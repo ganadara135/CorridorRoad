@@ -36,4 +36,4 @@ architecture = """
 - Finished Grade (FG) object (FGDisplay) owns FG display: ShowWire, CurvesOnly, ZOffset, SourceVA.
 - ProfileBundle stores Stations/ElevEG/ElevFG/Delta; draws EG only.
 - TaskPanels must not reference removed VA FG properties (ShowFGWire/FGCurvesOnly/FGWireZOffset).
-"""
+context_files = ["README_Codex.md", "docs/ARCHITECTURE.md", "docs/CODEX_PROMPTS.md"]
