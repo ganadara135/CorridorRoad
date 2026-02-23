@@ -1,0 +1,24 @@
+# CorridorRoad/commands/cmd_edit_pvi.py
+import FreeCAD as App
+import FreeCADGui as Gui
+
+from ui.task_pvi_editor import PviEditorTaskPanel
+
+
+class CmdEditPVI:
+    def GetResources(self):
+        return {
+            "Pixmap": "",
+            "MenuText": "Edit PVI (Generate FG)",
+            "ToolTip": "Edit Vertical Alignment PVI and generate FG on stations (linear grade)",
+        }
+
+    def IsActive(self):
+        return App.ActiveDocument is not None
+
+    def Activated(self):
+        panel = PviEditorTaskPanel()
+        Gui.Control.showDialog(panel)
+
+
+Gui.addCommand("CorridorRoad_EditPVI", CmdEditPVI())
