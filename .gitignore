@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# VS Code
+.vscode/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# FreeCAD (common)
+*.FCStd1
+*.bak
+*.tmp
+
+# Optional: local-only Codex state (keep project config committed, keep local state untracked)
+.codex/history.jsonl
+.codex/logs/
