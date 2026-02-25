@@ -47,7 +47,7 @@ def _ensure_fg_display(doc, va):
     if fg is not None:
         # ensure link
         try:
-            if getattr(fg, "SourceVA", None) is None:
+            if va is not None and getattr(fg, "SourceVA", None) is None:
                 fg.SourceVA = va
         except Exception:
             pass
@@ -63,17 +63,6 @@ def _ensure_fg_display(doc, va):
 
     try:
         fg.SourceVA = va
-    except Exception:
-        pass
-
-    # migration: if old properties existed on VA, copy once
-    try:
-        fg.CurvesOnly = bool(getattr(va, "FGCurvesOnly", False))
-    except Exception:
-        pass
-
-    try:
-        fg.ZOffset = float(getattr(va, "FGWireZOffset", 0.0))
     except Exception:
         pass
 
@@ -328,12 +317,12 @@ class PviEditorTaskPanel:
             raise Exception("Need at least 2 valid PVI rows (Station & Elev).")
 
         va = _find_vertical_alignment(self.doc)
-        _ensure_fg_display(self.doc, va)
         if va is None:
             va = self.doc.addObject("Part::FeaturePython", "VerticalAlignment")
             VerticalAlignment(va)
             ViewProviderVerticalAlignment(va.ViewObject)
             va.Label = "Vertical Alignment (PVI)"
+        _ensure_fg_display(self.doc, va)
 
         va.ClampOverlaps = bool(self.chk_clamp.isChecked())
         va.MinTangent = float(self.spin_min_tan.value())
@@ -444,16 +433,12 @@ class PviEditorTaskPanel:
         except Exception:
             pass
 
-        # Ensure FG display is enabled on VerticalAlignment (it owns FG wire now)
+        fgdisp = _ensure_fg_display(self.doc, va)
         try:
-            va.ShowFGWire = True
+            fgdisp.ShowWire = True
+            fgdisp.touch()
         except Exception:
             pass
-
-
-        fgdisp = _ensure_fg_display(self.doc, va)
-        # Optional: if you want, sync offsets or curve-only defaults here
-        fgdisp.touch()
 
 
         b.touch()

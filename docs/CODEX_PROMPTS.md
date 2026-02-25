@@ -2,9 +2,7 @@
 
 ## Session Boot Prompt
 Read README_Codex.md first. Follow the architecture rules strictly.
-Work in small patches. Provide patch-like diffs. After changes:
-- run git grep for removed VA FG props
-- run python -m compileall CorridorRoad
+Work in small patches. Provide patch-like diffs.
 
 ## Task: Update references after removing VA FG properties
 Search the workspace for references to:
@@ -22,6 +20,4 @@ When opening Edit Profiles or saving PVI:
 - link SourceVA to current VerticalAlignment
 
 ## Task: Validation
-1) `git grep -n "ShowFGWire\|FGCurvesOnly\|FGWireZOffset" CorridorRoad`
-2) `python -m compileall CorridorRoad`
-3) Summarize changed files and reasoning.
+1) Summarize changed files and reasoning.

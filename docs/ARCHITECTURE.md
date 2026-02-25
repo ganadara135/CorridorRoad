@@ -76,9 +76,7 @@ Terrain(EG) → Horizontal Alignment → Stations → EG Profile → FG Profile 
 - Prefer small patches, patch-like diffs, and minimal churn.
 
 ## Validation Checklist (before commit)
-1) `git grep -n "ShowFGWire\|FGCurvesOnly\|FGWireZOffset" CorridorRoad` returns nothing (except documentation if any).
-2) `python -m compileall CorridorRoad` passes.
-3) In FreeCAD:
+1) In FreeCAD:
    - "Finished Grade (FG)" appears and CurvesOnly works in Property editor.
    - VerticalAlignment shows only PVI (if enabled).
    - Edit Profiles opens without AttributeError and toggles FGDisplay.

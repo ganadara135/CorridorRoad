@@ -1,20 +1,5 @@
 // .vscode/tasks.json
 {
   "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Python: compileall (CorridorRoad)",
-      "type": "shell",
-      "command": "python",
-      "args": ["-m", "compileall", "CorridorRoad"],
-      "problemMatcher": []
-    },
-    {
-      "label": "Git: grep removed VA FG props",
-      "type": "shell",
-      "command": "git",
-      "args": ["grep", "-n", "ShowFGWire\\|FGCurvesOnly\\|FGWireZOffset", "--", "CorridorRoad"],
-      "problemMatcher": []
-    }
-  ]
+  "tasks": []
 }

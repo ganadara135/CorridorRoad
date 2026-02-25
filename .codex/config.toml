@@ -24,8 +24,6 @@ include_patch_summary = true
 allowed = [
   "git status",
   "git diff",
-  "git grep",
-  "python -m compileall CorridorRoad",
 ]
 
 [notes]

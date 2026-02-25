@@ -21,7 +21,7 @@ if WB_DIR and (WB_DIR not in sys.path):
 
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
-    ToolTip = "CorridorRoad Workbench (Alignment / Stations / ProfileEG)"
+    ToolTip = "CorridorRoad Workbench (Sample Alignment / Stations / ProfileEG)"
     Icon = ""
 
     def Initialize(self):
