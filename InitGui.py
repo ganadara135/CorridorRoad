@@ -28,6 +28,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         # Absolute imports (no leading dots)
         import commands.cmd_new_project  # noqa: F401
         import commands.cmd_create_alignment  # noqa: F401
+        import commands.cmd_edit_alignment  # noqa: F401
         import commands.cmd_generate_stations  # noqa: F401
         import commands.cmd_sample_eg_profile  # noqa: F401
         import commands.cmd_edit_profiles  # noqa: F401
@@ -36,6 +37,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         self.appendToolbar("CorridorRoad", [
             "CorridorRoad_NewProject",
             "CorridorRoad_CreateAlignment",
+            "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
             "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
@@ -45,6 +47,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         self.appendMenu("CorridorRoad", [
             "CorridorRoad_NewProject",
             "CorridorRoad_CreateAlignment",
+            "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
             "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
