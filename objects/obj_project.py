@@ -34,6 +34,8 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
     if not hasattr(obj, "SectionSet"):
         obj.addProperty("App::PropertyLink", "SectionSet", "CorridorRoad", "Link to section set object")
+    if not hasattr(obj, "CorridorLoft"):
+        obj.addProperty("App::PropertyLink", "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
 
 
 class CorridorRoadProject:
@@ -132,3 +134,15 @@ class CorridorRoadProject:
                     break
             if s is not None:
                 obj_project.SectionSet = s
+
+        if hasattr(obj_project, "CorridorLoft") and obj_project.CorridorLoft is None:
+            c = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CorridorLoft":
+                    c = o
+                    break
+                if o.Name.startswith("CorridorLoft"):
+                    c = o
+                    break
+            if c is not None:
+                obj_project.CorridorLoft = c

@@ -6,6 +6,8 @@ import Part
 
 from objects.obj_centerline3d import Centerline3D
 
+_RECOMP_LABEL_SUFFIX = " [Recompute]"
+
 
 def _unique_sorted(values, tol: float = 1e-6):
     vals = sorted([float(v) for v in values])
@@ -29,6 +31,28 @@ def _parse_station_text(text: str):
         except Exception:
             continue
     return out
+
+
+def _mark_corridor_needs_recompute(obj_corridor):
+    try:
+        if hasattr(obj_corridor, "NeedsRecompute"):
+            obj_corridor.NeedsRecompute = True
+    except Exception:
+        pass
+
+    try:
+        st = str(getattr(obj_corridor, "Status", "") or "")
+        if "NEEDS_RECOMPUTE" not in st:
+            obj_corridor.Status = "NEEDS_RECOMPUTE: Source SectionSet changed."
+    except Exception:
+        pass
+
+    try:
+        label = str(getattr(obj_corridor, "Label", "") or "")
+        if _RECOMP_LABEL_SUFFIX not in label:
+            obj_corridor.Label = f"{label}{_RECOMP_LABEL_SUFFIX}"
+    except Exception:
+        pass
 
 
 def ensure_section_set_properties(obj):
@@ -60,6 +84,9 @@ def ensure_section_set_properties(obj):
 
     if not hasattr(obj, "StationValues"):
         obj.addProperty("App::PropertyFloatList", "StationValues", "Result", "Resolved stations for sections (m)")
+    if not hasattr(obj, "SectionSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "SectionSchemaVersion", "Result", "Section schema version")
+        obj.SectionSchemaVersion = 1
     if not hasattr(obj, "SectionCount"):
         obj.addProperty("App::PropertyInteger", "SectionCount", "Result", "Section count")
         obj.SectionCount = 0
@@ -228,6 +255,8 @@ class SectionSet:
     def execute(self, obj):
         ensure_section_set_properties(obj)
         try:
+            # Contract for corridor loft schema
+            obj.SectionSchemaVersion = 1
             stations = SectionSet.resolve_station_values(obj)
             obj.StationValues = stations
             obj.SectionCount = len(stations)
@@ -273,6 +302,15 @@ class SectionSet:
             if bool(getattr(obj, "RebuildNow", False)):
                 obj.RebuildNow = False
             obj.Status = "OK"
+
+            # Push parametric updates to linked corridor objects.
+            if obj.Document is not None:
+                for o in list(obj.Document.Objects):
+                    try:
+                        if getattr(o, "SourceSectionSet", None) == obj and bool(getattr(o, "AutoUpdate", True)):
+                            _mark_corridor_needs_recompute(o)
+                    except Exception:
+                        pass
 
         except Exception as ex:
             obj.Shape = Part.Shape()

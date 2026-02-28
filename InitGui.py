@@ -35,6 +35,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import commands.cmd_edit_pvi  # noqa: F401
         import commands.cmd_generate_centerline3d  # noqa: F401
         import commands.cmd_generate_sections  # noqa: F401
+        import commands.cmd_generate_corridor_loft  # noqa: F401
 
         self.appendToolbar("CorridorRoad", [
             "CorridorRoad_NewProject",
@@ -46,6 +47,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_EditPVI",
             "CorridorRoad_GenerateCenterline3D",
             "CorridorRoad_GenerateSections",
+            "CorridorRoad_GenerateCorridorLoft",
         ])
 
         self.appendMenu("CorridorRoad", [
@@ -58,6 +60,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_EditPVI",
             "CorridorRoad_GenerateCenterline3D",
             "CorridorRoad_GenerateSections",
+            "CorridorRoad_GenerateCorridorLoft",
         ])
 
     def GetClassName(self):

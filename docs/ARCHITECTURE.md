@@ -69,6 +69,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Key params:
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
+  - `HeightLeft`, `HeightRight` (used by corridor solid output)
+- Display behavior:
+  - template wire shows crown line and depth envelope
+  - `HeightLeft/HeightRight` edits are visible in 3D view immediately
+  - `HeightLeft/HeightRight` belong to `Assembly` property group
 
 ### 2.8 SectionSet (`objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
@@ -79,12 +84,33 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `Range` (`StartStation`, `EndStation`, `Interval`)
   - `Manual` (`StationText`)
 - Results:
-  - `StationValues`, `SectionCount`, `Status`
+  - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
 - Optional tree children:
   - `SectionSlice` objects under `Group`
 - Rebuild controls:
   - `AutoRebuildChildren`
   - `RebuildNow` (property-panel trigger)
+
+### 2.9 CorridorLoft (`objects/obj_corridor_loft.py`)
+- Purpose: corridor loft generation from `SectionSet`.
+- Inputs:
+  - `SourceSectionSet`
+- Controls:
+  - `OutputType` (`Solid` only)
+  - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
+  - `UseRuled`
+  - `AutoUpdate`
+  - `RebuildNow`
+- Results:
+  - `SectionCount`, `PointCountPerSection`, `SchemaVersion`
+  - `NeedsRecompute`
+  - `FailedRanges`, `Status`
+- Output mode:
+  - `Solid`: loft from closed profiles generated with downward heights
+  - Height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+- Pending-update marker:
+  - tree label suffix: ` [Recompute]`
+  - status text starts with `NEEDS_RECOMPUTE` when source changed
 
 ## 3) UI Contracts
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
@@ -113,6 +139,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - select mode: `Range` or `Manual`
   - create/update `SectionSet`
   - optionally create child sections per station in tree
+  - `OK` closes dialog only (no generation)
+  - generation action is `Generate Sections Now` button
+
+### 3.6 Corridor Command (`commands/cmd_generate_corridor_loft.py`)
+- Creates/updates `CorridorLoft`.
+- Links current `SectionSet`.
+- Forces `OutputType` to `Solid`.
 
 ## 4) Design Rules
 - Separation of concerns is mandatory:
@@ -149,10 +182,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - If mismatch is detected, Loft must stop with explicit status/error
 
 ### 6.2 Output Type Policy
-- Phase-1 target is `Top Surface` only (open section Loft)
-- `OutputType` enum should exist as `Surface|Solid`
-- Current implementation scope: `Surface` only
-- `Solid` generation is deferred to phase-2
+- `OutputType` is `Solid` only
+- `Solid` uses closed profiles built from section wires + `HeightLeft/HeightRight` (downward)
+- `HeightLeft/HeightRight` must be finite and non-negative, and at least one side must be > 0
 
 ### 6.3 Parametric Update Policy
 - Default: `AutoUpdate = True`
@@ -161,6 +193,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - Vertical/Profile source changes
   - AssemblyTemplate changes
   - SectionSet changes
+- Section/Assembly source edits must not auto-recompute `CorridorLoft`
+- Instead, linked corridor objects are marked as pending recompute in tree/status
 - Manual override trigger must exist: `RebuildNow=True`
 
 ### 6.4 Loft Failure Guards
@@ -173,7 +207,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - detect orientation flips between neighboring sections
   - auto-fix orientation before Loft
 - Failure fallback:
-  - try segmented Loft by station ranges
+  - try adaptive segmented Loft by station ranges (range split on failure)
   - record failed range/stations in `Status`
 
 ## 7) Validation Strategy

@@ -18,11 +18,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - FG display as dedicated object (`Finished Grade (FG)`)
 - ProfileBundle storage (Stations/ElevEG/ElevFG/ElevDelta) and EG display
 - 3D centerline generation from H+V integration (`Centerline3D`)
+- Assembly template + section generation (`AssemblyTemplate`, `SectionSet`)
+- Corridor loft generation (`CorridorLoft`, solid mode)
 
 ### Not Yet Implemented
-- Assembly/subassembly modeling
-- Section generation pipeline
-- Corridor lofting workflow
+- Assembly/subassembly detailed modeling
 - Surface comparison and cut/fill volume workflow
 
 ## Core Architecture Rules (MUST)
@@ -97,6 +97,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Key inputs:
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
+  - `HeightLeft`, `HeightRight`
+- Display:
+  - crown line + depth envelope wire
+  - `HeightLeft/HeightRight` changes are visible in 3D view immediately
+  - `HeightLeft/HeightRight` are in the `Assembly` property group
 
 ### 8) SectionSet
 - Role: section generation container + aggregate display.
@@ -109,6 +114,24 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Optional:
   - child `SectionSlice` objects in tree
   - rebuild controls: `AutoRebuildChildren`, `RebuildNow`
+
+### 9) CorridorLoft
+- Role: corridor loft generator from `SectionSet`.
+- Controls:
+  - `OutputType` (`Solid`)
+  - `HeightLeft`, `HeightRight` (fallback heights)
+  - `UseRuled`
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SectionCount`, `PointCountPerSection`, `SchemaVersion`
+  - `NeedsRecompute`
+  - `FailedRanges`, `Status`
+- Output mode:
+  - `Solid`: loft from closed profiles using downward heights
+  - height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+- Pending-update marker:
+  - tree label suffix: ` [Recompute]`
+  - status prefix: `NEEDS_RECOMPUTE`
 
 ## Section Basis Rules (Fixed)
 - Section baseline must use resolved H+V source data (not display tessellation).
@@ -127,22 +150,26 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - point order fixed: `Left -> Center -> Right`
   - point count/order must match across stations; mismatch stops Loft
 - Output policy:
-  - phase-1: `Top Surface` only (open section Loft)
-  - keep `OutputType = Surface|Solid` for compatibility
-  - current support: `Surface` only
+  - `OutputType = Solid`
+  - `Solid`: closed-profile loft with valid `HeightLeft/HeightRight`
 - Parametric update policy:
   - default `AutoUpdate = True`
   - rebuild triggers: Alignment, Vertical/Profile source, AssemblyTemplate, SectionSet
+  - source edits mark `CorridorLoft` as pending recompute (no auto corridor recompute)
   - manual trigger: `RebuildNow=True`
 - Failure guards:
   - prechecks: >=2 sections, same point count/order, valid stations, no NaN/critical duplicates
   - continuity fix for orientation flips
-  - fallback to segmented Loft with failed ranges logged in `Status`
+  - adaptive segmented fallback (range split) with failed ranges logged in `Status`
 
 ## UI / TaskPanel Rules
 ### Edit Profiles (EG/FG)
 - Table edits ProfileBundle station/profile data.
 - FG display controls must map to `FGDisplay` object properties.
+
+### Generate Sections Panel
+- `OK` button closes dialog only.
+- section creation/update runs only from `Generate Sections Now`.
 
 ### PVI Editor
 - Updates/creates `VerticalAlignment`.

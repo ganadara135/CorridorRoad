@@ -33,6 +33,12 @@ For criteria violations:
 When implementing Corridor Loft + parametric updates:
 - Enforce `SectionSchemaVersion = 1` and fixed point order `Left -> Center -> Right`.
 - Stop Loft with explicit status if section point count/order mismatch occurs.
-- Keep `OutputType = Surface|Solid` but implement `Surface` first.
+- Keep `OutputType = Solid` only.
+- For `Solid`, require valid `HeightLeft/HeightRight` and build closed profiles from section wires.
 - Default `AutoUpdate=True`; support manual `RebuildNow=True`.
-- Add failure guards (precheck/orientation-fix/segmented fallback) and log failed ranges.
+- Source edits should mark corridor as `NEEDS_RECOMPUTE` in tree/status instead of auto corridor recompute.
+- Add failure guards (precheck/orientation-fix/adaptive segmented fallback) and log failed ranges.
+
+## Task: Section Panel UX
+- In `Generate Sections` task panel, `OK` must close only.
+- Actual generation must be explicit via `Generate Sections Now`.

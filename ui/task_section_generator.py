@@ -55,7 +55,6 @@ class SectionGeneratorTaskPanel:
         return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
 
     def accept(self):
-        self._generate()
         Gui.Control.closeDialog()
 
     def reject(self):
@@ -121,6 +120,14 @@ class SectionGeneratorTaskPanel:
         self.spin_tpl_z.setRange(-1.0e9, 1.0e9)
         self.spin_tpl_z.setDecimals(3)
         self.spin_tpl_z.setValue(0.0)
+        self.spin_h_left = QtWidgets.QDoubleSpinBox()
+        self.spin_h_left.setRange(0.0, 100.0)
+        self.spin_h_left.setDecimals(3)
+        self.spin_h_left.setValue(0.300)
+        self.spin_h_right = QtWidgets.QDoubleSpinBox()
+        self.spin_h_right.setRange(0.0, 100.0)
+        self.spin_h_right.setDecimals(3)
+        self.spin_h_right.setValue(0.300)
         self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fo.addRow(self.chk_create_new)
@@ -129,6 +136,8 @@ class SectionGeneratorTaskPanel:
         fo.addRow("Template X:", self.spin_tpl_x)
         fo.addRow("Template Y:", self.spin_tpl_y)
         fo.addRow("Template Z:", self.spin_tpl_z)
+        fo.addRow("Height Left:", self.spin_h_left)
+        fo.addRow("Height Right:", self.spin_h_right)
         fo.addRow(self.btn_make_assembly)
         fo.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
@@ -185,6 +194,15 @@ class SectionGeneratorTaskPanel:
         sec = _find_first_by_proxy_type(self.doc, "SectionSet")
         aln = _find_alignment(self.doc)
 
+        if asm is not None:
+            try:
+                if hasattr(asm, "HeightLeft"):
+                    self.spin_h_left.setValue(float(asm.HeightLeft))
+                if hasattr(asm, "HeightRight"):
+                    self.spin_h_right.setValue(float(asm.HeightRight))
+            except Exception:
+                pass
+
         if src is not None and getattr(src, "Alignment", None) is not None and getattr(src.Alignment, "Shape", None):
             try:
                 total = float(src.Alignment.Shape.Length)
@@ -215,6 +233,10 @@ class SectionGeneratorTaskPanel:
         if asm is not None:
             try:
                 asm.Placement.Base = self._resolve_template_base()
+                if hasattr(asm, "HeightLeft"):
+                    asm.HeightLeft = float(self.spin_h_left.value())
+                if hasattr(asm, "HeightRight"):
+                    asm.HeightRight = float(self.spin_h_right.value())
                 asm.touch()
                 self.doc.recompute()
             except Exception:
@@ -227,6 +249,10 @@ class SectionGeneratorTaskPanel:
         asm.Label = "Assembly Template"
         try:
             asm.Placement.Base = self._resolve_template_base()
+            if hasattr(asm, "HeightLeft"):
+                asm.HeightLeft = float(self.spin_h_left.value())
+            if hasattr(asm, "HeightRight"):
+                asm.HeightRight = float(self.spin_h_right.value())
         except Exception:
             pass
         asm.touch()
@@ -252,6 +278,10 @@ class SectionGeneratorTaskPanel:
         if asm is not None:
             try:
                 asm.Placement.Base = self._resolve_template_base()
+                if hasattr(asm, "HeightLeft"):
+                    asm.HeightLeft = float(self.spin_h_left.value())
+                if hasattr(asm, "HeightRight"):
+                    asm.HeightRight = float(self.spin_h_right.value())
                 asm.touch()
             except Exception:
                 pass
@@ -264,6 +294,10 @@ class SectionGeneratorTaskPanel:
         asm.Label = "Assembly Template"
         try:
             asm.Placement.Base = self._resolve_template_base()
+            if hasattr(asm, "HeightLeft"):
+                asm.HeightLeft = float(self.spin_h_left.value())
+            if hasattr(asm, "HeightRight"):
+                asm.HeightRight = float(self.spin_h_right.value())
         except Exception:
             pass
         asm.touch()

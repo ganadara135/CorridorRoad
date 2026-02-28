@@ -45,6 +45,8 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.AssemblyTemplate)
         if hasattr(obj, "SectionSet") and obj.SectionSet is not None:
             CorridorRoadProject.adopt(obj, obj.SectionSet)
+        if hasattr(obj, "CorridorLoft") and obj.CorridorLoft is not None:
+            CorridorRoadProject.adopt(obj, obj.CorridorLoft)
 
         doc.recompute()
 
