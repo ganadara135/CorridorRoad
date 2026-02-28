@@ -30,6 +30,10 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
     if not hasattr(obj, "Centerline3DDisplay"):
         obj.addProperty("App::PropertyLink", "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
+    if not hasattr(obj, "AssemblyTemplate"):
+        obj.addProperty("App::PropertyLink", "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
+    if not hasattr(obj, "SectionSet"):
+        obj.addProperty("App::PropertyLink", "SectionSet", "CorridorRoad", "Link to section set object")
 
 
 class CorridorRoadProject:
@@ -104,3 +108,27 @@ class CorridorRoadProject:
                     break
             if d is not None:
                 obj_project.Centerline3DDisplay = d
+
+        if hasattr(obj_project, "AssemblyTemplate") and obj_project.AssemblyTemplate is None:
+            a = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "AssemblyTemplate":
+                    a = o
+                    break
+                if o.Name.startswith("AssemblyTemplate"):
+                    a = o
+                    break
+            if a is not None:
+                obj_project.AssemblyTemplate = a
+
+        if hasattr(obj_project, "SectionSet") and obj_project.SectionSet is None:
+            s = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SectionSet":
+                    s = o
+                    break
+                if o.Name.startswith("SectionSet"):
+                    s = o
+                    break
+            if s is not None:
+                obj_project.SectionSet = s

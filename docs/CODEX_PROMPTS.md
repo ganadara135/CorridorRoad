@@ -28,3 +28,11 @@ For criteria violations:
 ## Task: Validation (Project Policy)
 1) Summarize changed files and reasoning.
 2) Mention what runtime behavior should be checked in FreeCAD.
+
+## Task: Corridor Loft Update
+When implementing Corridor Loft + parametric updates:
+- Enforce `SectionSchemaVersion = 1` and fixed point order `Left -> Center -> Right`.
+- Stop Loft with explicit status if section point count/order mismatch occurs.
+- Keep `OutputType = Surface|Solid` but implement `Surface` first.
+- Default `AutoUpdate=True`; support manual `RebuildNow=True`.
+- Add failure guards (precheck/orientation-fix/segmented fallback) and log failed ranges.

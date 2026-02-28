@@ -41,6 +41,10 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.Centerline3D)
         if hasattr(obj, "Centerline3DDisplay") and obj.Centerline3DDisplay is not None:
             CorridorRoadProject.adopt(obj, obj.Centerline3DDisplay)
+        if hasattr(obj, "AssemblyTemplate") and obj.AssemblyTemplate is not None:
+            CorridorRoadProject.adopt(obj, obj.AssemblyTemplate)
+        if hasattr(obj, "SectionSet") and obj.SectionSet is not None:
+            CorridorRoadProject.adopt(obj, obj.SectionSet)
 
         doc.recompute()
 

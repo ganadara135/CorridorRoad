@@ -177,6 +177,72 @@ class Centerline3D:
         z = float(z_provider(ss))
         return App.Vector(float(p_xy.x), float(p_xy.y), z)
 
+    @staticmethod
+    def tangent3d_at_station(obj, s: float, eps: float = 0.1, z_provider=None) -> App.Vector:
+        """
+        3D tangent from central difference on resolved 3D centerline.
+        """
+        aln = getattr(obj, "Alignment", None)
+        if aln is None or aln.Shape is None or aln.Shape.isNull():
+            raise Exception("Centerline3D.Alignment is missing or empty.")
+
+        total = float(aln.Shape.Length)
+        if total <= 1e-9:
+            return App.Vector(1.0, 0.0, 0.0)
+
+        e = float(eps)
+        if e <= 1e-6:
+            e = 0.1
+        if e > 0.25 * total:
+            e = max(1e-3, 0.25 * total)
+
+        s0 = max(0.0, float(s) - e)
+        s1 = min(total, float(s) + e)
+        if s1 <= s0 + 1e-9:
+            s0 = max(0.0, float(s) - 0.5 * e)
+            s1 = min(total, float(s) + 0.5 * e)
+
+        p0 = Centerline3D.point3d_at_station(obj, s0, z_provider=z_provider)
+        p1 = Centerline3D.point3d_at_station(obj, s1, z_provider=z_provider)
+        t = p1 - p0
+        if t.Length <= 1e-12:
+            return App.Vector(1.0, 0.0, 0.0)
+        return t.normalize()
+
+    @staticmethod
+    def frame_at_station(obj, s: float, eps: float = 0.1, prev_n: App.Vector = None, z_provider=None):
+        """
+        Standard section frame (T-N-Z):
+          - T: tangent at station (3D)
+          - Z: global up (0,0,1)
+          - N: left normal, N = normalize(Z x T), with flip-stabilization via prev_n
+        """
+        p = Centerline3D.point3d_at_station(obj, float(s), z_provider=z_provider)
+        t = Centerline3D.tangent3d_at_station(obj, float(s), eps=eps, z_provider=z_provider)
+        z = App.Vector(0.0, 0.0, 1.0)
+        n = z.cross(t)
+
+        if n.Length <= 1e-12:
+            if prev_n is not None and getattr(prev_n, "Length", 0.0) > 1e-12:
+                n = prev_n
+            else:
+                n = App.Vector(0.0, 1.0, 0.0)
+        else:
+            n = n.normalize()
+
+        # Keep left/right orientation continuity to reduce sudden flips.
+        if prev_n is not None and getattr(prev_n, "Length", 0.0) > 1e-12:
+            pn = prev_n.normalize()
+            if float(n.dot(pn)) < 0.0:
+                n = n * -1.0
+
+        return {
+            "point": p,
+            "T": t,
+            "N": n,
+            "Z": z,
+        }
+
     def execute(self, obj):
         ensure_centerline3d_properties(obj)
         try:

@@ -92,6 +92,53 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Behavior:
   - Builds display wire using adaptive sampling (curve-heavy regions are sampled denser).
 
+### 7) AssemblyTemplate
+- Role: section template parameter object.
+- Key inputs:
+  - `LeftWidth`, `RightWidth`
+  - `LeftSlopePct`, `RightSlopePct`
+
+### 8) SectionSet
+- Role: section generation container + aggregate display.
+- Station mode:
+  - `Range`: Start/End/Interval
+  - `Manual`: station list text
+- Sources:
+  - `SourceCenterlineDisplay`
+  - `AssemblyTemplate`
+- Optional:
+  - child `SectionSlice` objects in tree
+  - rebuild controls: `AutoRebuildChildren`, `RebuildNow`
+
+## Section Basis Rules (Fixed)
+- Section baseline must use resolved H+V source data (not display tessellation).
+- Source priority:
+  - XY from `HorizontalAlignment.point_at_station`
+  - Z from `VerticalAlignment` -> `ProfileBundleFG` -> `FlatZero`
+- Section frame is fixed to `T-N-Z`:
+  - `T = normalize(P(s+eps)-P(s-eps))`
+  - `Z = (0,0,1)`
+  - `N = normalize(Z x T)` (left)
+  - continuity guard: use previous `N` when degenerate and flip by dot sign
+
+## Corridor Loft Preconditions (Fixed)
+- Section shape contract:
+  - `SectionSchemaVersion = 1`
+  - point order fixed: `Left -> Center -> Right`
+  - point count/order must match across stations; mismatch stops Loft
+- Output policy:
+  - phase-1: `Top Surface` only (open section Loft)
+  - keep `OutputType = Surface|Solid` for compatibility
+  - current support: `Surface` only
+- Parametric update policy:
+  - default `AutoUpdate = True`
+  - rebuild triggers: Alignment, Vertical/Profile source, AssemblyTemplate, SectionSet
+  - manual trigger: `RebuildNow=True`
+- Failure guards:
+  - prechecks: >=2 sections, same point count/order, valid stations, no NaN/critical duplicates
+  - continuity fix for orientation flips
+  - fallback to segmented Loft with failed ranges logged in `Status`
+
 ## UI / TaskPanel Rules
 ### Edit Profiles (EG/FG)
 - Table edits ProfileBundle station/profile data.
