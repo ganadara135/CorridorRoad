@@ -1,82 +1,99 @@
-# CorridorRoad Workbench — Codex Context
+# CorridorRoad Architecture
 
-This repository is a FreeCAD Workbench (Python) for road corridor design.
+## 1) Pipeline View
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft -> Surface Comparison -> Cut/Fill
 
-## Project Goal (Pipeline)
-Terrain(EG) → Horizontal Alignment → Stations → EG Profile → FG Profile (from PVI) → Delta Profile → 3D Centerline → Assembly → Sections → Loft Corridor → Surface Comparison → Cut/Fill Volume (incl. slopes)
+## 2) Object Responsibilities
+### 2.1 VerticalAlignment (`objects/obj_vertical_alignment.py`)
+- Purpose: vertical geometry engine only.
+- Owns PVI data and solver logic.
+- May display PVI polyline only (`ShowPVIWire`).
+- Must not own FG display toggles.
 
-## Core Architecture Rules (MUST)
-### 1) VerticalAlignment (PVI)
-- Role: **data/engine only**
-- Owns:
-  - PVIStations, PVIElevations, CurveLengths
-  - ClampOverlaps, MinTangent
-  - elevation_at_station(station)
-  - curve solving (BVC/EVC handling + clamp)
-- Displays:
-  - May display **PVI polyline only** (ShowPVIWire)
-- Must NOT own / must NOT display:
-  - ShowFGWire
-  - FGCurvesOnly
-  - FGWireZOffset
-  - Any FG display wire
+### 2.2 FGDisplay (`objects/obj_fg_display.py`)
+- Purpose: FG rendering only.
+- Required label: `Finished Grade (FG)`.
+- Required properties:
+  - `SourceVA`
+  - `ShowWire`
+  - `CurvesOnly`
+  - `ZOffset`
+- Generates FG geometry from VerticalAlignment engine.
 
-### 2) Finished Grade (FG) — FGDisplay object
-- Role: **display-only**
-- Tree label MUST be: **"Finished Grade (FG)"**
-- Properties:
-  - SourceVA (Link to VerticalAlignment)
-  - ShowWire (bool)
-  - CurvesOnly (bool): if true show only vertical curve segments
-  - ZOffset (float)
-- Generates FG shape from SourceVA using:
-  - line edges for tangents (optional)
-  - quadratic Bezier edges for vertical curves (exact 2nd-degree curve)
-- CurvesOnly may create disconnected segments → return Compound safely.
-
-### 3) ProfileBundle
-- Role: station-based profile storage (data + EG display)
+### 2.3 ProfileBundle (`objects/obj_profile_bundle.py`)
+- Purpose: station-profile data container + EG display.
 - Stores:
-  - Stations[]
-  - ElevEG[]
-  - ElevFG[] (data storage, not display responsibility)
-  - ElevDelta[] = FG - EG
-  - Link: VerticalAlignment (optional traceability)
-- Displays:
-  - EG wire only (ShowEGWire, WireZOffset)
-- Must NOT display FG, must NOT have ShowFGWire.
+  - `Stations`, `ElevEG`, `ElevFG`, `ElevDelta`
+  - Optional `VerticalAlignment` link
+- Displays EG only (`ShowEGWire`, `WireZOffset`).
 
-## UI / TaskPanels Rules (MUST)
-### Edit Profiles (EG/FG)
-- Table edits Stations/EG/FG data in ProfileBundle.
-- FG display toggles MUST control **Finished Grade (FG)** object:
-  - Show FG → FGDisplay.ShowWire
-  - FG Z Offset → FGDisplay.ZOffset
-  - Curves Only → FGDisplay.CurvesOnly (if shown in UI)
-- Must NOT reference removed VA FG properties.
+### 2.4 HorizontalAlignment (`objects/obj_alignment.py`)
+- Purpose: horizontal geometry and stationing source shape.
+- Supports:
+  - Tangent + circular curve
+  - Optional transition curve (S-C-S) approximation
+- Practical properties:
+  - Geometry: `IPPoints`, `CurveRadii`, `TransitionLengths`, `UseTransitionCurves`, `SpiralSegments`
+  - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
+  - Results: `CriteriaMessages`, `CriteriaStatus`, `TotalLength`
 
-### PVI Editor
-- Updates/creates VerticalAlignment.
-- Ensures FGDisplay exists and is linked (SourceVA=VA).
-- Should NOT store FG display settings on VA.
+### 2.5 Centerline3D (`objects/obj_centerline3d.py`)
+- Purpose: 3D centerline computation engine (no display shape ownership).
+- Inputs:
+  - `Alignment` (required)
+  - `Stationing` (optional station list source)
+  - `VerticalAlignment` (optional elevation source)
+  - `ProfileBundle` (optional FG fallback source)
+- Controls:
+  - `UseStationing`, `SamplingInterval`, `ElevationSource`
+- Results:
+  - `StationValues`, `CenterlinePoints`, `TotalLength3D`, `ResolvedElevationSource`, `Status`
 
-## Naming / Consistency
-- Use "FG" (Finished Grade) instead of "design" in naming.
-- Keep module names stable:
-  - objects/obj_vertical_alignment.py
-  - objects/obj_fg_display.py
-  - objects/obj_profile_bundle.py
-  - ui/task_profile_editor.py
-  - ui/task_pvi_editor.py
-  - commands/cmd_edit_profiles.py etc.
+### 2.6 Centerline3DDisplay (`objects/obj_centerline3d_display.py`)
+- Purpose: 3D centerline rendering only.
+- Input:
+  - direct source links: `Alignment`, `Stationing`, `VerticalAlignment`, `ProfileBundle`
+  - optional legacy link: `SourceCenterline` (Centerline3D)
+- Controls:
+  - `ShowWire`, `UseStationing`, `SamplingInterval`, `ElevationSource`
+  - `MaxChordError`, `MinStep`, `MaxStep`, `UseKeyStations`
+- Results:
+  - `SampledStations`, `SampledPoints`, `SampleCount`, `Status`
 
-## Safety / Migration
-- When removing properties from VerticalAlignment, search repo for references.
-- Provide a simple migration helper if old documents still contain removed props.
-- Prefer small patches, patch-like diffs, and minimal churn.
+## 3) UI Contracts
+### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
+- Creates simple baseline alignment object and sample values.
+- Keep as lightweight starter command.
 
-## Validation Checklist (before commit)
-1) In FreeCAD:
-   - "Finished Grade (FG)" appears and CurvesOnly works in Property editor.
-   - VerticalAlignment shows only PVI (if enabled).
-   - Edit Profiles opens without AttributeError and toggles FGDisplay.
+### 3.2 Practical Alignment Editor (`commands/cmd_edit_alignment.py`, `ui/task_alignment_editor.py`)
+- Edits practical alignment inputs:
+  - IP coordinates
+  - Radius/transition arrays
+  - Criteria settings
+- Shows criteria report messages.
+
+### 3.3 Profile/PVI Editors
+- `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
+- `ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
+
+### 3.4 Centerline Command (`commands/cmd_generate_centerline3d.py`)
+- Creates/updates `Centerline3DDisplay` (direct source mode).
+- Auto-links available Alignment/Stationing/VerticalAlignment/ProfileBundle.
+- Uses `Auto` elevation mode by default (VA -> ProfileBundle FG -> FlatZero).
+- Removes legacy `Centerline3D` engine object if present.
+
+## 4) Design Rules
+- Separation of concerns is mandatory:
+  - Vertical engine != FG display
+  - Profile data storage != FG display
+  - Centerline3D engine != Centerline3DDisplay rendering
+- Keep sample and practical workflows separated, not mixed.
+- Prefer small, patch-like changes and minimal churn.
+
+## 5) Validation Strategy
+- Primary validation is runtime behavior in FreeCAD:
+  - object creation
+  - recompute
+  - property update reactions
+  - command/task-panel flow
+- `git grep` / `python -m compileall` are not mandatory validation gates in this project workflow.

@@ -33,6 +33,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import commands.cmd_sample_eg_profile  # noqa: F401
         import commands.cmd_edit_profiles  # noqa: F401
         import commands.cmd_edit_pvi  # noqa: F401
+        import commands.cmd_generate_centerline3d  # noqa: F401
 
         self.appendToolbar("CorridorRoad", [
             "CorridorRoad_NewProject",
@@ -42,6 +43,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
+            "CorridorRoad_GenerateCenterline3D",
         ])
 
         self.appendMenu("CorridorRoad", [
@@ -52,6 +54,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
+            "CorridorRoad_GenerateCenterline3D",
         ])
 
     def GetClassName(self):

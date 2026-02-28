@@ -37,6 +37,11 @@ class CmdNewProject:
         if obj.ProfileEG is not None:
             CorridorRoadProject.adopt(obj, obj.ProfileEG)
 
+        if hasattr(obj, "Centerline3D") and obj.Centerline3D is not None:
+            CorridorRoadProject.adopt(obj, obj.Centerline3D)
+        if hasattr(obj, "Centerline3DDisplay") and obj.Centerline3DDisplay is not None:
+            CorridorRoadProject.adopt(obj, obj.Centerline3DDisplay)
+
         doc.recompute()
 
 

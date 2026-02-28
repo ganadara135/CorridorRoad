@@ -1,23 +1,30 @@
 # Codex Prompt Templates (CorridorRoad)
 
 ## Session Boot Prompt
-Read README_Codex.md first. Follow the architecture rules strictly.
-Work in small patches. Provide patch-like diffs.
+Read `README_Codex.md` first, then follow `docs/ARCHITECTURE.md`.
+Keep changes small and provide patch-like diffs.
+Do not use `git grep` / `python -m compileall` as required validation steps.
 
-## Task: Update references after removing VA FG properties
-Search the workspace for references to:
-ShowFGWire, FGCurvesOnly, FGWireZOffset
-Replace logic to use FGDisplay (Finished Grade (FG)):
-- Show FG → FGDisplay.ShowWire
-- Curves only → FGDisplay.CurvesOnly
-- Z offset → FGDisplay.ZOffset
-Ensure no UI references remain to removed VA props.
+## Task: FG Architecture Safety
+Verify these boundaries:
+- VerticalAlignment is engine/data only.
+- FGDisplay owns FG display toggles.
+- ProfileBundle stores data and shows EG only.
+- Profile/PVI task panels must not depend on removed VA FG display props.
 
-## Task: Ensure FGDisplay auto-creation
-When opening Edit Profiles or saving PVI:
-- if FGDisplay missing, create it
-- set Label = "Finished Grade (FG)"
-- link SourceVA to current VerticalAlignment
+## Task: Practical Alignment Update
+When updating practical alignment behavior:
+- Preserve `Sample Alignment` command as a separate lightweight flow.
+- Keep practical editing in `Edit Alignment (Practical)` flow.
+- Ensure criteria messages are actionable, not just warning labels.
+- Keep stationing compatibility with `point_at_station` / `tangent_at_station`.
 
-## Task: Validation
+## Task: Alignment Criteria Message Quality
+For criteria violations:
+- Include which segment/IP failed.
+- Include numeric threshold and current value.
+- Include one actionable next step (e.g., required segment length increase).
+
+## Task: Validation (Project Policy)
 1) Summarize changed files and reasoning.
+2) Mention what runtime behavior should be checked in FreeCAD.

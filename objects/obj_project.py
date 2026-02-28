@@ -10,6 +10,28 @@ def _find_first(doc, name_prefix: str):
     return None
 
 
+def ensure_project_properties(obj):
+    if not hasattr(obj, "Group"):
+        obj.addProperty("App::PropertyLinkList", "Group", "CorridorRoad", "Contained objects")
+
+    if not hasattr(obj, "Version"):
+        obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
+        obj.Version = "0.3"
+
+    if not hasattr(obj, "Terrain"):
+        obj.addProperty("App::PropertyLink", "Terrain", "CorridorRoad", "Link to EG terrain object")
+    if not hasattr(obj, "Alignment"):
+        obj.addProperty("App::PropertyLink", "Alignment", "CorridorRoad", "Link to horizontal alignment object")
+    if not hasattr(obj, "Stationing"):
+        obj.addProperty("App::PropertyLink", "Stationing", "CorridorRoad", "Link to stationing object")
+    if not hasattr(obj, "ProfileEG"):
+        obj.addProperty("App::PropertyLink", "ProfileEG", "CorridorRoad", "Link to existing ground profile object")
+    if not hasattr(obj, "Centerline3D"):
+        obj.addProperty("App::PropertyLink", "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
+    if not hasattr(obj, "Centerline3DDisplay"):
+        obj.addProperty("App::PropertyLink", "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
+
+
 class CorridorRoadProject:
     """
     Project container:
@@ -20,21 +42,10 @@ class CorridorRoadProject:
     def __init__(self, obj):
         obj.Proxy = self
         self.Type = "CorridorRoadProject"
-
-        # Group-capable base type is recommended, but App::FeaturePython also works with a Group property.
-        # We'll add Group property explicitly.
-        if not hasattr(obj, "Group"):
-            obj.addProperty("App::PropertyLinkList", "Group", "CorridorRoad", "Contained objects")
-
-        obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
-        obj.Version = "0.2"
-
-        obj.addProperty("App::PropertyLink", "Terrain", "CorridorRoad", "Link to EG terrain object")
-        obj.addProperty("App::PropertyLink", "Alignment", "CorridorRoad", "Link to horizontal alignment object")
-        obj.addProperty("App::PropertyLink", "Stationing", "CorridorRoad", "Link to stationing object")
-        obj.addProperty("App::PropertyLink", "ProfileEG", "CorridorRoad", "Link to existing ground profile object")
+        ensure_project_properties(obj)
 
     def execute(self, obj):
+        ensure_project_properties(obj)
         # Container does not generate shape.
         return
 
@@ -69,3 +80,27 @@ class CorridorRoadProject:
             p = _find_first(doc, "ProfileEG")
             if p is not None:
                 obj_project.ProfileEG = p
+
+        if hasattr(obj_project, "Centerline3D") and obj_project.Centerline3D is None:
+            c = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "Centerline3D":
+                    c = o
+                    break
+                if o.Name.startswith("Centerline3D") and (not o.Name.startswith("Centerline3DDisplay")):
+                    c = o
+                    break
+            if c is not None:
+                obj_project.Centerline3D = c
+
+        if hasattr(obj_project, "Centerline3DDisplay") and obj_project.Centerline3DDisplay is None:
+            d = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "Centerline3DDisplay":
+                    d = o
+                    break
+                if o.Name.startswith("Centerline3DDisplay"):
+                    d = o
+                    break
+            if d is not None:
+                obj_project.Centerline3DDisplay = d
