@@ -46,7 +46,7 @@ def _ensure_fg_display(doc, va):
     if fg is not None:
         # ensure link
         try:
-            if getattr(fg, "SourceVA", None) is None:
+            if va is not None and getattr(fg, "SourceVA", None) is None:
                 fg.SourceVA = va
         except Exception:
             pass
@@ -65,17 +65,6 @@ def _ensure_fg_display(doc, va):
     except Exception:
         pass
 
-    # migration: if old properties existed on VA, copy once
-    try:
-        fg.CurvesOnly = bool(getattr(va, "FGCurvesOnly", False))
-    except Exception:
-        pass
-
-    try:
-        fg.ZOffset = float(getattr(va, "FGWireZOffset", 0.0))
-    except Exception:
-        pass
-
     try:
         fg.ShowWire = True
     except Exception:
@@ -91,7 +80,7 @@ class ProfileEditorTaskPanel:
 
     - ProfileBundle holds data: Stations/ElevEG/ElevFG/Delta.
     - ProfileBundle only draws EG (optional).
-    - VerticalAlignment draws FG (optional).
+    - FGDisplay draws FG (optional).
 
     UI:
       - Table: Station, EG, FG, Delta
@@ -100,9 +89,9 @@ class ProfileEditorTaskPanel:
           * Manual FG: FG column editable.
       - Display options:
           * Show EG wire -> ProfileBundle.ShowEGWire
-          * Show FG wire -> VerticalAlignment.ShowFGWire
+          * Show FG wire -> FGDisplay.ShowWire
           * EG Z offset -> ProfileBundle.WireZOffset
-          * FG Z offset -> VerticalAlignment.FGWireZOffset
+          * FG Z offset -> FGDisplay.ZOffset
     """
 
     def __init__(self):
@@ -187,7 +176,7 @@ class ProfileEditorTaskPanel:
         self.chk_show_eg = QtWidgets.QCheckBox("Show EG wire (ProfileBundle)")
         self.chk_show_eg.setChecked(True)
 
-        self.chk_show_fg = QtWidgets.QCheckBox("Show FG wire (VerticalAlignment)")
+        self.chk_show_fg = QtWidgets.QCheckBox("Show FG wire (Finished Grade (FG))")
         self.chk_show_fg.setChecked(True)
 
         self.spin_eg_zoff = QtWidgets.QDoubleSpinBox()
@@ -250,7 +239,7 @@ class ProfileEditorTaskPanel:
         msg.append("")
         msg.append("Policy:")
         msg.append("- EG wire is drawn by ProfileBundle.")
-        msg.append("- FG wire is drawn by VerticalAlignment (analytic Bezier vertical curves).")
+        msg.append("- FG wire is drawn by Finished Grade (FG) display object.")
         self.lbl_info.setText("\n".join(msg))
 
         # default FG-from-VA checkbox based on VA existence
@@ -416,11 +405,11 @@ class ProfileEditorTaskPanel:
             if c != 2 and self.chk_fg_from_va.isChecked() and self.va is not None:
                 self._fill_fg_from_va()
 
-            # If user edits FG manually (FG column) while NOT locked => hide VA FG wire
+            # If user edits FG manually (FG column) while NOT locked => hide FG wire
             if c == 2:
                 if (not self.chk_fg_from_va.isChecked()) and (self.va is not None):
-                    # user is manually editing FG -> force-hide VA FG wire to avoid mismatch
-                    self._ensure_va_fg_hidden("FG cell edited manually")
+                    # user is manually editing FG -> force-hide FG wire to avoid mismatch
+                    self._ensure_fg_hidden("FG cell edited manually")
 
             self._update_delta_row(r)
 
@@ -631,11 +620,10 @@ class ProfileEditorTaskPanel:
         try:
             if self.chk_fg_from_va.isChecked() and va is not None:
                 b.FGIsManual = False
-                va.ShowFGWire = bool(self.chk_show_fg.isChecked())
             else:
                 b.FGIsManual = True
-                if va is not None:
-                    va.ShowFGWire = False
+                if self.fgdisp is not None:
+                    self.fgdisp.ShowWire = False
                     try:
                         self.chk_show_fg.setChecked(False)
                     except Exception:
@@ -648,16 +636,6 @@ class ProfileEditorTaskPanel:
         except Exception:
             pass
 
-        # FG display is owned by VA
-        # if va is not None:
-        #     try:
-        #         va.ShowFGWire = bool(self.chk_show_fg.isChecked())
-        #     except Exception:
-        #         pass
-        #     try:
-        #         va.FGWireZOffset = float(self.spin_fg_zoff.value())
-        #     except Exception:
-        #         pass
         if self.fgdisp is not None:
             try:
                 self.fgdisp.ShowWire = bool(self.chk_show_fg.isChecked())
@@ -714,8 +692,8 @@ class ProfileEditorTaskPanel:
     #     else:
     #         self._set_state_text("Manual FG mode: hiding VerticalAlignment FG wire.")
     def _ensure_fg_hidden(self, reason=""):
-        # Hard rule: when manual FG, VA FG must be hidden to avoid mismatch UX
-        if self.va is None:
+        # Hard rule: when manual FG, FG display must be hidden to avoid mismatch UX
+        if self.fgdisp is None:
             return
 
         try:
@@ -724,15 +702,15 @@ class ProfileEditorTaskPanel:
             pass
 
         try:
-            self.va.ShowFGWire = False
-            self.va.touch()
+            self.fgdisp.ShowWire = False
+            self.fgdisp.touch()
         except Exception:
             pass
 
         if reason:
-            self._set_state_text(f"Manual FG mode: hiding VerticalAlignment FG wire. ({reason})")
+            self._set_state_text(f"Manual FG mode: hiding Finished Grade (FG) wire. ({reason})")
         else:
-            self._set_state_text("Manual FG mode: hiding VerticalAlignment FG wire.")
+            self._set_state_text("Manual FG mode: hiding Finished Grade (FG) wire.")
 
     # def _ensure_va_fg_shown(self, reason=""):
     #     if self.va is None:
@@ -754,7 +732,7 @@ class ProfileEditorTaskPanel:
     #     else:
     #         self._set_state_text("FG from VerticalAlignment: showing VA FG wire.")
     def _ensure_fg_shown(self, reason=""):
-        if self.va is None:
+        if self.fgdisp is None:
             return
 
         try:
@@ -763,15 +741,15 @@ class ProfileEditorTaskPanel:
             pass
 
         try:
-            self.va.ShowFGWire = True
-            self.va.touch()
+            self.fgdisp.ShowWire = True
+            self.fgdisp.touch()
         except Exception:
             pass
 
         if reason:
-            self._set_state_text(f"FG from VerticalAlignment: showing VA FG wire. ({reason})")
+            self._set_state_text(f"FG from VerticalAlignment: showing Finished Grade (FG) wire. ({reason})")
         else:
-            self._set_state_text("FG from VerticalAlignment: showing VA FG wire.")
+            self._set_state_text("FG from VerticalAlignment: showing Finished Grade (FG) wire.")
 
 
     def _on_fg_mode_toggled(self, checked):

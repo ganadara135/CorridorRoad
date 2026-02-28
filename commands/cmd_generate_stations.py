@@ -40,7 +40,7 @@ class CmdGenerateStations:
 
         aln = _find_alignment(doc)
         if aln is None:
-            raise Exception("No HorizontalAlignment found. Create Alignment first.")
+            raise Exception("No HorizontalAlignment found. Run Sample Alignment first.")
 
         st = doc.addObject("Part::FeaturePython", "Stationing")
         Stationing(st)

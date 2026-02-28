@@ -9,8 +9,8 @@ class CmdCreateAlignment:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Create Alignment",
-            "ToolTip": "Create a simple Horizontal Alignment (FeaturePython + Wire)",
+            "MenuText": "Sample Alignment",
+            "ToolTip": "Create a sample Horizontal Alignment (tangent + circular curve basics)",
         }
 
     def IsActive(self):
@@ -31,7 +31,8 @@ class CmdCreateAlignment:
             App.Vector(80, 20, 0),
             App.Vector(120, 20, 0),
         ]
-        obj.Label = "Alignment"
+        obj.CurveRadii = [0.0, 25.0, 20.0, 0.0]
+        obj.Label = "Sample Alignment"
 
         obj.touch()
         doc.recompute()
