@@ -112,6 +112,34 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
+### 2.10 SurfaceComparison (`objects/obj_surface_comparison.py`)
+- Purpose: Existing/Design surface comparison and cut/fill summary.
+- Inputs:
+  - `SourceCorridor` (`CorridorLoft`)
+  - `ExistingSurface` (Mesh object)
+- Controls:
+  - `CellSize`, `MaxSamples`, `DomainMargin`, `UseCorridorBounds`
+  - manual domain: `XMin/XMax/YMin/YMax`
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SampleCount`, `ValidCount`
+  - `DeltaMin/DeltaMax/DeltaMean`
+  - `CutVolume`, `FillVolume`, `NoDataArea`
+  - `Status`
+- Comparison rule:
+  - design side uses top surface extracted from `CorridorLoft`
+  - existing side uses mesh triangles
+  - grid sampling integrates `delta = Design - Existing`
+- Runtime/UX:
+  - supports progress callback (stage + percent)
+  - supports cancel request during run
+  - cancel result is stored as `Status = CANCELED: user requested cancel`
+  - when `AutoUpdate=False`, source/parameter edits set pending status and do not auto-run
+- Performance guards:
+  - precheck `EstimatedSamples <= MaxSamples`
+  - wide-triangle bucket expansion is guarded to avoid bucket blow-up
+  - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
+
 ## 3) UI Contracts
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
@@ -147,11 +175,25 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Links current `SectionSet`.
 - Forces `OutputType` to `Solid`.
 
+### 3.7 Surface Comparison Command (`commands/cmd_generate_surface_comparison.py`)
+- Opens dedicated TaskPanel (`ui/task_surface_comparison.py`).
+- TaskPanel responsibilities:
+  - explicit source selection (`CorridorLoft`, Existing Mesh)
+  - set comparison controls (domain/resolution/update policy)
+  - show run progress and support cancel
+- Execution path:
+  - updates/creates `SurfaceComparison`
+  - updates project links (`CorridorLoft`, `Terrain`, `SurfaceComparison`)
+  - runs comparison through object proxy execution path for responsive UI
+
 ## 4) Design Rules
 - Separation of concerns is mandatory:
   - Vertical engine != FG display
   - Profile data storage != FG display
   - Centerline3D engine != Centerline3DDisplay rendering
+- Model representation policy:
+  - `CorridorLoft` is Solid model
+  - other design/analysis objects are Surface/Wire based
 - Section baseline must come from resolved H+V source data, not display wire tessellation.
 - Section frame must use fixed T-N-Z rule for consistency across recomputes.
 - Keep sample and practical workflows separated, not mixed.
@@ -217,3 +259,33 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - property update reactions
   - command/task-panel flow
 - `git grep` / `python -m compileall` are not mandatory validation gates in this project workflow.
+
+## 8) Pre-SurfaceComparison Decisions (Fixed 7)
+Before entering `Existing/Design Surface` comparison stage, these are fixed:
+
+1. Corridor recompute UX
+- Source edits do not auto-recompute `CorridorLoft`.
+- Mark pending state in tree/status (`[Recompute]`, `NEEDS_RECOMPUTE`).
+- Recompute is explicit (manual trigger/command).
+
+2. Design Surface extraction
+- Comparison design surface is extracted from `CorridorLoft` top surface only.
+
+3. Existing Surface input format
+- Phase-1 existing surface input is `Mesh` only.
+
+4. Comparison domain/resolution
+- Default domain: corridor extents with margin.
+- Default cell/sample size: `1.0 m` (user-adjustable range: `0.2~5.0 m`).
+
+5. Result schema
+- `SurfaceComparison` must store: `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`.
+
+6. Validation sample and tolerance
+- Keep one fixed sample case for regression.
+- Target tolerance: elevation `±0.01 m`, volume `±1%`.
+
+7. Execution UX / responsiveness
+- Surface comparison run must provide visible progress state.
+- User must be able to cancel from TaskPanel during long runs.
+- Long-run path should avoid unnecessary document-wide recompute dependency.

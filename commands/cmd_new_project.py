@@ -47,6 +47,8 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.SectionSet)
         if hasattr(obj, "CorridorLoft") and obj.CorridorLoft is not None:
             CorridorRoadProject.adopt(obj, obj.CorridorLoft)
+        if hasattr(obj, "SurfaceComparison") and obj.SurfaceComparison is not None:
+            CorridorRoadProject.adopt(obj, obj.SurfaceComparison)
 
         doc.recompute()
 

@@ -36,6 +36,8 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "SectionSet", "CorridorRoad", "Link to section set object")
     if not hasattr(obj, "CorridorLoft"):
         obj.addProperty("App::PropertyLink", "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
+    if not hasattr(obj, "SurfaceComparison"):
+        obj.addProperty("App::PropertyLink", "SurfaceComparison", "CorridorRoad", "Link to surface comparison object")
 
 
 class CorridorRoadProject:
@@ -146,3 +148,15 @@ class CorridorRoadProject:
                     break
             if c is not None:
                 obj_project.CorridorLoft = c
+
+        if hasattr(obj_project, "SurfaceComparison") and obj_project.SurfaceComparison is None:
+            s = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SurfaceComparison":
+                    s = o
+                    break
+                if o.Name.startswith("SurfaceComparison"):
+                    s = o
+                    break
+            if s is not None:
+                obj_project.SurfaceComparison = s

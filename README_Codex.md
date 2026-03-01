@@ -20,10 +20,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - 3D centerline generation from H+V integration (`Centerline3D`)
 - Assembly template + section generation (`AssemblyTemplate`, `SectionSet`)
 - Corridor loft generation (`CorridorLoft`, solid mode)
+- Existing/Design surface comparison phase-1 (`SurfaceComparison`, mesh-based)
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
-- Surface comparison and cut/fill volume workflow
+- Advanced surface comparison options (multi-source/advanced clipping)
 
 ## Core Architecture Rules (MUST)
 ### 1) VerticalAlignment (PVI)
@@ -133,6 +134,25 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - tree label suffix: ` [Recompute]`
   - status prefix: `NEEDS_RECOMPUTE`
 
+### 10) SurfaceComparison
+- Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
+- Controls:
+  - `CellSize`, `MaxSamples`, `DomainMargin`, `UseCorridorBounds`
+  - manual domain (`XMin/XMax/YMin/YMax`)
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SampleCount`, `ValidCount`
+  - `DeltaMin/DeltaMax/DeltaMean`
+  - `CutVolume`, `FillVolume`, `NoDataArea`
+  - `Status`
+- Runtime behavior:
+  - progress callback updates stage/percent during run
+  - cancel request sets `Status = CANCELED: user requested cancel`
+  - when `AutoUpdate=False`, edits do not auto-run comparison and remain pending until `RebuildNow=True`
+- Performance guards:
+  - run precheck: estimated samples must be within `MaxSamples`
+  - wide-triangle bucket expansion guard to avoid pathological bucket growth
+
 ## Section Basis Rules (Fixed)
 - Section baseline must use resolved H+V source data (not display tessellation).
 - Source priority:
@@ -171,6 +191,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - `OK` button closes dialog only.
 - section creation/update runs only from `Generate Sections Now`.
 
+### Generate Surface Comparison Panel
+- command opens dedicated TaskPanel (no immediate heavy run on command click)
+- user explicitly selects `CorridorLoft` and Existing mesh source
+- panel shows run status/progress and supports cancel
+- run path updates `SurfaceComparison` + project links (`CorridorLoft`, `Terrain`, `SurfaceComparison`)
+
 ### PVI Editor
 - Updates/creates `VerticalAlignment`.
 - Ensures `FGDisplay` exists and links `SourceVA`.
@@ -192,6 +218,40 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `CorridorRoad_CreateAlignment` = Sample Alignment
   - `CorridorRoad_EditAlignment` = Practical editing
 
+## Model Representation Policy (Fixed)
+- `CorridorLoft` uses `Solid` model.
+- Other design/analysis objects use `Surface/Wire` representation.
+
+## Existing/Design Surface Entry Decisions (Fixed 7)
+Before implementing `Existing/Design Surface` comparison:
+
+1. Corridor recompute UX
+- source edits must mark corridor as pending recompute (`[Recompute]`, `NEEDS_RECOMPUTE`)
+- corridor recompute is explicit/manual
+
+2. Design surface source
+- use `CorridorLoft` top surface only
+
+3. Existing surface input
+- phase-1 input type is `Mesh` only
+
+4. Domain and resolution
+- default domain: corridor extents + margin
+- default resolution: `1.0 m` (adjustable `0.2~5.0 m`)
+
+5. Result schema
+- store `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`
+
+6. Validation sample
+- keep one fixed sample case
+- tolerance: elevation `±0.01 m`, volume `±1%`
+
+7. Execution UX / responsiveness
+- Surface comparison run must provide visible progress state.
+- User must be able to cancel from TaskPanel during long runs.
+- Long-run path should avoid unnecessary document-wide recompute dependency.
+
 ## Validation Policy
 - Prefer FreeCAD runtime validation (object creation, property changes, recompute behavior).
 - Do not require `git grep` or `python -m compileall` as mandatory workflow steps in this repository.
+

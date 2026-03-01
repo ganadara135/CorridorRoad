@@ -42,3 +42,16 @@ When implementing Corridor Loft + parametric updates:
 ## Task: Section Panel UX
 - In `Generate Sections` task panel, `OK` must close only.
 - Actual generation must be explicit via `Generate Sections Now`.
+
+## Task: Surface Comparison Prep
+Before implementing `Existing/Design Surface` comparison:
+- Keep model policy: `CorridorLoft=Solid`, others `Surface/Wire`.
+- Use design top surface extracted from `CorridorLoft`.
+- Use existing surface input as `Mesh` (phase-1).
+- Keep default comparison resolution at `1.0 m` (adjustable `0.2~5.0 m`).
+- Use dedicated TaskPanel flow for source selection and run control.
+- TaskPanel must expose visible progress and a cancel action.
+- Keep result schema fields: `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`.
+- Keep run guardrails: `EstimatedSamples <= MaxSamples`, and avoid bucket blow-up on wide triangles.
+- Keep update policy: `AutoUpdate=False` means no auto-run; `RebuildNow=True` triggers explicit run.
+- Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
