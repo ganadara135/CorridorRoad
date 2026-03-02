@@ -36,6 +36,10 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "SectionSet", "CorridorRoad", "Link to section set object")
     if not hasattr(obj, "CorridorLoft"):
         obj.addProperty("App::PropertyLink", "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
+    if not hasattr(obj, "DesignGradingSurface"):
+        obj.addProperty("App::PropertyLink", "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
+    if not hasattr(obj, "DesignTerrain"):
+        obj.addProperty("App::PropertyLink", "DesignTerrain", "CorridorRoad", "Link to design terrain object")
     if not hasattr(obj, "SurfaceComparison"):
         obj.addProperty("App::PropertyLink", "SurfaceComparison", "CorridorRoad", "Link to surface comparison object")
 
@@ -148,6 +152,30 @@ class CorridorRoadProject:
                     break
             if c is not None:
                 obj_project.CorridorLoft = c
+
+        if hasattr(obj_project, "DesignGradingSurface") and obj_project.DesignGradingSurface is None:
+            g = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "DesignGradingSurface":
+                    g = o
+                    break
+                if o.Name.startswith("DesignGradingSurface"):
+                    g = o
+                    break
+            if g is not None:
+                obj_project.DesignGradingSurface = g
+
+        if hasattr(obj_project, "DesignTerrain") and obj_project.DesignTerrain is None:
+            d = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "DesignTerrain":
+                    d = o
+                    break
+                if o.Name.startswith("DesignTerrain"):
+                    d = o
+                    break
+            if d is not None:
+                obj_project.DesignTerrain = d
 
         if hasattr(obj_project, "SurfaceComparison") and obj_project.SurfaceComparison is None:
             s = None

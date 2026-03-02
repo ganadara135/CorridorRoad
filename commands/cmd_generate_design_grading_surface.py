@@ -1,8 +1,8 @@
-# CorridorRoad/commands/cmd_generate_corridor_loft.py
+# CorridorRoad/commands/cmd_generate_design_grading_surface.py
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft
+from objects.obj_design_grading_surface import DesignGradingSurface, ViewProviderDesignGradingSurface
 from objects.obj_project import CorridorRoadProject, ensure_project_properties
 
 
@@ -22,21 +22,21 @@ def _find_section_set(doc):
     return None
 
 
-def _find_corridor_loft(doc):
+def _find_design_grading_surface(doc):
     for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CorridorLoft":
+        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "DesignGradingSurface":
             return o
-        if o.Name.startswith("CorridorLoft"):
+        if o.Name.startswith("DesignGradingSurface"):
             return o
     return None
 
 
-class CmdGenerateCorridorLoft:
+class CmdGenerateDesignGradingSurface:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Corridor Loft",
-            "ToolTip": "Create/update corridor loft from SectionSet",
+            "MenuText": "Design Grading Surface",
+            "ToolTip": "Create/update design grading surface (road + side slopes) from SectionSet",
         }
 
     def IsActive(self):
@@ -51,30 +51,25 @@ class CmdGenerateCorridorLoft:
         if sec is None:
             raise Exception("No SectionSet found. Run Generate Sections first.")
 
-        cor = _find_corridor_loft(doc)
-        if cor is None:
-            cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-            CorridorLoft(cor)
-            ViewProviderCorridorLoft(cor.ViewObject)
-            cor.Label = "Corridor Loft"
+        surf = _find_design_grading_surface(doc)
+        if surf is None:
+            surf = doc.addObject("Part::FeaturePython", "DesignGradingSurface")
+            DesignGradingSurface(surf)
+            ViewProviderDesignGradingSurface(surf.ViewObject)
+            surf.Label = "Design Grading Surface"
 
-        cor.SourceSectionSet = sec
-        try:
-            if hasattr(cor, "OutputType"):
-                cor.OutputType = "Solid"
-        except Exception:
-            pass
-        cor.AutoUpdate = True
-        cor.touch()
+        surf.SourceSectionSet = sec
+        surf.AutoUpdate = True
+        surf.touch()
 
         prj = _find_project(doc)
         if prj is not None:
             ensure_project_properties(prj)
-            if hasattr(prj, "CorridorLoft"):
-                prj.CorridorLoft = cor
+            if hasattr(prj, "DesignGradingSurface"):
+                prj.DesignGradingSurface = surf
             if hasattr(prj, "SectionSet") and getattr(prj, "SectionSet", None) is None:
                 prj.SectionSet = sec
-            CorridorRoadProject.adopt(prj, cor)
+            CorridorRoadProject.adopt(prj, surf)
             CorridorRoadProject.adopt(prj, sec)
 
         doc.recompute()
@@ -85,4 +80,4 @@ class CmdGenerateCorridorLoft:
             pass
 
 
-Gui.addCommand("CorridorRoad_GenerateCorridorLoft", CmdGenerateCorridorLoft())
+Gui.addCommand("CorridorRoad_GenerateDesignGradingSurface", CmdGenerateDesignGradingSurface())

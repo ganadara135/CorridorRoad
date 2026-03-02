@@ -307,7 +307,7 @@ class CorridorLoft:
                 _mark_recompute_flag(obj, False)
                 return
 
-            stations, wires = SectionSet.build_section_wires(src)
+            stations, wires, _tf, _so = SectionSet.build_section_wires(src)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
 
             norm_wires, pt_count = CorridorLoft._validate_and_normalize(stations, wires, schema)

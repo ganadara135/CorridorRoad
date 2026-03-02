@@ -9,7 +9,7 @@ class CmdGenerateSections:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Generate Sections",
+            "MenuText": "Sections",
             "ToolTip": "Generate section set from assembly template (range/manual stations)",
         }
 

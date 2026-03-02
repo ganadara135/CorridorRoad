@@ -36,6 +36,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import commands.cmd_generate_centerline3d  # noqa: F401
         import commands.cmd_generate_sections  # noqa: F401
         import commands.cmd_generate_corridor_loft  # noqa: F401
+        import commands.cmd_generate_design_grading_surface  # noqa: F401
+        import commands.cmd_generate_design_terrain  # noqa: F401
         import commands.cmd_generate_surface_comparison  # noqa: F401
 
         self.appendToolbar("CorridorRoad", [
@@ -49,6 +51,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_GenerateCenterline3D",
             "CorridorRoad_GenerateSections",
             "CorridorRoad_GenerateCorridorLoft",
+            "CorridorRoad_GenerateDesignGradingSurface",
+            "CorridorRoad_GenerateDesignTerrain",
             "CorridorRoad_GenerateSurfaceComparison",
         ])
 
@@ -63,6 +67,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_GenerateCenterline3D",
             "CorridorRoad_GenerateSections",
             "CorridorRoad_GenerateCorridorLoft",
+            "CorridorRoad_GenerateDesignGradingSurface",
+            "CorridorRoad_GenerateDesignTerrain",
             "CorridorRoad_GenerateSurfaceComparison",
         ])
 

@@ -4,7 +4,11 @@ import FreeCADGui as Gui
 
 from PySide2 import QtWidgets
 
-from objects.obj_assembly_template import AssemblyTemplate, ViewProviderAssemblyTemplate
+from objects.obj_assembly_template import (
+    AssemblyTemplate,
+    ViewProviderAssemblyTemplate,
+    ensure_assembly_template_properties,
+)
 from objects.obj_section_set import SectionSet, ViewProviderSectionSet
 from objects.obj_project import CorridorRoadProject, ensure_project_properties
 
@@ -128,6 +132,30 @@ class SectionGeneratorTaskPanel:
         self.spin_h_right.setRange(0.0, 100.0)
         self.spin_h_right.setDecimals(3)
         self.spin_h_right.setValue(0.300)
+        self.chk_side = QtWidgets.QCheckBox("Use side slopes")
+        self.chk_side.setChecked(False)
+        self.spin_side_w_left = QtWidgets.QDoubleSpinBox()
+        self.spin_side_w_left.setRange(0.0, 1000.0)
+        self.spin_side_w_left.setDecimals(3)
+        self.spin_side_w_left.setValue(2.0)
+        self.spin_side_w_right = QtWidgets.QDoubleSpinBox()
+        self.spin_side_w_right.setRange(0.0, 1000.0)
+        self.spin_side_w_right.setDecimals(3)
+        self.spin_side_w_right.setValue(2.0)
+        self.spin_side_s_left = QtWidgets.QDoubleSpinBox()
+        self.spin_side_s_left.setRange(-1000.0, 1000.0)
+        self.spin_side_s_left.setDecimals(3)
+        self.spin_side_s_left.setValue(50.0)
+        self.spin_side_s_right = QtWidgets.QDoubleSpinBox()
+        self.spin_side_s_right.setRange(-1000.0, 1000.0)
+        self.spin_side_s_right.setDecimals(3)
+        self.spin_side_s_right.setValue(50.0)
+        self.chk_daylight = QtWidgets.QCheckBox("Use terrain daylight (Stage-2)")
+        self.chk_daylight.setChecked(False)
+        self.spin_day_step = QtWidgets.QDoubleSpinBox()
+        self.spin_day_step.setRange(0.2, 100.0)
+        self.spin_day_step.setDecimals(3)
+        self.spin_day_step.setValue(1.0)
         self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fo.addRow(self.chk_create_new)
@@ -138,6 +166,13 @@ class SectionGeneratorTaskPanel:
         fo.addRow("Template Z:", self.spin_tpl_z)
         fo.addRow("Height Left:", self.spin_h_left)
         fo.addRow("Height Right:", self.spin_h_right)
+        fo.addRow(self.chk_side)
+        fo.addRow("Side Width Left:", self.spin_side_w_left)
+        fo.addRow("Side Width Right:", self.spin_side_w_right)
+        fo.addRow("Side Slope Left (%):", self.spin_side_s_left)
+        fo.addRow("Side Slope Right (%):", self.spin_side_s_right)
+        fo.addRow(self.chk_daylight)
+        fo.addRow("Daylight Search Step:", self.spin_day_step)
         fo.addRow(self.btn_make_assembly)
         fo.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
@@ -147,12 +182,15 @@ class SectionGeneratorTaskPanel:
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
         self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
+        self.chk_side.toggled.connect(self._update_side_ui)
+        self.chk_daylight.toggled.connect(self._update_side_ui)
         self.btn_make_assembly.clicked.connect(self._create_assembly_template)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
 
         self._update_mode_ui()
         self._update_template_pos_ui()
+        self._update_side_ui()
         return w
 
     def _update_mode_ui(self):
@@ -167,6 +205,50 @@ class SectionGeneratorTaskPanel:
         self.spin_tpl_x.setEnabled(not use_start)
         self.spin_tpl_y.setEnabled(not use_start)
         self.spin_tpl_z.setEnabled(not use_start)
+
+    def _update_side_ui(self):
+        on = bool(self.chk_side.isChecked())
+        if on:
+            if float(self.spin_side_w_left.value()) <= 1e-9:
+                self.spin_side_w_left.setValue(2.0)
+            if float(self.spin_side_w_right.value()) <= 1e-9:
+                self.spin_side_w_right.setValue(2.0)
+        self.spin_side_w_left.setEnabled(on)
+        self.spin_side_w_right.setEnabled(on)
+        self.spin_side_s_left.setEnabled(on)
+        self.spin_side_s_right.setEnabled(on)
+        self.chk_daylight.setEnabled(on)
+        self.spin_day_step.setEnabled(on and bool(self.chk_daylight.isChecked()))
+
+    def _set_suspend_recompute(self, obj, flag: bool):
+        try:
+            pr = getattr(obj, "Proxy", None)
+            if pr is not None and hasattr(pr, "_suspend_recompute"):
+                pr._suspend_recompute = bool(flag)
+        except Exception:
+            pass
+
+    def _apply_assembly_ui_values(self, asm):
+        if asm is None:
+            return
+        if hasattr(asm, "HeightLeft"):
+            asm.HeightLeft = float(self.spin_h_left.value())
+        if hasattr(asm, "HeightRight"):
+            asm.HeightRight = float(self.spin_h_right.value())
+        if hasattr(asm, "UseSideSlopes"):
+            asm.UseSideSlopes = bool(self.chk_side.isChecked())
+        if hasattr(asm, "LeftSideWidth"):
+            asm.LeftSideWidth = float(self.spin_side_w_left.value())
+        if hasattr(asm, "RightSideWidth"):
+            asm.RightSideWidth = float(self.spin_side_w_right.value())
+        if hasattr(asm, "LeftSideSlopePct"):
+            asm.LeftSideSlopePct = float(self.spin_side_s_left.value())
+        if hasattr(asm, "RightSideSlopePct"):
+            asm.RightSideSlopePct = float(self.spin_side_s_right.value())
+        if hasattr(asm, "UseDaylightToTerrain"):
+            asm.UseDaylightToTerrain = bool(self.chk_daylight.isChecked())
+        if hasattr(asm, "DaylightSearchStep"):
+            asm.DaylightSearchStep = float(self.spin_day_step.value())
 
     def _resolve_template_base(self):
         if bool(self.chk_place_at_start.isChecked()):
@@ -196,10 +278,25 @@ class SectionGeneratorTaskPanel:
 
         if asm is not None:
             try:
+                ensure_assembly_template_properties(asm)
                 if hasattr(asm, "HeightLeft"):
                     self.spin_h_left.setValue(float(asm.HeightLeft))
                 if hasattr(asm, "HeightRight"):
                     self.spin_h_right.setValue(float(asm.HeightRight))
+                if hasattr(asm, "UseSideSlopes"):
+                    self.chk_side.setChecked(bool(asm.UseSideSlopes))
+                if hasattr(asm, "LeftSideWidth"):
+                    self.spin_side_w_left.setValue(float(asm.LeftSideWidth))
+                if hasattr(asm, "RightSideWidth"):
+                    self.spin_side_w_right.setValue(float(asm.RightSideWidth))
+                if hasattr(asm, "LeftSideSlopePct"):
+                    self.spin_side_s_left.setValue(float(asm.LeftSideSlopePct))
+                if hasattr(asm, "RightSideSlopePct"):
+                    self.spin_side_s_right.setValue(float(asm.RightSideSlopePct))
+                if hasattr(asm, "UseDaylightToTerrain"):
+                    self.chk_daylight.setChecked(bool(asm.UseDaylightToTerrain))
+                if hasattr(asm, "DaylightSearchStep"):
+                    self.spin_day_step.setValue(float(asm.DaylightSearchStep))
             except Exception:
                 pass
 
@@ -224,7 +321,10 @@ class SectionGeneratorTaskPanel:
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
+        msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
+        msg.append("4) Stage-2 daylight uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
         self.lbl_info.setText("\n".join(msg))
+        self._update_side_ui()
 
     def _create_assembly_template(self):
         if self.doc is None:
@@ -232,12 +332,13 @@ class SectionGeneratorTaskPanel:
         asm = _find_first_by_proxy_type(self.doc, "AssemblyTemplate")
         if asm is not None:
             try:
+                self._set_suspend_recompute(asm, True)
                 asm.Placement.Base = self._resolve_template_base()
-                if hasattr(asm, "HeightLeft"):
-                    asm.HeightLeft = float(self.spin_h_left.value())
-                if hasattr(asm, "HeightRight"):
-                    asm.HeightRight = float(self.spin_h_right.value())
+                self._apply_assembly_ui_values(asm)
                 asm.touch()
+            finally:
+                self._set_suspend_recompute(asm, False)
+            try:
                 self.doc.recompute()
             except Exception:
                 pass
@@ -248,13 +349,13 @@ class SectionGeneratorTaskPanel:
         ViewProviderAssemblyTemplate(asm.ViewObject)
         asm.Label = "Assembly Template"
         try:
+            self._set_suspend_recompute(asm, True)
             asm.Placement.Base = self._resolve_template_base()
-            if hasattr(asm, "HeightLeft"):
-                asm.HeightLeft = float(self.spin_h_left.value())
-            if hasattr(asm, "HeightRight"):
-                asm.HeightRight = float(self.spin_h_right.value())
+            self._apply_assembly_ui_values(asm)
         except Exception:
             pass
+        finally:
+            self._set_suspend_recompute(asm, False)
         asm.touch()
         self.doc.recompute()
 
@@ -277,14 +378,14 @@ class SectionGeneratorTaskPanel:
         asm = _find_first_by_proxy_type(self.doc, "AssemblyTemplate")
         if asm is not None:
             try:
+                self._set_suspend_recompute(asm, True)
                 asm.Placement.Base = self._resolve_template_base()
-                if hasattr(asm, "HeightLeft"):
-                    asm.HeightLeft = float(self.spin_h_left.value())
-                if hasattr(asm, "HeightRight"):
-                    asm.HeightRight = float(self.spin_h_right.value())
+                self._apply_assembly_ui_values(asm)
                 asm.touch()
             except Exception:
                 pass
+            finally:
+                self._set_suspend_recompute(asm, False)
             return asm
 
         # Auto-create for first run convenience
@@ -293,13 +394,13 @@ class SectionGeneratorTaskPanel:
         ViewProviderAssemblyTemplate(asm.ViewObject)
         asm.Label = "Assembly Template"
         try:
+            self._set_suspend_recompute(asm, True)
             asm.Placement.Base = self._resolve_template_base()
-            if hasattr(asm, "HeightLeft"):
-                asm.HeightLeft = float(self.spin_h_left.value())
-            if hasattr(asm, "HeightRight"):
-                asm.HeightRight = float(self.spin_h_right.value())
+            self._apply_assembly_ui_values(asm)
         except Exception:
             pass
+        finally:
+            self._set_suspend_recompute(asm, False)
         asm.touch()
         self.doc.recompute()
         return asm
@@ -336,15 +437,25 @@ class SectionGeneratorTaskPanel:
         asm = self._resolve_assembly()
         sec = self._create_or_get_section_set()
 
-        sec.SourceCenterlineDisplay = src
-        sec.AssemblyTemplate = asm
-        sec.Mode = self.cmb_mode.currentText()
-        sec.StartStation = float(self.spin_start.value())
-        sec.EndStation = float(self.spin_end.value())
-        sec.Interval = float(self.spin_itv.value())
-        sec.StationText = str(self.txt_manual.toPlainText() or "")
-        sec.CreateChildSections = bool(self.chk_children.isChecked())
-        sec.touch()
+        try:
+            self._set_suspend_recompute(sec, True)
+            sec.SourceCenterlineDisplay = src
+            sec.AssemblyTemplate = asm
+            sec.Mode = self.cmb_mode.currentText()
+            sec.StartStation = float(self.spin_start.value())
+            sec.EndStation = float(self.spin_end.value())
+            sec.Interval = float(self.spin_itv.value())
+            sec.StationText = str(self.txt_manual.toPlainText() or "")
+            sec.CreateChildSections = bool(self.chk_children.isChecked())
+            try:
+                prj0 = _find_project(self.doc)
+                if prj0 is not None and hasattr(sec, "TerrainMesh") and hasattr(prj0, "Terrain"):
+                    sec.TerrainMesh = prj0.Terrain
+            except Exception:
+                pass
+            sec.touch()
+        finally:
+            self._set_suspend_recompute(sec, False)
 
         self.doc.recompute()
 

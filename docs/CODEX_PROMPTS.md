@@ -31,7 +31,10 @@ For criteria violations:
 
 ## Task: Corridor Loft Update
 When implementing Corridor Loft + parametric updates:
-- Enforce `SectionSchemaVersion = 1` and fixed point order `Left -> Center -> Right`.
+- Enforce section schema contract:
+  - `SectionSchemaVersion = 1 or 2`
+  - `v1` point order: `Left -> Center -> Right`
+  - `v2` point order: `LeftOuter? -> Left -> Center -> Right -> RightOuter?`
 - Stop Loft with explicit status if section point count/order mismatch occurs.
 - Keep `OutputType = Solid` only.
 - For `Solid`, require valid `HeightLeft/HeightRight` and build closed profiles from section wires.
@@ -42,10 +45,13 @@ When implementing Corridor Loft + parametric updates:
 ## Task: Section Panel UX
 - In `Generate Sections` task panel, `OK` must close only.
 - Actual generation must be explicit via `Generate Sections Now`.
+- `UseDaylightToTerrain` must support terrain source as Mesh or Shape.
+- Daylight path must include performance guards (`DaylightMaxTriangles`, wide-triangle bucket guard).
+- If daylight source is missing/fails, set explicit WARN status and fall back to fixed side widths.
 
 ## Task: Surface Comparison Prep
 Before implementing `Existing/Design Surface` comparison:
-- Keep model policy: `CorridorLoft=Solid`, others `Surface/Wire`.
+- Keep model policy: `CorridorLoft=Solid`, `DesignGradingSurface=Surface`, `DesignTerrain=Surface`, others `Surface/Wire`.
 - Use design top surface extracted from `CorridorLoft`.
 - Use existing surface input as `Mesh` (phase-1).
 - Keep default comparison resolution at `1.0 m` (adjustable `0.2~5.0 m`).
@@ -58,3 +64,7 @@ Before implementing `Existing/Design Surface` comparison:
 - Keep sign convention fixed: `delta=Design-Existing`, `+Fill`, `-Cut`.
 - Keep update policy: `AutoUpdate=False` means no auto-run; `RebuildNow=True` triggers explicit run.
 - Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
+
+## Task: Command Labels
+- Toolbar/menu `MenuText` should omit `Generate` prefix.
+- Keep command IDs unchanged for backward compatibility.

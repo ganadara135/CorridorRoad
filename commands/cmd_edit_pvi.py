@@ -9,7 +9,7 @@ class CmdEditPVI:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Edit PVI (Generate FG)",
+            "MenuText": "Edit PVI (FG)",
             "ToolTip": "Edit Vertical Alignment PVI and generate FG on stations (linear grade)",
         }
 

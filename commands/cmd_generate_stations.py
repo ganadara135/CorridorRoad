@@ -26,7 +26,7 @@ class CmdGenerateStations:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Generate Stations",
+            "MenuText": "Stations",
             "ToolTip": "Create Stationing object and generate station ticks along alignment",
         }
 

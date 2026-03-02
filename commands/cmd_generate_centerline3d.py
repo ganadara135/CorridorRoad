@@ -67,7 +67,7 @@ class CmdGenerateCenterline3D:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Generate 3D Centerline",
+            "MenuText": "3D Centerline",
             "ToolTip": "Create/update 3D centerline display from horizontal + vertical sources",
         }
 

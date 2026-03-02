@@ -3,7 +3,7 @@
 This repository is a FreeCAD Workbench (Python) for road corridor design.
 
 ## Project Goal (Pipeline)
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft -> Surface Comparison -> Cut/Fill Volume
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Surface Comparison -> Cut/Fill Volume
 
 ## Current Implementation Scope
 ### Implemented
@@ -20,6 +20,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - 3D centerline generation from H+V integration (`Centerline3D`)
 - Assembly template + section generation (`AssemblyTemplate`, `SectionSet`)
 - Corridor loft generation (`CorridorLoft`, solid mode)
+- Design grading surface generation (`DesignGradingSurface`, surface mode)
+- Design terrain generation (`DesignTerrain`, composite surface mode)
 - Existing/Design surface comparison phase-1 (`SurfaceComparison`, mesh-based)
 
 ### Not Yet Implemented
@@ -99,6 +101,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
   - `HeightLeft`, `HeightRight`
+  - side slope options:
+    - `UseSideSlopes`
+    - `LeftSideWidth`, `RightSideWidth`
+    - `LeftSideSlopePct`, `RightSideSlopePct`
+    - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxTriangles`
 - Display:
   - crown line + depth envelope wire
   - `HeightLeft/HeightRight` changes are visible in 3D view immediately
@@ -112,9 +119,23 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Sources:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
+  - optional `TerrainMesh` (for daylight-to-terrain, Mesh/Shape)
+  - terrain source resolve order when daylight is enabled:
+    - `SectionSet.TerrainMesh`
+    - `CorridorRoadProject.Terrain`
+    - document terrain candidate fallback
 - Optional:
   - child `SectionSlice` objects in tree
   - rebuild controls: `AutoRebuildChildren`, `RebuildNow`
+- Schema policy:
+  - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
+  - `SectionSchemaVersion=2`: side-slope extended section (>=3 points)
+- Daylight status/warnings:
+  - no terrain source found -> fixed side width fallback
+  - terrain source found but sampler failed -> fixed side width fallback
+- Daylight performance controls:
+  - `AssemblyTemplate.DaylightMaxTriangles`
+  - wide-triangle bucket guard
 
 ### 9) CorridorLoft
 - Role: corridor loft generator from `SectionSet`.
@@ -134,7 +155,18 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - tree label suffix: ` [Recompute]`
   - status prefix: `NEEDS_RECOMPUTE`
 
-### 10) SurfaceComparison
+### 10) DesignGradingSurface
+- Role: render visual grading surface (road + side slopes/daylight) from `SectionSet`.
+- Controls:
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SectionCount`, `PointCountPerSection`, `FaceCount`, `SchemaVersion`
+  - `NeedsRecompute`, `Status`
+- Output mode:
+  - ruled-surface compound between neighboring section wires
+  - intended for 3D side-slope visualization
+
+### 11) SurfaceComparison
 - Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
@@ -160,6 +192,21 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - run precheck: estimated samples must be within `MaxSamples`
   - wide-triangle bucket expansion guard to avoid pathological bucket growth
 
+### 12) DesignTerrain
+- Role: build composite terrain surface from `DesignGradingSurface` and existing terrain.
+- Inputs:
+  - `SourceDesignSurface` (`DesignGradingSurface`)
+  - `ExistingTerrain` (Mesh/Shape)
+- Controls:
+  - `CellSize`, `MaxSamples`, `DomainMargin`
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SampleCount`, `ValidCount`, `NoDataArea`
+  - `NeedsRecompute`, `Status`
+- Merge rule:
+  - where design surface exists, use design Z
+  - otherwise use existing terrain Z
+
 ## Section Basis Rules (Fixed)
 - Section baseline must use resolved H+V source data (not display tessellation).
 - Source priority:
@@ -173,8 +220,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ## Corridor Loft Preconditions (Fixed)
 - Section shape contract:
-  - `SectionSchemaVersion = 1`
-  - point order fixed: `Left -> Center -> Right`
+  - `SectionSchemaVersion = 1 or 2`
+  - `v1` point order fixed: `Left -> Center -> Right`
+  - `v2` point order: `LeftOuter? -> Left -> Center -> Right -> RightOuter?`
   - point count/order must match across stations; mismatch stops Loft
 - Output policy:
   - `OutputType = Solid`
@@ -197,6 +245,23 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 ### Generate Sections Panel
 - `OK` button closes dialog only.
 - section creation/update runs only from `Generate Sections Now`.
+- supports side slopes and Stage-2 terrain-daylight options.
+- daylight terrain source can be Mesh or Shape (`Project.Terrain` or `SectionSet.TerrainMesh`).
+
+### Generate Design Grading Surface
+- command creates/updates `DesignGradingSurface` from current `SectionSet`.
+- intended for 3D visualization of side slopes/daylight.
+
+### Generate Design Terrain
+- command creates/updates `DesignTerrain` from `DesignGradingSurface` + existing terrain source.
+- existing terrain source resolve order:
+  - `Project.Terrain`
+  - document terrain candidate fallback
+- builds composite terrain for downstream use.
+
+### Command Labels
+- toolbar/menu labels do not include `Generate`.
+- command IDs stay unchanged for compatibility.
 
 ### Generate Surface Comparison Panel
 - command opens dedicated TaskPanel (no immediate heavy run on command click)
@@ -228,6 +293,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ## Model Representation Policy (Fixed)
 - `CorridorLoft` uses `Solid` model.
+- `DesignGradingSurface` uses `Surface` model.
+- `DesignTerrain` uses `Surface` model.
 - Other design/analysis objects use `Surface/Wire` representation.
 
 ## Existing/Design Surface Entry Decisions (Fixed 7)

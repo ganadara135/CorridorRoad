@@ -9,7 +9,7 @@ class CmdGenerateSurfaceComparison:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Generate Surface Comparison",
+            "MenuText": "Surface Comparison",
             "ToolTip": "Compare Existing(Mesh) and Design(Corridor top surface) for cut/fill",
         }
 

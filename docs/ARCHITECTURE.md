@@ -1,7 +1,7 @@
 # CorridorRoad Architecture
 
 ## 1) Pipeline View
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft -> Surface Comparison -> Cut/Fill
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Surface Comparison -> Cut/Fill
 
 ## 2) Object Responsibilities
 ### 2.1 VerticalAlignment (`objects/obj_vertical_alignment.py`)
@@ -70,6 +70,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
   - `HeightLeft`, `HeightRight` (used by corridor solid output)
+  - side slope options:
+    - `UseSideSlopes`
+    - `LeftSideWidth`, `RightSideWidth`
+    - `LeftSideSlopePct`, `RightSideSlopePct`
+    - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxTriangles`
 - Display behavior:
   - template wire shows crown line and depth envelope
   - `HeightLeft/HeightRight` edits are visible in 3D view immediately
@@ -80,11 +85,25 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Inputs:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
+  - optional `TerrainMesh` (for daylight-to-terrain, Mesh/Shape)
+  - terrain source resolve order when daylight is enabled:
+    - `SectionSet.TerrainMesh`
+    - `CorridorRoadProject.Terrain`
+    - document terrain candidate fallback
 - Modes:
   - `Range` (`StartStation`, `EndStation`, `Interval`)
   - `Manual` (`StationText`)
 - Results:
   - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
+  - schema policy:
+    - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
+    - `SectionSchemaVersion=2`: side-slope extended section (>=3 points)
+  - daylight runtime status:
+    - `WARN: UseDaylightToTerrain=True but no terrain source found...`
+    - `WARN: Terrain source found but daylight sampler failed...`
+  - daylight performance guards:
+    - `AssemblyTemplate.DaylightMaxTriangles`
+    - wide-triangle bucket guard to avoid bucket blow-up
 - Optional tree children:
   - `SectionSlice` objects under `Group`
 - Rebuild controls:
@@ -112,7 +131,23 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
-### 2.10 SurfaceComparison (`objects/obj_surface_comparison.py`)
+### 2.10 DesignGradingSurface (`objects/obj_design_grading_surface.py`)
+- Purpose: visual grading surface (road top + side slopes/daylight) from `SectionSet`.
+- Inputs:
+  - `SourceSectionSet`
+- Controls:
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SectionCount`, `PointCountPerSection`, `FaceCount`, `SchemaVersion`
+  - `NeedsRecompute`, `Status`
+- Output mode:
+  - ruled-surface compound between neighboring section wires
+  - intended for 3D visualization of cut/fill side slopes
+- Pending-update marker:
+  - tree label suffix: ` [Recompute]`
+  - status text starts with `NEEDS_RECOMPUTE` when source changed
+
+### 2.11 SurfaceComparison (`objects/obj_surface_comparison.py`)
 - Purpose: Existing/Design surface comparison and cut/fill summary.
 - Inputs:
   - `SourceCorridor` (`CorridorLoft`)
@@ -151,6 +186,20 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - wide-triangle bucket expansion is guarded to avoid bucket blow-up
   - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
 
+### 2.12 DesignTerrain (`objects/obj_design_terrain.py`)
+- Purpose: composite terrain surface from `DesignGradingSurface` and existing terrain.
+- Inputs:
+  - `SourceDesignSurface` (`DesignGradingSurface`)
+  - `ExistingTerrain` (Mesh/Shape source)
+- Controls:
+  - `CellSize`, `MaxSamples`, `DomainMargin`
+  - `AutoUpdate`, `RebuildNow`
+- Results:
+  - `SampleCount`, `ValidCount`, `NoDataArea`, `NeedsRecompute`, `Status`
+- Merge rule:
+  - use design surface elevation where available
+  - else keep existing terrain elevation
+
 ## 3) UI Contracts
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
@@ -177,6 +226,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Provides user-facing section workflow:
   - select mode: `Range` or `Manual`
   - create/update `SectionSet`
+  - optional side slopes + terrain-daylight (Stage-2)
   - optionally create child sections per station in tree
   - `OK` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
@@ -186,7 +236,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Links current `SectionSet`.
 - Forces `OutputType` to `Solid`.
 
-### 3.7 Surface Comparison Command (`commands/cmd_generate_surface_comparison.py`)
+### 3.7 Design Grading Surface Command (`commands/cmd_generate_design_grading_surface.py`)
+- Creates/updates `DesignGradingSurface`.
+- Links current `SectionSet`.
+- Uses section schema (v1/v2) and daylight-resolved section wires.
+
+### 3.8 Surface Comparison Command (`commands/cmd_generate_surface_comparison.py`)
 - Opens dedicated TaskPanel (`ui/task_surface_comparison.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`CorridorLoft`, Existing Mesh)
@@ -197,6 +252,18 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - updates project links (`CorridorLoft`, `Terrain`, `SurfaceComparison`)
   - runs comparison through object proxy execution path for responsive UI
 
+### 3.9 Design Terrain Command (`commands/cmd_generate_design_terrain.py`)
+- Creates/updates `DesignTerrain`.
+- Uses `DesignGradingSurface` + existing terrain source.
+- Existing terrain source resolve order:
+  - `Project.Terrain`
+  - terrain candidate fallback in document (prefer terrain-named object, then mesh)
+- Produces composite terrain surface for downstream visualization/workflow.
+
+### 3.10 Command Label Policy
+- Toolbar/menu labels omit `Generate` prefix.
+- Command IDs remain stable (`CorridorRoad_Generate...`) for compatibility.
+
 ## 4) Design Rules
 - Separation of concerns is mandatory:
   - Vertical engine != FG display
@@ -204,6 +271,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - Centerline3D engine != Centerline3DDisplay rendering
 - Model representation policy:
   - `CorridorLoft` is Solid model
+  - `DesignGradingSurface` is Surface model (visual grading)
+  - `DesignTerrain` is Surface model (composite terrain)
   - other design/analysis objects are Surface/Wire based
 - Section baseline must come from resolved H+V source data, not display wire tessellation.
 - Section frame must use fixed T-N-Z rule for consistency across recomputes.
@@ -229,8 +298,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ## 6) Corridor Loft Preconditions (Fixed)
 ### 6.1 Section Shape Contract
-- `SectionSchemaVersion = 1`
-- Section point order is fixed: `Left -> Center -> Right`
+- `SectionSchemaVersion = 1 or 2`
+- `v1`: section point order fixed: `Left -> Center -> Right`
+- `v2`: side-slope extended order: `LeftOuter? -> Left -> Center -> Right -> RightOuter?`
 - Point count/order must be identical at all stations
 - If mismatch is detected, Loft must stop with explicit status/error
 

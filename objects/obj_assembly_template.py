@@ -31,6 +31,31 @@ def ensure_assembly_template_properties(obj):
         obj.addProperty("App::PropertyFloat", "RightSlopePct", "Assembly", "Cross slope (%) on right side (downward)")
         obj.RightSlopePct = 2.0
 
+    if not hasattr(obj, "UseSideSlopes"):
+        obj.addProperty("App::PropertyBool", "UseSideSlopes", "Assembly", "Enable side slope wings")
+        obj.UseSideSlopes = False
+    if not hasattr(obj, "LeftSideWidth"):
+        obj.addProperty("App::PropertyFloat", "LeftSideWidth", "Assembly", "Left side slope horizontal width (m)")
+        obj.LeftSideWidth = 0.0
+    if not hasattr(obj, "RightSideWidth"):
+        obj.addProperty("App::PropertyFloat", "RightSideWidth", "Assembly", "Right side slope horizontal width (m)")
+        obj.RightSideWidth = 0.0
+    if not hasattr(obj, "LeftSideSlopePct"):
+        obj.addProperty("App::PropertyFloat", "LeftSideSlopePct", "Assembly", "Left side slope (%) downward outward")
+        obj.LeftSideSlopePct = 50.0
+    if not hasattr(obj, "RightSideSlopePct"):
+        obj.addProperty("App::PropertyFloat", "RightSideSlopePct", "Assembly", "Right side slope (%) downward outward")
+        obj.RightSideSlopePct = 50.0
+    if not hasattr(obj, "UseDaylightToTerrain"):
+        obj.addProperty("App::PropertyBool", "UseDaylightToTerrain", "Assembly", "Use terrain-daylight for side slopes")
+        obj.UseDaylightToTerrain = False
+    if not hasattr(obj, "DaylightSearchStep"):
+        obj.addProperty("App::PropertyFloat", "DaylightSearchStep", "Assembly", "Search step for terrain-daylight (m)")
+        obj.DaylightSearchStep = 1.0
+    if not hasattr(obj, "DaylightMaxTriangles"):
+        obj.addProperty("App::PropertyInteger", "DaylightMaxTriangles", "Assembly", "Max triangles used for daylight sampler")
+        obj.DaylightMaxTriangles = 300000
+
     if not hasattr(obj, "HeightLeft"):
         obj.addProperty("App::PropertyFloat", "HeightLeft", "Assembly", "Left depth for corridor solid (m, downward)")
         obj.HeightLeft = 0.30
@@ -62,6 +87,7 @@ class AssemblyTemplate:
     def __init__(self, obj):
         obj.Proxy = self
         self.Type = "AssemblyTemplate"
+        self._suspend_recompute = False
         ensure_assembly_template_properties(obj)
 
     def execute(self, obj):
@@ -78,6 +104,11 @@ class AssemblyTemplate:
             rs = float(getattr(obj, "RightSlopePct", 0.0))
             hl = max(0.0, float(getattr(obj, "HeightLeft", 0.0)))
             hr = max(0.0, float(getattr(obj, "HeightRight", 0.0)))
+            use_ss = bool(getattr(obj, "UseSideSlopes", False))
+            lsw = max(0.0, float(getattr(obj, "LeftSideWidth", 0.0)))
+            rsw = max(0.0, float(getattr(obj, "RightSideWidth", 0.0)))
+            lss = float(getattr(obj, "LeftSideSlopePct", 0.0))
+            rss = float(getattr(obj, "RightSideSlopePct", 0.0))
 
             dz_l = -lw * ls / 100.0
             dz_r = -rw * rs / 100.0
@@ -86,32 +117,64 @@ class AssemblyTemplate:
             p_c = App.Vector(0.0, 0.0, 0.0)
             p_r = App.Vector(-rw, dz_r, 0.0)
 
+            top_pts = [p_l, p_c, p_r]
+            if use_ss and (lsw > 1e-9):
+                p_lt = App.Vector(+lw + lsw, dz_l - lsw * lss / 100.0, 0.0)
+                top_pts = [p_lt] + top_pts
+            if use_ss and (rsw > 1e-9):
+                p_rt = App.Vector(-(rw + rsw), dz_r - rsw * rss / 100.0, 0.0)
+                top_pts = top_pts + [p_rt]
+
             # Display both crown line and solid-depth envelope so HeightLeft/Right
             # edits are visible immediately in 3D view.
             if max(hl, hr) <= 1e-9:
-                obj.Shape = Part.makePolygon([p_l, p_c, p_r])
+                obj.Shape = Part.makePolygon(top_pts)
             else:
-                h_c = 0.5 * (hl + hr)
-                q_l = App.Vector(p_l.x, p_l.y - hl, p_l.z)
-                q_c = App.Vector(p_c.x, p_c.y - h_c, p_c.z)
-                q_r = App.Vector(p_r.x, p_r.y - hr, p_r.z)
-                obj.Shape = Part.makePolygon([p_l, p_c, p_r, q_r, q_c, q_l, p_l])
+                n_top = len(top_pts)
+                q_pts = []
+                for i, tp in enumerate(top_pts):
+                    if n_top <= 1:
+                        alpha = 0.5
+                    else:
+                        alpha = float(i) / float(n_top - 1)
+                    h = (1.0 - alpha) * hl + alpha * hr
+                    q_pts.append(App.Vector(tp.x, tp.y - h, tp.z))
+                obj.Shape = Part.makePolygon(list(top_pts) + list(reversed(q_pts)) + [top_pts[0]])
             obj.Status = "OK"
         except Exception as ex:
             obj.Shape = Part.Shape()
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
+        if bool(getattr(self, "_suspend_recompute", False)):
+            return
         if prop in (
             "LeftWidth",
             "RightWidth",
             "LeftSlopePct",
             "RightSlopePct",
+            "UseSideSlopes",
+            "LeftSideWidth",
+            "RightSideWidth",
+            "LeftSideSlopePct",
+            "RightSideSlopePct",
+            "UseDaylightToTerrain",
+            "DaylightSearchStep",
+            "DaylightMaxTriangles",
             "HeightLeft",
             "HeightRight",
             "ShowTemplateWire",
         ):
             try:
+                if prop == "UseSideSlopes" and bool(getattr(obj, "UseSideSlopes", False)):
+                    # Keep side-slope preview visible by seeding practical defaults
+                    # when user enables side slopes with zero widths.
+                    lsw = max(0.0, float(getattr(obj, "LeftSideWidth", 0.0)))
+                    rsw = max(0.0, float(getattr(obj, "RightSideWidth", 0.0)))
+                    if lsw <= 1e-9:
+                        obj.LeftSideWidth = max(2.0, 0.5 * max(0.0, float(getattr(obj, "LeftWidth", 0.0))))
+                    if rsw <= 1e-9:
+                        obj.RightSideWidth = max(2.0, 0.5 * max(0.0, float(getattr(obj, "RightWidth", 0.0))))
                 obj.touch()
                 if obj.Document is not None:
                     # Propagate template edits to linked SectionSet objects.
