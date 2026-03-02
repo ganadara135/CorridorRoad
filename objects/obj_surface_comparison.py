@@ -13,6 +13,19 @@ def _is_finite(x: float) -> bool:
     return math.isfinite(float(x))
 
 
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, float(x)))
+
+
+def _lerp_rgb(c0, c1, t: float):
+    tt = _clamp01(t)
+    return (
+        float(c0[0]) + (float(c1[0]) - float(c0[0])) * tt,
+        float(c0[1]) + (float(c1[1]) - float(c0[1])) * tt,
+        float(c0[2]) + (float(c1[2]) - float(c0[2])) * tt,
+    )
+
+
 def _vec(x, y, z):
     return App.Vector(float(x), float(y), float(z))
 
@@ -48,6 +61,9 @@ def ensure_surface_comparison_properties(obj):
     if not hasattr(obj, "MaxSamples"):
         obj.addProperty("App::PropertyInteger", "MaxSamples", "Comparison", "Maximum allowed sample cells")
         obj.MaxSamples = 200000
+    if not hasattr(obj, "MinMeshFacets"):
+        obj.addProperty("App::PropertyInteger", "MinMeshFacets", "Comparison", "Minimum mesh facets required")
+        obj.MinMeshFacets = 100
     if not hasattr(obj, "DomainMargin"):
         obj.addProperty("App::PropertyFloat", "DomainMargin", "Comparison", "Margin from corridor bounds (m)")
         obj.DomainMargin = 5.0
@@ -73,6 +89,25 @@ def ensure_surface_comparison_properties(obj):
     if not hasattr(obj, "RebuildNow"):
         obj.addProperty("App::PropertyBool", "RebuildNow", "Comparison", "Set True to force rebuild now")
         obj.RebuildNow = False
+    if not hasattr(obj, "NoDataWarnRatio"):
+        obj.addProperty("App::PropertyFloat", "NoDataWarnRatio", "Comparison", "Warn threshold for no-data area ratio [0..1]")
+        obj.NoDataWarnRatio = 0.05
+
+    if not hasattr(obj, "ShowDeltaMap"):
+        obj.addProperty("App::PropertyBool", "ShowDeltaMap", "Display", "Show cut/fill delta map in 3D")
+        obj.ShowDeltaMap = True
+    if not hasattr(obj, "DeltaDeadband"):
+        obj.addProperty("App::PropertyFloat", "DeltaDeadband", "Display", "Neutral band threshold for |delta| (m)")
+        obj.DeltaDeadband = 0.02
+    if not hasattr(obj, "DeltaClamp"):
+        obj.addProperty("App::PropertyFloat", "DeltaClamp", "Display", "Color clamp for |delta| (m)")
+        obj.DeltaClamp = 2.0
+    if not hasattr(obj, "VisualZOffset"):
+        obj.addProperty("App::PropertyFloat", "VisualZOffset", "Display", "Z offset for delta map display (m)")
+        obj.VisualZOffset = 0.05
+    if not hasattr(obj, "MaxVisualCells"):
+        obj.addProperty("App::PropertyInteger", "MaxVisualCells", "Display", "Maximum cells used for 3D delta map")
+        obj.MaxVisualCells = 40000
 
     if not hasattr(obj, "SampleCount"):
         obj.addProperty("App::PropertyInteger", "SampleCount", "Result", "Total sample cell count")
@@ -98,6 +133,15 @@ def ensure_surface_comparison_properties(obj):
     if not hasattr(obj, "NoDataArea"):
         obj.addProperty("App::PropertyFloat", "NoDataArea", "Result", "No-data area (m^2)")
         obj.NoDataArea = 0.0
+    if not hasattr(obj, "DomainArea"):
+        obj.addProperty("App::PropertyFloat", "DomainArea", "Result", "Evaluated domain area (m^2)")
+        obj.DomainArea = 0.0
+    if not hasattr(obj, "NoDataRatio"):
+        obj.addProperty("App::PropertyFloat", "NoDataRatio", "Result", "No-data area ratio [0..1]")
+        obj.NoDataRatio = 0.0
+    if not hasattr(obj, "SignConvention"):
+        obj.addProperty("App::PropertyString", "SignConvention", "Result", "Fixed cut/fill sign convention")
+        obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
@@ -392,6 +436,33 @@ class SurfaceComparison:
         return z_best
 
     @staticmethod
+    def _make_cell_face(x: float, y: float, cell: float, z: float):
+        h = 0.5 * float(cell)
+        p1 = App.Vector(float(x - h), float(y - h), float(z))
+        p2 = App.Vector(float(x + h), float(y - h), float(z))
+        p3 = App.Vector(float(x + h), float(y + h), float(z))
+        p4 = App.Vector(float(x - h), float(y + h), float(z))
+        w = Part.makePolygon([p1, p2, p3, p4, p1])
+        return Part.Face(w)
+
+    def _delta_color(self, d: float, deadband: float, clamp_abs: float):
+        # Fixed palette:
+        # - Fill (delta>0): blue scale
+        # - Cut  (delta<0): red scale
+        # - Neutral: light gray
+        neutral = (0.85, 0.85, 0.85)
+        fill_hi = (0.15, 0.45, 0.95)
+        cut_hi = (0.95, 0.25, 0.20)
+        if abs(float(d)) <= max(0.0, float(deadband)):
+            return neutral
+        if clamp_abs <= 1e-9:
+            clamp_abs = 1.0
+        t = min(1.0, abs(float(d)) / float(clamp_abs))
+        if d > 0.0:
+            return _lerp_rgb(neutral, fill_hi, t)
+        return _lerp_rgb(neutral, cut_hi, t)
+
+    @staticmethod
     def _resolve_domain(obj, design_shape):
         use_corr = bool(getattr(obj, "UseCorridorBounds", True))
         if use_corr:
@@ -448,6 +519,16 @@ class SurfaceComparison:
             eg = getattr(obj, "ExistingSurface", None)
             if eg is None or (not _is_mesh_object(eg)):
                 raise Exception("ExistingSurface must be a valid mesh object.")
+            mesh_facets = int(getattr(getattr(eg, "Mesh", None), "CountFacets", 0))
+            min_facets = int(getattr(obj, "MinMeshFacets", 100))
+            if mesh_facets < max(1, min_facets):
+                raise Exception(f"Existing mesh facets {mesh_facets} < MinMeshFacets {min_facets}.")
+            try:
+                bbm = eg.Mesh.BoundBox
+                if float(bbm.XLength) <= 1e-9 or float(bbm.YLength) <= 1e-9:
+                    raise Exception("Existing mesh XY bounds are degenerate.")
+            except Exception as ex:
+                raise Exception(f"Existing mesh quality check failed: {ex}")
 
             if self._report_progress(5.0, "Extracting design top surface"):
                 raise _CanceledError("Canceled by user.")
@@ -501,6 +582,17 @@ class SurfaceComparison:
             area = cell * cell
             total_for_progress = max(1, est_samples)
             report_every = max(20, min(2000, total_for_progress // 200))
+            show_map = bool(getattr(obj, "ShowDeltaMap", True))
+            deadband = max(0.0, float(getattr(obj, "DeltaDeadband", 0.02)))
+            clamp_abs = abs(float(getattr(obj, "DeltaClamp", 2.0)))
+            zoff = float(getattr(obj, "VisualZOffset", 0.05))
+            max_vis = int(getattr(obj, "MaxVisualCells", 40000))
+            if max_vis <= 0:
+                max_vis = 40000
+            vis_stride = int(max(1, math.ceil(math.sqrt(float(total_for_progress) / float(max_vis))))) if total_for_progress > max_vis else 1
+            vis_faces = []
+            vis_colors = []
+            nodata_color = (0.55, 0.55, 0.55)
 
             for x, y in SurfaceComparison._iter_grid_centers(xmin, xmax, ymin, ymax, cell):
                 s_cnt += 1
@@ -511,8 +603,16 @@ class SurfaceComparison:
 
                 zd = SurfaceComparison._z_at_xy(x, y, tri_design, buck_d, cell, wide_d)
                 ze = SurfaceComparison._z_at_xy(x, y, tri_exist, buck_e, cell, wide_e)
+
+                vis_pick = show_map and ((s_cnt % vis_stride) == 0)
                 if zd is None or ze is None:
                     nodata += area
+                    if vis_pick and (zd is not None):
+                        try:
+                            vis_faces.append(SurfaceComparison._make_cell_face(x, y, cell, float(zd) + zoff))
+                            vis_colors.append(nodata_color)
+                        except Exception:
+                            pass
                     continue
 
                 d = float(zd - ze)
@@ -525,10 +625,34 @@ class SurfaceComparison:
                 else:
                     cut += (-d) * area
 
+                if vis_pick:
+                    try:
+                        vis_faces.append(SurfaceComparison._make_cell_face(x, y, cell, float(zd) + zoff))
+                        vis_colors.append(self._delta_color(d, deadband, clamp_abs))
+                    except Exception:
+                        pass
+
             if self._report_progress(97.0, "Finalizing result"):
                 raise _CanceledError("Canceled by user.")
 
-            obj.Shape = design_top
+            if show_map and vis_faces:
+                obj.Shape = Part.Compound(vis_faces)
+                try:
+                    if App.GuiUp:
+                        obj.ViewObject.DiffuseColor = list(vis_colors)
+                        obj.ViewObject.DisplayMode = "Shaded"
+                        obj.ViewObject.Transparency = 0
+                        obj.ViewObject.LineWidth = 1
+                except Exception:
+                    pass
+            else:
+                obj.Shape = design_top
+                try:
+                    if App.GuiUp:
+                        obj.ViewObject.DisplayMode = "Flat Lines"
+                        obj.ViewObject.Transparency = 70
+                except Exception:
+                    pass
             obj.SampleCount = int(s_cnt)
             obj.ValidCount = int(v_cnt)
             obj.DeltaMin = float(d_min if d_min is not None else 0.0)
@@ -537,9 +661,22 @@ class SurfaceComparison:
             obj.CutVolume = float(cut)
             obj.FillVolume = float(fill)
             obj.NoDataArea = float(nodata)
+            dom_area = float(area * float(s_cnt))
+            nodata_ratio = float((nodata / dom_area) if dom_area > 1e-12 else 0.0)
+            obj.DomainArea = dom_area
+            obj.NoDataRatio = nodata_ratio
+            obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
+
+            warn_ratio = float(getattr(obj, "NoDataWarnRatio", 0.05))
+            prefix = "OK"
+            note = ""
+            if nodata_ratio > max(0.0, warn_ratio):
+                prefix = "WARN"
+                note = f", nodata={100.0 * nodata_ratio:.2f}%"
+
             obj.Status = (
-                f"OK: samples={s_cnt}, valid={v_cnt}, "
-                f"cut={cut:.3f} m^3, fill={fill:.3f} m^3"
+                f"{prefix}: samples={s_cnt}, valid={v_cnt}, "
+                f"cut={cut:.3f} m^3, fill={fill:.3f} m^3{note}, vis_stride={vis_stride}"
             )
 
             if bool(getattr(obj, "RebuildNow", False)):
@@ -568,6 +705,9 @@ class SurfaceComparison:
             obj.CutVolume = 0.0
             obj.FillVolume = 0.0
             obj.NoDataArea = 0.0
+            obj.DomainArea = 0.0
+            obj.NoDataRatio = 0.0
+            obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -579,12 +719,19 @@ class SurfaceComparison:
             "ExistingSurface",
             "CellSize",
             "MaxSamples",
+            "MinMeshFacets",
             "DomainMargin",
             "UseCorridorBounds",
             "XMin",
             "XMax",
             "YMin",
             "YMax",
+            "NoDataWarnRatio",
+            "ShowDeltaMap",
+            "DeltaDeadband",
+            "DeltaClamp",
+            "VisualZOffset",
+            "MaxVisualCells",
             "AutoUpdate",
             "RebuildNow",
         ):

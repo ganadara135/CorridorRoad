@@ -118,14 +118,25 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `SourceCorridor` (`CorridorLoft`)
   - `ExistingSurface` (Mesh object)
 - Controls:
-  - `CellSize`, `MaxSamples`, `DomainMargin`, `UseCorridorBounds`
+  - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
+  - `NoDataWarnRatio`
   - manual domain: `XMin/XMax/YMin/YMax`
   - `AutoUpdate`, `RebuildNow`
 - Results:
   - `SampleCount`, `ValidCount`
   - `DeltaMin/DeltaMax/DeltaMean`
   - `CutVolume`, `FillVolume`, `NoDataArea`
+  - `DomainArea`, `NoDataRatio`
+  - `SignConvention`
   - `Status`
+- 3D delta map controls:
+  - `ShowDeltaMap`
+  - `DeltaDeadband`
+  - `DeltaClamp`
+  - `VisualZOffset`
+  - `MaxVisualCells`
+- 3D color policy:
+  - Cut=red, Fill=blue, Neutral=light gray, NoData=gray
 - Comparison rule:
   - design side uses top surface extracted from `CorridorLoft`
   - existing side uses mesh triangles
@@ -289,3 +300,42 @@ Before entering `Existing/Design Surface` comparison stage, these are fixed:
 - Surface comparison run must provide visible progress state.
 - User must be able to cancel from TaskPanel during long runs.
 - Long-run path should avoid unnecessary document-wide recompute dependency.
+
+## 9) Pre-Cut/Fill Decisions (Fixed 8)
+Before finalizing cut/fill volume reporting, these are fixed:
+
+1. Sign convention
+- `delta = Design - Existing`
+- `delta > 0` is Fill, `delta < 0` is Cut
+
+2. Design surface scope
+- Use corridor top surface only (no side-face inclusion).
+
+3. Comparison domain policy
+- Default: corridor bounds + margin (`UseCorridorBounds=True`).
+- Manual bounds are explicit override.
+
+4. Sampling policy
+- Default `CellSize = 1.0 m`, with operational recommendation `2.0~5.0 m` for large scenes.
+- Hard guard: estimated samples must not exceed `MaxSamples`.
+
+5. Existing mesh quality gate
+- Existing mesh must pass minimum facet count (`MinMeshFacets`) and non-degenerate XY bounds.
+
+6. NoData governance
+- Track `NoDataArea` and `NoDataRatio`.
+- Warn when `NoDataRatio > NoDataWarnRatio`.
+
+7. Result reporting minimum set
+- `CutVolume`, `FillVolume`, `DeltaMin/DeltaMax/DeltaMean`
+- `SampleCount`, `ValidCount`, `NoDataArea`, `NoDataRatio`
+- `CellSize`, `Status`, `SignConvention`
+
+8. Regression baseline
+- Keep one fixed sample case for regression.
+- Target tolerance: elevation +/-0.01 m, volume +/-1%.
+
+9. 3D visualization rule
+- Delta map uses fixed color policy: Cut=red, Fill=blue, Neutral=light gray, NoData=gray.
+- Use `DeltaDeadband` for neutral band and `DeltaClamp` for color saturation.
+- Large scenes must throttle display density via `MaxVisualCells`.

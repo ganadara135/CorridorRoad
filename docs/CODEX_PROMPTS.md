@@ -53,5 +53,8 @@ Before implementing `Existing/Design Surface` comparison:
 - TaskPanel must expose visible progress and a cancel action.
 - Keep result schema fields: `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`.
 - Keep run guardrails: `EstimatedSamples <= MaxSamples`, and avoid bucket blow-up on wide triangles.
+- Keep mesh quality gate: enforce `MinMeshFacets` and non-degenerate existing mesh XY bounds.
+- Keep no-data governance: track `NoDataRatio` and warn when `NoDataRatio > NoDataWarnRatio`.
+- Keep sign convention fixed: `delta=Design-Existing`, `+Fill`, `-Cut`.
 - Keep update policy: `AutoUpdate=False` means no auto-run; `RebuildNow=True` triggers explicit run.
 - Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
