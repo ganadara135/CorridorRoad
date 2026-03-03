@@ -3,7 +3,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from objects.obj_stationing import Stationing, ViewProviderStationing
-from objects.obj_project import CorridorRoadProject
+from objects.obj_project import CorridorRoadProject, get_length_scale
 
 
 def _find_project(doc):
@@ -46,8 +46,9 @@ class CmdGenerateStations:
         Stationing(st)
         ViewProviderStationing(st.ViewObject)
         st.Alignment = aln
-        st.Interval = 20.0
-        st.TickLength = 2.0
+        scale = get_length_scale(doc, default=1.0)
+        st.Interval = 20.0 * scale
+        st.TickLength = 2.0 * scale
         st.ShowTicks = True
         st.Label = "Stations"
 

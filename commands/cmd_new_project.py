@@ -1,8 +1,9 @@
 # CorridorRoad/commands/cmd_new_project.py
 import FreeCAD as App
 import FreeCADGui as Gui
+from PySide2 import QtWidgets
 
-from objects.obj_project import CorridorRoadProject
+from objects.obj_project import CorridorRoadProject, ensure_project_properties
 
 
 class CmdNewProject:
@@ -23,7 +24,20 @@ class CmdNewProject:
 
         obj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(obj)
+        ensure_project_properties(obj)
         obj.Label = "CorridorRoad Project"
+
+        scale, ok = QtWidgets.QInputDialog.getDouble(
+            None,
+            "Project Scale",
+            "Length scale (internal units per meter)\n1 = meter, 1000 = millimeter-like",
+            float(getattr(obj, "LengthScale", 1.0)),
+            1e-6,
+            1e9,
+            6,
+        )
+        if ok:
+            obj.LengthScale = float(scale)
 
         # Try auto-link and adopt existing objects
         CorridorRoadProject.auto_link(doc, obj)

@@ -10,7 +10,7 @@ from objects.obj_assembly_template import (
     ensure_assembly_template_properties,
 )
 from objects.obj_section_set import SectionSet, ViewProviderSectionSet
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
+from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
 
 
 def _find_first_by_proxy_type(doc, type_name: str):
@@ -65,6 +65,8 @@ class SectionGeneratorTaskPanel:
         Gui.Control.closeDialog()
 
     def _build_ui(self):
+        scale = get_length_scale(self.doc, default=1.0)
+
         w = QtWidgets.QWidget()
         w.setWindowTitle("CorridorRoad - Generate Sections")
 
@@ -89,11 +91,11 @@ class SectionGeneratorTaskPanel:
         self.spin_end = QtWidgets.QDoubleSpinBox()
         self.spin_end.setRange(0.0, 1.0e9)
         self.spin_end.setDecimals(3)
-        self.spin_end.setValue(100.0)
+        self.spin_end.setValue(100.0 * scale)
         self.spin_itv = QtWidgets.QDoubleSpinBox()
         self.spin_itv.setRange(0.001, 1.0e6)
         self.spin_itv.setDecimals(3)
-        self.spin_itv.setValue(20.0)
+        self.spin_itv.setValue(20.0 * scale)
         fm.addRow("Start Station:", self.spin_start)
         fm.addRow("End Station:", self.spin_end)
         fm.addRow("Interval:", self.spin_itv)
@@ -125,23 +127,23 @@ class SectionGeneratorTaskPanel:
         self.spin_tpl_z.setDecimals(3)
         self.spin_tpl_z.setValue(0.0)
         self.spin_h_left = QtWidgets.QDoubleSpinBox()
-        self.spin_h_left.setRange(0.0, 100.0)
+        self.spin_h_left.setRange(0.0, 100.0 * scale)
         self.spin_h_left.setDecimals(3)
-        self.spin_h_left.setValue(0.300)
+        self.spin_h_left.setValue(0.300 * scale)
         self.spin_h_right = QtWidgets.QDoubleSpinBox()
-        self.spin_h_right.setRange(0.0, 100.0)
+        self.spin_h_right.setRange(0.0, 100.0 * scale)
         self.spin_h_right.setDecimals(3)
-        self.spin_h_right.setValue(0.300)
+        self.spin_h_right.setValue(0.300 * scale)
         self.chk_side = QtWidgets.QCheckBox("Use side slopes")
         self.chk_side.setChecked(False)
         self.spin_side_w_left = QtWidgets.QDoubleSpinBox()
-        self.spin_side_w_left.setRange(0.0, 1000.0)
+        self.spin_side_w_left.setRange(0.0, 1000.0 * scale)
         self.spin_side_w_left.setDecimals(3)
-        self.spin_side_w_left.setValue(2.0)
+        self.spin_side_w_left.setValue(2.0 * scale)
         self.spin_side_w_right = QtWidgets.QDoubleSpinBox()
-        self.spin_side_w_right.setRange(0.0, 1000.0)
+        self.spin_side_w_right.setRange(0.0, 1000.0 * scale)
         self.spin_side_w_right.setDecimals(3)
-        self.spin_side_w_right.setValue(2.0)
+        self.spin_side_w_right.setValue(2.0 * scale)
         self.spin_side_s_left = QtWidgets.QDoubleSpinBox()
         self.spin_side_s_left.setRange(-1000.0, 1000.0)
         self.spin_side_s_left.setDecimals(3)
@@ -153,9 +155,9 @@ class SectionGeneratorTaskPanel:
         self.chk_daylight = QtWidgets.QCheckBox("Use terrain daylight (Stage-2)")
         self.chk_daylight.setChecked(False)
         self.spin_day_step = QtWidgets.QDoubleSpinBox()
-        self.spin_day_step.setRange(0.2, 100.0)
+        self.spin_day_step.setRange(0.2 * scale, 100.0 * scale)
         self.spin_day_step.setDecimals(3)
-        self.spin_day_step.setValue(1.0)
+        self.spin_day_step.setValue(1.0 * scale)
         self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fo.addRow(self.chk_create_new)
@@ -208,11 +210,12 @@ class SectionGeneratorTaskPanel:
 
     def _update_side_ui(self):
         on = bool(self.chk_side.isChecked())
+        scale = get_length_scale(self.doc, default=1.0)
         if on:
             if float(self.spin_side_w_left.value()) <= 1e-9:
-                self.spin_side_w_left.setValue(2.0)
+                self.spin_side_w_left.setValue(2.0 * scale)
             if float(self.spin_side_w_right.value()) <= 1e-9:
-                self.spin_side_w_right.setValue(2.0)
+                self.spin_side_w_right.setValue(2.0 * scale)
         self.spin_side_w_left.setEnabled(on)
         self.spin_side_w_right.setEnabled(on)
         self.spin_side_s_left.setEnabled(on)

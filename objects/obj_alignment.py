@@ -2,6 +2,7 @@ import FreeCAD as App
 import Part
 import math
 
+from objects.obj_project import get_length_scale
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
@@ -84,6 +85,8 @@ def _polyline_edges(points, tol: float = 1e-7):
 
 
 def ensure_alignment_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     if not hasattr(obj, "IPPoints"):
         obj.addProperty("App::PropertyVectorList", "IPPoints", "Alignment", "Intersection points (IP)")
     if not hasattr(obj, "CurveRadii"):
@@ -114,10 +117,10 @@ def ensure_alignment_properties(obj):
         obj.MinRadius = 0.0
     if not hasattr(obj, "MinTangentLength"):
         obj.addProperty("App::PropertyFloat", "MinTangentLength", "Criteria", "Minimum tangent length between curves (m)")
-        obj.MinTangentLength = 20.0
+        obj.MinTangentLength = 20.0 * scale
     if not hasattr(obj, "MinTransitionLength"):
         obj.addProperty("App::PropertyFloat", "MinTransitionLength", "Criteria", "Minimum transition length (m)")
-        obj.MinTransitionLength = 20.0
+        obj.MinTransitionLength = 20.0 * scale
     if not hasattr(obj, "CriteriaMessages"):
         obj.addProperty("App::PropertyStringList", "CriteriaMessages", "Criteria", "Criteria check messages")
         obj.CriteriaMessages = []

@@ -3,7 +3,7 @@ import FreeCADGui as Gui
 
 from PySide2 import QtWidgets
 
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
+from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
 from objects.obj_surface_comparison import SurfaceComparison, ViewProviderSurfaceComparison
 
 
@@ -78,6 +78,7 @@ def _selected_mesh():
 class SurfaceComparisonTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._scale = get_length_scale(self.doc, default=1.0)
         self._corridors = []
         self._meshes = []
         self._loading = False
@@ -120,9 +121,9 @@ class SurfaceComparisonTaskPanel:
         gb_opt = QtWidgets.QGroupBox("Comparison")
         fo = QtWidgets.QFormLayout(gb_opt)
         self.spin_cell = QtWidgets.QDoubleSpinBox()
-        self.spin_cell.setRange(0.01, 10000.0)
+        self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
         self.spin_cell.setDecimals(3)
-        self.spin_cell.setValue(1.0)
+        self.spin_cell.setValue(1.0 * self._scale)
         self.spin_max_samples = QtWidgets.QSpinBox()
         self.spin_max_samples.setRange(1000, 2000000000)
         self.spin_max_samples.setValue(200000)
@@ -132,9 +133,9 @@ class SurfaceComparisonTaskPanel:
         self.chk_use_bounds = QtWidgets.QCheckBox("Use corridor bounds")
         self.chk_use_bounds.setChecked(True)
         self.spin_margin = QtWidgets.QDoubleSpinBox()
-        self.spin_margin.setRange(0.0, 1000000.0)
+        self.spin_margin.setRange(0.0, 1000000.0 * self._scale)
         self.spin_margin.setDecimals(3)
-        self.spin_margin.setValue(5.0)
+        self.spin_margin.setValue(5.0 * self._scale)
         self.spin_nodata_warn = QtWidgets.QDoubleSpinBox()
         self.spin_nodata_warn.setRange(0.0, 100.0)
         self.spin_nodata_warn.setDecimals(1)
@@ -153,11 +154,11 @@ class SurfaceComparisonTaskPanel:
         self.chk_auto.setChecked(True)
         self.lbl_sign = QtWidgets.QLabel("Sign: delta=Design-Existing, +Fill / -Cut")
 
-        fo.addRow("Cell Size:", self.spin_cell)
+        fo.addRow("Cell Size (scaled):", self.spin_cell)
         fo.addRow("Max Samples:", self.spin_max_samples)
         fo.addRow("Min Mesh Facets:", self.spin_min_facets)
         fo.addRow(self.chk_use_bounds)
-        fo.addRow("Domain Margin:", self.spin_margin)
+        fo.addRow("Domain Margin (scaled):", self.spin_margin)
         fo.addRow("NoData Warn:", self.spin_nodata_warn)
         fo.addRow("X Min:", self.spin_xmin)
         fo.addRow("X Max:", self.spin_xmax)
@@ -172,29 +173,26 @@ class SurfaceComparisonTaskPanel:
         self.chk_show_map = QtWidgets.QCheckBox("Show Cut/Fill Map in 3D")
         self.chk_show_map.setChecked(True)
         self.spin_deadband = QtWidgets.QDoubleSpinBox()
-        self.spin_deadband.setRange(0.0, 100.0)
+        self.spin_deadband.setRange(0.0, 100.0 * self._scale)
         self.spin_deadband.setDecimals(3)
-        self.spin_deadband.setValue(0.02)
-        self.spin_deadband.setSuffix(" m")
+        self.spin_deadband.setValue(0.02 * self._scale)
         self.spin_clamp = QtWidgets.QDoubleSpinBox()
-        self.spin_clamp.setRange(0.001, 10000.0)
+        self.spin_clamp.setRange(0.001 * self._scale, 10000.0 * self._scale)
         self.spin_clamp.setDecimals(3)
-        self.spin_clamp.setValue(2.0)
-        self.spin_clamp.setSuffix(" m")
+        self.spin_clamp.setValue(2.0 * self._scale)
         self.spin_zoff = QtWidgets.QDoubleSpinBox()
-        self.spin_zoff.setRange(-1000.0, 1000.0)
+        self.spin_zoff.setRange(-1000.0 * self._scale, 1000.0 * self._scale)
         self.spin_zoff.setDecimals(3)
-        self.spin_zoff.setValue(0.05)
-        self.spin_zoff.setSuffix(" m")
+        self.spin_zoff.setValue(0.05 * self._scale)
         self.spin_max_vis = QtWidgets.QSpinBox()
         self.spin_max_vis.setRange(1000, 2000000000)
         self.spin_max_vis.setValue(40000)
         self.lbl_palette = QtWidgets.QLabel("Palette: Cut=Red, Fill=Blue, Neutral=Light Gray, NoData=Gray")
         self.lbl_palette.setWordWrap(True)
         fv.addRow(self.chk_show_map)
-        fv.addRow("Deadband |delta|:", self.spin_deadband)
-        fv.addRow("Clamp |delta|:", self.spin_clamp)
-        fv.addRow("Visual Z Offset:", self.spin_zoff)
+        fv.addRow("Deadband |delta| (scaled):", self.spin_deadband)
+        fv.addRow("Clamp |delta| (scaled):", self.spin_clamp)
+        fv.addRow("Visual Z Offset (scaled):", self.spin_zoff)
         fv.addRow("Max Visual Cells:", self.spin_max_vis)
         fv.addRow(self.lbl_palette)
         main.addWidget(gb_vis)
@@ -525,20 +523,20 @@ class SurfaceComparisonTaskPanel:
 
         msg = [
             status,
-            f"CutVolume: {float(getattr(cmp_obj, 'CutVolume', 0.0)):.3f} m^3",
-            f"FillVolume: {float(getattr(cmp_obj, 'FillVolume', 0.0)):.3f} m^3",
+            f"CutVolume: {float(getattr(cmp_obj, 'CutVolume', 0.0)):.3f} (scaled^3)",
+            f"FillVolume: {float(getattr(cmp_obj, 'FillVolume', 0.0)):.3f} (scaled^3)",
             f"Delta(min/max/mean): "
             f"{float(getattr(cmp_obj, 'DeltaMin', 0.0)):.3f} / "
             f"{float(getattr(cmp_obj, 'DeltaMax', 0.0)):.3f} / "
             f"{float(getattr(cmp_obj, 'DeltaMean', 0.0)):.3f}",
             f"Samples(valid/total): {int(getattr(cmp_obj, 'ValidCount', 0))} / {int(getattr(cmp_obj, 'SampleCount', 0))}",
-            f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} m^2 / "
+            f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
             f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
-            f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} m",
+            f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
             f"Sign: {str(getattr(cmp_obj, 'SignConvention', 'delta=Design-Existing, +Fill/-Cut'))}",
             f"Display: show_map={bool(getattr(cmp_obj, 'ShowDeltaMap', True))}, "
-            f"deadband={float(getattr(cmp_obj, 'DeltaDeadband', 0.0)):.3f} m, "
-            f"clamp={float(getattr(cmp_obj, 'DeltaClamp', 0.0)):.3f} m",
+            f"deadband={float(getattr(cmp_obj, 'DeltaDeadband', 0.0)):.3f} (scaled), "
+            f"clamp={float(getattr(cmp_obj, 'DeltaClamp', 0.0)):.3f} (scaled)",
         ]
         QtWidgets.QMessageBox.information(None, "Surface Comparison", "\n".join(msg))
 

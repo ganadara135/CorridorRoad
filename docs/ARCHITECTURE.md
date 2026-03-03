@@ -183,6 +183,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - when `AutoUpdate=False`, source/parameter edits set pending status and do not auto-run
 - Performance guards:
   - precheck `EstimatedSamples <= MaxSamples`
+  - scale-aware defaults (`CellSize`, `DomainMargin`, display delta thresholds) from `Project.LengthScale`
+  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
+  - design tessellation deflection is scale-aware
   - wide-triangle bucket expansion is guarded to avoid bucket blow-up
   - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
 
@@ -200,10 +203,22 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - use design surface elevation where available
   - else keep existing terrain elevation
 
+### 2.13 CorridorRoadProject (`objects/obj_project.py`)
+- Purpose: project container + global unit/scale policy.
+- Key property:
+  - `LengthScale` (internal units per meter; `1.0=m`, `1000.0=mm-like`)
+- Scale usage:
+  - sample/default length values are initialized by `LengthScale`
+  - station/section/assembly/centerline defaults follow project scale
+  - geometry math stays in internal units; source survey data remains unchanged
+  - changing `LengthScale` does not retroactively rescale existing object values
+
 ## 3) UI Contracts
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
 - Keep as lightweight starter command.
+- Opens scale input UX (`LengthScale`) before creating sample.
+- Creates `CorridorRoadProject` automatically when missing and stores `LengthScale`.
 
 ### 3.2 Practical Alignment Editor (`commands/cmd_edit_alignment.py`, `ui/task_alignment_editor.py`)
 - Edits practical alignment inputs:

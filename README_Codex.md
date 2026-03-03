@@ -190,6 +190,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - when `AutoUpdate=False`, edits do not auto-run comparison and remain pending until `RebuildNow=True`
 - Performance guards:
   - run precheck: estimated samples must be within `MaxSamples`
+  - scale-aware defaults from `LengthScale` for `CellSize`/`DomainMargin`/delta display thresholds
+  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
+  - scale-aware design tessellation deflection
   - wide-triangle bucket expansion guard to avoid pathological bucket growth
 
 ### 12) DesignTerrain
@@ -206,6 +209,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Merge rule:
   - where design surface exists, use design Z
   - otherwise use existing terrain Z
+
+### 13) CorridorRoadProject
+- Role: project container + global scale policy.
+- Key property:
+  - `LengthScale` (internal units per meter; `1.0=m`, `1000.0=mm-like`)
+- Scale behavior:
+  - sample/default length values are initialized with `LengthScale`
+  - station/section/assembly/centerline default distances follow `LengthScale`
+  - geometric computation remains in internal units
+  - changing `LengthScale` does not auto-rescale existing object values
 
 ## Section Basis Rules (Fixed)
 - Section baseline must use resolved H+V source data (not display tessellation).
@@ -247,6 +260,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - section creation/update runs only from `Generate Sections Now`.
 - supports side slopes and Stage-2 terrain-daylight options.
 - daylight terrain source can be Mesh or Shape (`Project.Terrain` or `SectionSet.TerrainMesh`).
+
+### Scale UX
+- `New Project` opens scale input (`LengthScale`) when project is created.
+- `Sample Alignment` opens scale input before sample generation.
+- If project is missing, `Sample Alignment` creates project container and stores `LengthScale`.
 
 ### Generate Design Grading Surface
 - command creates/updates `DesignGradingSurface` from current `SectionSet`.

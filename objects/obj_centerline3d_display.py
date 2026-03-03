@@ -3,6 +3,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_centerline3d import Centerline3D
+from objects.obj_project import get_length_scale
 from objects.obj_vertical_alignment import VerticalAlignment
 
 
@@ -46,6 +47,8 @@ def _vertical_key_stations(va):
 
 
 def ensure_centerline3d_display_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     # Optional legacy link: if provided, display can read source data from engine object.
     if not hasattr(obj, "SourceCenterline"):
         obj.addProperty("App::PropertyLink", "SourceCenterline", "Display", "Centerline3D engine source")
@@ -66,7 +69,7 @@ def ensure_centerline3d_display_properties(obj):
 
     if not hasattr(obj, "SamplingInterval"):
         obj.addProperty("App::PropertyFloat", "SamplingInterval", "Sampling", "Sampling interval (m) when Stationing is not used")
-        obj.SamplingInterval = 5.0
+        obj.SamplingInterval = 5.0 * scale
     else:
         # Migrate older objects where SamplingInterval was under "Source"
         try:
@@ -85,15 +88,15 @@ def ensure_centerline3d_display_properties(obj):
 
     if not hasattr(obj, "MaxChordError"):
         obj.addProperty("App::PropertyFloat", "MaxChordError", "Sampling", "Maximum chord error for adaptive sampling (m)")
-        obj.MaxChordError = 0.02
+        obj.MaxChordError = 0.02 * scale
 
     if not hasattr(obj, "MinStep"):
         obj.addProperty("App::PropertyFloat", "MinStep", "Sampling", "Minimum station step for adaptive sampling (m)")
-        obj.MinStep = 0.5
+        obj.MinStep = 0.5 * scale
 
     if not hasattr(obj, "MaxStep"):
         obj.addProperty("App::PropertyFloat", "MaxStep", "Sampling", "Maximum station step for adaptive sampling (m)")
-        obj.MaxStep = 10.0
+        obj.MaxStep = 10.0 * scale
 
     if not hasattr(obj, "UseKeyStations"):
         obj.addProperty("App::PropertyBool", "UseKeyStations", "Sampling", "Always include key stations (edge bounds, BVC/EVC)")
@@ -128,17 +131,18 @@ class Centerline3DDisplay:
 
     @staticmethod
     def _safe_sampling_params(obj):
-        max_err = float(getattr(obj, "MaxChordError", 0.02))
-        if max_err < 1e-6:
-            max_err = 1e-6
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+        max_err = float(getattr(obj, "MaxChordError", 0.02 * scale))
+        if max_err < 1e-6 * scale:
+            max_err = 1e-6 * scale
             obj.MaxChordError = max_err
 
-        min_step = float(getattr(obj, "MinStep", 0.5))
-        if min_step < 1e-3:
-            min_step = 1e-3
+        min_step = float(getattr(obj, "MinStep", 0.5 * scale))
+        if min_step < 1e-3 * scale:
+            min_step = 1e-3 * scale
             obj.MinStep = min_step
 
-        max_step = float(getattr(obj, "MaxStep", 10.0))
+        max_step = float(getattr(obj, "MaxStep", 10.0 * scale))
         if max_step < min_step:
             max_step = min_step
             obj.MaxStep = max_step

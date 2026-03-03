@@ -6,6 +6,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_centerline3d import Centerline3D
+from objects.obj_project import get_length_scale
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
@@ -108,6 +109,8 @@ def _mark_corridor_needs_recompute(obj_corridor):
 
 
 def ensure_section_set_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     if not hasattr(obj, "Group"):
         obj.addProperty("App::PropertyLinkList", "Group", "Sections", "Child section objects")
 
@@ -128,10 +131,10 @@ def ensure_section_set_properties(obj):
         obj.StartStation = 0.0
     if not hasattr(obj, "EndStation"):
         obj.addProperty("App::PropertyFloat", "EndStation", "Sections", "End station (m)")
-        obj.EndStation = 100.0
+        obj.EndStation = 100.0 * scale
     if not hasattr(obj, "Interval"):
         obj.addProperty("App::PropertyFloat", "Interval", "Sections", "Interval for range mode (m)")
-        obj.Interval = 20.0
+        obj.Interval = 20.0 * scale
     if not hasattr(obj, "StationText"):
         obj.addProperty("App::PropertyString", "StationText", "Sections", "Manual station list text")
         obj.StationText = ""
@@ -206,7 +209,7 @@ class SectionSet:
 
         itv = float(getattr(obj, "Interval", 20.0))
         if itv <= 1e-9:
-            itv = 20.0
+            itv = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
             obj.Interval = itv
 
         vals = [s0]
@@ -331,7 +334,8 @@ class SectionSet:
         if _is_mesh_object(src_obj):
             return SectionSet._mesh_triangles(src_obj)
         if _is_shape_object(src_obj):
-            return SectionSet._shape_triangles(src_obj, deflection=1.0)
+            scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
+            return SectionSet._shape_triangles(src_obj, deflection=1.0 * scale)
         return []
 
     @staticmethod
@@ -387,15 +391,16 @@ class SectionSet:
             stride = int(math.ceil(float(len(tris)) / float(mt)))
             tris = tris[::max(1, stride)]
 
-        bucket = 2.0
+        scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
+        bucket = 2.0 * scale
         try:
             if _is_mesh_object(src_obj):
                 bb = src_obj.Mesh.BoundBox
             else:
                 bb = src_obj.Shape.BoundBox
             n = max(1, len(tris))
-            area = max(1.0, float(bb.XLength) * float(bb.YLength))
-            bucket = max(0.5, min(20.0, math.sqrt(area / float(n)) * 2.0))
+            area = max((1.0 * scale) ** 2, float(bb.XLength) * float(bb.YLength))
+            bucket = max(0.5 * scale, min(20.0 * scale, math.sqrt(area / float(n)) * 2.0))
         except Exception:
             pass
         buckets, wide = SectionSet._build_xy_buckets(tris, bucket)
@@ -519,7 +524,8 @@ class SectionSet:
 
     @staticmethod
     def build_section_wire(source_obj, asm_obj, station: float, prev_n: App.Vector = None, terrain_sampler=None):
-        frame = Centerline3D.frame_at_station(source_obj, float(station), eps=0.1, prev_n=prev_n)
+        scale = get_length_scale(getattr(source_obj, "Document", None), default=1.0)
+        frame = Centerline3D.frame_at_station(source_obj, float(station), eps=0.1 * scale, prev_n=prev_n)
         p = frame["point"]
         n = frame["N"]
         z = frame["Z"]
@@ -534,7 +540,7 @@ class SectionSet:
         lss = float(getattr(asm_obj, "LeftSideSlopePct", 0.0))
         rss = float(getattr(asm_obj, "RightSideSlopePct", 0.0))
         use_day = bool(getattr(asm_obj, "UseDaylightToTerrain", False))
-        day_step = max(0.2, float(getattr(asm_obj, "DaylightSearchStep", 1.0)))
+        day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
 
         dz_l = -lw * ls / 100.0
         dz_r = -rw * rs / 100.0

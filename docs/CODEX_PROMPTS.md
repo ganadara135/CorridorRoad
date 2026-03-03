@@ -18,6 +18,8 @@ When updating practical alignment behavior:
 - Keep practical editing in `Edit Alignment (Practical)` flow.
 - Ensure criteria messages are actionable, not just warning labels.
 - Keep stationing compatibility with `point_at_station` / `tangent_at_station`.
+- Keep project length-scale policy consistent (`LengthScale`: internal units per meter).
+- Do not hardcode `s=1000`; use project/user scale UX and shared scale helper.
 
 ## Task: Alignment Criteria Message Quality
 For criteria violations:
@@ -63,6 +65,8 @@ Before implementing `Existing/Design Surface` comparison:
 - Keep no-data governance: track `NoDataRatio` and warn when `NoDataRatio > NoDataWarnRatio`.
 - Keep sign convention fixed: `delta=Design-Existing`, `+Fill`, `-Cut`.
 - Keep update policy: `AutoUpdate=False` means no auto-run; `RebuildNow=True` triggers explicit run.
+- Keep `SurfaceComparison` scale-aware with `Project.LengthScale` (defaults and guards).
+- Enforce minimum cell size policy: `CellSize >= 0.2 m * LengthScale`.
 - Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
 
 ## Task: Command Labels

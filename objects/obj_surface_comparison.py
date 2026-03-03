@@ -4,6 +4,8 @@ import math
 import FreeCAD as App
 import Part
 
+from objects.obj_project import get_length_scale
+
 
 class _CanceledError(Exception):
     pass
@@ -50,6 +52,8 @@ def _is_mesh_object(obj) -> bool:
 
 
 def ensure_surface_comparison_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     if not hasattr(obj, "SourceCorridor"):
         obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
     if not hasattr(obj, "ExistingSurface"):
@@ -57,7 +61,7 @@ def ensure_surface_comparison_properties(obj):
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "Comparison", "Sampling cell size (m)")
-        obj.CellSize = 1.0
+        obj.CellSize = 1.0 * scale
     if not hasattr(obj, "MaxSamples"):
         obj.addProperty("App::PropertyInteger", "MaxSamples", "Comparison", "Maximum allowed sample cells")
         obj.MaxSamples = 200000
@@ -66,7 +70,7 @@ def ensure_surface_comparison_properties(obj):
         obj.MinMeshFacets = 100
     if not hasattr(obj, "DomainMargin"):
         obj.addProperty("App::PropertyFloat", "DomainMargin", "Comparison", "Margin from corridor bounds (m)")
-        obj.DomainMargin = 5.0
+        obj.DomainMargin = 5.0 * scale
     if not hasattr(obj, "UseCorridorBounds"):
         obj.addProperty("App::PropertyBool", "UseCorridorBounds", "Comparison", "Use corridor top bounds for domain")
         obj.UseCorridorBounds = True
@@ -98,13 +102,13 @@ def ensure_surface_comparison_properties(obj):
         obj.ShowDeltaMap = True
     if not hasattr(obj, "DeltaDeadband"):
         obj.addProperty("App::PropertyFloat", "DeltaDeadband", "Display", "Neutral band threshold for |delta| (m)")
-        obj.DeltaDeadband = 0.02
+        obj.DeltaDeadband = 0.02 * scale
     if not hasattr(obj, "DeltaClamp"):
         obj.addProperty("App::PropertyFloat", "DeltaClamp", "Display", "Color clamp for |delta| (m)")
-        obj.DeltaClamp = 2.0
+        obj.DeltaClamp = 2.0 * scale
     if not hasattr(obj, "VisualZOffset"):
         obj.addProperty("App::PropertyFloat", "VisualZOffset", "Display", "Z offset for delta map display (m)")
-        obj.VisualZOffset = 0.05
+        obj.VisualZOffset = 0.05 * scale
     if not hasattr(obj, "MaxVisualCells"):
         obj.addProperty("App::PropertyInteger", "MaxVisualCells", "Display", "Maximum cells used for 3D delta map")
         obj.MaxVisualCells = 40000
@@ -500,6 +504,7 @@ class SurfaceComparison:
     def execute(self, obj):
         ensure_surface_comparison_properties(obj)
         try:
+            scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
             if self._report_progress(1.0, "Preparing comparison"):
                 raise _CanceledError("Canceled by user.")
 
@@ -534,10 +539,16 @@ class SurfaceComparison:
                 raise _CanceledError("Canceled by user.")
             design_top = SurfaceComparison._top_shape_from_corridor(src.Shape)
 
-            cell = float(getattr(obj, "CellSize", 1.0))
+            cell = float(getattr(obj, "CellSize", 1.0 * scale))
             if not _is_finite(cell) or cell <= 1e-6:
-                cell = 1.0
-                obj.CellSize = 1.0
+                cell = 1.0 * scale
+                obj.CellSize = 1.0 * scale
+
+            # Guardrail: comparison cell size is meter-policy based (>=0.2m), converted by project scale.
+            min_cell = 0.2 * scale
+            if cell < min_cell:
+                cell = min_cell
+                obj.CellSize = min_cell
 
             xmin, xmax, ymin, ymax = SurfaceComparison._resolve_domain(obj, design_top)
             if xmax <= xmin + 1e-9 or ymax <= ymin + 1e-9:
@@ -559,7 +570,8 @@ class SurfaceComparison:
 
             if self._report_progress(10.0, "Triangulating design surface"):
                 raise _CanceledError("Canceled by user.")
-            defl = max(0.05, min(2.0, 0.5 * cell))
+            # Keep tessellation tolerance scale-aware to avoid over-tessellation at large model scales.
+            defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
             tri_design = SurfaceComparison._triangles_from_shape(design_top, defl)
 
             tri_exist = self._triangles_from_mesh_progress(eg, 15.0, 18.0)
@@ -676,7 +688,7 @@ class SurfaceComparison:
 
             obj.Status = (
                 f"{prefix}: samples={s_cnt}, valid={v_cnt}, "
-                f"cut={cut:.3f} m^3, fill={fill:.3f} m^3{note}, vis_stride={vis_stride}"
+                f"cut={cut:.3f} (scaled^3), fill={fill:.3f} (scaled^3){note}, vis_stride={vis_stride}"
             )
 
             if bool(getattr(obj, "RebuildNow", False)):

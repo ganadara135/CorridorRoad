@@ -10,6 +10,46 @@ def _find_first(doc, name_prefix: str):
     return None
 
 
+def find_project(doc):
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if o.Name.startswith("CorridorRoadProject"):
+            return o
+    return None
+
+
+def _safe_scale(v, default: float = 1.0) -> float:
+    try:
+        x = float(v)
+    except Exception:
+        return float(default)
+    if x <= 1e-12:
+        return float(default)
+    return float(x)
+
+
+def get_length_scale(doc_or_project, default: float = 1.0) -> float:
+    """
+    Length scale = internal units per meter.
+    1.0 means meter-native; 1000.0 means millimeter-like internal units.
+    """
+    if doc_or_project is None:
+        return float(default)
+
+    if hasattr(doc_or_project, "Document") and hasattr(doc_or_project, "LengthScale"):
+        return _safe_scale(getattr(doc_or_project, "LengthScale", default), default=default)
+
+    prj = find_project(doc_or_project) if hasattr(doc_or_project, "Objects") else None
+    if prj is None:
+        return float(default)
+    return _safe_scale(getattr(prj, "LengthScale", default), default=default)
+
+
+def meters_to_internal(doc_or_project, meters: float, default_scale: float = 1.0) -> float:
+    return float(meters) * get_length_scale(doc_or_project, default=default_scale)
+
+
 def ensure_project_properties(obj):
     if not hasattr(obj, "Group"):
         obj.addProperty("App::PropertyLinkList", "Group", "CorridorRoad", "Contained objects")
@@ -17,6 +57,9 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "Version"):
         obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
         obj.Version = "0.3"
+    if not hasattr(obj, "LengthScale"):
+        obj.addProperty("App::PropertyFloat", "LengthScale", "CorridorRoad", "Length scale (internal units per meter)")
+        obj.LengthScale = 1.0
 
     if not hasattr(obj, "Terrain"):
         obj.addProperty("App::PropertyLink", "Terrain", "CorridorRoad", "Link to EG terrain object")

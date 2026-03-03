@@ -2,6 +2,8 @@
 import FreeCAD as App
 import Part
 
+from objects.obj_project import get_length_scale
+
 try:
     import FreeCADGui as Gui
 except Exception:
@@ -17,12 +19,14 @@ def ensure_assembly_template_properties(obj):
         except Exception:
             pass
 
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     if not hasattr(obj, "LeftWidth"):
         obj.addProperty("App::PropertyFloat", "LeftWidth", "Assembly", "Width to left side from centerline (m)")
-        obj.LeftWidth = 4.0
+        obj.LeftWidth = 4.0 * scale
     if not hasattr(obj, "RightWidth"):
         obj.addProperty("App::PropertyFloat", "RightWidth", "Assembly", "Width to right side from centerline (m)")
-        obj.RightWidth = 4.0
+        obj.RightWidth = 4.0 * scale
 
     if not hasattr(obj, "LeftSlopePct"):
         obj.addProperty("App::PropertyFloat", "LeftSlopePct", "Assembly", "Cross slope (%) on left side (downward)")
@@ -51,18 +55,18 @@ def ensure_assembly_template_properties(obj):
         obj.UseDaylightToTerrain = False
     if not hasattr(obj, "DaylightSearchStep"):
         obj.addProperty("App::PropertyFloat", "DaylightSearchStep", "Assembly", "Search step for terrain-daylight (m)")
-        obj.DaylightSearchStep = 1.0
+        obj.DaylightSearchStep = 1.0 * scale
     if not hasattr(obj, "DaylightMaxTriangles"):
         obj.addProperty("App::PropertyInteger", "DaylightMaxTriangles", "Assembly", "Max triangles used for daylight sampler")
         obj.DaylightMaxTriangles = 300000
 
     if not hasattr(obj, "HeightLeft"):
         obj.addProperty("App::PropertyFloat", "HeightLeft", "Assembly", "Left depth for corridor solid (m, downward)")
-        obj.HeightLeft = 0.30
+        obj.HeightLeft = 0.30 * scale
 
     if not hasattr(obj, "HeightRight"):
         obj.addProperty("App::PropertyFloat", "HeightRight", "Assembly", "Right depth for corridor solid (m, downward)")
-        obj.HeightRight = 0.30
+        obj.HeightRight = 0.30 * scale
 
     try:
         obj.setGroupOfProperty("HeightLeft", "Assembly")
@@ -171,10 +175,11 @@ class AssemblyTemplate:
                     # when user enables side slopes with zero widths.
                     lsw = max(0.0, float(getattr(obj, "LeftSideWidth", 0.0)))
                     rsw = max(0.0, float(getattr(obj, "RightSideWidth", 0.0)))
+                    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
                     if lsw <= 1e-9:
-                        obj.LeftSideWidth = max(2.0, 0.5 * max(0.0, float(getattr(obj, "LeftWidth", 0.0))))
+                        obj.LeftSideWidth = max(2.0 * scale, 0.5 * max(0.0, float(getattr(obj, "LeftWidth", 0.0))))
                     if rsw <= 1e-9:
-                        obj.RightSideWidth = max(2.0, 0.5 * max(0.0, float(getattr(obj, "RightWidth", 0.0))))
+                        obj.RightSideWidth = max(2.0 * scale, 0.5 * max(0.0, float(getattr(obj, "RightWidth", 0.0))))
                 obj.touch()
                 if obj.Document is not None:
                     # Propagate template edits to linked SectionSet objects.

@@ -5,6 +5,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_alignment import HorizontalAlignment
+from objects.obj_project import get_length_scale
 from objects.obj_vertical_alignment import VerticalAlignment
 
 
@@ -52,6 +53,8 @@ def _interp_bundle_fg(bundle_obj, s: float):
 
 
 def ensure_centerline3d_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     if not hasattr(obj, "Alignment"):
         obj.addProperty("App::PropertyLink", "Alignment", "Centerline3D", "HorizontalAlignment link")
     if not hasattr(obj, "Stationing"):
@@ -67,7 +70,7 @@ def ensure_centerline3d_properties(obj):
 
     if not hasattr(obj, "SamplingInterval"):
         obj.addProperty("App::PropertyFloat", "SamplingInterval", "Sampling", "Sampling interval (m) when Stationing is not used")
-        obj.SamplingInterval = 5.0
+        obj.SamplingInterval = 5.0 * scale
 
     if not hasattr(obj, "ElevationSource"):
         obj.addProperty("App::PropertyEnumeration", "ElevationSource", "Sampling", "Elevation source mode")
@@ -120,7 +123,7 @@ class Centerline3D:
 
         interval = float(getattr(obj, "SamplingInterval", 5.0))
         if not math.isfinite(interval) or interval <= 1e-6:
-            interval = 5.0
+            interval = 5.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
             obj.SamplingInterval = interval
 
         s = 0.0

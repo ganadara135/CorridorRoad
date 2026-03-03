@@ -3,6 +3,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_alignment import HorizontalAlignment
+from objects.obj_project import get_length_scale
 
 
 class Stationing:
@@ -13,13 +14,14 @@ class Stationing:
     def __init__(self, obj):
         obj.Proxy = self
         self.Type = "Stationing"
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
 
         obj.addProperty("App::PropertyLink", "Alignment", "Stations", "Link to HorizontalAlignment")
         obj.addProperty("App::PropertyFloat", "Interval", "Stations", "Station interval (m)")
-        obj.Interval = 20.0
+        obj.Interval = 20.0 * scale
 
         obj.addProperty("App::PropertyFloat", "TickLength", "Stations", "Tick length (m)")
-        obj.TickLength = 2.0
+        obj.TickLength = 2.0 * scale
 
         obj.addProperty("App::PropertyBool", "ShowTicks", "Stations", "Show tick marks as shape")
         obj.ShowTicks = True
@@ -38,7 +40,7 @@ class Stationing:
 
         interval = float(obj.Interval)
         if interval <= 0:
-            interval = 20.0
+            interval = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
             obj.Interval = interval
 
         total = float(aln.Shape.Length)
@@ -65,7 +67,7 @@ class Stationing:
 
         tick_len = float(obj.TickLength)
         if tick_len <= 0:
-            tick_len = 2.0
+            tick_len = 2.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
             obj.TickLength = tick_len
 
         tick_edges = []
