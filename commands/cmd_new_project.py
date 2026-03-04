@@ -65,8 +65,8 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.DesignGradingSurface)
         if hasattr(obj, "DesignTerrain") and obj.DesignTerrain is not None:
             CorridorRoadProject.adopt(obj, obj.DesignTerrain)
-        if hasattr(obj, "SurfaceComparison") and obj.SurfaceComparison is not None:
-            CorridorRoadProject.adopt(obj, obj.SurfaceComparison)
+        if hasattr(obj, "CutFillCalc") and obj.CutFillCalc is not None:
+            CorridorRoadProject.adopt(obj, obj.CutFillCalc)
 
         doc.recompute()
 

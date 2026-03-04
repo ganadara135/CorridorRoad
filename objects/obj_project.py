@@ -83,8 +83,8 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
     if not hasattr(obj, "DesignTerrain"):
         obj.addProperty("App::PropertyLink", "DesignTerrain", "CorridorRoad", "Link to design terrain object")
-    if not hasattr(obj, "SurfaceComparison"):
-        obj.addProperty("App::PropertyLink", "SurfaceComparison", "CorridorRoad", "Link to surface comparison object")
+    if not hasattr(obj, "CutFillCalc"):
+        obj.addProperty("App::PropertyLink", "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
 
 
 class CorridorRoadProject:
@@ -220,14 +220,14 @@ class CorridorRoadProject:
             if d is not None:
                 obj_project.DesignTerrain = d
 
-        if hasattr(obj_project, "SurfaceComparison") and obj_project.SurfaceComparison is None:
+        if hasattr(obj_project, "CutFillCalc") and obj_project.CutFillCalc is None:
             s = None
             for o in doc.Objects:
-                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SurfaceComparison":
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CutFillCalc":
                     s = o
                     break
-                if o.Name.startswith("SurfaceComparison"):
+                if o.Name.startswith("CutFillCalc"):
                     s = o
                     break
             if s is not None:
-                obj_project.SurfaceComparison = s
+                obj_project.CutFillCalc = s

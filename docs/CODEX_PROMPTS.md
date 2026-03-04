@@ -65,7 +65,7 @@ Before implementing `Existing/Design Surface` comparison:
 - Keep no-data governance: track `NoDataRatio` and warn when `NoDataRatio > NoDataWarnRatio`.
 - Keep sign convention fixed: `delta=Design-Existing`, `+Fill`, `-Cut`.
 - Keep update policy: `AutoUpdate=False` means no auto-run; `RebuildNow=True` triggers explicit run.
-- Keep `SurfaceComparison` scale-aware with `Project.LengthScale` (defaults and guards).
+- Keep `CutFillCalc` scale-aware with `Project.LengthScale` (defaults and guards).
 - Enforce minimum cell size policy: `CellSize >= 0.2 m * LengthScale`.
 - Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
 
@@ -77,4 +77,4 @@ Before implementing `Existing/Design Surface` comparison:
 
 ## Task: Command Labels
 - Toolbar/menu `MenuText` should omit `Generate` prefix.
-- Keep command IDs unchanged for backward compatibility.
+- Keep command IDs aligned with current feature naming.

@@ -1,4 +1,4 @@
-# CorridorRoad/objects/obj_surface_comparison.py
+# CorridorRoad/objects/obj_cut_fill_calc.py
 import math
 
 import FreeCAD as App
@@ -51,13 +51,20 @@ def _is_mesh_object(obj) -> bool:
         return False
 
 
-def ensure_surface_comparison_properties(obj):
+def _is_shape_object(obj) -> bool:
+    try:
+        return hasattr(obj, "Shape") and obj.Shape is not None and (not obj.Shape.isNull()) and len(list(obj.Shape.Faces)) > 0
+    except Exception:
+        return False
+
+
+def ensure_cut_fill_calc_properties(obj):
     scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
 
     if not hasattr(obj, "SourceCorridor"):
         obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
     if not hasattr(obj, "ExistingSurface"):
-        obj.addProperty("App::PropertyLink", "ExistingSurface", "Source", "Existing surface mesh object")
+        obj.addProperty("App::PropertyLink", "ExistingSurface", "Source", "Existing surface source (Mesh/Shape)")
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "Comparison", "Sampling cell size (m)")
@@ -151,21 +158,21 @@ def ensure_surface_comparison_properties(obj):
         obj.Status = "Idle"
 
 
-class SurfaceComparison:
+class CutFillCalc:
     """
     Existing/Design surface comparison:
     - Design source: top faces extracted from CorridorLoft solid
-    - Existing source: mesh object
+    - Existing source: mesh/shape object
     - Method: grid sampling and delta integration
     """
 
     def __init__(self, obj):
         obj.Proxy = self
-        self.Type = "SurfaceComparison"
+        self.Type = "CutFillCalc"
         self._bulk_updating = False
         self._in_onchange = False
         self._progress_cb = None
-        ensure_surface_comparison_properties(obj)
+        ensure_cut_fill_calc_properties(obj)
 
     def _report_progress(self, pct: float, message: str = "") -> bool:
         cb = getattr(self, "_progress_cb", None)
@@ -207,6 +214,8 @@ class SurfaceComparison:
 
     @staticmethod
     def _triangles_from_shape(shape, deflection: float):
+        if shape is None:
+            raise Exception("Shape source is empty.")
         try:
             pts, tri_idx = shape.tessellate(max(0.01, float(deflection)))
         except Exception as ex:
@@ -219,7 +228,7 @@ class SurfaceComparison:
                 p0, p1, p2 = pts[i0], pts[i1], pts[i2]
                 if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
                     continue
-                bb = SurfaceComparison._triangle_bbox_xy(p0, p1, p2)
+                bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
                 triangles.append((p0, p1, p2, bb))
             except Exception:
                 continue
@@ -251,7 +260,7 @@ class SurfaceComparison:
                     p0, p1, p2 = _to_vec(p0), _to_vec(p1), _to_vec(p2)
                     if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
                         continue
-                    bb = SurfaceComparison._triangle_bbox_xy(p0, p1, p2)
+                    bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
                     triangles.append((p0, p1, p2, bb))
                 except Exception:
                     continue
@@ -264,7 +273,7 @@ class SurfaceComparison:
                     p0, p1, p2 = _to_vec(pts[0]), _to_vec(pts[1]), _to_vec(pts[2])
                     if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
                         continue
-                    bb = SurfaceComparison._triangle_bbox_xy(p0, p1, p2)
+                    bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
                     triangles.append((p0, p1, p2, bb))
                 except Exception:
                     continue
@@ -299,7 +308,7 @@ class SurfaceComparison:
                     if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
                         pass
                     else:
-                        bb = SurfaceComparison._triangle_bbox_xy(p0, p1, p2)
+                        bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
                         triangles.append((p0, p1, p2, bb))
                 except Exception:
                     pass
@@ -318,7 +327,7 @@ class SurfaceComparison:
                     if len(pts) == 3:
                         p0, p1, p2 = _to_vec(pts[0]), _to_vec(pts[1]), _to_vec(pts[2])
                         if (p1 - p0).Length > 1e-12 and (p2 - p0).Length > 1e-12:
-                            bb = SurfaceComparison._triangle_bbox_xy(p0, p1, p2)
+                            bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
                             triangles.append((p0, p1, p2, bb))
                 except Exception:
                     pass
@@ -432,7 +441,7 @@ class SurfaceComparison:
             p0, p1, p2, bb = triangles[idx]
             if x < bb[0] - 1e-9 or x > bb[1] + 1e-9 or y < bb[2] - 1e-9 or y > bb[3] + 1e-9:
                 continue
-            z = SurfaceComparison._point_in_tri_z(x, y, p0, p1, p2)
+            z = CutFillCalc._point_in_tri_z(x, y, p0, p1, p2)
             if z is None:
                 continue
             if z_best is None or z > z_best:
@@ -502,7 +511,7 @@ class SurfaceComparison:
             x += step
 
     def execute(self, obj):
-        ensure_surface_comparison_properties(obj)
+        ensure_cut_fill_calc_properties(obj)
         try:
             scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
             if self._report_progress(1.0, "Preparing comparison"):
@@ -522,22 +531,30 @@ class SurfaceComparison:
                 raise Exception("Missing SourceCorridor.")
 
             eg = getattr(obj, "ExistingSurface", None)
-            if eg is None or (not _is_mesh_object(eg)):
-                raise Exception("ExistingSurface must be a valid mesh object.")
-            mesh_facets = int(getattr(getattr(eg, "Mesh", None), "CountFacets", 0))
-            min_facets = int(getattr(obj, "MinMeshFacets", 100))
-            if mesh_facets < max(1, min_facets):
-                raise Exception(f"Existing mesh facets {mesh_facets} < MinMeshFacets {min_facets}.")
-            try:
-                bbm = eg.Mesh.BoundBox
-                if float(bbm.XLength) <= 1e-9 or float(bbm.YLength) <= 1e-9:
-                    raise Exception("Existing mesh XY bounds are degenerate.")
-            except Exception as ex:
-                raise Exception(f"Existing mesh quality check failed: {ex}")
+            if eg is None or (not (_is_mesh_object(eg) or _is_shape_object(eg))):
+                raise Exception("ExistingSurface must be a valid Mesh/Shape object.")
+            if _is_mesh_object(eg):
+                mesh_facets = int(getattr(getattr(eg, "Mesh", None), "CountFacets", 0))
+                min_facets = int(getattr(obj, "MinMeshFacets", 100))
+                if mesh_facets < max(1, min_facets):
+                    raise Exception(f"Existing mesh facets {mesh_facets} < MinMeshFacets {min_facets}.")
+                try:
+                    bbm = eg.Mesh.BoundBox
+                    if float(bbm.XLength) <= 1e-9 or float(bbm.YLength) <= 1e-9:
+                        raise Exception("Existing mesh XY bounds are degenerate.")
+                except Exception as ex:
+                    raise Exception(f"Existing mesh quality check failed: {ex}")
+            else:
+                try:
+                    bbs = eg.Shape.BoundBox
+                    if float(bbs.XLength) <= 1e-9 or float(bbs.YLength) <= 1e-9:
+                        raise Exception("Existing shape XY bounds are degenerate.")
+                except Exception as ex:
+                    raise Exception(f"Existing shape quality check failed: {ex}")
 
             if self._report_progress(5.0, "Extracting design top surface"):
                 raise _CanceledError("Canceled by user.")
-            design_top = SurfaceComparison._top_shape_from_corridor(src.Shape)
+            design_top = CutFillCalc._top_shape_from_corridor(src.Shape)
 
             cell = float(getattr(obj, "CellSize", 1.0 * scale))
             if not _is_finite(cell) or cell <= 1e-6:
@@ -550,7 +567,7 @@ class SurfaceComparison:
                 cell = min_cell
                 obj.CellSize = min_cell
 
-            xmin, xmax, ymin, ymax = SurfaceComparison._resolve_domain(obj, design_top)
+            xmin, xmax, ymin, ymax = CutFillCalc._resolve_domain(obj, design_top)
             if xmax <= xmin + 1e-9 or ymax <= ymin + 1e-9:
                 raise Exception("Invalid comparison domain.")
 
@@ -572,9 +589,14 @@ class SurfaceComparison:
                 raise _CanceledError("Canceled by user.")
             # Keep tessellation tolerance scale-aware to avoid over-tessellation at large model scales.
             defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
-            tri_design = SurfaceComparison._triangles_from_shape(design_top, defl)
+            tri_design = CutFillCalc._triangles_from_shape(design_top, defl)
 
-            tri_exist = self._triangles_from_mesh_progress(eg, 15.0, 18.0)
+            if _is_mesh_object(eg):
+                tri_exist = self._triangles_from_mesh_progress(eg, 15.0, 18.0)
+            else:
+                if self._report_progress(15.0, "Triangulating existing shape"):
+                    raise _CanceledError("Canceled by user.")
+                tri_exist = CutFillCalc._triangles_from_shape(getattr(eg, "Shape", None), defl)
 
             buck_d, wide_d = self._build_xy_buckets_progress(
                 tri_design, cell, 18.0, 30.0, "Bucketing design triangles"
@@ -606,22 +628,22 @@ class SurfaceComparison:
             vis_colors = []
             nodata_color = (0.55, 0.55, 0.55)
 
-            for x, y in SurfaceComparison._iter_grid_centers(xmin, xmax, ymin, ymax, cell):
+            for x, y in CutFillCalc._iter_grid_centers(xmin, xmax, ymin, ymax, cell):
                 s_cnt += 1
                 if (s_cnt % report_every) == 0:
                     pct = 40.0 + 57.0 * (float(s_cnt) / float(total_for_progress))
                     if self._report_progress(pct, f"Sampling grid: {s_cnt}/{est_samples}"):
                         raise _CanceledError("Canceled by user.")
 
-                zd = SurfaceComparison._z_at_xy(x, y, tri_design, buck_d, cell, wide_d)
-                ze = SurfaceComparison._z_at_xy(x, y, tri_exist, buck_e, cell, wide_e)
+                zd = CutFillCalc._z_at_xy(x, y, tri_design, buck_d, cell, wide_d)
+                ze = CutFillCalc._z_at_xy(x, y, tri_exist, buck_e, cell, wide_e)
 
                 vis_pick = show_map and ((s_cnt % vis_stride) == 0)
                 if zd is None or ze is None:
                     nodata += area
                     if vis_pick and (zd is not None):
                         try:
-                            vis_faces.append(SurfaceComparison._make_cell_face(x, y, cell, float(zd) + zoff))
+                            vis_faces.append(CutFillCalc._make_cell_face(x, y, cell, float(zd) + zoff))
                             vis_colors.append(nodata_color)
                         except Exception:
                             pass
@@ -639,7 +661,7 @@ class SurfaceComparison:
 
                 if vis_pick:
                     try:
-                        vis_faces.append(SurfaceComparison._make_cell_face(x, y, cell, float(zd) + zoff))
+                        vis_faces.append(CutFillCalc._make_cell_face(x, y, cell, float(zd) + zoff))
                         vis_colors.append(self._delta_color(d, deadband, clamp_abs))
                     except Exception:
                         pass
@@ -777,7 +799,7 @@ class SurfaceComparison:
                 self._in_onchange = False
 
 
-class ViewProviderSurfaceComparison:
+class ViewProviderCutFillCalc:
     def __init__(self, vobj):
         vobj.Proxy = self
 

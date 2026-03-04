@@ -4,7 +4,7 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
-from objects.obj_surface_comparison import SurfaceComparison, ViewProviderSurfaceComparison
+from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc
 
 
 def _find_project(doc):
@@ -21,6 +21,17 @@ def _is_mesh_obj(obj):
         return hasattr(obj, "Mesh") and obj.Mesh is not None and int(obj.Mesh.CountFacets) > 0
     except Exception:
         return False
+
+
+def _is_shape_obj(obj):
+    try:
+        return hasattr(obj, "Shape") and obj.Shape is not None and (not obj.Shape.isNull()) and len(list(obj.Shape.Faces)) > 0
+    except Exception:
+        return False
+
+
+def _is_surface_source(obj):
+    return _is_mesh_obj(obj) or _is_shape_obj(obj)
 
 
 def _is_corridor_obj(obj):
@@ -44,43 +55,43 @@ def _find_corridors(doc):
     return out
 
 
-def _find_surface_comparison(doc):
+def _find_cut_fill_calc(doc):
     if doc is None:
         return None
     for o in doc.Objects:
         try:
-            if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SurfaceComparison":
+            if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CutFillCalc":
                 return o
         except Exception:
             pass
-        if o.Name.startswith("SurfaceComparison"):
+        if o.Name.startswith("CutFillCalc"):
             return o
     return None
 
 
-def _find_meshes(doc):
+def _find_surface_sources(doc):
     if doc is None:
         return []
-    return [o for o in doc.Objects if _is_mesh_obj(o)]
+    return [o for o in doc.Objects if _is_surface_source(o)]
 
 
-def _selected_mesh():
+def _selected_surface():
     try:
         sel = list(Gui.Selection.getSelection() or [])
         for o in sel:
-            if _is_mesh_obj(o):
+            if _is_surface_source(o):
                 return o
     except Exception:
         pass
     return None
 
 
-class SurfaceComparisonTaskPanel:
+class CutFillCalcTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._scale = get_length_scale(self.doc, default=1.0)
         self._corridors = []
-        self._meshes = []
+        self._surfaces = []
         self._loading = False
         self.form = self._build_ui()
         self._refresh_context()
@@ -96,7 +107,7 @@ class SurfaceComparisonTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Generate Surface Comparison")
+        w.setWindowTitle("CorridorRoad - Cut-Fill Calc")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)
@@ -109,11 +120,11 @@ class SurfaceComparisonTaskPanel:
         gb_src = QtWidgets.QGroupBox("Source")
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_corridor = QtWidgets.QComboBox()
-        self.cmb_mesh = QtWidgets.QComboBox()
-        self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Mesh")
+        self.cmb_surface = QtWidgets.QComboBox()
+        self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Surface")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Corridor:", self.cmb_corridor)
-        fs.addRow("Existing Mesh:", self.cmb_mesh)
+        fs.addRow("Existing Surface (Mesh/Shape):", self.cmb_surface)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -197,7 +208,7 @@ class SurfaceComparisonTaskPanel:
         fv.addRow(self.lbl_palette)
         main.addWidget(gb_vis)
 
-        self.btn_generate = QtWidgets.QPushButton("Generate Surface Comparison")
+        self.btn_generate = QtWidgets.QPushButton("Run Cut-Fill Calc")
         main.addWidget(self.btn_generate)
 
         gb_run = QtWidgets.QGroupBox("Run")
@@ -217,7 +228,7 @@ class SurfaceComparisonTaskPanel:
         self._running = False
 
         self.chk_use_bounds.toggled.connect(self._update_bounds_ui)
-        self.btn_pick_sel.clicked.connect(self._use_selected_mesh)
+        self.btn_pick_sel.clicked.connect(self._use_selected_surface)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
         self.btn_cancel.clicked.connect(self._request_cancel)
@@ -226,7 +237,10 @@ class SurfaceComparisonTaskPanel:
         return w
 
     def _format_obj(self, obj):
-        return f"{obj.Label} ({obj.Name})"
+        tag = "Shape"
+        if _is_mesh_obj(obj):
+            tag = "Mesh"
+        return f"[{tag}] {obj.Label} ({obj.Name})"
 
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
@@ -248,11 +262,11 @@ class SurfaceComparisonTaskPanel:
             return None
         return self._corridors[i]
 
-    def _current_mesh(self):
-        i = int(self.cmb_mesh.currentIndex())
-        if i < 0 or i >= len(self._meshes):
+    def _current_surface(self):
+        i = int(self.cmb_surface.currentIndex())
+        if i < 0 or i >= len(self._surfaces):
             return None
-        return self._meshes[i]
+        return self._surfaces[i]
 
     def _update_bounds_ui(self):
         use_bounds = bool(self.chk_use_bounds.isChecked())
@@ -268,22 +282,28 @@ class SurfaceComparisonTaskPanel:
             return
 
         self._corridors = _find_corridors(self.doc)
-        self._meshes = _find_meshes(self.doc)
+        self._surfaces = _find_surface_sources(self.doc)
         prj = _find_project(self.doc)
-        cmp_obj = _find_surface_comparison(self.doc)
+        cmp_obj = _find_cut_fill_calc(self.doc)
+        if cmp_obj is not None:
+            try:
+                if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison"):
+                    cmp_obj.Label = "Cut-Fill Calc"
+            except Exception:
+                pass
 
         preferred_corridor = None
-        preferred_mesh = None
+        preferred_surface = None
         if prj is not None:
             preferred_corridor = getattr(prj, "CorridorLoft", None)
-            preferred_mesh = getattr(prj, "Terrain", None)
+            preferred_surface = getattr(prj, "Terrain", None)
 
         if cmp_obj is not None:
             try:
                 if getattr(cmp_obj, "SourceCorridor", None) is not None:
                     preferred_corridor = cmp_obj.SourceCorridor
                 if getattr(cmp_obj, "ExistingSurface", None) is not None:
-                    preferred_mesh = cmp_obj.ExistingSurface
+                    preferred_surface = cmp_obj.ExistingSurface
             except Exception:
                 pass
 
@@ -324,56 +344,61 @@ class SurfaceComparisonTaskPanel:
             finally:
                 self._loading = False
 
-        sel_mesh = _selected_mesh()
-        if sel_mesh is not None:
-            preferred_mesh = sel_mesh
+        sel_surface = _selected_surface()
+        if sel_surface is not None:
+            preferred_surface = sel_surface
 
         self._fill_combo(self.cmb_corridor, self._corridors, preferred_corridor)
-        self._fill_combo(self.cmb_mesh, self._meshes, preferred_mesh)
+        self._fill_combo(self.cmb_surface, self._surfaces, preferred_surface)
         self._update_bounds_ui()
 
         msg = []
         msg.append(f"CorridorLoft: {len(self._corridors)} found")
-        msg.append(f"Mesh sources: {len(self._meshes)} found")
+        msg.append(f"Surface sources: {len(self._surfaces)} found (Mesh/Shape)")
         if cmp_obj is not None:
-            msg.append("SurfaceComparison object: FOUND (will update)")
+            msg.append("Cut-Fill Calc object: FOUND (will update)")
             try:
                 msg.append(f"Last status: {getattr(cmp_obj, 'Status', '')}")
             except Exception:
                 pass
         else:
-            msg.append("SurfaceComparison object: NOT FOUND (will create)")
+            msg.append("Cut-Fill Calc object: NOT FOUND (will create)")
         self.lbl_info.setText("\n".join(msg))
 
-    def _use_selected_mesh(self):
-        sel = _selected_mesh()
+    def _use_selected_surface(self):
+        sel = _selected_surface()
         if sel is None:
             QtWidgets.QMessageBox.information(
                 None,
-                "Surface Comparison",
-                "No mesh selected. Select a mesh object in tree or 3D view first.",
+                "Cut-Fill Calc",
+                "No valid surface selected. Select Mesh/Shape object in tree or 3D view first.",
             )
             return
-        for i, o in enumerate(self._meshes):
+        for i, o in enumerate(self._surfaces):
             if o == sel:
-                self.cmb_mesh.setCurrentIndex(i)
+                self.cmb_surface.setCurrentIndex(i)
                 return
         self._refresh_context()
 
-    def _create_or_get_surface_comparison(self):
-        cmp_obj = _find_surface_comparison(self.doc)
+    def _create_or_get_cut_fill_calc(self):
+        cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
+            try:
+                if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison", "Cut-Fill Calc"):
+                    cmp_obj.Label = "Cut-Fill Calc"
+            except Exception:
+                pass
             return cmp_obj
 
-        cmp_obj = self.doc.addObject("Part::FeaturePython", "SurfaceComparison")
-        SurfaceComparison(cmp_obj)
-        ViewProviderSurfaceComparison(cmp_obj.ViewObject)
-        cmp_obj.Label = "Existing/Design Surface Comparison"
+        cmp_obj = self.doc.addObject("Part::FeaturePython", "CutFillCalc")
+        CutFillCalc(cmp_obj)
+        ViewProviderCutFillCalc(cmp_obj.ViewObject)
+        cmp_obj.Label = "Cut-Fill Calc"
         return cmp_obj
 
     def _generate(self):
         if bool(getattr(self, "_running", False)):
-            QtWidgets.QMessageBox.information(None, "Surface Comparison", "Already running.")
+            QtWidgets.QMessageBox.information(None, "Cut-Fill Calc", "Already running.")
             return
 
         if self.doc is None:
@@ -383,35 +408,43 @@ class SurfaceComparisonTaskPanel:
         if corridor is None:
             QtWidgets.QMessageBox.warning(
                 None,
-                "Surface Comparison",
+                "Cut-Fill Calc",
                 "No CorridorLoft selected. Run Generate Corridor Loft first.",
             )
             return
 
-        mesh = self._current_mesh()
-        if mesh is None:
+        source = self._current_surface()
+        if source is None:
             QtWidgets.QMessageBox.warning(
                 None,
-                "Surface Comparison",
-                "No Existing Surface mesh selected.",
+                "Cut-Fill Calc",
+                "No Existing Surface selected.",
             )
             return
 
-        # Existing mesh quality gate.
-        mesh_facets = self._mesh_facets(mesh)
-        min_facets = int(self.spin_min_facets.value())
-        if mesh_facets < min_facets:
+        # Existing source quality gate.
+        if _is_mesh_obj(source):
+            mesh_facets = self._mesh_facets(source)
+            min_facets = int(self.spin_min_facets.value())
+            if mesh_facets < min_facets:
+                QtWidgets.QMessageBox.warning(
+                    None,
+                    "Cut-Fill Calc",
+                    f"Existing mesh facets {mesh_facets} < Min Mesh Facets {min_facets}.",
+                )
+                return
+            if not self._mesh_xy_valid(source):
+                QtWidgets.QMessageBox.warning(
+                    None,
+                    "Cut-Fill Calc",
+                    "Existing mesh XY bounds are degenerate.",
+                )
+                return
+        elif not self._shape_xy_valid(source):
             QtWidgets.QMessageBox.warning(
                 None,
-                "Surface Comparison",
-                f"Existing mesh facets {mesh_facets} < Min Mesh Facets {min_facets}.",
-            )
-            return
-        if not self._mesh_xy_valid(mesh):
-            QtWidgets.QMessageBox.warning(
-                None,
-                "Surface Comparison",
-                "Existing mesh XY bounds are degenerate.",
+                "Cut-Fill Calc",
+                "Existing shape XY bounds are degenerate.",
             )
             return
 
@@ -421,13 +454,13 @@ class SurfaceComparisonTaskPanel:
         if est is not None and est > max_samples:
             QtWidgets.QMessageBox.warning(
                 None,
-                "Surface Comparison",
+                "Cut-Fill Calc",
                 f"Estimated samples {est} exceed Max Samples {max_samples}.\n"
                 "Increase Cell Size, reduce domain, or raise Max Samples.",
             )
             return
 
-        cmp_obj = self._create_or_get_surface_comparison()
+        cmp_obj = self._create_or_get_cut_fill_calc()
         proxy = getattr(cmp_obj, "Proxy", None)
         self._running = True
         self._cancel_requested = False
@@ -450,7 +483,7 @@ class SurfaceComparisonTaskPanel:
                     pass
             try:
                 cmp_obj.SourceCorridor = corridor
-                cmp_obj.ExistingSurface = mesh
+                cmp_obj.ExistingSurface = source
                 cmp_obj.CellSize = float(self.spin_cell.value())
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
                 cmp_obj.MinMeshFacets = int(self.spin_min_facets.value())
@@ -482,11 +515,11 @@ class SurfaceComparisonTaskPanel:
                 if hasattr(prj, "CorridorLoft"):
                     prj.CorridorLoft = corridor
                 if hasattr(prj, "Terrain"):
-                    prj.Terrain = mesh
-                if hasattr(prj, "SurfaceComparison"):
-                    prj.SurfaceComparison = cmp_obj
+                    prj.Terrain = source
+                if hasattr(prj, "CutFillCalc"):
+                    prj.CutFillCalc = cmp_obj
                 CorridorRoadProject.adopt(prj, corridor)
-                CorridorRoadProject.adopt(prj, mesh)
+                CorridorRoadProject.adopt(prj, source)
                 CorridorRoadProject.adopt(prj, cmp_obj)
 
             cmp_obj.touch()
@@ -538,7 +571,7 @@ class SurfaceComparisonTaskPanel:
             f"deadband={float(getattr(cmp_obj, 'DeltaDeadband', 0.0)):.3f} (scaled), "
             f"clamp={float(getattr(cmp_obj, 'DeltaClamp', 0.0)):.3f} (scaled)",
         ]
-        QtWidgets.QMessageBox.information(None, "Surface Comparison", "\n".join(msg))
+        QtWidgets.QMessageBox.information(None, "Cut-Fill Calc", "\n".join(msg))
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
@@ -556,6 +589,13 @@ class SurfaceComparisonTaskPanel:
     def _mesh_xy_valid(self, mesh_obj):
         try:
             bb = mesh_obj.Mesh.BoundBox
+            return float(bb.XLength) > 1e-9 and float(bb.YLength) > 1e-9
+        except Exception:
+            return False
+
+    def _shape_xy_valid(self, shape_obj):
+        try:
+            bb = shape_obj.Shape.BoundBox
             return float(bb.XLength) > 1e-9 and float(bb.YLength) > 1e-9
         except Exception:
             return False

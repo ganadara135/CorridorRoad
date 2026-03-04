@@ -147,7 +147,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
-### 2.11 SurfaceComparison (`objects/obj_surface_comparison.py`)
+### 2.11 CutFillCalc (`objects/obj_cut_fill_calc.py`)
 - Purpose: Existing/Design surface comparison and cut/fill summary.
 - Inputs:
   - `SourceCorridor` (`CorridorLoft`)
@@ -259,15 +259,15 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Links current `SectionSet`.
 - Uses section schema (v1/v2) and daylight-resolved section wires.
 
-### 3.8 Surface Comparison Command (`commands/cmd_generate_surface_comparison.py`)
-- Opens dedicated TaskPanel (`ui/task_surface_comparison.py`).
+### 3.8 Cut-Fill Calc Command (`commands/cmd_generate_cut_fill_calc.py`)
+- Opens dedicated TaskPanel (`ui/task_cut_fill_calc.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`CorridorLoft`, Existing Mesh)
   - set comparison controls (domain/resolution/update policy)
   - show run progress and support cancel
 - Execution path:
-  - updates/creates `SurfaceComparison`
-  - updates project links (`CorridorLoft`, `Terrain`, `SurfaceComparison`)
+  - updates/creates `CutFillCalc`
+  - updates project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
   - runs comparison through object proxy execution path for responsive UI
 
 ### 3.9 Design Terrain Command (`commands/cmd_generate_design_terrain.py`)
@@ -283,7 +283,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ### 3.10 Command Label Policy
 - Toolbar/menu labels omit `Generate` prefix.
-- Command IDs remain stable (`CorridorRoad_Generate...`) for compatibility.
+- Command IDs follow current feature naming (`CorridorRoad_GenerateCutFillCalc` etc.).
 
 ## 4) Design Rules
 - Separation of concerns is mandatory:
@@ -362,7 +362,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - command/task-panel flow
 - `git grep` / `python -m compileall` are not mandatory validation gates in this project workflow.
 
-## 8) Pre-SurfaceComparison Decisions (Fixed 7)
+## 8) Pre-CutFillCalc Decisions (Fixed 7)
 Before entering `Existing/Design Surface` comparison stage, these are fixed:
 
 1. Corridor recompute UX
@@ -381,7 +381,7 @@ Before entering `Existing/Design Surface` comparison stage, these are fixed:
 - Default cell/sample size: `1.0 m` (user-adjustable range: `0.2~5.0 m`).
 
 5. Result schema
-- `SurfaceComparison` must store: `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`.
+- `CutFillCalc` must store: `DeltaMin/Max/Mean`, `CutVolume`, `FillVolume`, `NoDataArea`, `CellSize`, `Status`.
 
 6. Validation sample and tolerance
 - Keep one fixed sample case for regression.

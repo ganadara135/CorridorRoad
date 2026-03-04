@@ -3,7 +3,7 @@
 This repository is a FreeCAD Workbench (Python) for road corridor design.
 
 ## Project Goal (Pipeline)
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Surface Comparison -> Cut/Fill Volume
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Cut-Fill Calc -> Cut/Fill Volume
 
 ## Current Implementation Scope
 ### Implemented
@@ -22,7 +22,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Corridor loft generation (`CorridorLoft`, solid mode)
 - Design grading surface generation (`DesignGradingSurface`, surface mode)
 - Design terrain generation (`DesignTerrain`, composite surface mode)
-- Existing/Design surface comparison phase-1 (`SurfaceComparison`, mesh-based)
+- Existing/Design surface comparison phase-1 (`CutFillCalc`, mesh/shape-based)
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
@@ -166,7 +166,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - ruled-surface compound between neighboring section wires
   - intended for 3D side-slope visualization
 
-### 11) SurfaceComparison
+### 11) CutFillCalc
 - Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
@@ -284,14 +284,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ### Command Labels
 - toolbar/menu labels do not include `Generate`.
-- command IDs stay unchanged for compatibility.
+- command IDs follow current feature naming (e.g., `CorridorRoad_GenerateCutFillCalc`).
 
-### Generate Surface Comparison Panel
+### Cut-Fill Calc Panel
 - command opens dedicated TaskPanel (no immediate heavy run on command click)
 - user explicitly selects `CorridorLoft` and Existing mesh source
 - panel shows run status/progress and supports cancel
 - panel provides 3D map controls (deadband/clamp/z-offset/max visual cells)
-- run path updates `SurfaceComparison` + project links (`CorridorLoft`, `Terrain`, `SurfaceComparison`)
+- run path updates `CutFillCalc` + project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
 
 ### PVI Editor
 - Updates/creates `VerticalAlignment`.
