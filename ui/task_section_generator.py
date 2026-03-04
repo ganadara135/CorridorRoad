@@ -40,6 +40,34 @@ def _find_project(doc):
     return None
 
 
+def _is_mesh_obj(obj):
+    try:
+        return hasattr(obj, "Mesh") and obj.Mesh is not None and int(obj.Mesh.CountFacets) > 0
+    except Exception:
+        return False
+
+
+def _find_terrain_sources(doc):
+    out = []
+    if doc is None:
+        return out
+    for o in doc.Objects:
+        if _is_mesh_obj(o):
+            out.append(o)
+    return out
+
+
+def _selected_mesh_terrain():
+    try:
+        sel = list(Gui.Selection.getSelection() or [])
+        for o in sel:
+            if _is_mesh_obj(o):
+                return o
+    except Exception:
+        pass
+    return None
+
+
 def _find_source_centerline_display(doc):
     if doc is None:
         return None
@@ -52,6 +80,7 @@ def _find_source_centerline_display(doc):
 class SectionGeneratorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._terrains = []
         self.form = self._build_ui()
         self._refresh_context()
 
@@ -152,12 +181,18 @@ class SectionGeneratorTaskPanel:
         self.spin_side_s_right.setRange(-1000.0, 1000.0)
         self.spin_side_s_right.setDecimals(3)
         self.spin_side_s_right.setValue(50.0)
-        self.chk_daylight = QtWidgets.QCheckBox("Use terrain daylight (Stage-2)")
-        self.chk_daylight.setChecked(False)
+        self.chk_daylight = QtWidgets.QCheckBox("Daylight Auto (SectionSet)")
+        self.chk_daylight.setChecked(True)
+        self.cmb_day_terrain = QtWidgets.QComboBox()
+        self.btn_pick_day_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.spin_day_step = QtWidgets.QDoubleSpinBox()
         self.spin_day_step.setRange(0.2 * scale, 100.0 * scale)
         self.spin_day_step.setDecimals(3)
         self.spin_day_step.setValue(1.0 * scale)
+        self.spin_day_max_w = QtWidgets.QDoubleSpinBox()
+        self.spin_day_max_w.setRange(1.0 * scale, 10000.0 * scale)
+        self.spin_day_max_w.setDecimals(3)
+        self.spin_day_max_w.setValue(200.0 * scale)
         self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fo.addRow(self.chk_create_new)
@@ -174,7 +209,10 @@ class SectionGeneratorTaskPanel:
         fo.addRow("Side Slope Left (%):", self.spin_side_s_left)
         fo.addRow("Side Slope Right (%):", self.spin_side_s_right)
         fo.addRow(self.chk_daylight)
+        fo.addRow("Daylight Terrain (Mesh):", self.cmb_day_terrain)
+        fo.addRow(self.btn_pick_day_terrain)
         fo.addRow("Daylight Search Step:", self.spin_day_step)
+        fo.addRow("Daylight Max Search Width:", self.spin_day_max_w)
         fo.addRow(self.btn_make_assembly)
         fo.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
@@ -186,6 +224,7 @@ class SectionGeneratorTaskPanel:
         self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
+        self.btn_pick_day_terrain.clicked.connect(self._use_selected_day_terrain)
         self.btn_make_assembly.clicked.connect(self._create_assembly_template)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
@@ -221,7 +260,48 @@ class SectionGeneratorTaskPanel:
         self.spin_side_s_left.setEnabled(on)
         self.spin_side_s_right.setEnabled(on)
         self.chk_daylight.setEnabled(on)
+        self.cmb_day_terrain.setEnabled(on and bool(self.chk_daylight.isChecked()))
+        self.btn_pick_day_terrain.setEnabled(on and bool(self.chk_daylight.isChecked()))
         self.spin_day_step.setEnabled(on and bool(self.chk_daylight.isChecked()))
+        self.spin_day_max_w.setEnabled(on and bool(self.chk_daylight.isChecked()))
+
+    def _format_obj(self, obj):
+        return f"[Mesh] {obj.Label} ({obj.Name})"
+
+    def _fill_combo(self, combo, objects, selected=None):
+        combo.clear()
+        for i, o in enumerate(objects):
+            combo.addItem(self._format_obj(o), i)
+        if not objects:
+            return
+        idx = 0
+        if selected is not None:
+            for i, o in enumerate(objects):
+                if o == selected:
+                    idx = i
+                    break
+        combo.setCurrentIndex(idx)
+
+    def _current_daylight_terrain(self):
+        i = int(self.cmb_day_terrain.currentIndex())
+        if i < 0 or i >= len(self._terrains):
+            return None
+        return self._terrains[i]
+
+    def _use_selected_day_terrain(self):
+        sel = _selected_mesh_terrain()
+        if sel is None:
+            QtWidgets.QMessageBox.information(
+                None,
+                "Generate Sections",
+                "No terrain mesh selected. Select a Mesh object first.",
+            )
+            return
+        for i, o in enumerate(self._terrains):
+            if o == sel:
+                self.cmb_day_terrain.setCurrentIndex(i)
+                return
+        self._refresh_context()
 
     def _set_suspend_recompute(self, obj, flag: bool):
         try:
@@ -252,6 +332,8 @@ class SectionGeneratorTaskPanel:
             asm.UseDaylightToTerrain = bool(self.chk_daylight.isChecked())
         if hasattr(asm, "DaylightSearchStep"):
             asm.DaylightSearchStep = float(self.spin_day_step.value())
+        if hasattr(asm, "DaylightMaxSearchWidth"):
+            asm.DaylightMaxSearchWidth = float(self.spin_day_max_w.value())
 
     def _resolve_template_base(self):
         if bool(self.chk_place_at_start.isChecked()):
@@ -278,6 +360,25 @@ class SectionGeneratorTaskPanel:
         asm = _find_first_by_proxy_type(self.doc, "AssemblyTemplate")
         sec = _find_first_by_proxy_type(self.doc, "SectionSet")
         aln = _find_alignment(self.doc)
+        prj = _find_project(self.doc)
+        self._terrains = _find_terrain_sources(self.doc)
+
+        pref_terrain = None
+        if sec is not None and hasattr(sec, "TerrainMesh"):
+            pref_terrain = getattr(sec, "TerrainMesh", None)
+        if pref_terrain is None and prj is not None and hasattr(prj, "Terrain"):
+            pref_terrain = getattr(prj, "Terrain", None)
+        sel_terrain = _selected_mesh_terrain()
+        if sel_terrain is not None:
+            pref_terrain = sel_terrain
+        self._fill_combo(self.cmb_day_terrain, self._terrains, pref_terrain)
+
+        if sec is not None:
+            try:
+                if hasattr(sec, "DaylightAuto"):
+                    self.chk_daylight.setChecked(bool(sec.DaylightAuto))
+            except Exception:
+                pass
 
         if asm is not None:
             try:
@@ -296,10 +397,14 @@ class SectionGeneratorTaskPanel:
                     self.spin_side_s_left.setValue(float(asm.LeftSideSlopePct))
                 if hasattr(asm, "RightSideSlopePct"):
                     self.spin_side_s_right.setValue(float(asm.RightSideSlopePct))
-                if hasattr(asm, "UseDaylightToTerrain"):
+                # Backward-compat fallback: if SectionSet.DaylightAuto is not available,
+                # keep using legacy AssemblyTemplate.UseDaylightToTerrain.
+                if (sec is None or (not hasattr(sec, "DaylightAuto"))) and hasattr(asm, "UseDaylightToTerrain"):
                     self.chk_daylight.setChecked(bool(asm.UseDaylightToTerrain))
                 if hasattr(asm, "DaylightSearchStep"):
                     self.spin_day_step.setValue(float(asm.DaylightSearchStep))
+                if hasattr(asm, "DaylightMaxSearchWidth"):
+                    self.spin_day_max_w.setValue(float(asm.DaylightMaxSearchWidth))
             except Exception:
                 pass
 
@@ -320,12 +425,15 @@ class SectionGeneratorTaskPanel:
         msg.append(f"Centerline Display: {'FOUND' if src else 'NOT FOUND'}")
         msg.append(f"Assembly Template: {'FOUND' if asm else 'NOT FOUND'}")
         msg.append(f"Section Set: {'FOUND' if sec else 'NOT FOUND'}")
+        msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh)")
+        if pref_terrain is not None:
+            msg.append(f"Daylight terrain: {pref_terrain.Label} ({pref_terrain.Name})")
         msg.append("")
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
-        msg.append("4) Stage-2 daylight uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
+        msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
         self.lbl_info.setText("\n".join(msg))
         self._update_side_ui()
 
@@ -450,10 +558,17 @@ class SectionGeneratorTaskPanel:
             sec.Interval = float(self.spin_itv.value())
             sec.StationText = str(self.txt_manual.toPlainText() or "")
             sec.CreateChildSections = bool(self.chk_children.isChecked())
+            if hasattr(sec, "DaylightAuto"):
+                sec.DaylightAuto = bool(self.chk_daylight.isChecked())
             try:
-                prj0 = _find_project(self.doc)
-                if prj0 is not None and hasattr(sec, "TerrainMesh") and hasattr(prj0, "Terrain"):
-                    sec.TerrainMesh = prj0.Terrain
+                if hasattr(sec, "TerrainMesh"):
+                    terr = self._current_daylight_terrain()
+                    if terr is not None:
+                        sec.TerrainMesh = terr
+                    else:
+                        prj0 = _find_project(self.doc)
+                        if prj0 is not None and hasattr(prj0, "Terrain"):
+                            sec.TerrainMesh = prj0.Terrain
             except Exception:
                 pass
             sec.touch()

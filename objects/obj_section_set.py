@@ -120,6 +120,9 @@ def ensure_section_set_properties(obj):
         obj.addProperty("App::PropertyLink", "AssemblyTemplate", "Sections", "AssemblyTemplate link")
     if not hasattr(obj, "TerrainMesh"):
         obj.addProperty("App::PropertyLink", "TerrainMesh", "Sections", "Optional terrain source link for daylight (Mesh/Shape)")
+    if not hasattr(obj, "DaylightAuto"):
+        obj.addProperty("App::PropertyBool", "DaylightAuto", "Sections", "Auto daylight to terrain during section build")
+        obj.DaylightAuto = True
 
     if not hasattr(obj, "Mode"):
         obj.addProperty("App::PropertyEnumeration", "Mode", "Sections", "Station selection mode")
@@ -451,11 +454,18 @@ class SectionSet:
     def _solve_daylight_width(edge_p, outward_n, up_z, slope_pct: float, max_w: float, sampler, step: float):
         mw = max(0.0, float(max_w))
         if sampler is None or mw <= 1e-9:
-            return mw
+            return mw, False
 
         st = max(0.2, float(step))
         if st > mw:
             st = mw
+        if st <= 1e-12:
+            return mw, False
+        # Keep runtime bounded even when max width is large or step is tiny.
+        max_iter = 5000
+        est_iter = int(math.ceil(mw / st)) + 1
+        if est_iter > max_iter:
+            st = max(st, float(mw) / float(max_iter))
 
         def f_at(w):
             q = edge_p + outward_n * float(w) + up_z * (-float(w) * float(slope_pct) / 100.0)
@@ -466,8 +476,7 @@ class SectionSet:
 
         # Daylight policy:
         # - If a sign-change intersection is found, use that root.
-        # - If no intersection exists inside [0, max_w], keep max_w
-        #   (do not collapse to near-zero width).
+        # - If no intersection exists inside [0, max_w], return max_w with hit=False.
         had_sample = False
         prev_w = None
         prev_f = None
@@ -478,19 +487,19 @@ class SectionSet:
                 had_sample = True
                 if prev_f is not None and (prev_f == 0.0 or fv == 0.0 or (prev_f > 0.0 and fv < 0.0) or (prev_f < 0.0 and fv > 0.0)):
                     if prev_w is None:
-                        return w
+                        return w, True
                     den = (fv - prev_f)
                     if abs(den) <= 1e-12:
-                        return w
+                        return w, True
                     t = -prev_f / den
-                    return max(0.0, min(mw, prev_w + (w - prev_w) * t))
+                    return max(0.0, min(mw, prev_w + (w - prev_w) * t)), True
                 prev_w = w
                 prev_f = fv
             w += st
 
         if not had_sample:
-            return mw
-        return mw
+            return mw, False
+        return mw, False
 
     @staticmethod
     def _daylight_signed_slope(edge_p, slope_pct: float, sampler):
@@ -523,7 +532,14 @@ class SectionSet:
         return sign_user * mag
 
     @staticmethod
-    def build_section_wire(source_obj, asm_obj, station: float, prev_n: App.Vector = None, terrain_sampler=None):
+    def build_section_wire(
+        source_obj,
+        asm_obj,
+        station: float,
+        prev_n: App.Vector = None,
+        terrain_sampler=None,
+        use_daylight: bool = False,
+    ):
         scale = get_length_scale(getattr(source_obj, "Document", None), default=1.0)
         frame = Centerline3D.frame_at_station(source_obj, float(station), eps=0.1 * scale, prev_n=prev_n)
         p = frame["point"]
@@ -539,8 +555,9 @@ class SectionSet:
         rsw = max(0.0, float(getattr(asm_obj, "RightSideWidth", 0.0)))
         lss = float(getattr(asm_obj, "LeftSideSlopePct", 0.0))
         rss = float(getattr(asm_obj, "RightSideSlopePct", 0.0))
-        use_day = bool(getattr(asm_obj, "UseDaylightToTerrain", False))
+        use_day = bool(use_daylight) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
+        day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
 
         dz_l = -lw * ls / 100.0
         dz_r = -rw * rs / 100.0
@@ -558,19 +575,35 @@ class SectionSet:
         if use_ss and lsw > 1e-9:
             w_l = lsw
             if use_day:
-                w_l = SectionSet._solve_daylight_width(
-                    p_l, n, z, lss_eff, lsw, terrain_sampler, day_step
-                )
-            w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
+                try:
+                    search_w_l = max(lsw, day_max_w)
+                    w_l_day, hit_l = SectionSet._solve_daylight_width(
+                        p_l, n, z, lss_eff, search_w_l, terrain_sampler, day_step
+                    )
+                    w_l = w_l_day if hit_l else lsw
+                    w_l = max(0.01 if lsw > 1e-9 else 0.0, min(search_w_l, w_l))
+                except Exception:
+                    # Fail-safe: never block section creation due to daylight solve failure.
+                    w_l = max(0.01 if lsw > 1e-9 else 0.0, lsw)
+            else:
+                w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
             p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
             pts = [p_lt] + pts
         if use_ss and rsw > 1e-9:
             w_r = rsw
             if use_day:
-                w_r = SectionSet._solve_daylight_width(
-                    p_r, -n, z, rss_eff, rsw, terrain_sampler, day_step
-                )
-            w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
+                try:
+                    search_w_r = max(rsw, day_max_w)
+                    w_r_day, hit_r = SectionSet._solve_daylight_width(
+                        p_r, -n, z, rss_eff, search_w_r, terrain_sampler, day_step
+                    )
+                    w_r = w_r_day if hit_r else rsw
+                    w_r = max(0.01 if rsw > 1e-9 else 0.0, min(search_w_r, w_r))
+                except Exception:
+                    # Fail-safe: never block section creation due to daylight solve failure.
+                    w_r = max(0.01 if rsw > 1e-9 else 0.0, rsw)
+            else:
+                w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
             p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
             pts = pts + [p_rt]
 
@@ -594,8 +627,12 @@ class SectionSet:
 
         terrain_sampler = None
         terrain_found = False
+        use_ss = bool(getattr(asm, "UseSideSlopes", False))
+        lsw = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0)))
+        rsw = max(0.0, float(getattr(asm, "RightSideWidth", 0.0)))
+        use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
         try:
-            if bool(getattr(asm, "UseDaylightToTerrain", False)):
+            if use_day:
                 tsrc = SectionSet._resolve_terrain_source(obj)
                 terrain_found = tsrc is not None
                 if tsrc is not None:
@@ -607,9 +644,25 @@ class SectionSet:
         wires = []
         prev_n = None
         for s in stations:
-            w, prev_n = SectionSet.build_section_wire(
-                src, asm, float(s), prev_n=prev_n, terrain_sampler=terrain_sampler
-            )
+            try:
+                w, prev_n = SectionSet.build_section_wire(
+                    src,
+                    asm,
+                    float(s),
+                    prev_n=prev_n,
+                    terrain_sampler=terrain_sampler,
+                    use_daylight=use_day,
+                )
+            except Exception:
+                # Per-station fail-safe: fall back to fixed-width side slopes.
+                w, prev_n = SectionSet.build_section_wire(
+                    src,
+                    asm,
+                    float(s),
+                    prev_n=prev_n,
+                    terrain_sampler=None,
+                    use_daylight=False,
+                )
             wires.append(w)
 
         return stations, wires, terrain_found, (terrain_sampler is not None)
@@ -716,9 +769,9 @@ class SectionSet:
 
             if bool(getattr(obj, "RebuildNow", False)):
                 obj.RebuildNow = False
-            use_day = bool(getattr(asm, "UseDaylightToTerrain", False)) if asm is not None else False
+            use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and (left_on or right_on)
             if use_day and (not terrain_found):
-                obj.Status = "WARN: UseDaylightToTerrain=True but no terrain source found. Fixed side widths used."
+                obj.Status = "WARN: DaylightAuto=True but no terrain source found. Fixed side widths used."
             elif use_day and terrain_found and (not sampler_ok):
                 obj.Status = "WARN: Terrain source found but daylight sampler failed. Fixed side widths used."
             else:
@@ -745,6 +798,7 @@ class SectionSet:
             "SourceCenterlineDisplay",
             "AssemblyTemplate",
             "TerrainMesh",
+            "DaylightAuto",
             "Mode",
             "StartStation",
             "EndStation",
