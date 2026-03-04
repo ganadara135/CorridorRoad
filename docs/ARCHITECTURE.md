@@ -197,6 +197,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
   - `AutoUpdate`, `RebuildNow`
+- Guardrails:
+  - scale-aware defaults from `Project.LengthScale`
+  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
 - Results:
   - `SampleCount`, `ValidCount`, `NoDataArea`, `NeedsRecompute`, `Status`
 - Merge rule:
@@ -268,12 +271,15 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - runs comparison through object proxy execution path for responsive UI
 
 ### 3.9 Design Terrain Command (`commands/cmd_generate_design_terrain.py`)
-- Creates/updates `DesignTerrain`.
-- Uses `DesignGradingSurface` + existing terrain source.
-- Existing terrain source resolve order:
-  - `Project.Terrain`
-  - terrain candidate fallback in document (prefer terrain-named object, then mesh)
-- Produces composite terrain surface for downstream visualization/workflow.
+- Opens dedicated TaskPanel (`ui/task_design_terrain.py`).
+- TaskPanel responsibilities:
+  - explicit source selection (`DesignGradingSurface`, `ExistingTerrain`)
+  - set `CellSize` / `MaxSamples` / `DomainMargin` / `AutoUpdate`
+  - show run progress and support cancel
+- Execution path:
+  - updates/creates `DesignTerrain`
+  - updates project links (`Terrain`, `DesignGradingSurface`, `DesignTerrain`)
+  - runs design-terrain merge through object proxy execution path
 
 ### 3.10 Command Label Policy
 - Toolbar/menu labels omit `Generate` prefix.

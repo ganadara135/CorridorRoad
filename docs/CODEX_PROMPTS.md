@@ -69,6 +69,12 @@ Before implementing `Existing/Design Surface` comparison:
 - Enforce minimum cell size policy: `CellSize >= 0.2 m * LengthScale`.
 - Keep one fixed validation sample with tolerance: elevation +/-0.01 m, volume +/-1%.
 
+## Task: Design Terrain UX
+- `Design Terrain` command should use dedicated TaskPanel with explicit source selection.
+- Do not rely on hidden auto-pick for `ExistingTerrain`.
+- Keep scale-aware defaults/guards (`LengthScale`, minimum cell size policy).
+- TaskPanel run path should expose progress and allow cancel.
+
 ## Task: Command Labels
 - Toolbar/menu `MenuText` should omit `Generate` prefix.
 - Keep command IDs unchanged for backward compatibility.

@@ -203,6 +203,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
   - `AutoUpdate`, `RebuildNow`
+- Guardrails:
+  - scale-aware defaults from `Project.LengthScale`
+  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
 - Results:
   - `SampleCount`, `ValidCount`, `NoDataArea`
   - `NeedsRecompute`, `Status`
@@ -271,11 +274,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - intended for 3D visualization of side slopes/daylight.
 
 ### Generate Design Terrain
-- command creates/updates `DesignTerrain` from `DesignGradingSurface` + existing terrain source.
-- existing terrain source resolve order:
-  - `Project.Terrain`
-  - document terrain candidate fallback
-- builds composite terrain for downstream use.
+- command opens dedicated TaskPanel (`ui/task_design_terrain.py`).
+- TaskPanel requires explicit source selection:
+  - `DesignGradingSurface`
+  - `ExistingTerrain` (Mesh/Shape)
+- TaskPanel applies options (`CellSize`, `MaxSamples`, `DomainMargin`, `AutoUpdate`) and runs merge.
+- TaskPanel shows progress and supports cancel during long runs.
+- updates project links (`Terrain`, `DesignGradingSurface`, `DesignTerrain`).
 
 ### Command Labels
 - toolbar/menu labels do not include `Generate`.
