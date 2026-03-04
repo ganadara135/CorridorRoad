@@ -1,6 +1,5 @@
 # CorridorRoad/objects/obj_design_grading_surface.py
 import FreeCAD as App
-import Part
 
 from objects.obj_section_set import SectionSet
 
@@ -66,6 +65,15 @@ def _mark_design_terrain_needs_recompute(obj_dep):
         pass
 
 
+def _empty_mesh():
+    try:
+        import Mesh
+
+        return Mesh.Mesh()
+    except Exception:
+        return None
+
+
 def ensure_design_grading_surface_properties(obj):
     if not hasattr(obj, "SourceSectionSet"):
         obj.addProperty("App::PropertyLink", "SourceSectionSet", "DesignSurface", "SectionSet source")
@@ -101,6 +109,14 @@ def ensure_design_grading_surface_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "Mesh"):
+        try:
+            obj.addProperty("Mesh::PropertyMeshKernel", "Mesh", "Result", "Generated grading mesh")
+            em = _empty_mesh()
+            if em is not None:
+                obj.Mesh = em
+        except Exception:
+            pass
 
 
 class DesignGradingSurface:
@@ -169,29 +185,47 @@ class DesignGradingSurface:
         return out, int(ref_n or 0)
 
     @staticmethod
-    def _build_ruled_faces(pt_lists):
-        faces = []
+    def _add_triangle(mesh_out, p0, p1, p2, area_tol: float = 1e-12):
+        try:
+            if (p1 - p0).Length <= area_tol or (p2 - p0).Length <= area_tol:
+                return 0
+            n = (p1 - p0).cross(p2 - p0)
+            if n.Length <= area_tol:
+                return 0
+            mesh_out.addFacet(p0, p1, p2)
+            return 1
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _build_mesh_from_sections(pt_lists):
+        import Mesh
+
+        m = Mesh.Mesh()
+        quad_count = 0
+        tri_count = 0
         for i in range(len(pt_lists) - 1):
             a = pt_lists[i]
             b = pt_lists[i + 1]
             for j in range(len(a) - 1):
-                e0 = Part.makeLine(a[j], a[j + 1])
-                e1 = Part.makeLine(b[j], b[j + 1])
-                try:
-                    f = Part.makeRuledSurface(e0, e1)
-                    if f is not None and (not f.isNull()):
-                        faces.append(f)
-                except Exception:
-                    # Keep generation robust even with local degeneracy.
-                    continue
-        return faces
+                p00 = a[j]
+                p01 = a[j + 1]
+                p10 = b[j]
+                p11 = b[j + 1]
+                tri_count += DesignGradingSurface._add_triangle(m, p00, p01, p11)
+                tri_count += DesignGradingSurface._add_triangle(m, p00, p11, p10)
+                quad_count += 1
+        return m, int(quad_count), int(tri_count)
 
     def execute(self, obj):
         ensure_design_grading_surface_properties(obj)
         try:
             src = getattr(obj, "SourceSectionSet", None)
             if src is None:
-                obj.Shape = Part.Shape()
+                if hasattr(obj, "Mesh"):
+                    em = _empty_mesh()
+                    if em is not None:
+                        obj.Mesh = em
                 obj.SectionCount = 0
                 obj.PointCountPerSection = 0
                 obj.FaceCount = 0
@@ -202,16 +236,21 @@ class DesignGradingSurface:
 
             stations, wires, _tf, _so = SectionSet.build_section_wires(src)
             pts, pt_count = DesignGradingSurface._validate_and_points(stations, wires)
-            faces = DesignGradingSurface._build_ruled_faces(pts)
-            if not faces:
-                raise Exception("No valid ruled faces were generated.")
+            mesh_out, quad_count, tri_count = DesignGradingSurface._build_mesh_from_sections(pts)
+            if tri_count <= 0:
+                raise Exception("No valid grading mesh triangles were generated.")
 
-            obj.Shape = Part.Compound(faces)
+            if hasattr(obj, "Mesh"):
+                obj.Mesh = mesh_out
             obj.SectionCount = int(len(stations))
             obj.PointCountPerSection = int(pt_count)
-            obj.FaceCount = int(len(faces))
+            obj.FaceCount = int(quad_count)
             obj.SchemaVersion = int(getattr(src, "SectionSchemaVersion", 0))
-            obj.Status = "OK (Surface)"
+            try:
+                fc = int(getattr(getattr(obj, "Mesh", None), "CountFacets", 0))
+            except Exception:
+                fc = 0
+            obj.Status = f"OK (Mesh): quads={quad_count}, facets={fc}"
             _mark_recompute_flag(obj, False)
 
             # Push updates to linked DesignTerrain objects as pending recompute.
@@ -227,7 +266,10 @@ class DesignGradingSurface:
                 obj.RebuildNow = False
 
         except Exception as ex:
-            obj.Shape = Part.Shape()
+            if hasattr(obj, "Mesh"):
+                em = _empty_mesh()
+                if em is not None:
+                    obj.Mesh = em
             obj.SectionCount = 0
             obj.PointCountPerSection = 0
             obj.FaceCount = 0

@@ -53,7 +53,7 @@ class CmdGenerateDesignGradingSurface:
 
         surf = _find_design_grading_surface(doc)
         if surf is None:
-            surf = doc.addObject("Part::FeaturePython", "DesignGradingSurface")
+            surf = doc.addObject("Mesh::FeaturePython", "DesignGradingSurface")
             DesignGradingSurface(surf)
             ViewProviderDesignGradingSurface(surf.ViewObject)
             surf.Label = "Design Grading Surface"

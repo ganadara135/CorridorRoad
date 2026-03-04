@@ -1,7 +1,7 @@
 # CorridorRoad Architecture
 
 ## 1) Pipeline View
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Surface Comparison -> Cut/Fill
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 
 ## 2) Object Responsibilities
 ### 2.1 VerticalAlignment (`objects/obj_vertical_alignment.py`)
@@ -141,8 +141,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `SectionCount`, `PointCountPerSection`, `FaceCount`, `SchemaVersion`
   - `NeedsRecompute`, `Status`
 - Output mode:
-  - ruled-surface compound between neighboring section wires
-  - intended for 3D visualization of cut/fill side slopes
+  - ruled-surface base is tessellated to output mesh facets
+  - intended for 3D visualization of cut/fill side slopes and mesh-based analysis
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
@@ -190,10 +190,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
 
 ### 2.12 DesignTerrain (`objects/obj_design_terrain.py`)
-- Purpose: composite terrain surface from `DesignGradingSurface` and existing terrain.
+- Purpose: composite terrain mesh from `DesignGradingSurface` and existing terrain.
 - Inputs:
   - `SourceDesignSurface` (`DesignGradingSurface`)
-  - `ExistingTerrain` (Mesh/Shape source)
+  - `ExistingTerrain` (Mesh source)
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
   - `AutoUpdate`, `RebuildNow`
@@ -273,7 +273,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 ### 3.9 Design Terrain Command (`commands/cmd_generate_design_terrain.py`)
 - Opens dedicated TaskPanel (`ui/task_design_terrain.py`).
 - TaskPanel responsibilities:
-  - explicit source selection (`DesignGradingSurface`, `ExistingTerrain`)
+  - explicit source selection (`DesignGradingSurface`, `ExistingTerrain (Mesh)`)
   - set `CellSize` / `MaxSamples` / `DomainMargin` / `AutoUpdate`
   - show run progress and support cancel
 - Execution path:
@@ -292,8 +292,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - Centerline3D engine != Centerline3DDisplay rendering
 - Model representation policy:
   - `CorridorLoft` is Solid model
-  - `DesignGradingSurface` is Surface model (visual grading)
-  - `DesignTerrain` is Surface model (composite terrain)
+  - `DesignGradingSurface` is Mesh model (visual grading)
+  - `DesignTerrain` is Mesh model (composite terrain)
   - other design/analysis objects are Surface/Wire based
 - Section baseline must come from resolved H+V source data, not display wire tessellation.
 - Section frame must use fixed T-N-Z rule for consistency across recomputes.

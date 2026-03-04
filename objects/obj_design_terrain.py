@@ -2,7 +2,6 @@
 import math
 
 import FreeCAD as App
-import Part
 
 from objects.obj_project import get_length_scale
 
@@ -13,16 +12,18 @@ class _CanceledError(Exception):
     pass
 
 
+def _empty_mesh():
+    try:
+        import Mesh
+
+        return Mesh.Mesh()
+    except Exception:
+        return None
+
+
 def _is_mesh_object(obj) -> bool:
     try:
         return hasattr(obj, "Mesh") and obj.Mesh is not None and int(obj.Mesh.CountFacets) > 0
-    except Exception:
-        return False
-
-
-def _is_shape_object(obj) -> bool:
-    try:
-        return hasattr(obj, "Shape") and obj.Shape is not None and (not obj.Shape.isNull())
     except Exception:
         return False
 
@@ -64,7 +65,7 @@ def ensure_design_terrain_properties(obj):
     if not hasattr(obj, "SourceDesignSurface"):
         obj.addProperty("App::PropertyLink", "SourceDesignSurface", "DesignTerrain", "DesignGradingSurface source")
     if not hasattr(obj, "ExistingTerrain"):
-        obj.addProperty("App::PropertyLink", "ExistingTerrain", "DesignTerrain", "Existing terrain source (Mesh/Shape)")
+        obj.addProperty("App::PropertyLink", "ExistingTerrain", "DesignTerrain", "Existing terrain source (Mesh)")
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "DesignTerrain", "Sampling cell size (m)")
@@ -99,6 +100,14 @@ def ensure_design_terrain_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "Mesh"):
+        try:
+            obj.addProperty("Mesh::PropertyMeshKernel", "Mesh", "Result", "Generated composite terrain mesh")
+            em = _empty_mesh()
+            if em is not None:
+                obj.Mesh = em
+        except Exception:
+            pass
 
 
 class DesignTerrain:
@@ -133,31 +142,6 @@ class DesignTerrain:
             min(p0.y, p1.y, p2.y),
             max(p0.y, p1.y, p2.y),
         )
-
-    @staticmethod
-    def _triangles_from_shape(shape_obj, deflection: float):
-        shp = getattr(shape_obj, "Shape", None)
-        if shp is None or shp.isNull():
-            raise Exception("Shape source is empty.")
-        try:
-            pts, tri_idx = shp.tessellate(max(0.01, float(deflection)))
-        except Exception as ex:
-            raise Exception(f"Shape tessellation failed: {ex}")
-
-        triangles = []
-        for t in tri_idx:
-            try:
-                i0, i1, i2 = int(t[0]), int(t[1]), int(t[2])
-                p0, p1, p2 = _to_vec(pts[i0]), _to_vec(pts[i1]), _to_vec(pts[i2])
-                if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
-                    continue
-                bb = DesignTerrain._triangle_bbox_xy(p0, p1, p2)
-                triangles.append((p0, p1, p2, bb))
-            except Exception:
-                continue
-        if not triangles:
-            raise Exception("No valid triangles from shape.")
-        return triangles
 
     @staticmethod
     def _triangles_from_mesh(mesh_obj):
@@ -261,14 +245,6 @@ class DesignTerrain:
         if not triangles:
             raise Exception("No valid triangles from mesh.")
         return triangles
-
-    @staticmethod
-    def _triangles_from_source(obj, deflection: float):
-        if _is_mesh_object(obj):
-            return DesignTerrain._triangles_from_mesh(obj)
-        if _is_shape_object(obj):
-            return DesignTerrain._triangles_from_shape(obj, deflection)
-        raise Exception("Source must be mesh or shape.")
 
     @staticmethod
     def _build_xy_buckets(triangles, bucket_size: float, max_cells_per_triangle: int = 20000):
@@ -385,16 +361,6 @@ class DesignTerrain:
         return z_best
 
     @staticmethod
-    def _make_cell_face(x: float, y: float, cell: float, z: float):
-        h = 0.5 * float(cell)
-        p1 = App.Vector(float(x - h), float(y - h), float(z))
-        p2 = App.Vector(float(x + h), float(y - h), float(z))
-        p3 = App.Vector(float(x + h), float(y + h), float(z))
-        p4 = App.Vector(float(x - h), float(y + h), float(z))
-        w = Part.makePolygon([p1, p2, p3, p4, p1])
-        return Part.Face(w)
-
-    @staticmethod
     def _iter_grid_centers(xmin, xmax, ymin, ymax, step):
         if step <= 1e-9:
             step = 1.0
@@ -408,11 +374,9 @@ class DesignTerrain:
 
     @staticmethod
     def _source_bounds(src_obj):
-        if _is_mesh_object(src_obj):
-            return src_obj.Mesh.BoundBox
-        if _is_shape_object(src_obj):
-            return src_obj.Shape.BoundBox
-        raise Exception("Invalid terrain source bounds.")
+        if not _is_mesh_object(src_obj):
+            raise Exception("ExistingTerrain must be a valid mesh object.")
+        return src_obj.Mesh.BoundBox
 
     def execute(self, obj):
         ensure_design_terrain_properties(obj)
@@ -422,11 +386,11 @@ class DesignTerrain:
                 raise _CanceledError("Canceled by user.")
 
             dsg = getattr(obj, "SourceDesignSurface", None)
-            if dsg is None or (not _is_shape_object(dsg)):
-                raise Exception("Missing SourceDesignSurface (DesignGradingSurface).")
+            if dsg is None or (not _is_mesh_object(dsg)):
+                raise Exception("Missing SourceDesignSurface (DesignGradingSurface Mesh).")
             eg = getattr(obj, "ExistingTerrain", None)
-            if eg is None or (not (_is_mesh_object(eg) or _is_shape_object(eg))):
-                raise Exception("Missing ExistingTerrain (Mesh/Shape).")
+            if eg is None or (not _is_mesh_object(eg)):
+                raise Exception("Missing ExistingTerrain (Mesh).")
 
             cell = float(getattr(obj, "CellSize", 1.0 * scale))
             if (not math.isfinite(cell)) or cell <= 1e-6:
@@ -461,17 +425,11 @@ class DesignTerrain:
                     "Increase CellSize, reduce domain, or raise MaxSamples."
                 )
 
-            if self._report_progress(8.0, "Triangulating design grading surface"):
+            if self._report_progress(8.0, "Reading design grading mesh"):
                 raise _CanceledError("Canceled by user.")
-            defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
-            tri_d = DesignTerrain._triangles_from_shape(dsg, defl)
+            tri_d = self._triangles_from_mesh_progress(dsg, 8.0, 12.0, "Reading design grading mesh")
 
-            if _is_mesh_object(eg):
-                tri_e = self._triangles_from_mesh_progress(eg, 12.0, 20.0, "Reading existing terrain mesh")
-            else:
-                if self._report_progress(12.0, "Triangulating existing terrain shape"):
-                    raise _CanceledError("Canceled by user.")
-                tri_e = DesignTerrain._triangles_from_source(eg, defl)
+            tri_e = self._triangles_from_mesh_progress(eg, 12.0, 20.0, "Reading existing terrain mesh")
 
             buck_d, wide_d = self._build_xy_buckets_progress(
                 tri_d, cell, 20.0, 30.0, "Bucketing design terrain triangles"
@@ -480,7 +438,9 @@ class DesignTerrain:
                 tri_e, cell, 30.0, 40.0, "Bucketing existing terrain triangles"
             )
 
-            faces = []
+            mesh_out = _empty_mesh()
+            if mesh_out is None:
+                raise Exception("Mesh module is not available.")
             s_cnt = 0
             v_cnt = 0
             nodata = 0.0
@@ -502,21 +462,36 @@ class DesignTerrain:
                     nodata += area
                     continue
                 try:
-                    faces.append(DesignTerrain._make_cell_face(x, y, cell, float(z)))
+                    h = 0.5 * float(cell)
+                    zf = float(z)
+                    p1 = App.Vector(float(x - h), float(y - h), zf)
+                    p2 = App.Vector(float(x + h), float(y - h), zf)
+                    p3 = App.Vector(float(x + h), float(y + h), zf)
+                    p4 = App.Vector(float(x - h), float(y + h), zf)
+                    # Two triangles per sampled cell.
+                    mesh_out.addFacet(p1, p2, p3)
+                    mesh_out.addFacet(p1, p3, p4)
                     v_cnt += 1
                 except Exception:
                     nodata += area
 
-            if not faces:
+            if int(v_cnt) <= 0:
                 raise Exception("No valid merged terrain cells were generated.")
 
-            obj.Shape = Part.Compound(faces)
+            if self._report_progress(98.5, "Applying output mesh"):
+                raise _CanceledError("Canceled by user.")
+            if hasattr(obj, "Mesh"):
+                obj.Mesh = mesh_out
             obj.SampleCount = int(s_cnt)
             obj.ValidCount = int(v_cnt)
             obj.NoDataArea = float(nodata)
+            try:
+                fc = int(getattr(mesh_out, "CountFacets", 0))
+            except Exception:
+                fc = 0
             obj.Status = (
                 f"OK: samples={s_cnt}, valid={v_cnt}, nodata={nodata:.3f} (scaled^2), "
-                f"mode=DesignInsideElseExisting"
+                f"mode=DesignInsideElseExisting, facets={fc}"
             )
             _mark_recompute_flag(obj, False)
 
@@ -537,7 +512,10 @@ class DesignTerrain:
                 pass
 
         except Exception as ex:
-            obj.Shape = Part.Shape()
+            if hasattr(obj, "Mesh"):
+                em = _empty_mesh()
+                if em is not None:
+                    obj.Mesh = em
             obj.SampleCount = 0
             obj.ValidCount = 0
             obj.NoDataArea = 0.0

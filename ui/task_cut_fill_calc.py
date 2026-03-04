@@ -23,17 +23,6 @@ def _is_mesh_obj(obj):
         return False
 
 
-def _is_shape_obj(obj):
-    try:
-        return hasattr(obj, "Shape") and obj.Shape is not None and (not obj.Shape.isNull()) and len(list(obj.Shape.Faces)) > 0
-    except Exception:
-        return False
-
-
-def _is_surface_source(obj):
-    return _is_mesh_obj(obj) or _is_shape_obj(obj)
-
-
 def _is_corridor_obj(obj):
     if obj is None:
         return False
@@ -72,14 +61,14 @@ def _find_cut_fill_calc(doc):
 def _find_surface_sources(doc):
     if doc is None:
         return []
-    return [o for o in doc.Objects if _is_surface_source(o)]
+    return [o for o in doc.Objects if _is_mesh_obj(o)]
 
 
 def _selected_surface():
     try:
         sel = list(Gui.Selection.getSelection() or [])
         for o in sel:
-            if _is_surface_source(o):
+            if _is_mesh_obj(o):
                 return o
     except Exception:
         pass
@@ -121,10 +110,10 @@ class CutFillCalcTaskPanel:
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_corridor = QtWidgets.QComboBox()
         self.cmb_surface = QtWidgets.QComboBox()
-        self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Surface")
+        self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Mesh")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Corridor:", self.cmb_corridor)
-        fs.addRow("Existing Surface (Mesh/Shape):", self.cmb_surface)
+        fs.addRow("Existing Mesh:", self.cmb_surface)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -237,10 +226,7 @@ class CutFillCalcTaskPanel:
         return w
 
     def _format_obj(self, obj):
-        tag = "Shape"
-        if _is_mesh_obj(obj):
-            tag = "Mesh"
-        return f"[{tag}] {obj.Label} ({obj.Name})"
+        return f"[Mesh] {obj.Label} ({obj.Name})"
 
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
@@ -354,7 +340,7 @@ class CutFillCalcTaskPanel:
 
         msg = []
         msg.append(f"CorridorLoft: {len(self._corridors)} found")
-        msg.append(f"Surface sources: {len(self._surfaces)} found (Mesh/Shape)")
+        msg.append(f"Mesh sources: {len(self._surfaces)} found")
         if cmp_obj is not None:
             msg.append("Cut-Fill Calc object: FOUND (will update)")
             try:
@@ -371,7 +357,7 @@ class CutFillCalcTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Cut-Fill Calc",
-                "No valid surface selected. Select Mesh/Shape object in tree or 3D view first.",
+                "No mesh selected. Select a Mesh object in tree or 3D view first.",
             )
             return
         for i, o in enumerate(self._surfaces):
@@ -413,38 +399,29 @@ class CutFillCalcTaskPanel:
             )
             return
 
-        source = self._current_surface()
-        if source is None:
+        mesh = self._current_surface()
+        if mesh is None:
             QtWidgets.QMessageBox.warning(
                 None,
                 "Cut-Fill Calc",
-                "No Existing Surface selected.",
+                "No Existing Mesh selected.",
             )
             return
 
-        # Existing source quality gate.
-        if _is_mesh_obj(source):
-            mesh_facets = self._mesh_facets(source)
-            min_facets = int(self.spin_min_facets.value())
-            if mesh_facets < min_facets:
-                QtWidgets.QMessageBox.warning(
-                    None,
-                    "Cut-Fill Calc",
-                    f"Existing mesh facets {mesh_facets} < Min Mesh Facets {min_facets}.",
-                )
-                return
-            if not self._mesh_xy_valid(source):
-                QtWidgets.QMessageBox.warning(
-                    None,
-                    "Cut-Fill Calc",
-                    "Existing mesh XY bounds are degenerate.",
-                )
-                return
-        elif not self._shape_xy_valid(source):
+        mesh_facets = self._mesh_facets(mesh)
+        min_facets = int(self.spin_min_facets.value())
+        if mesh_facets < min_facets:
             QtWidgets.QMessageBox.warning(
                 None,
                 "Cut-Fill Calc",
-                "Existing shape XY bounds are degenerate.",
+                f"Existing mesh facets {mesh_facets} < Min Mesh Facets {min_facets}.",
+            )
+            return
+        if not self._mesh_xy_valid(mesh):
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Cut-Fill Calc",
+                "Existing mesh XY bounds are degenerate.",
             )
             return
 
@@ -483,7 +460,7 @@ class CutFillCalcTaskPanel:
                     pass
             try:
                 cmp_obj.SourceCorridor = corridor
-                cmp_obj.ExistingSurface = source
+                cmp_obj.ExistingSurface = mesh
                 cmp_obj.CellSize = float(self.spin_cell.value())
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
                 cmp_obj.MinMeshFacets = int(self.spin_min_facets.value())
@@ -515,11 +492,11 @@ class CutFillCalcTaskPanel:
                 if hasattr(prj, "CorridorLoft"):
                     prj.CorridorLoft = corridor
                 if hasattr(prj, "Terrain"):
-                    prj.Terrain = source
+                    prj.Terrain = mesh
                 if hasattr(prj, "CutFillCalc"):
                     prj.CutFillCalc = cmp_obj
                 CorridorRoadProject.adopt(prj, corridor)
-                CorridorRoadProject.adopt(prj, source)
+                CorridorRoadProject.adopt(prj, mesh)
                 CorridorRoadProject.adopt(prj, cmp_obj)
 
             cmp_obj.touch()
@@ -589,13 +566,6 @@ class CutFillCalcTaskPanel:
     def _mesh_xy_valid(self, mesh_obj):
         try:
             bb = mesh_obj.Mesh.BoundBox
-            return float(bb.XLength) > 1e-9 and float(bb.YLength) > 1e-9
-        except Exception:
-            return False
-
-    def _shape_xy_valid(self, shape_obj):
-        try:
-            bb = shape_obj.Shape.BoundBox
             return float(bb.XLength) > 1e-9 and float(bb.YLength) > 1e-9
         except Exception:
             return False

@@ -3,7 +3,7 @@
 This repository is a FreeCAD Workbench (Python) for road corridor design.
 
 ## Project Goal (Pipeline)
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Surface) -> DesignTerrain (Composite Surface) -> Cut-Fill Calc -> Cut/Fill Volume
+Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill Volume
 
 ## Current Implementation Scope
 ### Implemented
@@ -20,9 +20,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - 3D centerline generation from H+V integration (`Centerline3D`)
 - Assembly template + section generation (`AssemblyTemplate`, `SectionSet`)
 - Corridor loft generation (`CorridorLoft`, solid mode)
-- Design grading surface generation (`DesignGradingSurface`, surface mode)
-- Design terrain generation (`DesignTerrain`, composite surface mode)
-- Existing/Design surface comparison phase-1 (`CutFillCalc`, mesh/shape-based)
+- Design grading surface generation (`DesignGradingSurface`, mesh mode)
+- Design terrain generation (`DesignTerrain`, mesh mode)
+- Existing/Design surface comparison phase-1 (`CutFillCalc`, mesh-based)
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
@@ -163,8 +163,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - `SectionCount`, `PointCountPerSection`, `FaceCount`, `SchemaVersion`
   - `NeedsRecompute`, `Status`
 - Output mode:
-  - ruled-surface compound between neighboring section wires
-  - intended for 3D side-slope visualization
+  - ruled-surface base is tessellated to output mesh facets
+  - intended for 3D side-slope visualization and mesh-based downstream analysis
 
 ### 11) CutFillCalc
 - Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
@@ -196,10 +196,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - wide-triangle bucket expansion guard to avoid pathological bucket growth
 
 ### 12) DesignTerrain
-- Role: build composite terrain surface from `DesignGradingSurface` and existing terrain.
+- Role: build composite terrain mesh from `DesignGradingSurface` and existing terrain.
 - Inputs:
   - `SourceDesignSurface` (`DesignGradingSurface`)
-  - `ExistingTerrain` (Mesh/Shape)
+  - `ExistingTerrain` (Mesh)
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
   - `AutoUpdate`, `RebuildNow`
@@ -277,7 +277,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - command opens dedicated TaskPanel (`ui/task_design_terrain.py`).
 - TaskPanel requires explicit source selection:
   - `DesignGradingSurface`
-  - `ExistingTerrain` (Mesh/Shape)
+  - `ExistingTerrain` (Mesh)
 - TaskPanel applies options (`CellSize`, `MaxSamples`, `DomainMargin`, `AutoUpdate`) and runs merge.
 - TaskPanel shows progress and supports cancel during long runs.
 - updates project links (`Terrain`, `DesignGradingSurface`, `DesignTerrain`).
@@ -316,8 +316,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 
 ## Model Representation Policy (Fixed)
 - `CorridorLoft` uses `Solid` model.
-- `DesignGradingSurface` uses `Surface` model.
-- `DesignTerrain` uses `Surface` model.
+- `DesignGradingSurface` uses `Mesh` model.
+- `DesignTerrain` uses `Mesh` model.
 - Other design/analysis objects use `Surface/Wire` representation.
 
 ## Existing/Design Surface Entry Decisions (Fixed 7)

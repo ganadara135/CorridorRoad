@@ -13,17 +13,6 @@ def _is_mesh_obj(obj):
         return False
 
 
-def _is_shape_obj(obj):
-    try:
-        return hasattr(obj, "Shape") and obj.Shape is not None and (not obj.Shape.isNull())
-    except Exception:
-        return False
-
-
-def _is_terrain_source(obj):
-    return _is_mesh_obj(obj) or _is_shape_obj(obj)
-
-
 def _find_project(doc):
     if doc is None:
         return None
@@ -38,13 +27,15 @@ def _find_design_surfaces(doc):
     if doc is None:
         return out
     for o in doc.Objects:
+        is_dsg = False
         try:
             if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "DesignGradingSurface":
-                out.append(o)
-                continue
+                is_dsg = True
         except Exception:
             pass
-        if o.Name.startswith("DesignGradingSurface"):
+        if (not is_dsg) and o.Name.startswith("DesignGradingSurface"):
+            is_dsg = True
+        if is_dsg and _is_mesh_obj(o):
             out.append(o)
     return out
 
@@ -75,7 +66,7 @@ def _find_terrain_sources(doc):
             pass
         if o.Name.startswith("DesignTerrain"):
             continue
-        if _is_terrain_source(o):
+        if _is_mesh_obj(o):
             out.append(o)
     return out
 
@@ -91,7 +82,7 @@ def _selected_terrain():
                 pass
             if o.Name.startswith("DesignTerrain"):
                 continue
-            if _is_terrain_source(o):
+            if _is_mesh_obj(o):
                 return o
     except Exception:
         pass
@@ -99,11 +90,9 @@ def _selected_terrain():
 
 
 def _source_bounds(src_obj):
-    if _is_mesh_obj(src_obj):
-        return src_obj.Mesh.BoundBox
-    if _is_shape_obj(src_obj):
-        return src_obj.Shape.BoundBox
-    raise Exception("Invalid terrain source bounds.")
+    if not _is_mesh_obj(src_obj):
+        raise Exception("Invalid terrain source bounds.")
+    return src_obj.Mesh.BoundBox
 
 
 class DesignTerrainTaskPanel:
@@ -146,7 +135,7 @@ class DesignTerrainTaskPanel:
         self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Grading Surface:", self.cmb_dsg)
-        fs.addRow("Existing Terrain (Mesh/Shape):", self.cmb_eg)
+        fs.addRow("Existing Terrain (Mesh):", self.cmb_eg)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -195,10 +184,7 @@ class DesignTerrainTaskPanel:
         return w
 
     def _format_obj(self, obj):
-        tag = "Shape"
-        if _is_mesh_obj(obj):
-            tag = "Mesh"
-        return f"[{tag}] {obj.Label} ({obj.Name})"
+        return f"[Mesh] {obj.Label} ({obj.Name})"
 
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
@@ -273,7 +259,7 @@ class DesignTerrainTaskPanel:
 
         msg = []
         msg.append(f"DesignGradingSurface: {len(self._surfaces)} found")
-        msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh/Shape)")
+        msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
         if dtm is not None:
             msg.append("DesignTerrain object: FOUND (will update)")
             try:
@@ -290,7 +276,7 @@ class DesignTerrainTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Design Terrain",
-                "No terrain source selected. Select Mesh/Shape object first.",
+                "No terrain source selected. Select a Mesh object first.",
             )
             return
         for i, o in enumerate(self._terrains):
@@ -322,7 +308,7 @@ class DesignTerrainTaskPanel:
         dtm = _find_design_terrain(self.doc)
         if dtm is not None:
             return dtm
-        dtm = self.doc.addObject("Part::FeaturePython", "DesignTerrain")
+        dtm = self.doc.addObject("Mesh::FeaturePython", "DesignTerrain")
         DesignTerrain(dtm)
         ViewProviderDesignTerrain(dtm.ViewObject)
         dtm.Label = "Design Terrain"

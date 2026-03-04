@@ -71,7 +71,7 @@ Before implementing `Existing/Design Surface` comparison:
 
 ## Task: Design Terrain UX
 - `Design Terrain` command should use dedicated TaskPanel with explicit source selection.
-- Do not rely on hidden auto-pick for `ExistingTerrain`.
+- Do not rely on hidden auto-pick for `ExistingTerrain` (Mesh only).
 - Keep scale-aware defaults/guards (`LengthScale`, minimum cell size policy).
 - TaskPanel run path should expose progress and allow cancel.
 

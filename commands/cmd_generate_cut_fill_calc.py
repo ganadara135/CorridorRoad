@@ -10,7 +10,7 @@ class CmdGenerateCutFillCalc:
         return {
             "Pixmap": "",
             "MenuText": "Cut-Fill Calc",
-            "ToolTip": "Cut/Fill calculation from Existing(Mesh/Shape) vs Design(Corridor top surface)",
+            "ToolTip": "Cut/Fill calculation from Existing(Mesh) vs Design(Corridor top surface)",
         }
 
     def IsActive(self):
