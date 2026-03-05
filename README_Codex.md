@@ -23,6 +23,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Design grading surface generation (`DesignGradingSurface`, mesh mode)
 - Design terrain generation (`DesignTerrain`, mesh mode)
 - Existing/Design surface comparison phase-1 (`CutFillCalc`, mesh-based)
+- Large-scene performance guardrails + estimate UX for `DesignTerrain`/`CutFillCalc`
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
@@ -170,6 +171,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
+  - `MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`
   - `NoDataWarnRatio`
   - manual domain (`XMin/XMax/YMin/YMax`)
   - `AutoUpdate`, `RebuildNow`
@@ -190,6 +192,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - when `AutoUpdate=False`, edits do not auto-run comparison and remain pending until `RebuildNow=True`
 - Performance guards:
   - run precheck: estimated samples must be within `MaxSamples`
+  - source triangle decimation by `MaxTrianglesPerSource`
+  - per-sample candidate cap by `MaxCandidateTriangles`
+  - run precheck: estimated triangle checks must be within `MaxTriangleChecks`
   - scale-aware defaults from `LengthScale` for `CellSize`/`DomainMargin`/delta display thresholds
   - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
   - scale-aware design tessellation deflection
@@ -202,10 +207,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `ExistingTerrain` (Mesh)
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
+  - `MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`
   - `AutoUpdate`, `RebuildNow`
 - Guardrails:
   - scale-aware defaults from `Project.LengthScale`
   - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
+  - source triangle decimation by `MaxTrianglesPerSource`
+  - per-sample candidate cap by `MaxCandidateTriangles`
+  - run precheck: estimated triangle checks must be within `MaxTriangleChecks`
 - Results:
   - `SampleCount`, `ValidCount`, `NoDataArea`
   - `NeedsRecompute`, `Status`
@@ -257,12 +266,15 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### Edit Profiles (Data/EG)
 - Table edits ProfileBundle station/profile data.
 - FG display controls must map to `FGDisplay` object properties.
+- EG terrain source is explicitly selectable from Mesh/Shape list.
+- `Apply` commits sampling+data updates; standard buttons are `Close` only (no `OK/Cancel`).
 
 ### Generate Sections Panel
-- `OK` button closes dialog only.
+- standard buttons are `Close` only (no `OK/Cancel`).
 - section creation/update runs only from `Generate Sections Now`.
 - supports side slopes and Stage-2 terrain-daylight options.
 - daylight terrain source can be Mesh or Shape (`Project.Terrain` or `SectionSet.TerrainMesh`).
+- `Daylight Auto (SectionSet)` is enabled by default on panel open.
 
 ### Scale UX
 - `New Project` opens scale input (`LengthScale`) when project is created.
@@ -275,10 +287,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### Generate Design Terrain
 - command opens dedicated TaskPanel (`ui/task_design_terrain.py`).
+- standard dialog button is `Close` only (no `OK/Cancel`; run-cancel is separate).
 - TaskPanel requires explicit source selection:
   - `DesignGradingSurface`
   - `ExistingTerrain` (Mesh)
 - TaskPanel applies options (`CellSize`, `MaxSamples`, `DomainMargin`, `AutoUpdate`) and runs merge.
+- TaskPanel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint.
+- TaskPanel exposes large-scene guards (`MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`).
+- TaskPanel blocks risky runs when estimated samples/checks exceed guard limits.
 - TaskPanel shows progress and supports cancel during long runs.
 - updates project links (`Terrain`, `DesignGradingSurface`, `DesignTerrain`).
 
@@ -288,16 +304,22 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### Cut-Fill Calc Panel
 - command opens dedicated TaskPanel (no immediate heavy run on command click)
+- standard dialog button is `Close` only (no `OK/Cancel`; run-cancel is separate)
 - user explicitly selects `CorridorLoft` and Existing mesh source
 - panel shows run status/progress and supports cancel
 - panel provides 3D map controls (deadband/clamp/z-offset/max visual cells)
+- panel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint
+- panel exposes large-scene guards (`MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`)
+- panel blocks risky runs when estimated samples/checks exceed guard limits
 - run path updates `CutFillCalc` + project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
 
 ### PVI Editor
 - Updates/creates `VerticalAlignment`.
 - Ensures `FGDisplay` exists and links `SourceVA`.
+- PVI station/elevation/curve-length values are loaded/saved with `LengthScale` conversion.
+- standard buttons are `Close` only (no `OK/Cancel`).
 
-### Practical Alignment Editor
+### Alignment Editor
 - Edits IP coordinates, radius, and transition length.
 - Updates criteria input values and shows criteria report messages.
 
