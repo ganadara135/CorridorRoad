@@ -2,65 +2,42 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from objects.doc_query import find_first, find_project
+from objects.project_links import link_project
 from objects.obj_centerline3d_display import (
     Centerline3DDisplay,
     ViewProviderCenterline3DDisplay,
     ensure_centerline3d_display_properties,
 )
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
-
-
-def _find_project(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
 
 
 def _find_alignment(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("HorizontalAlignment"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("HorizontalAlignment",))
 
 
 def _find_stationing(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("Stationing"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("Stationing",))
 
 
 def _find_vertical_alignment(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("VerticalAlignment"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("VerticalAlignment",))
 
 
 def _find_profile_bundle(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("ProfileBundle"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("ProfileBundle",))
 
 
 def _find_centerline3d(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "Centerline3D":
-            return o
-        if o.Name.startswith("Centerline3D") and (not o.Name.startswith("Centerline3DDisplay")):
-            return o
-    return None
+    return find_first(
+        doc,
+        proxy_type="Centerline3D",
+        name_prefixes=("Centerline3D",),
+        predicate=lambda o: not str(getattr(o, "Name", "")).startswith("Centerline3DDisplay"),
+    )
 
 
 def _find_centerline3d_display(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "Centerline3DDisplay":
-            return o
-        if o.Name.startswith("Centerline3DDisplay"):
-            return o
-    return None
+    return find_first(doc, proxy_type="Centerline3DDisplay", name_prefixes=("Centerline3DDisplay",))
 
 
 class CmdGenerateCenterline3D:
@@ -114,7 +91,7 @@ class CmdGenerateCenterline3D:
         if cl is not None:
             if hasattr(disp, "SourceCenterline") and getattr(disp, "SourceCenterline", None) == cl:
                 disp.SourceCenterline = None
-            prj = _find_project(doc)
+            prj = find_project(doc)
             if prj is not None and hasattr(prj, "Centerline3D") and getattr(prj, "Centerline3D", None) == cl:
                 prj.Centerline3D = None
             try:
@@ -122,20 +99,14 @@ class CmdGenerateCenterline3D:
             except Exception:
                 pass
 
-        prj = _find_project(doc)
+        prj = find_project(doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "Centerline3DDisplay"):
-                prj.Centerline3DDisplay = disp
-            CorridorRoadProject.adopt(prj, disp)
-
-            if getattr(prj, "Alignment", None) is None:
-                prj.Alignment = aln
-                CorridorRoadProject.adopt(prj, aln)
-
-            if getattr(prj, "Stationing", None) is None and st is not None:
-                prj.Stationing = st
-                CorridorRoadProject.adopt(prj, st)
+            link_project(
+                prj,
+                links={"Centerline3DDisplay": disp},
+                links_if_empty={"Alignment": aln, "Stationing": st},
+                adopt_extra=[disp],
+            )
 
         doc.recompute()
 

@@ -3,19 +3,19 @@ import FreeCADGui as Gui
 
 from PySide2 import QtWidgets
 
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
+from objects.doc_query import find_project
+from objects.obj_project import get_length_scale
 from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc
-
-QUALITY_PRESETS = ("Fast", "Balanced", "Precise", "Custom")
-
-
-def _find_project(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
+from objects.project_links import link_project
+from ui.common.perf_quality import (
+    QUALITY_PRESETS,
+    apply_preset_to_widgets,
+    build_quality_presets,
+    estimate_triangle_checks,
+    get_preset_values,
+    guess_preset_name,
+    update_estimate_label,
+)
 
 
 def _is_mesh_obj(obj):
@@ -81,6 +81,14 @@ class CutFillCalcTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._scale = get_length_scale(self.doc, default=1.0)
+        self._quality_presets = build_quality_presets(
+            self._scale,
+            {
+                "Fast": 120000,
+                "Balanced": 200000,
+                "Precise": 500000,
+            },
+        )
         self._corridors = []
         self._surfaces = []
         self._loading = False
@@ -305,7 +313,7 @@ class CutFillCalcTaskPanel:
 
         self._corridors = _find_corridors(self.doc)
         self._surfaces = _find_surface_sources(self.doc)
-        prj = _find_project(self.doc)
+        prj = find_project(self.doc)
         cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
             try:
@@ -551,18 +559,17 @@ class CutFillCalcTaskPanel:
                     except Exception:
                         pass
 
-            prj = _find_project(self.doc)
+            prj = find_project(self.doc)
             if prj is not None:
-                ensure_project_properties(prj)
-                if hasattr(prj, "CorridorLoft"):
-                    prj.CorridorLoft = corridor
-                if hasattr(prj, "Terrain"):
-                    prj.Terrain = mesh
-                if hasattr(prj, "CutFillCalc"):
-                    prj.CutFillCalc = cmp_obj
-                CorridorRoadProject.adopt(prj, corridor)
-                CorridorRoadProject.adopt(prj, mesh)
-                CorridorRoadProject.adopt(prj, cmp_obj)
+                link_project(
+                    prj,
+                    links={
+                        "CorridorLoft": corridor,
+                        "Terrain": mesh,
+                        "CutFillCalc": cmp_obj,
+                    },
+                    adopt_extra=[corridor, mesh, cmp_obj],
+                )
 
             cmp_obj.touch()
             if proxy is not None:
@@ -671,31 +678,7 @@ class CutFillCalcTaskPanel:
             return None
 
     def _preset_values(self, name: str):
-        sc = float(self._scale)
-        presets = {
-            "Fast": {
-                "cell": 2.0 * sc,
-                "max_samples": 120000,
-                "max_tri_src": 80000,
-                "max_cand": 1200,
-                "max_checks": 120000000,
-            },
-            "Balanced": {
-                "cell": 1.0 * sc,
-                "max_samples": 200000,
-                "max_tri_src": 150000,
-                "max_cand": 2500,
-                "max_checks": 250000000,
-            },
-            "Precise": {
-                "cell": 0.5 * sc,
-                "max_samples": 500000,
-                "max_tri_src": 300000,
-                "max_cand": 4000,
-                "max_checks": 600000000,
-            },
-        }
-        return presets.get(str(name), None)
+        return get_preset_values(self._quality_presets, name)
 
     def _apply_quality_preset(self, name: str):
         vals = self._preset_values(name)
@@ -703,33 +686,27 @@ class CutFillCalcTaskPanel:
             return
         self._loading = True
         try:
-            self.spin_cell.setValue(float(vals["cell"]))
-            self.spin_max_samples.setValue(int(vals["max_samples"]))
-            self.spin_max_tri_src.setValue(int(vals["max_tri_src"]))
-            self.spin_max_cand.setValue(int(vals["max_cand"]))
-            self.spin_max_checks.setValue(int(vals["max_checks"]))
+            apply_preset_to_widgets(
+                vals,
+                self.spin_cell,
+                self.spin_max_samples,
+                self.spin_max_tri_src,
+                self.spin_max_cand,
+                self.spin_max_checks,
+            )
         finally:
             self._loading = False
 
     def _guess_quality_preset(self):
-        cell = float(self.spin_cell.value())
-        max_samples = int(self.spin_max_samples.value())
-        max_tri = int(self.spin_max_tri_src.value())
-        max_cand = int(self.spin_max_cand.value())
-        max_checks = int(self.spin_max_checks.value())
-        for name in ("Fast", "Balanced", "Precise"):
-            vals = self._preset_values(name)
-            if vals is None:
-                continue
-            if (
-                abs(cell - float(vals["cell"])) <= max(1e-6, 1e-3 * self._scale)
-                and max_samples == int(vals["max_samples"])
-                and max_tri == int(vals["max_tri_src"])
-                and max_cand == int(vals["max_cand"])
-                and max_checks == int(vals["max_checks"])
-            ):
-                return name
-        return "Custom"
+        return guess_preset_name(
+            self._quality_presets,
+            cell=float(self.spin_cell.value()),
+            max_samples=int(self.spin_max_samples.value()),
+            max_tri=int(self.spin_max_tri_src.value()),
+            max_cand=int(self.spin_max_cand.value()),
+            max_checks=int(self.spin_max_checks.value()),
+            scale=float(self._scale),
+        )
 
     def _estimate_triangle_checks(self, corridor, mesh, est_samples=None):
         try:
@@ -761,9 +738,7 @@ class CutFillCalcTaskPanel:
             max_cand = int(self.spin_max_cand.value())
             tri_exist = min(max_tri_src, self._mesh_facets(mesh))
             tri_design = min(max_tri_src, max(1, tri_exist))
-            cand = 9.0 * float(cell * cell) * float(max(1, tri_design + tri_exist)) / float(area)
-            cand = min(float(max(1, 2 * max_cand)), max(1.0, cand))
-            return int(float(est_samples) * cand)
+            return estimate_triangle_checks(est_samples, cell, area, tri_design, tri_exist, max_cand)
         except Exception:
             return None
 
@@ -772,18 +747,14 @@ class CutFillCalcTaskPanel:
         mesh = self._current_surface()
         est_s = self._estimate_samples(corridor) if corridor is not None else None
         est_c = self._estimate_triangle_checks(corridor, mesh, est_samples=est_s) if (corridor is not None and mesh is not None) else None
-        if est_s is None:
-            self.lbl_est.setText("Estimate: select valid corridor/mesh to compute estimate")
-            self.lbl_est.setStyleSheet("")
-            return
-        max_s = int(self.spin_max_samples.value())
-        max_c = int(self.spin_max_checks.value())
-        warn = (est_s > max_s) or (est_c is not None and est_c > max_c)
-        checks_txt = "-" if est_c is None else f"{int(est_c):,}"
-        self.lbl_est.setText(
-            f"samples ~ {int(est_s):,} / limit {max_s:,}, triangle checks ~ {checks_txt} / limit {max_c:,}"
+        update_estimate_label(
+            self.lbl_est,
+            est_s,
+            est_c,
+            int(self.spin_max_samples.value()),
+            int(self.spin_max_checks.value()),
+            "Estimate: select valid corridor/mesh to compute estimate",
         )
-        self.lbl_est.setStyleSheet("color:#b71c1c;" if warn else "")
 
     def _on_quality_changed(self, name):
         if self._loading:

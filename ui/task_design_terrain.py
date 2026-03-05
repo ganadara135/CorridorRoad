@@ -2,10 +2,19 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
+from objects.doc_query import find_project
 from objects.obj_design_terrain import DesignTerrain, ViewProviderDesignTerrain
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
-
-QUALITY_PRESETS = ("Fast", "Balanced", "Precise", "Custom")
+from objects.obj_project import get_length_scale
+from objects.project_links import link_project
+from ui.common.perf_quality import (
+    QUALITY_PRESETS,
+    apply_preset_to_widgets,
+    build_quality_presets,
+    estimate_triangle_checks,
+    get_preset_values,
+    guess_preset_name,
+    update_estimate_label,
+)
 
 
 def _is_mesh_obj(obj):
@@ -13,15 +22,6 @@ def _is_mesh_obj(obj):
         return hasattr(obj, "Mesh") and obj.Mesh is not None and int(obj.Mesh.CountFacets) > 0
     except Exception:
         return False
-
-
-def _find_project(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
 
 
 def _find_design_surfaces(doc):
@@ -101,6 +101,14 @@ class DesignTerrainTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._scale = get_length_scale(self.doc, default=1.0)
+        self._quality_presets = build_quality_presets(
+            self._scale,
+            {
+                "Fast": 150000,
+                "Balanced": 250000,
+                "Precise": 700000,
+            },
+        )
         self._surfaces = []
         self._terrains = []
         self._loading = False
@@ -251,7 +259,7 @@ class DesignTerrainTaskPanel:
 
         self._surfaces = _find_design_surfaces(self.doc)
         self._terrains = _find_terrain_sources(self.doc)
-        prj = _find_project(self.doc)
+        prj = find_project(self.doc)
         dtm = _find_design_terrain(self.doc)
 
         pref_dsg = None
@@ -356,31 +364,7 @@ class DesignTerrainTaskPanel:
             return 0
 
     def _preset_values(self, name: str):
-        sc = float(self._scale)
-        presets = {
-            "Fast": {
-                "cell": 2.0 * sc,
-                "max_samples": 150000,
-                "max_tri_src": 80000,
-                "max_cand": 1200,
-                "max_checks": 120000000,
-            },
-            "Balanced": {
-                "cell": 1.0 * sc,
-                "max_samples": 250000,
-                "max_tri_src": 150000,
-                "max_cand": 2500,
-                "max_checks": 250000000,
-            },
-            "Precise": {
-                "cell": 0.5 * sc,
-                "max_samples": 700000,
-                "max_tri_src": 300000,
-                "max_cand": 4000,
-                "max_checks": 600000000,
-            },
-        }
-        return presets.get(str(name), None)
+        return get_preset_values(self._quality_presets, name)
 
     def _apply_quality_preset(self, name: str):
         vals = self._preset_values(name)
@@ -388,33 +372,27 @@ class DesignTerrainTaskPanel:
             return
         self._loading = True
         try:
-            self.spin_cell.setValue(float(vals["cell"]))
-            self.spin_max_samples.setValue(int(vals["max_samples"]))
-            self.spin_max_tri_src.setValue(int(vals["max_tri_src"]))
-            self.spin_max_cand.setValue(int(vals["max_cand"]))
-            self.spin_max_checks.setValue(int(vals["max_checks"]))
+            apply_preset_to_widgets(
+                vals,
+                self.spin_cell,
+                self.spin_max_samples,
+                self.spin_max_tri_src,
+                self.spin_max_cand,
+                self.spin_max_checks,
+            )
         finally:
             self._loading = False
 
     def _guess_quality_preset(self):
-        cell = float(self.spin_cell.value())
-        max_samples = int(self.spin_max_samples.value())
-        max_tri = int(self.spin_max_tri_src.value())
-        max_cand = int(self.spin_max_cand.value())
-        max_checks = int(self.spin_max_checks.value())
-        for name in ("Fast", "Balanced", "Precise"):
-            vals = self._preset_values(name)
-            if vals is None:
-                continue
-            if (
-                abs(cell - float(vals["cell"])) <= max(1e-6, 1e-3 * self._scale)
-                and max_samples == int(vals["max_samples"])
-                and max_tri == int(vals["max_tri_src"])
-                and max_cand == int(vals["max_cand"])
-                and max_checks == int(vals["max_checks"])
-            ):
-                return name
-        return "Custom"
+        return guess_preset_name(
+            self._quality_presets,
+            cell=float(self.spin_cell.value()),
+            max_samples=int(self.spin_max_samples.value()),
+            max_tri=int(self.spin_max_tri_src.value()),
+            max_cand=int(self.spin_max_cand.value()),
+            max_checks=int(self.spin_max_checks.value()),
+            scale=float(self._scale),
+        )
 
     def _estimate_triangle_checks(self, dsg_obj, eg_obj, est_samples=None):
         try:
@@ -436,9 +414,7 @@ class DesignTerrainTaskPanel:
             max_cand = int(self.spin_max_cand.value())
             tri_d = min(max_tri_src, self._mesh_facets(dsg_obj))
             tri_e = min(max_tri_src, self._mesh_facets(eg_obj))
-            cand = 9.0 * float(cell * cell) * float(max(1, tri_d + tri_e)) / float(area)
-            cand = min(float(max(1, 2 * max_cand)), max(1.0, cand))
-            return int(float(est_samples) * cand)
+            return estimate_triangle_checks(est_samples, cell, area, tri_d, tri_e, max_cand)
         except Exception:
             return None
 
@@ -447,20 +423,14 @@ class DesignTerrainTaskPanel:
         eg = self._current_eg()
         est_s = self._estimate_samples(eg) if eg is not None else None
         est_c = self._estimate_triangle_checks(dsg, eg, est_samples=est_s) if (dsg is not None and eg is not None) else None
-        if est_s is None:
-            self.lbl_est.setText("Estimate: select valid sources to compute estimate")
-            self.lbl_est.setStyleSheet("")
-            return
-        max_s = int(self.spin_max_samples.value())
-        max_c = int(self.spin_max_checks.value())
-        warn = (est_s > max_s) or (est_c is not None and est_c > max_c)
-        checks_txt = "-" if est_c is None else f"{int(est_c):,}"
-        txt = (
-            f"samples ~ {int(est_s):,} / limit {max_s:,}, "
-            f"triangle checks ~ {checks_txt} / limit {max_c:,}"
+        update_estimate_label(
+            self.lbl_est,
+            est_s,
+            est_c,
+            int(self.spin_max_samples.value()),
+            int(self.spin_max_checks.value()),
+            "Estimate: select valid sources to compute estimate",
         )
-        self.lbl_est.setText(txt)
-        self.lbl_est.setStyleSheet("color:#b71c1c;" if warn else "")
 
     def _on_quality_changed(self, name):
         if self._loading:
@@ -575,18 +545,17 @@ class DesignTerrainTaskPanel:
             if proxy is not None and hasattr(proxy, "_bulk_updating"):
                 proxy._bulk_updating = False
 
-        prj = _find_project(self.doc)
+        prj = find_project(self.doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "Terrain"):
-                prj.Terrain = eg
-            if hasattr(prj, "DesignGradingSurface"):
-                prj.DesignGradingSurface = dsg
-            if hasattr(prj, "DesignTerrain"):
-                prj.DesignTerrain = dtm
-            CorridorRoadProject.adopt(prj, dsg)
-            CorridorRoadProject.adopt(prj, eg)
-            CorridorRoadProject.adopt(prj, dtm)
+            link_project(
+                prj,
+                links={
+                    "Terrain": eg,
+                    "DesignGradingSurface": dsg,
+                    "DesignTerrain": dtm,
+                },
+                adopt_extra=[dsg, eg, dtm],
+            )
 
         dtm.touch()
         try:

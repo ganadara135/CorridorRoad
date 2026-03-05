@@ -2,24 +2,14 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from objects.doc_query import find_first, find_project
+from objects.project_links import link_project
 from objects.obj_stationing import Stationing, ViewProviderStationing
-from objects.obj_project import CorridorRoadProject, get_length_scale
-
-
-def _find_project(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-
-    return None
+from objects.obj_project import get_length_scale
 
 
 def _find_alignment(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("HorizontalAlignment"):
-            return o
-
-    return None
+    return find_first(doc, name_prefixes=("HorizontalAlignment",))
 
 
 class CmdGenerateStations:
@@ -53,14 +43,14 @@ class CmdGenerateStations:
         st.Label = "Stations"
 
         # Project auto-link/adopt
-        prj = _find_project(doc)
+        prj = find_project(doc)
         if prj is not None:
-            prj.Stationing = st
-            CorridorRoadProject.adopt(prj, st)
-
-            if prj.Alignment is None:
-                prj.Alignment = aln
-                CorridorRoadProject.adopt(prj, aln)
+            link_project(
+                prj,
+                links={"Stationing": st},
+                links_if_empty={"Alignment": aln},
+                adopt_extra=[st],
+            )
 
         doc.recompute()
         

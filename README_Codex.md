@@ -24,6 +24,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Design terrain generation (`DesignTerrain`, mesh mode)
 - Existing/Design surface comparison phase-1 (`CutFillCalc`, mesh-based)
 - Large-scene performance guardrails + estimate UX for `DesignTerrain`/`CutFillCalc`
+- Shared utility modularization:
+  - doc lookup/link helpers (`objects/doc_query.py`, `objects/project_links.py`)
+  - profile/FG UI helpers (`ui/common/profile_fg_helpers.py`)
+  - quality/estimate UI helpers (`ui/common/perf_quality.py`)
+  - shared surface sampling core (`objects/surface_sampling_core.py`)
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
@@ -137,6 +142,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Daylight performance controls:
   - `AssemblyTemplate.DaylightMaxTriangles`
   - wide-triangle bucket guard
+- Sampling policy:
+  - daylight terrain sampling should use shared core (`objects/surface_sampling_core.py`) via module wrappers.
 
 ### 9) CorridorLoft
 - Role: corridor loft generator from `SectionSet`.
@@ -199,6 +206,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
   - scale-aware design tessellation deflection
   - wide-triangle bucket expansion guard to avoid pathological bucket growth
+- Shared-core policy:
+  - triangle extraction/bucket/intersection primitives should be sourced from `objects/surface_sampling_core.py`.
 
 ### 12) DesignTerrain
 - Role: build composite terrain mesh from `DesignGradingSurface` and existing terrain.
@@ -215,6 +224,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - source triangle decimation by `MaxTrianglesPerSource`
   - per-sample candidate cap by `MaxCandidateTriangles`
   - run precheck: estimated triangle checks must be within `MaxTriangleChecks`
+- Shared-core policy:
+  - triangle extraction/bucket/intersection primitives should be sourced from `objects/surface_sampling_core.py`.
 - Results:
   - `SampleCount`, `ValidCount`, `NoDataArea`
   - `NeedsRecompute`, `Status`
@@ -295,6 +306,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - TaskPanel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint.
 - TaskPanel exposes large-scene guards (`MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`).
 - TaskPanel blocks risky runs when estimated samples/checks exceed guard limits.
+- preset/estimate helper logic should be shared from `ui/common/perf_quality.py`.
 - TaskPanel shows progress and supports cancel during long runs.
 - updates project links (`Terrain`, `DesignGradingSurface`, `DesignTerrain`).
 
@@ -311,6 +323,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - panel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint
 - panel exposes large-scene guards (`MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`)
 - panel blocks risky runs when estimated samples/checks exceed guard limits
+- preset/estimate helper logic should be shared from `ui/common/perf_quality.py`
 - run path updates `CutFillCalc` + project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
 
 ### PVI Editor
@@ -332,9 +345,20 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `ui/task_profile_editor.py`
   - `ui/task_pvi_editor.py`
   - `ui/task_alignment_editor.py`
+  - `objects/doc_query.py`
+  - `objects/project_links.py`
+  - `objects/surface_sampling_core.py`
+  - `ui/common/profile_fg_helpers.py`
+  - `ui/common/perf_quality.py`
 - Keep sample command and practical command separated:
   - `CorridorRoad_CreateAlignment` = Sample Alignment
   - `CorridorRoad_EditAlignment` = Practical editing
+- Shared-helper usage policy:
+  - document object lookup should prefer `objects/doc_query.py`.
+  - project link/adopt updates should prefer `objects/project_links.py`.
+  - PVI/Profile FG helper logic should prefer `ui/common/profile_fg_helpers.py`.
+  - DesignTerrain/CutFill preset+estimate logic should prefer `ui/common/perf_quality.py`.
+  - surface triangle/bucket/intersection primitives should prefer `objects/surface_sampling_core.py`.
 
 ## Model Representation Policy (Fixed)
 - `CorridorLoft` uses `Solid` model.

@@ -9,35 +9,22 @@ from objects.obj_assembly_template import (
     ViewProviderAssemblyTemplate,
     ensure_assembly_template_properties,
 )
+from objects.doc_query import find_first, find_project
+from objects.project_links import link_project
 from objects.obj_section_set import SectionSet, ViewProviderSectionSet
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
+from objects.obj_project import get_length_scale
 
 
 def _find_first_by_proxy_type(doc, type_name: str):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == type_name:
-            return o
-    return None
+    return find_first(doc, proxy_type=type_name, name_prefixes=(type_name,))
 
 
 def _find_alignment(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("HorizontalAlignment"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("HorizontalAlignment",))
 
 
 def _find_project(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
+    return find_project(doc)
 
 
 def _is_mesh_obj(obj):
@@ -69,12 +56,7 @@ def _selected_mesh_terrain():
 
 
 def _find_source_centerline_display(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "Centerline3DDisplay":
-            return o
-    return None
+    return find_first(doc, proxy_type="Centerline3DDisplay", name_prefixes=("Centerline3DDisplay",))
 
 
 class SectionGeneratorTaskPanel:
@@ -472,10 +454,7 @@ class SectionGeneratorTaskPanel:
 
         prj = _find_project(self.doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "AssemblyTemplate"):
-                prj.AssemblyTemplate = asm
-            CorridorRoadProject.adopt(prj, asm)
+            link_project(prj, links={"AssemblyTemplate": asm}, adopt_extra=[asm])
 
         self._refresh_context()
 
@@ -584,16 +563,15 @@ class SectionGeneratorTaskPanel:
 
         prj = _find_project(self.doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "Centerline3DDisplay"):
-                prj.Centerline3DDisplay = src
-            if hasattr(prj, "AssemblyTemplate"):
-                prj.AssemblyTemplate = asm
-            if hasattr(prj, "SectionSet"):
-                prj.SectionSet = sec
-            CorridorRoadProject.adopt(prj, src)
-            CorridorRoadProject.adopt(prj, asm)
-            CorridorRoadProject.adopt(prj, sec)
+            link_project(
+                prj,
+                links={
+                    "Centerline3DDisplay": src,
+                    "AssemblyTemplate": asm,
+                    "SectionSet": sec,
+                },
+                adopt_extra=[src, asm, sec],
+            )
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

@@ -4,50 +4,27 @@ import FreeCADGui as Gui
 
 from PySide2 import QtCore, QtWidgets
 
+from objects.doc_query import find_first, find_project
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_vertical_alignment import VerticalAlignment
-from objects.obj_fg_display import FGDisplay, ViewProviderFGDisplay
 from objects.obj_alignment import HorizontalAlignment
 from objects.terrain_sampler import TerrainSampler, is_mesh_object, is_shape_object
-
-PROFILE_BUNDLE_LABEL = "Profiles (Data/EG)"
-OLD_PROFILE_BUNDLE_LABEL = "Profiles (EG/FG)"
-
-
-def _normalize_profile_bundle_label(bundle):
-    if bundle is None:
-        return
-    try:
-        if str(getattr(bundle, "Label", "")) == OLD_PROFILE_BUNDLE_LABEL:
-            bundle.Label = PROFILE_BUNDLE_LABEL
-    except Exception:
-        pass
-
-
-def _find_profile_bundle(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("ProfileBundle"):
-            _normalize_profile_bundle_label(o)
-            return o
-    return None
+from ui.common.profile_fg_helpers import (
+    PROFILE_BUNDLE_LABEL,
+    ensure_fg_display as _ensure_fg_display,
+    find_fg_display as _find_fg_display,
+    find_profile_bundle as _find_profile_bundle,
+    find_stationing as _find_stationing,
+    find_vertical_alignment as _find_vertical_alignment,
+)
 
 
 def _find_project(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
+    return find_project(doc)
 
 
 def _find_alignment(doc):
-    if doc is None:
-        return None
-    for o in doc.Objects:
-        if o.Name.startswith("HorizontalAlignment"):
-            return o
-    return None
+    return find_first(doc, name_prefixes=("HorizontalAlignment",))
 
 
 def _find_terrain_sources(doc):
@@ -70,65 +47,6 @@ def _selected_terrain():
         pass
     return None
 
-
-def _find_stationing(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("Stationing"):
-            return o
-    return None
-
-
-def _find_vertical_alignment(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("VerticalAlignment"):
-            return o
-    return None
-
-
-def _find_fg_display(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "FGDisplay":
-            return o
-
-        # 이름 기반 fallback
-        if o.Label == "Finished Grade (FG)":
-            return o
-
-    return None
-
-
-def _ensure_fg_display(doc, va):
-    fg = _find_fg_display(doc)
-    if fg is not None:
-        # ensure link
-        try:
-            if va is not None and getattr(fg, "SourceVA", None) is None:
-                fg.SourceVA = va
-        except Exception:
-            pass
-        return fg
-
-    fg = doc.addObject("Part::FeaturePython", "FinishedGradeFG")
-    from objects.obj_fg_display import FGDisplay, ViewProviderFGDisplay
-
-    FGDisplay(fg)
-    ViewProviderFGDisplay(fg.ViewObject)
-
-    fg.Label = "Finished Grade (FG)"
-
-    try:
-        fg.SourceVA = va
-    except Exception:
-        pass
-
-    try:
-        fg.ShowWire = True
-    except Exception:
-        pass
-
-    fg.touch()
-    doc.recompute()
-    return fg
 
 class ProfileEditorTaskPanel:
     """
@@ -650,7 +568,7 @@ class ProfileEditorTaskPanel:
                 pass
         else:
             try:
-                # FGDisplay가 없으면 FG표시 옵션 비활성 추천                
+                # If FGDisplay is missing, keep FG display option off.
                 self.chk_show_fg.setChecked(False)
             except Exception:                
                 pass

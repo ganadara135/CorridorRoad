@@ -2,33 +2,17 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from objects.doc_query import find_first, find_project
 from objects.obj_design_grading_surface import DesignGradingSurface, ViewProviderDesignGradingSurface
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
-
-
-def _find_project(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
+from objects.project_links import link_project
 
 
 def _find_section_set(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SectionSet":
-            return o
-        if o.Name.startswith("SectionSet"):
-            return o
-    return None
+    return find_first(doc, proxy_type="SectionSet", name_prefixes=("SectionSet",))
 
 
 def _find_design_grading_surface(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "DesignGradingSurface":
-            return o
-        if o.Name.startswith("DesignGradingSurface"):
-            return o
-    return None
+    return find_first(doc, proxy_type="DesignGradingSurface", name_prefixes=("DesignGradingSurface",))
 
 
 class CmdGenerateDesignGradingSurface:
@@ -62,15 +46,14 @@ class CmdGenerateDesignGradingSurface:
         surf.AutoUpdate = True
         surf.touch()
 
-        prj = _find_project(doc)
+        prj = find_project(doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "DesignGradingSurface"):
-                prj.DesignGradingSurface = surf
-            if hasattr(prj, "SectionSet") and getattr(prj, "SectionSet", None) is None:
-                prj.SectionSet = sec
-            CorridorRoadProject.adopt(prj, surf)
-            CorridorRoadProject.adopt(prj, sec)
+            link_project(
+                prj,
+                links={"DesignGradingSurface": surf},
+                links_if_empty={"SectionSet": sec},
+                adopt_extra=[surf, sec],
+            )
 
         doc.recompute()
 

@@ -5,6 +5,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_project import get_length_scale
+from objects import surface_sampling_core as _ssc
 
 
 class _CanceledError(Exception):
@@ -33,22 +34,11 @@ def _vec(x, y, z):
 
 
 def _to_vec(p):
-    try:
-        return _vec(p.x, p.y, p.z)
-    except Exception:
-        pass
-    try:
-        return _vec(p[0], p[1], p[2])
-    except Exception:
-        pass
-    raise Exception("Invalid point format.")
+    return _ssc.to_vec(p)
 
 
 def _is_mesh_object(obj) -> bool:
-    try:
-        return hasattr(obj, "Mesh") and obj.Mesh is not None and int(obj.Mesh.CountFacets) > 0
-    except Exception:
-        return False
+    return _ssc.is_mesh_object(obj)
 
 
 def ensure_cut_fill_calc_properties(obj):
@@ -203,12 +193,7 @@ class CutFillCalc:
 
     @staticmethod
     def _triangle_bbox_xy(p0, p1, p2):
-        return (
-            min(p0.x, p1.x, p2.x),
-            max(p0.x, p1.x, p2.x),
-            min(p0.y, p1.y, p2.y),
-            max(p0.y, p1.y, p2.y),
-        )
+        return _ssc.triangle_bbox_xy(p0, p1, p2)
 
     @staticmethod
     def _top_faces_from_corridor(corridor_shape):
@@ -296,46 +281,7 @@ class CutFillCalc:
 
     @staticmethod
     def _triangles_from_mesh(mesh_obj):
-        mesh = getattr(mesh_obj, "Mesh", None)
-        if mesh is None:
-            raise Exception("ExistingSurface has no mesh.")
-
-        triangles = []
-        topo = None
-        try:
-            topo = mesh.Topology
-            if callable(topo):
-                topo = topo()
-        except Exception:
-            topo = None
-
-        if topo is not None and len(topo) == 2:
-            pts, faces = topo
-            for f in faces:
-                try:
-                    i0, i1, i2 = int(f[0]), int(f[1]), int(f[2])
-                    p0, p1, p2 = pts[i0], pts[i1], pts[i2]
-                    p0, p1, p2 = _to_vec(p0), _to_vec(p1), _to_vec(p2)
-                    if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
-                        continue
-                    bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
-                    triangles.append((p0, p1, p2, bb))
-                except Exception:
-                    continue
-        else:
-            for fc in list(getattr(mesh, "Facets", []) or []):
-                try:
-                    pts = list(getattr(fc, "Points", []) or [])
-                    if len(pts) != 3:
-                        continue
-                    p0, p1, p2 = _to_vec(pts[0]), _to_vec(pts[1]), _to_vec(pts[2])
-                    if (p1 - p0).Length <= 1e-12 or (p2 - p0).Length <= 1e-12:
-                        continue
-                    bb = CutFillCalc._triangle_bbox_xy(p0, p1, p2)
-                    triangles.append((p0, p1, p2, bb))
-                except Exception:
-                    continue
-
+        triangles = _ssc.mesh_triangles(mesh_obj)
         if not triangles:
             raise Exception("No valid triangles from existing mesh.")
         return triangles
@@ -418,14 +364,7 @@ class CutFillCalc:
 
     @staticmethod
     def _decimate_triangles(triangles, max_count: int):
-        n = int(len(triangles))
-        if n <= 0:
-            return triangles
-        m = int(max_count)
-        if m <= 0 or n <= m:
-            return triangles
-        stride = int(max(2, math.ceil(float(n) / float(m))))
-        return triangles[::stride]
+        return _ssc.decimate_triangles(triangles, max_count)
 
     def _build_xy_buckets_progress(
         self,
@@ -494,20 +433,7 @@ class CutFillCalc:
 
     @staticmethod
     def _point_in_tri_z(x, y, p0, p1, p2):
-        x0, y0 = p0.x, p0.y
-        x1, y1 = p1.x, p1.y
-        x2, y2 = p2.x, p2.y
-        den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-        if abs(den) <= 1e-14:
-            return None
-        w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / den
-        w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / den
-        w2 = 1.0 - w0 - w1
-        tol = 1e-9
-        if w0 < -tol or w1 < -tol or w2 < -tol:
-            return None
-        z = w0 * p0.z + w1 * p1.z + w2 * p2.z
-        return float(z)
+        return _ssc.point_in_tri_z(x, y, p0, p1, p2)
 
     @staticmethod
     def _z_at_xy(
@@ -607,15 +533,7 @@ class CutFillCalc:
 
     @staticmethod
     def _iter_grid_centers(xmin, xmax, ymin, ymax, step):
-        if step <= 1e-9:
-            step = 1.0
-        x = xmin + 0.5 * step
-        while x <= xmax - 0.5 * step + 1e-9:
-            y = ymin + 0.5 * step
-            while y <= ymax - 0.5 * step + 1e-9:
-                yield x, y
-                y += step
-            x += step
+        return _ssc.iter_grid_centers(xmin, xmax, ymin, ymax, step)
 
     def execute(self, obj):
         ensure_cut_fill_calc_properties(obj)

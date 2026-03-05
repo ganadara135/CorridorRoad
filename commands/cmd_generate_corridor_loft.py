@@ -2,33 +2,17 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from objects.doc_query import find_first, find_project
 from objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
-
-
-def _find_project(doc):
-    for o in doc.Objects:
-        if o.Name.startswith("CorridorRoadProject"):
-            return o
-    return None
+from objects.project_links import link_project
 
 
 def _find_section_set(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "SectionSet":
-            return o
-        if o.Name.startswith("SectionSet"):
-            return o
-    return None
+    return find_first(doc, proxy_type="SectionSet", name_prefixes=("SectionSet",))
 
 
 def _find_corridor_loft(doc):
-    for o in doc.Objects:
-        if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CorridorLoft":
-            return o
-        if o.Name.startswith("CorridorLoft"):
-            return o
-    return None
+    return find_first(doc, proxy_type="CorridorLoft", name_prefixes=("CorridorLoft",))
 
 
 class CmdGenerateCorridorLoft:
@@ -67,15 +51,14 @@ class CmdGenerateCorridorLoft:
         cor.AutoUpdate = True
         cor.touch()
 
-        prj = _find_project(doc)
+        prj = find_project(doc)
         if prj is not None:
-            ensure_project_properties(prj)
-            if hasattr(prj, "CorridorLoft"):
-                prj.CorridorLoft = cor
-            if hasattr(prj, "SectionSet") and getattr(prj, "SectionSet", None) is None:
-                prj.SectionSet = sec
-            CorridorRoadProject.adopt(prj, cor)
-            CorridorRoadProject.adopt(prj, sec)
+            link_project(
+                prj,
+                links={"CorridorLoft": cor},
+                links_if_empty={"SectionSet": sec},
+                adopt_extra=[cor, sec],
+            )
 
         doc.recompute()
 
