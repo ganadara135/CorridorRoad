@@ -67,8 +67,6 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyLink", "Alignment", "CorridorRoad", "Link to horizontal alignment object")
     if not hasattr(obj, "Stationing"):
         obj.addProperty("App::PropertyLink", "Stationing", "CorridorRoad", "Link to stationing object")
-    if not hasattr(obj, "ProfileEG"):
-        obj.addProperty("App::PropertyLink", "ProfileEG", "CorridorRoad", "Link to existing ground profile object")
     if not hasattr(obj, "Centerline3D"):
         obj.addProperty("App::PropertyLink", "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
     if not hasattr(obj, "Centerline3DDisplay"):
@@ -130,11 +128,6 @@ class CorridorRoadProject:
             s = _find_first(doc, "Stationing")
             if s is not None:
                 obj_project.Stationing = s
-
-        if obj_project.ProfileEG is None:
-            p = _find_first(doc, "ProfileEG")
-            if p is not None:
-                obj_project.ProfileEG = p
 
         if hasattr(obj_project, "Centerline3D") and obj_project.Centerline3D is None:
             c = None

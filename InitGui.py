@@ -21,7 +21,7 @@ if WB_DIR and (WB_DIR not in sys.path):
 
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
-    ToolTip = "CorridorRoad Workbench (Sample Alignment / Stations / ProfileEG)"
+    ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
     Icon = ""
 
     def Initialize(self):
@@ -30,7 +30,6 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import commands.cmd_create_alignment  # noqa: F401
         import commands.cmd_edit_alignment  # noqa: F401
         import commands.cmd_generate_stations  # noqa: F401
-        import commands.cmd_sample_eg_profile  # noqa: F401
         import commands.cmd_edit_profiles  # noqa: F401
         import commands.cmd_edit_pvi  # noqa: F401
         import commands.cmd_generate_centerline3d  # noqa: F401
@@ -45,7 +44,6 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
-            "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
             "CorridorRoad_GenerateCenterline3D",
@@ -61,7 +59,6 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
-            "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
             "CorridorRoad_GenerateCenterline3D",
