@@ -7,6 +7,20 @@ from PySide2 import QtCore, QtWidgets
 from objects.obj_vertical_alignment import VerticalAlignment, ViewProviderVerticalAlignment
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_fg_display import FGDisplay, ViewProviderFGDisplay
+from objects.obj_project import get_length_scale
+
+PROFILE_BUNDLE_LABEL = "Profiles (Data/EG)"
+OLD_PROFILE_BUNDLE_LABEL = "Profiles (EG/FG)"
+
+
+def _normalize_profile_bundle_label(bundle):
+    if bundle is None:
+        return
+    try:
+        if str(getattr(bundle, "Label", "")) == OLD_PROFILE_BUNDLE_LABEL:
+            bundle.Label = PROFILE_BUNDLE_LABEL
+    except Exception:
+        pass
 
 
 def _find_stationing(doc):
@@ -19,6 +33,7 @@ def _find_stationing(doc):
 def _find_profile_bundle(doc):
     for o in doc.Objects:
         if o.Name.startswith("ProfileBundle"):
+            _normalize_profile_bundle_label(o)
             return o
     return None
 
@@ -83,6 +98,7 @@ class PviEditorTaskPanel:
 
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._scale = get_length_scale(self.doc, default=1.0)
         self._loading = False
         self.form = self._build_ui()
         self._try_load_existing_va()
@@ -268,6 +284,7 @@ class PviEditorTaskPanel:
         if self.doc is None:
             return
 
+        self._scale = get_length_scale(self.doc, default=1.0)
         va = _find_vertical_alignment(self.doc)
         if va is None:
             return
@@ -285,7 +302,11 @@ class PviEditorTaskPanel:
         else:
             Ls = Ls[:n]
 
-        rows = sorted([(float(st[i]), float(el[i]), float(Ls[i])) for i in range(n)], key=lambda x: x[0])
+        sc = max(1e-12, float(self._scale))
+        rows = sorted(
+            [(float(st[i]) / sc, float(el[i]) / sc, float(Ls[i]) / sc) for i in range(n)],
+            key=lambda x: x[0],
+        )
 
         self._loading = True
         try:
@@ -300,7 +321,7 @@ class PviEditorTaskPanel:
 
         try:
             self.chk_clamp.setChecked(bool(getattr(va, "ClampOverlaps", True)))
-            self.spin_min_tan.setValue(float(getattr(va, "MinTangent", 0.0)))
+            self.spin_min_tan.setValue(float(getattr(va, "MinTangent", 0.0)) / sc)
         except Exception:
             pass
 
@@ -309,6 +330,8 @@ class PviEditorTaskPanel:
         if self.doc is None:
             return
 
+        self._scale = get_length_scale(self.doc, default=1.0)
+        sc = max(1e-12, float(self._scale))
         rows  = self._read_pvi()
         if len(rows) < 2:
             raise Exception("Need at least 2 valid PVI rows (Station & Elev).")
@@ -322,10 +345,14 @@ class PviEditorTaskPanel:
         _ensure_fg_display(self.doc, va)
 
         va.ClampOverlaps = bool(self.chk_clamp.isChecked())
-        va.MinTangent = float(self.spin_min_tan.value())
-        va.PVIStations = [p[0] for p in rows]
-        va.PVIElevations = [p[1] for p in rows]
-        va.CurveLengths  = [p[2] for p in rows]
+        va.MinTangent = float(self.spin_min_tan.value()) * sc
+        va.PVIStations = [float(p[0]) * sc for p in rows]
+        va.PVIElevations = [float(p[1]) * sc for p in rows]
+        va.CurveLengths  = [float(p[2]) * sc for p in rows]
+        try:
+            va.ShowPVIWire = False
+        except Exception:
+            pass
         va.touch()
 
         self.doc.recompute()
@@ -353,10 +380,11 @@ class PviEditorTaskPanel:
         if self.doc is None:
             return
 
+        # Always persist current UI rows first so preview uses latest edits/scale conversion.
+        self._save_vertical_alignment()
         va = _find_vertical_alignment(self.doc)
         if va is None:
-            self._save_vertical_alignment()
-            va = _find_vertical_alignment(self.doc)
+            raise Exception("Failed to create/update VerticalAlignment from current PVI table.")
 
         stations = self._resolve_station_list()
         if len(stations) < 2:
@@ -371,12 +399,11 @@ class PviEditorTaskPanel:
         if self.doc is None:
             return
 
-        # Ensure VerticalAlignment exists
+        # Always persist current UI rows first so generated FG reflects latest edits/scale conversion.
+        self._save_vertical_alignment()
         va = _find_vertical_alignment(self.doc)
         if va is None:
-            # if user hasn't pressed OK yet, still allow generate-only
-            self._save_vertical_alignment()
-            va = _find_vertical_alignment(self.doc)
+            raise Exception("Failed to create/update VerticalAlignment from current PVI table.")
 
         stations = self._resolve_station_list()
         if len(stations) < 2:
@@ -390,7 +417,7 @@ class PviEditorTaskPanel:
             b = self.doc.addObject("Part::FeaturePython", "ProfileBundle")
             ProfileBundle(b)
             ViewProviderProfileBundle(b.ViewObject)
-            b.Label = "Profiles (EG/FG)"
+            b.Label = PROFILE_BUNDLE_LABEL
 
             # If we created from Stationing, set Stations now
             b.Stations = [float(s) for s in stations]

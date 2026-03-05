@@ -254,7 +254,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - adaptive segmented fallback (range split) with failed ranges logged in `Status`
 
 ## UI / TaskPanel Rules
-### Edit Profiles (EG/FG)
+### Edit Profiles (Data/EG)
 - Table edits ProfileBundle station/profile data.
 - FG display controls must map to `FGDisplay` object properties.
 

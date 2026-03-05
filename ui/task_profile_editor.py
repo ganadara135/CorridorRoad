@@ -7,11 +7,67 @@ from PySide2 import QtCore, QtWidgets
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_vertical_alignment import VerticalAlignment
 from objects.obj_fg_display import FGDisplay, ViewProviderFGDisplay
+from objects.obj_alignment import HorizontalAlignment
+from objects.terrain_sampler import TerrainSampler, is_mesh_object, is_shape_object
+
+PROFILE_BUNDLE_LABEL = "Profiles (Data/EG)"
+OLD_PROFILE_BUNDLE_LABEL = "Profiles (EG/FG)"
+
+
+def _normalize_profile_bundle_label(bundle):
+    if bundle is None:
+        return
+    try:
+        if str(getattr(bundle, "Label", "")) == OLD_PROFILE_BUNDLE_LABEL:
+            bundle.Label = PROFILE_BUNDLE_LABEL
+    except Exception:
+        pass
+
 
 def _find_profile_bundle(doc):
     for o in doc.Objects:
         if o.Name.startswith("ProfileBundle"):
+            _normalize_profile_bundle_label(o)
             return o
+    return None
+
+
+def _find_project(doc):
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if o.Name.startswith("CorridorRoadProject"):
+            return o
+    return None
+
+
+def _find_alignment(doc):
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if o.Name.startswith("HorizontalAlignment"):
+            return o
+    return None
+
+
+def _find_terrain_sources(doc):
+    out = []
+    if doc is None:
+        return out
+    for o in doc.Objects:
+        if is_mesh_object(o) or is_shape_object(o):
+            out.append(o)
+    return out
+
+
+def _selected_terrain():
+    try:
+        sel = list(Gui.Selection.getSelection() or [])
+        for o in sel:
+            if is_mesh_object(o) or is_shape_object(o):
+                return o
+    except Exception:
+        pass
     return None
 
 
@@ -99,9 +155,12 @@ class ProfileEditorTaskPanel:
 
         # prevent AttributeError during UI build
         self.bundle = None
+        self.project = None
+        self.alignment = None
         self.stationing = None
         self.va = None
         self.fgdisp = None
+        self._terrains = []
 
         self._loading = False
         self.form = self._build_ui()
@@ -111,10 +170,9 @@ class ProfileEditorTaskPanel:
 
     # ---- TaskPanel protocol ----
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        return int(QtWidgets.QDialogButtonBox.Close)
 
     def accept(self):
-        self._save_to_document()
         Gui.Control.closeDialog()
 
     def reject(self):
@@ -123,7 +181,7 @@ class ProfileEditorTaskPanel:
     # ---- UI ----
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit Profiles (EG/FG)")
+        w.setWindowTitle("CorridorRoad - Edit Profiles (Data/EG)")
 
         root = QtWidgets.QVBoxLayout(w)
         root.setContentsMargins(10, 10, 10, 10)
@@ -189,12 +247,19 @@ class ProfileEditorTaskPanel:
         self.spin_fg_zoff.setDecimals(3)
         self.spin_fg_zoff.setValue(0.0)
 
+        self.cmb_eg_terrain = QtWidgets.QComboBox()
+        self.btn_pick_terrain = QtWidgets.QPushButton("Use Selected Terrain")
+        self.btn_apply = QtWidgets.QPushButton("Apply")
+
         form.addRow(self.chk_create_bundle)
         form.addRow(self.chk_fg_from_va)
         form.addRow(self.chk_show_eg)
         form.addRow(self.chk_show_fg)
         form.addRow("EG Z Offset:", self.spin_eg_zoff)
         form.addRow("FG Z Offset:", self.spin_fg_zoff)
+        form.addRow("EG Terrain Source:", self.cmb_eg_terrain)
+        form.addRow(self.btn_pick_terrain)
+        form.addRow(self.btn_apply)
 
         root.addWidget(gb)
 
@@ -204,6 +269,8 @@ class ProfileEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_fill_stations.clicked.connect(self._fill_stations_from_stationing)
         self.btn_fill_fg_from_va.clicked.connect(self._fill_fg_from_va)
+        self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
+        self.btn_apply.clicked.connect(self._apply_changes)
 
         self.chk_fg_from_va.toggled.connect(self._on_fg_mode_toggled)
         self.table.itemChanged.connect(self._on_table_item_changed)
@@ -217,14 +284,27 @@ class ProfileEditorTaskPanel:
     def _refresh_context(self):
         if self.doc is None:
             self.bundle = None
+            self.project = None
+            self.alignment = None
             self.stationing = None
             self.va = None
+            self._terrains = []
             self.lbl_info.setText("No active document.")
             return
         
         self.bundle = _find_profile_bundle(self.doc)
+        self.project = _find_project(self.doc)
+        self.alignment = None
+        try:
+            if self.project is not None and hasattr(self.project, "Alignment"):
+                self.alignment = getattr(self.project, "Alignment", None)
+        except Exception:
+            self.alignment = None
+        if self.alignment is None:
+            self.alignment = _find_alignment(self.doc)
         self.stationing = _find_stationing(self.doc)
         self.va = _find_vertical_alignment(self.doc)
+        self._terrains = _find_terrain_sources(self.doc)
 
         self.fgdisp = None
         if self.va is not None:
@@ -234,13 +314,25 @@ class ProfileEditorTaskPanel:
 
         msg = []
         msg.append(f"ProfileBundle: {'FOUND' if self.bundle else 'NOT FOUND'}")
+        msg.append(f"HorizontalAlignment: {'FOUND' if self.alignment else 'NOT FOUND'}")
         msg.append(f"Stationing: {'FOUND' if self.stationing else 'NOT FOUND'}")
         msg.append(f"VerticalAlignment: {'FOUND' if self.va else 'NOT FOUND'}")
+        msg.append(f"Terrain sources: {len(self._terrains)} found (Mesh/Shape)")
         msg.append("")
         msg.append("Policy:")
         msg.append("- EG wire is drawn by ProfileBundle.")
         msg.append("- FG wire is drawn by Finished Grade (FG) display object.")
         self.lbl_info.setText("\n".join(msg))
+
+        pref_terrain = None
+        if self.project is not None and hasattr(self.project, "Terrain"):
+            pref_terrain = getattr(self.project, "Terrain", None)
+        if pref_terrain is None:
+            pref_terrain = _selected_terrain()
+        self._fill_terrain_combo(selected=pref_terrain)
+        self.cmb_eg_terrain.setEnabled(bool(self._terrains))
+        self.btn_pick_terrain.setEnabled(bool(self._terrains))
+        self.btn_apply.setEnabled(True)
 
         # default FG-from-VA checkbox based on VA existence
         if self.va is None:
@@ -321,6 +413,45 @@ class ProfileEditorTaskPanel:
         finally:
             self._loading = False
 
+    def _format_terrain_obj(self, obj):
+        tag = "Mesh" if is_mesh_object(obj) else "Shape"
+        return f"[{tag}] {obj.Label} ({obj.Name})"
+
+    def _fill_terrain_combo(self, selected=None):
+        self.cmb_eg_terrain.clear()
+        for i, o in enumerate(self._terrains):
+            self.cmb_eg_terrain.addItem(self._format_terrain_obj(o), i)
+        if not self._terrains:
+            return
+        idx = 0
+        if selected is not None:
+            for i, o in enumerate(self._terrains):
+                if o == selected:
+                    idx = i
+                    break
+        self.cmb_eg_terrain.setCurrentIndex(idx)
+
+    def _current_terrain(self):
+        i = int(self.cmb_eg_terrain.currentIndex())
+        if i < 0 or i >= len(self._terrains):
+            return None
+        return self._terrains[i]
+
+    def _use_selected_terrain(self):
+        sel = _selected_terrain()
+        if sel is None:
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Profiles",
+                "No terrain source selected. Select a Mesh/Shape object first.",
+            )
+            return
+        for i, o in enumerate(self._terrains):
+            if o == sel:
+                self.cmb_eg_terrain.setCurrentIndex(i)
+                return
+        self._refresh_context()
+
     # ---- Actions ----
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
@@ -371,6 +502,64 @@ class ProfileEditorTaskPanel:
 
         # If FG locked, auto-fill from VA
         self._fill_fg_from_va()
+
+    def _fill_eg_from_terrain(self, overwrite: bool = True, show_message: bool = True, terrain_obj=None):
+        if self.alignment is None:
+            raise Exception("HorizontalAlignment not found.")
+        terr = terrain_obj if terrain_obj is not None else self._current_terrain()
+        if terr is None:
+            raise Exception("No terrain source selected.")
+
+        sampler = TerrainSampler.from_object(terr, max_triangles=300000)
+        if sampler is None:
+            raise Exception("Failed to build terrain sampler from selected source.")
+
+        sampled = 0
+        nodata = 0
+        self._loading = True
+        try:
+            for r in range(self.table.rowCount()):
+                s = self._get_cell_float(r, 0)
+                if s is None:
+                    continue
+                eg_old = self._get_cell_float(r, 1)
+                if (not overwrite) and (eg_old is not None):
+                    continue
+                p = HorizontalAlignment.point_at_station(self.alignment, float(s))
+                z = sampler.z_at(float(p.x), float(p.y))
+                if z is None:
+                    nodata += 1
+                    continue
+                self._set_cell_float(r, 1, float(z))
+                self._update_delta_row(r)
+                sampled += 1
+        finally:
+            self._loading = False
+
+        if sampled <= 0:
+            raise Exception("No EG elevations sampled from terrain. Check terrain coverage and station range.")
+
+        try:
+            if self.project is not None and hasattr(self.project, "Terrain"):
+                self.project.Terrain = terr
+        except Exception:
+            pass
+
+        if show_message:
+            msg = f"EG filled from terrain: {sampled} rows"
+            if nodata > 0:
+                msg += f", no-data: {nodata} rows"
+            QtWidgets.QMessageBox.information(None, "Edit Profiles", msg)
+
+    def _apply_changes(self):
+        try:
+            terr = self._current_terrain()
+            if terr is not None and self.alignment is not None:
+                self._fill_eg_from_terrain(overwrite=True, show_message=False, terrain_obj=terr)
+            self._save_to_document()
+            QtWidgets.QMessageBox.information(None, "Edit Profiles", "Applied.")
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Apply failed: {ex}")
 
     def _fill_fg_from_va(self):
         if self.va is None:
@@ -557,7 +746,7 @@ class ProfileEditorTaskPanel:
         b = self.doc.addObject("Part::FeaturePython", "ProfileBundle")
         ProfileBundle(b)
         ViewProviderProfileBundle(b.ViewObject)
-        b.Label = "Profiles (EG/FG)"
+        b.Label = PROFILE_BUNDLE_LABEL
         self.bundle = b
 
         return b
@@ -566,10 +755,28 @@ class ProfileEditorTaskPanel:
         if self.doc is None:
             return
 
+        terr_sel = self._current_terrain()
         self._refresh_context()
 
         b = self._get_or_create_bundle()
         va = self.va  # may be None
+
+        try:
+            if terr_sel is not None and self.project is not None and hasattr(self.project, "Terrain"):
+                self.project.Terrain = terr_sel
+        except Exception:
+            pass
+
+        # Safety net: prevent empty EG cells from being serialized as 0
+        # when a valid terrain source and alignment are available.
+        terr_for_eg = terr_sel
+        if terr_for_eg is None and self.project is not None and hasattr(self.project, "Terrain"):
+            terr_for_eg = getattr(self.project, "Terrain", None)
+        if terr_for_eg is not None and self.alignment is not None:
+            try:
+                self._fill_eg_from_terrain(overwrite=False, show_message=False, terrain_obj=terr_for_eg)
+            except Exception:
+                pass
 
         # Read stations + EG + FG
         # Policy:

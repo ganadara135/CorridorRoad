@@ -27,7 +27,8 @@ class VerticalAlignment:
         obj.MinTangent = 0.0
 
         obj.addProperty("App::PropertyBool", "ShowPVIWire", "Display", "Show PVI polyline (station-elev)")
-        obj.ShowPVIWire = True
+        # Keep PVI polyline hidden by default to avoid overlap with EG/FG display lines.
+        obj.ShowPVIWire = False
 
     def execute(self, obj):
         if obj.ShowPVIWire:
