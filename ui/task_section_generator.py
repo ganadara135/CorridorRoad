@@ -85,7 +85,7 @@ class SectionGeneratorTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        return int(QtWidgets.QDialogButtonBox.Close)
 
     def accept(self):
         Gui.Control.closeDialog()

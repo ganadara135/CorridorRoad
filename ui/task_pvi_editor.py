@@ -89,12 +89,9 @@ class PviEditorTaskPanel:
 
     # ---- TaskPanel API ----
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        return int(QtWidgets.QDialogButtonBox.Close)
 
     def accept(self):
-        self._save_vertical_alignment()
-        self._generate_fg_to_profilebundle()
-
         Gui.Control.closeDialog()
 
     def reject(self):
