@@ -4,6 +4,7 @@ import FreeCADGui as Gui
 from PySide2 import QtCore, QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
+from objects.obj_project import get_length_scale
 
 
 def _find_alignment(doc):
@@ -33,6 +34,8 @@ class AlignmentEditorTaskPanel:
         Gui.Control.closeDialog()
 
     def _build_ui(self):
+        scale = get_length_scale(self.doc, default=1.0)
+
         w = QtWidgets.QWidget()
         w.setWindowTitle("CorridorRoad - Edit Alignment (Practical)")
 
@@ -98,12 +101,12 @@ class AlignmentEditorTaskPanel:
         self.spin_min_tan = QtWidgets.QDoubleSpinBox()
         self.spin_min_tan.setRange(0.0, 100000.0)
         self.spin_min_tan.setDecimals(3)
-        self.spin_min_tan.setValue(20.0)
+        self.spin_min_tan.setValue(20.0 * scale)
 
         self.spin_min_ls = QtWidgets.QDoubleSpinBox()
         self.spin_min_ls.setRange(0.0, 100000.0)
         self.spin_min_ls.setDecimals(3)
-        self.spin_min_ls.setValue(20.0)
+        self.spin_min_ls.setValue(20.0 * scale)
 
         form.addRow(self.chk_create)
         form.addRow(self.chk_use_trans)

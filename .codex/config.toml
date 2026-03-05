@@ -1,37 +1,35 @@
 # .codex/config.toml
-# Project-scoped Codex settings for CorridorRoad (FreeCAD Workbench)
+# Project-scoped Codex settings for CorridorRoad
 
 [project]
 name = "CorridorRoad"
-# Optional: add a short description to keep the agent aligned
-description = "FreeCAD Workbench for road corridor pipeline. Python FeaturePython objects, TaskPanels, commands."
+description = "FreeCAD Workbench for road corridor design. Includes Sample Alignment and practical alignment editing with transition curves and criteria checks."
 
 [agent]
-# Keep changes reviewable.
-# If your Codex supports approvals/sandbox toggles, these options help safety.
-# (Exact keys can vary by Codex version; see Config Reference if needed.)
 ask_for_approval = "on-request"
 sandbox = "workspace-write"
 
 [style]
-# Encourage consistent diffs and minimal churn
 prefer_small_patches = true
 include_patch_summary = true
 
 [commands]
-# “Safe” commands Codex can run during iterations (optional).
-# Adjust to your environment.
 allowed = [
   "git status",
   "git diff",
+  "rg --files",
+  "rg -n",
 ]
 
 [notes]
-# A “house rules” block to keep naming and architecture consistent.
-# (This is just stored text; Codex will read it when you point it to this file or keep it in repo.)
 architecture = """
-- VerticalAlignment = data/engine (PVI, curve solving, elevation_at_station), no FG display props.
-- Finished Grade (FG) object (FGDisplay) owns FG display: ShowWire, CurvesOnly, ZOffset, SourceVA.
-- ProfileBundle stores Stations/ElevEG/ElevFG/Delta; draws EG only.
-- TaskPanels must not reference removed VA FG properties (ShowFGWire/FGCurvesOnly/FGWireZOffset).
+- Keep VerticalAlignment as data/engine only (PVI, curve solver, elevation_at_station).
+- FG display belongs only to FGDisplay (ShowWire, CurvesOnly, ZOffset, SourceVA).
+- ProfileBundle stores Stations/ElevEG/ElevFG/ElevDelta and displays EG only.
+- HorizontalAlignment supports two use cases:
+  1) Sample Alignment command for simple baseline data.
+  2) Practical Edit Alignment flow with CurveRadii/TransitionLengths, criteria checks, and actionable warnings.
+- Keep module/file names stable and avoid broad refactors.
+- Do not use git grep / compileall as mandatory validation steps in this repository workflow.
+"""
 context_files = ["README_Codex.md", "docs/ARCHITECTURE.md", "docs/CODEX_PROMPTS.md"]

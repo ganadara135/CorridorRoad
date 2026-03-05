@@ -1,8 +1,9 @@
 # CorridorRoad/commands/cmd_new_project.py
 import FreeCAD as App
 import FreeCADGui as Gui
+from PySide2 import QtWidgets
 
-from objects.obj_project import CorridorRoadProject
+from objects.obj_project import CorridorRoadProject, ensure_project_properties
 
 
 class CmdNewProject:
@@ -23,7 +24,20 @@ class CmdNewProject:
 
         obj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(obj)
+        ensure_project_properties(obj)
         obj.Label = "CorridorRoad Project"
+
+        scale, ok = QtWidgets.QInputDialog.getDouble(
+            None,
+            "Project Scale",
+            "Length scale (internal units per meter)\n1 = meter, 1000 = millimeter-like",
+            float(getattr(obj, "LengthScale", 1.0)),
+            1e-6,
+            1e9,
+            6,
+        )
+        if ok:
+            obj.LengthScale = float(scale)
 
         # Try auto-link and adopt existing objects
         CorridorRoadProject.auto_link(doc, obj)
@@ -34,8 +48,22 @@ class CmdNewProject:
         if obj.Stationing is not None:
             CorridorRoadProject.adopt(obj, obj.Stationing)
 
-        if obj.ProfileEG is not None:
-            CorridorRoadProject.adopt(obj, obj.ProfileEG)
+        if hasattr(obj, "Centerline3D") and obj.Centerline3D is not None:
+            CorridorRoadProject.adopt(obj, obj.Centerline3D)
+        if hasattr(obj, "Centerline3DDisplay") and obj.Centerline3DDisplay is not None:
+            CorridorRoadProject.adopt(obj, obj.Centerline3DDisplay)
+        if hasattr(obj, "AssemblyTemplate") and obj.AssemblyTemplate is not None:
+            CorridorRoadProject.adopt(obj, obj.AssemblyTemplate)
+        if hasattr(obj, "SectionSet") and obj.SectionSet is not None:
+            CorridorRoadProject.adopt(obj, obj.SectionSet)
+        if hasattr(obj, "CorridorLoft") and obj.CorridorLoft is not None:
+            CorridorRoadProject.adopt(obj, obj.CorridorLoft)
+        if hasattr(obj, "DesignGradingSurface") and obj.DesignGradingSurface is not None:
+            CorridorRoadProject.adopt(obj, obj.DesignGradingSurface)
+        if hasattr(obj, "DesignTerrain") and obj.DesignTerrain is not None:
+            CorridorRoadProject.adopt(obj, obj.DesignTerrain)
+        if hasattr(obj, "CutFillCalc") and obj.CutFillCalc is not None:
+            CorridorRoadProject.adopt(obj, obj.CutFillCalc)
 
         doc.recompute()
 

@@ -9,8 +9,8 @@ class CmdEditProfiles:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Edit Profiles (EG/FG)",
-            "ToolTip": "Manual input editor for EG and FG profiles by station",
+            "MenuText": "Edit Profiles (Data/EG)",
+            "ToolTip": "Edit profile data (Data/EG) and FG display/source settings by station",
         }
 
     def IsActive(self):

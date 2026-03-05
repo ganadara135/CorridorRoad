@@ -21,7 +21,7 @@ if WB_DIR and (WB_DIR not in sys.path):
 
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
-    ToolTip = "CorridorRoad Workbench (Sample Alignment / Stations / ProfileEG)"
+    ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
     Icon = ""
 
     def Initialize(self):
@@ -30,18 +30,28 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import commands.cmd_create_alignment  # noqa: F401
         import commands.cmd_edit_alignment  # noqa: F401
         import commands.cmd_generate_stations  # noqa: F401
-        import commands.cmd_sample_eg_profile  # noqa: F401
         import commands.cmd_edit_profiles  # noqa: F401
         import commands.cmd_edit_pvi  # noqa: F401
+        import commands.cmd_generate_centerline3d  # noqa: F401
+        import commands.cmd_generate_sections  # noqa: F401
+        import commands.cmd_generate_corridor_loft  # noqa: F401
+        import commands.cmd_generate_design_grading_surface  # noqa: F401
+        import commands.cmd_generate_design_terrain  # noqa: F401
+        import commands.cmd_generate_cut_fill_calc  # noqa: F401
 
         self.appendToolbar("CorridorRoad", [
             "CorridorRoad_NewProject",
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
-            "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
+            "CorridorRoad_GenerateCenterline3D",
+            "CorridorRoad_GenerateSections",
+            "CorridorRoad_GenerateCorridorLoft",
+            "CorridorRoad_GenerateDesignGradingSurface",
+            "CorridorRoad_GenerateDesignTerrain",
+            "CorridorRoad_GenerateCutFillCalc",
         ])
 
         self.appendMenu("CorridorRoad", [
@@ -49,9 +59,14 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
-            "CorridorRoad_SampleEGProfile",
             "CorridorRoad_EditProfiles",
             "CorridorRoad_EditPVI",
+            "CorridorRoad_GenerateCenterline3D",
+            "CorridorRoad_GenerateSections",
+            "CorridorRoad_GenerateCorridorLoft",
+            "CorridorRoad_GenerateDesignGradingSurface",
+            "CorridorRoad_GenerateDesignTerrain",
+            "CorridorRoad_GenerateCutFillCalc",
         ])
 
     def GetClassName(self):
