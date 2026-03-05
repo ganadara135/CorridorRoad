@@ -15,7 +15,7 @@ Verify these boundaries:
 ## Task: Practical Alignment Update
 When updating practical alignment behavior:
 - Preserve `Sample Alignment` command as a separate lightweight flow.
-- Keep practical editing in `Edit Alignment (Practical)` flow.
+- Keep practical editing in `Edit Alignment` flow.
 - Ensure criteria messages are actionable, not just warning labels.
 - Keep stationing compatibility with `point_at_station` / `tangent_at_station`.
 - Keep project length-scale policy consistent (`LengthScale`: internal units per meter).
@@ -53,7 +53,7 @@ When implementing Corridor Loft + parametric updates:
 
 ## Task: Surface Comparison Prep
 Before implementing `Existing/Design Surface` comparison:
-- Keep model policy: `CorridorLoft=Solid`, `DesignGradingSurface=Surface`, `DesignTerrain=Surface`, others `Surface/Wire`.
+- Keep model policy: `CorridorLoft=Solid`, `DesignGradingSurface=Mesh`, `DesignTerrain=Mesh`, others `Surface/Wire`.
 - Use design top surface extracted from `CorridorLoft`.
 - Use existing surface input as `Mesh` (phase-1).
 - Keep default comparison resolution at `1.0 m` (adjustable `0.2~5.0 m`).

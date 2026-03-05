@@ -73,6 +73,30 @@ def ensure_design_terrain_properties(obj):
     if not hasattr(obj, "MaxSamples"):
         obj.addProperty("App::PropertyInteger", "MaxSamples", "DesignTerrain", "Maximum allowed sample cells")
         obj.MaxSamples = 250000
+    if not hasattr(obj, "MaxCandidateTriangles"):
+        obj.addProperty(
+            "App::PropertyInteger",
+            "MaxCandidateTriangles",
+            "DesignTerrain",
+            "Maximum candidate triangles checked per sample point",
+        )
+        obj.MaxCandidateTriangles = 2500
+    if not hasattr(obj, "MaxTriangleChecks"):
+        obj.addProperty(
+            "App::PropertyInteger",
+            "MaxTriangleChecks",
+            "DesignTerrain",
+            "Maximum estimated triangle checks before abort",
+        )
+        obj.MaxTriangleChecks = 250000000
+    if not hasattr(obj, "MaxTrianglesPerSource"):
+        obj.addProperty(
+            "App::PropertyInteger",
+            "MaxTrianglesPerSource",
+            "DesignTerrain",
+            "Maximum triangle count per source after decimation",
+        )
+        obj.MaxTrianglesPerSource = 150000
     if not hasattr(obj, "DomainMargin"):
         obj.addProperty("App::PropertyFloat", "DomainMargin", "DesignTerrain", "Margin from existing terrain bounds (m)")
         obj.DomainMargin = 0.0 * scale
@@ -332,7 +356,7 @@ class DesignTerrain:
         return float(w0 * p0.z + w1 * p1.z + w2 * p2.z)
 
     @staticmethod
-    def _z_at_xy(x, y, triangles, buckets, bucket_size, wide_indices=None):
+    def _z_at_xy(x, y, triangles, buckets, bucket_size, wide_indices=None, max_candidates=None):
         ix = int(math.floor(float(x) / bucket_size))
         iy = int(math.floor(float(y) / bucket_size))
         cand = []
@@ -341,6 +365,9 @@ class DesignTerrain:
                 cand.extend(buckets.get((ix + dx, iy + dy), []))
         if wide_indices:
             cand.extend(wide_indices)
+        if max_candidates is not None and int(max_candidates) > 0 and len(cand) > int(max_candidates):
+            stride = int(max(2, math.ceil(float(len(cand)) / float(max_candidates))))
+            cand = cand[::stride]
         if not cand:
             return None
 
@@ -359,6 +386,17 @@ class DesignTerrain:
             if z_best is None or z > z_best:
                 z_best = z
         return z_best
+
+    @staticmethod
+    def _decimate_triangles(triangles, max_count: int):
+        n = int(len(triangles))
+        if n <= 0:
+            return triangles
+        m = int(max_count)
+        if m <= 0 or n <= m:
+            return triangles
+        stride = int(max(2, math.ceil(float(n) / float(m))))
+        return triangles[::stride]
 
     @staticmethod
     def _iter_grid_centers(xmin, xmax, ymin, ymax, step):
@@ -408,6 +446,18 @@ class DesignTerrain:
                 obj.MaxSamples = max_samples
 
             margin = max(0.0, float(getattr(obj, "DomainMargin", 0.0)))
+            max_candidates = int(getattr(obj, "MaxCandidateTriangles", 2500))
+            if max_candidates <= 0:
+                max_candidates = 2500
+                obj.MaxCandidateTriangles = max_candidates
+            max_checks = int(getattr(obj, "MaxTriangleChecks", 250000000))
+            if max_checks <= 0:
+                max_checks = 250000000
+                obj.MaxTriangleChecks = max_checks
+            max_tri = int(getattr(obj, "MaxTrianglesPerSource", 150000))
+            if max_tri <= 0:
+                max_tri = 150000
+                obj.MaxTrianglesPerSource = max_tri
             bb = DesignTerrain._source_bounds(eg)
             xmin = float(bb.XMin - margin)
             xmax = float(bb.XMax + margin)
@@ -431,12 +481,38 @@ class DesignTerrain:
 
             tri_e = self._triangles_from_mesh_progress(eg, 12.0, 20.0, "Reading existing terrain mesh")
 
+            if len(tri_d) > max_tri:
+                tri_d = DesignTerrain._decimate_triangles(tri_d, max_tri)
+            if len(tri_e) > max_tri:
+                tri_e = DesignTerrain._decimate_triangles(tri_e, max_tri)
+
             buck_d, wide_d = self._build_xy_buckets_progress(
                 tri_d, cell, 20.0, 30.0, "Bucketing design terrain triangles"
             )
             buck_e, wide_e = self._build_xy_buckets_progress(
                 tri_e, cell, 30.0, 40.0, "Bucketing existing terrain triangles"
             )
+
+            # Pre-run complexity guard for large terrains.
+            def _avg_len(dct):
+                if not dct:
+                    return 0.0
+                try:
+                    return float(sum(len(v) for v in dct.values())) / float(max(1, len(dct)))
+                except Exception:
+                    return 0.0
+
+            total_for_progress = max(1, est_samples)
+            avg_local_d = _avg_len(buck_d)
+            avg_local_e = _avg_len(buck_e)
+            est_cand_d = min(float(max_candidates), 9.0 * avg_local_d + float(len(wide_d)))
+            est_cand_e = min(float(max_candidates), 9.0 * avg_local_e + float(len(wide_e)))
+            est_checks = int(float(total_for_progress) * float(max(1.0, est_cand_d + est_cand_e)))
+            if est_checks > max_checks:
+                raise Exception(
+                    f"Estimated triangle checks {est_checks} exceed MaxTriangleChecks {max_checks}. "
+                    "Increase CellSize, reduce domain, or lower mesh density."
+                )
 
             mesh_out = _empty_mesh()
             if mesh_out is None:
@@ -445,7 +521,6 @@ class DesignTerrain:
             v_cnt = 0
             nodata = 0.0
             area = float(cell * cell)
-            total_for_progress = max(1, est_samples)
             report_every = max(20, min(2000, total_for_progress // 200))
 
             for x, y in DesignTerrain._iter_grid_centers(xmin, xmax, ymin, ymax, cell):
@@ -455,8 +530,8 @@ class DesignTerrain:
                     if self._report_progress(pct, f"Sampling merged terrain: {s_cnt}/{est_samples}"):
                         raise _CanceledError("Canceled by user.")
 
-                zd = DesignTerrain._z_at_xy(x, y, tri_d, buck_d, cell, wide_d)
-                ze = DesignTerrain._z_at_xy(x, y, tri_e, buck_e, cell, wide_e)
+                zd = DesignTerrain._z_at_xy(x, y, tri_d, buck_d, cell, wide_d, max_candidates=max_candidates)
+                ze = DesignTerrain._z_at_xy(x, y, tri_e, buck_e, cell, wide_e, max_candidates=max_candidates)
                 z = zd if zd is not None else ze
                 if z is None:
                     nodata += area
@@ -531,6 +606,9 @@ class DesignTerrain:
             "ExistingTerrain",
             "CellSize",
             "MaxSamples",
+            "MaxCandidateTriangles",
+            "MaxTriangleChecks",
+            "MaxTrianglesPerSource",
             "DomainMargin",
             "AutoUpdate",
             "RebuildNow",

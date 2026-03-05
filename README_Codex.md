@@ -3,7 +3,7 @@
 This repository is a FreeCAD Workbench (Python) for road corridor design.
 
 ## Project Goal (Pipeline)
-Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill Volume
+Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta Profile -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill Volume
 
 ## Current Implementation Scope
 ### Implemented
@@ -13,7 +13,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
   - Criteria checks (radius / tangent / transition length)
   - Actionable guidance messages
 - Station generation from alignment
-- Sample EG profile generation
+- EG terrain sampling and profile data editing (`Edit Profiles (Data/EG)`)
 - VerticalAlignment (PVI) engine and FG sampling
 - FG display as dedicated object (`Finished Grade (FG)`)
 - ProfileBundle storage (Stations/ElevEG/ElevFG/ElevDelta) and EG display
@@ -63,7 +63,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> EG Profile -> FG Profile (fr
 - Role: horizontal geometry engine and display shape for stationing
 - Supports:
   - Sample mode (`Sample Alignment`)
-  - Practical mode (`Edit Alignment (Practical)`)
+  - Practical mode (`Edit Alignment`)
     - `CurveRadii[]`, `TransitionLengths[]`, `UseTransitionCurves`, `SpiralSegments`
     - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
     - Output: `CriteriaMessages`, `CriteriaStatus`

@@ -6,6 +6,8 @@ from PySide2 import QtWidgets
 from objects.obj_project import CorridorRoadProject, ensure_project_properties, get_length_scale
 from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc
 
+QUALITY_PRESETS = ("Fast", "Balanced", "Precise", "Custom")
+
 
 def _find_project(doc):
     if doc is None:
@@ -120,6 +122,9 @@ class CutFillCalcTaskPanel:
 
         gb_opt = QtWidgets.QGroupBox("Comparison")
         fo = QtWidgets.QFormLayout(gb_opt)
+        self.cmb_quality = QtWidgets.QComboBox()
+        self.cmb_quality.addItems(list(QUALITY_PRESETS))
+        self.cmb_quality.setCurrentText("Balanced")
         self.spin_cell = QtWidgets.QDoubleSpinBox()
         self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
         self.spin_cell.setDecimals(3)
@@ -127,6 +132,16 @@ class CutFillCalcTaskPanel:
         self.spin_max_samples = QtWidgets.QSpinBox()
         self.spin_max_samples.setRange(1000, 2000000000)
         self.spin_max_samples.setValue(200000)
+        self.spin_max_tri_src = QtWidgets.QSpinBox()
+        self.spin_max_tri_src.setRange(1000, 2000000000)
+        self.spin_max_tri_src.setValue(150000)
+        self.spin_max_cand = QtWidgets.QSpinBox()
+        self.spin_max_cand.setRange(100, 2000000000)
+        self.spin_max_cand.setValue(2500)
+        self.spin_max_checks = QtWidgets.QSpinBox()
+        self.spin_max_checks.setRange(100000, 2000000000)
+        self.spin_max_checks.setSingleStep(10000000)
+        self.spin_max_checks.setValue(250000000)
         self.spin_min_facets = QtWidgets.QSpinBox()
         self.spin_min_facets.setRange(1, 2000000000)
         self.spin_min_facets.setValue(100)
@@ -153,9 +168,15 @@ class CutFillCalcTaskPanel:
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
         self.lbl_sign = QtWidgets.QLabel("Sign: delta=Design-Existing, +Fill / -Cut")
+        self.lbl_est = QtWidgets.QLabel("Estimate: -")
+        self.lbl_est.setWordWrap(True)
 
+        fo.addRow("Quality Preset:", self.cmb_quality)
         fo.addRow("Cell Size (scaled):", self.spin_cell)
         fo.addRow("Max Samples:", self.spin_max_samples)
+        fo.addRow("Max Triangles/Source:", self.spin_max_tri_src)
+        fo.addRow("Max Candidate Triangles:", self.spin_max_cand)
+        fo.addRow("Max Triangle Checks:", self.spin_max_checks)
         fo.addRow("Min Mesh Facets:", self.spin_min_facets)
         fo.addRow(self.chk_use_bounds)
         fo.addRow("Domain Margin (scaled):", self.spin_margin)
@@ -166,6 +187,7 @@ class CutFillCalcTaskPanel:
         fo.addRow("Y Max:", self.spin_ymax)
         fo.addRow(self.chk_auto)
         fo.addRow(self.lbl_sign)
+        fo.addRow("Estimate:", self.lbl_est)
         main.addWidget(gb_opt)
 
         gb_vis = QtWidgets.QGroupBox("3D Display")
@@ -221,6 +243,20 @@ class CutFillCalcTaskPanel:
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
         self.btn_cancel.clicked.connect(self._request_cancel)
+        self.cmb_corridor.currentIndexChanged.connect(self._on_source_changed)
+        self.cmb_surface.currentIndexChanged.connect(self._on_source_changed)
+        self.cmb_quality.currentTextChanged.connect(self._on_quality_changed)
+        self.spin_cell.valueChanged.connect(self._on_opt_changed)
+        self.spin_max_samples.valueChanged.connect(self._on_opt_changed)
+        self.spin_max_tri_src.valueChanged.connect(self._on_opt_changed)
+        self.spin_max_cand.valueChanged.connect(self._on_opt_changed)
+        self.spin_max_checks.valueChanged.connect(self._on_opt_changed)
+        self.spin_margin.valueChanged.connect(self._on_source_changed)
+        self.spin_xmin.valueChanged.connect(self._on_source_changed)
+        self.spin_xmax.valueChanged.connect(self._on_source_changed)
+        self.spin_ymin.valueChanged.connect(self._on_source_changed)
+        self.spin_ymax.valueChanged.connect(self._on_source_changed)
+        self.chk_use_bounds.toggled.connect(self._on_source_changed)
 
         self._update_bounds_ui()
         return w
@@ -299,6 +335,12 @@ class CutFillCalcTaskPanel:
                     self.spin_cell.setValue(float(cmp_obj.CellSize))
                 if hasattr(cmp_obj, "MaxSamples"):
                     self.spin_max_samples.setValue(int(cmp_obj.MaxSamples))
+                if hasattr(cmp_obj, "MaxTrianglesPerSource"):
+                    self.spin_max_tri_src.setValue(int(cmp_obj.MaxTrianglesPerSource))
+                if hasattr(cmp_obj, "MaxCandidateTriangles"):
+                    self.spin_max_cand.setValue(int(cmp_obj.MaxCandidateTriangles))
+                if hasattr(cmp_obj, "MaxTriangleChecks"):
+                    self.spin_max_checks.setValue(int(cmp_obj.MaxTriangleChecks))
                 if hasattr(cmp_obj, "MinMeshFacets"):
                     self.spin_min_facets.setValue(int(cmp_obj.MinMeshFacets))
                 if hasattr(cmp_obj, "UseCorridorBounds"):
@@ -350,6 +392,12 @@ class CutFillCalcTaskPanel:
         else:
             msg.append("Cut-Fill Calc object: NOT FOUND (will create)")
         self.lbl_info.setText("\n".join(msg))
+        self._loading = True
+        try:
+            self.cmb_quality.setCurrentText(self._guess_quality_preset())
+        finally:
+            self._loading = False
+        self._update_estimate_hint()
 
     def _use_selected_surface(self):
         sel = _selected_surface()
@@ -363,6 +411,7 @@ class CutFillCalcTaskPanel:
         for i, o in enumerate(self._surfaces):
             if o == sel:
                 self.cmb_surface.setCurrentIndex(i)
+                self._update_estimate_hint()
                 return
         self._refresh_context()
 
@@ -436,6 +485,16 @@ class CutFillCalcTaskPanel:
                 "Increase Cell Size, reduce domain, or raise Max Samples.",
             )
             return
+        est_checks = self._estimate_triangle_checks(corridor, mesh, est_samples=est)
+        max_checks = int(self.spin_max_checks.value())
+        if est_checks is not None and est_checks > max_checks:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Cut-Fill Calc",
+                f"Estimated triangle checks {est_checks} exceed Max Triangle Checks {max_checks}.\n"
+                "Increase Cell Size, reduce domain, or lower triangle limits.",
+            )
+            return
 
         cmp_obj = self._create_or_get_cut_fill_calc()
         proxy = getattr(cmp_obj, "Proxy", None)
@@ -463,6 +522,12 @@ class CutFillCalcTaskPanel:
                 cmp_obj.ExistingSurface = mesh
                 cmp_obj.CellSize = float(self.spin_cell.value())
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
+                if hasattr(cmp_obj, "MaxTrianglesPerSource"):
+                    cmp_obj.MaxTrianglesPerSource = int(self.spin_max_tri_src.value())
+                if hasattr(cmp_obj, "MaxCandidateTriangles"):
+                    cmp_obj.MaxCandidateTriangles = int(self.spin_max_cand.value())
+                if hasattr(cmp_obj, "MaxTriangleChecks"):
+                    cmp_obj.MaxTriangleChecks = int(self.spin_max_checks.value())
                 cmp_obj.MinMeshFacets = int(self.spin_min_facets.value())
                 cmp_obj.UseCorridorBounds = bool(self.chk_use_bounds.isChecked())
                 cmp_obj.DomainMargin = float(self.spin_margin.value())
@@ -543,6 +608,9 @@ class CutFillCalcTaskPanel:
             f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
             f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
             f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
+            f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
+            f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
+            f"MaxTriangleChecks: {int(getattr(cmp_obj, 'MaxTriangleChecks', 0))}",
             f"Sign: {str(getattr(cmp_obj, 'SignConvention', 'delta=Design-Existing, +Fill/-Cut'))}",
             f"Display: show_map={bool(getattr(cmp_obj, 'ShowDeltaMap', True))}, "
             f"deadband={float(getattr(cmp_obj, 'DeltaDeadband', 0.0)):.3f} (scaled), "
@@ -601,6 +669,142 @@ class CutFillCalcTaskPanel:
             return int(max(0, nx) * max(0, ny))
         except Exception:
             return None
+
+    def _preset_values(self, name: str):
+        sc = float(self._scale)
+        presets = {
+            "Fast": {
+                "cell": 2.0 * sc,
+                "max_samples": 120000,
+                "max_tri_src": 80000,
+                "max_cand": 1200,
+                "max_checks": 120000000,
+            },
+            "Balanced": {
+                "cell": 1.0 * sc,
+                "max_samples": 200000,
+                "max_tri_src": 150000,
+                "max_cand": 2500,
+                "max_checks": 250000000,
+            },
+            "Precise": {
+                "cell": 0.5 * sc,
+                "max_samples": 500000,
+                "max_tri_src": 300000,
+                "max_cand": 4000,
+                "max_checks": 600000000,
+            },
+        }
+        return presets.get(str(name), None)
+
+    def _apply_quality_preset(self, name: str):
+        vals = self._preset_values(name)
+        if vals is None:
+            return
+        self._loading = True
+        try:
+            self.spin_cell.setValue(float(vals["cell"]))
+            self.spin_max_samples.setValue(int(vals["max_samples"]))
+            self.spin_max_tri_src.setValue(int(vals["max_tri_src"]))
+            self.spin_max_cand.setValue(int(vals["max_cand"]))
+            self.spin_max_checks.setValue(int(vals["max_checks"]))
+        finally:
+            self._loading = False
+
+    def _guess_quality_preset(self):
+        cell = float(self.spin_cell.value())
+        max_samples = int(self.spin_max_samples.value())
+        max_tri = int(self.spin_max_tri_src.value())
+        max_cand = int(self.spin_max_cand.value())
+        max_checks = int(self.spin_max_checks.value())
+        for name in ("Fast", "Balanced", "Precise"):
+            vals = self._preset_values(name)
+            if vals is None:
+                continue
+            if (
+                abs(cell - float(vals["cell"])) <= max(1e-6, 1e-3 * self._scale)
+                and max_samples == int(vals["max_samples"])
+                and max_tri == int(vals["max_tri_src"])
+                and max_cand == int(vals["max_cand"])
+                and max_checks == int(vals["max_checks"])
+            ):
+                return name
+        return "Custom"
+
+    def _estimate_triangle_checks(self, corridor, mesh, est_samples=None):
+        try:
+            if corridor is None or mesh is None:
+                return None
+            if est_samples is None:
+                est_samples = self._estimate_samples(corridor)
+            if est_samples is None:
+                return None
+            cell = float(self.spin_cell.value())
+            if bool(self.chk_use_bounds.isChecked()):
+                bb = corridor.Shape.BoundBox
+                margin = float(self.spin_margin.value())
+                xmin = float(bb.XMin - margin)
+                xmax = float(bb.XMax + margin)
+                ymin = float(bb.YMin - margin)
+                ymax = float(bb.YMax + margin)
+            else:
+                xmin = float(self.spin_xmin.value())
+                xmax = float(self.spin_xmax.value())
+                ymin = float(self.spin_ymin.value())
+                ymax = float(self.spin_ymax.value())
+                if xmax < xmin:
+                    xmin, xmax = xmax, xmin
+                if ymax < ymin:
+                    ymin, ymax = ymax, ymin
+            area = max(1e-9, float(xmax - xmin) * float(ymax - ymin))
+            max_tri_src = int(self.spin_max_tri_src.value())
+            max_cand = int(self.spin_max_cand.value())
+            tri_exist = min(max_tri_src, self._mesh_facets(mesh))
+            tri_design = min(max_tri_src, max(1, tri_exist))
+            cand = 9.0 * float(cell * cell) * float(max(1, tri_design + tri_exist)) / float(area)
+            cand = min(float(max(1, 2 * max_cand)), max(1.0, cand))
+            return int(float(est_samples) * cand)
+        except Exception:
+            return None
+
+    def _update_estimate_hint(self):
+        corridor = self._current_corridor()
+        mesh = self._current_surface()
+        est_s = self._estimate_samples(corridor) if corridor is not None else None
+        est_c = self._estimate_triangle_checks(corridor, mesh, est_samples=est_s) if (corridor is not None and mesh is not None) else None
+        if est_s is None:
+            self.lbl_est.setText("Estimate: select valid corridor/mesh to compute estimate")
+            self.lbl_est.setStyleSheet("")
+            return
+        max_s = int(self.spin_max_samples.value())
+        max_c = int(self.spin_max_checks.value())
+        warn = (est_s > max_s) or (est_c is not None and est_c > max_c)
+        checks_txt = "-" if est_c is None else f"{int(est_c):,}"
+        self.lbl_est.setText(
+            f"samples ~ {int(est_s):,} / limit {max_s:,}, triangle checks ~ {checks_txt} / limit {max_c:,}"
+        )
+        self.lbl_est.setStyleSheet("color:#b71c1c;" if warn else "")
+
+    def _on_quality_changed(self, name):
+        if self._loading:
+            return
+        if str(name) != "Custom":
+            self._apply_quality_preset(str(name))
+        self._update_estimate_hint()
+
+    def _on_opt_changed(self, _v):
+        if self._loading:
+            return
+        if str(self.cmb_quality.currentText()) != "Custom":
+            self._loading = True
+            try:
+                self.cmb_quality.setCurrentText("Custom")
+            finally:
+                self._loading = False
+        self._update_estimate_hint()
+
+    def _on_source_changed(self, _v):
+        self._update_estimate_hint()
 
     def _request_cancel(self):
         self._cancel_requested = True

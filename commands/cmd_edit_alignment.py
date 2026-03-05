@@ -8,7 +8,7 @@ class CmdEditAlignment:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Edit Alignment (Practical)",
+            "MenuText": "Edit Alignment",
             "ToolTip": "Edit alignment IP/radius/transition and run criteria checks",
         }
 
