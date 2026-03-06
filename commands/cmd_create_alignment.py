@@ -4,7 +4,13 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, find_project, get_length_scale
+from objects.obj_project import (
+    CorridorRoadProject,
+    ensure_project_properties,
+    find_project,
+    get_coordinate_setup,
+    get_length_scale,
+)
 
 
 def _ask_length_scale(default_value: float):
@@ -57,12 +63,15 @@ class CmdCreateAlignment:
 
         # Sample uses 120 m total length with user/project scale.
         s = float(scale)
+        cst = get_coordinate_setup(prj)
+        x0 = float(cst.get("LocalOriginX", 0.0))
+        y0 = float(cst.get("LocalOriginY", 0.0))
         deltaX = 60.0 * s
         obj.IPPoints = [
-            App.Vector(0 - deltaX, 0, 0),
-            App.Vector(48.0 * s - deltaX, 0, 0),
-            App.Vector(66.0 * s - deltaX, 24.0 * s, 0),
-            App.Vector(108.0 * s - deltaX, 24.0 * s, 0),
+            App.Vector(x0 + (0 - deltaX), y0 + 0.0, 0),
+            App.Vector(x0 + (48.0 * s - deltaX), y0 + 0.0, 0),
+            App.Vector(x0 + (66.0 * s - deltaX), y0 + (24.0 * s), 0),
+            App.Vector(x0 + (108.0 * s - deltaX), y0 + (24.0 * s), 0),
         ]
         # Keep sample geometry feasible so S-C-S transitions are preserved (not clamped to zero).
         obj.CurveRadii = [0.0, 18.0 * s, 18.0 * s, 0.0]

@@ -4,6 +4,7 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.obj_project import CorridorRoadProject, ensure_project_properties
+from ui.task_project_setup import ProjectSetupTaskPanel
 
 
 class CmdNewProject:
@@ -66,6 +67,11 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.CutFillCalc)
 
         doc.recompute()
+
+        try:
+            Gui.Control.showDialog(ProjectSetupTaskPanel(preferred_project=obj))
+        except Exception:
+            pass
 
 
 Gui.addCommand("CorridorRoad_NewProject", CmdNewProject())

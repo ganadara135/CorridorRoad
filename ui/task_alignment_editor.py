@@ -4,7 +4,13 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
-from objects.obj_project import get_length_scale
+from objects.obj_project import (
+    find_project,
+    get_coordinate_setup,
+    get_length_scale,
+    local_to_world,
+    world_to_local,
+)
 
 
 def _find_alignments(doc):
@@ -21,8 +27,10 @@ class AlignmentEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self.aln = None
+        self.prj = None
         self._alignments = []
         self._loading = False
+        self._coord_mode_initialized = False
         self._last_apply_warnings = []
         self.form = self._build_ui()
         self._refresh_context()
@@ -58,6 +66,16 @@ class AlignmentEditorTaskPanel:
         row_src.addWidget(self.cmb_alignment, 1)
         row_src.addWidget(self.btn_refresh_context)
         root.addLayout(row_src)
+
+        row_coord = QtWidgets.QHBoxLayout()
+        self.cmb_coord_mode = QtWidgets.QComboBox()
+        self.cmb_coord_mode.addItems(["Local (X/Y)", "World (E/N)"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
+        row_coord.addWidget(QtWidgets.QLabel("Coord Input:"))
+        row_coord.addWidget(self.cmb_coord_mode)
+        row_coord.addWidget(self.lbl_coord_hint, 1)
+        root.addLayout(row_coord)
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
@@ -150,13 +168,27 @@ class AlignmentEditorTaskPanel:
         self.btn_refresh.clicked.connect(self._refresh_report)
         self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
         self.btn_refresh_context.clicked.connect(self._on_refresh_context)
+        self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)
 
         self._set_rows(4)
+        self._update_coord_headers()
         return w
 
     @staticmethod
     def _fmt_alignment(o):
         return f"{o.Label} ({o.Name})"
+
+    def _use_world_mode(self):
+        return int(self.cmb_coord_mode.currentIndex()) == 1
+
+    def _update_coord_headers(self):
+        if self._use_world_mode():
+            self.table.setHorizontalHeaderLabels(["E", "N", "Radius (m)", "Transition Ls (m)"])
+        else:
+            self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
+
+    def _coord_context_obj(self):
+        return self.prj if self.prj is not None else self.doc
 
     def _current_alignment_from_combo(self):
         i = int(self.cmb_alignment.currentIndex())
@@ -166,14 +198,33 @@ class AlignmentEditorTaskPanel:
 
     def _refresh_context(self, selected=None):
         if self.doc is None:
+            self.prj = None
             self._alignments = []
             self.aln = None
             self.cmb_alignment.clear()
+            self.lbl_coord_hint.setText("No coordinate setup.")
             self.lbl_info.setText("No active document.")
             return
 
         if selected is None:
             selected = self.aln
+
+        self.prj = find_project(self.doc)
+        cst = get_coordinate_setup(self.prj if self.prj is not None else self.doc)
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+
+        if not self._coord_mode_initialized:
+            self._loading = True
+            try:
+                if st != "Uninitialized" or bool(epsg):
+                    self.cmb_coord_mode.setCurrentIndex(1)
+                else:
+                    self.cmb_coord_mode.setCurrentIndex(0)
+            finally:
+                self._loading = False
+            self._coord_mode_initialized = True
 
         self._alignments = _find_alignments(self.doc)
 
@@ -207,6 +258,12 @@ class AlignmentEditorTaskPanel:
         if self._loading:
             return
         self.aln = self._current_alignment_from_combo()
+        self._load_from_doc()
+
+    def _on_coord_mode_changed(self):
+        if self._loading:
+            return
+        self._update_coord_headers()
         self._load_from_doc()
 
     def _on_refresh_context(self):
@@ -280,8 +337,14 @@ class AlignmentEditorTaskPanel:
             self._set_rows(n if n > 0 else 4)
             for i in range(n):
                 p = pts[i]
-                self._set_float(i, 0, float(p.x))
-                self._set_float(i, 1, float(p.y))
+                xv = float(p.x)
+                yv = float(p.y)
+                if self._use_world_mode():
+                    e, n1, _z1 = local_to_world(self._coord_context_obj(), xv, yv, float(p.z))
+                    xv = float(e)
+                    yv = float(n1)
+                self._set_float(i, 0, xv)
+                self._set_float(i, 1, yv)
                 self._set_float(i, 2, float(rr[i]))
                 self._set_float(i, 3, float(ls[i]))
 
@@ -328,6 +391,8 @@ class AlignmentEditorTaskPanel:
                     lines.append(f"IP#{i}: {sta:.3f}")
                 except Exception:
                     lines.append(f"IP#{i}: N/A")
+        lines.append("")
+        lines.append(f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}")
         self.txt_report.setPlainText("\n".join(lines))
 
     def _add_row(self):
@@ -399,7 +464,15 @@ class AlignmentEditorTaskPanel:
         if self.doc is None:
             return
 
-        rows = self._read_rows()
+        rows_input = self._read_rows()
+        rows = []
+        for x, y, rr, ls in rows_input:
+            if self._use_world_mode():
+                lx, ly, _lz = world_to_local(self._coord_context_obj(), float(x), float(y), 0.0)
+                rows.append((float(lx), float(ly), float(rr), float(ls)))
+            else:
+                rows.append((float(x), float(y), float(rr), float(ls)))
+
         errs, warns = self._validate_rows(rows)
         if errs:
             raise Exception("\n".join(errs))

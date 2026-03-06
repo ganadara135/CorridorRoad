@@ -9,6 +9,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### Implemented
 - Sample Horizontal Alignment command (`Sample Alignment`)
   - sample defaults include S-C-S transitions (`TransitionLengths` + `UseTransitionCurves`)
+- Project coordinate setup (`Project Setup`)
+  - CRS/EPSG, datum, world/local origin, north rotation, setup lock/status
+  - shared coordinate transforms (`world_to_local`, `local_to_world`)
 - Practical alignment editing:
   - Tangent + circular curves + transition curves (S-C-S)
   - Criteria checks (radius / tangent / transition length)
@@ -83,6 +86,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `TSKeyStations`, `SCKeyStations`, `CSKeyStations`, `STKeyStations`
 - Edit Alignment UX:
   - TaskPanel uses `Close` + explicit `Apply Alignment`
+  - alignment object is selectable in TaskPanel
+  - coordinate input mode supports `Local (X/Y)` and `World (E/N)`
   - duplicate consecutive IP rows are blocked
   - report includes criteria warnings and approximate station of each IP
 
@@ -306,8 +311,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### Scale UX
 - `New Project` opens scale input (`LengthScale`) when project is created.
+- `New Project` opens `Project Setup` dialog after project creation.
 - `Sample Alignment` opens scale input before sample generation.
 - If project is missing, `Sample Alignment` creates project container and stores `LengthScale`.
+- `Sample Alignment` starts around project local origin (`LocalOriginX/Y`).
 
 ### Generate Design Grading Surface
 - command creates/updates `DesignGradingSurface` from current `SectionSet`.

@@ -222,6 +222,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Purpose: project container + global unit/scale policy.
 - Key property:
   - `LengthScale` (internal units per meter; `1.0=m`, `1000.0=mm-like`)
+- Coordinate setup properties:
+  - `CRSEPSG`, `HorizontalDatum`, `VerticalDatum`
+  - `ProjectOriginE/N/Z`, `LocalOriginX/Y/Z`, `NorthRotationDeg`
+  - `CoordSetupLocked`, `CoordSetupStatus`
+- Shared coordinate transform helpers:
+  - `world_to_local(...)`, `local_to_world(...)`
+  - vector variants: `world_to_local_vec(...)`, `local_to_world_vec(...)`
 - Scale usage:
   - sample/default length values are initialized by `LengthScale`
   - station/section/assembly/centerline defaults follow project scale
@@ -229,18 +236,30 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - changing `LengthScale` does not retroactively rescale existing object values
 
 ## 3) UI Contracts
+### 3.0 Project Setup (`commands/cmd_project_setup.py`, `ui/task_project_setup.py`)
+- Provides initial coordinate-system setup UI:
+  - CRS/EPSG, datum, world/local origin, north rotation
+  - setup lock/status
+- `Apply Setup` commits values to `CorridorRoadProject`.
+- `New Project` opens this task panel automatically after project creation.
+
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
 - Sample defaults include feasible S-C-S transition settings (`CurveRadii`, `TransitionLengths`, `UseTransitionCurves=True`).
 - Keep as lightweight starter command.
 - Opens scale input UX (`LengthScale`) before creating sample.
 - Creates `CorridorRoadProject` automatically when missing and stores `LengthScale`.
+- Sample points are generated around project local origin (`LocalOriginX/Y`).
 
 ### 3.2 Practical Alignment Editor (`commands/cmd_edit_alignment.py`, `ui/task_alignment_editor.py`)
 - Edits practical alignment inputs:
   - IP coordinates
   - Radius/transition arrays
   - Criteria settings
+- Supports target alignment selection in TaskPanel.
+- Coordinate input mode:
+  - `Local (X/Y)` writes local model coordinates directly
+  - `World (E/N)` converts to/from local using project coordinate setup
 - Shows criteria report messages.
 - TaskPanel button policy:
   - standard button is `Close`
