@@ -1,5 +1,4 @@
 # CorridorRoad/objects/obj_stationing.py
-import FreeCAD as App
 import Part
 
 from objects.obj_alignment import HorizontalAlignment
@@ -74,13 +73,7 @@ class Stationing:
         half = tick_len * 0.5
 
         for s_val, p in zip(stations, points):
-            t = HorizontalAlignment.tangent_at_station(aln, s_val)
-            n = App.Vector(-t.y, t.x, 0)
-            if n.Length < 1e-9:
-                n = App.Vector(0, 1, 0)
-
-            else:
-                n = n.normalize()
+            n = HorizontalAlignment.normal_at_station(aln, s_val)
 
             a = p - n * half
             b = p + n * half

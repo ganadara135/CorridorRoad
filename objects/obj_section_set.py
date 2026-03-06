@@ -6,6 +6,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_centerline3d import Centerline3D
+from objects.obj_alignment import HorizontalAlignment
 from objects.obj_project import get_length_scale
 from objects import surface_sampling_core as _ssc
 
@@ -81,6 +82,37 @@ def _parse_station_text(text: str):
     return out
 
 
+def _alignment_ip_key_stations(aln):
+    if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
+        return []
+    total = float(aln.Shape.Length)
+    if total <= 1e-9:
+        return [0.0]
+
+    vals = [0.0, total]
+    pts = list(getattr(aln, "IPPoints", []) or [])
+    for p in pts:
+        try:
+            s = float(HorizontalAlignment.station_at_xy(aln, float(p.x), float(p.y), samples_per_edge=48))
+            vals.append(s)
+        except Exception:
+            continue
+    vals = [min(max(0.0, float(v)), total) for v in vals]
+    return _unique_sorted(vals)
+
+
+def _alignment_sc_cs_key_stations(aln):
+    if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
+        return [], []
+    total = float(aln.Shape.Length)
+    if total <= 1e-9:
+        return [], []
+
+    sc = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "SCKeyStations", []) or [])]
+    cs = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "CSKeyStations", []) or [])]
+    return _unique_sorted(sc), _unique_sorted(cs)
+
+
 def _mark_corridor_needs_recompute(obj_corridor):
     try:
         if hasattr(obj_corridor, "NeedsRecompute"):
@@ -136,6 +168,12 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "StationText"):
         obj.addProperty("App::PropertyString", "StationText", "Sections", "Manual station list text")
         obj.StationText = ""
+    if not hasattr(obj, "IncludeAlignmentIPStations"):
+        obj.addProperty("App::PropertyBool", "IncludeAlignmentIPStations", "Sections", "In Range mode, always include alignment IP key stations")
+        obj.IncludeAlignmentIPStations = True
+    if not hasattr(obj, "IncludeAlignmentSCCSStations"):
+        obj.addProperty("App::PropertyBool", "IncludeAlignmentSCCSStations", "Sections", "In Range mode, include transition SC/CS key stations")
+        obj.IncludeAlignmentSCCSStations = False
 
     if not hasattr(obj, "StationValues"):
         obj.addProperty("App::PropertyFloatList", "StationValues", "Result", "Resolved stations for sections (m)")
@@ -216,7 +254,66 @@ class SectionSet:
             vals.append(float(s))
             s += itv
         vals.append(float(s1))
+
+        if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
+            try:
+                keys = _alignment_ip_key_stations(aln)
+                keys = [v for v in keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                vals.extend(keys)
+            except Exception:
+                pass
+        if bool(getattr(obj, "IncludeAlignmentSCCSStations", False)):
+            try:
+                sc_keys, cs_keys = _alignment_sc_cs_key_stations(aln)
+                sc_keys = [v for v in sc_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                cs_keys = [v for v in cs_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                vals.extend(sc_keys)
+                vals.extend(cs_keys)
+            except Exception:
+                pass
         return _unique_sorted(vals)
+
+    @staticmethod
+    def resolve_station_tags(obj, stations):
+        """
+        Resolve per-station tag list used by child section labels.
+        """
+        out = [[] for _ in stations]
+        if not stations:
+            return out
+
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        aln = getattr(src, "Alignment", None) if src is not None else None
+        if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
+            return out
+
+        tol = max(1e-4, 1e-6 * float(getattr(aln.Shape, "Length", 1.0)))
+        key_sets = []
+
+        if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
+            try:
+                key_sets.append(("IP", _alignment_ip_key_stations(aln)))
+            except Exception:
+                pass
+        if bool(getattr(obj, "IncludeAlignmentSCCSStations", False)):
+            try:
+                sc_keys, cs_keys = _alignment_sc_cs_key_stations(aln)
+                key_sets.append(("SC", sc_keys))
+                key_sets.append(("CS", cs_keys))
+            except Exception:
+                pass
+
+        if not key_sets:
+            return out
+
+        for i, s in enumerate(stations):
+            ss = float(s)
+            tags = []
+            for tag, keys in key_sets:
+                if any(abs(ss - float(k)) <= tol for k in keys):
+                    tags.append(tag)
+            out[i] = tags
+        return out
 
     @staticmethod
     def _resolve_terrain_source(obj):
@@ -547,7 +644,7 @@ class SectionSet:
         obj.Group = []
 
     @staticmethod
-    def rebuild_child_sections(obj, stations=None, wires=None):
+    def rebuild_child_sections(obj, stations=None, wires=None, station_tags=None):
         doc = getattr(obj, "Document", None)
         if doc is None:
             return
@@ -556,12 +653,16 @@ class SectionSet:
             stations, wires, _tf, _so = SectionSet.build_section_wires(obj)
         if len(stations) != len(wires):
             raise Exception("Child rebuild failed: stations/wires size mismatch.")
+        if station_tags is None or len(station_tags) != len(stations):
+            station_tags = SectionSet.resolve_station_tags(obj, stations)
 
         SectionSet.clear_child_sections(obj)
         children = []
-        for s, w in zip(stations, wires):
+        for i, (s, w) in enumerate(zip(stations, wires)):
             ch = doc.addObject("Part::Feature", "SectionSlice")
-            ch.Label = f"Section @STA {float(s):.3f}"
+            tags = station_tags[i] if i < len(station_tags) else []
+            tag_txt = f" [{'/'.join(tags)}]" if tags else ""
+            ch.Label = f"STA {float(s):.3f}{tag_txt}"
             try:
                 if not hasattr(ch, "Station"):
                     ch.addProperty("App::PropertyFloat", "Station", "Section", "Station (m)")
@@ -620,7 +721,8 @@ class SectionSet:
                 if need_rebuild and (not self._is_rebuilding_children):
                     self._is_rebuilding_children = True
                     try:
-                        SectionSet.rebuild_child_sections(obj, stations=stations, wires=wires)
+                        tags = SectionSet.resolve_station_tags(obj, stations)
+                        SectionSet.rebuild_child_sections(obj, stations=stations, wires=wires, station_tags=tags)
                     finally:
                         self._is_rebuilding_children = False
             else:
@@ -668,6 +770,8 @@ class SectionSet:
             "EndStation",
             "Interval",
             "StationText",
+            "IncludeAlignmentIPStations",
+            "IncludeAlignmentSCCSStations",
             "CreateChildSections",
             "AutoRebuildChildren",
             "RebuildNow",

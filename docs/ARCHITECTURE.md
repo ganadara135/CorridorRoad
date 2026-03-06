@@ -32,10 +32,17 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Supports:
   - Tangent + circular curve
   - Optional transition curve (S-C-S) approximation
+  - Stable station helpers on mixed edge types:
+    - `point_at_station(s)` (length-based edge parameter)
+    - `tangent_at_station(s)`, `normal_at_station(s)`
+    - `station_at_xy(x, y)` (approximate inverse mapping)
 - Practical properties:
   - Geometry: `IPPoints`, `CurveRadii`, `TransitionLengths`, `UseTransitionCurves`, `SpiralSegments`
   - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
   - Results: `CriteriaMessages`, `CriteriaStatus`, `TotalLength`
+  - Key-station outputs:
+    - `IPKeyStations` (IP station list)
+    - `SCKeyStations`, `CSKeyStations` (transition boundary station lists)
 
 ### 2.5 Centerline3D (`objects/obj_centerline3d.py`)
 - Purpose: 3D centerline computation engine (no display shape ownership).
@@ -93,6 +100,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Modes:
   - `Range` (`StartStation`, `EndStation`, `Interval`)
   - `Manual` (`StationText`)
+  - Range helper:
+    - `IncludeAlignmentIPStations` adds alignment IP key stations to range list
+    - `IncludeAlignmentSCCSStations` adds transition SC/CS key stations to range list
 - Results:
   - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
   - schema policy:
@@ -106,6 +116,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - wide-triangle bucket guard to avoid bucket blow-up
 - Optional tree children:
   - `SectionSlice` objects under `Group`
+  - label format: `STA {station}` with optional key tags (e.g., `[IP]`, `[SC]`, `[CS]`)
 - Rebuild controls:
   - `AutoRebuildChildren`
   - `RebuildNow` (property-panel trigger)
@@ -229,6 +240,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Radius/transition arrays
   - Criteria settings
 - Shows criteria report messages.
+- TaskPanel button policy:
+  - standard button is `Close`
+  - apply action is explicit `Apply Alignment`
+- Input guards:
+  - duplicate/too-close consecutive IP rows are rejected
+  - endpoint radius/transition values are forced to zero with warning text
+- Diagnostics:
+  - report includes status, total length, and approximate IP station summary.
 
 ### 3.3 Profile/PVI Editors
 - `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
@@ -243,10 +262,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### 3.5 Section Command (`commands/cmd_generate_sections.py`, `ui/task_section_generator.py`)
 - Provides user-facing section workflow:
   - select mode: `Range` or `Manual`
+  - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment SC/CS Key Stations`)
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2)
   - optionally create child sections per station in tree
-  - `OK` closes dialog only (no generation)
+  - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
 
 ### 3.6 Corridor Command (`commands/cmd_generate_corridor_loft.py`)

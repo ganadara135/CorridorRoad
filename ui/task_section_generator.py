@@ -115,6 +115,12 @@ class SectionGeneratorTaskPanel:
         self.txt_manual.setPlaceholderText("Manual stations (comma/space/newline), e.g. 0, 20, 37.5, 80")
         self.txt_manual.setFixedHeight(80)
         fm.addRow("Manual Stations:", self.txt_manual)
+        self.chk_include_ip_keys = QtWidgets.QCheckBox("Include Alignment IP Key Stations (Range)")
+        self.chk_include_ip_keys.setChecked(True)
+        fm.addRow(self.chk_include_ip_keys)
+        self.chk_include_sccs_keys = QtWidgets.QCheckBox("Include Alignment SC/CS Key Stations (Range)")
+        self.chk_include_sccs_keys.setChecked(False)
+        fm.addRow(self.chk_include_sccs_keys)
         main.addWidget(gb_mode)
 
         gb_opt = QtWidgets.QGroupBox("Options")
@@ -222,6 +228,8 @@ class SectionGeneratorTaskPanel:
         self.spin_end.setEnabled(is_range)
         self.spin_itv.setEnabled(is_range)
         self.txt_manual.setEnabled(not is_range)
+        self.chk_include_ip_keys.setEnabled(is_range)
+        self.chk_include_sccs_keys.setEnabled(is_range)
 
     def _update_template_pos_ui(self):
         use_start = bool(self.chk_place_at_start.isChecked())
@@ -359,6 +367,10 @@ class SectionGeneratorTaskPanel:
             try:
                 if hasattr(sec, "DaylightAuto"):
                     self.chk_daylight.setChecked(bool(sec.DaylightAuto))
+                if hasattr(sec, "IncludeAlignmentIPStations"):
+                    self.chk_include_ip_keys.setChecked(bool(sec.IncludeAlignmentIPStations))
+                if hasattr(sec, "IncludeAlignmentSCCSStations"):
+                    self.chk_include_sccs_keys.setChecked(bool(sec.IncludeAlignmentSCCSStations))
             except Exception:
                 pass
 
@@ -414,6 +426,7 @@ class SectionGeneratorTaskPanel:
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
+        msg.append("   - Range mode can include Alignment IP / SC/CS key stations automatically")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
         self.lbl_info.setText("\n".join(msg))
@@ -536,6 +549,10 @@ class SectionGeneratorTaskPanel:
             sec.EndStation = float(self.spin_end.value())
             sec.Interval = float(self.spin_itv.value())
             sec.StationText = str(self.txt_manual.toPlainText() or "")
+            if hasattr(sec, "IncludeAlignmentIPStations"):
+                sec.IncludeAlignmentIPStations = bool(self.chk_include_ip_keys.isChecked())
+            if hasattr(sec, "IncludeAlignmentSCCSStations"):
+                sec.IncludeAlignmentSCCSStations = bool(self.chk_include_sccs_keys.isChecked())
             sec.CreateChildSections = bool(self.chk_children.isChecked())
             if hasattr(sec, "DaylightAuto"):
                 sec.DaylightAuto = bool(self.chk_daylight.isChecked())

@@ -73,6 +73,17 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `CurveRadii[]`, `TransitionLengths[]`, `UseTransitionCurves`, `SpiralSegments`
     - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
     - Output: `CriteriaMessages`, `CriteriaStatus`
+- Station helper contract:
+  - `point_at_station(s)`: length-true edge evaluation on line/arc/mixed wire
+  - `tangent_at_station(s)`, `normal_at_station(s)`
+  - `station_at_xy(x, y)`: approximate XY->station inverse lookup
+- Key-station outputs:
+  - `IPKeyStations` (IP station list)
+  - `SCKeyStations`, `CSKeyStations` (transition boundary station lists)
+- Edit Alignment UX:
+  - TaskPanel uses `Close` + explicit `Apply Alignment`
+  - duplicate consecutive IP rows are blocked
+  - report includes criteria warnings and approximate station of each IP
 
 ### 5) Centerline3D
 - Role: data/engine only for H+V integrated 3D centerline.
@@ -122,6 +133,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Station mode:
   - `Range`: Start/End/Interval
   - `Manual`: station list text
+  - Range helper:
+    - `IncludeAlignmentIPStations` to merge alignment IP key stations
+    - `IncludeAlignmentSCCSStations` to merge transition SC/CS key stations
 - Sources:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
@@ -132,6 +146,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - document terrain candidate fallback
 - Optional:
   - child `SectionSlice` objects in tree
+  - child label format: `STA {station}` + optional key tags (`[IP]`, `[SC]`, `[CS]`)
   - rebuild controls: `AutoRebuildChildren`, `RebuildNow`
 - Schema policy:
   - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)

@@ -1,7 +1,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
 from objects.obj_project import get_length_scale
@@ -19,15 +19,15 @@ class AlignmentEditorTaskPanel:
         self.doc = App.ActiveDocument
         self.aln = None
         self._loading = False
+        self._last_apply_warnings = []
         self.form = self._build_ui()
         self._refresh_context()
         self._load_from_doc()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        return int(QtWidgets.QDialogButtonBox.Close)
 
     def accept(self):
-        self._save_to_doc()
         Gui.Control.closeDialog()
 
     def reject(self):
@@ -37,7 +37,7 @@ class AlignmentEditorTaskPanel:
         scale = get_length_scale(self.doc, default=1.0)
 
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit Alignment (Practical)")
+        w.setWindowTitle("CorridorRoad - Edit Alignment")
 
         root = QtWidgets.QVBoxLayout(w)
         root.setContentsMargins(10, 10, 10, 10)
@@ -120,7 +120,9 @@ class AlignmentEditorTaskPanel:
         root.addWidget(gb_opts)
 
         rep_row = QtWidgets.QHBoxLayout()
+        self.btn_apply = QtWidgets.QPushButton("Apply Alignment")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Criteria Report")
+        rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
         root.addLayout(rep_row)
 
@@ -132,6 +134,7 @@ class AlignmentEditorTaskPanel:
         self.btn_add.clicked.connect(self._add_row)
         self.btn_del.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
+        self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_refresh.clicked.connect(self._refresh_report)
 
         self._set_rows(4)
@@ -237,11 +240,32 @@ class AlignmentEditorTaskPanel:
         if self.aln is None:
             self.txt_report.setPlainText("No alignment object.")
             return
+        lines = []
+        lines.append(f"Status: {getattr(self.aln, 'CriteriaStatus', 'N/A')}")
+        lines.append(f"Total length: {float(getattr(self.aln, 'TotalLength', 0.0)):.3f}")
+        pts = list(getattr(self.aln, "IPPoints", []) or [])
+        lines.append(f"IP count: {len(pts)}")
+        if self._last_apply_warnings:
+            lines.append("")
+            lines.append("Input warnings:")
+            lines.extend(self._last_apply_warnings)
         msgs = list(getattr(self.aln, "CriteriaMessages", []) or [])
-        if not msgs:
-            self.txt_report.setPlainText("OK: no criteria warnings.")
-            return
-        self.txt_report.setPlainText("\n".join(msgs))
+        lines.append("")
+        if msgs:
+            lines.append("Criteria warnings:")
+            lines.extend(msgs)
+        else:
+            lines.append("Criteria warnings: none")
+        if pts and getattr(self.aln, "Shape", None) and (not self.aln.Shape.isNull()):
+            lines.append("")
+            lines.append("IP station (approx):")
+            for i, p in enumerate(pts):
+                try:
+                    sta = float(HorizontalAlignment.station_at_xy(self.aln, float(p.x), float(p.y)))
+                    lines.append(f"IP#{i}: {sta:.3f}")
+                except Exception:
+                    lines.append(f"IP#{i}: N/A")
+        self.txt_report.setPlainText("\n".join(lines))
 
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
@@ -284,13 +308,38 @@ class AlignmentEditorTaskPanel:
         self.aln = obj
         return obj
 
+    def _validate_rows(self, rows):
+        errs = []
+        warns = []
+        if len(rows) < 2:
+            errs.append("Need at least 2 valid IP rows (X, Y).")
+            return errs, warns
+
+        tol = 1e-6
+        for i in range(len(rows) - 1):
+            x0, y0, _, _ = rows[i]
+            x1, y1, _, _ = rows[i + 1]
+            dx = float(x1 - x0)
+            dy = float(y1 - y0)
+            if (dx * dx + dy * dy) <= (tol * tol):
+                errs.append(f"Rows {i} and {i + 1} are duplicated or too close.")
+
+        if abs(float(rows[0][2])) > 1e-9 or abs(float(rows[-1][2])) > 1e-9:
+            warns.append("Endpoint radius values are forced to 0.")
+        if abs(float(rows[0][3])) > 1e-9 or abs(float(rows[-1][3])) > 1e-9:
+            warns.append("Endpoint transition lengths are forced to 0.")
+
+        return errs, warns
+
     def _save_to_doc(self):
         if self.doc is None:
             return
 
         rows = self._read_rows()
-        if len(rows) < 2:
-            raise Exception("Need at least 2 valid IP rows (X, Y).")
+        errs, warns = self._validate_rows(rows)
+        if errs:
+            raise Exception("\n".join(errs))
+        self._last_apply_warnings = list(warns)
 
         aln = self._get_or_create_alignment()
         ensure_alignment_properties(aln)
@@ -325,3 +374,10 @@ class AlignmentEditorTaskPanel:
             Gui.ActiveDocument.ActiveView.fitAll()
         except Exception:
             pass
+
+    def _apply_changes(self):
+        try:
+            self._save_to_doc()
+            QtWidgets.QMessageBox.information(None, "Edit Alignment", "Applied.")
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Alignment", f"Apply failed: {ex}")
