@@ -8,6 +8,7 @@ from objects.doc_query import find_first, find_project
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_vertical_alignment import VerticalAlignment
 from objects.obj_alignment import HorizontalAlignment
+from objects.obj_project import get_coordinate_setup, local_to_world, world_to_local
 from objects.terrain_sampler import TerrainSampler, is_mesh_object, is_shape_object
 from ui.common.profile_fg_helpers import (
     PROFILE_BUNDLE_LABEL,
@@ -79,6 +80,7 @@ class ProfileEditorTaskPanel:
         self.va = None
         self.fgdisp = None
         self._terrains = []
+        self._coord_mode_initialized = False
 
         self._loading = False
         self.form = self._build_ui()
@@ -166,6 +168,10 @@ class ProfileEditorTaskPanel:
         self.spin_fg_zoff.setValue(0.0)
 
         self.cmb_eg_terrain = QtWidgets.QComboBox()
+        self.cmb_terrain_coords = QtWidgets.QComboBox()
+        self.cmb_terrain_coords.addItems(["Local (X/Y)", "World (E/N)"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_apply = QtWidgets.QPushButton("Apply")
 
@@ -176,6 +182,12 @@ class ProfileEditorTaskPanel:
         form.addRow("EG Z Offset:", self.spin_eg_zoff)
         form.addRow("FG Z Offset:", self.spin_fg_zoff)
         form.addRow("EG Terrain Source:", self.cmb_eg_terrain)
+        row_coord_mode = QtWidgets.QHBoxLayout()
+        row_coord_mode.addWidget(self.cmb_terrain_coords)
+        row_coord_mode.addWidget(self.lbl_coord_hint, 1)
+        w_coord_mode = QtWidgets.QWidget()
+        w_coord_mode.setLayout(row_coord_mode)
+        form.addRow("EG Terrain Coords:", w_coord_mode)
         form.addRow(self.btn_pick_terrain)
         form.addRow(self.btn_apply)
 
@@ -189,6 +201,7 @@ class ProfileEditorTaskPanel:
         self.btn_fill_fg_from_va.clicked.connect(self._fill_fg_from_va)
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
+        self.cmb_terrain_coords.currentIndexChanged.connect(self._on_terrain_coord_mode_changed)
 
         self.chk_fg_from_va.toggled.connect(self._on_fg_mode_toggled)
         self.table.itemChanged.connect(self._on_table_item_changed)
@@ -197,6 +210,41 @@ class ProfileEditorTaskPanel:
         self._set_rows(3)
 
         return w
+
+    def _use_world_terrain_mode(self):
+        return int(self.cmb_terrain_coords.currentIndex()) == 1
+
+    def _coord_context_obj(self):
+        if self.project is not None:
+            return self.project
+        return self.doc
+
+    def _update_coord_hint(self):
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+
+    def _apply_default_coord_mode(self):
+        if self._coord_mode_initialized:
+            return
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self._loading = True
+        try:
+            if st != "Uninitialized" or bool(epsg):
+                self.cmb_terrain_coords.setCurrentIndex(1)
+            else:
+                self.cmb_terrain_coords.setCurrentIndex(0)
+        finally:
+            self._loading = False
+        self._coord_mode_initialized = True
+
+    def _on_terrain_coord_mode_changed(self):
+        if self._loading:
+            return
+        self._update_coord_hint()
 
     # ---- Context ----
     def _refresh_context(self):
@@ -223,6 +271,8 @@ class ProfileEditorTaskPanel:
         self.stationing = _find_stationing(self.doc)
         self.va = _find_vertical_alignment(self.doc)
         self._terrains = _find_terrain_sources(self.doc)
+        self._apply_default_coord_mode()
+        self._update_coord_hint()
 
         self.fgdisp = None
         if self.va is not None:
@@ -236,6 +286,7 @@ class ProfileEditorTaskPanel:
         msg.append(f"Stationing: {'FOUND' if self.stationing else 'NOT FOUND'}")
         msg.append(f"VerticalAlignment: {'FOUND' if self.va else 'NOT FOUND'}")
         msg.append(f"Terrain sources: {len(self._terrains)} found (Mesh/Shape)")
+        msg.append(f"EG terrain coord mode: {'World (E/N)' if self._use_world_terrain_mode() else 'Local (X/Y)'}")
         msg.append("")
         msg.append("Policy:")
         msg.append("- EG wire is drawn by ProfileBundle.")
@@ -444,11 +495,18 @@ class ProfileEditorTaskPanel:
                 if (not overwrite) and (eg_old is not None):
                     continue
                 p = HorizontalAlignment.point_at_station(self.alignment, float(s))
-                z = sampler.z_at(float(p.x), float(p.y))
+                qx = float(p.x)
+                qy = float(p.y)
+                if self._use_world_terrain_mode():
+                    qx, qy, _qz = local_to_world(self._coord_context_obj(), qx, qy, float(p.z))
+                z = sampler.z_at(float(qx), float(qy))
                 if z is None:
                     nodata += 1
                     continue
-                self._set_cell_float(r, 1, float(z))
+                z_local = float(z)
+                if self._use_world_terrain_mode():
+                    _lx, _ly, z_local = world_to_local(self._coord_context_obj(), float(qx), float(qy), float(z))
+                self._set_cell_float(r, 1, float(z_local))
                 self._update_delta_row(r)
                 sampled += 1
         finally:

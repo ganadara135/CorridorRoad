@@ -272,6 +272,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### 3.3 Profile/PVI Editors
 - `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
+- Profile editor EG terrain sampling coordinate mode:
+  - `Local (X/Y)` samples terrain with local alignment XY directly
+  - `World (E/N)` converts local alignment XY to world XY for sampling, then converts sampled Z back to local
 - `ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
 
 ### 3.4 Centerline Command (`commands/cmd_generate_centerline3d.py`)

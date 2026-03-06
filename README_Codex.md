@@ -300,6 +300,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Table edits ProfileBundle station/profile data.
 - FG display controls must map to `FGDisplay` object properties.
 - EG terrain source is explicitly selectable from Mesh/Shape list.
+- EG terrain coordinate mode supports `Local (X/Y)` and `World (E/N)` for sampling.
+- In `World (E/N)` mode, terrain XY queries use project transform and sampled Z is converted back to local.
 - `Apply` commits sampling+data updates; standard buttons are `Close` only (no `OK/Cancel`).
 
 ### Generate Sections Panel
