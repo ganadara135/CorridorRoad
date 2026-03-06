@@ -243,6 +243,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `world_to_local(...)`, `local_to_world(...)`
   - vector variants: `world_to_local_vec(...)`, `local_to_world_vec(...)`
   - bulk/localized geometry helpers for world/local conversion: `objects/coord_transform.py`
+  - world XY domain/bounds conversion helper: `world_xy_bounds_to_local(...)`
+  - repeated point conversion caching helper: `world_point_to_local_cached(...)`
 - Scale usage:
   - sample/default length values are initialized by `LengthScale`
   - station/section/assembly/centerline defaults follow project scale
@@ -250,6 +252,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - changing `LengthScale` does not retroactively rescale existing object values
 
 ## 3) UI Contracts
+- Shared coordinate-mode UX policy:
+  - coordinate setup hint text and default Local/World mode decision should use `ui/common/coord_ui.py`
+  - hint text includes CRS/status plus transform essentials (north rotation, world/local origins)
+
 ### 3.0 Project Setup (`commands/cmd_project_setup.py`, `ui/task_project_setup.py`)
 - Provides initial coordinate-system setup UI:
   - CRS/EPSG, datum, world/local origin, north rotation
@@ -423,6 +429,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - recompute
   - property update reactions
   - command/task-panel flow
+- Standard runtime scenario sheet: `docs/RUNTIME_VALIDATION_CHECKLIST.md`
 - `git grep` / `python -m compileall` are not mandatory validation gates in this project workflow.
 
 ## 8) Pre-CutFillCalc Decisions (Fixed 7)

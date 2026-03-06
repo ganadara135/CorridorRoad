@@ -12,8 +12,9 @@ from objects.obj_assembly_template import (
 from objects.doc_query import find_first, find_project
 from objects.project_links import link_project
 from objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
-from objects.obj_project import get_coordinate_setup, get_length_scale
+from objects.obj_project import get_length_scale
 from objects import surface_sampling_core as _ssc
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
 def _find_first_by_proxy_type(doc, type_name: str):
@@ -254,20 +255,14 @@ class SectionGeneratorTaskPanel:
         return self.doc
 
     def _update_coord_hint(self):
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
-        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+        self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
 
     def _apply_default_coord_mode(self):
         if self._coord_mode_initialized:
             return
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
         self._loading = True
         try:
-            if st != "Uninitialized" or bool(epsg):
+            if should_default_world_mode(self._coord_context_obj()):
                 self.cmb_day_coords.setCurrentText("World")
             else:
                 self.cmb_day_coords.setCurrentText("Local")

@@ -30,21 +30,39 @@ def world_point_to_local(p_world, params):
     return App.Vector(x, y, z)
 
 
+def world_point_to_local_cached(p_world, params, cache=None, max_cache_size: int = 500000):
+    if cache is None:
+        return world_point_to_local(p_world, params)
+    key = (float(p_world.x), float(p_world.y), float(p_world.z))
+    q = cache.get(key)
+    if q is not None:
+        return q
+    q = world_point_to_local(p_world, params)
+    try:
+        if int(len(cache)) >= int(max_cache_size):
+            cache.clear()
+        cache[key] = q
+    except Exception:
+        pass
+    return q
+
+
 def triangle_bbox_xy(p0, p1, p2):
     return _ssc.triangle_bbox_xy(p0, p1, p2)
 
 
-def triangles_world_to_local(triangles, doc_or_obj=None, params=None):
+def triangles_world_to_local(triangles, doc_or_obj=None, params=None, point_cache=None):
     if not triangles:
         return []
     tr = params if params is not None else world_to_local_params(doc_or_obj)
+    cache = point_cache if point_cache is not None else {}
     out = []
     for tri in triangles:
         try:
             p0, p1, p2, _bb = tri
-            q0 = world_point_to_local(p0, tr)
-            q1 = world_point_to_local(p1, tr)
-            q2 = world_point_to_local(p2, tr)
+            q0 = world_point_to_local_cached(p0, tr, cache=cache)
+            q1 = world_point_to_local_cached(p1, tr, cache=cache)
+            q2 = world_point_to_local_cached(p2, tr, cache=cache)
             bb = triangle_bbox_xy(q0, q1, q2)
             out.append((q0, q1, q2, bb))
         except Exception:
@@ -66,3 +84,28 @@ def triangles_bbox_xy(triangles):
         ymin = float(by0) if ymin is None else min(float(ymin), float(by0))
         ymax = float(by1) if ymax is None else max(float(ymax), float(by1))
     return float(xmin), float(xmax), float(ymin), float(ymax)
+
+
+def world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=None, params=None):
+    x0 = float(x0)
+    x1 = float(x1)
+    y0 = float(y0)
+    y1 = float(y1)
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    tr = params if params is not None else world_to_local_params(doc_or_obj)
+    corners = (
+        App.Vector(x0, y0, 0.0),
+        App.Vector(x0, y1, 0.0),
+        App.Vector(x1, y0, 0.0),
+        App.Vector(x1, y1, 0.0),
+    )
+    xs = []
+    ys = []
+    for p in corners:
+        q = world_point_to_local(p, tr)
+        xs.append(float(q.x))
+        ys.append(float(q.y))
+    return min(xs), max(xs), min(ys), max(ys)

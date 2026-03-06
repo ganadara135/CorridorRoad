@@ -31,6 +31,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Shared utility modularization:
   - doc lookup/link helpers (`objects/doc_query.py`, `objects/project_links.py`)
   - profile/FG UI helpers (`ui/common/profile_fg_helpers.py`)
+  - coordinate mode/hint UI helpers (`ui/common/coord_ui.py`)
   - quality/estimate UI helpers (`ui/common/perf_quality.py`)
   - shared surface sampling core (`objects/surface_sampling_core.py`)
   - shared coordinate transform helpers (`objects/coord_transform.py`)
@@ -392,6 +393,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `objects/project_links.py`
   - `objects/coord_transform.py`
   - `objects/surface_sampling_core.py`
+  - `ui/common/coord_ui.py`
   - `ui/common/profile_fg_helpers.py`
   - `ui/common/perf_quality.py`
 - Keep sample command and practical command separated:
@@ -401,8 +403,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - document object lookup should prefer `objects/doc_query.py`.
   - project link/adopt updates should prefer `objects/project_links.py`.
   - PVI/Profile FG helper logic should prefer `ui/common/profile_fg_helpers.py`.
+  - coordinate mode/hint UI logic should prefer `ui/common/coord_ui.py`.
   - DesignTerrain/CutFill preset+estimate logic should prefer `ui/common/perf_quality.py`.
   - world/local geometry transform helpers should prefer `objects/coord_transform.py`.
+  - world/local XY domain/bounds conversion should use `objects/coord_transform.py::world_xy_bounds_to_local`.
   - surface triangle/bucket/intersection primitives should prefer `objects/surface_sampling_core.py`.
 
 ## Model Representation Policy (Fixed)
@@ -481,5 +485,6 @@ Before finalizing cut/fill volume reporting, these are fixed:
 
 ## Validation Policy
 - Prefer FreeCAD runtime validation (object creation, property changes, recompute behavior).
+- Use runtime checklist: `docs/RUNTIME_VALIDATION_CHECKLIST.md`.
 - Do not require `git grep` or `python -m compileall` as mandatory workflow steps in this repository.
 

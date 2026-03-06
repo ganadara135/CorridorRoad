@@ -389,6 +389,7 @@ class CutFillCalc:
         if not triangles:
             return []
         tr = _ct.world_to_local_params(doc_or_obj)
+        p_cache = {}
         out = []
         n = max(1, int(len(triangles)))
         report_every = max(20, min(2000, n // 100))
@@ -397,9 +398,9 @@ class CutFillCalc:
         for i, tri in enumerate(triangles, start=1):
             try:
                 p0, p1, p2, _bb = tri
-                q0 = _ct.world_point_to_local(p0, tr)
-                q1 = _ct.world_point_to_local(p1, tr)
-                q2 = _ct.world_point_to_local(p2, tr)
+                q0 = _ct.world_point_to_local_cached(p0, tr, cache=p_cache)
+                q1 = _ct.world_point_to_local_cached(p1, tr, cache=p_cache)
+                q2 = _ct.world_point_to_local_cached(p2, tr, cache=p_cache)
                 bb = CutFillCalc._triangle_bbox_xy(q0, q1, q2)
                 out.append((q0, q1, q2, bb))
             except Exception:
@@ -576,23 +577,7 @@ class CutFillCalc:
 
         mode = str(getattr(obj, "DomainCoords", "Local") or "Local")
         if mode == "World":
-            tr = _ct.world_to_local_params(obj)
-            corners = [
-                _vec(x0, y0, 0.0),
-                _vec(x0, y1, 0.0),
-                _vec(x1, y0, 0.0),
-                _vec(x1, y1, 0.0),
-            ]
-            xs = []
-            ys = []
-            for p in corners:
-                q = _ct.world_point_to_local(p, tr)
-                xs.append(float(q.x))
-                ys.append(float(q.y))
-            x0 = min(xs)
-            x1 = max(xs)
-            y0 = min(ys)
-            y1 = max(ys)
+            x0, x1, y0, y1 = _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=obj)
         return x0, x1, y0, y1
 
     @staticmethod

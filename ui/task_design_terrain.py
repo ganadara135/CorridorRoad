@@ -2,10 +2,12 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
+from objects import coord_transform as _ct
 from objects.doc_query import find_project
 from objects.obj_design_terrain import DesignTerrain, ViewProviderDesignTerrain, ensure_design_terrain_properties
-from objects.obj_project import get_coordinate_setup, get_length_scale, world_to_local
+from objects.obj_project import get_length_scale
 from objects.project_links import link_project
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 from ui.common.perf_quality import (
     QUALITY_PRESETS,
     apply_preset_to_widgets,
@@ -245,20 +247,14 @@ class DesignTerrainTaskPanel:
         return str(self.cmb_eg_coords.currentText() or "Local") == "World"
 
     def _update_coord_hint(self):
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
-        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+        self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
 
     def _apply_default_coord_mode(self):
         if self._coord_mode_initialized:
             return
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
         self._loading = True
         try:
-            if st != "Uninitialized" or bool(epsg):
+            if should_default_world_mode(self._coord_context_obj()):
                 self.cmb_eg_coords.setCurrentText("World")
             else:
                 self.cmb_eg_coords.setCurrentText("Local")
@@ -488,19 +484,7 @@ class DesignTerrainTaskPanel:
         if not self._use_world_existing_mode():
             return xmin, xmax, ymin, ymax
 
-        corners = [
-            (xmin, ymin),
-            (xmin, ymax),
-            (xmax, ymin),
-            (xmax, ymax),
-        ]
-        xs = []
-        ys = []
-        for e, n in corners:
-            x, y, _z = world_to_local(self._coord_context_obj(), float(e), float(n), 0.0)
-            xs.append(float(x))
-            ys.append(float(y))
-        return min(xs), max(xs), min(ys), max(ys)
+        return _ct.world_xy_bounds_to_local(xmin, xmax, ymin, ymax, doc_or_obj=self._coord_context_obj())
 
     def _update_estimate_hint(self):
         dsg = self._current_dsg()

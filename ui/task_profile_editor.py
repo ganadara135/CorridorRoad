@@ -8,8 +8,9 @@ from objects.doc_query import find_first, find_project
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_vertical_alignment import VerticalAlignment
 from objects.obj_alignment import HorizontalAlignment
-from objects.obj_project import get_coordinate_setup, local_to_world, world_to_local
+from objects.obj_project import local_to_world, world_to_local
 from objects.terrain_sampler import TerrainSampler, is_mesh_object, is_shape_object
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 from ui.common.profile_fg_helpers import (
     PROFILE_BUNDLE_LABEL,
     ensure_fg_display as _ensure_fg_display,
@@ -220,20 +221,14 @@ class ProfileEditorTaskPanel:
         return self.doc
 
     def _update_coord_hint(self):
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
-        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+        self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
 
     def _apply_default_coord_mode(self):
         if self._coord_mode_initialized:
             return
-        cst = get_coordinate_setup(self._coord_context_obj())
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
         self._loading = True
         try:
-            if st != "Uninitialized" or bool(epsg):
+            if should_default_world_mode(self._coord_context_obj()):
                 self.cmb_terrain_coords.setCurrentIndex(1)
             else:
                 self.cmb_terrain_coords.setCurrentIndex(0)

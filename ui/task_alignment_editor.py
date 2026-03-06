@@ -6,11 +6,11 @@ from PySide2 import QtWidgets
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
 from objects.obj_project import (
     find_project,
-    get_coordinate_setup,
     get_length_scale,
     local_to_world,
     world_to_local,
 )
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
 def _find_alignments(doc):
@@ -210,15 +210,12 @@ class AlignmentEditorTaskPanel:
             selected = self.aln
 
         self.prj = find_project(self.doc)
-        cst = get_coordinate_setup(self.prj if self.prj is not None else self.doc)
-        epsg = str(cst.get("CRSEPSG", "") or "").strip()
-        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
-        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+        self.lbl_coord_hint.setText(coord_hint_text(self.prj if self.prj is not None else self.doc))
 
         if not self._coord_mode_initialized:
             self._loading = True
             try:
-                if st != "Uninitialized" or bool(epsg):
+                if should_default_world_mode(self.prj if self.prj is not None else self.doc):
                     self.cmb_coord_mode.setCurrentIndex(1)
                 else:
                     self.cmb_coord_mode.setCurrentIndex(0)
