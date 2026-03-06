@@ -8,6 +8,7 @@ import Part
 from objects.obj_centerline3d import Centerline3D
 from objects.obj_alignment import HorizontalAlignment
 from objects.obj_project import get_length_scale
+from objects import coord_transform as _ct
 from objects import surface_sampling_core as _ssc
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
@@ -149,6 +150,15 @@ def ensure_section_set_properties(obj):
         obj.addProperty("App::PropertyLink", "AssemblyTemplate", "Sections", "AssemblyTemplate link")
     if not hasattr(obj, "TerrainMesh"):
         obj.addProperty("App::PropertyLink", "TerrainMesh", "Sections", "Optional terrain source link for daylight (Mesh/Shape)")
+    if not hasattr(obj, "TerrainMeshCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "TerrainMeshCoords",
+            "Sections",
+            "Coordinate system of daylight terrain source",
+        )
+        obj.TerrainMeshCoords = ["Local", "World"]
+        obj.TerrainMeshCoords = "Local"
     if not hasattr(obj, "DaylightAuto"):
         obj.addProperty("App::PropertyBool", "DaylightAuto", "Sections", "Auto daylight to terrain during section build")
         obj.DaylightAuto = True
@@ -406,10 +416,18 @@ class SectionSet:
         return _ssc.point_in_tri_z(x, y, p0, p1, p2)
 
     @staticmethod
-    def _terrain_sampler(src_obj, max_triangles: int = 300000):
+    def _terrain_sampler(src_obj, max_triangles: int = 300000, coord_context=None, coord_mode: str = "Local"):
         tris = SectionSet._surface_triangles(src_obj)
         if not tris:
             return None
+
+        if str(coord_mode or "Local") == "World":
+            tris = _ct.triangles_world_to_local(
+                tris,
+                doc_or_obj=(coord_context if coord_context is not None else src_obj),
+            )
+            if not tris:
+                return None
 
         mt = int(max(1000, int(max_triangles)))
         tris = _ssc.decimate_triangles(tris, mt)
@@ -417,12 +435,11 @@ class SectionSet:
         scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
         bucket = 2.0 * scale
         try:
-            if _is_mesh_object(src_obj):
-                bb = src_obj.Mesh.BoundBox
-            else:
-                bb = src_obj.Shape.BoundBox
             n = max(1, len(tris))
-            area = max((1.0 * scale) ** 2, float(bb.XLength) * float(bb.YLength))
+            xmin, xmax, ymin, ymax = _ct.triangles_bbox_xy(tris)
+            xlen = float(xmax - xmin)
+            ylen = float(ymax - ymin)
+            area = max((1.0 * scale) ** 2, xlen * ylen)
             bucket = max(0.5 * scale, min(20.0 * scale, math.sqrt(area / float(n)) * 2.0))
         except Exception:
             pass
@@ -631,7 +648,15 @@ class SectionSet:
                 terrain_found = tsrc is not None
                 if tsrc is not None:
                     day_max = int(getattr(asm, "DaylightMaxTriangles", 300000))
-                    terrain_sampler = SectionSet._terrain_sampler(tsrc, max_triangles=day_max)
+                    terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
+                    if terrain_mode not in ("Local", "World"):
+                        terrain_mode = "Local"
+                    terrain_sampler = SectionSet._terrain_sampler(
+                        tsrc,
+                        max_triangles=day_max,
+                        coord_context=obj,
+                        coord_mode=terrain_mode,
+                    )
         except Exception:
             terrain_sampler = None
 
@@ -797,6 +822,7 @@ class SectionSet:
             "SourceCenterlineDisplay",
             "AssemblyTemplate",
             "TerrainMesh",
+            "TerrainMeshCoords",
             "DaylightAuto",
             "Mode",
             "StartStation",

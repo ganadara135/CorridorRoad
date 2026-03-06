@@ -4,7 +4,8 @@ import math
 import FreeCAD as App
 import Part
 
-from objects.obj_project import get_coordinate_setup, get_length_scale
+from objects.obj_project import get_length_scale
+from objects import coord_transform as _ct
 from objects import surface_sampling_core as _ssc
 
 
@@ -97,6 +98,15 @@ def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "UseCorridorBounds"):
         obj.addProperty("App::PropertyBool", "UseCorridorBounds", "Comparison", "Use corridor top bounds for domain")
         obj.UseCorridorBounds = True
+    if not hasattr(obj, "DomainCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "DomainCoords",
+            "Comparison",
+            "Coordinate system of manual domain (X/Y)",
+        )
+        obj.DomainCoords = ["Local", "World"]
+        obj.DomainCoords = "Local"
     if not hasattr(obj, "XMin"):
         obj.addProperty("App::PropertyFloat", "XMin", "Comparison", "Manual domain xmin")
         obj.XMin = 0.0
@@ -375,34 +385,10 @@ class CutFillCalc:
     def _decimate_triangles(triangles, max_count: int):
         return _ssc.decimate_triangles(triangles, max_count)
 
-    @staticmethod
-    def _world_to_local_params(doc_or_obj):
-        c = get_coordinate_setup(doc_or_obj)
-        th = math.radians(float(c.get("NorthRotationDeg", 0.0)))
-        return {
-            "cs": math.cos(th),
-            "sn": math.sin(th),
-            "e0": float(c.get("ProjectOriginE", 0.0)),
-            "n0": float(c.get("ProjectOriginN", 0.0)),
-            "z0": float(c.get("ProjectOriginZ", 0.0)),
-            "lx": float(c.get("LocalOriginX", 0.0)),
-            "ly": float(c.get("LocalOriginY", 0.0)),
-            "lz": float(c.get("LocalOriginZ", 0.0)),
-        }
-
-    @staticmethod
-    def _world_point_to_local(p, tr):
-        de = float(p.x) - float(tr["e0"])
-        dn = float(p.y) - float(tr["n0"])
-        x = float(tr["lx"]) + float(tr["cs"]) * de + float(tr["sn"]) * dn
-        y = float(tr["ly"]) - float(tr["sn"]) * de + float(tr["cs"]) * dn
-        z = float(tr["lz"]) + (float(p.z) - float(tr["z0"]))
-        return _vec(x, y, z)
-
     def _triangles_world_to_local_progress(self, doc_or_obj, triangles, pct0: float, pct1: float, label: str):
         if not triangles:
             return []
-        tr = self._world_to_local_params(doc_or_obj)
+        tr = _ct.world_to_local_params(doc_or_obj)
         out = []
         n = max(1, int(len(triangles)))
         report_every = max(20, min(2000, n // 100))
@@ -411,9 +397,9 @@ class CutFillCalc:
         for i, tri in enumerate(triangles, start=1):
             try:
                 p0, p1, p2, _bb = tri
-                q0 = self._world_point_to_local(p0, tr)
-                q1 = self._world_point_to_local(p1, tr)
-                q2 = self._world_point_to_local(p2, tr)
+                q0 = _ct.world_point_to_local(p0, tr)
+                q1 = _ct.world_point_to_local(p1, tr)
+                q2 = _ct.world_point_to_local(p2, tr)
                 bb = CutFillCalc._triangle_bbox_xy(q0, q1, q2)
                 out.append((q0, q1, q2, bb))
             except Exception:
@@ -587,6 +573,26 @@ class CutFillCalc:
             x0, x1 = x1, x0
         if y1 < y0:
             y0, y1 = y1, y0
+
+        mode = str(getattr(obj, "DomainCoords", "Local") or "Local")
+        if mode == "World":
+            tr = _ct.world_to_local_params(obj)
+            corners = [
+                _vec(x0, y0, 0.0),
+                _vec(x0, y1, 0.0),
+                _vec(x1, y0, 0.0),
+                _vec(x1, y1, 0.0),
+            ]
+            xs = []
+            ys = []
+            for p in corners:
+                q = _ct.world_point_to_local(p, tr)
+                xs.append(float(q.x))
+                ys.append(float(q.y))
+            x0 = min(xs)
+            x1 = max(xs)
+            y0 = min(ys)
+            y1 = max(ys)
         return x0, x1, y0, y1
 
     @staticmethod
@@ -882,6 +888,7 @@ class CutFillCalc:
             "MaxTrianglesPerSource",
             "DomainMargin",
             "UseCorridorBounds",
+            "DomainCoords",
             "XMin",
             "XMax",
             "YMin",

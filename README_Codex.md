@@ -33,6 +33,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - profile/FG UI helpers (`ui/common/profile_fg_helpers.py`)
   - quality/estimate UI helpers (`ui/common/perf_quality.py`)
   - shared surface sampling core (`objects/surface_sampling_core.py`)
+  - shared coordinate transform helpers (`objects/coord_transform.py`)
 
 ### Not Yet Implemented
 - Assembly/subassembly detailed modeling
@@ -147,6 +148,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
   - optional `TerrainMesh` (for daylight-to-terrain, Mesh/Shape)
+  - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
     - `SectionSet.TerrainMesh`
     - `CorridorRoadProject.Terrain`
@@ -166,6 +168,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - wide-triangle bucket guard
 - Sampling policy:
   - daylight terrain sampling should use shared core (`objects/surface_sampling_core.py`) via module wrappers.
+  - when `TerrainMeshCoords=World`, daylight terrain triangles are transformed to local before sampling.
 
 ### 9) CorridorLoft
 - Role: corridor loft generator from `SectionSet`.
@@ -200,6 +203,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Role: compare `ExistingSurface` (mesh) vs design top surface from `CorridorLoft`.
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
+  - `DomainCoords` (`Local` or `World`) for manual `X/Y` domain input
   - `MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`
   - `NoDataWarnRatio`
   - manual domain (`XMin/XMax/YMin/YMax`)
@@ -233,6 +237,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - triangle extraction/bucket/intersection primitives should be sourced from `objects/surface_sampling_core.py`.
 - Coordinate policy:
   - design corridor/top surface is evaluated in local model coordinates
+  - manual domain is interpreted by `DomainCoords` (world input is converted to local bbox)
   - when `ExistingSurfaceCoords=World`, existing mesh triangles are transformed to local before comparison
 
 ### 12) DesignTerrain
@@ -317,6 +322,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - section creation/update runs only from `Generate Sections Now`.
 - supports side slopes and Stage-2 terrain-daylight options.
 - daylight terrain source can be Mesh or Shape (`Project.Terrain` or `SectionSet.TerrainMesh`).
+- panel selects `Daylight Terrain Coords` (`Local`/`World`) for daylight terrain interpretation.
 - `Daylight Auto (SectionSet)` is enabled by default on panel open.
 
 ### Scale UX
@@ -354,6 +360,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - standard dialog button is `Close` only (no `OK/Cancel`; run-cancel is separate)
 - user explicitly selects `CorridorLoft` and Existing mesh source
 - panel selects `Existing Mesh Coords` (`Local`/`World`) for existing mesh interpretation
+- panel selects `Manual Domain Coords` (`Local`/`World`) for `XMin/XMax/YMin/YMax`
 - panel shows run status/progress and supports cancel
 - panel provides 3D map controls (deadband/clamp/z-offset/max visual cells)
 - panel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint
@@ -383,6 +390,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `ui/task_alignment_editor.py`
   - `objects/doc_query.py`
   - `objects/project_links.py`
+  - `objects/coord_transform.py`
   - `objects/surface_sampling_core.py`
   - `ui/common/profile_fg_helpers.py`
   - `ui/common/perf_quality.py`
@@ -394,6 +402,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - project link/adopt updates should prefer `objects/project_links.py`.
   - PVI/Profile FG helper logic should prefer `ui/common/profile_fg_helpers.py`.
   - DesignTerrain/CutFill preset+estimate logic should prefer `ui/common/perf_quality.py`.
+  - world/local geometry transform helpers should prefer `objects/coord_transform.py`.
   - surface triangle/bucket/intersection primitives should prefer `objects/surface_sampling_core.py`.
 
 ## Model Representation Policy (Fixed)

@@ -93,6 +93,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
   - optional `TerrainMesh` (for daylight-to-terrain, Mesh/Shape)
+  - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
     - `SectionSet.TerrainMesh`
     - `CorridorRoadProject.Terrain`
@@ -109,9 +110,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - schema policy:
     - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
     - `SectionSchemaVersion=2`: side-slope extended section (>=3 points)
-  - daylight runtime status:
-    - `WARN: UseDaylightToTerrain=True but no terrain source found...`
-    - `WARN: Terrain source found but daylight sampler failed...`
+- daylight runtime status:
+  - `WARN: UseDaylightToTerrain=True but no terrain source found...`
+  - `WARN: Terrain source found but daylight sampler failed...`
+- daylight coordinate rule:
+  - when `TerrainMeshCoords=World`, daylight terrain triangles are transformed to local before section sampling
   - daylight performance guards:
     - `AssemblyTemplate.DaylightMaxTriangles`
     - wide-triangle bucket guard to avoid bucket blow-up
@@ -167,6 +170,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
   - `NoDataWarnRatio`
+  - `DomainCoords` (`Local` or `World`) for manual `X/Y` domain input
   - `ExistingSurfaceCoords` (`Local` or `World`)
   - manual domain: `XMin/XMax/YMin/YMax`
   - `AutoUpdate`, `RebuildNow`
@@ -191,6 +195,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - grid sampling integrates `delta = Design - Existing`
 - Coordinate rule:
   - design side is local-model coordinates
+  - manual domain is interpreted by `DomainCoords` (world input is converted to local bbox)
   - when `ExistingSurfaceCoords=World`, existing mesh triangles are transformed to local before sampling
 - Runtime/UX:
   - supports progress callback (stage + percent)
@@ -237,6 +242,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Shared coordinate transform helpers:
   - `world_to_local(...)`, `local_to_world(...)`
   - vector variants: `world_to_local_vec(...)`, `local_to_world_vec(...)`
+  - bulk/localized geometry helpers for world/local conversion: `objects/coord_transform.py`
 - Scale usage:
   - sample/default length values are initialized by `LengthScale`
   - station/section/assembly/centerline defaults follow project scale
@@ -298,6 +304,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optional structure/crossing key-station merge from text list
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2)
+  - daylight terrain coordinate mode selection (`Local`/`World`)
   - optionally create child sections per station in tree
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
@@ -317,6 +324,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - TaskPanel responsibilities:
   - explicit source selection (`CorridorLoft`, Existing Mesh)
   - existing mesh coordinate mode selection (`Local`/`World`)
+  - manual domain coordinate mode selection (`Local`/`World`)
   - set comparison controls (domain/resolution/update policy)
   - show run progress and support cancel
 - Execution path:

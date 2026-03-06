@@ -3,7 +3,8 @@ import math
 
 import FreeCAD as App
 
-from objects.obj_project import get_coordinate_setup, get_length_scale
+from objects.obj_project import get_length_scale
+from objects import coord_transform as _ct
 from objects import surface_sampling_core as _ssc
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
@@ -309,34 +310,10 @@ class DesignTerrain:
             raise Exception("ExistingTerrain must be a valid mesh object.")
         return src_obj.Mesh.BoundBox
 
-    @staticmethod
-    def _world_to_local_params(doc_or_obj):
-        c = get_coordinate_setup(doc_or_obj)
-        th = math.radians(float(c.get("NorthRotationDeg", 0.0)))
-        return {
-            "cs": math.cos(th),
-            "sn": math.sin(th),
-            "e0": float(c.get("ProjectOriginE", 0.0)),
-            "n0": float(c.get("ProjectOriginN", 0.0)),
-            "z0": float(c.get("ProjectOriginZ", 0.0)),
-            "lx": float(c.get("LocalOriginX", 0.0)),
-            "ly": float(c.get("LocalOriginY", 0.0)),
-            "lz": float(c.get("LocalOriginZ", 0.0)),
-        }
-
-    @staticmethod
-    def _world_point_to_local(p, tr):
-        de = float(p.x) - float(tr["e0"])
-        dn = float(p.y) - float(tr["n0"])
-        x = float(tr["lx"]) + float(tr["cs"]) * de + float(tr["sn"]) * dn
-        y = float(tr["ly"]) - float(tr["sn"]) * de + float(tr["cs"]) * dn
-        z = float(tr["lz"]) + (float(p.z) - float(tr["z0"]))
-        return App.Vector(x, y, z)
-
     def _triangles_world_to_local_progress(self, doc_or_obj, triangles, pct0: float, pct1: float, label: str):
         if not triangles:
             return []
-        tr = self._world_to_local_params(doc_or_obj)
+        tr = _ct.world_to_local_params(doc_or_obj)
         out = []
         n = max(1, int(len(triangles)))
         report_every = max(20, min(2000, n // 100))
@@ -345,9 +322,9 @@ class DesignTerrain:
         for i, tri in enumerate(triangles, start=1):
             try:
                 p0, p1, p2, _bb = tri
-                q0 = self._world_point_to_local(p0, tr)
-                q1 = self._world_point_to_local(p1, tr)
-                q2 = self._world_point_to_local(p2, tr)
+                q0 = _ct.world_point_to_local(p0, tr)
+                q1 = _ct.world_point_to_local(p1, tr)
+                q2 = _ct.world_point_to_local(p2, tr)
                 bb = DesignTerrain._triangle_bbox_xy(q0, q1, q2)
                 out.append((q0, q1, q2, bb))
             except Exception:
@@ -360,19 +337,7 @@ class DesignTerrain:
 
     @staticmethod
     def _triangles_bounds_xy(triangles):
-        if not triangles:
-            raise Exception("No triangles available for bounds.")
-        x0 = None
-        x1 = None
-        y0 = None
-        y1 = None
-        for _p0, _p1, _p2, bb in triangles:
-            bx0, bx1, by0, by1 = bb
-            x0 = float(bx0) if x0 is None else min(float(x0), float(bx0))
-            x1 = float(bx1) if x1 is None else max(float(x1), float(bx1))
-            y0 = float(by0) if y0 is None else min(float(y0), float(by0))
-            y1 = float(by1) if y1 is None else max(float(y1), float(by1))
-        return float(x0), float(x1), float(y0), float(y1)
+        return _ct.triangles_bbox_xy(triangles)
 
     def execute(self, obj):
         ensure_design_terrain_properties(obj)

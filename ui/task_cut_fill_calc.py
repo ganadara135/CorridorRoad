@@ -4,7 +4,7 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.doc_query import find_project
-from objects.obj_project import get_coordinate_setup, get_length_scale
+from objects.obj_project import get_coordinate_setup, get_length_scale, world_to_local
 from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from objects.project_links import link_project
 from ui.common.perf_quality import (
@@ -167,6 +167,9 @@ class CutFillCalcTaskPanel:
         self.spin_min_facets.setValue(100)
         self.chk_use_bounds = QtWidgets.QCheckBox("Use corridor bounds")
         self.chk_use_bounds.setChecked(True)
+        self.cmb_domain_coords = QtWidgets.QComboBox()
+        self.cmb_domain_coords.addItems(["Local", "World"])
+        self.cmb_domain_coords.setCurrentText("Local")
         self.spin_margin = QtWidgets.QDoubleSpinBox()
         self.spin_margin.setRange(0.0, 1000000.0 * self._scale)
         self.spin_margin.setDecimals(3)
@@ -199,6 +202,7 @@ class CutFillCalcTaskPanel:
         fo.addRow("Max Triangle Checks:", self.spin_max_checks)
         fo.addRow("Min Mesh Facets:", self.spin_min_facets)
         fo.addRow(self.chk_use_bounds)
+        fo.addRow("Manual Domain Coords:", self.cmb_domain_coords)
         fo.addRow("Domain Margin (scaled):", self.spin_margin)
         fo.addRow("NoData Warn:", self.spin_nodata_warn)
         fo.addRow("X Min:", self.spin_xmin)
@@ -278,6 +282,7 @@ class CutFillCalcTaskPanel:
         self.spin_ymin.valueChanged.connect(self._on_source_changed)
         self.spin_ymax.valueChanged.connect(self._on_source_changed)
         self.chk_use_bounds.toggled.connect(self._on_source_changed)
+        self.cmb_domain_coords.currentIndexChanged.connect(self._on_source_changed)
 
         self._update_bounds_ui()
         return w
@@ -344,6 +349,7 @@ class CutFillCalcTaskPanel:
     def _update_bounds_ui(self):
         use_bounds = bool(self.chk_use_bounds.isChecked())
         self.spin_margin.setEnabled(use_bounds)
+        self.cmb_domain_coords.setEnabled(not use_bounds)
         self.spin_xmin.setEnabled(not use_bounds)
         self.spin_xmax.setEnabled(not use_bounds)
         self.spin_ymin.setEnabled(not use_bounds)
@@ -403,6 +409,9 @@ class CutFillCalcTaskPanel:
                     self.spin_min_facets.setValue(int(cmp_obj.MinMeshFacets))
                 if hasattr(cmp_obj, "UseCorridorBounds"):
                     self.chk_use_bounds.setChecked(bool(cmp_obj.UseCorridorBounds))
+                if hasattr(cmp_obj, "DomainCoords"):
+                    dmode = str(getattr(cmp_obj, "DomainCoords", "Local") or "Local")
+                    self.cmb_domain_coords.setCurrentText("World" if dmode == "World" else "Local")
                 if hasattr(cmp_obj, "DomainMargin"):
                     self.spin_margin.setValue(float(cmp_obj.DomainMargin))
                 if hasattr(cmp_obj, "NoDataWarnRatio"):
@@ -445,7 +454,7 @@ class CutFillCalcTaskPanel:
         msg.append(f"CorridorLoft: {len(self._corridors)} found")
         msg.append(f"Mesh sources: {len(self._surfaces)} found")
         msg.append(f"Existing mesh coords: {'World' if self._use_world_surface_mode() else 'Local'}")
-        msg.append("Manual X/Y domain is interpreted in local model coordinates.")
+        msg.append(f"Manual X/Y domain coords: {self.cmb_domain_coords.currentText()}")
         if cmp_obj is not None:
             msg.append("Cut-Fill Calc object: FOUND (will update)")
             try:
@@ -605,6 +614,8 @@ class CutFillCalcTaskPanel:
                     cmp_obj.MaxTriangleChecks = int(self.spin_max_checks.value())
                 cmp_obj.MinMeshFacets = int(self.spin_min_facets.value())
                 cmp_obj.UseCorridorBounds = bool(self.chk_use_bounds.isChecked())
+                if hasattr(cmp_obj, "DomainCoords"):
+                    cmp_obj.DomainCoords = str(self.cmb_domain_coords.currentText() or "Local")
                 cmp_obj.DomainMargin = float(self.spin_margin.value())
                 cmp_obj.NoDataWarnRatio = float(self.spin_nodata_warn.value()) / 100.0
                 cmp_obj.ShowDeltaMap = bool(self.chk_show_map.isChecked())
@@ -682,6 +693,7 @@ class CutFillCalcTaskPanel:
             f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
             f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
             f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
+            f"DomainCoords: {str(getattr(cmp_obj, 'DomainCoords', 'Local'))}",
             f"ExistingSurfaceCoords: {str(getattr(cmp_obj, 'ExistingSurfaceCoords', 'Local'))}",
             f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
             f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
@@ -713,6 +725,33 @@ class CutFillCalcTaskPanel:
         except Exception:
             return False
 
+    def _manual_domain_local_bbox(self):
+        x0 = float(self.spin_xmin.value())
+        x1 = float(self.spin_xmax.value())
+        y0 = float(self.spin_ymin.value())
+        y1 = float(self.spin_ymax.value())
+        if x1 < x0:
+            x0, x1 = x1, x0
+        if y1 < y0:
+            y0, y1 = y1, y0
+
+        if str(self.cmb_domain_coords.currentText() or "Local") != "World":
+            return x0, x1, y0, y1
+
+        corners = [
+            (x0, y0),
+            (x0, y1),
+            (x1, y0),
+            (x1, y1),
+        ]
+        xs = []
+        ys = []
+        for e, n in corners:
+            x, y, _z = world_to_local(self._coord_context_obj(), float(e), float(n), 0.0)
+            xs.append(float(x))
+            ys.append(float(y))
+        return min(xs), max(xs), min(ys), max(ys)
+
     def _estimate_samples(self, corridor):
         try:
             cell = float(self.spin_cell.value())
@@ -727,10 +766,7 @@ class CutFillCalcTaskPanel:
                 ymin = float(bb.YMin - margin)
                 ymax = float(bb.YMax + margin)
             else:
-                xmin = float(self.spin_xmin.value())
-                xmax = float(self.spin_xmax.value())
-                ymin = float(self.spin_ymin.value())
-                ymax = float(self.spin_ymax.value())
+                xmin, xmax, ymin, ymax = self._manual_domain_local_bbox()
 
             if xmax < xmin:
                 xmin, xmax = xmax, xmin
@@ -793,14 +829,7 @@ class CutFillCalcTaskPanel:
                 ymin = float(bb.YMin - margin)
                 ymax = float(bb.YMax + margin)
             else:
-                xmin = float(self.spin_xmin.value())
-                xmax = float(self.spin_xmax.value())
-                ymin = float(self.spin_ymin.value())
-                ymax = float(self.spin_ymax.value())
-                if xmax < xmin:
-                    xmin, xmax = xmax, xmin
-                if ymax < ymin:
-                    ymin, ymax = ymax, ymin
+                xmin, xmax, ymin, ymax = self._manual_domain_local_bbox()
             area = max(1e-9, float(xmax - xmin) * float(ymax - ymin))
             max_tri_src = int(self.spin_max_tri_src.value())
             max_cand = int(self.spin_max_cand.value())
