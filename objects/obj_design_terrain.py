@@ -3,7 +3,7 @@ import math
 
 import FreeCAD as App
 
-from objects.obj_project import get_length_scale
+from objects.obj_project import get_coordinate_setup, get_length_scale
 from objects import surface_sampling_core as _ssc
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
@@ -56,6 +56,15 @@ def ensure_design_terrain_properties(obj):
         obj.addProperty("App::PropertyLink", "SourceDesignSurface", "DesignTerrain", "DesignGradingSurface source")
     if not hasattr(obj, "ExistingTerrain"):
         obj.addProperty("App::PropertyLink", "ExistingTerrain", "DesignTerrain", "Existing terrain source (Mesh)")
+    if not hasattr(obj, "ExistingTerrainCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "ExistingTerrainCoords",
+            "DesignTerrain",
+            "Coordinate system of ExistingTerrain mesh",
+        )
+        obj.ExistingTerrainCoords = ["Local", "World"]
+        obj.ExistingTerrainCoords = "Local"
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "DesignTerrain", "Sampling cell size (m)")
@@ -300,6 +309,71 @@ class DesignTerrain:
             raise Exception("ExistingTerrain must be a valid mesh object.")
         return src_obj.Mesh.BoundBox
 
+    @staticmethod
+    def _world_to_local_params(doc_or_obj):
+        c = get_coordinate_setup(doc_or_obj)
+        th = math.radians(float(c.get("NorthRotationDeg", 0.0)))
+        return {
+            "cs": math.cos(th),
+            "sn": math.sin(th),
+            "e0": float(c.get("ProjectOriginE", 0.0)),
+            "n0": float(c.get("ProjectOriginN", 0.0)),
+            "z0": float(c.get("ProjectOriginZ", 0.0)),
+            "lx": float(c.get("LocalOriginX", 0.0)),
+            "ly": float(c.get("LocalOriginY", 0.0)),
+            "lz": float(c.get("LocalOriginZ", 0.0)),
+        }
+
+    @staticmethod
+    def _world_point_to_local(p, tr):
+        de = float(p.x) - float(tr["e0"])
+        dn = float(p.y) - float(tr["n0"])
+        x = float(tr["lx"]) + float(tr["cs"]) * de + float(tr["sn"]) * dn
+        y = float(tr["ly"]) - float(tr["sn"]) * de + float(tr["cs"]) * dn
+        z = float(tr["lz"]) + (float(p.z) - float(tr["z0"]))
+        return App.Vector(x, y, z)
+
+    def _triangles_world_to_local_progress(self, doc_or_obj, triangles, pct0: float, pct1: float, label: str):
+        if not triangles:
+            return []
+        tr = self._world_to_local_params(doc_or_obj)
+        out = []
+        n = max(1, int(len(triangles)))
+        report_every = max(20, min(2000, n // 100))
+        if self._report_progress(pct0, label):
+            raise _CanceledError("Canceled by user.")
+        for i, tri in enumerate(triangles, start=1):
+            try:
+                p0, p1, p2, _bb = tri
+                q0 = self._world_point_to_local(p0, tr)
+                q1 = self._world_point_to_local(p1, tr)
+                q2 = self._world_point_to_local(p2, tr)
+                bb = DesignTerrain._triangle_bbox_xy(q0, q1, q2)
+                out.append((q0, q1, q2, bb))
+            except Exception:
+                pass
+            if (i % report_every) == 0:
+                pct = float(pct0) + (float(pct1) - float(pct0)) * (float(i) / float(n))
+                if self._report_progress(pct, f"{label}: {i}/{n}"):
+                    raise _CanceledError("Canceled by user.")
+        return out
+
+    @staticmethod
+    def _triangles_bounds_xy(triangles):
+        if not triangles:
+            raise Exception("No triangles available for bounds.")
+        x0 = None
+        x1 = None
+        y0 = None
+        y1 = None
+        for _p0, _p1, _p2, bb in triangles:
+            bx0, bx1, by0, by1 = bb
+            x0 = float(bx0) if x0 is None else min(float(x0), float(bx0))
+            x1 = float(bx1) if x1 is None else max(float(x1), float(bx1))
+            y0 = float(by0) if y0 is None else min(float(y0), float(by0))
+            y1 = float(by1) if y1 is None else max(float(y1), float(by1))
+        return float(x0), float(x1), float(y0), float(y1)
+
     def execute(self, obj):
         ensure_design_terrain_properties(obj)
         try:
@@ -313,6 +387,8 @@ class DesignTerrain:
             eg = getattr(obj, "ExistingTerrain", None)
             if eg is None or (not _is_mesh_object(eg)):
                 raise Exception("Missing ExistingTerrain (Mesh).")
+            eg_coords = str(getattr(obj, "ExistingTerrainCoords", "Local") or "Local")
+            use_world_existing = eg_coords == "World"
 
             cell = float(getattr(obj, "CellSize", 1.0 * scale))
             if (not math.isfinite(cell)) or cell <= 1e-6:
@@ -342,11 +418,25 @@ class DesignTerrain:
             if max_tri <= 0:
                 max_tri = 150000
                 obj.MaxTrianglesPerSource = max_tri
-            bb = DesignTerrain._source_bounds(eg)
-            xmin = float(bb.XMin - margin)
-            xmax = float(bb.XMax + margin)
-            ymin = float(bb.YMin - margin)
-            ymax = float(bb.YMax + margin)
+            if self._report_progress(8.0, "Reading design grading mesh"):
+                raise _CanceledError("Canceled by user.")
+            tri_d = self._triangles_from_mesh_progress(dsg, 8.0, 12.0, "Reading design grading mesh")
+
+            tri_e = self._triangles_from_mesh_progress(eg, 12.0, 20.0, "Reading existing terrain mesh")
+            if use_world_existing:
+                tri_e = self._triangles_world_to_local_progress(
+                    obj,
+                    tri_e,
+                    20.0,
+                    24.0,
+                    "Transforming existing terrain to local",
+                )
+
+            bx0, bx1, by0, by1 = self._triangles_bounds_xy(tri_e)
+            xmin = float(bx0 - margin)
+            xmax = float(bx1 + margin)
+            ymin = float(by0 - margin)
+            ymax = float(by1 + margin)
             if xmax <= xmin + 1e-9 or ymax <= ymin + 1e-9:
                 raise Exception("ExistingTerrain XY bounds are degenerate.")
 
@@ -359,22 +449,16 @@ class DesignTerrain:
                     "Increase CellSize, reduce domain, or raise MaxSamples."
                 )
 
-            if self._report_progress(8.0, "Reading design grading mesh"):
-                raise _CanceledError("Canceled by user.")
-            tri_d = self._triangles_from_mesh_progress(dsg, 8.0, 12.0, "Reading design grading mesh")
-
-            tri_e = self._triangles_from_mesh_progress(eg, 12.0, 20.0, "Reading existing terrain mesh")
-
             if len(tri_d) > max_tri:
                 tri_d = DesignTerrain._decimate_triangles(tri_d, max_tri)
             if len(tri_e) > max_tri:
                 tri_e = DesignTerrain._decimate_triangles(tri_e, max_tri)
 
             buck_d, wide_d = self._build_xy_buckets_progress(
-                tri_d, cell, 20.0, 30.0, "Bucketing design terrain triangles"
+                tri_d, cell, 24.0, 32.0, "Bucketing design terrain triangles"
             )
             buck_e, wide_e = self._build_xy_buckets_progress(
-                tri_e, cell, 30.0, 40.0, "Bucketing existing terrain triangles"
+                tri_e, cell, 32.0, 40.0, "Bucketing existing terrain triangles"
             )
 
             # Pre-run complexity guard for large terrains.
@@ -488,6 +572,7 @@ class DesignTerrain:
         if prop in (
             "SourceDesignSurface",
             "ExistingTerrain",
+            "ExistingTerrainCoords",
             "CellSize",
             "MaxSamples",
             "MaxCandidateTriangles",

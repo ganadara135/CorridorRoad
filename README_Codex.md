@@ -213,6 +213,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Status`
 - 3D display controls:
   - `ShowDeltaMap`, `DeltaDeadband`, `DeltaClamp`, `VisualZOffset`, `MaxVisualCells`
+  - `ExistingSurfaceCoords` (`Local` or `World`)
 - 3D color policy:
   - Cut=red, Fill=blue, Neutral=light gray, NoData=gray
 - Runtime behavior:
@@ -230,6 +231,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - wide-triangle bucket expansion guard to avoid pathological bucket growth
 - Shared-core policy:
   - triangle extraction/bucket/intersection primitives should be sourced from `objects/surface_sampling_core.py`.
+- Coordinate policy:
+  - design corridor/top surface is evaluated in local model coordinates
+  - when `ExistingSurfaceCoords=World`, existing mesh triangles are transformed to local before comparison
 
 ### 12) DesignTerrain
 - Role: build composite terrain mesh from `DesignGradingSurface` and existing terrain.
@@ -239,6 +243,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
   - `MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`
+  - `ExistingTerrainCoords` (`Local` or `World`)
   - `AutoUpdate`, `RebuildNow`
 - Guardrails:
   - scale-aware defaults from `Project.LengthScale`
@@ -254,6 +259,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Merge rule:
   - where design surface exists, use design Z
   - otherwise use existing terrain Z
+- Coordinate policy:
+  - design surface is evaluated in local model coordinates
+  - when `ExistingTerrainCoords=World`, existing terrain triangles are transformed to local before merge
 
 ### 13) CorridorRoadProject
 - Role: project container + global scale policy.
@@ -329,6 +337,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `DesignGradingSurface`
   - `ExistingTerrain` (Mesh)
 - TaskPanel applies options (`CellSize`, `MaxSamples`, `DomainMargin`, `AutoUpdate`) and runs merge.
+- TaskPanel selects `Existing Terrain Coords` (`Local`/`World`) for existing terrain mesh interpretation.
 - TaskPanel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint.
 - TaskPanel exposes large-scene guards (`MaxTrianglesPerSource`, `MaxCandidateTriangles`, `MaxTriangleChecks`).
 - TaskPanel blocks risky runs when estimated samples/checks exceed guard limits.
@@ -344,6 +353,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - command opens dedicated TaskPanel (no immediate heavy run on command click)
 - standard dialog button is `Close` only (no `OK/Cancel`; run-cancel is separate)
 - user explicitly selects `CorridorLoft` and Existing mesh source
+- panel selects `Existing Mesh Coords` (`Local`/`World`) for existing mesh interpretation
 - panel shows run status/progress and supports cancel
 - panel provides 3D map controls (deadband/clamp/z-offset/max visual cells)
 - panel provides quality presets (`Fast/Balanced/Precise/Custom`) and estimate hint

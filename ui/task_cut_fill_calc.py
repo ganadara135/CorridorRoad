@@ -4,8 +4,8 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.doc_query import find_project
-from objects.obj_project import get_length_scale
-from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc
+from objects.obj_project import get_coordinate_setup, get_length_scale
+from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from objects.project_links import link_project
 from ui.common.perf_quality import (
     QUALITY_PRESETS,
@@ -91,6 +91,8 @@ class CutFillCalcTaskPanel:
         )
         self._corridors = []
         self._surfaces = []
+        self._project = None
+        self._coord_mode_initialized = False
         self._loading = False
         self.form = self._build_ui()
         self._refresh_context()
@@ -120,10 +122,20 @@ class CutFillCalcTaskPanel:
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_corridor = QtWidgets.QComboBox()
         self.cmb_surface = QtWidgets.QComboBox()
+        self.cmb_surface_coords = QtWidgets.QComboBox()
+        self.cmb_surface_coords.addItems(["Local", "World"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Mesh")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Corridor:", self.cmb_corridor)
         fs.addRow("Existing Mesh:", self.cmb_surface)
+        row_coords = QtWidgets.QHBoxLayout()
+        row_coords.addWidget(self.cmb_surface_coords)
+        row_coords.addWidget(self.lbl_coord_hint, 1)
+        w_coords = QtWidgets.QWidget()
+        w_coords.setLayout(row_coords)
+        fs.addRow("Existing Mesh Coords:", w_coords)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -253,6 +265,7 @@ class CutFillCalcTaskPanel:
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_corridor.currentIndexChanged.connect(self._on_source_changed)
         self.cmb_surface.currentIndexChanged.connect(self._on_source_changed)
+        self.cmb_surface_coords.currentIndexChanged.connect(self._on_surface_coord_changed)
         self.cmb_quality.currentTextChanged.connect(self._on_quality_changed)
         self.spin_cell.valueChanged.connect(self._on_opt_changed)
         self.spin_max_samples.valueChanged.connect(self._on_opt_changed)
@@ -268,6 +281,36 @@ class CutFillCalcTaskPanel:
 
         self._update_bounds_ui()
         return w
+
+    def _coord_context_obj(self):
+        if self._project is not None:
+            return self._project
+        return self.doc
+
+    def _use_world_surface_mode(self):
+        return str(self.cmb_surface_coords.currentText() or "Local") == "World"
+
+    def _update_coord_hint(self):
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+
+    def _apply_default_coord_mode(self):
+        if self._coord_mode_initialized:
+            return
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self._loading = True
+        try:
+            if st != "Uninitialized" or bool(epsg):
+                self.cmb_surface_coords.setCurrentText("World")
+            else:
+                self.cmb_surface_coords.setCurrentText("Local")
+        finally:
+            self._loading = False
+        self._coord_mode_initialized = True
 
     def _format_obj(self, obj):
         return f"[Mesh] {obj.Label} ({obj.Name})"
@@ -314,8 +357,15 @@ class CutFillCalcTaskPanel:
         self._corridors = _find_corridors(self.doc)
         self._surfaces = _find_surface_sources(self.doc)
         prj = find_project(self.doc)
+        self._project = prj
+        self._apply_default_coord_mode()
+        self._update_coord_hint()
         cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
+            try:
+                ensure_cut_fill_calc_properties(cmp_obj)
+            except Exception:
+                pass
             try:
                 if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison"):
                     cmp_obj.Label = "Cut-Fill Calc"
@@ -377,6 +427,9 @@ class CutFillCalcTaskPanel:
                     self.spin_ymax.setValue(float(cmp_obj.YMax))
                 if hasattr(cmp_obj, "AutoUpdate"):
                     self.chk_auto.setChecked(bool(cmp_obj.AutoUpdate))
+                if hasattr(cmp_obj, "ExistingSurfaceCoords"):
+                    mode = str(getattr(cmp_obj, "ExistingSurfaceCoords", "Local") or "Local")
+                    self.cmb_surface_coords.setCurrentText("World" if mode == "World" else "Local")
             finally:
                 self._loading = False
 
@@ -391,6 +444,8 @@ class CutFillCalcTaskPanel:
         msg = []
         msg.append(f"CorridorLoft: {len(self._corridors)} found")
         msg.append(f"Mesh sources: {len(self._surfaces)} found")
+        msg.append(f"Existing mesh coords: {'World' if self._use_world_surface_mode() else 'Local'}")
+        msg.append("Manual X/Y domain is interpreted in local model coordinates.")
         if cmp_obj is not None:
             msg.append("Cut-Fill Calc object: FOUND (will update)")
             try:
@@ -406,6 +461,12 @@ class CutFillCalcTaskPanel:
         finally:
             self._loading = False
         self._update_estimate_hint()
+
+    def _on_surface_coord_changed(self, _v):
+        if self._loading:
+            return
+        self._update_coord_hint()
+        self._on_source_changed(_v)
 
     def _use_selected_surface(self):
         sel = _selected_surface()
@@ -426,6 +487,10 @@ class CutFillCalcTaskPanel:
     def _create_or_get_cut_fill_calc(self):
         cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
+            try:
+                ensure_cut_fill_calc_properties(cmp_obj)
+            except Exception:
+                pass
             try:
                 if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison", "Cut-Fill Calc"):
                     cmp_obj.Label = "Cut-Fill Calc"
@@ -528,6 +593,8 @@ class CutFillCalcTaskPanel:
             try:
                 cmp_obj.SourceCorridor = corridor
                 cmp_obj.ExistingSurface = mesh
+                if hasattr(cmp_obj, "ExistingSurfaceCoords"):
+                    cmp_obj.ExistingSurfaceCoords = "World" if self._use_world_surface_mode() else "Local"
                 cmp_obj.CellSize = float(self.spin_cell.value())
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
                 if hasattr(cmp_obj, "MaxTrianglesPerSource"):
@@ -615,6 +682,7 @@ class CutFillCalcTaskPanel:
             f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
             f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
             f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
+            f"ExistingSurfaceCoords: {str(getattr(cmp_obj, 'ExistingSurfaceCoords', 'Local'))}",
             f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
             f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
             f"MaxTriangleChecks: {int(getattr(cmp_obj, 'MaxTriangleChecks', 0))}",

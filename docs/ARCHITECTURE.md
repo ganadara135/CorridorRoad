@@ -167,6 +167,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
   - `NoDataWarnRatio`
+  - `ExistingSurfaceCoords` (`Local` or `World`)
   - manual domain: `XMin/XMax/YMin/YMax`
   - `AutoUpdate`, `RebuildNow`
 - Results:
@@ -188,6 +189,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - design side uses top surface extracted from `CorridorLoft`
   - existing side uses mesh triangles
   - grid sampling integrates `delta = Design - Existing`
+- Coordinate rule:
+  - design side is local-model coordinates
+  - when `ExistingSurfaceCoords=World`, existing mesh triangles are transformed to local before sampling
 - Runtime/UX:
   - supports progress callback (stage + percent)
   - supports cancel request during run
@@ -208,6 +212,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `ExistingTerrain` (Mesh source)
 - Controls:
   - `CellSize`, `MaxSamples`, `DomainMargin`
+  - `ExistingTerrainCoords` (`Local` or `World`)
   - `AutoUpdate`, `RebuildNow`
 - Guardrails:
   - scale-aware defaults from `Project.LengthScale`
@@ -217,6 +222,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Merge rule:
   - use design surface elevation where available
   - else keep existing terrain elevation
+- Coordinate rule:
+  - design surface side is local-model coordinates
+  - when `ExistingTerrainCoords=World`, existing terrain triangles are transformed to local before merge
 
 ### 2.13 CorridorRoadProject (`objects/obj_project.py`)
 - Purpose: project container + global unit/scale policy.
@@ -308,6 +316,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Opens dedicated TaskPanel (`ui/task_cut_fill_calc.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`CorridorLoft`, Existing Mesh)
+  - existing mesh coordinate mode selection (`Local`/`World`)
   - set comparison controls (domain/resolution/update policy)
   - show run progress and support cancel
 - Execution path:
@@ -319,6 +328,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Opens dedicated TaskPanel (`ui/task_design_terrain.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`DesignGradingSurface`, `ExistingTerrain (Mesh)`)
+  - existing terrain coordinate mode selection (`Local`/`World`)
   - set `CellSize` / `MaxSamples` / `DomainMargin` / `AutoUpdate`
   - show run progress and support cancel
 - Execution path:

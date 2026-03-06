@@ -3,8 +3,8 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.doc_query import find_project
-from objects.obj_design_terrain import DesignTerrain, ViewProviderDesignTerrain
-from objects.obj_project import get_length_scale
+from objects.obj_design_terrain import DesignTerrain, ViewProviderDesignTerrain, ensure_design_terrain_properties
+from objects.obj_project import get_coordinate_setup, get_length_scale, world_to_local
 from objects.project_links import link_project
 from ui.common.perf_quality import (
     QUALITY_PRESETS,
@@ -111,6 +111,8 @@ class DesignTerrainTaskPanel:
         )
         self._surfaces = []
         self._terrains = []
+        self._project = None
+        self._coord_mode_initialized = False
         self._loading = False
         self._running = False
         self._cancel_requested = False
@@ -142,10 +144,20 @@ class DesignTerrainTaskPanel:
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_dsg = QtWidgets.QComboBox()
         self.cmb_eg = QtWidgets.QComboBox()
+        self.cmb_eg_coords = QtWidgets.QComboBox()
+        self.cmb_eg_coords.addItems(["Local", "World"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Grading Surface:", self.cmb_dsg)
         fs.addRow("Existing Terrain (Mesh):", self.cmb_eg)
+        row_coords = QtWidgets.QHBoxLayout()
+        row_coords.addWidget(self.cmb_eg_coords)
+        row_coords.addWidget(self.lbl_coord_hint, 1)
+        w_coords = QtWidgets.QWidget()
+        w_coords.setLayout(row_coords)
+        fs.addRow("Existing Terrain Coords:", w_coords)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -214,6 +226,7 @@ class DesignTerrainTaskPanel:
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_dsg.currentIndexChanged.connect(self._on_source_changed)
         self.cmb_eg.currentIndexChanged.connect(self._on_source_changed)
+        self.cmb_eg_coords.currentIndexChanged.connect(self._on_existing_coord_changed)
         self.cmb_quality.currentTextChanged.connect(self._on_quality_changed)
         self.spin_cell.valueChanged.connect(self._on_opt_changed)
         self.spin_max_samples.valueChanged.connect(self._on_opt_changed)
@@ -222,6 +235,36 @@ class DesignTerrainTaskPanel:
         self.spin_max_checks.valueChanged.connect(self._on_opt_changed)
         self.spin_margin.valueChanged.connect(self._on_opt_changed)
         return w
+
+    def _coord_context_obj(self):
+        if self._project is not None:
+            return self._project
+        return self.doc
+
+    def _use_world_existing_mode(self):
+        return str(self.cmb_eg_coords.currentText() or "Local") == "World"
+
+    def _update_coord_hint(self):
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self.lbl_coord_hint.setText(f"CRS: {epsg if epsg else 'N/A'} / Status: {st}")
+
+    def _apply_default_coord_mode(self):
+        if self._coord_mode_initialized:
+            return
+        cst = get_coordinate_setup(self._coord_context_obj())
+        epsg = str(cst.get("CRSEPSG", "") or "").strip()
+        st = str(cst.get("CoordSetupStatus", "Uninitialized") or "Uninitialized")
+        self._loading = True
+        try:
+            if st != "Uninitialized" or bool(epsg):
+                self.cmb_eg_coords.setCurrentText("World")
+            else:
+                self.cmb_eg_coords.setCurrentText("Local")
+        finally:
+            self._loading = False
+        self._coord_mode_initialized = True
 
     def _format_obj(self, obj):
         return f"[Mesh] {obj.Label} ({obj.Name})"
@@ -260,7 +303,15 @@ class DesignTerrainTaskPanel:
         self._surfaces = _find_design_surfaces(self.doc)
         self._terrains = _find_terrain_sources(self.doc)
         prj = find_project(self.doc)
+        self._project = prj
+        self._apply_default_coord_mode()
+        self._update_coord_hint()
         dtm = _find_design_terrain(self.doc)
+        if dtm is not None:
+            try:
+                ensure_design_terrain_properties(dtm)
+            except Exception:
+                pass
 
         pref_dsg = None
         pref_eg = None
@@ -293,6 +344,9 @@ class DesignTerrainTaskPanel:
                     self.spin_margin.setValue(float(dtm.DomainMargin))
                 if hasattr(dtm, "AutoUpdate"):
                     self.chk_auto.setChecked(bool(dtm.AutoUpdate))
+                if hasattr(dtm, "ExistingTerrainCoords"):
+                    mode = str(getattr(dtm, "ExistingTerrainCoords", "Local") or "Local")
+                    self.cmb_eg_coords.setCurrentText("World" if mode == "World" else "Local")
             finally:
                 self._loading = False
 
@@ -306,6 +360,7 @@ class DesignTerrainTaskPanel:
         msg = []
         msg.append(f"DesignGradingSurface: {len(self._surfaces)} found")
         msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
+        msg.append(f"Existing terrain coords: {'World' if self._use_world_existing_mode() else 'Local'}")
         if dtm is not None:
             msg.append("DesignTerrain object: FOUND (will update)")
             try:
@@ -321,6 +376,12 @@ class DesignTerrainTaskPanel:
         finally:
             self._loading = False
         self._update_estimate_hint()
+
+    def _on_existing_coord_changed(self, _v):
+        if self._loading:
+            return
+        self._update_coord_hint()
+        self._on_source_changed(_v)
 
     def _use_selected_terrain(self):
         sel = _selected_terrain()
@@ -344,11 +405,11 @@ class DesignTerrainTaskPanel:
             if cell <= 1e-9:
                 return None
             margin = float(self.spin_margin.value())
-            bb = _source_bounds(eg_obj)
-            xmin = float(bb.XMin - margin)
-            xmax = float(bb.XMax + margin)
-            ymin = float(bb.YMin - margin)
-            ymax = float(bb.YMax + margin)
+            xmin, xmax, ymin, ymax = self._existing_bounds_local(eg_obj)
+            xmin = float(xmin - margin)
+            xmax = float(xmax + margin)
+            ymin = float(ymin - margin)
+            ymax = float(ymax + margin)
             if (xmax - xmin) <= 1e-9 or (ymax - ymin) <= 1e-9:
                 return 0
             nx = int((xmax - xmin) / cell)
@@ -404,11 +465,11 @@ class DesignTerrainTaskPanel:
                 return None
             cell = float(self.spin_cell.value())
             margin = float(self.spin_margin.value())
-            bb = _source_bounds(eg_obj)
-            xmin = float(bb.XMin - margin)
-            xmax = float(bb.XMax + margin)
-            ymin = float(bb.YMin - margin)
-            ymax = float(bb.YMax + margin)
+            xmin, xmax, ymin, ymax = self._existing_bounds_local(eg_obj)
+            xmin = float(xmin - margin)
+            xmax = float(xmax + margin)
+            ymin = float(ymin - margin)
+            ymax = float(ymax + margin)
             area = max(1e-9, float(xmax - xmin) * float(ymax - ymin))
             max_tri_src = int(self.spin_max_tri_src.value())
             max_cand = int(self.spin_max_cand.value())
@@ -417,6 +478,29 @@ class DesignTerrainTaskPanel:
             return estimate_triangle_checks(est_samples, cell, area, tri_d, tri_e, max_cand)
         except Exception:
             return None
+
+    def _existing_bounds_local(self, eg_obj):
+        bb = _source_bounds(eg_obj)
+        xmin = float(bb.XMin)
+        xmax = float(bb.XMax)
+        ymin = float(bb.YMin)
+        ymax = float(bb.YMax)
+        if not self._use_world_existing_mode():
+            return xmin, xmax, ymin, ymax
+
+        corners = [
+            (xmin, ymin),
+            (xmin, ymax),
+            (xmax, ymin),
+            (xmax, ymax),
+        ]
+        xs = []
+        ys = []
+        for e, n in corners:
+            x, y, _z = world_to_local(self._coord_context_obj(), float(e), float(n), 0.0)
+            xs.append(float(x))
+            ys.append(float(y))
+        return min(xs), max(xs), min(ys), max(ys)
 
     def _update_estimate_hint(self):
         dsg = self._current_dsg()
@@ -456,6 +540,10 @@ class DesignTerrainTaskPanel:
     def _create_or_get_design_terrain(self):
         dtm = _find_design_terrain(self.doc)
         if dtm is not None:
+            try:
+                ensure_design_terrain_properties(dtm)
+            except Exception:
+                pass
             return dtm
         dtm = self.doc.addObject("Mesh::FeaturePython", "DesignTerrain")
         DesignTerrain(dtm)
@@ -530,6 +618,8 @@ class DesignTerrainTaskPanel:
                 proxy._bulk_updating = True
             dtm.SourceDesignSurface = dsg
             dtm.ExistingTerrain = eg
+            if hasattr(dtm, "ExistingTerrainCoords"):
+                dtm.ExistingTerrainCoords = "World" if self._use_world_existing_mode() else "Local"
             dtm.CellSize = float(self.spin_cell.value())
             dtm.MaxSamples = int(self.spin_max_samples.value())
             if hasattr(dtm, "MaxTrianglesPerSource"):
@@ -589,6 +679,7 @@ class DesignTerrainTaskPanel:
         msg = [
             status,
             f"ExistingTerrain: {eg.Label} ({eg.Name})",
+            f"ExistingTerrainCoords: {str(getattr(dtm, 'ExistingTerrainCoords', 'Local'))}",
             f"Samples(valid/total): {int(getattr(dtm, 'ValidCount', 0))} / {int(getattr(dtm, 'SampleCount', 0))}",
             f"NoDataArea: {float(getattr(dtm, 'NoDataArea', 0.0)):.3f} (scaled^2)",
             f"CellSize: {float(getattr(dtm, 'CellSize', 0.0)):.3f} (scaled)",

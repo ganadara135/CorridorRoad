@@ -4,7 +4,7 @@ import math
 import FreeCAD as App
 import Part
 
-from objects.obj_project import get_length_scale
+from objects.obj_project import get_coordinate_setup, get_length_scale
 from objects import surface_sampling_core as _ssc
 
 
@@ -48,6 +48,15 @@ def ensure_cut_fill_calc_properties(obj):
         obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
     if not hasattr(obj, "ExistingSurface"):
         obj.addProperty("App::PropertyLink", "ExistingSurface", "Source", "Existing surface source (Mesh)")
+    if not hasattr(obj, "ExistingSurfaceCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "ExistingSurfaceCoords",
+            "Source",
+            "Coordinate system of ExistingSurface mesh",
+        )
+        obj.ExistingSurfaceCoords = ["Local", "World"]
+        obj.ExistingSurfaceCoords = "Local"
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "Comparison", "Sampling cell size (m)")
@@ -366,6 +375,55 @@ class CutFillCalc:
     def _decimate_triangles(triangles, max_count: int):
         return _ssc.decimate_triangles(triangles, max_count)
 
+    @staticmethod
+    def _world_to_local_params(doc_or_obj):
+        c = get_coordinate_setup(doc_or_obj)
+        th = math.radians(float(c.get("NorthRotationDeg", 0.0)))
+        return {
+            "cs": math.cos(th),
+            "sn": math.sin(th),
+            "e0": float(c.get("ProjectOriginE", 0.0)),
+            "n0": float(c.get("ProjectOriginN", 0.0)),
+            "z0": float(c.get("ProjectOriginZ", 0.0)),
+            "lx": float(c.get("LocalOriginX", 0.0)),
+            "ly": float(c.get("LocalOriginY", 0.0)),
+            "lz": float(c.get("LocalOriginZ", 0.0)),
+        }
+
+    @staticmethod
+    def _world_point_to_local(p, tr):
+        de = float(p.x) - float(tr["e0"])
+        dn = float(p.y) - float(tr["n0"])
+        x = float(tr["lx"]) + float(tr["cs"]) * de + float(tr["sn"]) * dn
+        y = float(tr["ly"]) - float(tr["sn"]) * de + float(tr["cs"]) * dn
+        z = float(tr["lz"]) + (float(p.z) - float(tr["z0"]))
+        return _vec(x, y, z)
+
+    def _triangles_world_to_local_progress(self, doc_or_obj, triangles, pct0: float, pct1: float, label: str):
+        if not triangles:
+            return []
+        tr = self._world_to_local_params(doc_or_obj)
+        out = []
+        n = max(1, int(len(triangles)))
+        report_every = max(20, min(2000, n // 100))
+        if self._report_progress(pct0, label):
+            raise _CanceledError("Canceled by user.")
+        for i, tri in enumerate(triangles, start=1):
+            try:
+                p0, p1, p2, _bb = tri
+                q0 = self._world_point_to_local(p0, tr)
+                q1 = self._world_point_to_local(p1, tr)
+                q2 = self._world_point_to_local(p2, tr)
+                bb = CutFillCalc._triangle_bbox_xy(q0, q1, q2)
+                out.append((q0, q1, q2, bb))
+            except Exception:
+                pass
+            if (i % report_every) == 0:
+                pct = float(pct0) + (float(pct1) - float(pct0)) * (float(i) / float(n))
+                if self._report_progress(pct, f"{label}: {i}/{n}"):
+                    raise _CanceledError("Canceled by user.")
+        return out
+
     def _build_xy_buckets_progress(
         self,
         triangles,
@@ -558,6 +616,8 @@ class CutFillCalc:
             eg = getattr(obj, "ExistingSurface", None)
             if eg is None or (not _is_mesh_object(eg)):
                 raise Exception("ExistingSurface must be a valid Mesh object.")
+            eg_coords = str(getattr(obj, "ExistingSurfaceCoords", "Local") or "Local")
+            use_world_existing = eg_coords == "World"
             mesh_facets = int(getattr(getattr(eg, "Mesh", None), "CountFacets", 0))
             min_facets = int(getattr(obj, "MinMeshFacets", 100))
             if mesh_facets < max(1, min_facets):
@@ -607,6 +667,14 @@ class CutFillCalc:
             defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
             tri_design = self._triangles_from_faces_progress(top_faces, defl, 10.0, 18.0)
             tri_exist = self._triangles_from_mesh_progress(eg, 18.0, 24.0)
+            if use_world_existing:
+                tri_exist = self._triangles_world_to_local_progress(
+                    obj,
+                    tri_exist,
+                    24.0,
+                    28.0,
+                    "Transforming existing mesh to local",
+                )
             max_tri = int(getattr(obj, "MaxTrianglesPerSource", 150000))
             if max_tri <= 0:
                 max_tri = 150000
@@ -616,10 +684,10 @@ class CutFillCalc:
                 tri_exist = CutFillCalc._decimate_triangles(tri_exist, max_tri)
 
             buck_d, wide_d, wide_cell_d = self._build_xy_buckets_progress(
-                tri_design, cell, 24.0, 32.0, "Bucketing design triangles"
+                tri_design, cell, 28.0, 34.0, "Bucketing design triangles"
             )
             buck_e, wide_e, wide_cell_e = self._build_xy_buckets_progress(
-                tri_exist, cell, 32.0, 40.0, "Bucketing existing triangles"
+                tri_exist, cell, 34.0, 40.0, "Bucketing existing triangles"
             )
 
             s_cnt = 0
@@ -805,6 +873,7 @@ class CutFillCalc:
         if prop in (
             "SourceCorridor",
             "ExistingSurface",
+            "ExistingSurfaceCoords",
             "CellSize",
             "MaxSamples",
             "MinMeshFacets",
