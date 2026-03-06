@@ -7,17 +7,21 @@ from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAli
 from objects.obj_project import get_length_scale
 
 
-def _find_alignment(doc):
+def _find_alignments(doc):
+    out = []
+    if doc is None:
+        return out
     for o in doc.Objects:
         if o.Name.startswith("HorizontalAlignment"):
-            return o
-    return None
+            out.append(o)
+    return out
 
 
 class AlignmentEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self.aln = None
+        self._alignments = []
         self._loading = False
         self._last_apply_warnings = []
         self.form = self._build_ui()
@@ -46,6 +50,14 @@ class AlignmentEditorTaskPanel:
         self.lbl_info = QtWidgets.QLabel("")
         self.lbl_info.setWordWrap(True)
         root.addWidget(self.lbl_info)
+
+        row_src = QtWidgets.QHBoxLayout()
+        self.cmb_alignment = QtWidgets.QComboBox()
+        self.btn_refresh_context = QtWidgets.QPushButton("Refresh Context")
+        row_src.addWidget(QtWidgets.QLabel("Alignment:"))
+        row_src.addWidget(self.cmb_alignment, 1)
+        row_src.addWidget(self.btn_refresh_context)
+        root.addLayout(row_src)
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
@@ -136,20 +148,70 @@ class AlignmentEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_refresh.clicked.connect(self._refresh_report)
+        self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
+        self.btn_refresh_context.clicked.connect(self._on_refresh_context)
 
         self._set_rows(4)
         return w
 
-    def _refresh_context(self):
+    @staticmethod
+    def _fmt_alignment(o):
+        return f"{o.Label} ({o.Name})"
+
+    def _current_alignment_from_combo(self):
+        i = int(self.cmb_alignment.currentIndex())
+        if i < 0 or i >= len(self._alignments):
+            return None
+        return self._alignments[i]
+
+    def _refresh_context(self, selected=None):
         if self.doc is None:
+            self._alignments = []
             self.aln = None
+            self.cmb_alignment.clear()
             self.lbl_info.setText("No active document.")
             return
 
-        self.aln = _find_alignment(self.doc)
-        self.lbl_info.setText(
-            "HorizontalAlignment: " + ("FOUND" if self.aln is not None else "NOT FOUND")
-        )
+        if selected is None:
+            selected = self.aln
+
+        self._alignments = _find_alignments(self.doc)
+
+        self._loading = True
+        try:
+            self.cmb_alignment.clear()
+            for o in self._alignments:
+                self.cmb_alignment.addItem(self._fmt_alignment(o))
+
+            idx = -1
+            if selected is not None:
+                for i, o in enumerate(self._alignments):
+                    if o == selected:
+                        idx = i
+                        break
+            if idx < 0 and self._alignments:
+                idx = 0
+            self.cmb_alignment.setCurrentIndex(idx)
+        finally:
+            self._loading = False
+
+        self.aln = self._current_alignment_from_combo()
+        if self.aln is None:
+            self.lbl_info.setText(f"HorizontalAlignment: 0 found")
+        else:
+            self.lbl_info.setText(
+                f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label})"
+            )
+
+    def _on_alignment_changed(self):
+        if self._loading:
+            return
+        self.aln = self._current_alignment_from_combo()
+        self._load_from_doc()
+
+    def _on_refresh_context(self):
+        self._refresh_context()
+        self._load_from_doc()
 
     def _set_rows(self, n):
         self._loading = True
@@ -194,8 +256,10 @@ class AlignmentEditorTaskPanel:
         return rows
 
     def _load_from_doc(self):
-        self._refresh_context()
         if self.aln is None:
+            self.table.setRowCount(0)
+            self._set_rows(4)
+            self._last_apply_warnings = []
             return
 
         ensure_alignment_properties(self.aln)
@@ -204,8 +268,6 @@ class AlignmentEditorTaskPanel:
         rr = list(getattr(self.aln, "CurveRadii", []) or [])
         ls = list(getattr(self.aln, "TransitionLengths", []) or [])
         n = len(pts)
-        if n < 2:
-            return
 
         if len(rr) < n:
             rr += [0.0] * (n - len(rr))
@@ -215,8 +277,9 @@ class AlignmentEditorTaskPanel:
         self._loading = True
         try:
             self.table.setRowCount(0)
-            self._set_rows(n)
-            for i, p in enumerate(pts):
+            self._set_rows(n if n > 0 else 4)
+            for i in range(n):
+                p = pts[i]
                 self._set_float(i, 0, float(p.x))
                 self._set_float(i, 1, float(p.y))
                 self._set_float(i, 2, float(rr[i]))
@@ -236,7 +299,7 @@ class AlignmentEditorTaskPanel:
         self._refresh_report()
 
     def _refresh_report(self):
-        self._refresh_context()
+        self._refresh_context(selected=self.aln)
         if self.aln is None:
             self.txt_report.setPlainText("No alignment object.")
             return
@@ -306,6 +369,7 @@ class AlignmentEditorTaskPanel:
         ViewProviderHorizontalAlignment(obj.ViewObject)
         obj.Label = "Alignment"
         self.aln = obj
+        self._refresh_context(selected=obj)
         return obj
 
     def _validate_rows(self, rows):
