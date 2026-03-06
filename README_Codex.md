@@ -8,6 +8,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ## Current Implementation Scope
 ### Implemented
 - Sample Horizontal Alignment command (`Sample Alignment`)
+  - sample defaults include S-C-S transitions (`TransitionLengths` + `UseTransitionCurves`)
 - Practical alignment editing:
   - Tangent + circular curves + transition curves (S-C-S)
   - Criteria checks (radius / tangent / transition length)
@@ -78,8 +79,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `tangent_at_station(s)`, `normal_at_station(s)`
   - `station_at_xy(x, y)`: approximate XY->station inverse lookup
 - Key-station outputs:
-  - `IPKeyStations` (IP station list)
-  - `SCKeyStations`, `CSKeyStations` (transition boundary station lists)
+  - `IPKeyStations` (PI station list)
+  - `TSKeyStations`, `SCKeyStations`, `CSKeyStations`, `STKeyStations`
 - Edit Alignment UX:
   - TaskPanel uses `Close` + explicit `Apply Alignment`
   - duplicate consecutive IP rows are blocked
@@ -135,7 +136,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Manual`: station list text
   - Range helper:
     - `IncludeAlignmentIPStations` to merge alignment IP key stations
-    - `IncludeAlignmentSCCSStations` to merge transition SC/CS key stations
+    - `IncludeAlignmentSCCSStations` to merge transition TS/SC/CS/ST key stations
+    - `IncludeStructureStations` + `StructureStationText` to merge structure/crossing key stations
 - Sources:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
@@ -146,7 +148,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - document terrain candidate fallback
 - Optional:
   - child `SectionSlice` objects in tree
-  - child label format: `STA {station}` + optional key tags (`[IP]`, `[SC]`, `[CS]`)
+  - child label format: `STA {station}` + optional key tags (`[PI]`, `[TS]`, `[SC]`, `[CS]`, `[ST]`, `[STR]`)
   - rebuild controls: `AutoRebuildChildren`, `RebuildNow`
 - Schema policy:
   - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)

@@ -50,8 +50,6 @@ class VerticalAlignment:
         ):
             try:
                 obj.touch()
-                if obj.Document is not None:
-                    obj.Document.recompute()
 
                 try:
                     if hasattr(obj, "ViewObject") and obj.ViewObject:

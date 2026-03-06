@@ -5,6 +5,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_section_set import SectionSet
+from objects.obj_project import get_length_scale
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
@@ -44,6 +45,8 @@ def _mark_recompute_flag(obj, needed: bool):
 
 
 def ensure_corridor_loft_properties(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+
     # Hard-remove legacy thickness properties.
     for legacy_prop in ("PavementThickness", "SolidThickness", "ResolvedPavementThickness"):
         try:
@@ -75,6 +78,10 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "UseRuled"):
         obj.addProperty("App::PropertyBool", "UseRuled", "Corridor", "Use ruled loft")
         obj.UseRuled = False
+
+    if not hasattr(obj, "MinSectionSpacing"):
+        obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for loft input (m)")
+        obj.MinSectionSpacing = 0.50 * scale
 
     if not hasattr(obj, "AutoUpdate"):
         obj.addProperty("App::PropertyBool", "AutoUpdate", "Corridor", "Auto update from source changes")
@@ -187,20 +194,45 @@ class CorridorLoft:
                 f"SchemaVersion=1 requires 3 points (Left->Center->Right), but got {ref_n}."
             )
 
-        # Orientation continuity guard: flip section order when axis flips.
+        # SectionSet.build_section_wires already stabilizes N-direction with prev_n.
+        # Keep source point order as-is; additional auto-flip here can mis-detect
+        # normal heading rotation as a true left/right inversion.
         out_wires = []
-        prev_axis = None
         for i, pts in enumerate(pt_lists):
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"Section[{i}] left/right axis is degenerate.")
-            if prev_axis is not None and float(axis.dot(prev_axis)) < 0.0:
-                pts = list(reversed(pts))
-                axis = pts[0] - pts[-1]
-            prev_axis = axis
             out_wires.append(CorridorLoft._make_wire(pts))
 
         return out_wires, ref_n
+
+    @staticmethod
+    def _filter_close_sections(stations, wires, min_spacing: float):
+        if len(stations) != len(wires):
+            raise Exception("Stations/wires size mismatch.")
+        if len(stations) <= 2:
+            return list(stations), list(wires), 0
+
+        dmin = max(0.0, float(min_spacing))
+        if dmin <= 1e-9:
+            return list(stations), list(wires), 0
+
+        out_st = [float(stations[0])]
+        out_wr = [wires[0]]
+        dropped = 0
+
+        for i in range(1, len(stations)):
+            s = float(stations[i])
+            if (s - float(out_st[-1])) < dmin:
+                dropped += 1
+                continue
+            out_st.append(s)
+            out_wr.append(wires[i])
+
+        # Keep at least 2 sections for loft contract.
+        if len(out_st) < 2 and len(stations) >= 2:
+            return [float(stations[0]), float(stations[-1])], [wires[0], wires[-1]], max(0, len(stations) - 2)
+        return out_st, out_wr, dropped
 
     @staticmethod
     def _valid_heights(h_left: float, h_right: float):
@@ -308,6 +340,8 @@ class CorridorLoft:
                 return
 
             stations, wires, _tf, _so = SectionSet.build_section_wires(src)
+            min_spacing = max(0.0, float(getattr(obj, "MinSectionSpacing", 0.0)))
+            stations, wires, dropped = CorridorLoft._filter_close_sections(stations, wires, min_spacing)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
 
             norm_wires, pt_count = CorridorLoft._validate_and_normalize(stations, wires, schema)
@@ -320,7 +354,8 @@ class CorridorLoft:
                 shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
                 status = (
                     "OK (Solid) "
-                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source}"
+                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
+                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)}"
                 )
             except Exception as ex:
                 shape, failed_ranges = CorridorLoft._loft_adaptive(
@@ -329,7 +364,8 @@ class CorridorLoft:
                 status = (
                     "WARN (Solid): full loft failed, adaptive fallback used "
                     f"({len(failed_ranges)} failed ranges): {ex} | "
-                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source}"
+                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
+                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)}"
                 )
 
             obj.Shape = shape
@@ -363,13 +399,18 @@ class CorridorLoft:
             "HeightLeft",
             "HeightRight",
             "UseRuled",
+            "MinSectionSpacing",
             "AutoUpdate",
             "RebuildNow",
         ):
             try:
                 obj.touch()
-                if obj.Document is not None:
-                    obj.Document.recompute()
+                # Avoid forced recompute on every property-editor keystroke.
+                # FreeCAD will recompute on confirmed edit; only force when user
+                # explicitly requests rebuild.
+                if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)):
+                    if obj.Document is not None:
+                        obj.Document.recompute()
             except Exception:
                 pass
 

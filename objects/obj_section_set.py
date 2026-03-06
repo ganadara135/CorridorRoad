@@ -101,16 +101,18 @@ def _alignment_ip_key_stations(aln):
     return _unique_sorted(vals)
 
 
-def _alignment_sc_cs_key_stations(aln):
+def _alignment_transition_key_stations(aln):
     if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
-        return [], []
+        return [], [], [], []
     total = float(aln.Shape.Length)
     if total <= 1e-9:
-        return [], []
+        return [], [], [], []
 
+    ts = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "TSKeyStations", []) or [])]
     sc = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "SCKeyStations", []) or [])]
     cs = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "CSKeyStations", []) or [])]
-    return _unique_sorted(sc), _unique_sorted(cs)
+    st = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "STKeyStations", []) or [])]
+    return _unique_sorted(ts), _unique_sorted(sc), _unique_sorted(cs), _unique_sorted(st)
 
 
 def _mark_corridor_needs_recompute(obj_corridor):
@@ -172,8 +174,14 @@ def ensure_section_set_properties(obj):
         obj.addProperty("App::PropertyBool", "IncludeAlignmentIPStations", "Sections", "In Range mode, always include alignment IP key stations")
         obj.IncludeAlignmentIPStations = True
     if not hasattr(obj, "IncludeAlignmentSCCSStations"):
-        obj.addProperty("App::PropertyBool", "IncludeAlignmentSCCSStations", "Sections", "In Range mode, include transition SC/CS key stations")
+        obj.addProperty("App::PropertyBool", "IncludeAlignmentSCCSStations", "Sections", "In Range mode, include transition TS/SC/CS/ST key stations")
         obj.IncludeAlignmentSCCSStations = False
+    if not hasattr(obj, "IncludeStructureStations"):
+        obj.addProperty("App::PropertyBool", "IncludeStructureStations", "Sections", "Include structure/crossing key stations from text list")
+        obj.IncludeStructureStations = False
+    if not hasattr(obj, "StructureStationText"):
+        obj.addProperty("App::PropertyString", "StructureStationText", "Sections", "Structure/crossing key stations list text")
+        obj.StructureStationText = ""
 
     if not hasattr(obj, "StationValues"):
         obj.addProperty("App::PropertyFloatList", "StationValues", "Result", "Resolved stations for sections (m)")
@@ -226,49 +234,65 @@ class SectionSet:
 
         total = float(aln.Shape.Length)
         mode = str(getattr(obj, "Mode", "Range"))
+        vals = []
+        s0 = 0.0
+        s1 = float(total)
 
         if mode == "Manual":
             vals = _parse_station_text(getattr(obj, "StationText", ""))
             vals = [min(max(0.0, float(v)), total) for v in vals]
-            return _unique_sorted(vals)
+        else:
+            # Range mode
+            s0 = float(getattr(obj, "StartStation", 0.0))
+            s1 = float(getattr(obj, "EndStation", total))
+            if s1 < s0:
+                s0, s1 = s1, s0
 
-        # Range mode
-        s0 = float(getattr(obj, "StartStation", 0.0))
-        s1 = float(getattr(obj, "EndStation", total))
-        if s1 < s0:
-            s0, s1 = s1, s0
+            s0 = min(max(0.0, s0), total)
+            s1 = min(max(0.0, s1), total)
+            if s1 < s0 + 1e-9:
+                vals = [s0]
+            else:
+                itv = float(getattr(obj, "Interval", 20.0))
+                if itv <= 1e-9:
+                    itv = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
+                    obj.Interval = itv
 
-        s0 = min(max(0.0, s0), total)
-        s1 = min(max(0.0, s1), total)
-        if s1 < s0 + 1e-9:
-            return [s0]
+                vals = [s0]
+                s = s0 + itv
+                while s < s1 - 1e-9:
+                    vals.append(float(s))
+                    s += itv
+                vals.append(float(s1))
 
-        itv = float(getattr(obj, "Interval", 20.0))
-        if itv <= 1e-9:
-            itv = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
-            obj.Interval = itv
+            if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
+                try:
+                    keys = _alignment_ip_key_stations(aln)
+                    keys = [v for v in keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                    vals.extend(keys)
+                except Exception:
+                    pass
+            if bool(getattr(obj, "IncludeAlignmentSCCSStations", False)):
+                try:
+                    ts_keys, sc_keys, cs_keys, st_keys = _alignment_transition_key_stations(aln)
+                    ts_keys = [v for v in ts_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                    sc_keys = [v for v in sc_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                    cs_keys = [v for v in cs_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                    st_keys = [v for v in st_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
+                    vals.extend(ts_keys)
+                    vals.extend(sc_keys)
+                    vals.extend(cs_keys)
+                    vals.extend(st_keys)
+                except Exception:
+                    pass
 
-        vals = [s0]
-        s = s0 + itv
-        while s < s1 - 1e-9:
-            vals.append(float(s))
-            s += itv
-        vals.append(float(s1))
-
-        if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
+        if bool(getattr(obj, "IncludeStructureStations", False)):
             try:
-                keys = _alignment_ip_key_stations(aln)
-                keys = [v for v in keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
-                vals.extend(keys)
-            except Exception:
-                pass
-        if bool(getattr(obj, "IncludeAlignmentSCCSStations", False)):
-            try:
-                sc_keys, cs_keys = _alignment_sc_cs_key_stations(aln)
-                sc_keys = [v for v in sc_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
-                cs_keys = [v for v in cs_keys if (v >= s0 - 1e-9 and v <= s1 + 1e-9)]
-                vals.extend(sc_keys)
-                vals.extend(cs_keys)
+                sk = _parse_station_text(getattr(obj, "StructureStationText", ""))
+                if mode == "Range":
+                    sk = [float(v) for v in sk if (float(v) >= s0 - 1e-9 and float(v) <= s1 + 1e-9)]
+                sk = [min(max(0.0, float(v)), total) for v in sk]
+                vals.extend(sk)
             except Exception:
                 pass
         return _unique_sorted(vals)
@@ -292,14 +316,23 @@ class SectionSet:
 
         if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
             try:
-                key_sets.append(("IP", _alignment_ip_key_stations(aln)))
+                key_sets.append(("PI", _alignment_ip_key_stations(aln)))
             except Exception:
                 pass
         if bool(getattr(obj, "IncludeAlignmentSCCSStations", False)):
             try:
-                sc_keys, cs_keys = _alignment_sc_cs_key_stations(aln)
+                ts_keys, sc_keys, cs_keys, st_keys = _alignment_transition_key_stations(aln)
+                key_sets.append(("TS", ts_keys))
                 key_sets.append(("SC", sc_keys))
                 key_sets.append(("CS", cs_keys))
+                key_sets.append(("ST", st_keys))
+            except Exception:
+                pass
+        if bool(getattr(obj, "IncludeStructureStations", False)):
+            try:
+                stx = _parse_station_text(getattr(obj, "StructureStationText", ""))
+                stx = [min(max(0.0, float(v)), float(aln.Shape.Length)) for v in stx]
+                key_sets.append(("STR", _unique_sorted(stx)))
             except Exception:
                 pass
 
@@ -772,6 +805,8 @@ class SectionSet:
             "StationText",
             "IncludeAlignmentIPStations",
             "IncludeAlignmentSCCSStations",
+            "IncludeStructureStations",
+            "StructureStationText",
             "CreateChildSections",
             "AutoRebuildChildren",
             "RebuildNow",
@@ -779,8 +814,9 @@ class SectionSet:
         ):
             try:
                 obj.touch()
-                if obj.Document is not None:
-                    obj.Document.recompute()
+                if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)):
+                    if obj.Document is not None:
+                        obj.Document.recompute()
             except Exception:
                 pass
 

@@ -118,9 +118,15 @@ class SectionGeneratorTaskPanel:
         self.chk_include_ip_keys = QtWidgets.QCheckBox("Include Alignment IP Key Stations (Range)")
         self.chk_include_ip_keys.setChecked(True)
         fm.addRow(self.chk_include_ip_keys)
-        self.chk_include_sccs_keys = QtWidgets.QCheckBox("Include Alignment SC/CS Key Stations (Range)")
+        self.chk_include_sccs_keys = QtWidgets.QCheckBox("Include Alignment TS/SC/CS/ST Key Stations (Range)")
         self.chk_include_sccs_keys.setChecked(False)
         fm.addRow(self.chk_include_sccs_keys)
+        self.chk_include_struct_keys = QtWidgets.QCheckBox("Include Structure/Crossing Key Stations")
+        self.chk_include_struct_keys.setChecked(False)
+        self.txt_struct_stations = QtWidgets.QLineEdit()
+        self.txt_struct_stations.setPlaceholderText("e.g. 25, 78.5, 120")
+        fm.addRow(self.chk_include_struct_keys)
+        fm.addRow("Structure/Crossing Stations:", self.txt_struct_stations)
         main.addWidget(gb_mode)
 
         gb_opt = QtWidgets.QGroupBox("Options")
@@ -209,6 +215,7 @@ class SectionGeneratorTaskPanel:
         main.addWidget(self.btn_generate)
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
+        self.chk_include_struct_keys.toggled.connect(self._update_mode_ui)
         self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
@@ -230,6 +237,7 @@ class SectionGeneratorTaskPanel:
         self.txt_manual.setEnabled(not is_range)
         self.chk_include_ip_keys.setEnabled(is_range)
         self.chk_include_sccs_keys.setEnabled(is_range)
+        self.txt_struct_stations.setEnabled(bool(self.chk_include_struct_keys.isChecked()))
 
     def _update_template_pos_ui(self):
         use_start = bool(self.chk_place_at_start.isChecked())
@@ -371,6 +379,10 @@ class SectionGeneratorTaskPanel:
                     self.chk_include_ip_keys.setChecked(bool(sec.IncludeAlignmentIPStations))
                 if hasattr(sec, "IncludeAlignmentSCCSStations"):
                     self.chk_include_sccs_keys.setChecked(bool(sec.IncludeAlignmentSCCSStations))
+                if hasattr(sec, "IncludeStructureStations"):
+                    self.chk_include_struct_keys.setChecked(bool(sec.IncludeStructureStations))
+                if hasattr(sec, "StructureStationText"):
+                    self.txt_struct_stations.setText(str(sec.StructureStationText or ""))
             except Exception:
                 pass
 
@@ -426,11 +438,13 @@ class SectionGeneratorTaskPanel:
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
-        msg.append("   - Range mode can include Alignment IP / SC/CS key stations automatically")
+        msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
+        msg.append("   - Structure/Crossing key stations can be merged from text list")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
         self.lbl_info.setText("\n".join(msg))
         self._update_side_ui()
+        self._update_mode_ui()
 
     def _create_assembly_template(self):
         if self.doc is None:
@@ -553,6 +567,10 @@ class SectionGeneratorTaskPanel:
                 sec.IncludeAlignmentIPStations = bool(self.chk_include_ip_keys.isChecked())
             if hasattr(sec, "IncludeAlignmentSCCSStations"):
                 sec.IncludeAlignmentSCCSStations = bool(self.chk_include_sccs_keys.isChecked())
+            if hasattr(sec, "IncludeStructureStations"):
+                sec.IncludeStructureStations = bool(self.chk_include_struct_keys.isChecked())
+            if hasattr(sec, "StructureStationText"):
+                sec.StructureStationText = str(self.txt_struct_stations.text() or "")
             sec.CreateChildSections = bool(self.chk_children.isChecked())
             if hasattr(sec, "DaylightAuto"):
                 sec.DaylightAuto = bool(self.chk_daylight.isChecked())

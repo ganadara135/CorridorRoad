@@ -142,10 +142,14 @@ def ensure_alignment_properties(obj):
         obj.TotalLength = 0.0
     if not hasattr(obj, "IPKeyStations"):
         obj.addProperty("App::PropertyFloatList", "IPKeyStations", "Result", "Approx station at each IP")
+    if not hasattr(obj, "TSKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "TSKeyStations", "Result", "Approx station at transition TS points")
     if not hasattr(obj, "SCKeyStations"):
         obj.addProperty("App::PropertyFloatList", "SCKeyStations", "Result", "Approx station at transition SC points")
     if not hasattr(obj, "CSKeyStations"):
         obj.addProperty("App::PropertyFloatList", "CSKeyStations", "Result", "Approx station at transition CS points")
+    if not hasattr(obj, "STKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "STKeyStations", "Result", "Approx station at transition ST points")
 
 
 class HorizontalAlignment:
@@ -176,13 +180,17 @@ class HorizontalAlignment:
             obj.CriteriaMessages = [f"[error] {ex}"]
             obj.CriteriaStatus = "ERROR"
             obj.IPKeyStations = []
+            obj.TSKeyStations = []
             obj.SCKeyStations = []
             obj.CSKeyStations = []
+            obj.STKeyStations = []
 
     def _build_shape_and_checks(self, obj):
         obj.IPKeyStations = []
+        obj.TSKeyStations = []
         obj.SCKeyStations = []
         obj.CSKeyStations = []
+        obj.STKeyStations = []
 
         pts = _dedupe_points(list(getattr(obj, "IPPoints", []) or []))
         if len(pts) < 2:
@@ -286,8 +294,10 @@ class HorizontalAlignment:
             total1 = float(shape.Length)
             if edges1 and total1 > 1e-9:
                 ip_vals = []
+                ts_vals = []
                 sc_vals = []
                 cs_vals = []
+                st_vals = []
                 for p in pts:
                     ip_vals.append(
                         HorizontalAlignment._station_at_xy_on_edges(
@@ -297,8 +307,16 @@ class HorizontalAlignment:
                 for c in corners:
                     if c is None:
                         continue
+                    p_ts = c.get("ts", None)
                     p_sc = c.get("sc", None)
                     p_cs = c.get("cs", None)
+                    p_st = c.get("st", None)
+                    if p_ts is not None:
+                        ts_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_ts.x), float(p_ts.y), samples_per_edge=64
+                            )
+                        )
                     if p_sc is not None:
                         sc_vals.append(
                             HorizontalAlignment._station_at_xy_on_edges(
@@ -311,13 +329,23 @@ class HorizontalAlignment:
                                 edges1, total1, float(p_cs.x), float(p_cs.y), samples_per_edge=64
                             )
                         )
+                    if p_st is not None:
+                        st_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_st.x), float(p_st.y), samples_per_edge=64
+                            )
+                        )
                 obj.IPKeyStations = _unique_sorted_floats(ip_vals)
+                obj.TSKeyStations = _unique_sorted_floats(ts_vals)
                 obj.SCKeyStations = _unique_sorted_floats(sc_vals)
                 obj.CSKeyStations = _unique_sorted_floats(cs_vals)
+                obj.STKeyStations = _unique_sorted_floats(st_vals)
         except Exception:
             obj.IPKeyStations = []
+            obj.TSKeyStations = []
             obj.SCKeyStations = []
             obj.CSKeyStations = []
+            obj.STKeyStations = []
 
         messages = self._run_criteria(obj, pts, seg_len, corners)
         return shape, float(shape.Length), messages
@@ -385,8 +413,10 @@ class HorizontalAlignment:
                 "entry": entry,
                 "exit": exitp,
                 "edges": [arc],
-                "sc": None,
-                "cs": None,
+                "ts": None,
+                "sc": entry,
+                "cs": exitp,
+                "st": None,
                 "radius_req": float(radius_req),
                 "radius_eff": float(r_eff),
                 "ls_req": float(ls_req),
@@ -439,8 +469,10 @@ class HorizontalAlignment:
             "entry": entry,
             "exit": exitp,
             "edges": edges,
+            "ts": entry,
             "sc": sc,
             "cs": csp,
+            "st": exitp,
             "radius_req": float(radius_req),
             "radius_eff": float(r_eff),
             "ls_req": float(ls_req),

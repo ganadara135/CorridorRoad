@@ -41,8 +41,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
   - Results: `CriteriaMessages`, `CriteriaStatus`, `TotalLength`
   - Key-station outputs:
-    - `IPKeyStations` (IP station list)
-    - `SCKeyStations`, `CSKeyStations` (transition boundary station lists)
+    - `IPKeyStations` (PI station list)
+    - `TSKeyStations`, `SCKeyStations`, `CSKeyStations`, `STKeyStations` (transition/key station lists)
 
 ### 2.5 Centerline3D (`objects/obj_centerline3d.py`)
 - Purpose: 3D centerline computation engine (no display shape ownership).
@@ -102,7 +102,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Manual` (`StationText`)
   - Range helper:
     - `IncludeAlignmentIPStations` adds alignment IP key stations to range list
-    - `IncludeAlignmentSCCSStations` adds transition SC/CS key stations to range list
+    - `IncludeAlignmentSCCSStations` adds transition TS/SC/CS/ST key stations to range list
+    - `IncludeStructureStations` + `StructureStationText` merges structure/crossing key stations
 - Results:
   - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
   - schema policy:
@@ -116,7 +117,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - wide-triangle bucket guard to avoid bucket blow-up
 - Optional tree children:
   - `SectionSlice` objects under `Group`
-  - label format: `STA {station}` with optional key tags (e.g., `[IP]`, `[SC]`, `[CS]`)
+  - label format: `STA {station}` with optional key tags (e.g., `[PI]`, `[TS]`, `[SC]`, `[CS]`, `[ST]`, `[STR]`)
 - Rebuild controls:
   - `AutoRebuildChildren`
   - `RebuildNow` (property-panel trigger)
@@ -230,6 +231,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ## 3) UI Contracts
 ### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
+- Sample defaults include feasible S-C-S transition settings (`CurveRadii`, `TransitionLengths`, `UseTransitionCurves=True`).
 - Keep as lightweight starter command.
 - Opens scale input UX (`LengthScale`) before creating sample.
 - Creates `CorridorRoadProject` automatically when missing and stores `LengthScale`.
@@ -262,7 +264,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### 3.5 Section Command (`commands/cmd_generate_sections.py`, `ui/task_section_generator.py`)
 - Provides user-facing section workflow:
   - select mode: `Range` or `Manual`
-  - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment SC/CS Key Stations`)
+  - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment TS/SC/CS/ST Key Stations`)
+  - optional structure/crossing key-station merge from text list
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2)
   - optionally create child sections per station in tree

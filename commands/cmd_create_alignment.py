@@ -27,7 +27,7 @@ class CmdCreateAlignment:
         return {
             "Pixmap": "",
             "MenuText": "Sample Alignment",
-            "ToolTip": "Create a sample Horizontal Alignment (tangent + circular curve basics)",
+            "ToolTip": "Create a sample Horizontal Alignment (tangent + S-C-S transition curves)",
         }
 
     def IsActive(self):
@@ -64,7 +64,11 @@ class CmdCreateAlignment:
             App.Vector(66.0 * s - deltaX, 24.0 * s, 0),
             App.Vector(108.0 * s - deltaX, 24.0 * s, 0),
         ]
-        obj.CurveRadii = [0.0, 30.0 * s, 24.0 * s, 0.0]
+        # Keep sample geometry feasible so S-C-S transitions are preserved (not clamped to zero).
+        obj.CurveRadii = [0.0, 18.0 * s, 18.0 * s, 0.0]
+        obj.TransitionLengths = [0.0, 8.0 * s, 8.0 * s, 0.0]
+        obj.UseTransitionCurves = True
+        obj.SpiralSegments = 20
         obj.Label = "Sample Alignment"
 
         if hasattr(prj, "Alignment"):

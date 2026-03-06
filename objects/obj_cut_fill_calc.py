@@ -848,7 +848,7 @@ class CutFillCalc:
                     return
                 self._in_onchange = True
                 obj.touch()
-                if obj.Document is not None:
+                if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)) and obj.Document is not None:
                     obj.Document.recompute()
             except Exception:
                 pass

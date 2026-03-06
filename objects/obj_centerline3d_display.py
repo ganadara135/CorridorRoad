@@ -306,8 +306,6 @@ class Centerline3DDisplay:
         ):
             try:
                 obj.touch()
-                if obj.Document is not None:
-                    obj.Document.recompute()
                 try:
                     import FreeCADGui as Gui
                     Gui.updateGui()
