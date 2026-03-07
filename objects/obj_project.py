@@ -1,6 +1,50 @@
 # CorridorRoad/objects/obj_project.py
 import FreeCAD as App
 import math
+import re
+
+
+TREE_KEY_PROP = "CRTreeKey"
+ALN_REF_PROP = "CRAlignmentRef"
+ALN_REF_NAME_PROP = "CRAlignmentRefName"
+ALN_NAME_PROP = "CRAlignmentName"
+
+TREE_INPUTS = "root_inputs"
+TREE_INPUTS_TERRAINS = "inputs_terrains"
+TREE_INPUTS_SURVEY = "inputs_survey"
+TREE_INPUTS_STRUCTURES = "inputs_structures"
+TREE_ALIGNMENTS = "root_alignments"
+TREE_SURFACES = "root_surfaces"
+TREE_ANALYSIS = "root_analysis"
+TREE_REFERENCES = "root_references"
+
+ALIGNMENT_ROOT = "alignment_root"
+ALIGNMENT_HORIZONTAL = "alignment_horizontal"
+ALIGNMENT_STATIONING = "alignment_stationing"
+ALIGNMENT_VERTICAL = "alignment_vertical_profiles"
+ALIGNMENT_ASSEMBLY = "alignment_assembly"
+ALIGNMENT_SECTIONS = "alignment_sections"
+ALIGNMENT_CORRIDOR = "alignment_corridor"
+
+BASE_TREE_DEFS = (
+    (TREE_INPUTS, "01_Inputs", "CR_01_Inputs"),
+    (TREE_ALIGNMENTS, "02_Alignments", "CR_02_Alignments"),
+    (TREE_SURFACES, "03_Surfaces", "CR_03_Surfaces"),
+    (TREE_ANALYSIS, "04_Analysis", "CR_04_Analysis"),
+)
+INPUT_SUBTREE_DEFS = (
+    (TREE_INPUTS_TERRAINS, "Terrains", "CR_01_Inputs_Terrains"),
+    (TREE_INPUTS_SURVEY, "Survey", "CR_01_Inputs_Survey"),
+    (TREE_INPUTS_STRUCTURES, "Structures", "CR_01_Inputs_Structures"),
+)
+ALIGNMENT_SUBTREE_DEFS = (
+    (ALIGNMENT_HORIZONTAL, "Horizontal", "CR_ALN_Horizontal"),
+    (ALIGNMENT_STATIONING, "Stationing", "CR_ALN_Stationing"),
+    (ALIGNMENT_VERTICAL, "VerticalProfiles", "CR_ALN_VerticalProfiles"),
+    (ALIGNMENT_ASSEMBLY, "Assembly", "CR_ALN_Assembly"),
+    (ALIGNMENT_SECTIONS, "Sections", "CR_ALN_Sections"),
+    (ALIGNMENT_CORRIDOR, "Corridor", "CR_ALN_Corridor"),
+)
 
 
 def _find_first(doc, name_prefix: str):
@@ -191,13 +235,939 @@ def world_to_local_vec(doc_or_project, p_world):
     return App.Vector(x, y, z)
 
 
+def _uniq_links(values):
+    out = []
+    seen = set()
+    for v in list(values or []):
+        if v is None:
+            continue
+        k = getattr(v, "Name", None) or str(id(v))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(v)
+    return out
+
+
+def _group_get(owner):
+    return list(getattr(owner, "Group", []) or [])
+
+
+def _group_set(owner, children):
+    try:
+        owner.Group = _uniq_links(children)
+    except Exception:
+        pass
+
+
+def _group_contains(owner, child):
+    if owner is None or child is None:
+        return False
+    try:
+        return child in _group_get(owner)
+    except Exception:
+        return False
+
+
+def _group_add(owner, child):
+    if owner is None or child is None:
+        return
+    cur = _group_get(owner)
+    if child in cur:
+        return
+    # Prefer native group APIs when available (App::DocumentObjectGroup).
+    try:
+        add_fn = getattr(owner, "addObject", None)
+        if callable(add_fn):
+            add_fn(child)
+            if _group_contains(owner, child):
+                return
+    except Exception:
+        pass
+    cur.append(child)
+    _group_set(owner, cur)
+
+
+def _group_remove(owner, child):
+    if owner is None or child is None:
+        return
+    cur = _group_get(owner)
+    if child not in cur:
+        return
+    try:
+        rem_fn = getattr(owner, "removeObject", None)
+        if callable(rem_fn):
+            rem_fn(child)
+            if (not _group_contains(owner, child)):
+                return
+    except Exception:
+        pass
+    _group_set(owner, [o for o in cur if o != child])
+
+
+def _prune_root_nonfolders(prj):
+    if prj is None:
+        return
+    cur = _group_get(prj)
+    keep = [ch for ch in cur if _is_tree_folder(ch)]
+    if len(keep) != len(cur):
+        _group_set(prj, keep)
+
+
+def _proxy_type(obj) -> str:
+    try:
+        p = getattr(obj, "Proxy", None)
+        return str(getattr(p, "Type", "") or "")
+    except Exception:
+        return ""
+
+
+def _name(obj) -> str:
+    try:
+        return str(getattr(obj, "Name", "") or "")
+    except Exception:
+        return ""
+
+
+def _label(obj) -> str:
+    try:
+        return str(getattr(obj, "Label", "") or "")
+    except Exception:
+        return ""
+
+
+def _is_group_obj(obj) -> bool:
+    try:
+        return bool(hasattr(obj, "Group"))
+    except Exception:
+        return False
+
+
+def _tree_key(obj) -> str:
+    try:
+        return str(getattr(obj, TREE_KEY_PROP, "") or "")
+    except Exception:
+        return ""
+
+
+def _is_tree_folder(obj) -> bool:
+    return _is_group_obj(obj) and bool(_tree_key(obj))
+
+
+def _ensure_folder_meta(group_obj, key: str):
+    if group_obj is None:
+        return
+    try:
+        if not hasattr(group_obj, TREE_KEY_PROP):
+            group_obj.addProperty("App::PropertyString", TREE_KEY_PROP, "CorridorRoad", "CorridorRoad tree folder key")
+    except Exception:
+        pass
+    try:
+        setattr(group_obj, TREE_KEY_PROP, str(key))
+    except Exception:
+        pass
+
+
+def _find_child_folder(owner, key: str):
+    if owner is None:
+        return None
+    for ch in _group_get(owner):
+        if not _is_group_obj(ch):
+            continue
+        if _tree_key(ch) == str(key):
+            return ch
+    return None
+
+
+def _ensure_child_folder(doc, owner, key: str, label: str, obj_name: str):
+    if doc is None or owner is None:
+        return None
+
+    folder = _find_child_folder(owner, key)
+    if folder is None:
+        # Label fallback for compatibility with manually created folders.
+        for ch in _group_get(owner):
+            if _is_group_obj(ch) and _label(ch) == str(label):
+                folder = ch
+                break
+    if folder is None:
+        folder = doc.addObject("App::DocumentObjectGroup", str(obj_name))
+        folder.Label = str(label)
+
+    _ensure_folder_meta(folder, key)
+    _group_add(owner, folder)
+    return folder
+
+
+def _iter_tree_folders(root):
+    out = []
+    seen = set()
+
+    def _walk(node):
+        for ch in _group_get(node):
+            nm = _name(ch)
+            if nm in seen:
+                continue
+            seen.add(nm)
+            if _is_tree_folder(ch):
+                out.append(ch)
+                _walk(ch)
+
+    _walk(root)
+    return out
+
+
+def _sanitize_tag(text: str, default_text: str = "Default") -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return str(default_text)
+    raw = re.sub(r"\s+", "_", raw)
+    raw = re.sub(r"[^A-Za-z0-9_]+", "_", raw)
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    if not raw:
+        return str(default_text)
+    return raw
+
+
+def _ensure_alignment_folder_meta(group_obj, alignment_obj, alignment_name: str):
+    if group_obj is None:
+        return
+    _ensure_folder_meta(group_obj, ALIGNMENT_ROOT)
+    try:
+        if not hasattr(group_obj, ALN_NAME_PROP):
+            group_obj.addProperty("App::PropertyString", ALN_NAME_PROP, "CorridorRoad", "Alignment tag")
+        setattr(group_obj, ALN_NAME_PROP, str(alignment_name))
+    except Exception:
+        pass
+    try:
+        if not hasattr(group_obj, ALN_REF_NAME_PROP):
+            group_obj.addProperty("App::PropertyString", ALN_REF_NAME_PROP, "CorridorRoad", "Alignment object name")
+        setattr(group_obj, ALN_REF_NAME_PROP, _name(alignment_obj))
+    except Exception:
+        pass
+    # Legacy cleanup: avoid direct object link on alignment root (causes wrong tree child display).
+    try:
+        if hasattr(group_obj, ALN_REF_PROP):
+            setattr(group_obj, ALN_REF_PROP, None)
+            try:
+                group_obj.setEditorMode(ALN_REF_PROP, 2)
+            except Exception:
+                pass
+            try:
+                group_obj.setPropertyStatus(ALN_REF_PROP, ["Hidden"])
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _alignment_ref_matches(aln_root, alignment_obj) -> bool:
+    if aln_root is None or alignment_obj is None:
+        return False
+    try:
+        if str(getattr(aln_root, ALN_REF_NAME_PROP, "") or "") == _name(alignment_obj):
+            return True
+    except Exception:
+        pass
+    try:
+        if getattr(aln_root, ALN_REF_PROP, None) == alignment_obj:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _migrate_alignment_root_links(root_alignments):
+    if root_alignments is None:
+        return
+    for ch in _iter_alignment_roots(root_alignments):
+        try:
+            if not hasattr(ch, ALN_REF_NAME_PROP):
+                ch.addProperty("App::PropertyString", ALN_REF_NAME_PROP, "CorridorRoad", "Alignment object name")
+        except Exception:
+            pass
+        try:
+            if not str(getattr(ch, ALN_REF_NAME_PROP, "") or ""):
+                legacy = getattr(ch, ALN_REF_PROP, None)
+                if legacy is not None:
+                    setattr(ch, ALN_REF_NAME_PROP, _name(legacy))
+        except Exception:
+            pass
+        # Clear old link to prevent root-level linked-child display in tree.
+        try:
+            if hasattr(ch, ALN_REF_PROP):
+                setattr(ch, ALN_REF_PROP, None)
+                try:
+                    ch.setEditorMode(ALN_REF_PROP, 2)
+                except Exception:
+                    pass
+                try:
+                    ch.setPropertyStatus(ALN_REF_PROP, ["Hidden"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def ensure_project_tree(obj_project, include_references: bool = False):
+    if obj_project is None:
+        return {}
+    doc = getattr(obj_project, "Document", None)
+    if doc is None:
+        return {}
+
+    ensure_project_properties(obj_project)
+
+    out = {}
+    for key, label, obj_name in BASE_TREE_DEFS:
+        out[key] = _ensure_child_folder(doc, obj_project, key, label, obj_name)
+
+    inputs = out.get(TREE_INPUTS, None)
+    if inputs is not None:
+        for key, label, obj_name in INPUT_SUBTREE_DEFS:
+            out[key] = _ensure_child_folder(doc, inputs, key, label, obj_name)
+
+    if include_references:
+        out[TREE_REFERENCES] = _ensure_child_folder(doc, obj_project, TREE_REFERENCES, "05_References", "CR_05_References")
+    _migrate_alignment_root_links(out.get(TREE_ALIGNMENTS, None))
+    return out
+
+
+def _alignment_name_from_obj(alignment_obj):
+    if alignment_obj is None:
+        return "Unassigned"
+    lbl = _label(alignment_obj)
+    nm = _name(alignment_obj)
+    src = lbl if lbl else nm
+    if src.startswith("ALN_"):
+        src = src[4:]
+    return _sanitize_tag(src, default_text="Unassigned")
+
+
+def _iter_alignment_roots(root_alignments):
+    out = []
+    for ch in _group_get(root_alignments):
+        if not _is_group_obj(ch):
+            continue
+        if _tree_key(ch) != ALIGNMENT_ROOT:
+            continue
+        out.append(ch)
+    return out
+
+
+def _alignment_label_conflict(root_alignments, label: str, alignment_obj, exclude=None):
+    for ch in _iter_alignment_roots(root_alignments):
+        if exclude is not None and ch == exclude:
+            continue
+        if _label(ch) != str(label):
+            continue
+        if _alignment_ref_matches(ch, alignment_obj):
+            continue
+        return True
+    return False
+
+
+def _unique_alignment_label(root_alignments, base_label: str, alignment_obj, exclude=None):
+    label = str(base_label)
+    if not _alignment_label_conflict(root_alignments, label, alignment_obj, exclude=exclude):
+        return label
+
+    if alignment_obj is not None:
+        name_tag = _sanitize_tag(_name(alignment_obj), default_text="Alignment")
+        tagged = f"{base_label}_{name_tag}"
+        if not _alignment_label_conflict(root_alignments, tagged, alignment_obj, exclude=exclude):
+            return tagged
+
+    idx = 2
+    while idx < 1000:
+        cand = f"{base_label}_{idx}"
+        if not _alignment_label_conflict(root_alignments, cand, alignment_obj, exclude=exclude):
+            return cand
+        idx += 1
+    return f"{base_label}_{_sanitize_tag(_name(alignment_obj), default_text='X')}"
+
+
+def ensure_alignment_tree(obj_project, alignment_obj=None):
+    tree = ensure_project_tree(obj_project, include_references=False)
+    root = tree.get(TREE_ALIGNMENTS, None)
+    doc = getattr(obj_project, "Document", None)
+    if root is None or doc is None:
+        return {}
+
+    aln_name = _alignment_name_from_obj(alignment_obj)
+    aln_label_base = f"ALN_{aln_name}"
+    aln_root = None
+
+    for ch in _group_get(root):
+        if not _is_group_obj(ch):
+            continue
+        if _tree_key(ch) != ALIGNMENT_ROOT:
+            continue
+        if _alignment_ref_matches(ch, alignment_obj):
+            aln_root = ch
+            break
+        if alignment_obj is None and _label(ch) == aln_label_base:
+            aln_root = ch
+            break
+
+    if aln_root is None:
+        aln_root = doc.addObject("App::DocumentObjectGroup", f"CR_ALN_{aln_name}")
+    aln_root.Label = _unique_alignment_label(root, aln_label_base, alignment_obj, exclude=aln_root)
+    _ensure_alignment_folder_meta(aln_root, alignment_obj, aln_name)
+    _group_add(root, aln_root)
+
+    out = {"alignment_root": aln_root}
+    for key, label, obj_name in ALIGNMENT_SUBTREE_DEFS:
+        out[key] = _ensure_child_folder(doc, aln_root, key, label, f"{obj_name}_{aln_name}")
+    return out
+
+
+def _is_type(obj, proxy_types=(), name_prefixes=()):
+    pt = _proxy_type(obj)
+    if pt and pt in tuple(proxy_types or ()):
+        return True
+    nm = _name(obj)
+    return any(nm.startswith(str(p)) for p in tuple(name_prefixes or ()))
+
+
+def _looks_like_horizontal_alignment(obj):
+    if obj is None:
+        return False
+    try:
+        return bool(
+            hasattr(obj, "IPPoints")
+            and hasattr(obj, "CurveRadii")
+            and hasattr(obj, "TransitionLengths")
+        )
+    except Exception:
+        return False
+
+
+def _first_alignment_from_doc(doc):
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if _is_type(o, proxy_types=("HorizontalAlignment",), name_prefixes=("HorizontalAlignment",)):
+            return o
+    return None
+
+
+def _first_stationing_from_doc(doc):
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if _is_type(o, proxy_types=("Stationing",), name_prefixes=("Stationing",)):
+            return o
+    return None
+
+
+def _alignment_from_centerline_display(obj):
+    if obj is None:
+        return None
+    aln = getattr(obj, "Alignment", None)
+    if aln is not None:
+        return aln
+    src = getattr(obj, "SourceCenterline", None)
+    if src is not None:
+        return getattr(src, "Alignment", None)
+    return None
+
+
+def _alignment_from_section_set(sec):
+    if sec is None:
+        return None
+    src = getattr(sec, "SourceCenterlineDisplay", None)
+    aln = _alignment_from_centerline_display(src)
+    if aln is not None:
+        return aln
+    return getattr(sec, "Alignment", None)
+
+
+def _alignment_from_profile_bundle(bundle):
+    if bundle is None:
+        return None
+    st = getattr(bundle, "Stationing", None)
+    if st is not None:
+        aln = getattr(st, "Alignment", None)
+        if aln is not None:
+            return aln
+    return None
+
+
+def _alignment_from_project_links(prj):
+    if prj is None:
+        return None
+    st = getattr(prj, "Stationing", None)
+    if st is not None:
+        aln = getattr(st, "Alignment", None)
+        if aln is not None:
+            return aln
+    aln = getattr(prj, "Alignment", None)
+    if aln is not None:
+        return aln
+    doc = getattr(prj, "Document", None)
+    st0 = _first_stationing_from_doc(doc)
+    if st0 is not None:
+        aln = getattr(st0, "Alignment", None)
+        if aln is not None:
+            return aln
+    aln0 = _first_alignment_from_doc(doc)
+    if aln0 is not None:
+        return aln0
+    return None
+
+
+def _alignment_from_vertical_alignment(prj, va):
+    if va is None:
+        return None
+    doc = getattr(prj, "Document", None)
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        if _is_type(o, proxy_types=("Centerline3DDisplay",), name_prefixes=("Centerline3DDisplay",)):
+            if getattr(o, "VerticalAlignment", None) == va:
+                aln = _alignment_from_centerline_display(o)
+                if aln is not None:
+                    return aln
+    for o in doc.Objects:
+        if _is_type(o, proxy_types=("ProfileBundle",), name_prefixes=("ProfileBundle",)):
+            if getattr(o, "VerticalAlignment", None) == va:
+                aln = _alignment_from_profile_bundle(o)
+                if aln is not None:
+                    return aln
+    return None
+
+
+def _resolve_alignment_for_object(prj, child):
+    if prj is None or child is None:
+        return None
+
+    if _is_type(child, proxy_types=("HorizontalAlignment",), name_prefixes=("HorizontalAlignment",)) or _looks_like_horizontal_alignment(child):
+        return child
+
+    if hasattr(child, "Alignment"):
+        aln = getattr(child, "Alignment", None)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("Centerline3DDisplay",), name_prefixes=("Centerline3DDisplay",)):
+        aln = _alignment_from_centerline_display(child)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("SectionSet",), name_prefixes=("SectionSet",)):
+        aln = _alignment_from_section_set(child)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("SectionSlice",), name_prefixes=("SectionSlice",)):
+        sec = getattr(child, "ParentSectionSet", None)
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
+        sec = getattr(child, "SourceSectionSet", None)
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
+        doc = getattr(prj, "Document", None)
+        if doc is not None:
+            for o in doc.Objects:
+                if _is_type(o, proxy_types=("SectionSet",), name_prefixes=("SectionSet",)):
+                    if getattr(o, "AssemblyTemplate", None) == child:
+                        aln = _alignment_from_section_set(o)
+                        if aln is not None:
+                            return aln
+
+    if _is_type(child, proxy_types=("ProfileBundle",), name_prefixes=("ProfileBundle",)):
+        aln = _alignment_from_profile_bundle(child)
+        if aln is not None:
+            return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("VerticalAlignment",), name_prefixes=("VerticalAlignment",)):
+        aln = _alignment_from_vertical_alignment(prj, child)
+        if aln is not None:
+            return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("FGDisplay",), name_prefixes=("FinishedGradeFG",)):
+        va = getattr(child, "SourceVA", None)
+        aln = _alignment_from_vertical_alignment(prj, va)
+        if aln is not None:
+            return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
+    # Unlinked objects are routed to ALN_Unassigned branch.
+    return None
+
+
+def _is_alignment_related(child):
+    if _looks_like_horizontal_alignment(child):
+        return True
+    return _is_type(
+        child,
+        proxy_types=(
+            "HorizontalAlignment",
+            "Stationing",
+            "VerticalAlignment",
+            "ProfileBundle",
+            "FGDisplay",
+            "Centerline3DDisplay",
+            "Centerline3D",
+            "AssemblyTemplate",
+            "SectionSet",
+            "SectionSlice",
+            "CorridorLoft",
+        ),
+        name_prefixes=(
+            "HorizontalAlignment",
+            "Stationing",
+            "VerticalAlignment",
+            "ProfileBundle",
+            "FinishedGradeFG",
+            "Centerline3DDisplay",
+            "Centerline3D",
+            "AssemblyTemplate",
+            "SectionSet",
+            "SectionSlice",
+            "CorridorLoft",
+        ),
+    )
+
+
+def _is_surface(child):
+    return _is_type(
+        child,
+        proxy_types=("DesignGradingSurface", "DesignTerrain"),
+        name_prefixes=("DesignGradingSurface", "DesignTerrain"),
+    )
+
+
+def _is_analysis(child):
+    return _is_type(child, proxy_types=("CutFillCalc",), name_prefixes=("CutFillCalc",))
+
+
+def _is_probable_terrain_input(prj, child):
+    if child is None:
+        return False
+    if child == getattr(prj, "Terrain", None):
+        return True
+    if _is_surface(child) or _is_analysis(child) or _is_alignment_related(child):
+        return False
+    doc = getattr(prj, "Document", None)
+    if doc is not None:
+        for o in list(getattr(doc, "Objects", []) or []):
+            if o is None or o == child:
+                continue
+            for prop in ("ExistingSurface", "ExistingTerrain", "TerrainMesh"):
+                try:
+                    if getattr(o, prop, None) == child:
+                        return True
+                except Exception:
+                    pass
+
+    nm = _name(child).lower()
+    lb = _label(child).lower()
+    keywords = ("terrain", "existing", "eg", "survey", "topo", "dtm", "dem", "ground")
+    return any(k in nm or k in lb for k in keywords)
+
+
+def _target_folder_for_alignment_child(prj, child):
+    aln = _resolve_alignment_for_object(prj, child)
+    aln_tree = ensure_alignment_tree(prj, alignment_obj=aln)
+    if not aln_tree:
+        return None
+
+    if _is_type(child, proxy_types=("HorizontalAlignment",), name_prefixes=("HorizontalAlignment",)) or _looks_like_horizontal_alignment(child):
+        return aln_tree.get(ALIGNMENT_HORIZONTAL, None)
+    if _is_type(child, proxy_types=("Stationing",), name_prefixes=("Stationing",)):
+        return aln_tree.get(ALIGNMENT_STATIONING, None)
+    if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
+        return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
+    if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
+        return aln_tree.get(ALIGNMENT_SECTIONS, None)
+    if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
+        return aln_tree.get(ALIGNMENT_CORRIDOR, None)
+    return aln_tree.get(ALIGNMENT_VERTICAL, None)
+
+
+def _resolve_target_container(prj, child, allow_references: bool = True):
+    if prj is None or child is None:
+        return None
+    if child == prj:
+        return None
+    if _is_tree_folder(child):
+        return prj
+
+    tree = ensure_project_tree(prj, include_references=False)
+
+    if _is_alignment_related(child):
+        return _target_folder_for_alignment_child(prj, child)
+
+    if _is_surface(child):
+        return tree.get(TREE_SURFACES, None)
+
+    if _is_analysis(child):
+        return tree.get(TREE_ANALYSIS, None)
+
+    if _is_probable_terrain_input(prj, child):
+        return tree.get(TREE_INPUTS_TERRAINS, None)
+
+    if allow_references:
+        tree = ensure_project_tree(prj, include_references=True)
+        return tree.get(TREE_REFERENCES, None)
+    return prj
+
+
+def _detach_from_other_tree_folders(prj, child, keep_owner):
+    if prj is None or child is None:
+        return
+    owners = [prj] + _iter_tree_folders(prj)
+    for owner in owners:
+        if owner is None or owner == keep_owner or owner == child:
+            continue
+        _group_remove(owner, child)
+
+
+def _adopt_project_linked_objects(prj):
+    if prj is None:
+        return
+    link_props = (
+        "Terrain",
+        "Alignment",
+        "Stationing",
+        "Centerline3D",
+        "Centerline3DDisplay",
+        "AssemblyTemplate",
+        "SectionSet",
+        "CorridorLoft",
+        "DesignGradingSurface",
+        "DesignTerrain",
+        "CutFillCalc",
+    )
+    for pn in link_props:
+        try:
+            ch = getattr(prj, pn, None)
+        except Exception:
+            ch = None
+        if ch is None:
+            continue
+        CorridorRoadProject.adopt(prj, ch)
+
+
+def _adopt_document_candidates(prj):
+    if prj is None:
+        return
+    doc = getattr(prj, "Document", None)
+    if doc is None:
+        return
+    for ch in list(getattr(doc, "Objects", []) or []):
+        if ch is None or ch == prj or _is_tree_folder(ch):
+            continue
+        if _is_alignment_related(ch) or _is_surface(ch) or _is_analysis(ch) or _is_probable_terrain_input(prj, ch):
+            CorridorRoadProject.adopt(prj, ch)
+
+
+def _rebalance_all_tree_objects(prj):
+    if prj is None:
+        return
+    owners = [prj] + _iter_tree_folders(prj)
+    objs = []
+    seen = set()
+    for owner in owners:
+        for ch in _group_get(owner):
+            if ch is None or _is_tree_folder(ch) or ch == prj:
+                continue
+            k = _name(ch) or str(id(ch))
+            if k in seen:
+                continue
+            seen.add(k)
+            objs.append(ch)
+    for ch in objs:
+        CorridorRoadProject.adopt(prj, ch)
+
+
+def _gui_up() -> bool:
+    try:
+        return bool(getattr(App, "GuiUp", False))
+    except Exception:
+        return False
+
+
+def show_project_setup_dialog(preferred_project=None) -> bool:
+    if not _gui_up():
+        return False
+    try:
+        import FreeCADGui as Gui
+        from ui.task_project_setup import ProjectSetupTaskPanel
+    except Exception:
+        return False
+    try:
+        Gui.Control.showDialog(ProjectSetupTaskPanel(preferred_project=preferred_project))
+        return True
+    except Exception:
+        return False
+
+
+class ViewProviderCorridorRoadProject:
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        self.Type = "ViewProviderCorridorRoadProject"
+
+    def attach(self, vobj):
+        self.Object = getattr(vobj, "Object", None)
+        try:
+            vobj.Visibility = True
+        except Exception:
+            pass
+
+    def getIcon(self):
+        return ""
+
+    def setEdit(self, vobj, mode=0):
+        # Do not auto-open task panel on selection/edit start.
+        return False
+
+    def unsetEdit(self, vobj, mode=0):
+        return True
+
+    def doubleClicked(self, vobj):
+        # Keep default behavior; opening project setup is menu-driven.
+        return False
+
+    def setupContextMenu(self, vobj, menu):
+        # Context menu entry for selected CorridorRoadProject.
+        try:
+            act = menu.addAction("Project Setup")
+            act.triggered.connect(lambda: show_project_setup_dialog(getattr(vobj, "Object", None)))
+        except Exception:
+            pass
+
+    def claimChildren(self):
+        # Tree should be driven by the fixed folder schema only.
+        try:
+            obj = getattr(self, "Object", None)
+            return list(getattr(obj, "Group", []) or [])
+        except Exception:
+            return []
+
+
+def ensure_project_viewprovider(obj):
+    if obj is None or (not _gui_up()):
+        return
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None:
+        return
+    proxy = getattr(vobj, "Proxy", None)
+    if proxy is not None and getattr(proxy, "Type", "") == "ViewProviderCorridorRoadProject":
+        # Older proxy instances may not have latest methods (e.g., claimChildren).
+        if hasattr(proxy, "claimChildren") and hasattr(proxy, "setupContextMenu"):
+            return
+    try:
+        ViewProviderCorridorRoadProject(vobj)
+    except Exception:
+        pass
+
+
+def _hide_project_link_properties(obj):
+    if obj is None:
+        return
+    link_props = (
+        "Terrain",
+        "Alignment",
+        "Stationing",
+        "Centerline3D",
+        "Centerline3DDisplay",
+        "AssemblyTemplate",
+        "SectionSet",
+        "CorridorLoft",
+        "DesignGradingSurface",
+        "DesignTerrain",
+        "CutFillCalc",
+    )
+    for pn in link_props:
+        try:
+            obj.setEditorMode(pn, 2)  # hidden in property editor
+        except Exception:
+            pass
+        try:
+            obj.setPropertyStatus(pn, ["Hidden"])
+        except Exception:
+            pass
+
+
+def _prop_type_id(obj, prop_name: str) -> str:
+    try:
+        return str(obj.getTypeIdOfProperty(str(prop_name)) or "")
+    except Exception:
+        return ""
+
+
+def _add_link_property_prefer_hidden(obj, prop_name: str, group_name: str, doc_text: str):
+    for tp in ("App::PropertyLinkHidden", "App::PropertyLink"):
+        try:
+            obj.addProperty(tp, prop_name, group_name, doc_text)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+def _ensure_hidden_link_property(obj, prop_name: str, group_name: str, doc_text: str):
+    if obj is None:
+        return
+    if not hasattr(obj, prop_name):
+        _add_link_property_prefer_hidden(obj, prop_name, group_name, doc_text)
+        return
+    pt = _prop_type_id(obj, prop_name)
+    if "PropertyLinkHidden" in pt:
+        return
+    # Migrate visible App::PropertyLink -> App::PropertyLinkHidden (same name/value).
+    try:
+        cur = getattr(obj, prop_name, None)
+    except Exception:
+        cur = None
+    try:
+        obj.removeProperty(prop_name)
+    except Exception:
+        # Migration failed; keep current property and hide via UI/status as fallback.
+        if str(prop_name) == "Alignment":
+            try:
+                setattr(obj, prop_name, None)
+            except Exception:
+                pass
+        return
+    if not _add_link_property_prefer_hidden(obj, prop_name, group_name, doc_text):
+        return
+    try:
+        if "PropertyLinkHidden" in _prop_type_id(obj, prop_name):
+            setattr(obj, prop_name, cur)
+        elif str(prop_name) == "Alignment":
+            # If hidden type is unavailable, keep Alignment empty to prevent tree duplication.
+            setattr(obj, prop_name, None)
+        else:
+            setattr(obj, prop_name, cur)
+    except Exception:
+        pass
+
+
 def ensure_project_properties(obj):
     if not hasattr(obj, "Group"):
         obj.addProperty("App::PropertyLinkList", "Group", "CorridorRoad", "Contained objects")
 
     if not hasattr(obj, "Version"):
         obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
-        obj.Version = "0.4"
+        obj.Version = "0.5"
     if not hasattr(obj, "LengthScale"):
         obj.addProperty("App::PropertyFloat", "LengthScale", "CorridorRoad", "Length scale (internal units per meter)")
         obj.LengthScale = 1.0
@@ -239,28 +1209,18 @@ def ensure_project_properties(obj):
         obj.addProperty("App::PropertyString", "CoordSetupStatus", "CoordinateSystem", "Coordinate setup status")
         obj.CoordSetupStatus = "Uninitialized"
 
-    if not hasattr(obj, "Terrain"):
-        obj.addProperty("App::PropertyLink", "Terrain", "CorridorRoad", "Link to EG terrain object")
-    if not hasattr(obj, "Alignment"):
-        obj.addProperty("App::PropertyLink", "Alignment", "CorridorRoad", "Link to horizontal alignment object")
-    if not hasattr(obj, "Stationing"):
-        obj.addProperty("App::PropertyLink", "Stationing", "CorridorRoad", "Link to stationing object")
-    if not hasattr(obj, "Centerline3D"):
-        obj.addProperty("App::PropertyLink", "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
-    if not hasattr(obj, "Centerline3DDisplay"):
-        obj.addProperty("App::PropertyLink", "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
-    if not hasattr(obj, "AssemblyTemplate"):
-        obj.addProperty("App::PropertyLink", "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
-    if not hasattr(obj, "SectionSet"):
-        obj.addProperty("App::PropertyLink", "SectionSet", "CorridorRoad", "Link to section set object")
-    if not hasattr(obj, "CorridorLoft"):
-        obj.addProperty("App::PropertyLink", "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
-    if not hasattr(obj, "DesignGradingSurface"):
-        obj.addProperty("App::PropertyLink", "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
-    if not hasattr(obj, "DesignTerrain"):
-        obj.addProperty("App::PropertyLink", "DesignTerrain", "CorridorRoad", "Link to design terrain object")
-    if not hasattr(obj, "CutFillCalc"):
-        obj.addProperty("App::PropertyLink", "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
+    _ensure_hidden_link_property(obj, "Terrain", "CorridorRoad", "Link to EG terrain object")
+    _ensure_hidden_link_property(obj, "Alignment", "CorridorRoad", "Link to horizontal alignment object")
+    _ensure_hidden_link_property(obj, "Stationing", "CorridorRoad", "Link to stationing object")
+    _ensure_hidden_link_property(obj, "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
+    _ensure_hidden_link_property(obj, "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
+    _ensure_hidden_link_property(obj, "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
+    _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
+    _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
+    _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
+    _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
+    _ensure_hidden_link_property(obj, "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
+    _hide_project_link_properties(obj)
 
 
 class CorridorRoadProject:
@@ -274,22 +1234,38 @@ class CorridorRoadProject:
         obj.Proxy = self
         self.Type = "CorridorRoadProject"
         ensure_project_properties(obj)
+        ensure_project_viewprovider(obj)
 
     def execute(self, obj):
         ensure_project_properties(obj)
+        ensure_project_viewprovider(obj)
+        ensure_project_tree(obj, include_references=False)
+        _adopt_project_linked_objects(obj)
+        _adopt_document_candidates(obj)
+        _rebalance_all_tree_objects(obj)
+        _prune_root_nonfolders(obj)
         # Container does not generate shape.
         return
 
     @staticmethod
     def adopt(obj_project, child):
-        """Put child into project.Group if not already there."""
-        if child is None:
+        """Place child into fixed schema folders under project."""
+        if obj_project is None or child is None:
             return
-
-        group = list(getattr(obj_project, "Group", []) or [])
-        if child not in group:
-            group.append(child)
-            obj_project.Group = group
+        ensure_project_properties(obj_project)
+        target = _resolve_target_container(obj_project, child, allow_references=True)
+        if target is None:
+            return
+        _detach_from_other_tree_folders(obj_project, child, keep_owner=target)
+        _group_add(target, child)
+        # Ensure non-folder objects do not remain directly under project root.
+        if target != obj_project and (not _is_tree_folder(child)):
+            _group_remove(obj_project, child)
+            # Hard cleanup fallback in case removeObject/path failed.
+            roots = _group_get(obj_project)
+            if child in roots:
+                _group_set(obj_project, [ch for ch in roots if ch != child])
+            _prune_root_nonfolders(obj_project)
 
     @staticmethod
     def auto_link(doc, obj_project):
@@ -298,9 +1274,15 @@ class CorridorRoadProject:
             return
 
         if obj_project.Alignment is None:
-            a = _find_first(doc, "HorizontalAlignment")
-            if a is not None:
-                obj_project.Alignment = a
+            # Keep Alignment link empty when property is visible (avoid tree duplication).
+            try:
+                pt = str(obj_project.getTypeIdOfProperty("Alignment") or "")
+            except Exception:
+                pt = ""
+            if "Hidden" in pt:
+                a = _find_first(doc, "HorizontalAlignment")
+                if a is not None:
+                    obj_project.Alignment = a
 
         if obj_project.Stationing is None:
             s = _find_first(doc, "Stationing")
@@ -402,3 +1384,9 @@ class CorridorRoadProject:
                     break
             if s is not None:
                 obj_project.CutFillCalc = s
+
+        ensure_project_tree(obj_project, include_references=False)
+        _adopt_project_linked_objects(obj_project)
+        _adopt_document_candidates(obj_project)
+        _rebalance_all_tree_objects(obj_project)
+        _prune_root_nonfolders(obj_project)

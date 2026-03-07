@@ -1,4 +1,5 @@
-from objects.doc_query import find_first
+from objects.doc_query import find_first, find_project
+from objects.project_links import link_project
 
 PROFILE_BUNDLE_LABEL = "Profiles (Data/EG)"
 OLD_PROFILE_BUNDLE_LABEL = "Profiles (EG/FG)"
@@ -44,6 +45,12 @@ def ensure_fg_display(doc, va):
                 fg.SourceVA = va
         except Exception:
             pass
+        try:
+            prj = find_project(doc)
+            if prj is not None:
+                link_project(prj, adopt_extra=[fg, va])
+        except Exception:
+            pass
         return fg
 
     fg = doc.addObject("Part::FeaturePython", "FinishedGradeFG")
@@ -64,4 +71,10 @@ def ensure_fg_display(doc, va):
 
     fg.touch()
     doc.recompute()
+    try:
+        prj = find_project(doc)
+        if prj is not None:
+            link_project(prj, adopt_extra=[fg, va])
+    except Exception:
+        pass
     return fg

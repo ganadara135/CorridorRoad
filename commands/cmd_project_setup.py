@@ -1,6 +1,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
 from ui.task_project_setup import ProjectSetupTaskPanel
 
 
@@ -16,7 +17,25 @@ class CmdProjectSetup:
         return App.ActiveDocument is not None
 
     def Activated(self):
-        panel = ProjectSetupTaskPanel()
+        preferred = None
+        try:
+            sel = list(Gui.Selection.getSelection() or [])
+            for o in sel:
+                if str(getattr(o, "Name", "") or "").startswith("CorridorRoadProject"):
+                    preferred = o
+                    break
+        except Exception:
+            preferred = None
+        if preferred is not None:
+            try:
+                ensure_project_properties(preferred)
+                ensure_project_tree(preferred, include_references=False)
+                CorridorRoadProject.auto_link(preferred.Document, preferred)
+                preferred.touch()
+                preferred.Document.recompute()
+            except Exception:
+                pass
+        panel = ProjectSetupTaskPanel(preferred_project=preferred)
         Gui.Control.showDialog(panel)
 
 

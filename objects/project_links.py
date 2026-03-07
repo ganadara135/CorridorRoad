@@ -1,4 +1,4 @@
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, find_project
+from objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree, find_project
 
 
 def _iter_unique(objs):
@@ -29,11 +29,20 @@ def link_project(project_obj, links=None, links_if_empty=None, adopt_extra=None)
         return None
 
     ensure_project_properties(prj)
+    ensure_project_tree(prj, include_references=False)
     linked = []
 
     for prop, obj in dict(links or {}).items():
         if obj is None or (not hasattr(prj, prop)):
             continue
+        if str(prop) == "Alignment":
+            try:
+                pt = str(prj.getTypeIdOfProperty("Alignment") or "")
+            except Exception:
+                pt = ""
+            if "Hidden" not in pt:
+                # Prevent tree duplication in environments lacking PropertyLinkHidden migration.
+                continue
         try:
             setattr(prj, prop, obj)
             linked.append(obj)
@@ -43,6 +52,13 @@ def link_project(project_obj, links=None, links_if_empty=None, adopt_extra=None)
     for prop, obj in dict(links_if_empty or {}).items():
         if obj is None or (not hasattr(prj, prop)):
             continue
+        if str(prop) == "Alignment":
+            try:
+                pt = str(prj.getTypeIdOfProperty("Alignment") or "")
+            except Exception:
+                pt = ""
+            if "Hidden" not in pt:
+                continue
         try:
             if getattr(prj, prop, None) is None:
                 setattr(prj, prop, obj)

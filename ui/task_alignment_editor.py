@@ -10,6 +10,7 @@ from objects.obj_project import (
     local_to_world,
     world_to_local,
 )
+from objects.project_links import link_project
 from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -502,6 +503,11 @@ class AlignmentEditorTaskPanel:
 
         aln.touch()
         self.doc.recompute()
+
+        prj = find_project(self.doc)
+        if prj is not None:
+            link_project(prj, links={"Alignment": aln}, adopt_extra=[aln])
+
         self._refresh_report()
 
         try:

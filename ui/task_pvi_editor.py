@@ -4,9 +4,11 @@ import FreeCADGui as Gui
 
 from PySide2 import QtCore, QtWidgets
 
+from objects.doc_query import find_project
 from objects.obj_vertical_alignment import VerticalAlignment, ViewProviderVerticalAlignment
 from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_project import get_length_scale
+from objects.project_links import link_project
 from ui.common.profile_fg_helpers import (
     PROFILE_BUNDLE_LABEL,
     ensure_fg_display as _ensure_fg_display,
@@ -282,6 +284,16 @@ class PviEditorTaskPanel:
 
         self.doc.recompute()
 
+        prj = find_project(self.doc)
+        if prj is not None:
+            fgdisp = _ensure_fg_display(self.doc, va)
+            st_obj = _find_stationing(self.doc)
+            link_project(
+                prj,
+                links_if_empty={"Stationing": st_obj},
+                adopt_extra=[va, fgdisp, st_obj],
+            )
+
     # ---- Generate FG ----
     def _resolve_station_list(self):
         if self.doc is None:
@@ -375,6 +387,12 @@ class PviEditorTaskPanel:
         # Save to bundle (data)
         b.Stations = [float(s) for s in stations]
         b.ElevFG = fg
+        try:
+            st_obj = _find_stationing(self.doc)
+            if st_obj is not None:
+                b.Stationing = st_obj
+        except Exception:
+            st_obj = _find_stationing(self.doc)
 
         # Link bundle -> vertical alignment (for traceability / future use)
         try:
@@ -393,6 +411,14 @@ class PviEditorTaskPanel:
         b.touch()
         va.touch()
         self.doc.recompute()
+
+        prj = find_project(self.doc)
+        if prj is not None:
+            link_project(
+                prj,
+                links_if_empty={"Stationing": st_obj},
+                adopt_extra=[va, b, fgdisp, st_obj],
+            )
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

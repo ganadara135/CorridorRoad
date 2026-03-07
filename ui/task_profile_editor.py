@@ -9,6 +9,7 @@ from objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from objects.obj_vertical_alignment import VerticalAlignment
 from objects.obj_alignment import HorizontalAlignment
 from objects.obj_project import local_to_world, world_to_local
+from objects.project_links import link_project
 from objects.terrain_sampler import TerrainSampler, is_mesh_object, is_shape_object
 from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 from ui.common.profile_fg_helpers import (
@@ -830,6 +831,18 @@ class ProfileEditorTaskPanel:
         if self.fgdisp is not None:
             self.fgdisp.touch()
         self.doc.recompute()
+
+        prj = self.project if self.project is not None else find_project(self.doc)
+        if prj is not None:
+            links = {}
+            if terr_sel is not None:
+                links["Terrain"] = terr_sel
+            link_project(
+                prj,
+                links=links,
+                links_if_empty={"Alignment": self.alignment, "Stationing": self.stationing},
+                adopt_extra=[b, self.fgdisp, va, terr_sel],
+            )
 
         # b.touch()
         # if va is not None:

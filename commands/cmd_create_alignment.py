@@ -6,11 +6,15 @@ from PySide2 import QtWidgets
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment
 from objects.obj_project import (
     CorridorRoadProject,
+    ALIGNMENT_HORIZONTAL,
+    ensure_alignment_tree,
+    ensure_project_tree,
     ensure_project_properties,
     find_project,
     get_coordinate_setup,
     get_length_scale,
 )
+from objects.project_links import link_project
 
 
 def _ask_length_scale(default_value: float):
@@ -51,10 +55,14 @@ class CmdCreateAlignment:
             return
 
         if prj is None:
-            prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+            try:
+                prj = doc.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
+            except Exception:
+                prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
             CorridorRoadProject(prj)
             prj.Label = "CorridorRoad Project"
         ensure_project_properties(prj)
+        ensure_project_tree(prj, include_references=False)
         prj.LengthScale = float(scale)
 
         obj = doc.addObject("Part::FeaturePython", "HorizontalAlignment")
@@ -80,9 +88,29 @@ class CmdCreateAlignment:
         obj.SpiralSegments = 20
         obj.Label = "Sample Alignment"
 
-        if hasattr(prj, "Alignment"):
-            prj.Alignment = obj
-        CorridorRoadProject.adopt(prj, obj)
+        link_project(prj, links={"Alignment": obj}, adopt_extra=[obj])
+
+        # Force immediate placement under ALN_<name>/Horizontal for this command path.
+        try:
+            aln_tree = ensure_alignment_tree(prj, alignment_obj=obj)
+            horizontal = aln_tree.get(ALIGNMENT_HORIZONTAL, None)
+            if horizontal is not None:
+                try:
+                    horizontal.addObject(obj)
+                except Exception:
+                    cur = list(getattr(horizontal, "Group", []) or [])
+                    if obj not in cur:
+                        cur.append(obj)
+                        horizontal.Group = cur
+            # Keep root project group clean (folders only).
+            try:
+                root_children = list(getattr(prj, "Group", []) or [])
+                if obj in root_children:
+                    prj.Group = [ch for ch in root_children if ch != obj]
+            except Exception:
+                pass
+        except Exception:
+            pass
 
         obj.touch()
         doc.recompute()
