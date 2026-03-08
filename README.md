@@ -55,23 +55,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 2. Restart FreeCAD.
 3. Select the `CorridorRoad` workbench.
 
-## Image List
-<img width="753" height="381" alt="Image" src="https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902" />
-
-<img width="690" height="492" alt="Image" src="https://github.com/user-attachments/assets/da25c711-88a1-4101-acd5-1353fba72ea4" />
-
-<img width="695" height="392" alt="Image" src="https://github.com/user-attachments/assets/e243fb11-cb56-49db-bb64-dbd0af535c8d" />
-
-<img width="726" height="622" alt="Image" src="https://github.com/user-attachments/assets/5638bace-9e6a-4c35-9524-6c66f2f2d36d" />
-
-<img width="814" height="550" alt="Image" src="https://github.com/user-attachments/assets/4f3bf538-04e1-47c2-a3e6-a2139192a48a" />
-
-<img width="846" height="469" alt="Image" src="https://github.com/user-attachments/assets/a6735b8f-b71e-4085-92ef-a06bc5931c7d" />
-
-<img width="556" height="456" alt="Image" src="https://github.com/user-attachments/assets/22571089-b91b-438f-8e32-ede0a823812b" />
-
-<img width="614" height="376" alt="Image" src="https://github.com/user-attachments/assets/999d9e0c-54ee-4fd1-9b63-c287724899ba" />
-
-<img width="1026" height="261" alt="Image" src="https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c" />
-
-<img width="649" height="564" alt="Image" src="https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825" />
+## Screenshots
+![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
+![CorridorRoad screenshot 02](https://github.com/user-attachments/assets/da25c711-88a1-4101-acd5-1353fba72ea4)
+![CorridorRoad screenshot 03](https://github.com/user-attachments/assets/e243fb11-cb56-49db-bb64-dbd0af535c8d)
+![CorridorRoad screenshot 04](https://github.com/user-attachments/assets/5638bace-9e6a-4c35-9524-6c66f2f2d36d)
+![CorridorRoad screenshot 05](https://github.com/user-attachments/assets/4f3bf538-04e1-47c2-a3e6-a2139192a48a)
+![CorridorRoad screenshot 06](https://github.com/user-attachments/assets/a6735b8f-b71e-4085-92ef-a06bc5931c7d)
+![CorridorRoad screenshot 07](https://github.com/user-attachments/assets/22571089-b91b-438f-8e32-ede0a823812b)
+![CorridorRoad screenshot 08](https://github.com/user-attachments/assets/999d9e0c-54ee-4fd1-9b63-c287724899ba)
+![CorridorRoad screenshot 09](https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c)
+![CorridorRoad screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
