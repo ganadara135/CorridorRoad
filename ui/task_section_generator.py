@@ -13,7 +13,6 @@ from objects.doc_query import find_first, find_project
 from objects.project_links import link_project
 from objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
 from objects.obj_project import get_length_scale
-from objects import surface_sampling_core as _ssc
 from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -36,16 +35,12 @@ def _is_mesh_obj(obj):
         return False
 
 
-def _is_shape_obj(obj):
-    return _ssc.is_shape_object(obj)
-
-
 def _find_terrain_sources(doc):
     out = []
     if doc is None:
         return out
     for o in doc.Objects:
-        if _is_mesh_obj(o) or _is_shape_obj(o):
+        if _is_mesh_obj(o):
             out.append(o)
     return out
 
@@ -54,7 +49,7 @@ def _selected_terrain_source():
     try:
         sel = list(Gui.Selection.getSelection() or [])
         for o in sel:
-            if _is_mesh_obj(o) or _is_shape_obj(o):
+            if _is_mesh_obj(o):
                 return o
     except Exception:
         pass
@@ -216,7 +211,7 @@ class SectionGeneratorTaskPanel:
         fo.addRow("Side Slope Left (%):", self.spin_side_s_left)
         fo.addRow("Side Slope Right (%):", self.spin_side_s_right)
         fo.addRow(self.chk_daylight)
-        fo.addRow("Daylight Terrain (Mesh/Shape):", self.cmb_day_terrain)
+        fo.addRow("Daylight Terrain (Mesh):", self.cmb_day_terrain)
         row_coords = QtWidgets.QHBoxLayout()
         row_coords.addWidget(self.cmb_day_coords)
         row_coords.addWidget(self.lbl_coord_hint, 1)
@@ -311,8 +306,7 @@ class SectionGeneratorTaskPanel:
         self.spin_day_max_w.setEnabled(on and bool(self.chk_daylight.isChecked()))
 
     def _format_obj(self, obj):
-        tag = "Mesh" if _is_mesh_obj(obj) else "Shape"
-        return f"[{tag}] {obj.Label} ({obj.Name})"
+        return f"[Mesh] {obj.Label} ({obj.Name})"
 
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
@@ -340,7 +334,7 @@ class SectionGeneratorTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Generate Sections",
-                "No terrain source selected. Select a Mesh/Shape object first.",
+                "No terrain source selected. Select a Mesh object first.",
             )
             return
         for i, o in enumerate(self._terrains):
@@ -417,6 +411,8 @@ class SectionGeneratorTaskPanel:
             pref_terrain = getattr(sec, "TerrainMesh", None)
         if pref_terrain is None and prj is not None and hasattr(prj, "Terrain"):
             pref_terrain = getattr(prj, "Terrain", None)
+        if pref_terrain is not None and (not _is_mesh_obj(pref_terrain)):
+            pref_terrain = None
         sel_terrain = _selected_terrain_source()
         if sel_terrain is not None:
             pref_terrain = sel_terrain
@@ -490,7 +486,7 @@ class SectionGeneratorTaskPanel:
         msg.append(f"Centerline Display: {'FOUND' if src else 'NOT FOUND'}")
         msg.append(f"Assembly Template: {'FOUND' if asm else 'NOT FOUND'}")
         msg.append(f"Section Set: {'FOUND' if sec else 'NOT FOUND'}")
-        msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh/Shape)")
+        msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
         if pref_terrain is not None:
             msg.append(f"Daylight terrain: {pref_terrain.Label} ({pref_terrain.Name})")
         msg.append(f"Daylight terrain coords: {self.cmb_day_coords.currentText()}")
@@ -501,7 +497,7 @@ class SectionGeneratorTaskPanel:
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
         msg.append("   - Structure/Crossing key stations can be merged from text list")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
-        msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh or Shape)")
+        msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
         msg.append("   - Daylight terrain coordinate mode can be Local or World")
         self.lbl_info.setText("\n".join(msg))
         self._update_side_ui()
@@ -644,11 +640,11 @@ class SectionGeneratorTaskPanel:
             try:
                 if hasattr(sec, "TerrainMesh"):
                     terr = self._current_daylight_terrain()
-                    if terr is not None:
+                    if terr is not None and _is_mesh_obj(terr):
                         sec.TerrainMesh = terr
                     else:
                         prj0 = _find_project(self.doc)
-                        if prj0 is not None and hasattr(prj0, "Terrain"):
+                        if prj0 is not None and hasattr(prj0, "Terrain") and _is_mesh_obj(prj0.Terrain):
                             sec.TerrainMesh = prj0.Terrain
             except Exception:
                 pass

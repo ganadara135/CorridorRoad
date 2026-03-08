@@ -39,23 +39,14 @@ def _find_terrain_candidate(doc):
         try:
             nm = str(getattr(o, "Name", "") or "").lower()
             lb = str(getattr(o, "Label", "") or "").lower()
-            if ("terrain" in nm or "terrain" in lb) and (_is_mesh_object(o) or _is_shape_object(o)):
+            if ("terrain" in nm or "terrain" in lb) and _is_mesh_object(o):
                 return o
         except Exception:
             continue
-    # 2) Fallback to first mesh object only (safer than arbitrary shape).
+    # 2) Fallback to first mesh object.
     for o in doc.Objects:
         if _is_mesh_object(o):
             return o
-    # 3) Last fallback: terrain/surface-like shape names only.
-    for o in doc.Objects:
-        try:
-            nm = str(getattr(o, "Name", "") or "").lower()
-            lb = str(getattr(o, "Label", "") or "").lower()
-            if ("surface" in nm or "surface" in lb or "eg" in nm or "existing" in nm) and _is_shape_object(o):
-                return o
-        except Exception:
-            continue
     return None
 
 
@@ -149,7 +140,7 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "AssemblyTemplate"):
         obj.addProperty("App::PropertyLink", "AssemblyTemplate", "Sections", "AssemblyTemplate link")
     if not hasattr(obj, "TerrainMesh"):
-        obj.addProperty("App::PropertyLink", "TerrainMesh", "Sections", "Optional terrain source link for daylight (Mesh/Shape)")
+        obj.addProperty("App::PropertyLink", "TerrainMesh", "Sections", "Optional terrain source link for daylight (Mesh only)")
     if not hasattr(obj, "TerrainMeshCoords"):
         obj.addProperty(
             "App::PropertyEnumeration",
@@ -361,14 +352,14 @@ class SectionSet:
     @staticmethod
     def _resolve_terrain_source(obj):
         t = getattr(obj, "TerrainMesh", None)
-        if _is_mesh_object(t) or _is_shape_object(t):
+        if _is_mesh_object(t):
             return t
 
         doc = getattr(obj, "Document", None)
         prj = _find_project(doc)
         if prj is not None:
             pt = getattr(prj, "Terrain", None)
-            if _is_mesh_object(pt) or _is_shape_object(pt):
+            if _is_mesh_object(pt):
                 return pt
 
         cand = _find_terrain_candidate(doc)
@@ -397,9 +388,6 @@ class SectionSet:
     def _surface_triangles(src_obj):
         if _is_mesh_object(src_obj):
             return SectionSet._mesh_triangles(src_obj)
-        if _is_shape_object(src_obj):
-            scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
-            return SectionSet._shape_triangles(src_obj, deflection=1.0 * scale)
         return []
 
     @staticmethod
