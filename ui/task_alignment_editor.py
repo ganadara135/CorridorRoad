@@ -14,6 +14,7 @@ from objects.obj_project import (
     world_to_local,
 )
 from objects.project_links import link_project
+from objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows
 from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -58,6 +59,7 @@ class AlignmentEditorTaskPanel:
         self.aln = None
         self.prj = None
         self._alignments = []
+        self._sketches = []
         self._loading = False
         self._coord_mode_initialized = False
         self._last_apply_warnings = []
@@ -95,6 +97,17 @@ class AlignmentEditorTaskPanel:
         row_src.addWidget(self.cmb_alignment, 1)
         row_src.addWidget(self.btn_refresh_context)
         root.addLayout(row_src)
+
+        row_sketch = QtWidgets.QHBoxLayout()
+        self.cmb_sketch = QtWidgets.QComboBox()
+        self.cmb_sketch_mode = QtWidgets.QComboBox()
+        self.cmb_sketch_mode.addItems(["Replace Table", "Append Rows"])
+        self.btn_load_sketch = QtWidgets.QPushButton("Load from Sketch")
+        row_sketch.addWidget(QtWidgets.QLabel("Sketch:"))
+        row_sketch.addWidget(self.cmb_sketch, 1)
+        row_sketch.addWidget(self.cmb_sketch_mode)
+        row_sketch.addWidget(self.btn_load_sketch)
+        root.addLayout(row_sketch)
 
         row_coord = QtWidgets.QHBoxLayout()
         self.cmb_coord_mode = QtWidgets.QComboBox()
@@ -203,6 +216,7 @@ class AlignmentEditorTaskPanel:
         self.btn_refresh_context.clicked.connect(self._on_refresh_context)
         self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)
         self.cmb_design_standard.currentIndexChanged.connect(self._on_design_standard_changed)
+        self.btn_load_sketch.clicked.connect(self._on_load_from_sketch)
 
         self._set_rows(4)
         self._update_coord_headers()
@@ -210,6 +224,10 @@ class AlignmentEditorTaskPanel:
 
     @staticmethod
     def _fmt_alignment(o):
+        return f"{o.Label} ({o.Name})"
+
+    @staticmethod
+    def _fmt_sketch(o):
         return f"{o.Label} ({o.Name})"
 
     def _use_world_mode(self):
@@ -229,6 +247,12 @@ class AlignmentEditorTaskPanel:
         if i < 0 or i >= len(self._alignments):
             return None
         return self._alignments[i]
+
+    def _current_sketch_from_combo(self):
+        i = int(self.cmb_sketch.currentIndex())
+        if i < 0 or i >= len(self._sketches):
+            return None
+        return self._sketches[i]
 
     def _selected_design_standard(self):
         base = get_design_standard(self.prj if self.prj is not None else self.doc, default=_ds.DEFAULT_STANDARD)
@@ -251,8 +275,10 @@ class AlignmentEditorTaskPanel:
         if self.doc is None:
             self.prj = None
             self._alignments = []
+            self._sketches = []
             self.aln = None
             self.cmb_alignment.clear()
+            self.cmb_sketch.clear()
             self.lbl_coord_hint.setText("No coordinate setup.")
             self.lbl_info.setText("No active document.")
             return
@@ -276,6 +302,8 @@ class AlignmentEditorTaskPanel:
             self._coord_mode_initialized = True
 
         self._alignments = _find_alignments(self.doc)
+        prev_sketch = self._current_sketch_from_combo()
+        self._sketches = find_sketch_objects(self.doc)
 
         self._loading = True
         try:
@@ -292,15 +320,29 @@ class AlignmentEditorTaskPanel:
             if idx < 0 and self._alignments:
                 idx = 0
             self.cmb_alignment.setCurrentIndex(idx)
+
+            self.cmb_sketch.clear()
+            for o in self._sketches:
+                self.cmb_sketch.addItem(self._fmt_sketch(o))
+            sidx = -1
+            if prev_sketch is not None:
+                for i, o in enumerate(self._sketches):
+                    if o == prev_sketch:
+                        sidx = i
+                        break
+            if sidx < 0 and self._sketches:
+                sidx = 0
+            self.cmb_sketch.setCurrentIndex(sidx)
         finally:
             self._loading = False
 
         self.aln = self._current_alignment_from_combo()
         if self.aln is None:
-            self.lbl_info.setText(f"HorizontalAlignment: 0 found")
+            self.lbl_info.setText(f"HorizontalAlignment: 0 found, Sketch: {len(self._sketches)} found")
         else:
             self.lbl_info.setText(
-                f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label})"
+                f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label}), "
+                f"Sketch: {len(self._sketches)} found"
             )
 
     def _on_alignment_changed(self):
@@ -324,6 +366,38 @@ class AlignmentEditorTaskPanel:
             return
         self._refresh_report()
 
+    def _on_load_from_sketch(self):
+        sk = self._current_sketch_from_combo()
+        if sk is None:
+            QtWidgets.QMessageBox.warning(None, "Load from Sketch", "No sketch selected.")
+            return
+        try:
+            rows_local = sketch_to_alignment_rows(sk)
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Load from Sketch", f"Import failed: {ex}")
+            return
+        if len(rows_local) < 2:
+            QtWidgets.QMessageBox.warning(None, "Load from Sketch", "Sketch must provide at least 2 points.")
+            return
+
+        imported_rows = self._rows_from_local_rows(rows_local)
+        if str(self.cmb_sketch_mode.currentText() or "") == "Append Rows":
+            rows = list(self._read_rows())
+            if rows and imported_rows:
+                x0, y0, _r0, _l0 = imported_rows[0]
+                xl, yl, _rl, _ll = rows[-1]
+                dx = float(x0) - float(xl)
+                dy = float(y0) - float(yl)
+                if (dx * dx + dy * dy) <= 1e-12:
+                    imported_rows = imported_rows[1:]
+            rows.extend(imported_rows)
+        else:
+            rows = imported_rows
+
+        self._set_rows_data(rows)
+        self._last_apply_warnings = []
+        self._refresh_report()
+
     def _set_rows(self, n):
         self._loading = True
         try:
@@ -334,6 +408,35 @@ class AlignmentEditorTaskPanel:
                         self.table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
         finally:
             self._loading = False
+
+    def _set_rows_data(self, rows):
+        self._loading = True
+        try:
+            self.table.setRowCount(0)
+            self._set_rows(len(rows) if rows else 4)
+            for i, (x, y, rr, ls) in enumerate(rows):
+                self._set_float(i, 0, x)
+                self._set_float(i, 1, y)
+                self._set_float(i, 2, rr)
+                self._set_float(i, 3, ls)
+        finally:
+            self._loading = False
+
+    def _table_xy_from_local(self, x: float, y: float, z: float = 0.0):
+        xv = float(x)
+        yv = float(y)
+        if self._use_world_mode():
+            e, n1, _z1 = local_to_world(self._coord_context_obj(), xv, yv, float(z))
+            xv = float(e)
+            yv = float(n1)
+        return float(xv), float(yv)
+
+    def _rows_from_local_rows(self, rows_local):
+        out = []
+        for x, y, rr, ls in list(rows_local or []):
+            xv, yv = self._table_xy_from_local(float(x), float(y), 0.0)
+            out.append((float(xv), float(yv), float(rr), float(ls)))
+        return out
 
     def _get_float(self, r, c):
         it = self.table.item(r, c)
