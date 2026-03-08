@@ -2,38 +2,47 @@
 
 Last updated: 2026-03-08
 
-## 1) Metadata (`package.xml`)
-- [x] `package.xml` exists at repository root.
-- [x] `name`, `description`, `version`, `date` are set.
-- [x] `maintainer` with email is set.
-- [x] `license` is set to `LGPL-2.1-or-later`.
-- [x] `url type="repository"` points to GitHub repository.
-- [x] `url type="readme"` points to `README.md`.
-- [x] `url type="bugtracker"` points to GitHub issues.
-- [x] `content/workbench/name` and `classname` are set.
-- [x] `icon` path is set for package and workbench.
+## Latest Verification Run
+- Date: 2026-03-08
+- Scope: Official Addon Manager listing/installability pre-check
+- Result: `CorridorRoad` not found in official sources yet
+  - `https://raw.githubusercontent.com/FreeCAD/FreeCAD-addons/master/.gitmodules` -> not found
+  - `https://freecad.org/addons/addon_cache.json` -> not found
+- Conclusion: Official Addon Manager install verification is blocked until upstream listing PR is merged and cache refresh completes.
 
-## 2) Workbench Loading
-- [x] Workbench class exists: `CorridorRoadWorkbench` in `InitGui.py`.
-- [x] `MenuText` and `ToolTip` are set.
-- [x] `Icon` is wired to repository icon path.
+## A. Local Metadata and Package Shape
+- [x] Root `package.xml` exists and is valid XML.
+- [x] Workbench metadata is filled (`name`, `description`, `version`, `date`).
+- [x] Maintainer and email are set.
+- [x] License is declared as `LGPL-2.1-or-later`.
+- [x] Repository/README/bugtracker URLs are set.
+- [x] Workbench class mapping is set (`CorridorRoadWorkbench`).
+- [x] Package and workbench icons are declared.
 
-## 3) Assets and Docs
-- [x] Workbench icon file exists: `resources/icons/corridorroad_workbench.svg`.
+## B. Workbench Runtime Basics
+- [x] Workbench class exists in `InitGui.py`.
+- [x] `MenuText` and `ToolTip` are defined.
+- [x] `Icon` path is connected to `resources/icons/corridorroad_workbench.svg`.
+
+## C. Repository Baseline
 - [x] User-facing `README.md` exists.
-- [x] License file exists: `LICENSE`.
+- [x] `LICENSE` file exists and matches package license.
+- [x] Icon asset exists in repository.
+- [x] `main` merge completed (user confirmed on 2026-03-08).
 
-## 4) Repository Readiness (before PR to FreeCAD/Addons)
-- [ ] Commit/push latest metadata and icon changes to `main`.
-- [ ] Verify Addon install/update in clean FreeCAD profile using Addon Manager.
-- [ ] Confirm command registration and task panels open without import errors.
-- [ ] Confirm README screenshots/links render correctly on GitHub.
+## D. Remaining Pre-Submission Checks
+- [ ] Validate clean install on a clean FreeCAD user profile via Addon Manager.
+- [ ] Validate update path (install old commit/tag -> update to latest).
+- [ ] Confirm all commands/task panels load without import/runtime errors.
+- [ ] Confirm README images and links render correctly on GitHub web UI.
 
-## 5) Upstream Submission
-- [ ] Open PR to `FreeCAD/Addons` following its current `Documentation/Submission.md`.
-- [ ] Fill PR template fields (summary, license, repo URL, maintenance status).
-- [ ] Respond to review comments and adjust metadata if requested.
+## E. Upstream Submission (FreeCAD/FreeCAD-addons)
+- [ ] Open PR to `FreeCAD/FreeCAD-addons` per its submission guide/template.
+- [ ] Fill PR template completely (addon URL, license, summary, maintenance info).
+- [ ] Monitor CI/checks and fix requested metadata/path issues.
+- [ ] Respond to maintainer review and update PR until merged.
+- [ ] After merge, wait for addons cache refresh cycle and verify listing in Addon Manager.
 
 ## Notes
-- This file is a project-side readiness checklist.
-- Final acceptance criteria are determined by maintainers of `FreeCAD/Addons`.
+- This checklist is project-side readiness tracking.
+- Final acceptance criteria and timing are controlled by `FreeCAD/FreeCAD-addons` maintainers.

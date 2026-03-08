@@ -22,9 +22,20 @@ if WB_DIR and (WB_DIR not in sys.path):
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
     ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
-    Icon = os.path.join(WB_DIR, "resources", "icons", "corridorroad_workbench.svg") if WB_DIR else ""
+    # Keep class-level attributes literal-safe for FreeCAD InitGui loader.
+    Icon = ""
 
     def Initialize(self):
+        # Resolve icon lazily to avoid InitGui class-scope NameError.
+        try:
+            icon_path = os.path.join(App.getUserAppDataDir(), "Mod", "CorridorRoad", "resources", "icons", "corridorroad_workbench.svg")
+            if not os.path.isfile(icon_path):
+                icon_path = os.path.join(App.getHomePath(), "Mod", "CorridorRoad", "resources", "icons", "corridorroad_workbench.svg")
+            if os.path.isfile(icon_path):
+                self.__class__.Icon = icon_path
+        except Exception:
+            pass
+
         # Absolute imports (no leading dots)
         import commands.cmd_new_project  # noqa: F401
         import commands.cmd_project_setup  # noqa: F401
