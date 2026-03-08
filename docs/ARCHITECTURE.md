@@ -39,7 +39,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Practical properties:
   - Geometry: `IPPoints`, `CurveRadii`, `TransitionLengths`, `UseTransitionCurves`, `SpiralSegments`
   - Criteria: `DesignSpeedKph`, `SuperelevationPct`, `SideFriction`, `MinRadius`, `MinTangentLength`, `MinTransitionLength`
-  - Results: `CriteriaMessages`, `CriteriaStatus`, `TotalLength`
+  - Results: `CriteriaMessages`, `CriteriaStatus`, `CriteriaStandard`, `TotalLength`
   - Key-station outputs:
     - `IPKeyStations` (PI station list)
     - `TSKeyStations`, `SCKeyStations`, `CSKeyStations`, `STKeyStations` (transition/key station lists)
@@ -86,13 +86,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - template wire shows crown line and depth envelope
   - `HeightLeft/HeightRight` edits are visible in 3D view immediately
   - `HeightLeft/HeightRight` belong to `Assembly` property group
+- Sync behavior:
+  - `Edit Alignment -> Apply Alignment` syncs alignment `SuperelevationPct`
+    into `LeftSlopePct/RightSlopePct` when an assembly template is linked/found.
 
 ### 2.8 SectionSet (`objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
 - Inputs:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
-  - optional `TerrainMesh` (for daylight-to-terrain, Mesh/Shape)
+  - optional `TerrainMesh` (for daylight-to-terrain, Mesh only)
   - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
     - `SectionSet.TerrainMesh`
@@ -279,12 +282,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Radius/transition arrays
   - Criteria settings
   - Design standard selector (`KDS` / `AASHTO`) synced with project
+  - Sketch import (`Load from Sketch`) for horizontal plan source objects
+  - CSV import/export (`Inspect CSV`, `Load from CSV`, `Save CSV`)
 - Supports target alignment selection in TaskPanel.
 - Coordinate input mode:
   - `Local (X/Y)` writes local model coordinates directly
   - `World (E/N)` converts to/from local using project coordinate setup
 - Shows criteria report messages.
 - Report shows applied criteria standard and pending editor standard (if changed before apply).
+- `Apply Alignment` also propagates `SuperelevationPct` to
+  `AssemblyTemplate.LeftSlopePct/RightSlopePct` when available.
 - TaskPanel button policy:
   - standard button is `Close`
   - apply action is explicit `Apply Alignment`
@@ -294,6 +301,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Diagnostics:
   - report includes status, total length, and approximate IP station summary.
   - criteria checks include reverse-curve diagnostics (`[REVERSE]`, `[REVERSE-TANGENT]`, `[REVERSE-TRANSITION]`).
+- Sketch import conversion policy:
+  - source sketch must be a single connected open path in XY.
+  - `line-arc-line` is converted to PI + exact arc radius (TS/ST tangent points are skipped as IP rows).
+  - imported transition lengths default to zero (`Ls=0.0`).
+- CSV import/export policy:
+  - parser/writer helper is centralized in `objects/csv_alignment_import.py`.
+  - import supports encoding/delimiter/header auto-detection and explicit override.
+  - import supports column mapping (`x/y/r/ls/sta`) and optional station sort.
+  - import can interpret CSV coordinates as local/world/panel-mode and converts to table mode.
+  - export writes current PI table rows with mode-aware coordinate headers (`X/Y` or `E/N`).
 
 ### 3.3 Profile/PVI Editors
 - `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.

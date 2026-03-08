@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package
+  format="1"
+  xmlns="https://wiki.freecad.org/Package_Metadata"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="https://wiki.freecad.org/Package_Metadata https://raw.githubusercontent.com/FreeCAD/FreeCAD-documentation/main/wiki/Package_Metadata.xsd">
+  <name>CorridorRoad</name>
+  <description>FreeCAD workbench for road corridor design workflow.</description>
+  <version>0.1.0</version>
+  <date>2026-03-08</date>
+
+  <maintainer email="ganadara135@gmail.com">kcod</maintainer>
+  <license>LGPL-2.1-or-later</license>
+
+  <url type="repository" branch="main">https://github.com/ganadara135/CorridorRoad</url>
+  <url type="readme">https://github.com/ganadara135/CorridorRoad/blob/main/README.md</url>
+  <url type="bugtracker">https://github.com/ganadara135/CorridorRoad/issues</url>
+  <icon>resources/icons/corridorroad_workbench.svg</icon>
+
+  <content>
+    <workbench>
+      <name>CorridorRoad</name>
+      <classname>CorridorRoadWorkbench</classname>
+      <subdirectory>./</subdirectory>
+      <icon>resources/icons/corridorroad_workbench.svg</icon>
+      <description>Alignment, stationing, profile, section, corridor, and cut/fill tools.</description>
+    </workbench>
+  </content>
+</package>

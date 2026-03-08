@@ -22,7 +22,7 @@ if WB_DIR and (WB_DIR not in sys.path):
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
     ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
-    Icon = ""
+    Icon = os.path.join(WB_DIR, "resources", "icons", "corridorroad_workbench.svg") if WB_DIR else ""
 
     def Initialize(self):
         # Absolute imports (no leading dots)
