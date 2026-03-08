@@ -23,7 +23,6 @@ Thumbs.db
 .codex/
 
 # Code consistency docs (local reference only)
-docs/ARCHITECTURE.md
 docs/CODEX_PROMPTS.md
 docs/RUNTIME_VALIDATION_CHECKLIST.md
 README_Codex.md

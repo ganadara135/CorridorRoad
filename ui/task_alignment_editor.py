@@ -3,9 +3,12 @@ import FreeCADGui as Gui
 
 from PySide2 import QtWidgets
 
+from objects import design_standards as _ds
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
 from objects.obj_project import (
+    ensure_project_properties,
     find_project,
+    get_design_standard,
     get_length_scale,
     local_to_world,
     world_to_local,
@@ -139,8 +142,12 @@ class AlignmentEditorTaskPanel:
         self.spin_min_ls.setDecimals(3)
         self.spin_min_ls.setValue(20.0 * scale)
 
+        self.cmb_design_standard = QtWidgets.QComboBox()
+        self.cmb_design_standard.addItems(list(_ds.SUPPORTED_STANDARDS))
+
         form.addRow(self.chk_create)
         form.addRow(self.chk_use_trans)
+        form.addRow("Design standard:", self.cmb_design_standard)
         form.addRow("Spiral segments:", self.spin_spiral_segments)
         form.addRow("Design speed:", self.spin_v)
         form.addRow("Superelevation e:", self.spin_e)
@@ -170,6 +177,7 @@ class AlignmentEditorTaskPanel:
         self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
         self.btn_refresh_context.clicked.connect(self._on_refresh_context)
         self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)
+        self.cmb_design_standard.currentIndexChanged.connect(self._on_design_standard_changed)
 
         self._set_rows(4)
         self._update_coord_headers()
@@ -197,6 +205,23 @@ class AlignmentEditorTaskPanel:
             return None
         return self._alignments[i]
 
+    def _selected_design_standard(self):
+        base = get_design_standard(self.prj if self.prj is not None else self.doc, default=_ds.DEFAULT_STANDARD)
+        return _ds.normalize_standard(self.cmb_design_standard.currentText(), default=base)
+
+    def _load_design_standard(self):
+        std = get_design_standard(self.prj if self.prj is not None else self.doc, default=_ds.DEFAULT_STANDARD)
+        std = _ds.normalize_standard(std, default=_ds.DEFAULT_STANDARD)
+        self._loading = True
+        try:
+            idx = self.cmb_design_standard.findText(std)
+            if idx >= 0:
+                self.cmb_design_standard.setCurrentIndex(idx)
+            else:
+                self.cmb_design_standard.setCurrentText(std)
+        finally:
+            self._loading = False
+
     def _refresh_context(self, selected=None):
         if self.doc is None:
             self.prj = None
@@ -212,6 +237,7 @@ class AlignmentEditorTaskPanel:
 
         self.prj = find_project(self.doc)
         self.lbl_coord_hint.setText(coord_hint_text(self.prj if self.prj is not None else self.doc))
+        self.cmb_design_standard.setEnabled(self.prj is not None)
 
         if not self._coord_mode_initialized:
             self._loading = True
@@ -268,6 +294,11 @@ class AlignmentEditorTaskPanel:
         self._refresh_context()
         self._load_from_doc()
 
+    def _on_design_standard_changed(self):
+        if self._loading:
+            return
+        self._refresh_report()
+
     def _set_rows(self, n):
         self._loading = True
         try:
@@ -311,6 +342,7 @@ class AlignmentEditorTaskPanel:
         return rows
 
     def _load_from_doc(self):
+        self._load_design_standard()
         if self.aln is None:
             self.table.setRowCount(0)
             self._set_rows(4)
@@ -365,6 +397,13 @@ class AlignmentEditorTaskPanel:
             self.txt_report.setPlainText("No alignment object.")
             return
         lines = []
+        applied_std = str(getattr(self.aln, "CriteriaStandard", "") or get_design_standard(self.doc))
+        editor_std = self._selected_design_standard()
+        if editor_std == applied_std:
+            lines.append(f"Design standard: {applied_std}")
+        else:
+            lines.append(f"Design standard: {applied_std} (applied)")
+            lines.append(f"Design standard (editor): {editor_std} (pending apply)")
         lines.append(f"Status: {getattr(self.aln, 'CriteriaStatus', 'N/A')}")
         lines.append(f"Total length: {float(getattr(self.aln, 'TotalLength', 0.0)):.3f}")
         pts = list(getattr(self.aln, "IPPoints", []) or [])
@@ -478,6 +517,10 @@ class AlignmentEditorTaskPanel:
 
         aln = self._get_or_create_alignment()
         ensure_alignment_properties(aln)
+        prj = find_project(self.doc)
+        if prj is not None:
+            ensure_project_properties(prj)
+            prj.DesignStandard = self._selected_design_standard()
 
         pts = [App.Vector(x, y, 0.0) for (x, y, _, _) in rows]
         rr = [max(0.0, r) for (_, _, r, _) in rows]
@@ -504,7 +547,6 @@ class AlignmentEditorTaskPanel:
         aln.touch()
         self.doc.recompute()
 
-        prj = find_project(self.doc)
         if prj is not None:
             link_project(prj, links={"Alignment": aln}, adopt_extra=[aln])
 

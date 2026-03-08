@@ -2,6 +2,7 @@
 import FreeCAD as App
 import math
 import re
+from objects import design_standards as _ds
 
 
 TREE_KEY_PROP = "CRTreeKey"
@@ -89,6 +90,20 @@ def get_length_scale(doc_or_project, default: float = 1.0) -> float:
     if prj is None:
         return float(default)
     return _safe_scale(getattr(prj, "LengthScale", default), default=default)
+
+
+def get_design_standard(doc_or_project, default: str = _ds.DEFAULT_STANDARD) -> str:
+    prj = _resolve_project(doc_or_project)
+    if prj is None:
+        return _ds.normalize_standard(default, default=default)
+    raw = str(getattr(prj, "DesignStandard", default) or default)
+    std = _ds.normalize_standard(raw, default=default)
+    try:
+        if str(getattr(prj, "DesignStandard", "") or "") != std:
+            prj.DesignStandard = std
+    except Exception:
+        pass
+    return std
 
 
 def meters_to_internal(doc_or_project, meters: float, default_scale: float = 1.0) -> float:
@@ -1171,6 +1186,18 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "LengthScale"):
         obj.addProperty("App::PropertyFloat", "LengthScale", "CorridorRoad", "Length scale (internal units per meter)")
         obj.LengthScale = 1.0
+    if not hasattr(obj, "DesignStandard"):
+        legacy = ""
+        try:
+            legacy = str(getattr(obj, "DesignCriteria", "") or "")
+        except Exception:
+            legacy = ""
+        obj.addProperty("App::PropertyString", "DesignStandard", "DesignCriteria", "Design standard (KDS/AASHTO)")
+        obj.DesignStandard = _ds.normalize_standard(legacy or _ds.DEFAULT_STANDARD)
+    try:
+        obj.DesignStandard = _ds.normalize_standard(getattr(obj, "DesignStandard", _ds.DEFAULT_STANDARD))
+    except Exception:
+        pass
 
     if not hasattr(obj, "CRSEPSG"):
         obj.addProperty("App::PropertyString", "CRSEPSG", "CoordinateSystem", "CRS code (e.g., EPSG:5186)")
