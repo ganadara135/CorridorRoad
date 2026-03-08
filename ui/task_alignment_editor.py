@@ -14,6 +14,7 @@ from objects.obj_project import (
     world_to_local,
 )
 from objects.project_links import link_project
+from objects.csv_alignment_import import inspect_alignment_csv, read_alignment_csv, write_alignment_csv
 from objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows
 from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
@@ -60,6 +61,7 @@ class AlignmentEditorTaskPanel:
         self.prj = None
         self._alignments = []
         self._sketches = []
+        self._csv_columns = []
         self._loading = False
         self._coord_mode_initialized = False
         self._last_apply_warnings = []
@@ -108,6 +110,67 @@ class AlignmentEditorTaskPanel:
         row_sketch.addWidget(self.cmb_sketch_mode)
         row_sketch.addWidget(self.btn_load_sketch)
         root.addLayout(row_sketch)
+
+        row_csv = QtWidgets.QHBoxLayout()
+        self.ed_csv_path = QtWidgets.QLineEdit()
+        self.ed_csv_path.setPlaceholderText("Path to alignment CSV file")
+        self.btn_browse_csv = QtWidgets.QPushButton("Browse CSV")
+        self.btn_inspect_csv = QtWidgets.QPushButton("Inspect CSV")
+        self.cmb_csv_mode = QtWidgets.QComboBox()
+        self.cmb_csv_mode.addItems(["Replace Table", "Append Rows"])
+        self.btn_load_csv = QtWidgets.QPushButton("Load from CSV")
+        self.btn_save_csv = QtWidgets.QPushButton("Save CSV")
+        row_csv.addWidget(QtWidgets.QLabel("CSV:"))
+        row_csv.addWidget(self.ed_csv_path, 1)
+        row_csv.addWidget(self.btn_browse_csv)
+        row_csv.addWidget(self.btn_inspect_csv)
+        row_csv.addWidget(self.cmb_csv_mode)
+        row_csv.addWidget(self.btn_load_csv)
+        row_csv.addWidget(self.btn_save_csv)
+        root.addLayout(row_csv)
+
+        gb_csv = QtWidgets.QGroupBox("CSV Import Options")
+        fcsv = QtWidgets.QFormLayout(gb_csv)
+
+        self.cmb_csv_coord = QtWidgets.QComboBox()
+        self.cmb_csv_coord.addItems(["Use Panel Mode", "Local", "World"])
+        self.cmb_csv_sort = QtWidgets.QComboBox()
+        self.cmb_csv_sort.addItems(["Input Order", "By STA", "By X/Y"])
+        self.cmb_csv_encoding = QtWidgets.QComboBox()
+        self.cmb_csv_encoding.addItems(["Auto", "UTF-8-SIG", "CP949", "UTF-8", "Latin-1"])
+        self.cmb_csv_delim = QtWidgets.QComboBox()
+        self.cmb_csv_delim.addItems(["Auto", "Comma (,)", "Semicolon (;)", "Tab", "Pipe (|)"])
+        self.cmb_csv_header = QtWidgets.QComboBox()
+        self.cmb_csv_header.addItems(["Auto", "Yes", "No"])
+
+        self.chk_csv_drop_dup = QtWidgets.QCheckBox("Drop consecutive duplicates")
+        self.chk_csv_drop_dup.setChecked(True)
+        self.chk_csv_clamp = QtWidgets.QCheckBox("Clamp negative Radius/Ls to 0")
+        self.chk_csv_clamp.setChecked(True)
+        self.chk_csv_end0 = QtWidgets.QCheckBox("Force endpoint Radius/Ls = 0")
+        self.chk_csv_end0.setChecked(True)
+
+        self.cmb_csv_map_x = QtWidgets.QComboBox()
+        self.cmb_csv_map_y = QtWidgets.QComboBox()
+        self.cmb_csv_map_r = QtWidgets.QComboBox()
+        self.cmb_csv_map_ls = QtWidgets.QComboBox()
+        self.cmb_csv_map_sta = QtWidgets.QComboBox()
+        self._reset_csv_mapping_combos()
+
+        fcsv.addRow("CSV Coords:", self.cmb_csv_coord)
+        fcsv.addRow("Sort:", self.cmb_csv_sort)
+        fcsv.addRow("Encoding:", self.cmb_csv_encoding)
+        fcsv.addRow("Delimiter:", self.cmb_csv_delim)
+        fcsv.addRow("Has Header:", self.cmb_csv_header)
+        fcsv.addRow("Map X:", self.cmb_csv_map_x)
+        fcsv.addRow("Map Y:", self.cmb_csv_map_y)
+        fcsv.addRow("Map Radius:", self.cmb_csv_map_r)
+        fcsv.addRow("Map Transition Ls:", self.cmb_csv_map_ls)
+        fcsv.addRow("Map STA (optional):", self.cmb_csv_map_sta)
+        fcsv.addRow(self.chk_csv_drop_dup)
+        fcsv.addRow(self.chk_csv_clamp)
+        fcsv.addRow(self.chk_csv_end0)
+        root.addWidget(gb_csv)
 
         row_coord = QtWidgets.QHBoxLayout()
         self.cmb_coord_mode = QtWidgets.QComboBox()
@@ -217,6 +280,10 @@ class AlignmentEditorTaskPanel:
         self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)
         self.cmb_design_standard.currentIndexChanged.connect(self._on_design_standard_changed)
         self.btn_load_sketch.clicked.connect(self._on_load_from_sketch)
+        self.btn_browse_csv.clicked.connect(self._on_browse_csv)
+        self.btn_inspect_csv.clicked.connect(self._on_inspect_csv)
+        self.btn_load_csv.clicked.connect(self._on_load_from_csv)
+        self.btn_save_csv.clicked.connect(self._on_save_csv)
 
         self._set_rows(4)
         self._update_coord_headers()
@@ -366,6 +433,193 @@ class AlignmentEditorTaskPanel:
             return
         self._refresh_report()
 
+    @staticmethod
+    def _combo_data(cmb):
+        i = int(cmb.currentIndex())
+        try:
+            return cmb.itemData(i)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _csv_delimiter_value(label: str):
+        s = str(label or "").lower()
+        if "comma" in s:
+            return ","
+        if "semicolon" in s:
+            return ";"
+        if "tab" in s:
+            return "\t"
+        if "pipe" in s:
+            return "|"
+        return "auto"
+
+    def _csv_encoding_value(self):
+        t = str(self.cmb_csv_encoding.currentText() or "Auto").strip().lower()
+        if t == "auto":
+            return "auto"
+        return t
+
+    def _csv_header_value(self):
+        t = str(self.cmb_csv_header.currentText() or "Auto").strip().lower()
+        if t.startswith("yes"):
+            return "yes"
+        if t.startswith("no"):
+            return "no"
+        return "auto"
+
+    def _csv_sort_value(self):
+        t = str(self.cmb_csv_sort.currentText() or "Input Order").strip().lower()
+        if "sta" in t:
+            return "sta"
+        if "x/y" in t or "x" in t:
+            return "xy"
+        return "input"
+
+    def _csv_coord_value(self):
+        t = str(self.cmb_csv_coord.currentText() or "Use Panel Mode").strip().lower()
+        if t.startswith("local"):
+            return "local"
+        if t.startswith("world"):
+            return "world"
+        return "panel"
+
+    def _reset_csv_mapping_combos(self):
+        for cmb in (self.cmb_csv_map_x, self.cmb_csv_map_y, self.cmb_csv_map_r, self.cmb_csv_map_ls, self.cmb_csv_map_sta):
+            cmb.clear()
+            cmb.addItem("<Auto>", "auto")
+            cmb.addItem("<None>", -1)
+
+    def _set_csv_columns(self, columns, guess=None):
+        cols = list(columns or [])
+        self._csv_columns = cols
+        self._reset_csv_mapping_combos()
+
+        for i, c in enumerate(cols):
+            label = f"{i}: {str(c)}"
+            for cmb in (self.cmb_csv_map_x, self.cmb_csv_map_y, self.cmb_csv_map_r, self.cmb_csv_map_ls, self.cmb_csv_map_sta):
+                cmb.addItem(label, int(i))
+
+        g = dict(guess or {})
+        self._set_mapping_combo_default(self.cmb_csv_map_x, g.get("x", "auto"))
+        self._set_mapping_combo_default(self.cmb_csv_map_y, g.get("y", "auto"))
+        self._set_mapping_combo_default(self.cmb_csv_map_r, g.get("r", "auto"))
+        self._set_mapping_combo_default(self.cmb_csv_map_ls, g.get("ls", "auto"))
+        self._set_mapping_combo_default(self.cmb_csv_map_sta, g.get("sta", "auto"))
+
+    @staticmethod
+    def _set_mapping_combo_default(cmb, value):
+        target = "auto" if value is None else value
+        for i in range(cmb.count()):
+            try:
+                if cmb.itemData(i) == target:
+                    cmb.setCurrentIndex(i)
+                    return
+            except Exception:
+                continue
+        cmb.setCurrentIndex(0)
+
+    def _build_csv_mapping(self):
+        pairs = {
+            "x": self._combo_data(self.cmb_csv_map_x),
+            "y": self._combo_data(self.cmb_csv_map_y),
+            "r": self._combo_data(self.cmb_csv_map_r),
+            "ls": self._combo_data(self.cmb_csv_map_ls),
+            "sta": self._combo_data(self.cmb_csv_map_sta),
+        }
+        if all(v == "auto" for v in pairs.values()):
+            return None
+
+        out = {}
+        for k, v in pairs.items():
+            if v == "auto":
+                continue
+            try:
+                out[k] = int(v)
+            except Exception:
+                out[k] = -1
+        return out if out else None
+
+    def _rows_from_world_rows(self, rows_world):
+        out = []
+        for x, y, rr, ls in list(rows_world or []):
+            xv = float(x)
+            yv = float(y)
+            if not self._use_world_mode():
+                lx, ly, _lz = world_to_local(self._coord_context_obj(), float(x), float(y), 0.0)
+                xv = float(lx)
+                yv = float(ly)
+            out.append((float(xv), float(yv), float(rr), float(ls)))
+        return out
+
+    def _rows_from_csv_mode_rows(self, rows_csv, csv_coord_mode: str):
+        mode = str(csv_coord_mode or "panel").strip().lower()
+        if mode == "local":
+            return self._rows_from_local_rows(rows_csv)
+        if mode == "world":
+            return self._rows_from_world_rows(rows_csv)
+        return list(rows_csv or [])
+
+    def _on_browse_csv(self):
+        path, _flt = QtWidgets.QFileDialog.getOpenFileName(
+            None,
+            "Select Alignment CSV",
+            str(self.ed_csv_path.text() or ""),
+            "CSV Files (*.csv *.txt);;All Files (*.*)",
+        )
+        if str(path or "").strip() != "":
+            self.ed_csv_path.setText(str(path))
+            self._csv_columns = []
+            self._reset_csv_mapping_combos()
+
+    def _on_inspect_csv(self):
+        path = str(self.ed_csv_path.text() or "").strip()
+        if path == "":
+            QtWidgets.QMessageBox.warning(None, "Inspect CSV", "CSV path is empty. Select a file first.")
+            return
+        try:
+            info = inspect_alignment_csv(
+                path,
+                encoding=self._csv_encoding_value(),
+                delimiter=self._csv_delimiter_value(self.cmb_csv_delim.currentText()),
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Inspect CSV", f"Inspect failed: {ex}")
+            return
+
+        self._set_csv_columns(info.get("columns", []), guess=info.get("guess_mapping", {}))
+        sample = list(info.get("sample_rows", []) or [])
+        lines = [
+            f"Rows: {int(info.get('row_count', 0))}",
+            f"Delimiter: {str(info.get('delimiter', ','))}",
+            f"Encoding: {str(info.get('encoding', ''))}",
+            f"Header guess: {'Yes' if bool(info.get('header_guess', False)) else 'No'}",
+        ]
+        if sample:
+            lines.append("")
+            lines.append("Sample:")
+            for r in sample[:3]:
+                lines.append(", ".join([str(x) for x in r]))
+        QtWidgets.QMessageBox.information(None, "Inspect CSV", "\n".join(lines))
+
+    def _apply_import_rows(self, imported_rows, mode_text: str):
+        if str(mode_text or "") == "Append Rows":
+            rows = list(self._read_rows())
+            if rows and imported_rows:
+                x0, y0, _r0, _l0 = imported_rows[0]
+                xl, yl, _rl, _ll = rows[-1]
+                dx = float(x0) - float(xl)
+                dy = float(y0) - float(yl)
+                if (dx * dx + dy * dy) <= 1e-12:
+                    imported_rows = imported_rows[1:]
+            rows.extend(imported_rows)
+        else:
+            rows = list(imported_rows)
+
+        self._set_rows_data(rows)
+        self._last_apply_warnings = []
+        self._refresh_report()
+
     def _on_load_from_sketch(self):
         sk = self._current_sketch_from_combo()
         if sk is None:
@@ -381,22 +635,106 @@ class AlignmentEditorTaskPanel:
             return
 
         imported_rows = self._rows_from_local_rows(rows_local)
-        if str(self.cmb_sketch_mode.currentText() or "") == "Append Rows":
-            rows = list(self._read_rows())
-            if rows and imported_rows:
-                x0, y0, _r0, _l0 = imported_rows[0]
-                xl, yl, _rl, _ll = rows[-1]
-                dx = float(x0) - float(xl)
-                dy = float(y0) - float(yl)
-                if (dx * dx + dy * dy) <= 1e-12:
-                    imported_rows = imported_rows[1:]
-            rows.extend(imported_rows)
-        else:
-            rows = imported_rows
+        self._apply_import_rows(imported_rows, self.cmb_sketch_mode.currentText())
 
-        self._set_rows_data(rows)
-        self._last_apply_warnings = []
-        self._refresh_report()
+    def _on_load_from_csv(self):
+        path = str(self.ed_csv_path.text() or "").strip()
+        if path == "":
+            QtWidgets.QMessageBox.warning(None, "Load from CSV", "CSV path is empty. Select a file first.")
+            return
+        try:
+            info = read_alignment_csv(
+                path,
+                encoding=self._csv_encoding_value(),
+                delimiter=self._csv_delimiter_value(self.cmb_csv_delim.currentText()),
+                has_header=self._csv_header_value(),
+                mapping=self._build_csv_mapping(),
+                sort_mode=self._csv_sort_value(),
+                drop_consecutive_duplicates=bool(self.chk_csv_drop_dup.isChecked()),
+                clamp_negative=bool(self.chk_csv_clamp.isChecked()),
+                enforce_endpoints=bool(self.chk_csv_end0.isChecked()),
+            )
+            rows = list(info.get("rows", []) or [])
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Load from CSV", f"Import failed: {ex}")
+            return
+        if len(rows) < 2:
+            QtWidgets.QMessageBox.warning(None, "Load from CSV", "CSV must provide at least 2 valid rows.")
+            return
+
+        rows_table = self._rows_from_csv_mode_rows(rows, self._csv_coord_value())
+        self._apply_import_rows(rows_table, self.cmb_csv_mode.currentText())
+
+        loaded = int(info.get("loaded", len(rows)))
+        skipped = int(info.get("skipped", 0))
+        delim = str(info.get("delimiter", ","))
+        enc = str(info.get("encoding", ""))
+        header = bool(info.get("header", False))
+        reasons = list(info.get("skip_reasons", []) or [])
+        msg_lines = [
+            f"Loaded rows: {loaded}",
+            f"Skipped rows: {skipped}",
+            f"Delimiter: {delim}",
+            f"Encoding: {enc}",
+            f"Header: {'Yes' if header else 'No'}",
+            f"Sort: {self.cmb_csv_sort.currentText()}",
+            f"CSV Coords: {self.cmb_csv_coord.currentText()}",
+        ]
+        if reasons:
+            msg_lines.append("")
+            msg_lines.append("Skipped details:")
+            msg_lines.extend(reasons)
+        QtWidgets.QMessageBox.information(None, "Load from CSV", "\n".join(msg_lines))
+
+    def _on_save_csv(self):
+        rows = list(self._read_rows())
+        if len(rows) < 1:
+            QtWidgets.QMessageBox.warning(None, "Save CSV", "No valid table rows to export.")
+            return
+
+        cur_path = str(self.ed_csv_path.text() or "").strip()
+        if cur_path == "":
+            cur_path = "alignment_pi.csv"
+        path, _flt = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Save Alignment CSV",
+            cur_path,
+            "CSV Files (*.csv);;Text Files (*.txt);;All Files (*.*)",
+        )
+        path = str(path or "").strip()
+        if path == "":
+            return
+
+        delim = self._csv_delimiter_value(self.cmb_csv_delim.currentText())
+        enc = self._csv_encoding_value()
+        hdr_opt = self._csv_header_value()
+        include_header = hdr_opt != "no"
+        x_header = "E" if self._use_world_mode() else "X"
+        y_header = "N" if self._use_world_mode() else "Y"
+
+        try:
+            info = write_alignment_csv(
+                path,
+                rows,
+                x_header=x_header,
+                y_header=y_header,
+                delimiter=delim,
+                encoding=enc,
+                include_header=include_header,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Save CSV", f"Export failed: {ex}")
+            return
+
+        self.ed_csv_path.setText(str(path))
+        msg_lines = [
+            f"Saved rows: {int(info.get('written', 0))}",
+            f"Delimiter: {str(info.get('delimiter', ','))}",
+            f"Encoding: {str(info.get('encoding', 'utf-8-sig'))}",
+            f"Header: {'Yes' if bool(info.get('header', True)) else 'No'}",
+            f"Path: {str(info.get('path', path))}",
+        ]
+        QtWidgets.QMessageBox.information(None, "Save CSV", "\n".join(msg_lines))
 
     def _set_rows(self, n):
         self._loading = True

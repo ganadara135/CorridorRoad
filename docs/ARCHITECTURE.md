@@ -283,6 +283,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Criteria settings
   - Design standard selector (`KDS` / `AASHTO`) synced with project
   - Sketch import (`Load from Sketch`) for horizontal plan source objects
+  - CSV import/export (`Inspect CSV`, `Load from CSV`, `Save CSV`)
 - Supports target alignment selection in TaskPanel.
 - Coordinate input mode:
   - `Local (X/Y)` writes local model coordinates directly
@@ -304,6 +305,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - source sketch must be a single connected open path in XY.
   - `line-arc-line` is converted to PI + exact arc radius (TS/ST tangent points are skipped as IP rows).
   - imported transition lengths default to zero (`Ls=0.0`).
+- CSV import/export policy:
+  - parser/writer helper is centralized in `objects/csv_alignment_import.py`.
+  - import supports encoding/delimiter/header auto-detection and explicit override.
+  - import supports column mapping (`x/y/r/ls/sta`) and optional station sort.
+  - import can interpret CSV coordinates as local/world/panel-mode and converts to table mode.
+  - export writes current PI table rows with mode-aware coordinate headers (`X/Y` or `E/N`).
 
 ### 3.3 Profile/PVI Editors
 - `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
