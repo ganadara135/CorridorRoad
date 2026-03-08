@@ -55,6 +55,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 2. Restart FreeCAD.
 3. Select the `CorridorRoad` workbench.
 
+## License
+- This project is licensed under `LGPL-2.1-or-later`.
+- See [LICENSE](./LICENSE).
+
 ## Screenshots
 ![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
 ![CorridorRoad screenshot 02](https://github.com/user-attachments/assets/da25c711-88a1-4101-acd5-1353fba72ea4)
