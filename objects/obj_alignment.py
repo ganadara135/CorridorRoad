@@ -2,7 +2,8 @@ import FreeCAD as App
 import Part
 import math
 
-from objects.obj_project import get_length_scale
+from objects import design_standards as _ds
+from objects.obj_project import get_design_standard, get_length_scale
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
@@ -136,6 +137,9 @@ def ensure_alignment_properties(obj):
     if not hasattr(obj, "CriteriaStatus"):
         obj.addProperty("App::PropertyString", "CriteriaStatus", "Criteria", "Criteria check status")
         obj.CriteriaStatus = "OK"
+    if not hasattr(obj, "CriteriaStandard"):
+        obj.addProperty("App::PropertyString", "CriteriaStandard", "Criteria", "Applied design standard")
+        obj.CriteriaStandard = _ds.DEFAULT_STANDARD
 
     if not hasattr(obj, "TotalLength"):
         obj.addProperty("App::PropertyFloat", "TotalLength", "Alignment", "Computed length")
@@ -423,6 +427,7 @@ class HorizontalAlignment:
                 "ls_eff": 0.0,
                 "theta": float(theta),
                 "trim": float(t_use),
+                "turn_sign": float(turn_sign),
             }
 
         n_in = _left_normal_2d(u_in) * turn_sign
@@ -479,6 +484,7 @@ class HorizontalAlignment:
             "ls_eff": float(ls_eff),
             "theta": float(theta),
             "trim": float(t_use),
+            "turn_sign": float(turn_sign),
         }
 
     @staticmethod
@@ -519,7 +525,13 @@ class HorizontalAlignment:
     def _run_criteria(self, obj, pts, seg_len, corners):
         msgs = []
 
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
         v = max(0.0, float(getattr(obj, "DesignSpeedKph", 60.0)))
+        std = get_design_standard(obj, default=_ds.DEFAULT_STANDARD)
+        std_spec = _ds.criteria_defaults(std, v, scale=scale)
+        obj.CriteriaStandard = std
+        std_tag = f"[{std}]"
+
         e = max(0.0, float(getattr(obj, "SuperelevationPct", 8.0))) / 100.0
         f = max(0.01, float(getattr(obj, "SideFriction", 0.15)))
         min_radius_user = float(getattr(obj, "MinRadius", 0.0))
@@ -527,10 +539,15 @@ class HorizontalAlignment:
             min_radius = min_radius_user
         else:
             denom = 127.0 * (e + f)
-            min_radius = (v * v / denom) if denom > 1e-9 else 0.0
+            r_ef = (v * v / denom) if denom > 1e-9 else 0.0
+            min_radius = max(float(std_spec.get("min_radius", 0.0)), float(r_ef))
 
-        min_tangent = max(0.0, float(getattr(obj, "MinTangentLength", 0.0)))
-        min_transition = max(0.0, float(getattr(obj, "MinTransitionLength", 0.0)))
+        min_tangent_user = max(0.0, float(getattr(obj, "MinTangentLength", 0.0)))
+        min_transition_user = max(0.0, float(getattr(obj, "MinTransitionLength", 0.0)))
+        min_tangent = max(min_tangent_user, float(std_spec.get("min_tangent", 0.0)))
+        min_transition = max(min_transition_user, float(std_spec.get("min_transition", 0.0)))
+        reverse_min_tangent = max(min_tangent, float(std_spec.get("reverse_min_tangent", 0.0)))
+        reverse_min_transition = max(min_transition, float(std_spec.get("reverse_min_transition", 0.0)))
 
         for i in range(1, len(pts) - 1):
             c = corners[i]
@@ -538,19 +555,19 @@ class HorizontalAlignment:
                 continue
             if c["radius_eff"] < min_radius - 1e-6:
                 msgs.append(
-                    f"[RADIUS] IP#{i} R={c['radius_eff']:.2f}m < min {min_radius:.2f}m (V={v:.1f}km/h)"
+                    f"{std_tag} [RADIUS] IP#{i} R={c['radius_eff']:.2f}m < min {min_radius:.2f}m (V={v:.1f}km/h)"
                 )
             if c["ls_eff"] > 1e-6 and c["ls_eff"] < min_transition - 1e-6:
                 msgs.append(
-                    f"[TRANSITION] IP#{i} Ls={c['ls_eff']:.2f}m < min {min_transition:.2f}m"
+                    f"{std_tag} [TRANSITION] IP#{i} Ls={c['ls_eff']:.2f}m < min {min_transition:.2f}m"
                 )
             if c["radius_eff"] < c["radius_req"] - 1e-6:
                 msgs.append(
-                    f"[CLAMP] IP#{i} R reduced {c['radius_req']:.2f} -> {c['radius_eff']:.2f}m by geometric limits"
+                    f"{std_tag} [CLAMP] IP#{i} R reduced {c['radius_req']:.2f} -> {c['radius_eff']:.2f}m by geometric limits"
                 )
             if c["ls_eff"] < c["ls_req"] - 1e-6:
                 msgs.append(
-                    f"[CLAMP] IP#{i} Ls reduced {c['ls_req']:.2f} -> {c['ls_eff']:.2f}m by geometric limits"
+                    f"{std_tag} [CLAMP] IP#{i} Ls reduced {c['ls_req']:.2f} -> {c['ls_eff']:.2f}m by geometric limits"
                 )
 
         for i in range(len(seg_len)):
@@ -559,7 +576,7 @@ class HorizontalAlignment:
             residual = float(seg_len[i]) - left_trim - right_trim
             if residual < min_tangent - 1e-6:
                 msgs.append(
-                    f"[TANGENT] Segment {i}-{i+1} residual tangent {residual:.2f}m < min {min_tangent:.2f}m"
+                    f"{std_tag} [TANGENT] Segment {i}-{i+1} residual tangent {residual:.2f}m < min {min_tangent:.2f}m"
                 )
 
                 # Actionable guidance:
@@ -585,10 +602,51 @@ class HorizontalAlignment:
                 add_len = required_len - float(seg_len[i])
                 if add_len > 1e-6:
                     msgs.append(
-                        f"[ACTION] Segment {i}-{i+1}: current IP layout cannot satisfy the criteria together. "
+                        f"{std_tag} [ACTION] Segment {i}-{i+1}: current IP layout cannot satisfy the criteria together. "
                         f"Required L >= {required_len:.2f}m, current L={float(seg_len[i]):.2f}m -> extend by about {add_len:.2f}m "
                         f"(or relax speed/radius/transition criteria)."
                     )
+
+        # Reverse-curve check: consecutive curved corners with opposite turning direction.
+        for i in range(1, len(pts) - 2):
+            c0 = corners[i]
+            c1 = corners[i + 1]
+            if c0 is None or c1 is None:
+                continue
+            if float(c0.get("radius_eff", 0.0)) <= 1e-9 or float(c1.get("radius_eff", 0.0)) <= 1e-9:
+                continue
+            s0 = float(c0.get("turn_sign", 0.0))
+            s1 = float(c1.get("turn_sign", 0.0))
+            if s0 * s1 >= 0.0:
+                continue
+
+            left_trim = float(c0.get("trim", 0.0))
+            right_trim = float(c1.get("trim", 0.0))
+            residual = float(seg_len[i]) - left_trim - right_trim
+            if residual <= 1e-6:
+                msgs.append(
+                    f"{std_tag} [REVERSE] IP#{i}->IP#{i+1}: reverse curve detected with no tangent between curves."
+                )
+            else:
+                msgs.append(
+                    f"{std_tag} [REVERSE] IP#{i}->IP#{i+1}: reverse curve detected (intermediate tangent {residual:.2f}m)."
+                )
+            if residual < reverse_min_tangent - 1e-6:
+                msgs.append(
+                    f"{std_tag} [REVERSE-TANGENT] IP#{i}->IP#{i+1}: intermediate tangent {residual:.2f}m < "
+                    f"required {reverse_min_tangent:.2f}m."
+                )
+
+            ls0 = float(c0.get("ls_eff", 0.0))
+            ls1 = float(c1.get("ls_eff", 0.0))
+            if ls0 < reverse_min_transition - 1e-6:
+                msgs.append(
+                    f"{std_tag} [REVERSE-TRANSITION] IP#{i}: Ls={ls0:.2f}m < required {reverse_min_transition:.2f}m."
+                )
+            if ls1 < reverse_min_transition - 1e-6:
+                msgs.append(
+                    f"{std_tag} [REVERSE-TRANSITION] IP#{i+1}: Ls={ls1:.2f}m < required {reverse_min_transition:.2f}m."
+                )
 
         return msgs
 

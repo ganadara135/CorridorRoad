@@ -2,6 +2,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
+from objects import design_standards as _ds
 from objects.obj_project import ensure_project_properties
 
 
@@ -48,8 +49,11 @@ class ProjectSetupTaskPanel:
         gb_src = QtWidgets.QGroupBox("Project")
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_project = QtWidgets.QComboBox()
+        self.cmb_design_standard = QtWidgets.QComboBox()
+        self.cmb_design_standard.addItems(list(_ds.SUPPORTED_STANDARDS))
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Target Project:", self.cmb_project)
+        fs.addRow("Design Standard:", self.cmb_design_standard)
         fs.addRow(self.btn_refresh)
         root.addWidget(gb_src)
 
@@ -169,6 +173,7 @@ class ProjectSetupTaskPanel:
         self._loading = True
         try:
             self.ed_epsg.setText(str(getattr(prj, "CRSEPSG", "") or ""))
+            self.cmb_design_standard.setCurrentText(_ds.normalize_standard(getattr(prj, "DesignStandard", _ds.DEFAULT_STANDARD)))
             self.ed_h_datum.setText(str(getattr(prj, "HorizontalDatum", "") or ""))
             self.ed_v_datum.setText(str(getattr(prj, "VerticalDatum", "") or ""))
             self.sp_e.setValue(float(getattr(prj, "ProjectOriginE", 0.0)))
@@ -244,6 +249,7 @@ class ProjectSetupTaskPanel:
 
         try:
             prj.CRSEPSG = str(self.ed_epsg.text() or "").strip()
+            prj.DesignStandard = _ds.normalize_standard(self.cmb_design_standard.currentText(), default=_ds.DEFAULT_STANDARD)
             prj.HorizontalDatum = str(self.ed_h_datum.text() or "").strip()
             prj.VerticalDatum = str(self.ed_v_datum.text() or "").strip()
             prj.ProjectOriginE = float(self.sp_e.value())
@@ -262,7 +268,8 @@ class ProjectSetupTaskPanel:
                 self.doc.recompute()
 
             self.lbl_result.setText(
-                f"Applied: EPSG='{prj.CRSEPSG}', NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
+                f"Applied: Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
+                f"NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
             )
             QtWidgets.QMessageBox.information(
                 None,
