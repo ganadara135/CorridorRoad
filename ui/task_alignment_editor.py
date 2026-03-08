@@ -27,6 +27,31 @@ def _find_alignments(doc):
     return out
 
 
+def _find_assembly_template(doc, project=None):
+    if project is not None:
+        try:
+            asm = getattr(project, "AssemblyTemplate", None)
+            if asm is not None:
+                return asm
+        except Exception:
+            pass
+    if doc is None:
+        return None
+    for o in doc.Objects:
+        try:
+            pr = getattr(o, "Proxy", None)
+            if pr is not None and getattr(pr, "Type", "") == "AssemblyTemplate":
+                return o
+        except Exception:
+            pass
+        try:
+            if str(getattr(o, "Name", "") or "").startswith("AssemblyTemplate"):
+                return o
+        except Exception:
+            pass
+    return None
+
+
 class AlignmentEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
@@ -543,6 +568,19 @@ class AlignmentEditorTaskPanel:
         aln.MinRadius = float(self.spin_min_r.value())
         aln.MinTangentLength = float(self.spin_min_tan.value())
         aln.MinTransitionLength = float(self.spin_min_ls.value())
+
+        # Sync alignment superelevation input to cross slope template defaults.
+        asm = _find_assembly_template(self.doc, project=prj)
+        if asm is not None:
+            try:
+                e_pct = float(self.spin_e.value())
+                if hasattr(asm, "LeftSlopePct"):
+                    asm.LeftSlopePct = e_pct
+                if hasattr(asm, "RightSlopePct"):
+                    asm.RightSlopePct = e_pct
+                asm.touch()
+            except Exception:
+                pass
 
         aln.touch()
         self.doc.recompute()
