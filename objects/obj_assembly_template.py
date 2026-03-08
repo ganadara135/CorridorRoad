@@ -193,7 +193,6 @@ class AssemblyTemplate:
                                 o.touch()
                         except Exception:
                             pass
-                    obj.Document.recompute()
                     if Gui is not None:
                         Gui.updateGui()
             except Exception:

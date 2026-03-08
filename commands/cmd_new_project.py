@@ -3,7 +3,8 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
-from objects.obj_project import CorridorRoadProject, ensure_project_properties
+from objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
+from ui.task_project_setup import ProjectSetupTaskPanel
 
 
 class CmdNewProject:
@@ -22,9 +23,13 @@ class CmdNewProject:
         if doc is None:
             raise Exception("No active document.")
 
-        obj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+        try:
+            obj = doc.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
+        except Exception:
+            obj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(obj)
         ensure_project_properties(obj)
+        ensure_project_tree(obj, include_references=False)
         obj.Label = "CorridorRoad Project"
 
         scale, ok = QtWidgets.QInputDialog.getDouble(
@@ -66,6 +71,11 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.CutFillCalc)
 
         doc.recompute()
+
+        try:
+            Gui.Control.showDialog(ProjectSetupTaskPanel(preferred_project=obj))
+        except Exception:
+            pass
 
 
 Gui.addCommand("CorridorRoad_NewProject", CmdNewProject())

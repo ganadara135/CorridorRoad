@@ -139,8 +139,6 @@ class FGDisplay:
         if prop in ("SourceVA", "ShowWire", "CurvesOnly", "ZOffset"):
             try:
                 obj.touch()
-                if obj.Document is not None:
-                    obj.Document.recompute()
             except Exception:
                 pass
 

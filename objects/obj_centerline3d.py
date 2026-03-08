@@ -333,7 +333,6 @@ class Centerline3D:
                                 o.touch()
                         except Exception:
                             pass
-                    obj.Document.recompute()
             except Exception:
                 pass
 

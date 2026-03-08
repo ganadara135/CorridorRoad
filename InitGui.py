@@ -27,6 +27,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
     def Initialize(self):
         # Absolute imports (no leading dots)
         import commands.cmd_new_project  # noqa: F401
+        import commands.cmd_project_setup  # noqa: F401
         import commands.cmd_create_alignment  # noqa: F401
         import commands.cmd_edit_alignment  # noqa: F401
         import commands.cmd_generate_stations  # noqa: F401
@@ -41,6 +42,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
 
         self.appendToolbar("CorridorRoad", [
             "CorridorRoad_NewProject",
+            "CorridorRoad_ProjectSetup",
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
@@ -56,6 +58,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
 
         self.appendMenu("CorridorRoad", [
             "CorridorRoad_NewProject",
+            "CorridorRoad_ProjectSetup",
             "CorridorRoad_CreateAlignment",
             "CorridorRoad_EditAlignment",
             "CorridorRoad_GenerateStations",
@@ -68,6 +71,41 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_GenerateDesignTerrain",
             "CorridorRoad_GenerateCutFillCalc",
         ])
+
+    def ContextMenu(self, recipient):
+        try:
+            sel = list(Gui.Selection.getSelection() or [])
+        except Exception:
+            sel = []
+        has_project = any(str(getattr(o, "Name", "") or "").startswith("CorridorRoadProject") for o in sel)
+        if has_project:
+            self.appendContextMenu("CorridorRoad Project", ["CorridorRoad_ProjectSetup"])
+
+    def Activated(self):
+        doc = App.ActiveDocument
+        if doc is None:
+            return
+        try:
+            from objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
+        except Exception:
+            return
+        touched = False
+        for o in list(getattr(doc, "Objects", []) or []):
+            if not str(getattr(o, "Name", "") or "").startswith("CorridorRoadProject"):
+                continue
+            try:
+                ensure_project_properties(o)
+                ensure_project_tree(o, include_references=False)
+                CorridorRoadProject.auto_link(doc, o)
+                o.touch()
+                touched = True
+            except Exception:
+                pass
+        if touched:
+            try:
+                doc.recompute()
+            except Exception:
+                pass
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"

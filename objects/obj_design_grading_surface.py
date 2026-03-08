@@ -168,18 +168,14 @@ class DesignGradingSurface:
                 )
             pt_lists.append(pts)
 
-        # Orientation continuity guard (same policy as corridor loft):
-        # reverse section point order if left/right axis flips.
+        # SectionSet.build_section_wires already stabilizes N-direction with prev_n.
+        # Keep source point order as-is; additional auto-flip can mis-detect
+        # heading rotation as a true left/right inversion.
         out = []
-        prev_axis = None
         for i, pts in enumerate(pt_lists):
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"Section[{i}] left/right axis is degenerate.")
-            if prev_axis is not None and float(axis.dot(prev_axis)) < 0.0:
-                pts = list(reversed(pts))
-                axis = pts[0] - pts[-1]
-            prev_axis = axis
             out.append(pts)
 
         return out, int(ref_n or 0)
@@ -295,7 +291,7 @@ class DesignGradingSurface:
                     return
 
                 obj.touch()
-                if obj.Document is not None:
+                if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)) and obj.Document is not None:
                     obj.Document.recompute()
             except Exception:
                 pass

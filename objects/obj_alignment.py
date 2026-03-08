@@ -45,6 +45,15 @@ def _dedupe_points(points, tol: float = 1e-6):
     return out
 
 
+def _unique_sorted_floats(values, tol: float = 1e-6):
+    vals = sorted([float(v) for v in values])
+    out = []
+    for v in vals:
+        if not out or abs(v - out[-1]) > tol:
+            out.append(v)
+    return out
+
+
 def _tangent_needed(r: float, ls: float, theta: float) -> float:
     if r <= 1e-9:
         return 0.0
@@ -131,6 +140,16 @@ def ensure_alignment_properties(obj):
     if not hasattr(obj, "TotalLength"):
         obj.addProperty("App::PropertyFloat", "TotalLength", "Alignment", "Computed length")
         obj.TotalLength = 0.0
+    if not hasattr(obj, "IPKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "IPKeyStations", "Result", "Approx station at each IP")
+    if not hasattr(obj, "TSKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "TSKeyStations", "Result", "Approx station at transition TS points")
+    if not hasattr(obj, "SCKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "SCKeyStations", "Result", "Approx station at transition SC points")
+    if not hasattr(obj, "CSKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "CSKeyStations", "Result", "Approx station at transition CS points")
+    if not hasattr(obj, "STKeyStations"):
+        obj.addProperty("App::PropertyFloatList", "STKeyStations", "Result", "Approx station at transition ST points")
 
 
 class HorizontalAlignment:
@@ -160,8 +179,19 @@ class HorizontalAlignment:
             obj.TotalLength = 0.0
             obj.CriteriaMessages = [f"[error] {ex}"]
             obj.CriteriaStatus = "ERROR"
+            obj.IPKeyStations = []
+            obj.TSKeyStations = []
+            obj.SCKeyStations = []
+            obj.CSKeyStations = []
+            obj.STKeyStations = []
 
     def _build_shape_and_checks(self, obj):
+        obj.IPKeyStations = []
+        obj.TSKeyStations = []
+        obj.SCKeyStations = []
+        obj.CSKeyStations = []
+        obj.STKeyStations = []
+
         pts = _dedupe_points(list(getattr(obj, "IPPoints", []) or []))
         if len(pts) < 2:
             return Part.Shape(), 0.0, ["Need at least 2 IP points."]
@@ -170,6 +200,20 @@ class HorizontalAlignment:
         if bool(getattr(obj, "Closed", False)):
             poly_pts.append(pts[0])
             wire = Part.makePolygon(poly_pts)
+            try:
+                edges0 = list(wire.Edges)
+                total0 = float(wire.Length)
+                if edges0 and total0 > 1e-9:
+                    vals = []
+                    for p in pts:
+                        vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges0, total0, float(p.x), float(p.y), samples_per_edge=48
+                            )
+                        )
+                    obj.IPKeyStations = _unique_sorted_floats(vals)
+            except Exception:
+                pass
             return wire, float(wire.Length), []
 
         n = len(pts)
@@ -233,7 +277,75 @@ class HorizontalAlignment:
             try:
                 shape = Part.Wire(edges)
             except Exception:
-                shape = Part.Compound(edges)
+                # Retry with topological sorting to keep station traversal stable.
+                try:
+                    chains = Part.sortEdges(edges)
+                    if chains:
+                        chain = max(chains, key=lambda ch: sum(float(e.Length) for e in ch))
+                        shape = Part.Wire(chain)
+                    else:
+                        shape = Part.Compound(edges)
+                except Exception:
+                    shape = Part.Compound(edges)
+
+        # Publish key stations for downstream tools (sections/labels).
+        try:
+            edges1 = list(shape.Edges)
+            total1 = float(shape.Length)
+            if edges1 and total1 > 1e-9:
+                ip_vals = []
+                ts_vals = []
+                sc_vals = []
+                cs_vals = []
+                st_vals = []
+                for p in pts:
+                    ip_vals.append(
+                        HorizontalAlignment._station_at_xy_on_edges(
+                            edges1, total1, float(p.x), float(p.y), samples_per_edge=48
+                        )
+                    )
+                for c in corners:
+                    if c is None:
+                        continue
+                    p_ts = c.get("ts", None)
+                    p_sc = c.get("sc", None)
+                    p_cs = c.get("cs", None)
+                    p_st = c.get("st", None)
+                    if p_ts is not None:
+                        ts_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_ts.x), float(p_ts.y), samples_per_edge=64
+                            )
+                        )
+                    if p_sc is not None:
+                        sc_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_sc.x), float(p_sc.y), samples_per_edge=64
+                            )
+                        )
+                    if p_cs is not None:
+                        cs_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_cs.x), float(p_cs.y), samples_per_edge=64
+                            )
+                        )
+                    if p_st is not None:
+                        st_vals.append(
+                            HorizontalAlignment._station_at_xy_on_edges(
+                                edges1, total1, float(p_st.x), float(p_st.y), samples_per_edge=64
+                            )
+                        )
+                obj.IPKeyStations = _unique_sorted_floats(ip_vals)
+                obj.TSKeyStations = _unique_sorted_floats(ts_vals)
+                obj.SCKeyStations = _unique_sorted_floats(sc_vals)
+                obj.CSKeyStations = _unique_sorted_floats(cs_vals)
+                obj.STKeyStations = _unique_sorted_floats(st_vals)
+        except Exception:
+            obj.IPKeyStations = []
+            obj.TSKeyStations = []
+            obj.SCKeyStations = []
+            obj.CSKeyStations = []
+            obj.STKeyStations = []
 
         messages = self._run_criteria(obj, pts, seg_len, corners)
         return shape, float(shape.Length), messages
@@ -256,8 +368,10 @@ class HorizontalAlignment:
             if ls_eff > ls_limit:
                 ls_eff = ls_limit
 
-        t_req = _tangent_needed(r_eff, ls_eff, theta)
         t_max = 0.49 * min(float(len_in), float(len_out))
+        if t_max <= 1e-6:
+            return None
+        t_req = _tangent_needed(r_eff, ls_eff, theta)
         t_use = min(t_req, t_max)
 
         if t_use < t_req - 1e-6:
@@ -299,6 +413,10 @@ class HorizontalAlignment:
                 "entry": entry,
                 "exit": exitp,
                 "edges": [arc],
+                "ts": None,
+                "sc": entry,
+                "cs": exitp,
+                "st": None,
                 "radius_req": float(radius_req),
                 "radius_eff": float(r_eff),
                 "ls_req": float(ls_req),
@@ -351,6 +469,10 @@ class HorizontalAlignment:
             "entry": entry,
             "exit": exitp,
             "edges": edges,
+            "ts": entry,
+            "sc": sc,
+            "cs": csp,
+            "st": exitp,
             "radius_req": float(radius_req),
             "radius_eff": float(r_eff),
             "ls_req": float(ls_req),
@@ -472,49 +594,184 @@ class HorizontalAlignment:
 
     # ----- helpers for stationing -----
     @staticmethod
-    def point_at_station(alignment_obj, s: float) -> App.Vector:
-        wire = alignment_obj.Shape
-        if wire is None or wire.isNull():
+    def _resolve_edges(alignment_obj):
+        shape = getattr(alignment_obj, "Shape", None)
+        if shape is None or shape.isNull():
             raise ValueError("Alignment shape is empty")
-
-        if s < 0:
-            s = 0.0
-
-        total = float(wire.Length)
-        if s > total:
-            s = total
-
-        remaining = s
-        edges = list(wire.Edges)
+        edges = list(shape.Edges)
         if not edges:
             raise ValueError("No edges in alignment")
+        return edges
+
+    @staticmethod
+    def _station_to_edge(alignment_obj, s: float):
+        edges = HorizontalAlignment._resolve_edges(alignment_obj)
+        lengths = [float(e.Length) for e in edges]
+        total = float(sum(lengths))
+        if total <= 1e-12:
+            raise ValueError("Alignment length is zero")
+
+        ss = _clamp(float(s), 0.0, total)
+        acc = 0.0
+        last_i = len(edges) - 1
+        for i, e in enumerate(edges):
+            L = lengths[i]
+            next_acc = acc + L
+            if i == last_i or ss <= next_acc + 1e-9:
+                local = _clamp(ss - acc, 0.0, L)
+                return {
+                    "edge": e,
+                    "edge_len": L,
+                    "local_len": local,
+                    "total_len": total,
+                    "station": ss,
+                }
+            acc = next_acc
+
+        # Numerical fallback.
+        e = edges[-1]
+        L = lengths[-1]
+        return {
+            "edge": e,
+            "edge_len": L,
+            "local_len": L,
+            "total_len": total,
+            "station": total,
+        }
+
+    @staticmethod
+    def _edge_param_by_length(edge, local_len: float, edge_len: float):
+        fp = float(edge.FirstParameter)
+        lp = float(edge.LastParameter)
+
+        if edge_len <= 1e-12:
+            return fp
+
+        ll = _clamp(float(local_len), 0.0, edge_len)
+        if ll <= 1e-12:
+            return fp
+        if ll >= edge_len - 1e-12:
+            return lp
+
+        try:
+            return float(edge.getParameterByLength(ll))
+        except Exception:
+            return float(fp + (lp - fp) * (ll / edge_len))
+
+    @staticmethod
+    def _station_at_xy_on_edges(edges, total_len: float, x: float, y: float, samples_per_edge: int = 64) -> float:
+        target = App.Vector(float(x), float(y), 0.0)
+        samples = max(8, min(256, int(samples_per_edge)))
+
+        best_s = 0.0
+        best_d2 = float("inf")
+        acc = 0.0
 
         for e in edges:
             L = float(e.Length)
-            if remaining <= L:
-                fp = float(e.FirstParameter)
-                lp = float(e.LastParameter)
-                if L <= 1e-9:
-                    return e.valueAt(fp)
+            if L <= 1e-12:
+                continue
 
-                t = fp + (lp - fp) * (remaining / L)
-                return e.valueAt(t)
+            try:
+                pts = list(e.discretize(Number=samples + 1))
+            except Exception:
+                pts = [
+                    e.valueAt(float(e.FirstParameter)),
+                    e.valueAt(float(e.LastParameter)),
+                ]
 
-            remaining -= L
+            if len(pts) < 2:
+                acc += L
+                continue
 
-        last = edges[-1]
-        return last.valueAt(last.LastParameter)
+            seg_acc = 0.0
+            for i in range(len(pts) - 1):
+                a = pts[i]
+                b = pts[i + 1]
+                abx = float(b.x - a.x)
+                aby = float(b.y - a.y)
+                seg_len = float((b - a).Length)
+                den = abx * abx + aby * aby
+                if den <= 1e-16:
+                    seg_acc += seg_len
+                    continue
+
+                apx = float(target.x - a.x)
+                apy = float(target.y - a.y)
+                t = _clamp((apx * abx + apy * aby) / den, 0.0, 1.0)
+
+                qx = float(a.x + t * abx)
+                qy = float(a.y + t * aby)
+                dx = float(target.x - qx)
+                dy = float(target.y - qy)
+                d2 = dx * dx + dy * dy
+
+                if d2 < best_d2:
+                    best_d2 = d2
+                    best_s = acc + seg_acc + seg_len * t
+
+                seg_acc += seg_len
+
+            acc += L
+
+        return _clamp(best_s, 0.0, max(0.0, float(total_len)))
+
+    @staticmethod
+    def point_at_station(alignment_obj, s: float) -> App.Vector:
+        hit = HorizontalAlignment._station_to_edge(alignment_obj, float(s))
+        e = hit["edge"]
+        L = hit["edge_len"]
+        p = HorizontalAlignment._edge_param_by_length(e, hit["local_len"], L)
+        return e.valueAt(p)
 
     @staticmethod
     def tangent_at_station(alignment_obj, s: float) -> App.Vector:
-        eps = 0.01
-        p0 = HorizontalAlignment.point_at_station(alignment_obj, max(0.0, s - eps))
-        p1 = HorizontalAlignment.point_at_station(alignment_obj, s + eps)
-        v = (p1 - p0)
+        hit = HorizontalAlignment._station_to_edge(alignment_obj, float(s))
+        e = hit["edge"]
+        L = hit["edge_len"]
+        p = HorizontalAlignment._edge_param_by_length(e, hit["local_len"], L)
+
+        try:
+            t = e.tangentAt(p)
+            if isinstance(t, (tuple, list)):
+                t = t[0]
+            if getattr(t, "Length", 0.0) > 1e-12:
+                return t.normalize()
+        except Exception:
+            pass
+
+        total = hit["total_len"]
+        ss = hit["station"]
+        eps = max(1e-4, min(1.0, 0.01 * total))
+        s0 = max(0.0, ss - eps)
+        s1 = min(total, ss + eps)
+        if s1 <= s0 + 1e-9:
+            s0 = max(0.0, ss - 0.5 * eps)
+            s1 = min(total, ss + 0.5 * eps)
+
+        p0 = HorizontalAlignment.point_at_station(alignment_obj, s0)
+        p1 = HorizontalAlignment.point_at_station(alignment_obj, s1)
+        v = p1 - p0
         if v.Length < 1e-9:
             return App.Vector(1, 0, 0)
-
         return v.normalize()
+
+    @staticmethod
+    def normal_at_station(alignment_obj, s: float) -> App.Vector:
+        t = HorizontalAlignment.tangent_at_station(alignment_obj, float(s))
+        n = App.Vector(-float(t.y), float(t.x), 0.0)
+        if n.Length < 1e-9:
+            return App.Vector(0, 1, 0)
+        return n.normalize()
+
+    @staticmethod
+    def station_at_xy(alignment_obj, x: float, y: float, samples_per_edge: int = 64) -> float:
+        """
+        Approximate inverse map XY->station by polyline projection over each edge.
+        """
+        edges = HorizontalAlignment._resolve_edges(alignment_obj)
+        total = float(getattr(alignment_obj.Shape, "Length", 0.0))
+        return HorizontalAlignment._station_at_xy_on_edges(edges, total, float(x), float(y), samples_per_edge=samples_per_edge)
 
 
 class ViewProviderHorizontalAlignment:

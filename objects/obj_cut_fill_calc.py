@@ -5,6 +5,7 @@ import FreeCAD as App
 import Part
 
 from objects.obj_project import get_length_scale
+from objects import coord_transform as _ct
 from objects import surface_sampling_core as _ssc
 
 
@@ -48,6 +49,15 @@ def ensure_cut_fill_calc_properties(obj):
         obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
     if not hasattr(obj, "ExistingSurface"):
         obj.addProperty("App::PropertyLink", "ExistingSurface", "Source", "Existing surface source (Mesh)")
+    if not hasattr(obj, "ExistingSurfaceCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "ExistingSurfaceCoords",
+            "Source",
+            "Coordinate system of ExistingSurface mesh",
+        )
+        obj.ExistingSurfaceCoords = ["Local", "World"]
+        obj.ExistingSurfaceCoords = "Local"
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "Comparison", "Sampling cell size (m)")
@@ -88,6 +98,15 @@ def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "UseCorridorBounds"):
         obj.addProperty("App::PropertyBool", "UseCorridorBounds", "Comparison", "Use corridor top bounds for domain")
         obj.UseCorridorBounds = True
+    if not hasattr(obj, "DomainCoords"):
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "DomainCoords",
+            "Comparison",
+            "Coordinate system of manual domain (X/Y)",
+        )
+        obj.DomainCoords = ["Local", "World"]
+        obj.DomainCoords = "Local"
     if not hasattr(obj, "XMin"):
         obj.addProperty("App::PropertyFloat", "XMin", "Comparison", "Manual domain xmin")
         obj.XMin = 0.0
@@ -366,6 +385,32 @@ class CutFillCalc:
     def _decimate_triangles(triangles, max_count: int):
         return _ssc.decimate_triangles(triangles, max_count)
 
+    def _triangles_world_to_local_progress(self, doc_or_obj, triangles, pct0: float, pct1: float, label: str):
+        if not triangles:
+            return []
+        tr = _ct.world_to_local_params(doc_or_obj)
+        p_cache = {}
+        out = []
+        n = max(1, int(len(triangles)))
+        report_every = max(20, min(2000, n // 100))
+        if self._report_progress(pct0, label):
+            raise _CanceledError("Canceled by user.")
+        for i, tri in enumerate(triangles, start=1):
+            try:
+                p0, p1, p2, _bb = tri
+                q0 = _ct.world_point_to_local_cached(p0, tr, cache=p_cache)
+                q1 = _ct.world_point_to_local_cached(p1, tr, cache=p_cache)
+                q2 = _ct.world_point_to_local_cached(p2, tr, cache=p_cache)
+                bb = CutFillCalc._triangle_bbox_xy(q0, q1, q2)
+                out.append((q0, q1, q2, bb))
+            except Exception:
+                pass
+            if (i % report_every) == 0:
+                pct = float(pct0) + (float(pct1) - float(pct0)) * (float(i) / float(n))
+                if self._report_progress(pct, f"{label}: {i}/{n}"):
+                    raise _CanceledError("Canceled by user.")
+        return out
+
     def _build_xy_buckets_progress(
         self,
         triangles,
@@ -529,6 +574,10 @@ class CutFillCalc:
             x0, x1 = x1, x0
         if y1 < y0:
             y0, y1 = y1, y0
+
+        mode = str(getattr(obj, "DomainCoords", "Local") or "Local")
+        if mode == "World":
+            x0, x1, y0, y1 = _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=obj)
         return x0, x1, y0, y1
 
     @staticmethod
@@ -558,6 +607,8 @@ class CutFillCalc:
             eg = getattr(obj, "ExistingSurface", None)
             if eg is None or (not _is_mesh_object(eg)):
                 raise Exception("ExistingSurface must be a valid Mesh object.")
+            eg_coords = str(getattr(obj, "ExistingSurfaceCoords", "Local") or "Local")
+            use_world_existing = eg_coords == "World"
             mesh_facets = int(getattr(getattr(eg, "Mesh", None), "CountFacets", 0))
             min_facets = int(getattr(obj, "MinMeshFacets", 100))
             if mesh_facets < max(1, min_facets):
@@ -607,6 +658,14 @@ class CutFillCalc:
             defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
             tri_design = self._triangles_from_faces_progress(top_faces, defl, 10.0, 18.0)
             tri_exist = self._triangles_from_mesh_progress(eg, 18.0, 24.0)
+            if use_world_existing:
+                tri_exist = self._triangles_world_to_local_progress(
+                    obj,
+                    tri_exist,
+                    24.0,
+                    28.0,
+                    "Transforming existing mesh to local",
+                )
             max_tri = int(getattr(obj, "MaxTrianglesPerSource", 150000))
             if max_tri <= 0:
                 max_tri = 150000
@@ -616,10 +675,10 @@ class CutFillCalc:
                 tri_exist = CutFillCalc._decimate_triangles(tri_exist, max_tri)
 
             buck_d, wide_d, wide_cell_d = self._build_xy_buckets_progress(
-                tri_design, cell, 24.0, 32.0, "Bucketing design triangles"
+                tri_design, cell, 28.0, 34.0, "Bucketing design triangles"
             )
             buck_e, wide_e, wide_cell_e = self._build_xy_buckets_progress(
-                tri_exist, cell, 32.0, 40.0, "Bucketing existing triangles"
+                tri_exist, cell, 34.0, 40.0, "Bucketing existing triangles"
             )
 
             s_cnt = 0
@@ -805,6 +864,7 @@ class CutFillCalc:
         if prop in (
             "SourceCorridor",
             "ExistingSurface",
+            "ExistingSurfaceCoords",
             "CellSize",
             "MaxSamples",
             "MinMeshFacets",
@@ -813,6 +873,7 @@ class CutFillCalc:
             "MaxTrianglesPerSource",
             "DomainMargin",
             "UseCorridorBounds",
+            "DomainCoords",
             "XMin",
             "XMax",
             "YMin",
@@ -848,7 +909,7 @@ class CutFillCalc:
                     return
                 self._in_onchange = True
                 obj.touch()
-                if obj.Document is not None:
+                if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)) and obj.Document is not None:
                     obj.Document.recompute()
             except Exception:
                 pass

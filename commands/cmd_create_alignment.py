@@ -4,7 +4,15 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment
-from objects.obj_project import CorridorRoadProject, ensure_project_properties, find_project, get_length_scale
+from objects.obj_project import (
+    CorridorRoadProject,
+    ensure_project_properties,
+    ensure_project_tree,
+    find_project,
+    get_coordinate_setup,
+    get_length_scale,
+)
+from objects.project_links import link_project
 
 
 def _ask_length_scale(default_value: float):
@@ -27,7 +35,7 @@ class CmdCreateAlignment:
         return {
             "Pixmap": "",
             "MenuText": "Sample Alignment",
-            "ToolTip": "Create a sample Horizontal Alignment (tangent + circular curve basics)",
+            "ToolTip": "Create a sample Horizontal Alignment (tangent + S-C-S transition curves)",
         }
 
     def IsActive(self):
@@ -45,36 +53,47 @@ class CmdCreateAlignment:
             return
 
         if prj is None:
-            prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+            try:
+                prj = doc.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
+            except Exception:
+                prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
             CorridorRoadProject(prj)
             prj.Label = "CorridorRoad Project"
+
         ensure_project_properties(prj)
+        ensure_project_tree(prj, include_references=False)
         prj.LengthScale = float(scale)
 
         obj = doc.addObject("Part::FeaturePython", "HorizontalAlignment")
         HorizontalAlignment(obj)
         ViewProviderHorizontalAlignment(obj.ViewObject)
 
-        # Sample uses 120 m total length with user/project scale.
         s = float(scale)
-        deltaX = 60.0 * s
+        cst = get_coordinate_setup(prj)
+        x0 = float(cst.get("LocalOriginX", 0.0))
+        y0 = float(cst.get("LocalOriginY", 0.0))
+        delta_x = 60.0 * s
         obj.IPPoints = [
-            App.Vector(0 - deltaX, 0, 0),
-            App.Vector(48.0 * s - deltaX, 0, 0),
-            App.Vector(66.0 * s - deltaX, 24.0 * s, 0),
-            App.Vector(108.0 * s - deltaX, 24.0 * s, 0),
+            App.Vector(x0 + (0.0 - delta_x), y0 + 0.0, 0.0),
+            App.Vector(x0 + (48.0 * s - delta_x), y0 + 0.0, 0.0),
+            App.Vector(x0 + (66.0 * s - delta_x), y0 + (24.0 * s), 0.0),
+            App.Vector(x0 + (108.0 * s - delta_x), y0 + (24.0 * s), 0.0),
         ]
-        obj.CurveRadii = [0.0, 30.0 * s, 24.0 * s, 0.0]
+        obj.CurveRadii = [0.0, 18.0 * s, 18.0 * s, 0.0]
+        obj.TransitionLengths = [0.0, 8.0 * s, 8.0 * s, 0.0]
+        obj.UseTransitionCurves = True
+        obj.SpiralSegments = 20
         obj.Label = "Sample Alignment"
 
-        if hasattr(prj, "Alignment"):
-            prj.Alignment = obj
-        CorridorRoadProject.adopt(prj, obj)
+        link_project(prj, links={"Alignment": obj}, adopt_extra=[obj])
 
         obj.touch()
         doc.recompute()
 
-        Gui.ActiveDocument.ActiveView.fitAll()
+        try:
+            Gui.ActiveDocument.ActiveView.fitAll()
+        except Exception:
+            pass
 
 
 Gui.addCommand("CorridorRoad_CreateAlignment", CmdCreateAlignment())

@@ -1,33 +1,46 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtWidgets
 
 from objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
-from objects.obj_project import get_length_scale
+from objects.obj_project import (
+    find_project,
+    get_length_scale,
+    local_to_world,
+    world_to_local,
+)
+from objects.project_links import link_project
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
-def _find_alignment(doc):
+def _find_alignments(doc):
+    out = []
+    if doc is None:
+        return out
     for o in doc.Objects:
         if o.Name.startswith("HorizontalAlignment"):
-            return o
-    return None
+            out.append(o)
+    return out
 
 
 class AlignmentEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self.aln = None
+        self.prj = None
+        self._alignments = []
         self._loading = False
+        self._coord_mode_initialized = False
+        self._last_apply_warnings = []
         self.form = self._build_ui()
         self._refresh_context()
         self._load_from_doc()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        return int(QtWidgets.QDialogButtonBox.Close)
 
     def accept(self):
-        self._save_to_doc()
         Gui.Control.closeDialog()
 
     def reject(self):
@@ -37,7 +50,7 @@ class AlignmentEditorTaskPanel:
         scale = get_length_scale(self.doc, default=1.0)
 
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Edit Alignment (Practical)")
+        w.setWindowTitle("CorridorRoad - Edit Alignment")
 
         root = QtWidgets.QVBoxLayout(w)
         root.setContentsMargins(10, 10, 10, 10)
@@ -46,6 +59,24 @@ class AlignmentEditorTaskPanel:
         self.lbl_info = QtWidgets.QLabel("")
         self.lbl_info.setWordWrap(True)
         root.addWidget(self.lbl_info)
+
+        row_src = QtWidgets.QHBoxLayout()
+        self.cmb_alignment = QtWidgets.QComboBox()
+        self.btn_refresh_context = QtWidgets.QPushButton("Refresh Context")
+        row_src.addWidget(QtWidgets.QLabel("Alignment:"))
+        row_src.addWidget(self.cmb_alignment, 1)
+        row_src.addWidget(self.btn_refresh_context)
+        root.addLayout(row_src)
+
+        row_coord = QtWidgets.QHBoxLayout()
+        self.cmb_coord_mode = QtWidgets.QComboBox()
+        self.cmb_coord_mode.addItems(["Local (X/Y)", "World (E/N)"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
+        row_coord.addWidget(QtWidgets.QLabel("Coord Input:"))
+        row_coord.addWidget(self.cmb_coord_mode)
+        row_coord.addWidget(self.lbl_coord_hint, 1)
+        root.addLayout(row_coord)
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
@@ -120,7 +151,9 @@ class AlignmentEditorTaskPanel:
         root.addWidget(gb_opts)
 
         rep_row = QtWidgets.QHBoxLayout()
+        self.btn_apply = QtWidgets.QPushButton("Apply Alignment")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Criteria Report")
+        rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
         root.addLayout(rep_row)
 
@@ -132,21 +165,108 @@ class AlignmentEditorTaskPanel:
         self.btn_add.clicked.connect(self._add_row)
         self.btn_del.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
+        self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_refresh.clicked.connect(self._refresh_report)
+        self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
+        self.btn_refresh_context.clicked.connect(self._on_refresh_context)
+        self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)
 
         self._set_rows(4)
+        self._update_coord_headers()
         return w
 
-    def _refresh_context(self):
+    @staticmethod
+    def _fmt_alignment(o):
+        return f"{o.Label} ({o.Name})"
+
+    def _use_world_mode(self):
+        return int(self.cmb_coord_mode.currentIndex()) == 1
+
+    def _update_coord_headers(self):
+        if self._use_world_mode():
+            self.table.setHorizontalHeaderLabels(["E", "N", "Radius (m)", "Transition Ls (m)"])
+        else:
+            self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
+
+    def _coord_context_obj(self):
+        return self.prj if self.prj is not None else self.doc
+
+    def _current_alignment_from_combo(self):
+        i = int(self.cmb_alignment.currentIndex())
+        if i < 0 or i >= len(self._alignments):
+            return None
+        return self._alignments[i]
+
+    def _refresh_context(self, selected=None):
         if self.doc is None:
+            self.prj = None
+            self._alignments = []
             self.aln = None
+            self.cmb_alignment.clear()
+            self.lbl_coord_hint.setText("No coordinate setup.")
             self.lbl_info.setText("No active document.")
             return
 
-        self.aln = _find_alignment(self.doc)
-        self.lbl_info.setText(
-            "HorizontalAlignment: " + ("FOUND" if self.aln is not None else "NOT FOUND")
-        )
+        if selected is None:
+            selected = self.aln
+
+        self.prj = find_project(self.doc)
+        self.lbl_coord_hint.setText(coord_hint_text(self.prj if self.prj is not None else self.doc))
+
+        if not self._coord_mode_initialized:
+            self._loading = True
+            try:
+                if should_default_world_mode(self.prj if self.prj is not None else self.doc):
+                    self.cmb_coord_mode.setCurrentIndex(1)
+                else:
+                    self.cmb_coord_mode.setCurrentIndex(0)
+            finally:
+                self._loading = False
+            self._coord_mode_initialized = True
+
+        self._alignments = _find_alignments(self.doc)
+
+        self._loading = True
+        try:
+            self.cmb_alignment.clear()
+            for o in self._alignments:
+                self.cmb_alignment.addItem(self._fmt_alignment(o))
+
+            idx = -1
+            if selected is not None:
+                for i, o in enumerate(self._alignments):
+                    if o == selected:
+                        idx = i
+                        break
+            if idx < 0 and self._alignments:
+                idx = 0
+            self.cmb_alignment.setCurrentIndex(idx)
+        finally:
+            self._loading = False
+
+        self.aln = self._current_alignment_from_combo()
+        if self.aln is None:
+            self.lbl_info.setText(f"HorizontalAlignment: 0 found")
+        else:
+            self.lbl_info.setText(
+                f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label})"
+            )
+
+    def _on_alignment_changed(self):
+        if self._loading:
+            return
+        self.aln = self._current_alignment_from_combo()
+        self._load_from_doc()
+
+    def _on_coord_mode_changed(self):
+        if self._loading:
+            return
+        self._update_coord_headers()
+        self._load_from_doc()
+
+    def _on_refresh_context(self):
+        self._refresh_context()
+        self._load_from_doc()
 
     def _set_rows(self, n):
         self._loading = True
@@ -191,8 +311,10 @@ class AlignmentEditorTaskPanel:
         return rows
 
     def _load_from_doc(self):
-        self._refresh_context()
         if self.aln is None:
+            self.table.setRowCount(0)
+            self._set_rows(4)
+            self._last_apply_warnings = []
             return
 
         ensure_alignment_properties(self.aln)
@@ -201,8 +323,6 @@ class AlignmentEditorTaskPanel:
         rr = list(getattr(self.aln, "CurveRadii", []) or [])
         ls = list(getattr(self.aln, "TransitionLengths", []) or [])
         n = len(pts)
-        if n < 2:
-            return
 
         if len(rr) < n:
             rr += [0.0] * (n - len(rr))
@@ -212,10 +332,17 @@ class AlignmentEditorTaskPanel:
         self._loading = True
         try:
             self.table.setRowCount(0)
-            self._set_rows(n)
-            for i, p in enumerate(pts):
-                self._set_float(i, 0, float(p.x))
-                self._set_float(i, 1, float(p.y))
+            self._set_rows(n if n > 0 else 4)
+            for i in range(n):
+                p = pts[i]
+                xv = float(p.x)
+                yv = float(p.y)
+                if self._use_world_mode():
+                    e, n1, _z1 = local_to_world(self._coord_context_obj(), xv, yv, float(p.z))
+                    xv = float(e)
+                    yv = float(n1)
+                self._set_float(i, 0, xv)
+                self._set_float(i, 1, yv)
                 self._set_float(i, 2, float(rr[i]))
                 self._set_float(i, 3, float(ls[i]))
 
@@ -233,15 +360,38 @@ class AlignmentEditorTaskPanel:
         self._refresh_report()
 
     def _refresh_report(self):
-        self._refresh_context()
+        self._refresh_context(selected=self.aln)
         if self.aln is None:
             self.txt_report.setPlainText("No alignment object.")
             return
+        lines = []
+        lines.append(f"Status: {getattr(self.aln, 'CriteriaStatus', 'N/A')}")
+        lines.append(f"Total length: {float(getattr(self.aln, 'TotalLength', 0.0)):.3f}")
+        pts = list(getattr(self.aln, "IPPoints", []) or [])
+        lines.append(f"IP count: {len(pts)}")
+        if self._last_apply_warnings:
+            lines.append("")
+            lines.append("Input warnings:")
+            lines.extend(self._last_apply_warnings)
         msgs = list(getattr(self.aln, "CriteriaMessages", []) or [])
-        if not msgs:
-            self.txt_report.setPlainText("OK: no criteria warnings.")
-            return
-        self.txt_report.setPlainText("\n".join(msgs))
+        lines.append("")
+        if msgs:
+            lines.append("Criteria warnings:")
+            lines.extend(msgs)
+        else:
+            lines.append("Criteria warnings: none")
+        if pts and getattr(self.aln, "Shape", None) and (not self.aln.Shape.isNull()):
+            lines.append("")
+            lines.append("IP station (approx):")
+            for i, p in enumerate(pts):
+                try:
+                    sta = float(HorizontalAlignment.station_at_xy(self.aln, float(p.x), float(p.y)))
+                    lines.append(f"IP#{i}: {sta:.3f}")
+                except Exception:
+                    lines.append(f"IP#{i}: N/A")
+        lines.append("")
+        lines.append(f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}")
+        self.txt_report.setPlainText("\n".join(lines))
 
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
@@ -282,15 +432,49 @@ class AlignmentEditorTaskPanel:
         ViewProviderHorizontalAlignment(obj.ViewObject)
         obj.Label = "Alignment"
         self.aln = obj
+        self._refresh_context(selected=obj)
         return obj
+
+    def _validate_rows(self, rows):
+        errs = []
+        warns = []
+        if len(rows) < 2:
+            errs.append("Need at least 2 valid IP rows (X, Y).")
+            return errs, warns
+
+        tol = 1e-6
+        for i in range(len(rows) - 1):
+            x0, y0, _, _ = rows[i]
+            x1, y1, _, _ = rows[i + 1]
+            dx = float(x1 - x0)
+            dy = float(y1 - y0)
+            if (dx * dx + dy * dy) <= (tol * tol):
+                errs.append(f"Rows {i} and {i + 1} are duplicated or too close.")
+
+        if abs(float(rows[0][2])) > 1e-9 or abs(float(rows[-1][2])) > 1e-9:
+            warns.append("Endpoint radius values are forced to 0.")
+        if abs(float(rows[0][3])) > 1e-9 or abs(float(rows[-1][3])) > 1e-9:
+            warns.append("Endpoint transition lengths are forced to 0.")
+
+        return errs, warns
 
     def _save_to_doc(self):
         if self.doc is None:
             return
 
-        rows = self._read_rows()
-        if len(rows) < 2:
-            raise Exception("Need at least 2 valid IP rows (X, Y).")
+        rows_input = self._read_rows()
+        rows = []
+        for x, y, rr, ls in rows_input:
+            if self._use_world_mode():
+                lx, ly, _lz = world_to_local(self._coord_context_obj(), float(x), float(y), 0.0)
+                rows.append((float(lx), float(ly), float(rr), float(ls)))
+            else:
+                rows.append((float(x), float(y), float(rr), float(ls)))
+
+        errs, warns = self._validate_rows(rows)
+        if errs:
+            raise Exception("\n".join(errs))
+        self._last_apply_warnings = list(warns)
 
         aln = self._get_or_create_alignment()
         ensure_alignment_properties(aln)
@@ -319,9 +503,21 @@ class AlignmentEditorTaskPanel:
 
         aln.touch()
         self.doc.recompute()
+
+        prj = find_project(self.doc)
+        if prj is not None:
+            link_project(prj, links={"Alignment": aln}, adopt_extra=[aln])
+
         self._refresh_report()
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
         except Exception:
             pass
+
+    def _apply_changes(self):
+        try:
+            self._save_to_doc()
+            QtWidgets.QMessageBox.information(None, "Edit Alignment", "Applied.")
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Alignment", f"Apply failed: {ex}")

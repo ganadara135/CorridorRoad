@@ -4,9 +4,11 @@ import FreeCADGui as Gui
 from PySide2 import QtWidgets
 
 from objects.doc_query import find_project
+from objects import coord_transform as _ct
 from objects.obj_project import get_length_scale
-from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc
+from objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from objects.project_links import link_project
+from ui.common.coord_ui import coord_hint_text, should_default_world_mode
 from ui.common.perf_quality import (
     QUALITY_PRESETS,
     apply_preset_to_widgets,
@@ -91,6 +93,8 @@ class CutFillCalcTaskPanel:
         )
         self._corridors = []
         self._surfaces = []
+        self._project = None
+        self._coord_mode_initialized = False
         self._loading = False
         self.form = self._build_ui()
         self._refresh_context()
@@ -120,10 +124,20 @@ class CutFillCalcTaskPanel:
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_corridor = QtWidgets.QComboBox()
         self.cmb_surface = QtWidgets.QComboBox()
+        self.cmb_surface_coords = QtWidgets.QComboBox()
+        self.cmb_surface_coords.addItems(["Local", "World"])
+        self.lbl_coord_hint = QtWidgets.QLabel("")
+        self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_sel = QtWidgets.QPushButton("Use Selected Mesh")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Design Corridor:", self.cmb_corridor)
         fs.addRow("Existing Mesh:", self.cmb_surface)
+        row_coords = QtWidgets.QHBoxLayout()
+        row_coords.addWidget(self.cmb_surface_coords)
+        row_coords.addWidget(self.lbl_coord_hint, 1)
+        w_coords = QtWidgets.QWidget()
+        w_coords.setLayout(row_coords)
+        fs.addRow("Existing Mesh Coords:", w_coords)
         fs.addRow(self.btn_pick_sel)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
@@ -155,6 +169,9 @@ class CutFillCalcTaskPanel:
         self.spin_min_facets.setValue(100)
         self.chk_use_bounds = QtWidgets.QCheckBox("Use corridor bounds")
         self.chk_use_bounds.setChecked(True)
+        self.cmb_domain_coords = QtWidgets.QComboBox()
+        self.cmb_domain_coords.addItems(["Local", "World"])
+        self.cmb_domain_coords.setCurrentText("Local")
         self.spin_margin = QtWidgets.QDoubleSpinBox()
         self.spin_margin.setRange(0.0, 1000000.0 * self._scale)
         self.spin_margin.setDecimals(3)
@@ -187,6 +204,7 @@ class CutFillCalcTaskPanel:
         fo.addRow("Max Triangle Checks:", self.spin_max_checks)
         fo.addRow("Min Mesh Facets:", self.spin_min_facets)
         fo.addRow(self.chk_use_bounds)
+        fo.addRow("Manual Domain Coords:", self.cmb_domain_coords)
         fo.addRow("Domain Margin (scaled):", self.spin_margin)
         fo.addRow("NoData Warn:", self.spin_nodata_warn)
         fo.addRow("X Min:", self.spin_xmin)
@@ -253,6 +271,7 @@ class CutFillCalcTaskPanel:
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_corridor.currentIndexChanged.connect(self._on_source_changed)
         self.cmb_surface.currentIndexChanged.connect(self._on_source_changed)
+        self.cmb_surface_coords.currentIndexChanged.connect(self._on_surface_coord_changed)
         self.cmb_quality.currentTextChanged.connect(self._on_quality_changed)
         self.spin_cell.valueChanged.connect(self._on_opt_changed)
         self.spin_max_samples.valueChanged.connect(self._on_opt_changed)
@@ -265,9 +284,34 @@ class CutFillCalcTaskPanel:
         self.spin_ymin.valueChanged.connect(self._on_source_changed)
         self.spin_ymax.valueChanged.connect(self._on_source_changed)
         self.chk_use_bounds.toggled.connect(self._on_source_changed)
+        self.cmb_domain_coords.currentIndexChanged.connect(self._on_source_changed)
 
         self._update_bounds_ui()
         return w
+
+    def _coord_context_obj(self):
+        if self._project is not None:
+            return self._project
+        return self.doc
+
+    def _use_world_surface_mode(self):
+        return str(self.cmb_surface_coords.currentText() or "Local") == "World"
+
+    def _update_coord_hint(self):
+        self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
+
+    def _apply_default_coord_mode(self):
+        if self._coord_mode_initialized:
+            return
+        self._loading = True
+        try:
+            if should_default_world_mode(self._coord_context_obj()):
+                self.cmb_surface_coords.setCurrentText("World")
+            else:
+                self.cmb_surface_coords.setCurrentText("Local")
+        finally:
+            self._loading = False
+        self._coord_mode_initialized = True
 
     def _format_obj(self, obj):
         return f"[Mesh] {obj.Label} ({obj.Name})"
@@ -301,6 +345,7 @@ class CutFillCalcTaskPanel:
     def _update_bounds_ui(self):
         use_bounds = bool(self.chk_use_bounds.isChecked())
         self.spin_margin.setEnabled(use_bounds)
+        self.cmb_domain_coords.setEnabled(not use_bounds)
         self.spin_xmin.setEnabled(not use_bounds)
         self.spin_xmax.setEnabled(not use_bounds)
         self.spin_ymin.setEnabled(not use_bounds)
@@ -314,8 +359,15 @@ class CutFillCalcTaskPanel:
         self._corridors = _find_corridors(self.doc)
         self._surfaces = _find_surface_sources(self.doc)
         prj = find_project(self.doc)
+        self._project = prj
+        self._apply_default_coord_mode()
+        self._update_coord_hint()
         cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
+            try:
+                ensure_cut_fill_calc_properties(cmp_obj)
+            except Exception:
+                pass
             try:
                 if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison"):
                     cmp_obj.Label = "Cut-Fill Calc"
@@ -353,6 +405,9 @@ class CutFillCalcTaskPanel:
                     self.spin_min_facets.setValue(int(cmp_obj.MinMeshFacets))
                 if hasattr(cmp_obj, "UseCorridorBounds"):
                     self.chk_use_bounds.setChecked(bool(cmp_obj.UseCorridorBounds))
+                if hasattr(cmp_obj, "DomainCoords"):
+                    dmode = str(getattr(cmp_obj, "DomainCoords", "Local") or "Local")
+                    self.cmb_domain_coords.setCurrentText("World" if dmode == "World" else "Local")
                 if hasattr(cmp_obj, "DomainMargin"):
                     self.spin_margin.setValue(float(cmp_obj.DomainMargin))
                 if hasattr(cmp_obj, "NoDataWarnRatio"):
@@ -377,6 +432,9 @@ class CutFillCalcTaskPanel:
                     self.spin_ymax.setValue(float(cmp_obj.YMax))
                 if hasattr(cmp_obj, "AutoUpdate"):
                     self.chk_auto.setChecked(bool(cmp_obj.AutoUpdate))
+                if hasattr(cmp_obj, "ExistingSurfaceCoords"):
+                    mode = str(getattr(cmp_obj, "ExistingSurfaceCoords", "Local") or "Local")
+                    self.cmb_surface_coords.setCurrentText("World" if mode == "World" else "Local")
             finally:
                 self._loading = False
 
@@ -391,6 +449,8 @@ class CutFillCalcTaskPanel:
         msg = []
         msg.append(f"CorridorLoft: {len(self._corridors)} found")
         msg.append(f"Mesh sources: {len(self._surfaces)} found")
+        msg.append(f"Existing mesh coords: {'World' if self._use_world_surface_mode() else 'Local'}")
+        msg.append(f"Manual X/Y domain coords: {self.cmb_domain_coords.currentText()}")
         if cmp_obj is not None:
             msg.append("Cut-Fill Calc object: FOUND (will update)")
             try:
@@ -406,6 +466,12 @@ class CutFillCalcTaskPanel:
         finally:
             self._loading = False
         self._update_estimate_hint()
+
+    def _on_surface_coord_changed(self, _v):
+        if self._loading:
+            return
+        self._update_coord_hint()
+        self._on_source_changed(_v)
 
     def _use_selected_surface(self):
         sel = _selected_surface()
@@ -426,6 +492,10 @@ class CutFillCalcTaskPanel:
     def _create_or_get_cut_fill_calc(self):
         cmp_obj = _find_cut_fill_calc(self.doc)
         if cmp_obj is not None:
+            try:
+                ensure_cut_fill_calc_properties(cmp_obj)
+            except Exception:
+                pass
             try:
                 if str(getattr(cmp_obj, "Label", "")) in ("", "Existing/Design Surface Comparison", "Cut-Fill Calc"):
                     cmp_obj.Label = "Cut-Fill Calc"
@@ -528,6 +598,8 @@ class CutFillCalcTaskPanel:
             try:
                 cmp_obj.SourceCorridor = corridor
                 cmp_obj.ExistingSurface = mesh
+                if hasattr(cmp_obj, "ExistingSurfaceCoords"):
+                    cmp_obj.ExistingSurfaceCoords = "World" if self._use_world_surface_mode() else "Local"
                 cmp_obj.CellSize = float(self.spin_cell.value())
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
                 if hasattr(cmp_obj, "MaxTrianglesPerSource"):
@@ -538,6 +610,8 @@ class CutFillCalcTaskPanel:
                     cmp_obj.MaxTriangleChecks = int(self.spin_max_checks.value())
                 cmp_obj.MinMeshFacets = int(self.spin_min_facets.value())
                 cmp_obj.UseCorridorBounds = bool(self.chk_use_bounds.isChecked())
+                if hasattr(cmp_obj, "DomainCoords"):
+                    cmp_obj.DomainCoords = str(self.cmb_domain_coords.currentText() or "Local")
                 cmp_obj.DomainMargin = float(self.spin_margin.value())
                 cmp_obj.NoDataWarnRatio = float(self.spin_nodata_warn.value()) / 100.0
                 cmp_obj.ShowDeltaMap = bool(self.chk_show_map.isChecked())
@@ -615,6 +689,8 @@ class CutFillCalcTaskPanel:
             f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
             f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
             f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
+            f"DomainCoords: {str(getattr(cmp_obj, 'DomainCoords', 'Local'))}",
+            f"ExistingSurfaceCoords: {str(getattr(cmp_obj, 'ExistingSurfaceCoords', 'Local'))}",
             f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
             f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
             f"MaxTriangleChecks: {int(getattr(cmp_obj, 'MaxTriangleChecks', 0))}",
@@ -645,6 +721,21 @@ class CutFillCalcTaskPanel:
         except Exception:
             return False
 
+    def _manual_domain_local_bbox(self):
+        x0 = float(self.spin_xmin.value())
+        x1 = float(self.spin_xmax.value())
+        y0 = float(self.spin_ymin.value())
+        y1 = float(self.spin_ymax.value())
+        if x1 < x0:
+            x0, x1 = x1, x0
+        if y1 < y0:
+            y0, y1 = y1, y0
+
+        if str(self.cmb_domain_coords.currentText() or "Local") != "World":
+            return x0, x1, y0, y1
+
+        return _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=self._coord_context_obj())
+
     def _estimate_samples(self, corridor):
         try:
             cell = float(self.spin_cell.value())
@@ -659,10 +750,7 @@ class CutFillCalcTaskPanel:
                 ymin = float(bb.YMin - margin)
                 ymax = float(bb.YMax + margin)
             else:
-                xmin = float(self.spin_xmin.value())
-                xmax = float(self.spin_xmax.value())
-                ymin = float(self.spin_ymin.value())
-                ymax = float(self.spin_ymax.value())
+                xmin, xmax, ymin, ymax = self._manual_domain_local_bbox()
 
             if xmax < xmin:
                 xmin, xmax = xmax, xmin
@@ -725,14 +813,7 @@ class CutFillCalcTaskPanel:
                 ymin = float(bb.YMin - margin)
                 ymax = float(bb.YMax + margin)
             else:
-                xmin = float(self.spin_xmin.value())
-                xmax = float(self.spin_xmax.value())
-                ymin = float(self.spin_ymin.value())
-                ymax = float(self.spin_ymax.value())
-                if xmax < xmin:
-                    xmin, xmax = xmax, xmin
-                if ymax < ymin:
-                    ymin, ymax = ymax, ymin
+                xmin, xmax, ymin, ymax = self._manual_domain_local_bbox()
             area = max(1e-9, float(xmax - xmin) * float(ymax - ymin))
             max_tri_src = int(self.spin_max_tri_src.value())
             max_cand = int(self.spin_max_cand.value())
