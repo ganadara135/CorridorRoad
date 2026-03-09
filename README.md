@@ -50,6 +50,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `ui/task_section_generator.py`
 - `commands/cmd_*.py`
 
+## Development Environment
+- OS: `Windows 11`
+- FreeCAD: `1.0.2`
+
 ## Install and Run
 1. Place this folder under your FreeCAD `Mod` directory.
 2. Restart FreeCAD.
@@ -58,6 +62,9 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## License
 - This project is licensed under `LGPL-2.1-or-later`.
 - See [LICENSE](./LICENSE).
+
+## Video
+- https://youtu.be/22JhV0dys3E
 
 ## Screenshots
 ![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
