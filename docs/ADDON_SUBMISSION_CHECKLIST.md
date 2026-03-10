@@ -28,19 +28,19 @@ Last updated: 2026-03-08
 - [x] User-facing `README.md` exists.
 - [x] `LICENSE` file exists and matches package license.
 - [x] Icon asset exists in repository.
-- [x] `main` merge completed (user confirmed on 2026-03-08).
+- [x] `main` merge completed (user confirmed on 2026-03-10).
 
 ## D. Remaining Pre-Submission Checks
-- [ ] Validate clean install on a clean FreeCAD user profile via Addon Manager.
-- [ ] Validate update path (install old commit/tag -> update to latest).
-- [ ] Confirm all commands/task panels load without import/runtime errors.
-- [ ] Confirm README images and links render correctly on GitHub web UI.
+- [x] Validate clean install on a clean FreeCAD user profile via Addon Manager.
+- [x] Validate update path (install old commit/tag -> update to latest).
+- [x] Confirm all commands/task panels load without import/runtime errors.
+- [x] Confirm README images and links render correctly on GitHub web UI.
 
 ## E. Upstream Submission (FreeCAD/FreeCAD-addons)
-- [ ] Open PR to `FreeCAD/FreeCAD-addons` per its submission guide/template.
-- [ ] Fill PR template completely (addon URL, license, summary, maintenance info).
-- [ ] Monitor CI/checks and fix requested metadata/path issues.
-- [ ] Respond to maintainer review and update PR until merged.
+- [x] Open PR to `FreeCAD/FreeCAD-addons` per its submission guide/template.
+- [x] Fill PR template completely (addon URL, license, summary, maintenance info).
+- [x] Monitor CI/checks and fix requested metadata/path issues.
+- [x] Respond to maintainer review and update PR until merged.
 - [ ] After merge, wait for addons cache refresh cycle and verify listing in Addon Manager.
 
 ## Notes
