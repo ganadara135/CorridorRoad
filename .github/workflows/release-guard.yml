@@ -1,0 +1,72 @@
+name: release-guard
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  validate-release-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate package.xml and tag/version consistency
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          PACKAGE_XML = "package.xml"
+          if not os.path.exists(PACKAGE_XML):
+              raise SystemExit("package.xml not found")
+
+          root = ET.parse(PACKAGE_XML).getroot()
+          ns = {"fc": "https://wiki.freecad.org/Package_Metadata"}
+
+          def read_text(tag_name):
+              el = root.find(f"fc:{tag_name}", ns)
+              if el is None:
+                  el = root.find(tag_name)
+              if el is None or el.text is None:
+                  return ""
+              return el.text.strip()
+
+          version = read_text("version")
+          date = read_text("date")
+
+          if not version:
+              raise SystemExit("package.xml: <version> is empty or missing")
+          if not date:
+              raise SystemExit("package.xml: <date> is empty or missing")
+
+          # Accept semver and optional prerelease/build suffixes.
+          semver_ok = re.fullmatch(
+              r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?",
+              version,
+          )
+          if not semver_ok:
+              raise SystemExit(f"Invalid package.xml version format: {version}")
+
+          if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+              raise SystemExit(f"Invalid package.xml date format (YYYY-MM-DD required): {date}")
+
+          ref = os.environ.get("GITHUB_REF", "")
+          if ref.startswith("refs/tags/"):
+              tag = ref.split("/")[-1]
+              if tag.startswith("v"):
+                  tag = tag[1:]
+              if tag != version:
+                  raise SystemExit(
+                      f"Tag/version mismatch: tag={tag}, package.xml version={version}"
+                  )
+
+          print(f"Release metadata OK: version={version}, date={date}")
+          PY
