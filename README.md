@@ -38,17 +38,18 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Project Setup is opened from the project context menu.
 
 ## Code Layout
-- `commands/`: command entry points (toolbar/menu actions)
-- `objects/`: parametric object logic
-- `ui/`: TaskPanel UI
-- `InitGui.py`: workbench registration and command loading
+- `freecad/Corridor_Road/commands/`: command entry points (toolbar/menu actions)
+- `freecad/Corridor_Road/objects/`: parametric object logic
+- `freecad/Corridor_Road/ui/`: TaskPanel UI
+- `freecad/Corridor_Road/init_gui.py`: main workbench registration and command loading
+- `InitGui.py`: root FreeCAD entrypoint that forwards to namespaced code
 
 ## Good Entry Points For Developers
-- `InitGui.py`
-- `objects/obj_project.py`
-- `objects/obj_section_set.py`
-- `ui/task_section_generator.py`
-- `commands/cmd_*.py`
+- `freecad/Corridor_Road/init_gui.py`
+- `freecad/Corridor_Road/objects/obj_project.py`
+- `freecad/Corridor_Road/objects/obj_section_set.py`
+- `freecad/Corridor_Road/ui/task_section_generator.py`
+- `freecad/Corridor_Road/commands/cmd_*.py`
 
 ## Development Environment
 - OS: `Windows 11`
