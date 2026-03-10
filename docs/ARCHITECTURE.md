@@ -4,13 +4,13 @@
 Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 
 ## 2) Object Responsibilities
-### 2.1 VerticalAlignment (`objects/obj_vertical_alignment.py`)
+### 2.1 VerticalAlignment (`freecad/Corridor_Road/objects/obj_vertical_alignment.py`)
 - Purpose: vertical geometry engine only.
 - Owns PVI data and solver logic.
 - May display PVI polyline only (`ShowPVIWire`).
 - Must not own FG display toggles.
 
-### 2.2 FGDisplay (`objects/obj_fg_display.py`)
+### 2.2 FGDisplay (`freecad/Corridor_Road/objects/obj_fg_display.py`)
 - Purpose: FG rendering only.
 - Required label: `Finished Grade (FG)`.
 - Required properties:
@@ -20,14 +20,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `ZOffset`
 - Generates FG geometry from VerticalAlignment engine.
 
-### 2.3 ProfileBundle (`objects/obj_profile_bundle.py`)
+### 2.3 ProfileBundle (`freecad/Corridor_Road/objects/obj_profile_bundle.py`)
 - Purpose: station-profile data container + EG display.
 - Stores:
   - `Stations`, `ElevEG`, `ElevFG`, `ElevDelta`
   - Optional `VerticalAlignment` link
 - Displays EG only (`ShowEGWire`, `WireZOffset`).
 
-### 2.4 HorizontalAlignment (`objects/obj_alignment.py`)
+### 2.4 HorizontalAlignment (`freecad/Corridor_Road/objects/obj_alignment.py`)
 - Purpose: horizontal geometry and stationing source shape.
 - Supports:
   - Tangent + circular curve
@@ -44,7 +44,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `IPKeyStations` (PI station list)
     - `TSKeyStations`, `SCKeyStations`, `CSKeyStations`, `STKeyStations` (transition/key station lists)
 
-### 2.5 Centerline3D (`objects/obj_centerline3d.py`)
+### 2.5 Centerline3D (`freecad/Corridor_Road/objects/obj_centerline3d.py`)
 - Purpose: 3D centerline computation engine (no display shape ownership).
 - Inputs:
   - `Alignment` (required)
@@ -60,7 +60,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `tangent3d_at_station(s, eps)`
   - `frame_at_station(s, eps, prev_n)` returning `T-N-Z`
 
-### 2.6 Centerline3DDisplay (`objects/obj_centerline3d_display.py`)
+### 2.6 Centerline3DDisplay (`freecad/Corridor_Road/objects/obj_centerline3d_display.py`)
 - Purpose: 3D centerline rendering only.
 - Input:
   - direct source links: `Alignment`, `Stationing`, `VerticalAlignment`, `ProfileBundle`
@@ -71,7 +71,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Results:
   - `SampledStations`, `SampledPoints`, `SampleCount`, `Status`
 
-### 2.7 AssemblyTemplate (`objects/obj_assembly_template.py`)
+### 2.7 AssemblyTemplate (`freecad/Corridor_Road/objects/obj_assembly_template.py`)
 - Purpose: cross-section template parameters.
 - Key params:
   - `LeftWidth`, `RightWidth`
@@ -90,7 +90,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Edit Alignment -> Apply Alignment` syncs alignment `SuperelevationPct`
     into `LeftSlopePct/RightSlopePct` when an assembly template is linked/found.
 
-### 2.8 SectionSet (`objects/obj_section_set.py`)
+### 2.8 SectionSet (`freecad/Corridor_Road/objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
 - Inputs:
   - `SourceCenterlineDisplay`
@@ -128,7 +128,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `AutoRebuildChildren`
   - `RebuildNow` (property-panel trigger)
 
-### 2.9 CorridorLoft (`objects/obj_corridor_loft.py`)
+### 2.9 CorridorLoft (`freecad/Corridor_Road/objects/obj_corridor_loft.py`)
 - Purpose: corridor loft generation from `SectionSet`.
 - Inputs:
   - `SourceSectionSet`
@@ -149,7 +149,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
-### 2.10 DesignGradingSurface (`objects/obj_design_grading_surface.py`)
+### 2.10 DesignGradingSurface (`freecad/Corridor_Road/objects/obj_design_grading_surface.py`)
 - Purpose: visual grading surface (road top + side slopes/daylight) from `SectionSet`.
 - Inputs:
   - `SourceSectionSet`
@@ -165,7 +165,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
-### 2.11 CutFillCalc (`objects/obj_cut_fill_calc.py`)
+### 2.11 CutFillCalc (`freecad/Corridor_Road/objects/obj_cut_fill_calc.py`)
 - Purpose: Existing/Design surface comparison and cut/fill summary.
 - Inputs:
   - `SourceCorridor` (`CorridorLoft`)
@@ -213,7 +213,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - wide-triangle bucket expansion is guarded to avoid bucket blow-up
   - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
 
-### 2.12 DesignTerrain (`objects/obj_design_terrain.py`)
+### 2.12 DesignTerrain (`freecad/Corridor_Road/objects/obj_design_terrain.py`)
 - Purpose: composite terrain mesh from `DesignGradingSurface` and existing terrain.
 - Inputs:
   - `SourceDesignSurface` (`DesignGradingSurface`)
@@ -234,7 +234,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - design surface side is local-model coordinates
   - when `ExistingTerrainCoords=World`, existing terrain triangles are transformed to local before merge
 
-### 2.13 CorridorRoadProject (`objects/obj_project.py`)
+### 2.13 CorridorRoadProject (`freecad/Corridor_Road/objects/obj_project.py`)
 - Purpose: project container + global unit/scale policy.
 - Key property:
   - `LengthScale` (internal units per meter; `1.0=m`, `1000.0=mm-like`)
@@ -246,7 +246,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Shared coordinate transform helpers:
   - `world_to_local(...)`, `local_to_world(...)`
   - vector variants: `world_to_local_vec(...)`, `local_to_world_vec(...)`
-  - bulk/localized geometry helpers for world/local conversion: `objects/coord_transform.py`
+  - bulk/localized geometry helpers for world/local conversion: `freecad/Corridor_Road/objects/coord_transform.py`
   - world XY domain/bounds conversion helper: `world_xy_bounds_to_local(...)`
   - repeated point conversion caching helper: `world_point_to_local_cached(...)`
 - Scale usage:
@@ -257,10 +257,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ## 3) UI Contracts
 - Shared coordinate-mode UX policy:
-  - coordinate setup hint text and default Local/World mode decision should use `ui/common/coord_ui.py`
+  - coordinate setup hint text and default Local/World mode decision should use `freecad/Corridor_Road/ui/common/coord_ui.py`
   - hint text includes CRS/status plus transform essentials (north rotation, world/local origins)
 
-### 3.0 Project Setup (`commands/cmd_project_setup.py`, `ui/task_project_setup.py`)
+### 3.0 Project Setup (`freecad/Corridor_Road/commands/cmd_project_setup.py`, `freecad/Corridor_Road/ui/task_project_setup.py`)
 - Provides initial coordinate-system setup UI:
   - design standard selection (`KDS` / `AASHTO`)
   - CRS/EPSG, datum, world/local origin, north rotation
@@ -268,7 +268,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - `Apply Setup` commits values to `CorridorRoadProject`.
 - `New Project` opens this task panel automatically after project creation.
 
-### 3.1 Sample Alignment (`commands/cmd_create_alignment.py`)
+### 3.1 Sample Alignment (`freecad/Corridor_Road/commands/cmd_create_alignment.py`)
 - Creates simple baseline alignment object and sample values.
 - Sample defaults include feasible S-C-S transition settings (`CurveRadii`, `TransitionLengths`, `UseTransitionCurves=True`).
 - Keep as lightweight starter command.
@@ -276,7 +276,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Creates `CorridorRoadProject` automatically when missing and stores `LengthScale`.
 - Sample points are generated around project local origin (`LocalOriginX/Y`).
 
-### 3.2 Practical Alignment Editor (`commands/cmd_edit_alignment.py`, `ui/task_alignment_editor.py`)
+### 3.2 Practical Alignment Editor (`freecad/Corridor_Road/commands/cmd_edit_alignment.py`, `freecad/Corridor_Road/ui/task_alignment_editor.py`)
 - Edits practical alignment inputs:
   - IP coordinates
   - Radius/transition arrays
@@ -306,26 +306,26 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `line-arc-line` is converted to PI + exact arc radius (TS/ST tangent points are skipped as IP rows).
   - imported transition lengths default to zero (`Ls=0.0`).
 - CSV import/export policy:
-  - parser/writer helper is centralized in `objects/csv_alignment_import.py`.
+  - parser/writer helper is centralized in `freecad/Corridor_Road/objects/csv_alignment_import.py`.
   - import supports encoding/delimiter/header auto-detection and explicit override.
   - import supports column mapping (`x/y/r/ls/sta`) and optional station sort.
   - import can interpret CSV coordinates as local/world/panel-mode and converts to table mode.
   - export writes current PI table rows with mode-aware coordinate headers (`X/Y` or `E/N`).
 
 ### 3.3 Profile/PVI Editors
-- `ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
+- `freecad/Corridor_Road/ui/task_profile_editor.py` controls FG visibility through FGDisplay only.
 - Profile editor EG terrain sampling coordinate mode:
   - `Local (X/Y)` samples terrain with local alignment XY directly
   - `World (E/N)` converts local alignment XY to world XY for sampling, then converts sampled Z back to local
-- `ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
+- `freecad/Corridor_Road/ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
 
-### 3.4 Centerline Command (`commands/cmd_generate_centerline3d.py`)
+### 3.4 Centerline Command (`freecad/Corridor_Road/commands/cmd_generate_centerline3d.py`)
 - Creates/updates `Centerline3DDisplay` (direct source mode).
 - Auto-links available Alignment/Stationing/VerticalAlignment/ProfileBundle.
 - Uses `Auto` elevation mode by default (VA -> ProfileBundle FG -> FlatZero).
 - Removes legacy `Centerline3D` engine object if present.
 
-### 3.5 Section Command (`commands/cmd_generate_sections.py`, `ui/task_section_generator.py`)
+### 3.5 Section Command (`freecad/Corridor_Road/commands/cmd_generate_sections.py`, `freecad/Corridor_Road/ui/task_section_generator.py`)
 - Provides user-facing section workflow:
   - select mode: `Range` or `Manual`
   - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment TS/SC/CS/ST Key Stations`)
@@ -337,18 +337,18 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
 
-### 3.6 Corridor Command (`commands/cmd_generate_corridor_loft.py`)
+### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor_loft.py`)
 - Creates/updates `CorridorLoft`.
 - Links current `SectionSet`.
 - Forces `OutputType` to `Solid`.
 
-### 3.7 Design Grading Surface Command (`commands/cmd_generate_design_grading_surface.py`)
+### 3.7 Design Grading Surface Command (`freecad/Corridor_Road/commands/cmd_generate_design_grading_surface.py`)
 - Creates/updates `DesignGradingSurface`.
 - Links current `SectionSet`.
 - Uses section schema (v1/v2) and daylight-resolved section wires.
 
-### 3.8 Cut-Fill Calc Command (`commands/cmd_generate_cut_fill_calc.py`)
-- Opens dedicated TaskPanel (`ui/task_cut_fill_calc.py`).
+### 3.8 Cut-Fill Calc Command (`freecad/Corridor_Road/commands/cmd_generate_cut_fill_calc.py`)
+- Opens dedicated TaskPanel (`freecad/Corridor_Road/ui/task_cut_fill_calc.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`CorridorLoft`, Existing Mesh)
   - existing mesh coordinate mode selection (`Local`/`World`)
@@ -360,8 +360,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - updates project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
   - runs comparison through object proxy execution path for responsive UI
 
-### 3.9 Design Terrain Command (`commands/cmd_generate_design_terrain.py`)
-- Opens dedicated TaskPanel (`ui/task_design_terrain.py`).
+### 3.9 Design Terrain Command (`freecad/Corridor_Road/commands/cmd_generate_design_terrain.py`)
+- Opens dedicated TaskPanel (`freecad/Corridor_Road/ui/task_design_terrain.py`).
 - TaskPanel responsibilities:
   - explicit source selection (`DesignGradingSurface`, `ExistingTerrain (Mesh)`)
   - existing terrain coordinate mode selection (`Local`/`World`)
