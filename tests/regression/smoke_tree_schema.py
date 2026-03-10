@@ -9,7 +9,7 @@ or inside Python console:
 
 import FreeCAD as App
 
-from objects.obj_project import (
+from freecad.Corridor_Road.objects.obj_project import (
     ALN_REF_PROP,
     ALIGNMENT_ASSEMBLY,
     ALIGNMENT_CORRIDOR,
@@ -29,7 +29,7 @@ from objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
-from objects.project_links import link_project
+from freecad.Corridor_Road.objects.project_links import link_project
 
 
 def _group(obj):

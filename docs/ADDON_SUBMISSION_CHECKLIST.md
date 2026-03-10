@@ -20,9 +20,9 @@ Last updated: 2026-03-08
 - [x] Package and workbench icons are declared.
 
 ## B. Workbench Runtime Basics
-- [x] Workbench class exists in `InitGui.py`.
+- [x] Workbench class exists in `freecad/Corridor_Road/init_gui.py` (with root `InitGui.py` shim).
 - [x] `MenuText` and `ToolTip` are defined.
-- [x] `Icon` path is connected to `resources/icons/corridorroad_workbench.svg`.
+- [x] `Icon` path is connected to `freecad/Corridor_Road/resources/icons/corridorroad_workbench.svg`.
 
 ## C. Repository Baseline
 - [x] User-facing `README.md` exists.
