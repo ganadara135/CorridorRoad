@@ -234,6 +234,7 @@ class SectionGeneratorTaskPanel:
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
         self.cmb_day_coords.currentIndexChanged.connect(self._on_day_coord_changed)
+        self.cmb_day_terrain.currentIndexChanged.connect(self._on_day_terrain_changed)
         self.btn_pick_day_terrain.clicked.connect(self._use_selected_day_terrain)
         self.btn_make_assembly.clicked.connect(self._create_assembly_template)
         self.btn_refresh.clicked.connect(self._refresh_context)
@@ -268,6 +269,41 @@ class SectionGeneratorTaskPanel:
     def _on_day_coord_changed(self, _v):
         if self._loading:
             return
+        self._update_coord_hint()
+
+    def _terrain_declared_world_mode(self, terrain_obj):
+        if terrain_obj is None:
+            return None
+        try:
+            mode = str(getattr(terrain_obj, "OutputCoords", "") or "")
+            if mode == "World":
+                return True
+            if mode == "Local":
+                return False
+        except Exception:
+            pass
+        try:
+            if getattr(terrain_obj, "Proxy", None) and getattr(terrain_obj.Proxy, "Type", "") == "PointCloudDEM":
+                return False
+        except Exception:
+            pass
+        return None
+
+    def _sync_day_coord_mode_from_selected_terrain(self):
+        terr = self._current_daylight_terrain()
+        auto_world = self._terrain_declared_world_mode(terr)
+        if auto_world is None:
+            return
+        self._loading = True
+        try:
+            self.cmb_day_coords.setCurrentText("World" if auto_world else "Local")
+        finally:
+            self._loading = False
+
+    def _on_day_terrain_changed(self, _v):
+        if self._loading:
+            return
+        self._sync_day_coord_mode_from_selected_terrain()
         self._update_coord_hint()
 
     def _update_mode_ui(self):
@@ -417,6 +453,7 @@ class SectionGeneratorTaskPanel:
         if sel_terrain is not None:
             pref_terrain = sel_terrain
         self._fill_combo(self.cmb_day_terrain, self._terrains, pref_terrain)
+        self._sync_day_coord_mode_from_selected_terrain()
 
         if sec is not None:
             try:
@@ -500,6 +537,7 @@ class SectionGeneratorTaskPanel:
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
         msg.append("   - Daylight terrain coordinate mode can be Local or World")
         self.lbl_info.setText("\n".join(msg))
+        self._sync_day_coord_mode_from_selected_terrain()
         self._update_side_ui()
         self._update_mode_ui()
 

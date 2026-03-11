@@ -49,10 +49,15 @@ class ProjectSetupTaskPanel:
         gb_src = QtWidgets.QGroupBox("Project")
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_project = QtWidgets.QComboBox()
+        self.sp_scale = QtWidgets.QDoubleSpinBox()
+        self.sp_scale.setRange(1e-6, 1.0e9)
+        self.sp_scale.setDecimals(6)
+        self.sp_scale.setValue(1.0)
         self.cmb_design_standard = QtWidgets.QComboBox()
         self.cmb_design_standard.addItems(list(_ds.SUPPORTED_STANDARDS))
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Target Project:", self.cmb_project)
+        fs.addRow("Length Scale:", self.sp_scale)
         fs.addRow("Design Standard:", self.cmb_design_standard)
         fs.addRow(self.btn_refresh)
         root.addWidget(gb_src)
@@ -173,6 +178,7 @@ class ProjectSetupTaskPanel:
         self._loading = True
         try:
             self.ed_epsg.setText(str(getattr(prj, "CRSEPSG", "") or ""))
+            self.sp_scale.setValue(float(getattr(prj, "LengthScale", 1.0)))
             self.cmb_design_standard.setCurrentText(_ds.normalize_standard(getattr(prj, "DesignStandard", _ds.DEFAULT_STANDARD)))
             self.ed_h_datum.setText(str(getattr(prj, "HorizontalDatum", "") or ""))
             self.ed_v_datum.setText(str(getattr(prj, "VerticalDatum", "") or ""))
@@ -249,6 +255,7 @@ class ProjectSetupTaskPanel:
 
         try:
             prj.CRSEPSG = str(self.ed_epsg.text() or "").strip()
+            prj.LengthScale = float(self.sp_scale.value())
             prj.DesignStandard = _ds.normalize_standard(self.cmb_design_standard.currentText(), default=_ds.DEFAULT_STANDARD)
             prj.HorizontalDatum = str(self.ed_h_datum.text() or "").strip()
             prj.VerticalDatum = str(self.ed_v_datum.text() or "").strip()
@@ -268,7 +275,7 @@ class ProjectSetupTaskPanel:
                 self.doc.recompute()
 
             self.lbl_result.setText(
-                f"Applied: Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
+                f"Applied: Scale={float(prj.LengthScale):.6f}, Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
                 f"NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
             )
             QtWidgets.QMessageBox.information(

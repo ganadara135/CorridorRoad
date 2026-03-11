@@ -36,6 +36,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Current Key Policies
 - SectionSet daylight terrain source is `Mesh only`.
 - Project Setup is opened from the project context menu.
+- `DesignTerrain`/`CutFillCalc` runtime sampling uses a DEM-style regular XY grid (`CellSize` based), with per-cell elevation queried from source mesh triangles.
 
 ## Code Layout
 - `freecad/Corridor_Road/commands/`: command entry points (toolbar/menu actions)

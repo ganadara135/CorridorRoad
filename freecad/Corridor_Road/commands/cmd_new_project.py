@@ -1,7 +1,6 @@
 # CorridorRoad/commands/cmd_new_project.py
 import FreeCAD as App
 import FreeCADGui as Gui
-from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
 from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
@@ -31,18 +30,6 @@ class CmdNewProject:
         ensure_project_properties(obj)
         ensure_project_tree(obj, include_references=False)
         obj.Label = "CorridorRoad Project"
-
-        scale, ok = QtWidgets.QInputDialog.getDouble(
-            None,
-            "Project Scale",
-            "Length scale (internal units per meter)\n1 = meter, 1000 = millimeter-like",
-            float(getattr(obj, "LengthScale", 1.0)),
-            1e-6,
-            1e9,
-            6,
-        )
-        if ok:
-            obj.LengthScale = float(scale)
 
         # Try auto-link and adopt existing objects
         CorridorRoadProject.auto_link(doc, obj)

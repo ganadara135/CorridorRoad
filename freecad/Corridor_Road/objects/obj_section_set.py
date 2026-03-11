@@ -447,7 +447,40 @@ class SectionSet:
         buckets = sampler["buckets"]
         wide = sampler.get("wide_indices", []) or []
         bs = float(sampler["bucket_size"])
-        return _ssc.z_at_xy(float(x), float(y), tris, buckets, bs, wide_indices=wide, max_candidates=None)
+        z0 = _ssc.z_at_xy(float(x), float(y), tris, buckets, bs, wide_indices=wide, max_candidates=None)
+        if z0 is not None:
+            return z0
+
+        # Fallback for DEM-like meshes with local holes:
+        # sample neighboring positions and use nearest available Z.
+        step = max(0.2, float(bs))
+        dirs = (
+            (1.0, 0.0),
+            (-1.0, 0.0),
+            (0.0, 1.0),
+            (0.0, -1.0),
+            (0.7071, 0.7071),
+            (0.7071, -0.7071),
+            (-0.7071, 0.7071),
+            (-0.7071, -0.7071),
+        )
+        best = None
+        best_d2 = None
+        for ring in (1, 2, 3):
+            r = float(ring) * step
+            for dx, dy in dirs:
+                qx = float(x) + float(dx) * r
+                qy = float(y) + float(dy) * r
+                zz = _ssc.z_at_xy(float(qx), float(qy), tris, buckets, bs, wide_indices=wide, max_candidates=None)
+                if zz is None:
+                    continue
+                d2 = float((qx - x) * (qx - x) + (qy - y) * (qy - y))
+                if best is None or d2 < best_d2:
+                    best = float(zz)
+                    best_d2 = d2
+            if best is not None:
+                return best
+        return None
 
     @staticmethod
     def _solve_daylight_width(edge_p, outward_n, up_z, slope_pct: float, max_w: float, sampler, step: float):
@@ -479,11 +512,17 @@ class SectionSet:
         had_sample = False
         prev_w = None
         prev_f = None
+        best_w = None
+        best_abs_f = None
         w = 0.0
         while w <= mw + 1e-9:
             fv = f_at(w)
             if fv is not None:
                 had_sample = True
+                af = abs(float(fv))
+                if best_abs_f is None or af < best_abs_f:
+                    best_abs_f = af
+                    best_w = float(w)
                 if prev_f is not None and (prev_f == 0.0 or fv == 0.0 or (prev_f > 0.0 and fv < 0.0) or (prev_f < 0.0 and fv > 0.0)):
                     if prev_w is None:
                         return w, True
@@ -498,6 +537,9 @@ class SectionSet:
 
         if not had_sample:
             return mw, False
+        # If sampled but no explicit sign change was found, use nearest approach.
+        if best_w is not None:
+            return max(0.0, min(mw, float(best_w))), True
         return mw, False
 
     @staticmethod
@@ -637,6 +679,10 @@ class SectionSet:
                 if tsrc is not None:
                     day_max = int(getattr(asm, "DaylightMaxTriangles", 300000))
                     terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
+                    # Prefer explicit source declaration when available.
+                    src_mode = str(getattr(tsrc, "OutputCoords", "") or "")
+                    if src_mode in ("Local", "World"):
+                        terrain_mode = src_mode
                     if terrain_mode not in ("Local", "World"):
                         terrain_mode = "Local"
                     terrain_sampler = SectionSet._terrain_sampler(

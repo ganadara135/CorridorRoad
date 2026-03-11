@@ -1,7 +1,6 @@
 # CorridorRoad/commands/cmd_create_alignment.py
 import FreeCAD as App
 import FreeCADGui as Gui
-from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment
 from freecad.Corridor_Road.objects.obj_project import (
@@ -13,21 +12,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     get_length_scale,
 )
 from freecad.Corridor_Road.objects.project_links import link_project
-
-
-def _ask_length_scale(default_value: float):
-    val, ok = QtWidgets.QInputDialog.getDouble(
-        None,
-        "Sample Alignment Scale",
-        "Length scale (internal units per meter)\n1 = meter, 1000 = millimeter-like",
-        float(default_value),
-        1e-6,
-        1e9,
-        6,
-    )
-    if not ok:
-        return None
-    return float(val)
 
 
 class CmdCreateAlignment:
@@ -47,10 +31,6 @@ class CmdCreateAlignment:
             raise Exception("No active document.")
 
         prj = find_project(doc)
-        default_scale = get_length_scale(prj if prj is not None else doc, default=1.0)
-        scale = _ask_length_scale(default_scale)
-        if scale is None:
-            return
 
         if prj is None:
             try:
@@ -62,6 +42,7 @@ class CmdCreateAlignment:
 
         ensure_project_properties(prj)
         ensure_project_tree(prj, include_references=False)
+        scale = float(get_length_scale(prj, default=1.0))
         prj.LengthScale = float(scale)
 
         obj = doc.addObject("Part::FeaturePython", "HorizontalAlignment")

@@ -8,27 +8,23 @@ from . import ensure_package_on_sys_path
 
 ensure_package_on_sys_path()
 
+_WB_ICON_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "resources",
+    "icons",
+    "corridorroad_workbench.svg",
+)
+
 
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
     ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
-    Icon = ""
+    Icon = _WB_ICON_PATH if os.path.isfile(_WB_ICON_PATH) else ""
 
     def Initialize(self):
-        try:
-            icon_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "resources",
-                "icons",
-                "corridorroad_workbench.svg",
-            )
-            if os.path.isfile(icon_path):
-                self.__class__.Icon = icon_path
-        except Exception:
-            pass
-
         import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_import_pointcloud_dem  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_stations  # noqa: F401
@@ -46,7 +42,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             [
                 "CorridorRoad_NewProject",
                 "CorridorRoad_ProjectSetup",
-                "CorridorRoad_CreateAlignment",
+                "CorridorRoad_ImportPointCloudDEM",
                 "CorridorRoad_EditAlignment",
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",
@@ -65,7 +61,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             [
                 "CorridorRoad_NewProject",
                 "CorridorRoad_ProjectSetup",
-                "CorridorRoad_CreateAlignment",
+                "CorridorRoad_ImportPointCloudDEM",
                 "CorridorRoad_EditAlignment",
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",
