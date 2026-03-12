@@ -38,6 +38,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Project Setup is opened from the project context menu.
 - `DesignTerrain`/`CutFillCalc` runtime sampling uses a DEM-style regular XY grid (`CellSize` based), with per-cell elevation queried from source mesh triangles.
 
+## Sample Test Data
+- Use the following files for realistic point-cloud terrain testing.
+- `tests/samples/pointcloud_utm_realistic_hilly.csv`
+- `tests/samples/alignment_utm_realistic_hilly.csv`
+1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
+2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
+3. Run stations/profiles/sections and verify EG coverage and daylight behavior.
+
 ## Code Layout
 - `freecad/Corridor_Road/commands/`: command entry points (toolbar/menu actions)
 - `freecad/Corridor_Road/objects/`: parametric object logic
