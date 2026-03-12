@@ -21,6 +21,8 @@ Thumbs.db
 
 # Local Codex state/config
 .codex/
+.tmp_refs/
+.tmp_ref/
 
 # Code consistency docs (local reference only)
 docs/CODEX_PROMPTS.md

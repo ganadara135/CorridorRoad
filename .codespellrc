@@ -1,0 +1,5 @@
+[codespell]
+quiet-level = 3
+check-filenames = true
+skip = .git,.venv,__pycache__,.mypy_cache,.pytest_cache,.ruff_cache,.tmp_refs,*.FCStd1,*.svg
+ignore-words-list = Vertexes

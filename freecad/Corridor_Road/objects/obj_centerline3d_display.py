@@ -1,5 +1,4 @@
 # CorridorRoad/objects/obj_centerline3d_display.py
-import FreeCAD as App
 import Part
 
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D

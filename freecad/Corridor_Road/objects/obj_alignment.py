@@ -5,6 +5,7 @@ import math
 from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects.obj_project import get_design_standard, get_length_scale
 
+
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 

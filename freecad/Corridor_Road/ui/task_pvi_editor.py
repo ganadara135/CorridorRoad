@@ -2,7 +2,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment, ViewProviderVerticalAlignment
@@ -78,9 +78,6 @@ class PviEditorTaskPanel:
 
         gb_right = QtWidgets.QGroupBox("Generate FG")
         gr = QtWidgets.QFormLayout(gb_right)
-
-
-
         self.chk_clamp = QtWidgets.QCheckBox("Clamp overlapping vertical curves (auto adjust L)")
         self.chk_clamp.setChecked(True)
 
@@ -259,7 +256,7 @@ class PviEditorTaskPanel:
 
         self._scale = get_length_scale(self.doc, default=1.0)
         sc = max(1e-12, float(self._scale))
-        rows  = self._read_pvi()
+        rows = self._read_pvi()
         if len(rows) < 2:
             raise Exception("Need at least 2 valid PVI rows (Station & Elev).")
 
@@ -275,7 +272,7 @@ class PviEditorTaskPanel:
         va.MinTangent = float(self.spin_min_tan.value()) * sc
         va.PVIStations = [float(p[0]) * sc for p in rows]
         va.PVIElevations = [float(p[1]) * sc for p in rows]
-        va.CurveLengths  = [float(p[2]) * sc for p in rows]
+        va.CurveLengths = [float(p[2]) * sc for p in rows]
         try:
             va.ShowPVIWire = False
         except Exception:
@@ -406,8 +403,6 @@ class PviEditorTaskPanel:
             fgdisp.touch()
         except Exception:
             pass
-
-
         b.touch()
         va.touch()
         self.doc.recompute()

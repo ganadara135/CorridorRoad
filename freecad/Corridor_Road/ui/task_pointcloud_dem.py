@@ -95,7 +95,7 @@ class PointCloudDEMTaskPanel:
         main.addWidget(gb_src)
 
         gb_dem = QtWidgets.QGroupBox("DEM Options")
-        fo = QtWidgets.QFormLayout(gb_dem)
+        form_dem = QtWidgets.QFormLayout(gb_dem)
         self.spin_cell = QtWidgets.QDoubleSpinBox()
         self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
         self.spin_cell.setDecimals(3)
@@ -107,10 +107,10 @@ class PointCloudDEMTaskPanel:
         self.spin_max_cells.setValue(2000000)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on parameter changes")
         self.chk_auto.setChecked(True)
-        fo.addRow("Cell Size (scaled):", self.spin_cell)
-        fo.addRow("Aggregation:", self.cmb_agg)
-        fo.addRow("Max Cells:", self.spin_max_cells)
-        fo.addRow(self.chk_auto)
+        form_dem.addRow("Cell Size (scaled):", self.spin_cell)
+        form_dem.addRow("Aggregation:", self.cmb_agg)
+        form_dem.addRow("Max Cells:", self.spin_max_cells)
+        form_dem.addRow(self.chk_auto)
         main.addWidget(gb_dem)
 
         self.btn_build = QtWidgets.QPushButton("Import CSV and Build DEM")

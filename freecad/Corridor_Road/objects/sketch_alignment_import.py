@@ -189,31 +189,31 @@ def sketch_to_alignment_rows(sketch_obj, tol: float = 1e-6, z_tol: float = 1e-4)
         rows.append((float(info["end"].x), float(info["end"].y), 0.0, 0.0))
 
     # Remove near-duplicate consecutive rows while keeping max radius/transition hints.
-    ded = []
+    dedup_rows = []
     for x, y, rr, ls in rows:
-        if not ded:
-            ded.append([float(x), float(y), float(rr), float(ls)])
+        if not dedup_rows:
+            dedup_rows.append([float(x), float(y), float(rr), float(ls)])
             continue
-        dx = float(x) - float(ded[-1][0])
-        dy = float(y) - float(ded[-1][1])
+        dx = float(x) - float(dedup_rows[-1][0])
+        dy = float(y) - float(dedup_rows[-1][1])
         if (dx * dx + dy * dy) <= (tol * tol):
-            ded[-1][2] = max(float(ded[-1][2]), float(rr))
-            ded[-1][3] = max(float(ded[-1][3]), float(ls))
+            dedup_rows[-1][2] = max(float(dedup_rows[-1][2]), float(rr))
+            dedup_rows[-1][3] = max(float(dedup_rows[-1][3]), float(ls))
         else:
-            ded.append([float(x), float(y), float(rr), float(ls)])
+            dedup_rows.append([float(x), float(y), float(rr), float(ls)])
 
-    if len(ded) < 2:
+    if len(dedup_rows) < 2:
         raise ValueError("Sketch path has fewer than 2 valid points.")
 
     # Preserve imported arc radius exactly by default: no auto-transition on sketch import.
-    ded[0][2] = 0.0
-    ded[0][3] = 0.0
-    ded[-1][2] = 0.0
-    ded[-1][3] = 0.0
-    for i in range(1, len(ded) - 1):
-        ded[i][3] = 0.0
+    dedup_rows[0][2] = 0.0
+    dedup_rows[0][3] = 0.0
+    dedup_rows[-1][2] = 0.0
+    dedup_rows[-1][3] = 0.0
+    for i in range(1, len(dedup_rows) - 1):
+        dedup_rows[i][3] = 0.0
 
-    return [(float(x), float(y), float(rr), float(ls)) for (x, y, rr, ls) in ded]
+    return [(float(x), float(y), float(rr), float(ls)) for (x, y, rr, ls) in dedup_rows]
 
 
 def sketch_to_ip_points(sketch_obj, tol: float = 1e-6, z_tol: float = 1e-4):

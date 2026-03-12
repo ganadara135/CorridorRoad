@@ -6,6 +6,17 @@ charset = utf-8
 end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
+max_line_length = 120
+
+# Codespell policy (documentation + editor tooling hints)
+# Note: codespell itself reads .codespellrc/.toml, not .editorconfig.
+# Keep these keys here as team-visible writing rules.
+spelling_language = en-US
+codespell_check = true
+codespell_check_filenames = true
+codespell_check_hidden = false
+codespell_skip = .git,.venv,__pycache__,.mypy_cache,.pytest_cache,.ruff_cache,.tmp_refs,*.FCStd1,*.svg
+codespell_ignore_words_list = {}
 
 [*.py]
 indent_style = space

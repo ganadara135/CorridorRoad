@@ -8,7 +8,6 @@ canonical addon namespace: ``freecad.Corridor_Road``.
 from __future__ import annotations
 
 import importlib
-import pkgutil
 import sys
 from types import ModuleType
 
@@ -26,6 +25,29 @@ _LEGACY_PREFIX_TO_CANONICAL = (
     ("objects", CANONICAL_OBJECTS),
     ("commands", CANONICAL_COMMANDS),
     ("ui", CANONICAL_UI),
+)
+
+_INSTALL_LEVEL = 0
+_INSTALL_BASIC = 1
+_INSTALL_EAGER = 2
+
+# Explicit proxy module list to avoid package-wide scans on startup.
+_PROXY_OBJECT_MODULES = (
+    "obj_alignment",
+    "obj_assembly_template",
+    "obj_centerline3d",
+    "obj_centerline3d_display",
+    "obj_corridor_loft",
+    "obj_cut_fill_calc",
+    "obj_design_grading_surface",
+    "obj_design_terrain",
+    "obj_fg_display",
+    "obj_pointcloud_dem",
+    "obj_profile_bundle",
+    "obj_project",
+    "obj_section_set",
+    "obj_stationing",
+    "obj_vertical_alignment",
 )
 
 
@@ -70,21 +92,9 @@ def _normalize_proxy_class_module_names(module: ModuleType, from_name: str, to_n
             pass
 
 
-def _iter_proxy_object_module_names() -> list[str]:
-    mod = _import_module(CANONICAL_OBJECTS)
-    if mod is None:
-        return []
-    pkg_path = getattr(mod, "__path__", None)
-    if not pkg_path:
-        return []
-
-    out: list[str] = []
-    for info in pkgutil.iter_modules(pkg_path):
-        # Proxy-bearing modules in this addon follow obj_*.py naming.
-        if info.name.startswith("obj_"):
-            out.append(info.name)
-    out.sort()
-    return out
+def _preload_proxy_modules() -> None:
+    for rel_name in _PROXY_OBJECT_MODULES:
+        _import_module(f"{CANONICAL_OBJECTS}.{rel_name}")
 
 
 def _alias_loaded_subtree(alias_prefix: str, canonical_prefix: str) -> None:
@@ -117,8 +127,17 @@ def _canonicalize_loaded_modules() -> None:
         _normalize_proxy_class_module_names(mod, mod_name, canonical_name)
 
 
-def install_virtual_path_mappings() -> None:
-    """Install canonical/legacy alias mapping for proxy module paths."""
+def install_virtual_path_mappings(*, eager: bool = False) -> None:
+    """Install canonical/legacy alias mapping for proxy module paths.
+
+    `eager=False` keeps startup light (root/package aliases only).
+    `eager=True` additionally preloads proxy-bearing object modules.
+    """
+    global _INSTALL_LEVEL
+    required_level = _INSTALL_EAGER if eager else _INSTALL_BASIC
+    if _INSTALL_LEVEL >= required_level:
+        return
+
     # Ensure canonical package skeleton exists.
     _import_module(CANONICAL_ROOT)
     _import_module(CANONICAL_OBJECTS)
@@ -126,9 +145,9 @@ def install_virtual_path_mappings() -> None:
     _import_module(CANONICAL_UI)
     _import_module(f"{CANONICAL_UI}.common")
 
-    # Preload proxy-bearing object modules in canonical namespace.
-    for rel_name in _iter_proxy_object_module_names():
-        _import_module(f"{CANONICAL_OBJECTS}.{rel_name}")
+    if eager:
+        # Preload proxy-bearing object modules in canonical namespace.
+        _preload_proxy_modules()
 
     # Map legacy package roots to canonical package roots.
     _alias_loaded_subtree("CorridorRoad.freecad.Corridor_Road", CANONICAL_ROOT)
@@ -141,3 +160,4 @@ def install_virtual_path_mappings() -> None:
 
     # If anything got loaded under a legacy name, normalize its class/module path.
     _canonicalize_loaded_modules()
+    _INSTALL_LEVEL = max(_INSTALL_LEVEL, required_level)

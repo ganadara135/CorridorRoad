@@ -7,7 +7,7 @@ from . import ensure_package_on_sys_path, install_virtual_path_mappings
 
 
 ensure_package_on_sys_path()
-install_virtual_path_mappings()
+install_virtual_path_mappings(eager=True)
 
 _WB_ICON_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),

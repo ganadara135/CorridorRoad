@@ -58,7 +58,7 @@ class StationGeneratorTaskPanel:
         main.addWidget(gb_src)
 
         gb_opt = QtWidgets.QGroupBox("Options")
-        fo = QtWidgets.QFormLayout(gb_opt)
+        form_opts = QtWidgets.QFormLayout(gb_opt)
         self.spin_interval = QtWidgets.QDoubleSpinBox()
         self.spin_interval.setRange(0.001 * self._scale, 1000000.0 * self._scale)
         self.spin_interval.setDecimals(3)
@@ -69,9 +69,9 @@ class StationGeneratorTaskPanel:
         self.spin_tick.setValue(2.0 * self._scale)
         self.chk_show_ticks = QtWidgets.QCheckBox("Show ticks")
         self.chk_show_ticks.setChecked(True)
-        fo.addRow("Interval:", self.spin_interval)
-        fo.addRow("Tick Length:", self.spin_tick)
-        fo.addRow(self.chk_show_ticks)
+        form_opts.addRow("Interval:", self.spin_interval)
+        form_opts.addRow("Tick Length:", self.spin_tick)
+        form_opts.addRow(self.chk_show_ticks)
         main.addWidget(gb_opt)
 
         self.btn_generate = QtWidgets.QPushButton("Generate Stations")
