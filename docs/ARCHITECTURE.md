@@ -272,8 +272,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Creates simple baseline alignment object and sample values.
 - Sample defaults include feasible S-C-S transition settings (`CurveRadii`, `TransitionLengths`, `UseTransitionCurves=True`).
 - Keep as lightweight starter command.
-- Opens scale input UX (`LengthScale`) before creating sample.
-- Creates `CorridorRoadProject` automatically when missing and stores `LengthScale`.
+- Uses current project `LengthScale` (no scale popup).
+- Creates `CorridorRoadProject` automatically when missing and uses default `LengthScale`.
 - Sample points are generated around project local origin (`LocalOriginX/Y`).
 
 ### 3.2 Practical Alignment Editor (`freecad/Corridor_Road/commands/cmd_edit_alignment.py`, `freecad/Corridor_Road/ui/task_alignment_editor.py`)

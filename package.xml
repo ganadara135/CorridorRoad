@@ -13,7 +13,7 @@
   <license file="LICENSE">LGPL-2.1-or-later</license>
 
   <url type="repository" branch="main">https://github.com/ganadara135/CorridorRoad</url>
-  <url type="readme">https://github.com/ganadara135/CorridorRoad/blob/main/README.md</url>
+  <url type="readme">https://github.com/ganadara135/CorridorRoad/blob/main/ADDON_OVERVIEW.md</url>
   <url type="bugtracker">https://github.com/ganadara135/CorridorRoad/issues</url>
   <icon>freecad/Corridor_Road/resources/icons/corridorroad_workbench.svg</icon>
 

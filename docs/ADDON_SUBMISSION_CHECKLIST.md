@@ -1,6 +1,6 @@
 # FreeCAD Addon Submission Checklist (CorridorRoad)
 
-Last updated: 2026-03-08
+Last updated: 2026-03-12
 
 ## Latest Verification Run
 - Date: 2026-03-08
@@ -20,7 +20,7 @@ Last updated: 2026-03-08
 - [x] Package and workbench icons are declared.
 
 ## B. Workbench Runtime Basics
-- [x] Workbench class exists in `freecad/Corridor_Road/init_gui.py` (with root `InitGui.py` shim).
+- [x] Workbench class exists in `freecad/Corridor_Road/init_gui.py`.
 - [x] `MenuText` and `ToolTip` are defined.
 - [x] `Icon` path is connected to `freecad/Corridor_Road/resources/icons/corridorroad_workbench.svg`.
 

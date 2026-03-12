@@ -1,4 +1,6 @@
 # CorridorRoad/ui/task_profile_editor.py
+import math
+
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -204,6 +206,7 @@ class ProfileEditorTaskPanel:
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
         self.cmb_terrain_coords.currentIndexChanged.connect(self._on_terrain_coord_mode_changed)
+        self.cmb_eg_terrain.currentIndexChanged.connect(self._on_terrain_source_changed)
 
         self.chk_fg_from_va.toggled.connect(self._on_fg_mode_toggled)
         self.table.itemChanged.connect(self._on_table_item_changed)
@@ -240,6 +243,47 @@ class ProfileEditorTaskPanel:
     def _on_terrain_coord_mode_changed(self):
         if self._loading:
             return
+        self._update_coord_hint()
+
+    def _terrain_declared_world_mode(self, terrain_obj):
+        if terrain_obj is None:
+            return None
+        try:
+            mode = str(getattr(terrain_obj, "OutputCoords", "") or "")
+            if mode == "World":
+                return True
+            if mode == "Local":
+                return False
+        except Exception:
+            pass
+        try:
+            if getattr(terrain_obj, "Proxy", None) and getattr(terrain_obj.Proxy, "Type", "") == "PointCloudDEM":
+                return False
+        except Exception:
+            pass
+        return None
+
+    def _sync_coord_mode_from_selected_terrain(self):
+        terr = self._current_terrain()
+        auto_world = self._terrain_declared_world_mode(terr)
+        if auto_world is None:
+            return
+        self._loading = True
+        try:
+            self.cmb_terrain_coords.setCurrentIndex(1 if auto_world else 0)
+        finally:
+            self._loading = False
+
+    def _effective_use_world_mode(self, terrain_obj):
+        auto_world = self._terrain_declared_world_mode(terrain_obj)
+        if auto_world is not None:
+            return bool(auto_world)
+        return self._use_world_terrain_mode()
+
+    def _on_terrain_source_changed(self, *_args):
+        if self._loading:
+            return
+        self._sync_coord_mode_from_selected_terrain()
         self._update_coord_hint()
 
     # ---- Context ----
@@ -295,6 +339,7 @@ class ProfileEditorTaskPanel:
         if pref_terrain is None:
             pref_terrain = _selected_terrain()
         self._fill_terrain_combo(selected=pref_terrain)
+        self._sync_coord_mode_from_selected_terrain()
         self.cmb_eg_terrain.setEnabled(bool(self._terrains))
         self.btn_pick_terrain.setEnabled(bool(self._terrains))
         self.btn_apply.setEnabled(True)
@@ -479,8 +524,83 @@ class ProfileEditorTaskPanel:
         if sampler is None:
             raise Exception("Failed to build terrain sampler from selected source.")
 
+        def _terrain_bounds_xy(src_obj):
+            try:
+                if is_mesh_object(src_obj):
+                    bb = src_obj.Mesh.BoundBox
+                else:
+                    bb = src_obj.Shape.BoundBox
+                return float(bb.XMin), float(bb.XMax), float(bb.YMin), float(bb.YMax)
+            except Exception:
+                return None
+
+        def _estimate_fallback_step(samp):
+            try:
+                tris = list(getattr(samp, "triangles", []) or [])
+                if not tris:
+                    return 1.0
+                xmin = min(t[3][0] for t in tris)
+                xmax = max(t[3][1] for t in tris)
+                ymin = min(t[3][2] for t in tris)
+                ymax = max(t[3][3] for t in tris)
+                area = max(1e-9, float(xmax - xmin) * float(ymax - ymin))
+                n_cells = max(1.0, 0.5 * float(len(tris)))
+                return max(0.5, min(50.0, math.sqrt(area / n_cells)))
+            except Exception:
+                return 1.0
+
+        def _sample_with_fallback(samp, x, y, bounds_xy=None, step=2.0):
+            z0 = samp.z_at(float(x), float(y))
+            if z0 is not None:
+                return z0, False
+
+            dirs = (
+                (1.0, 0.0),
+                (-1.0, 0.0),
+                (0.0, 1.0),
+                (0.0, -1.0),
+                (0.7071, 0.7071),
+                (0.7071, -0.7071),
+                (-0.7071, 0.7071),
+                (-0.7071, -0.7071),
+            )
+            max_rings = 4
+            step_use = max(0.2, float(step))
+            max_radius = float(max_rings) * step_use
+
+            if bounds_xy is not None:
+                xmin, xmax, ymin, ymax = bounds_xy
+                if (x < xmin - max_radius) or (x > xmax + max_radius) or (y < ymin - max_radius) or (y > ymax + max_radius):
+                    return None, False
+
+            best = None
+            best_d2 = None
+            for ring in range(1, max_rings + 1):
+                r = float(ring) * step_use
+                for dx, dy in dirs:
+                    qx = float(x) + float(dx) * r
+                    qy = float(y) + float(dy) * r
+                    if bounds_xy is not None:
+                        xmin, xmax, ymin, ymax = bounds_xy
+                        if qx < xmin - 1e-9 or qx > xmax + 1e-9 or qy < ymin - 1e-9 or qy > ymax + 1e-9:
+                            continue
+                    zz = samp.z_at(qx, qy)
+                    if zz is None:
+                        continue
+                    d2 = float((qx - x) * (qx - x) + (qy - y) * (qy - y))
+                    if best is None or d2 < best_d2:
+                        best = float(zz)
+                        best_d2 = d2
+                if best is not None:
+                    return best, True
+            return None, False
+
         sampled = 0
         nodata = 0
+        sampled_fallback = 0
+        use_world_mode = self._effective_use_world_mode(terr)
+        bounds_xy = _terrain_bounds_xy(terr)
+        fallback_step = _estimate_fallback_step(sampler)
         self._loading = True
         try:
             for r in range(self.table.rowCount()):
@@ -493,14 +613,22 @@ class ProfileEditorTaskPanel:
                 p = HorizontalAlignment.point_at_station(self.alignment, float(s))
                 qx = float(p.x)
                 qy = float(p.y)
-                if self._use_world_terrain_mode():
+                if use_world_mode:
                     qx, qy, _qz = local_to_world(self._coord_context_obj(), qx, qy, float(p.z))
-                z = sampler.z_at(float(qx), float(qy))
+                z, used_fallback = _sample_with_fallback(
+                    sampler,
+                    float(qx),
+                    float(qy),
+                    bounds_xy=bounds_xy,
+                    step=fallback_step,
+                )
                 if z is None:
                     nodata += 1
                     continue
+                if used_fallback:
+                    sampled_fallback += 1
                 z_local = float(z)
-                if self._use_world_terrain_mode():
+                if use_world_mode:
                     _lx, _ly, z_local = world_to_local(self._coord_context_obj(), float(qx), float(qy), float(z))
                 self._set_cell_float(r, 1, float(z_local))
                 self._update_delta_row(r)
@@ -519,6 +647,8 @@ class ProfileEditorTaskPanel:
 
         if show_message:
             msg = f"EG filled from terrain: {sampled} rows"
+            if sampled_fallback > 0:
+                msg += f", fallback: {sampled_fallback}"
             if nodata > 0:
                 msg += f", no-data: {nodata} rows"
             QtWidgets.QMessageBox.information(None, "Edit Profiles", msg)
