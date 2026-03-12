@@ -1,6 +1,4 @@
 # CorridorRoad/objects/obj_design_grading_surface.py
-import FreeCAD as App
-
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"

@@ -380,18 +380,18 @@ def read_alignment_csv(
         out = sorted(out, key=lambda t: (float(t[0]), float(t[1])))
 
     if drop_consecutive_duplicates:
-        ded = []
+        dedup_rows = []
         tol = 1e-9
         for row in out:
-            if not ded:
-                ded.append(row)
+            if not dedup_rows:
+                dedup_rows.append(row)
                 continue
-            dx = float(row[0]) - float(ded[-1][0])
-            dy = float(row[1]) - float(ded[-1][1])
+            dx = float(row[0]) - float(dedup_rows[-1][0])
+            dy = float(row[1]) - float(dedup_rows[-1][1])
             if (dx * dx + dy * dy) <= tol:
                 continue
-            ded.append(row)
-        out = ded
+            dedup_rows.append(row)
+        out = dedup_rows
 
     if enforce_endpoints and len(out) >= 2:
         out = list(out)

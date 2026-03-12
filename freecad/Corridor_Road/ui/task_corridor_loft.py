@@ -58,7 +58,7 @@ class CorridorLoftTaskPanel:
         main.addWidget(gb_src)
 
         gb_opt = QtWidgets.QGroupBox("Options")
-        fo = QtWidgets.QFormLayout(gb_opt)
+        form_opts = QtWidgets.QFormLayout(gb_opt)
         self.spin_min_spacing = QtWidgets.QDoubleSpinBox()
         self.spin_min_spacing.setRange(0.0, 10000.0 * self._scale)
         self.spin_min_spacing.setDecimals(3)
@@ -67,9 +67,9 @@ class CorridorLoftTaskPanel:
         self.chk_ruled.setChecked(False)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
-        fo.addRow("Min Section Spacing:", self.spin_min_spacing)
-        fo.addRow(self.chk_ruled)
-        fo.addRow(self.chk_auto)
+        form_opts.addRow("Min Section Spacing:", self.spin_min_spacing)
+        form_opts.addRow(self.chk_ruled)
+        form_opts.addRow(self.chk_auto)
         main.addWidget(gb_opt)
 
         self.btn_build = QtWidgets.QPushButton("Build Corridor Loft")

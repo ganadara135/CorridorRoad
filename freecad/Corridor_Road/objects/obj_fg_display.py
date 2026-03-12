@@ -91,7 +91,6 @@ class FGDisplay:
                 if abs(float(c["evc"]) - b) < 1e-9:
                     bvc = float(c["bvc"])
                     evc = float(c["evc"])
-                    L = float(c["L"])
 
                     z_bvc = float(c["z_bvc"])
                     z_evc = float(VerticalAlignment.elevation_at_station(va, evc))

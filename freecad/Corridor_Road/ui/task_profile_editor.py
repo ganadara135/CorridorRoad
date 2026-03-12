@@ -297,7 +297,7 @@ class ProfileEditorTaskPanel:
             self._terrains = []
             self.lbl_info.setText("No active document.")
             return
-        
+
         self.bundle = _find_profile_bundle(self.doc)
         self.project = _find_project(self.doc)
         self.alignment = None
@@ -349,9 +349,8 @@ class ProfileEditorTaskPanel:
             self.chk_fg_from_va.setChecked(False)
 
         self.btn_fill_fg_from_va.setEnabled(self.va is not None)
-
-
     # ---- Table helpers ----
+
     def _set_rows(self, n):
         self._loading = True
         try:
@@ -683,7 +682,6 @@ class ProfileEditorTaskPanel:
         finally:
             self._loading = False
 
-
     def _on_table_item_changed(self, item):
         if self._loading:
             return
@@ -703,7 +701,6 @@ class ProfileEditorTaskPanel:
                     self._ensure_fg_hidden("FG cell edited manually")
 
             self._update_delta_row(r)
-
 
     def _update_delta_row(self, r):
         eg = self._get_cell_float(r, 1)
@@ -754,9 +751,9 @@ class ProfileEditorTaskPanel:
             try:
                 # If FGDisplay is missing, keep FG display option off.
                 self.chk_show_fg.setChecked(False)
-            except Exception:                
+            except Exception:
                 pass
-            
+
             # self.chk_show_fg.setChecked(False)
 
         # Restore FG mode from bundle state
@@ -948,7 +945,7 @@ class ProfileEditorTaskPanel:
         if self.fgdisp is not None:
             try:
                 self.fgdisp.ShowWire = bool(self.chk_show_fg.isChecked())
-            except Exception:                
+            except Exception:
                 pass
             try:
                 self.fgdisp.ZOffset = float(self.spin_fg_zoff.value())
@@ -984,7 +981,6 @@ class ProfileEditorTaskPanel:
             Gui.ActiveDocument.ActiveView.fitAll()
         except Exception:
             pass
-
 
     def _set_state_text(self, txt):
         try:
@@ -1071,7 +1067,6 @@ class ProfileEditorTaskPanel:
             self._set_state_text(f"FG from VerticalAlignment: showing Finished Grade (FG) wire. ({reason})")
         else:
             self._set_state_text("FG from VerticalAlignment: showing Finished Grade (FG) wire.")
-
 
     def _on_fg_mode_toggled(self, checked):
         # checked=True => FG from VA mode
