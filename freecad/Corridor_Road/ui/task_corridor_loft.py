@@ -226,6 +226,12 @@ class CorridorLoftTaskPanel:
 
             self.doc.recompute()
             self.lbl_status.setText(str(getattr(cor, "Status", "OK")))
+            n = len(list(getattr(sec, "StationValues", []) or []))
+            QtWidgets.QMessageBox.information(
+                None,
+                "Corridor Loft",
+                f"Corridor loft build completed.\nSections used: {n}\nStatus: {getattr(cor, 'Status', 'OK')}",
+            )
             self._refresh_context()
             try:
                 Gui.ActiveDocument.ActiveView.fitAll()

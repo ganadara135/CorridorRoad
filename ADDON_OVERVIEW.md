@@ -28,6 +28,14 @@ It provides a practical workflow from alignment setup to corridor and cut/fill a
 6. Generate sections and corridor loft.
 7. Generate design terrain and run cut/fill analysis.
 
+## Sample Test Data
+- Use these files for point cloud DEM testing.
+- `tests/samples/pointcloud_utm_realistic_hilly.csv`
+- `tests/samples/alignment_utm_realistic_hilly.csv`
+1. Import `pointcloud_utm_realistic_hilly.csv` as terrain source.
+2. Import `alignment_utm_realistic_hilly.csv` for horizontal alignment.
+3. Continue with stations/profiles/sections to validate EG/FG and daylight behavior.
+
 ## Requirements
 - FreeCAD `1.0.2` or newer recommended.
 - Windows 11 used for current development and validation.

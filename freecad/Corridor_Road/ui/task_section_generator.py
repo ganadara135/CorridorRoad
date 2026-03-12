@@ -709,6 +709,13 @@ class SectionGeneratorTaskPanel:
                 adopt_extra=[src, asm, sec],
             )
 
+        n = len(list(getattr(sec, "StationValues", []) or []))
+        QtWidgets.QMessageBox.information(
+            None,
+            "Generate Sections",
+            f"Section generation completed.\nResolved stations: {n}",
+        )
+
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
         except Exception:

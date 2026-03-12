@@ -224,6 +224,11 @@ class StationGeneratorTaskPanel:
             self.doc.recompute()
             n = len(list(getattr(st, "StationValues", []) or []))
             self.lbl_status.setText(f"OK: {n} stations")
+            QtWidgets.QMessageBox.information(
+                None,
+                "Stations",
+                f"Station generation completed.\nGenerated stations: {n}",
+            )
             self._refresh_context()
             try:
                 Gui.ActiveDocument.ActiveView.fitAll()

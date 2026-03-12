@@ -1,6 +1,7 @@
 # CorridorRoad/commands/cmd_generate_centerline3d.py
 import FreeCAD as App
 import FreeCADGui as Gui
+from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
@@ -109,6 +110,12 @@ class CmdGenerateCenterline3D:
             )
 
         doc.recompute()
+        n = len(list(getattr(disp, "SampledStations", []) or []))
+        QtWidgets.QMessageBox.information(
+            None,
+            "3D Centerline",
+            f"3D centerline generation completed.\nSampled stations: {n}",
+        )
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
