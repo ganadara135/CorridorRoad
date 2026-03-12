@@ -43,7 +43,6 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `freecad/Corridor_Road/objects/`: parametric object logic
 - `freecad/Corridor_Road/ui/`: TaskPanel UI
 - `freecad/Corridor_Road/init_gui.py`: main workbench registration and command loading
-- `InitGui.py`: root FreeCAD entrypoint that forwards to namespaced code
 
 ## Good Entry Points For Developers
 - `freecad/Corridor_Road/init_gui.py`

@@ -3,10 +3,11 @@ import os
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from . import ensure_package_on_sys_path
+from . import ensure_package_on_sys_path, install_virtual_path_mappings
 
 
 ensure_package_on_sys_path()
+install_virtual_path_mappings()
 
 _WB_ICON_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
