@@ -28,6 +28,15 @@ It provides a practical workflow from alignment setup to corridor and cut/fill a
 6. Generate sections and corridor loft.
 7. Generate design terrain and run cut/fill analysis.
 
+## Wiki Documentation
+- Online Wiki: https://github.com/ganadara135/CorridorRoad/wiki
+- Main pages:
+1. Quick Start: https://github.com/ganadara135/CorridorRoad/wiki/Quick-Start
+2. Workflow: https://github.com/ganadara135/CorridorRoad/wiki/Workflow
+3. CSV Format: https://github.com/ganadara135/CorridorRoad/wiki/CSV-Format
+4. Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
+- Local wiki draft source: `docs/wiki/`
+
 ## Sample Test Data
 - Use these files for point cloud DEM testing.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`

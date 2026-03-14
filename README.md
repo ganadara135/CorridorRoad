@@ -10,6 +10,18 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Enforces a fixed Civil3D-style project tree schema with automatic object routing.
 - Keeps object links and recompute flow organized under a project container.
 
+## Wiki Documentation
+- Online Wiki: https://github.com/ganadara135/CorridorRoad/wiki
+- Wiki draft source in this repo: `docs/wiki/`
+- Wiki page map: `docs/wiki/WIKI_TOC.md`
+- Main wiki pages:
+1. Home: https://github.com/ganadara135/CorridorRoad/wiki
+2. Quick Start: https://github.com/ganadara135/CorridorRoad/wiki/Quick-Start
+3. Workflow: https://github.com/ganadara135/CorridorRoad/wiki/Workflow
+4. CSV Format: https://github.com/ganadara135/CorridorRoad/wiki/CSV-Format
+5. Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
+6. Developer Guide: https://github.com/ganadara135/CorridorRoad/wiki/Developer-Guide
+
 ## Main Commands
 - `New Project`
 - `Project Setup`
