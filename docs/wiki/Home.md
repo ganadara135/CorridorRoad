@@ -1,0 +1,59 @@
+# CorridorRoad Wiki
+
+CorridorRoad is a FreeCAD workbench for road corridor design.
+This wiki is the practical guide for daily use and development.
+
+## Start Here
+- [Quick Start](Quick-Start)
+- [Workflow](Workflow)
+- [CSV Format](CSV-Format)
+- [Troubleshooting](Troubleshooting)
+- [Developer Guide](Developer-Guide)
+
+## What You Can Do
+- Build alignment/stations/profiles/sections/corridor in one pipeline.
+- Import terrain from point cloud CSV using DEM-style grid sampling.
+- Run design terrain and cut/fill analysis.
+
+> [Screenshot Needed] Workbench overview screen with main toolbar commands visible.
+> Suggested file: `wiki-home-workbench-overview.png`
+>
+> Wiki image link template:
+> `![Workbench Overview](images/wiki-home-workbench-overview.png)`
+
+## Recommended First Test Data
+- `tests/samples/pointcloud_utm_realistic_hilly.csv`
+- `tests/samples/alignment_utm_realistic_hilly.csv`
+
+## How To Use This Wiki
+1. Start from [Quick Start](Quick-Start) for first successful run.
+2. Use [Workflow](Workflow) when doing full production sequence.
+3. Use [CSV Format](CSV-Format) before importing external survey/alignment data.
+4. Open [Troubleshooting](Troubleshooting) when EG/daylight/output issues appear.
+5. Use [Developer Guide](Developer-Guide) for code-level changes.
+
+## Core Pipeline
+`Terrain (EG) -> Alignment -> Stations -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
+
+> [Screenshot Needed] Project tree and pipeline result objects in one view.
+> Suggested file: `wiki-home-project-tree-pipeline.png`
+>
+> Wiki image link template:
+> `![Pipeline Result](images/wiki-home-project-tree-pipeline.png)`
+
+## Screenshot Insertion Guide
+1. Add image files under wiki repo path: `images/`.
+2. Use relative markdown links: `![alt](images/<file>.png)`.
+3. Keep width around 1600-2200 px for readability on wiki pages.
+
+## Required Environment
+- FreeCAD `1.0.2` or newer (recommended)
+- Windows 11 (current validation environment)
+
+## Notes
+- Daylight terrain source in section workflow is mesh based.
+- Runtime terrain/cut-fill sampling follows DEM-style regular XY grid.
+- For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
+
+---
+Last verified with commit: `<fill-after-release>`
