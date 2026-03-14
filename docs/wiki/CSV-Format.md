@@ -33,8 +33,7 @@ Rules:
 Recommended sample file:
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 
-> [Screenshot Needed] PointCloud DEM import panel with valid CSV selected.
-> Suggested file: `wiki-csv-pointcloud-import-panel.png`
+![PointCloud DEM import panel with valid CSV selected](images/wiki-csv-pointcloud-import-panel.png)
 
 ## 2. Alignment CSV
 
@@ -60,8 +59,8 @@ Rules:
 Recommended sample file:
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 
-> [Screenshot Needed] Alignment CSV import result (geometry over terrain).
-> Suggested file: `wiki-csv-alignment-import-result.png`
+![Alignment CSV import result](images/wiki-csv-alignment-import-result.png)
+
 
 ## 3. Import Validation Checklist
 1. Header names match exactly.

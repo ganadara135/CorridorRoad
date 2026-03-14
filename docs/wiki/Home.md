@@ -15,11 +15,8 @@ This wiki is the practical guide for daily use and development.
 - Import terrain from point cloud CSV using DEM-style grid sampling.
 - Run design terrain and cut/fill analysis.
 
-> [Screenshot Needed] Workbench overview screen with main toolbar commands visible.
-> Suggested file: `wiki-home-workbench-overview.png`
->
-> Wiki image link template:
-> `![Workbench Overview](images/wiki-home-workbench-overview.png)`
+![Workbench overview screen with main toolbar commands visible](images/wiki-home-workbench-overview.png)
+
 
 ## Recommended First Test Data
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
@@ -35,11 +32,9 @@ This wiki is the practical guide for daily use and development.
 ## Core Pipeline
 `Terrain (EG) -> Alignment -> Stations -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
 
-> [Screenshot Needed] Project tree and pipeline result objects in one view.
-> Suggested file: `wiki-home-project-tree-pipeline.png`
->
-> Wiki image link template:
-> `![Pipeline Result](images/wiki-home-project-tree-pipeline.png)`
+![Project tree and pipeline result objects in one view](images/wiki-home-project-tree-pipeline.png)
+
+
 
 ## Screenshot Insertion Guide
 1. Add image files under wiki repo path: `images/`.

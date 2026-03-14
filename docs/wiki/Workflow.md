@@ -14,11 +14,10 @@ Validation:
 - Project object links are initialized.
 - Length scale and coordinate policy are confirmed before geometry creation.
 
-> [Screenshot Needed] Project tree immediately after setup.
-> Suggested file: `wiki-workflow-01-project-init.png`
+![Screenshot Needed Project tree immediately after setup](images/wiki-workflow-01-project-init.png)
 
 ## 2. Existing Terrain (EG)
-1. Run `Point Cloud DEM`.
+1. Run `Import PointCloud DEM`.
 2. Load point cloud CSV (UTM or project coordinates).
 3. Generate DEM mesh terrain.
 
@@ -29,8 +28,8 @@ Validation:
 - Terrain mesh has valid facets.
 - Terrain coverage encloses the intended alignment area.
 
-> [Screenshot Needed] Point cloud DEM source and generated terrain mesh.
-> Suggested file: `wiki-workflow-02-terrain-eg.png`
+![Point cloud DEM source and generated terrain mesh](images/wiki-workflow-02-terrain-eg.png)
+![Point cloud DEM source and generated terrain mesh second](images/wiki-workflow-02-terrain-eg_2.png)
 
 ## 3. Horizontal Geometry
 1. Open `Alignment`.
@@ -44,8 +43,8 @@ Validation:
 - IP/radius/transition interpretation is correct.
 - Alignment path is inside terrain bounds.
 
-> [Screenshot Needed] Imported alignment geometry and key points.
-> Suggested file: `wiki-workflow-03-horizontal-alignment.png`
+![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment.png)
+![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment_2.png)
 
 ## 4. Stations and Profiles
 1. `Generate Stations`
@@ -60,8 +59,10 @@ Validation:
 - Station list count is reasonable for interval.
 - EG fill coverage is acceptable before FG generation.
 
-> [Screenshot Needed] Stations and profile table with EG/FG columns.
-> Suggested file: `wiki-workflow-04-stations-profiles.png`
+![stations](images/wiki-workflow-04-stations-profiles.png)
+![profile table with EG columns](images/wiki-workflow-04-stations-profiles_2.png)
+![profile table with FG columns](images/wiki-workflow-04-stations-profiles_3.png)
+
 
 ## 5. 3D Centerline
 1. Run `3D Centerline`.
@@ -74,8 +75,8 @@ Validation:
 - Completion popup appears.
 - Sampled station count is non-zero and wire is visible.
 
-> [Screenshot Needed] 3D centerline wire and completion popup.
-> Suggested file: `wiki-workflow-05-centerline3d.png`
+[3D centerline wire and completion popup](images/wiki-workflow-05-centerline3d.png)
+
 
 ## 6. Sections
 1. Run `Generate Sections`.
@@ -90,13 +91,13 @@ Validation:
 - Resolved station count matches mode/configuration.
 - Daylight terrain is assigned when Daylight Auto is enabled.
 
-> [Screenshot Needed] Sections task panel and generated section set.
-> Suggested file: `wiki-workflow-06-sections.png`
+![Sections task panel and generated section set](images/wiki-workflow-06-sections.png)
+![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
 
 ## 7. Corridor and Surfaces
 1. Run `Generate Corridor Loft`.
 2. Optionally run `Generate Design Grading Surface`.
-3. Run `Generate Design Terrain`.
+3. Optionally run `Generate Design Terrain`.
 4. Run `Generate Cut/Fill Calc`.
 
 Output:
@@ -108,8 +109,11 @@ Validation:
 - Corridor loft status is OK.
 - Design terrain/cut-fill status fields show no blocking error.
 
-> [Screenshot Needed] Corridor loft + design terrain + cut/fill summary.
-> Suggested file: `wiki-workflow-07-corridor-surfaces-analysis.png`
+![Corridor loft, failed case](images/wiki-workflow-07-corridor-surfaces-analysis.png)
+- this is a failed case. check your profile data. there would be many zero data.
+![Corridor loft](images/wiki-workflow-07-corridor-surfaces-analysis_2.png)
+![Cut and Fill Analisys](images/wiki-workflow-07-corridor-surfaces-analysis_3.png)
+
 
 ## 8. Quality Check
 - Verify station coverage and EG values.

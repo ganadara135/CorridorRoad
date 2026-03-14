@@ -8,8 +8,8 @@ This page is the quick technical map for contributors.
 - `freecad/Corridor_Road/objects/`
 - `freecad/Corridor_Road/ui/`
 
-> [Screenshot Needed] High-level code map diagram or folder tree capture.
-> Suggested file: `wiki-dev-code-layout.png`
+![High-level code map diagram or folder tree capture](images/wiki-dev-code-layout.png)
+
 
 ## Key Runtime Policy
 - Terrain/design/cut-fill runtime uses DEM-style regular XY grid sampling.

@@ -60,8 +60,7 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 - Section set and corridor loft are generated.
 - Completion dialogs appear after Stations/Centerline/Sections/Corridor commands.
 
-> [Screenshot Needed] Final end-to-end result screen (terrain + alignment + corridor).
-> Suggested file: `wiki-quickstart-final-result.png`
+![Final end-to-end result screen](images/wiki-workflow-07-corridor-surfaces-analysis_3.png)
 
 ## If Something Looks Wrong
 - If EG has blanks, see [Troubleshooting](Troubleshooting#eg-values-are-blank-or-partially-missing).
