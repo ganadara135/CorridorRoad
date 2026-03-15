@@ -59,6 +59,14 @@ def ensure_assembly_template_properties(obj):
     if not hasattr(obj, "DaylightMaxSearchWidth"):
         obj.addProperty("App::PropertyFloat", "DaylightMaxSearchWidth", "Assembly", "Max search width for terrain-daylight (m)")
         obj.DaylightMaxSearchWidth = 200.0 * scale
+    if not hasattr(obj, "DaylightMaxWidthDelta"):
+        obj.addProperty(
+            "App::PropertyFloat",
+            "DaylightMaxWidthDelta",
+            "Assembly",
+            "Max daylight-width change allowed between neighboring sections (m, 0=off)",
+        )
+        obj.DaylightMaxWidthDelta = 6.0 * scale
     if not hasattr(obj, "DaylightMaxTriangles"):
         obj.addProperty("App::PropertyInteger", "DaylightMaxTriangles", "Assembly", "Max triangles used for daylight sampler")
         obj.DaylightMaxTriangles = 300000
@@ -168,6 +176,7 @@ class AssemblyTemplate:
             "UseDaylightToTerrain",
             "DaylightSearchStep",
             "DaylightMaxSearchWidth",
+            "DaylightMaxWidthDelta",
             "DaylightMaxTriangles",
             "HeightLeft",
             "HeightRight",

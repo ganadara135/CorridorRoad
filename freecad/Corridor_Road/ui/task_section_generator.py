@@ -195,6 +195,10 @@ class SectionGeneratorTaskPanel:
         self.spin_day_max_w.setRange(1.0 * scale, 10000.0 * scale)
         self.spin_day_max_w.setDecimals(3)
         self.spin_day_max_w.setValue(200.0 * scale)
+        self.spin_day_max_delta = QtWidgets.QDoubleSpinBox()
+        self.spin_day_max_delta.setRange(0.0, 1000.0 * scale)
+        self.spin_day_max_delta.setDecimals(3)
+        self.spin_day_max_delta.setValue(6.0 * scale)
         self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         form_opts.addRow(self.chk_create_new)
@@ -221,6 +225,7 @@ class SectionGeneratorTaskPanel:
         form_opts.addRow(self.btn_pick_day_terrain)
         form_opts.addRow("Daylight Search Step:", self.spin_day_step)
         form_opts.addRow("Daylight Max Search Width:", self.spin_day_max_w)
+        form_opts.addRow("Daylight Max Width Delta:", self.spin_day_max_delta)
         form_opts.addRow(self.btn_make_assembly)
         form_opts.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
@@ -340,6 +345,7 @@ class SectionGeneratorTaskPanel:
         self.btn_pick_day_terrain.setEnabled(on and bool(self.chk_daylight.isChecked()))
         self.spin_day_step.setEnabled(on and bool(self.chk_daylight.isChecked()))
         self.spin_day_max_w.setEnabled(on and bool(self.chk_daylight.isChecked()))
+        self.spin_day_max_delta.setEnabled(on and bool(self.chk_daylight.isChecked()))
 
     def _format_obj(self, obj):
         return f"[Mesh] {obj.Label} ({obj.Name})"
@@ -410,6 +416,8 @@ class SectionGeneratorTaskPanel:
             asm.DaylightSearchStep = float(self.spin_day_step.value())
         if hasattr(asm, "DaylightMaxSearchWidth"):
             asm.DaylightMaxSearchWidth = float(self.spin_day_max_w.value())
+        if hasattr(asm, "DaylightMaxWidthDelta"):
+            asm.DaylightMaxWidthDelta = float(self.spin_day_max_delta.value())
 
     def _resolve_template_base(self):
         if bool(self.chk_place_at_start.isChecked()):
@@ -503,6 +511,8 @@ class SectionGeneratorTaskPanel:
                     self.spin_day_step.setValue(float(asm.DaylightSearchStep))
                 if hasattr(asm, "DaylightMaxSearchWidth"):
                     self.spin_day_max_w.setValue(float(asm.DaylightMaxSearchWidth))
+                if hasattr(asm, "DaylightMaxWidthDelta"):
+                    self.spin_day_max_delta.setValue(float(asm.DaylightMaxWidthDelta))
             except Exception:
                 pass
 

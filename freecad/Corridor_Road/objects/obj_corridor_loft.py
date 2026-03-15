@@ -83,6 +83,15 @@ def ensure_corridor_loft_properties(obj):
         obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for loft input (m)")
         obj.MinSectionSpacing = 0.50 * scale
 
+    if not hasattr(obj, "AutoFixSectionOrientation"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "AutoFixSectionOrientation",
+            "Corridor",
+            "Auto-fix flipped section orientation against neighboring section input",
+        )
+        obj.AutoFixSectionOrientation = True
+
     if not hasattr(obj, "AutoUpdate"):
         obj.addProperty("App::PropertyBool", "AutoUpdate", "Corridor", "Auto update from source changes")
         obj.AutoUpdate = True
@@ -98,6 +107,10 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "PointCountPerSection"):
         obj.addProperty("App::PropertyInteger", "PointCountPerSection", "Result", "Point count per section")
         obj.PointCountPerSection = 0
+
+    if not hasattr(obj, "AutoFixedSectionCount"):
+        obj.addProperty("App::PropertyInteger", "AutoFixedSectionCount", "Result", "Auto-fixed section count")
+        obj.AutoFixedSectionCount = 0
 
     if not hasattr(obj, "SchemaVersion"):
         obj.addProperty("App::PropertyInteger", "SchemaVersion", "Result", "Section schema version used")
@@ -155,7 +168,26 @@ class CorridorLoft:
         return Part.makePolygon(points)
 
     @staticmethod
-    def _validate_and_normalize(stations, wires, schema_version: int):
+    def _should_flip_points(prev_pts, pts):
+        if prev_pts is None or len(prev_pts) != len(pts):
+            return False
+
+        rev_pts = list(reversed(pts))
+        direct_score = sum((pts[i] - prev_pts[i]).Length for i in range(len(pts)))
+        flip_score = sum((rev_pts[i] - prev_pts[i]).Length for i in range(len(pts)))
+
+        axis_prev = prev_pts[-1] - prev_pts[0]
+        axis_curr = pts[-1] - pts[0]
+        if axis_prev.Length > 1e-9 and axis_curr.Length > 1e-9:
+            axis_prev = axis_prev.normalize()
+            axis_curr = axis_curr.normalize()
+            if axis_prev.dot(axis_curr) < 0.0 and flip_score <= (direct_score * 1.02 + 1e-6):
+                return True
+
+        return flip_score + 1e-6 < (direct_score * 0.85)
+
+    @staticmethod
+    def _validate_and_normalize(stations, wires, schema_version: int, auto_fix_orientation: bool):
         if len(stations) < 2 or len(wires) < 2:
             raise Exception("Need at least 2 sections for loft.")
         if len(stations) != len(wires):
@@ -194,17 +226,20 @@ class CorridorLoft:
                 f"SchemaVersion=1 requires 3 points (Left->Center->Right), but got {ref_n}."
             )
 
-        # SectionSet.build_section_wires already stabilizes N-direction with prev_n.
-        # Keep source point order as-is; additional auto-flip here can mis-detect
-        # normal heading rotation as a true left/right inversion.
         out_wires = []
+        prev_pts = None
+        fixed_count = 0
         for i, pts in enumerate(pt_lists):
+            if bool(auto_fix_orientation) and CorridorLoft._should_flip_points(prev_pts, pts):
+                pts = list(reversed(pts))
+                fixed_count += 1
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"Section[{i}] left/right axis is degenerate.")
             out_wires.append(CorridorLoft._make_wire(pts))
+            prev_pts = pts
 
-        return out_wires, ref_n
+        return out_wires, ref_n, fixed_count
 
     @staticmethod
     def _filter_close_sections(stations, wires, min_spacing: float):
@@ -331,6 +366,7 @@ class CorridorLoft:
                 obj.Shape = Part.Shape()
                 obj.SectionCount = 0
                 obj.PointCountPerSection = 0
+                obj.AutoFixedSectionCount = 0
                 obj.SchemaVersion = 0
                 obj.FailedRanges = []
                 obj.ResolvedHeightLeft = 0.0
@@ -344,7 +380,13 @@ class CorridorLoft:
             stations, wires, dropped = CorridorLoft._filter_close_sections(stations, wires, min_spacing)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
 
-            norm_wires, pt_count = CorridorLoft._validate_and_normalize(stations, wires, schema)
+            auto_fix_orientation = bool(getattr(obj, "AutoFixSectionOrientation", True))
+            norm_wires, pt_count, fixed_count = CorridorLoft._validate_and_normalize(
+                stations,
+                wires,
+                schema,
+                auto_fix_orientation,
+            )
             ruled = bool(getattr(obj, "UseRuled", False))
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
@@ -355,7 +397,8 @@ class CorridorLoft:
                 status = (
                     "OK (Solid) "
                     f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)}"
+                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
+                    f"autoFixed={int(fixed_count)}"
                 )
             except Exception as ex:
                 shape, failed_ranges = CorridorLoft._loft_adaptive(
@@ -365,12 +408,14 @@ class CorridorLoft:
                     "WARN (Solid): full loft failed, adaptive fallback used "
                     f"({len(failed_ranges)} failed ranges): {ex} | "
                     f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)}"
+                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
+                    f"autoFixed={int(fixed_count)}"
                 )
 
             obj.Shape = shape
             obj.SectionCount = len(stations)
             obj.PointCountPerSection = int(pt_count)
+            obj.AutoFixedSectionCount = int(fixed_count)
             obj.SchemaVersion = int(schema)
             obj.FailedRanges = list(failed_ranges)
             obj.ResolvedHeightLeft = float(h_left)
@@ -385,6 +430,7 @@ class CorridorLoft:
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
             obj.PointCountPerSection = 0
+            obj.AutoFixedSectionCount = 0
             obj.SchemaVersion = 0
             obj.FailedRanges = []
             obj.ResolvedHeightLeft = 0.0
@@ -400,6 +446,7 @@ class CorridorLoft:
             "HeightRight",
             "UseRuled",
             "MinSectionSpacing",
+            "AutoFixSectionOrientation",
             "AutoUpdate",
             "RebuildNow",
         ):

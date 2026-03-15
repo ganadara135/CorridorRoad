@@ -109,6 +109,46 @@ Validation:
 - Corridor loft status is OK.
 - Design terrain/cut-fill status fields show no blocking error.
 
+## 7A. How To Reduce Corridor Loft Twisting
+
+Corridor loft twisting usually happens when neighboring sections change too abruptly or when section left/right orientation becomes inconsistent between stations.
+
+Recommended settings and workflow:
+1. Keep section spacing practical.
+2. Avoid very small section interval unless the geometry truly needs it.
+3. Increase `Corridor Loft > Min Section Spacing` if many sections are nearly overlapping.
+4. Turn on `Use ruled loft` first when testing unstable geometry.
+5. Keep `Auto-fix flipped sections` enabled in Corridor Loft.
+
+Daylight-related guidance:
+1. If `Daylight Auto` is enabled, avoid large jumps in daylight width between neighboring sections.
+2. Use `Daylight Max Width Delta` in the Sections panel to smooth daylight-width changes.
+3. If terrain is noisy or sparse, reduce dependence on aggressive daylight behavior until the base corridor is stable.
+
+Profile and section quality guidance:
+1. Check that EG/FG/profile data does not contain large zero-value runs or unexpected spikes.
+2. Confirm the alignment stays inside terrain coverage.
+3. Review child sections in the tree to find the first station where the shape looks reversed or jumps sharply.
+
+Practical order of stabilization:
+1. Increase section interval slightly.
+2. Increase `Min Section Spacing`.
+3. Enable `Use ruled loft`.
+4. Keep `Auto-fix flipped sections` enabled.
+5. Reduce daylight aggressiveness with `Daylight Max Width Delta`.
+
+What the current code already does:
+1. Stabilizes section normal continuity across stations.
+2. Smooths daylight width changes using `Daylight Max Width Delta`.
+3. Auto-fixes likely flipped section orientation in Corridor Loft when enabled.
+4. Falls back to adaptive segmented loft if full loft fails.
+
+> [Screenshot Needed] Corridor Loft options showing `Min Section Spacing`, `Use ruled loft`, and `Auto-fix flipped sections`.
+> Suggested file: `wiki-workflow-07a-corridor-loft-stability-options.png`
+
+> [Screenshot Needed] Sections options showing `Daylight Max Width Delta`.
+> Suggested file: `wiki-workflow-07b-daylight-max-width-delta.png`
+
 ![Corridor loft, failed case](images/wiki-workflow-07-corridor-surfaces-analysis.png)
 - this is a failed case. check your profile data. there would be many zero data.
 ![Corridor loft](images/wiki-workflow-07-corridor-surfaces-analysis_2.png)

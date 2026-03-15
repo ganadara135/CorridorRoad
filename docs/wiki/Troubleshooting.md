@@ -40,6 +40,39 @@ Actions:
 > [Screenshot Needed] Sections panel showing Daylight Auto and terrain selection.
 > Suggested file: `wiki-troubleshooting-daylight-settings.png`
 
+## Corridor Loft is twisted or locally flipped
+Symptoms:
+- Corridor solid twists between nearby stations.
+- Some corridor ranges look inverted or folded.
+- Full loft fails, or only segmented fallback succeeds.
+
+Checks:
+1. Confirm `SectionSet` child sections look consistent from one station to the next.
+2. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, or daylight transition.
+3. Check `Corridor Loft` status for `adaptive fallback used` and `autoFixed=<count>`.
+4. Confirm `Auto-fix flipped sections` is enabled.
+5. Confirm `Min Section Spacing` is not too small.
+
+Actions:
+1. Increase section interval in `Generate Sections`.
+2. Increase `Corridor Loft > Min Section Spacing`.
+3. Enable `Use ruled loft`.
+4. Keep `Auto-fix flipped sections` enabled.
+5. Reduce abrupt daylight changes with `Daylight Max Width Delta`.
+6. Check profile data for long zero runs, missing EG, or sudden grade spikes.
+7. If needed, temporarily disable daylight and confirm whether the base corridor is stable first.
+
+Interpretation guide:
+1. If `autoFixed=0` and loft still twists, the issue is usually abrupt section shape change rather than simple orientation reversal.
+2. If `autoFixed` is high, inspect the related section range because left/right orientation may be unstable there.
+3. If only daylight-enabled runs fail, focus on terrain coverage, terrain noise, and daylight width smoothing.
+
+> [Screenshot Needed] Twisted corridor example with status text visible.
+> Suggested file: `wiki-troubleshooting-corridor-twist.png`
+
+> [Screenshot Needed] Stable corridor result after spacing/orientation/daylight adjustments.
+> Suggested file: `wiki-troubleshooting-corridor-twist-fixed.png`
+
 ## Workbench icon not visible
 Symptoms:
 - Workbench appears in combo but icon is missing.
