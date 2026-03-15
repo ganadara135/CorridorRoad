@@ -59,6 +59,10 @@ def _unique_sorted(values, tol: float = 1e-6):
     return out
 
 
+def _clamp(value: float, lo: float, hi: float):
+    return max(float(lo), min(float(hi), float(value)))
+
+
 def _parse_station_text(text: str):
     if not text:
         return []
@@ -573,11 +577,24 @@ class SectionSet:
         return sign_user * mag
 
     @staticmethod
+    def _stabilize_daylight_width(target_w: float, prev_w, max_delta: float, min_w: float, max_w: float):
+        w = _clamp(float(target_w), float(min_w), float(max_w))
+        if prev_w is None:
+            return w
+        md = max(0.0, float(max_delta))
+        if md <= 1e-9:
+            return w
+        lo = max(float(min_w), float(prev_w) - md)
+        hi = min(float(max_w), float(prev_w) + md)
+        return _clamp(w, lo, hi)
+
+    @staticmethod
     def build_section_wire(
         source_obj,
         asm_obj,
         station: float,
         prev_n: App.Vector = None,
+        prev_day_widths=None,
         terrain_sampler=None,
         use_daylight: bool = False,
     ):
@@ -599,6 +616,9 @@ class SectionSet:
         use_day = bool(use_daylight) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
         day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
+        day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
+        prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
+        prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
 
         dz_l = -lw * ls / 100.0
         dz_r = -rw * rs / 100.0
@@ -613,6 +633,8 @@ class SectionSet:
             rss_eff = SectionSet._daylight_signed_slope(p_r, rss, terrain_sampler)
 
         pts = [p_l, p, p_r]
+        resolved_left_w = None
+        resolved_right_w = None
         if use_ss and lsw > 1e-9:
             w_l = lsw
             if use_day:
@@ -622,12 +644,19 @@ class SectionSet:
                         p_l, n, z, lss_eff, search_w_l, terrain_sampler, day_step
                     )
                     w_l = w_l_day if hit_l else lsw
-                    w_l = max(0.01 if lsw > 1e-9 else 0.0, min(search_w_l, w_l))
+                    w_l = SectionSet._stabilize_daylight_width(
+                        w_l,
+                        prev_left_w,
+                        day_max_delta,
+                        0.01 if lsw > 1e-9 else 0.0,
+                        search_w_l,
+                    )
                 except Exception:
                     # Fail-safe: never block section creation due to daylight solve failure.
                     w_l = max(0.01 if lsw > 1e-9 else 0.0, lsw)
             else:
                 w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
+            resolved_left_w = float(w_l)
             p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
             pts = [p_lt] + pts
         if use_ss and rsw > 1e-9:
@@ -639,17 +668,24 @@ class SectionSet:
                         p_r, -n, z, rss_eff, search_w_r, terrain_sampler, day_step
                     )
                     w_r = w_r_day if hit_r else rsw
-                    w_r = max(0.01 if rsw > 1e-9 else 0.0, min(search_w_r, w_r))
+                    w_r = SectionSet._stabilize_daylight_width(
+                        w_r,
+                        prev_right_w,
+                        day_max_delta,
+                        0.01 if rsw > 1e-9 else 0.0,
+                        search_w_r,
+                    )
                 except Exception:
                     # Fail-safe: never block section creation due to daylight solve failure.
                     w_r = max(0.01 if rsw > 1e-9 else 0.0, rsw)
             else:
                 w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
+            resolved_right_w = float(w_r)
             p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
             pts = pts + [p_rt]
 
         w = Part.makePolygon(pts)
-        return w, n
+        return w, n, {"left": resolved_left_w, "right": resolved_right_w}
 
     @staticmethod
     def build_section_wires(obj):
@@ -696,23 +732,26 @@ class SectionSet:
 
         wires = []
         prev_n = None
+        prev_day_widths = {"left": None, "right": None}
         for s in stations:
             try:
-                w, prev_n = SectionSet.build_section_wire(
+                w, prev_n, prev_day_widths = SectionSet.build_section_wire(
                     src,
                     asm,
                     float(s),
                     prev_n=prev_n,
+                    prev_day_widths=prev_day_widths,
                     terrain_sampler=terrain_sampler,
                     use_daylight=use_day,
                 )
             except Exception:
                 # Per-station fail-safe: fall back to fixed-width side slopes.
-                w, prev_n = SectionSet.build_section_wire(
+                w, prev_n, prev_day_widths = SectionSet.build_section_wire(
                     src,
                     asm,
                     float(s),
                     prev_n=prev_n,
+                    prev_day_widths=prev_day_widths,
                     terrain_sampler=None,
                     use_daylight=False,
                 )

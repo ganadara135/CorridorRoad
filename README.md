@@ -22,6 +22,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 5. Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
 6. Developer Guide: https://github.com/ganadara135/CorridorRoad/wiki/Developer-Guide
 
+## Questions And Support
+- If general users or developers have questions about this project, please ask in the CorridorRoad project thread on the FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
+- Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
+
 ## Main Commands
 - `New Project`
 - `Project Setup`
@@ -57,6 +61,13 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
 3. Run stations/profiles/sections and verify EG coverage and daylight behavior.
+
+## Loft Twist Reduction Tips
+- If `Corridor Loft` twists or folds, first increase section interval and `Min Section Spacing`.
+- Turn on `Use ruled loft` and keep `Auto-fix flipped sections` enabled.
+- If `Daylight Auto` is used, reduce abrupt side-width changes with `Daylight Max Width Delta`.
+- Check section wires first: unstable EG/FG data, terrain holes, or sudden daylight jumps usually appear there before the loft fails.
+- Detailed guidance: https://github.com/ganadara135/CorridorRoad/wiki/Workflow and https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
 
 ## Code Layout
 - `freecad/Corridor_Road/commands/`: command entry points (toolbar/menu actions)

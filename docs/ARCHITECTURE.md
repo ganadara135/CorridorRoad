@@ -8,6 +8,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Purpose: vertical geometry engine only.
 - Owns PVI data and solver logic.
 - May display PVI polyline only (`ShowPVIWire`).
+- Default display policy:
+  - `ShowPVIWire=True`
+  - `Edit PVI` save/apply keeps the PVI object visible in 3D view by default.
 - Must not own FG display toggles.
 
 ### 2.2 FGDisplay (`freecad/Corridor_Road/objects/obj_fg_display.py`)
@@ -81,7 +84,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `UseSideSlopes`
     - `LeftSideWidth`, `RightSideWidth`
     - `LeftSideSlopePct`, `RightSideSlopePct`
-    - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxTriangles`
+    - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxSearchWidth`, `DaylightMaxWidthDelta`, `DaylightMaxTriangles`
 - Display behavior:
   - template wire shows crown line and depth envelope
   - `HeightLeft/HeightRight` edits are visible in 3D view immediately
@@ -118,9 +121,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `WARN: Terrain source found but daylight sampler failed...`
 - daylight coordinate rule:
   - when `TerrainMeshCoords=World`, daylight terrain triangles are transformed to local before section sampling
-  - daylight performance guards:
-    - `AssemblyTemplate.DaylightMaxTriangles`
-    - wide-triangle bucket guard to avoid bucket blow-up
+- daylight performance guards:
+  - `AssemblyTemplate.DaylightMaxTriangles`
+  - `AssemblyTemplate.DaylightMaxWidthDelta`
+  - wide-triangle bucket guard to avoid bucket blow-up
+- daylight continuity policy:
+  - neighboring section daylight widths should be smoothed/clamped by `DaylightMaxWidthDelta` to reduce abrupt loft twists.
 - Optional tree children:
   - `SectionSlice` objects under `Group`
   - label format: `STA {station}` with optional key tags (e.g., `[PI]`, `[TS]`, `[SC]`, `[CS]`, `[ST]`, `[STR]`)
@@ -136,10 +142,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `OutputType` (`Solid` only)
   - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
   - `UseRuled`
+  - `AutoFixSectionOrientation`
   - `AutoUpdate`
   - `RebuildNow`
 - Results:
   - `SectionCount`, `PointCountPerSection`, `SchemaVersion`
+  - `AutoFixedSectionCount`
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
 - Output mode:
@@ -148,6 +156,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
+- orientation continuity policy:
+  - when `AutoFixSectionOrientation=True`, section point order may be reversed automatically if neighboring section comparison indicates a likely left/right flip.
 
 ### 2.10 DesignGradingSurface (`freecad/Corridor_Road/objects/obj_design_grading_surface.py`)
 - Purpose: visual grading surface (road top + side slopes/daylight) from `SectionSet`.
@@ -318,6 +328,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Local (X/Y)` samples terrain with local alignment XY directly
   - `World (E/N)` converts local alignment XY to world XY for sampling, then converts sampled Z back to local
 - `freecad/Corridor_Road/ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
+- `Generate FG Now (apply)` shows a completion dialog on success.
+- saved/generated `Vertical Alignment (PVI)` is visible in 3D view by default.
 
 ### 3.4 Centerline Command (`freecad/Corridor_Road/commands/cmd_generate_centerline3d.py`)
 - Creates/updates `Centerline3DDisplay` (direct source mode).
@@ -333,6 +345,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2, Mesh source only)
   - daylight terrain coordinate mode selection (`Local`/`World`)
+  - daylight width smoothing control (`Daylight Max Width Delta`)
   - optionally create child sections per station in tree
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
@@ -346,6 +359,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Creates/updates `DesignGradingSurface`.
 - Links current `SectionSet`.
 - Uses section schema (v1/v2) and daylight-resolved section wires.
+- successful run shows a completion dialog with section/facet summary.
 
 ### 3.8 Cut-Fill Calc Command (`freecad/Corridor_Road/commands/cmd_generate_cut_fill_calc.py`)
 - Opens dedicated TaskPanel (`freecad/Corridor_Road/ui/task_cut_fill_calc.py`).

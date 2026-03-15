@@ -274,7 +274,9 @@ class PviEditorTaskPanel:
         va.PVIElevations = [float(p[1]) * sc for p in rows]
         va.CurveLengths = [float(p[2]) * sc for p in rows]
         try:
-            va.ShowPVIWire = False
+            va.ShowPVIWire = True
+            if hasattr(va, "ViewObject") and va.ViewObject is not None:
+                va.ViewObject.Visibility = True
         except Exception:
             pass
         va.touch()
@@ -414,6 +416,12 @@ class PviEditorTaskPanel:
                 links_if_empty={"Stationing": st_obj},
                 adopt_extra=[va, b, fgdisp, st_obj],
             )
+
+        QtWidgets.QMessageBox.information(
+            None,
+            "Edit PVI",
+            f"FG generation completed.\nStations: {len(stations)}\nProfileBundle and VerticalAlignment updated.",
+        )
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

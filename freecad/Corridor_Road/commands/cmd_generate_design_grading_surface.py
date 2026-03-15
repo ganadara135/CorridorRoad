@@ -1,6 +1,7 @@
 # CorridorRoad/commands/cmd_generate_design_grading_surface.py
 import FreeCAD as App
 import FreeCADGui as Gui
+from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface, ViewProviderDesignGradingSurface
@@ -56,6 +57,13 @@ class CmdGenerateDesignGradingSurface:
             )
 
         doc.recompute()
+        sec_count = int(getattr(surf, "SectionCount", 0) or 0)
+        facet_count = int(getattr(getattr(surf, "Mesh", None), "CountFacets", 0) or 0)
+        QtWidgets.QMessageBox.information(
+            None,
+            "Design Grading Surface",
+            f"Design grading surface generation completed.\nSections: {sec_count}\nFacets: {facet_count}",
+        )
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

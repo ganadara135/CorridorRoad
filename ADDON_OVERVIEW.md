@@ -37,6 +37,10 @@ It provides a practical workflow from alignment setup to corridor and cut/fill a
 4. Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
 - Local wiki draft source: `docs/wiki/`
 
+## Questions And Support
+- If users or developers have questions about CorridorRoad, please ask in the project thread on the FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
+- Please use the forum thread for user support, workflow questions, and development discussion.
+
 ## Sample Test Data
 - Use these files for point cloud DEM testing.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`

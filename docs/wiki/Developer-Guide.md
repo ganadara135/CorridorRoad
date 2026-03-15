@@ -28,6 +28,19 @@ This page is the quick technical map for contributors.
 Object link chain (typical):
 `HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
 
+## Corridor Loft Stability Notes
+- `SectionSet` keeps section frame continuity using previous normal direction.
+- Daylight side-width changes are smoothed by `AssemblyTemplate.DaylightMaxWidthDelta`.
+- `CorridorLoft.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
+- `CorridorLoft.AutoFixedSectionCount` reports how many sections were auto-corrected during build.
+- If full loft still fails, adaptive segmented fallback is used and failed ranges are recorded in status.
+
+Practical debugging order:
+1. Inspect section wires before inspecting loft output.
+2. Reduce section density before changing loft algorithm.
+3. Separate base corridor issues from daylight-induced issues.
+4. Use ruled loft during diagnosis, then relax settings if stable.
+
 ## UI Entry Points
 - `cmd_new_project.py`
 - `cmd_edit_alignment.py`
