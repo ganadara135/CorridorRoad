@@ -92,6 +92,15 @@ def ensure_corridor_loft_properties(obj):
         )
         obj.AutoFixSectionOrientation = True
 
+    if not hasattr(obj, "SplitAtStructureZones"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "SplitAtStructureZones",
+            "Corridor",
+            "Split loft into segments at structure-zone boundaries when StructureSet-driven sections are used",
+        )
+        obj.SplitAtStructureZones = True
+
     if not hasattr(obj, "AutoUpdate"):
         obj.addProperty("App::PropertyBool", "AutoUpdate", "Corridor", "Auto update from source changes")
         obj.AutoUpdate = True
@@ -119,6 +128,14 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "FailedRanges"):
         obj.addProperty("App::PropertyStringList", "FailedRanges", "Result", "Failed ranges during segmented fallback")
         obj.FailedRanges = []
+
+    if not hasattr(obj, "StructureSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "StructureSegmentCount", "Result", "Number of structure-aware loft segments used")
+        obj.StructureSegmentCount = 0
+
+    if not hasattr(obj, "StructureSplitStations"):
+        obj.addProperty("App::PropertyStringList", "StructureSplitStations", "Result", "Stations used as structure-aware split boundaries")
+        obj.StructureSplitStations = []
 
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
@@ -358,6 +375,95 @@ class CorridorLoft:
         shape = shapes[0] if len(shapes) == 1 else Part.Compound(shapes)
         return shape, failed
 
+    @staticmethod
+    def _structure_split_candidates(src, stations):
+        try:
+            if not bool(getattr(src, "UseStructureSet", False)):
+                return [], []
+            meta = SectionSet.resolve_structure_metadata(src, stations)
+        except Exception:
+            return [], []
+
+        if not meta or len(meta) != len(stations):
+            return [], []
+
+        candidates = []
+        split_station_rows = []
+        prev_has = bool(meta[0].get("HasStructure", False)) if meta else False
+        for i in range(1, len(stations)):
+            curr_meta = meta[i]
+            prev_meta = meta[i - 1]
+            curr_has = bool(curr_meta.get("HasStructure", False))
+            prev_roles = {str(v or "").strip().lower() for v in list(prev_meta.get("StructureRoles", []) or [])}
+            curr_roles = {str(v or "").strip().lower() for v in list(curr_meta.get("StructureRoles", []) or [])}
+
+            split_here = False
+            if curr_has != prev_has:
+                split_here = True
+            elif ("start" in curr_roles) or ("transition_before" in curr_roles):
+                split_here = True
+            elif ("end" in prev_roles) or ("transition_after" in prev_roles):
+                split_here = True
+
+            if split_here:
+                candidates.append(i)
+                split_station_rows.append(f"{float(stations[i]):.3f}")
+            prev_has = curr_has
+
+        # Deduplicate while preserving order.
+        dedup_idx = []
+        dedup_sta = []
+        seen = set()
+        for idx, sta in zip(candidates, split_station_rows):
+            if idx in seen:
+                continue
+            seen.add(idx)
+            dedup_idx.append(int(idx))
+            dedup_sta.append(str(sta))
+        return dedup_idx, dedup_sta
+
+    @staticmethod
+    def _segment_ranges(count: int, boundaries):
+        if count < 2:
+            return []
+        ranges = []
+        start = 0
+        for b in sorted({int(v) for v in list(boundaries or []) if int(v) > 0 and int(v) < count}):
+            # Keep the split station shared by both neighboring segments so the
+            # corridor skin remains continuous across the structure boundary.
+            if (b - start + 1) < 2:
+                continue
+            if (count - b) < 2:
+                continue
+            ranges.append((start, b))
+            start = b
+        ranges.append((start, count - 1))
+        return [(i0, i1) for (i0, i1) in ranges if (i1 - i0 + 1) >= 2]
+
+    @staticmethod
+    def _loft_by_ranges(wires, stations, ranges, ruled: bool, solid: bool = True):
+        if not ranges:
+            return CorridorLoft._loft(wires, ruled=ruled, solid=solid), []
+
+        shapes = []
+        failed_ranges = []
+        for i0, i1 in ranges:
+            seg_wires = list(wires[i0 : i1 + 1])
+            seg_sta = list(stations[i0 : i1 + 1])
+            try:
+                shp = CorridorLoft._loft(seg_wires, ruled=ruled, solid=solid)
+            except Exception as ex:
+                shp, failed = CorridorLoft._loft_adaptive(seg_wires, seg_sta, ruled=ruled, solid=solid)
+                if failed:
+                    failed_ranges.extend(list(failed))
+                else:
+                    failed_ranges.append(f"{float(seg_sta[0]):.3f}-{float(seg_sta[-1]):.3f}: {ex}")
+            shapes.append(shp)
+
+        if not shapes:
+            raise Exception("Structure-aware segmented loft failed for all ranges.")
+        return (shapes[0] if len(shapes) == 1 else Part.Compound(shapes)), failed_ranges
+
     def execute(self, obj):
         ensure_corridor_loft_properties(obj)
         try:
@@ -369,6 +475,8 @@ class CorridorLoft:
                 obj.AutoFixedSectionCount = 0
                 obj.SchemaVersion = 0
                 obj.FailedRanges = []
+                obj.StructureSegmentCount = 0
+                obj.StructureSplitStations = []
                 obj.ResolvedHeightLeft = 0.0
                 obj.ResolvedHeightRight = 0.0
                 obj.Status = "Missing SourceSectionSet"
@@ -390,20 +498,48 @@ class CorridorLoft:
             ruled = bool(getattr(obj, "UseRuled", False))
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
+            split_count = 0
+            split_station_rows = []
+            structure_ranges = []
+            if bool(getattr(obj, "SplitAtStructureZones", True)):
+                split_idx, split_station_rows = CorridorLoft._structure_split_candidates(src, stations)
+                structure_ranges = CorridorLoft._segment_ranges(len(stations), split_idx)
+                split_count = len(structure_ranges) if structure_ranges else 0
 
             failed_ranges = []
             try:
-                shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
-                status = (
-                    "OK (Solid) "
-                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                    f"autoFixed={int(fixed_count)}"
-                )
+                if structure_ranges and len(structure_ranges) >= 2:
+                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
+                    )
+                else:
+                    shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
+                if failed_ranges:
+                    status = (
+                        "WARN (Solid): structure-aware segmented fallback used "
+                        f"({len(failed_ranges)} failed ranges) | "
+                        f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
+                        f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
+                        f"autoFixed={int(fixed_count)}"
+                    )
+                else:
+                    status = (
+                        "OK (Solid) "
+                        f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
+                        f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
+                        f"autoFixed={int(fixed_count)}"
+                    )
+                if split_count >= 2:
+                    status += f" structureSegs={int(split_count)}"
             except Exception as ex:
-                shape, failed_ranges = CorridorLoft._loft_adaptive(
-                    loft_wires, stations, ruled=ruled, solid=True
-                )
+                if structure_ranges and len(structure_ranges) >= 2:
+                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
+                    )
+                else:
+                    shape, failed_ranges = CorridorLoft._loft_adaptive(
+                        loft_wires, stations, ruled=ruled, solid=True
+                    )
                 status = (
                     "WARN (Solid): full loft failed, adaptive fallback used "
                     f"({len(failed_ranges)} failed ranges): {ex} | "
@@ -411,6 +547,8 @@ class CorridorLoft:
                     f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
                     f"autoFixed={int(fixed_count)}"
                 )
+                if split_count >= 2:
+                    status += f" structureSegs={int(split_count)}"
 
             obj.Shape = shape
             obj.SectionCount = len(stations)
@@ -418,6 +556,8 @@ class CorridorLoft:
             obj.AutoFixedSectionCount = int(fixed_count)
             obj.SchemaVersion = int(schema)
             obj.FailedRanges = list(failed_ranges)
+            obj.StructureSegmentCount = int(split_count)
+            obj.StructureSplitStations = list(split_station_rows)
             obj.ResolvedHeightLeft = float(h_left)
             obj.ResolvedHeightRight = float(h_right)
             obj.Status = status
@@ -433,6 +573,8 @@ class CorridorLoft:
             obj.AutoFixedSectionCount = 0
             obj.SchemaVersion = 0
             obj.FailedRanges = []
+            obj.StructureSegmentCount = 0
+            obj.StructureSplitStations = []
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0
             obj.Status = f"ERROR: {ex}"
@@ -447,6 +589,7 @@ class CorridorLoft:
             "UseRuled",
             "MinSectionSpacing",
             "AutoFixSectionOrientation",
+            "SplitAtStructureZones",
             "AutoUpdate",
             "RebuildNow",
         ):

@@ -279,8 +279,9 @@ The `Generate Sections` panel now includes structure-aware options that work wit
 | `Structure Source` | Chooses the source `StructureSet`. | Normally use the active project structure set. |
 | `Include start/end stations` | Adds structure start and end stations into the section station list. | Keep enabled in most workflows. |
 | `Include center stations` | Adds structure center stations into the section station list. | Keep enabled when you want a clear mid-structure section. |
-| `Buffer Before` | Adds an extra station before each structure start. | Useful when you want one section just before entering the structure zone. |
-| `Buffer After` | Adds an extra station after each structure end. | Useful when you want one section just after leaving the structure zone. |
+| `Include transition stations` | Adds transition stations before and after each structure zone. | Keep enabled in most workflows so section shape changes do not happen too abruptly at structure boundaries. |
+| `Auto transition distance` | Derives transition distance automatically from structure type and size. | Recommended default. It reduces manual tuning when different structure types need different boundary spacing. |
+| `Transition Distance` | Manual fallback distance used for transition stations when auto mode is off. | Turn off auto mode only when you need to force one fixed distance for all structure records. |
 | `Add structure tags to child sections` | Adds tags and metadata to child sections at structure-related stations. | Keep enabled if you want labels and tree identification. |
 | `Apply structure overrides` | Enables structure-type override logic during section build. | Turn this on when structure zones should constrain daylight/side-slope behavior. |
 
@@ -288,12 +289,34 @@ The `Generate Sections` panel now includes structure-aware options that work wit
 
 | Structure Type | Current Section Override Behavior |
 |---|---|
-| `crossing` | Affects both sides; keeps loft-safe stub points through the structure zone. |
-| `culvert` | Affects both sides; disables daylight through the zone and keeps stub side points. |
-| `retaining_wall` | Affects the declared side only; opposite side can remain normal. |
-| `bridge_zone` | Affects both sides conservatively. |
-| `abutment_zone` | Affects both sides conservatively. |
+| `crossing` | Affects both sides; replaces daylight-driven side slopes with short flat bench-like side segments through the active zone. |
+| `culvert` | Affects both sides; behaves like a crossing and keeps a wider flat bench around the structure envelope instead of full daylight slopes. |
+| `retaining_wall` | Affects only the declared side; replaces that side with a short steep wall-like segment while the opposite side can stay normal. |
+| `bridge_zone` | Affects both sides conservatively; trims side-slope reach and disables daylight so the section remains loft-stable near the zone. |
+| `abutment_zone` | Affects both sides conservatively; trims side-slope reach and disables daylight so the section remains loft-stable near the zone. |
 | `other` | No special type logic beyond the selected `BehaviorMode`. |
+
+### Auto Transition Distance Rules
+
+When `Auto transition distance` is enabled, the current default rules are:
+
+| Structure Type | Auto Rule |
+|---|---|
+| `culvert`, `crossing` | `max(5 m, 0.75 x Width, 1.50 x Height)` |
+| `retaining_wall` | `max(3 m, 0.50 x Width, 1.00 x Height)` |
+| `bridge_zone`, `abutment_zone` | `max(10 m, 0.50 x Width, 1.00 x Height)` |
+| `other` | `max(5 m, 0.50 x Width, 1.00 x Height)` |
+
+Interpretation:
+1. Crossing-like structures use a moderate transition so section shape and daylight do not change too abruptly at entry and exit.
+2. Retaining walls usually need a shorter transition because only one side is typically constrained.
+3. Bridge and abutment zones use longer transition spacing because their influence is usually wider and more conservative.
+4. If project `Length Scale` is not meter-native, the actual stored internal distance scales automatically.
+
+When to override manually:
+1. The structure boundary still looks too abrupt even with auto mode on.
+2. The structure influence should be much tighter than its displayed width.
+3. You want a uniform transition distance for all structures in a specific test case.
 
 ### Output To Expect
 1. Standard section children continue to appear under `Sections`.

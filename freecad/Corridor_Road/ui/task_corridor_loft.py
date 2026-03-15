@@ -67,11 +67,14 @@ class CorridorLoftTaskPanel:
         self.chk_ruled.setChecked(False)
         self.chk_fix_orientation = QtWidgets.QCheckBox("Auto-fix flipped sections")
         self.chk_fix_orientation.setChecked(True)
+        self.chk_structure_split = QtWidgets.QCheckBox("Split at structure zones")
+        self.chk_structure_split.setChecked(True)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
         form_opts.addRow("Min Section Spacing:", self.spin_min_spacing)
         form_opts.addRow(self.chk_ruled)
         form_opts.addRow(self.chk_fix_orientation)
+        form_opts.addRow(self.chk_structure_split)
         form_opts.addRow(self.chk_auto)
         main.addWidget(gb_opt)
 
@@ -168,6 +171,7 @@ class CorridorLoftTaskPanel:
             self.spin_min_spacing.setValue(0.50 * self._scale)
             self.chk_ruled.setChecked(False)
             self.chk_fix_orientation.setChecked(True)
+            self.chk_structure_split.setChecked(True)
             self.chk_auto.setChecked(True)
             self.lbl_status.setText("New corridor will be created.")
             return
@@ -182,6 +186,7 @@ class CorridorLoftTaskPanel:
             self.spin_min_spacing.setValue(0.50 * self._scale)
         self.chk_ruled.setChecked(bool(getattr(cor, "UseRuled", False)))
         self.chk_fix_orientation.setChecked(bool(getattr(cor, "AutoFixSectionOrientation", True)))
+        self.chk_structure_split.setChecked(bool(getattr(cor, "SplitAtStructureZones", True)))
         self.chk_auto.setChecked(bool(getattr(cor, "AutoUpdate", True)))
         self.lbl_status.setText(str(getattr(cor, "Status", "Ready")))
 
@@ -216,6 +221,7 @@ class CorridorLoftTaskPanel:
             cor.SourceSectionSet = sec
             cor.UseRuled = bool(self.chk_ruled.isChecked())
             cor.AutoFixSectionOrientation = bool(self.chk_fix_orientation.isChecked())
+            cor.SplitAtStructureZones = bool(self.chk_structure_split.isChecked())
             cor.AutoUpdate = bool(self.chk_auto.isChecked())
             if hasattr(cor, "MinSectionSpacing"):
                 cor.MinSectionSpacing = float(self.spin_min_spacing.value())
@@ -233,10 +239,11 @@ class CorridorLoftTaskPanel:
             self.doc.recompute()
             self.lbl_status.setText(str(getattr(cor, "Status", "OK")))
             n = len(list(getattr(sec, "StationValues", []) or []))
+            structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nStructure-aware segments: {structure_seg_count}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

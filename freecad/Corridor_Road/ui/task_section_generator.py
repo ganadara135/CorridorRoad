@@ -147,20 +147,22 @@ class SectionGeneratorTaskPanel:
         self.chk_struct_start_end.setChecked(True)
         self.chk_struct_centers = QtWidgets.QCheckBox("Include center stations")
         self.chk_struct_centers.setChecked(True)
-        self.spin_struct_buffer_before = QtWidgets.QDoubleSpinBox()
-        self.spin_struct_buffer_before.setRange(0.0, 1.0e6)
-        self.spin_struct_buffer_before.setDecimals(3)
-        self.spin_struct_buffer_before.setValue(0.0)
-        self.spin_struct_buffer_after = QtWidgets.QDoubleSpinBox()
-        self.spin_struct_buffer_after.setRange(0.0, 1.0e6)
-        self.spin_struct_buffer_after.setDecimals(3)
-        self.spin_struct_buffer_after.setValue(0.0)
+        self.chk_struct_transition = QtWidgets.QCheckBox("Include transition stations")
+        self.chk_struct_transition.setChecked(True)
+        self.chk_struct_transition_auto = QtWidgets.QCheckBox("Auto transition distance")
+        self.chk_struct_transition_auto.setChecked(True)
+        self.spin_struct_transition = QtWidgets.QDoubleSpinBox()
+        self.spin_struct_transition.setRange(0.0, 1.0e6)
+        self.spin_struct_transition.setDecimals(3)
+        self.spin_struct_transition.setValue(5.0 * scale)
         self.chk_struct_tagged_children = QtWidgets.QCheckBox("Add structure tags to child sections")
         self.chk_struct_tagged_children.setChecked(True)
         self.chk_struct_apply_overrides = QtWidgets.QCheckBox("Apply structure overrides (reserved)")
         self.chk_struct_apply_overrides.setChecked(False)
         self.lbl_struct_note = QtWidgets.QLabel(
             "When enabled, StructureSet stations are merged into section generation.\n"
+            "Transition stations can be added automatically around structure boundaries.\n"
+            "Auto transition distance uses structure type and size to derive the boundary spacing.\n"
             "The old manual Structure/Crossing station text workflow is no longer used."
         )
         self.lbl_struct_note.setWordWrap(True)
@@ -168,8 +170,9 @@ class SectionGeneratorTaskPanel:
         form_struct.addRow("Structure Source:", self.cmb_structure_source)
         form_struct.addRow(self.chk_struct_start_end)
         form_struct.addRow(self.chk_struct_centers)
-        form_struct.addRow("Buffer Before:", self.spin_struct_buffer_before)
-        form_struct.addRow("Buffer After:", self.spin_struct_buffer_after)
+        form_struct.addRow(self.chk_struct_transition)
+        form_struct.addRow(self.chk_struct_transition_auto)
+        form_struct.addRow("Transition Distance:", self.spin_struct_transition)
         form_struct.addRow(self.chk_struct_tagged_children)
         form_struct.addRow(self.chk_struct_apply_overrides)
         form_struct.addRow(self.lbl_struct_note)
@@ -277,6 +280,8 @@ class SectionGeneratorTaskPanel:
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
         self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
+        self.chk_struct_transition.toggled.connect(self._update_structure_ui)
+        self.chk_struct_transition_auto.toggled.connect(self._update_structure_ui)
         self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
@@ -368,8 +373,11 @@ class SectionGeneratorTaskPanel:
         self.cmb_structure_source.setEnabled(on)
         self.chk_struct_start_end.setEnabled(on)
         self.chk_struct_centers.setEnabled(on)
-        self.spin_struct_buffer_before.setEnabled(on)
-        self.spin_struct_buffer_after.setEnabled(on)
+        self.chk_struct_transition.setEnabled(on)
+        self.chk_struct_transition_auto.setEnabled(on and bool(self.chk_struct_transition.isChecked()))
+        self.spin_struct_transition.setEnabled(
+            on and bool(self.chk_struct_transition.isChecked()) and (not bool(self.chk_struct_transition_auto.isChecked()))
+        )
         self.chk_struct_tagged_children.setEnabled(on)
         self.chk_struct_apply_overrides.setEnabled(on)
 
@@ -577,10 +585,12 @@ class SectionGeneratorTaskPanel:
                     self.chk_struct_start_end.setChecked(bool(sec.IncludeStructureStartEnd))
                 if hasattr(sec, "IncludeStructureCenters"):
                     self.chk_struct_centers.setChecked(bool(sec.IncludeStructureCenters))
-                if hasattr(sec, "StructureBufferBefore"):
-                    self.spin_struct_buffer_before.setValue(float(sec.StructureBufferBefore))
-                if hasattr(sec, "StructureBufferAfter"):
-                    self.spin_struct_buffer_after.setValue(float(sec.StructureBufferAfter))
+                if hasattr(sec, "IncludeStructureTransitionStations"):
+                    self.chk_struct_transition.setChecked(bool(sec.IncludeStructureTransitionStations))
+                if hasattr(sec, "AutoStructureTransitionDistance"):
+                    self.chk_struct_transition_auto.setChecked(bool(sec.AutoStructureTransitionDistance))
+                if hasattr(sec, "StructureTransitionDistance"):
+                    self.spin_struct_transition.setValue(float(sec.StructureTransitionDistance))
                 if hasattr(sec, "CreateStructureTaggedChildren"):
                     self.chk_struct_tagged_children.setChecked(bool(sec.CreateStructureTaggedChildren))
                 if hasattr(sec, "ApplyStructureOverrides"):
@@ -647,7 +657,7 @@ class SectionGeneratorTaskPanel:
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
-        msg.append("   - StructureSet integration can merge start/end/center and optional buffer stations")
+        msg.append("   - StructureSet integration can merge start/end/center and optional transition stations")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
         msg.append("   - Daylight terrain coordinate mode can be Local or World")
@@ -803,10 +813,12 @@ class SectionGeneratorTaskPanel:
                 sec.IncludeStructureStartEnd = bool(self.chk_struct_start_end.isChecked())
             if hasattr(sec, "IncludeStructureCenters"):
                 sec.IncludeStructureCenters = bool(self.chk_struct_centers.isChecked())
-            if hasattr(sec, "StructureBufferBefore"):
-                sec.StructureBufferBefore = float(self.spin_struct_buffer_before.value())
-            if hasattr(sec, "StructureBufferAfter"):
-                sec.StructureBufferAfter = float(self.spin_struct_buffer_after.value())
+            if hasattr(sec, "IncludeStructureTransitionStations"):
+                sec.IncludeStructureTransitionStations = bool(self.chk_struct_transition.isChecked())
+            if hasattr(sec, "AutoStructureTransitionDistance"):
+                sec.AutoStructureTransitionDistance = bool(self.chk_struct_transition_auto.isChecked())
+            if hasattr(sec, "StructureTransitionDistance"):
+                sec.StructureTransitionDistance = float(self.spin_struct_transition.value())
             if hasattr(sec, "CreateStructureTaggedChildren"):
                 sec.CreateStructureTaggedChildren = bool(self.chk_struct_tagged_children.isChecked())
             if hasattr(sec, "ApplyStructureOverrides"):

@@ -106,7 +106,7 @@ def _structure_overlay_offsets(rec):
 
 def _primary_structure_role(meta) -> str:
     roles = [str(v or "").strip().lower() for v in list(meta.get("StructureRoles", []) or [])]
-    for key in ("center", "start", "end", "buffer_before", "buffer_after", "active"):
+    for key in ("center", "start", "end", "transition_before", "transition_after", "active"):
         if key in roles:
             return key
     return roles[0] if roles else ""
@@ -136,6 +136,85 @@ def _structure_overlay_label(station: float, meta) -> str:
         parts.append(role.replace("_", " ").upper())
 
     return f"STA {float(station):.3f} [{' | '.join(parts)}]"
+
+
+def _slope_sign(value: float, fallback: float = 1.0) -> float:
+    v = float(value)
+    if v > 1e-9:
+        return 1.0
+    if v < -1e-9:
+        return -1.0
+    return 1.0 if float(fallback) >= 0.0 else -1.0
+
+
+def _structure_side_override_spec(rec, side_key: str, scale: float):
+    typ = str(rec.get("Type", "") or "").strip().lower()
+    side = str(rec.get("Side", "") or "").strip().lower()
+    width = max(0.0, abs(float(rec.get("Width", 0.0) or 0.0)))
+    height = max(0.0, abs(float(rec.get("Height", 0.0) or 0.0)))
+
+    applies = False
+    if typ in ("culvert", "crossing", "bridge_zone", "abutment_zone"):
+        applies = True
+    elif side_key == "left" and side in ("left", "both", "center"):
+        applies = True
+    elif side_key == "right" and side in ("right", "both", "center"):
+        applies = True
+    if not applies:
+        return None
+
+    if typ in ("culvert", "crossing"):
+        return {
+            "Action": "bench",
+            "TargetWidth": max(1.0 * scale, min(4.0 * scale, 0.35 * width + 0.50 * height)),
+            "SlopeMode": "flat",
+            "DisableDaylight": True,
+            "Priority": 20,
+        }
+    if typ == "retaining_wall":
+        return {
+            "Action": "wall",
+            "TargetWidth": max(0.35 * scale, min(2.0 * scale, 0.15 * width + 0.25 * height)),
+            "SlopeMode": "steep",
+            "SteepSlopePct": max(250.0, 60.0 * max(1.0, height / max(scale, 1e-9))),
+            "DisableDaylight": True,
+            "Priority": 30,
+        }
+    if typ in ("bridge_zone", "abutment_zone"):
+        return {
+            "Action": "trim",
+            "TargetWidth": max(1.0 * scale, min(6.0 * scale, 0.20 * width + 0.50 * height)),
+            "SlopeMode": "same",
+            "DisableDaylight": True,
+            "Priority": 15,
+        }
+    return {
+        "Action": "stub",
+        "TargetWidth": max(0.25 * scale, min(2.0 * scale, 0.15 * width + 0.25 * height)),
+        "SlopeMode": "flat",
+        "DisableDaylight": True,
+        "Priority": 10,
+    }
+
+
+def _merge_side_override_spec(current, incoming):
+    if incoming is None:
+        return current
+    if current is None:
+        return dict(incoming)
+    cur_pri = int(current.get("Priority", 0) or 0)
+    inc_pri = int(incoming.get("Priority", 0) or 0)
+    if inc_pri > cur_pri:
+        return dict(incoming)
+    if inc_pri < cur_pri:
+        return current
+    cur_w = float(current.get("TargetWidth", 0.0) or 0.0)
+    inc_w = float(incoming.get("TargetWidth", 0.0) or 0.0)
+    if cur_w <= 1e-9:
+        return dict(incoming)
+    if inc_w > 1e-9 and inc_w < cur_w:
+        return dict(incoming)
+    return current
 
 
 def _alignment_ip_key_stations(aln):
@@ -258,6 +337,16 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "IncludeStructureCenters"):
         obj.addProperty("App::PropertyBool", "IncludeStructureCenters", "Structures", "Include structure center stations from StructureSet")
         obj.IncludeStructureCenters = True
+    if not hasattr(obj, "IncludeStructureTransitionStations"):
+        obj.addProperty("App::PropertyBool", "IncludeStructureTransitionStations", "Structures", "Include transition stations before and after structure zones")
+        obj.IncludeStructureTransitionStations = True
+    if not hasattr(obj, "AutoStructureTransitionDistance"):
+        obj.addProperty("App::PropertyBool", "AutoStructureTransitionDistance", "Structures", "Automatically derive transition distance from structure type and size")
+        obj.AutoStructureTransitionDistance = True
+    if not hasattr(obj, "StructureTransitionDistance"):
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+        obj.addProperty("App::PropertyFloat", "StructureTransitionDistance", "Structures", "Transition distance used before and after structure boundaries")
+        obj.StructureTransitionDistance = 5.0 * scale
     if not hasattr(obj, "StructureBufferBefore"):
         obj.addProperty("App::PropertyFloat", "StructureBufferBefore", "Structures", "Additional station before structure start")
         obj.StructureBufferBefore = 0.0
@@ -331,8 +420,9 @@ class SectionSet:
                     ss,
                     include_start_end=bool(getattr(obj, "IncludeStructureStartEnd", True)),
                     include_centers=bool(getattr(obj, "IncludeStructureCenters", True)),
-                    before=float(getattr(obj, "StructureBufferBefore", 0.0) or 0.0),
-                    after=float(getattr(obj, "StructureBufferAfter", 0.0) or 0.0),
+                    include_transition=bool(getattr(obj, "IncludeStructureTransitionStations", True)),
+                    auto_transition=bool(getattr(obj, "AutoStructureTransitionDistance", True)),
+                    transition=float(getattr(obj, "StructureTransitionDistance", 0.0) or 0.0),
                 )
 
         out = []
@@ -361,7 +451,7 @@ class SectionSet:
             if tag:
                 txt = f"{sta:.3f}:{tag}"
             else:
-                txt = f"{sta:.3f}:BUFFER"
+                txt = f"{sta:.3f}:TRANSITION"
             if ids:
                 txt += f" [{ids}]"
             if txt not in uniq:
@@ -382,6 +472,10 @@ class SectionSet:
             "RightAction": "keep",
             "LeftDisableDaylight": False,
             "RightDisableDaylight": False,
+            "BoundaryRoles": [],
+            "IsBoundaryStation": False,
+            "LeftOverrideSpec": None,
+            "RightOverrideSpec": None,
         }
         if not bool(getattr(obj, "UseStructureSet", False)):
             return ctx
@@ -403,32 +497,45 @@ class SectionSet:
         ctx["HasStructure"] = True
         ctx["ActiveRecords"] = list(active)
         ctx["OverlayRecords"] = list(active)
+        try:
+            station_items, _sk, _so = SectionSet._resolve_structure_station_items(
+                obj,
+                total,
+                mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
+                s1=float(getattr(obj, "EndStation", total) or total),
+            )
+        except Exception:
+            station_items = []
+        boundary_roles = []
+        for it in station_items:
+            if abs(float(it.get("station", 0.0) or 0.0) - float(station)) > tol:
+                continue
+            role = str(it.get("role", "") or "").strip().lower()
+            if role and role not in boundary_roles:
+                boundary_roles.append(role)
+        ctx["BoundaryRoles"] = list(boundary_roles)
+        ctx["IsBoundaryStation"] = any(r in ("start", "end", "transition_before", "transition_after") for r in boundary_roles)
+
+        if ctx["IsBoundaryStation"]:
+            return ctx
+
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
         for rec in active:
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
             if mode not in ("section_overlay", "assembly_override"):
                 continue
-            typ = str(rec.get("Type", "") or "").strip().lower()
-            side = str(rec.get("Side", "") or "").strip().lower()
+            left_spec = _structure_side_override_spec(rec, "left", scale)
+            right_spec = _structure_side_override_spec(rec, "right", scale)
+            ctx["LeftOverrideSpec"] = _merge_side_override_spec(ctx.get("LeftOverrideSpec"), left_spec)
+            ctx["RightOverrideSpec"] = _merge_side_override_spec(ctx.get("RightOverrideSpec"), right_spec)
 
-            sides = []
-            if typ in ("crossing", "culvert", "bridge_zone", "abutment_zone"):
-                sides = ["left", "right"]
-            elif side == "left":
-                sides = ["left"]
-            elif side == "right":
-                sides = ["right"]
-            elif side in ("both", "center"):
-                sides = ["left", "right"]
-            else:
-                sides = ["left", "right"]
-
-            for sk in sides:
-                if sk == "left":
-                    ctx["LeftAction"] = "stub"
-                    ctx["LeftDisableDaylight"] = True
-                elif sk == "right":
-                    ctx["RightAction"] = "stub"
-                    ctx["RightDisableDaylight"] = True
+        if ctx["LeftOverrideSpec"] is not None:
+            ctx["LeftAction"] = str(ctx["LeftOverrideSpec"].get("Action", "keep") or "keep").strip().lower()
+            ctx["LeftDisableDaylight"] = bool(ctx["LeftOverrideSpec"].get("DisableDaylight", False))
+        if ctx["RightOverrideSpec"] is not None:
+            ctx["RightAction"] = str(ctx["RightOverrideSpec"].get("Action", "keep") or "keep").strip().lower()
+            ctx["RightDisableDaylight"] = bool(ctx["RightOverrideSpec"].get("DisableDaylight", False))
 
         if ctx["LeftAction"] == "stub" and ctx["RightAction"] == "stub":
             ctx["SuppressSideSlopes"] = True
@@ -687,7 +794,7 @@ class SectionSet:
             elif "start" in roles or "end" in roles:
                 color = (0.95, 0.52, 0.14)
                 line_width = 4
-            elif "buffer_before" in roles or "buffer_after" in roles:
+            elif "transition_before" in roles or "transition_after" in roles:
                 color = (0.92, 0.82, 0.38)
                 line_width = 3
             vobj.LineColor = color
@@ -1034,11 +1141,15 @@ class SectionSet:
         right_has_side = bool(use_ss) and rsw > 1e-9
         left_action = "keep"
         right_action = "keep"
+        left_spec = None
+        right_spec = None
         use_day_left = bool(use_day and left_has_side)
         use_day_right = bool(use_day and right_has_side)
         if bool(apply_structure_overrides) and structure_context is not None:
             left_action = str(structure_context.get("LeftAction", "keep") or "keep").strip().lower()
             right_action = str(structure_context.get("RightAction", "keep") or "keep").strip().lower()
+            left_spec = structure_context.get("LeftOverrideSpec")
+            right_spec = structure_context.get("RightOverrideSpec")
             if bool(structure_context.get("SuppressSideSlopes", False)):
                 # Preserve the section point contract for loft consumers by keeping
                 # side-slope vertices present as short horizontal stubs.
@@ -1070,6 +1181,55 @@ class SectionSet:
                 use_day_left = False
             if bool(structure_context.get("RightDisableDaylight", False)):
                 use_day_right = False
+
+        def _apply_side_override(base_w, base_s, has_side, action, spec, use_day_side):
+            if (not has_side) or action == "keep":
+                return base_w, base_s, use_day_side
+
+            target_w = 0.0
+            slope_mode = "same"
+            steep_slope = 0.0
+            if spec is not None:
+                try:
+                    target_w = float(spec.get("TargetWidth", 0.0) or 0.0)
+                except Exception:
+                    target_w = 0.0
+                slope_mode = str(spec.get("SlopeMode", "same") or "same").strip().lower()
+                try:
+                    steep_slope = float(spec.get("SteepSlopePct", 0.0) or 0.0)
+                except Exception:
+                    steep_slope = 0.0
+
+            resolved_w = float(base_w)
+            resolved_s = float(base_s)
+            sign = _slope_sign(base_s, fallback=1.0)
+
+            if action == "stub":
+                resolved_w = min(resolved_w, max(stub_side_w, target_w if target_w > 1e-9 else stub_side_w))
+                resolved_s = 0.0
+                use_day_side = False
+            elif action == "bench":
+                target = max(1.0 * scale, target_w if target_w > 1e-9 else max(stub_side_w, 0.20 * resolved_w))
+                resolved_w = min(resolved_w, target) if resolved_w > 1e-9 else target
+                resolved_s = 0.0
+                use_day_side = False
+            elif action == "trim":
+                target = max(stub_side_w, target_w if target_w > 1e-9 else max(0.50 * scale, 0.35 * resolved_w))
+                resolved_w = min(resolved_w, target) if resolved_w > 1e-9 else target
+                resolved_s = 0.0 if slope_mode == "flat" else float(base_s)
+                use_day_side = False
+            elif action == "wall":
+                target = max(0.20 * scale, target_w if target_w > 1e-9 else max(0.35 * scale, 0.15 * resolved_w))
+                resolved_w = min(resolved_w, target) if resolved_w > 1e-9 else target
+                steep = max(abs(steep_slope), abs(float(base_s)), 250.0)
+                resolved_s = sign * steep
+                use_day_side = False
+
+            return resolved_w, resolved_s, use_day_side
+
+        if bool(apply_structure_overrides) and structure_context is not None:
+            lsw, lss, use_day_left = _apply_side_override(lsw, lss, left_has_side, left_action, left_spec, use_day_left)
+            rsw, rss, use_day_right = _apply_side_override(rsw, rss, right_has_side, right_action, right_spec, use_day_right)
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
         day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
         day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
@@ -1195,7 +1355,12 @@ class SectionSet:
             structure_context = None
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
                 structure_context = SectionSet._structure_context_at_station(obj, float(s))
-                if bool(structure_context.get("SuppressSideSlopes", False) or structure_context.get("SuppressDaylight", False)):
+                if bool(
+                    structure_context.get("SuppressSideSlopes", False)
+                    or structure_context.get("SuppressDaylight", False)
+                    or str(structure_context.get("LeftAction", "keep") or "keep").strip().lower() != "keep"
+                    or str(structure_context.get("RightAction", "keep") or "keep").strip().lower() != "keep"
+                ):
                     override_hits += 1
             try:
                 w, prev_n, prev_day_widths = SectionSet.build_section_wire(
@@ -1553,6 +1718,9 @@ class SectionSet:
             "UseStructureSet",
             "IncludeStructureStartEnd",
             "IncludeStructureCenters",
+            "IncludeStructureTransitionStations",
+            "AutoStructureTransitionDistance",
+            "StructureTransitionDistance",
             "StructureBufferBefore",
             "StructureBufferAfter",
             "CreateStructureTaggedChildren",

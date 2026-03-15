@@ -10,6 +10,7 @@ except Exception:
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
+from freecad.Corridor_Road.objects.obj_project import get_length_scale
 
 
 ALLOWED_TYPES = (
@@ -116,6 +117,24 @@ def _side_offsets(rec):
     if side == "both":
         return [-sep, sep]
     return [off]
+
+
+def _record_transition_distance(obj, rec, auto_transition: bool = True, transition: float = 0.0):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    width = max(0.0, abs(float(rec.get("Width", 0.0) or 0.0)))
+    height = max(0.0, abs(float(rec.get("Height", 0.0) or 0.0)))
+    typ = str(rec.get("Type", "") or "").strip().lower()
+
+    if not bool(auto_transition):
+        return max(0.0, float(transition))
+
+    if typ in ("culvert", "crossing"):
+        return max(5.0 * scale, 0.75 * width, 1.50 * height)
+    if typ == "retaining_wall":
+        return max(3.0 * scale, 0.50 * width, 1.00 * height)
+    if typ in ("bridge_zone", "abutment_zone"):
+        return max(10.0 * scale, 0.50 * width, 1.00 * height)
+    return max(5.0 * scale, 0.50 * width, 1.00 * height)
 
 
 def _build_structure_solid(base_pt, tangent, normal, rec):
@@ -434,9 +453,14 @@ class StructureSet:
         return out
 
     @staticmethod
-    def structure_key_station_items(obj, include_start_end: bool = True, include_centers: bool = True, before: float = 0.0, after: float = 0.0):
-        bt = max(0.0, float(before))
-        at = max(0.0, float(after))
+    def structure_key_station_items(
+        obj,
+        include_start_end: bool = True,
+        include_centers: bool = True,
+        include_transition: bool = False,
+        auto_transition: bool = True,
+        transition: float = 0.0,
+    ):
         items = []
         for rec in StructureSet.records(obj):
             rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
@@ -465,20 +489,29 @@ class StructureSet:
             if include_centers:
                 if abs(sc) > 1e-9 or (abs(s0) <= 1e-9 and abs(s1) <= 1e-9):
                     _add(sc, "STR_CENTER", "center")
-            if bt > 1e-9:
-                _add(s0 - bt, "", "buffer_before")
-            if at > 1e-9:
-                _add(s1 + at, "", "buffer_after")
+            if include_transition:
+                tt = _record_transition_distance(obj, rec, auto_transition=auto_transition, transition=transition)
+                if tt > 1e-9:
+                    _add(s0 - tt, "", "transition_before")
+                    _add(s1 + tt, "", "transition_after")
         return items
 
     @staticmethod
-    def structure_key_stations(obj, include_start_end: bool = True, include_centers: bool = True, before: float = 0.0, after: float = 0.0):
+    def structure_key_stations(
+        obj,
+        include_start_end: bool = True,
+        include_centers: bool = True,
+        include_transition: bool = False,
+        auto_transition: bool = True,
+        transition: float = 0.0,
+    ):
         items = StructureSet.structure_key_station_items(
             obj,
             include_start_end=include_start_end,
             include_centers=include_centers,
-            before=before,
-            after=after,
+            include_transition=include_transition,
+            auto_transition=auto_transition,
+            transition=transition,
         )
         return _unique_sorted_floats([it.get("station", 0.0) for it in items])
 

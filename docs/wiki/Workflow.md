@@ -157,6 +157,7 @@ Recommended settings and workflow:
 3. Increase `Corridor Loft > Min Section Spacing` if many sections are nearly overlapping.
 4. Turn on `Use ruled loft` first when testing unstable geometry.
 5. Keep `Auto-fix flipped sections` enabled in Corridor Loft.
+6. If structures are present, keep `Split at structure zones` enabled.
 
 Daylight-related guidance:
 1. If `Daylight Auto` is enabled, avoid large jumps in daylight width between neighboring sections.
@@ -180,24 +181,30 @@ What the current code already does:
 2. Smooths daylight width changes using `Daylight Max Width Delta`.
 3. Auto-fixes likely flipped section orientation in Corridor Loft when enabled.
 4. Falls back to adaptive segmented loft if full loft fails.
+5. Can split the loft into structure-aware segments at structure boundaries.
 
 ## 7B. Structure-Aware Section Behavior
 
 When `Use linked StructureSet` is enabled, structure records participate in section generation in three ways:
 1. Structure start/end/center stations can be merged into the section station list.
-2. Child sections receive structure metadata such as IDs, types, and roles.
-3. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
+2. Transition stations can be added automatically before and after structure boundaries.
+3. Child sections receive structure metadata such as IDs, types, and roles.
+4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
 
 Current override policy by structure type:
-1. `culvert`, `crossing`, `bridge_zone`, `abutment_zone`
+1. `culvert`, `crossing`
    - Affect both sides of the section.
    - Daylight is disabled through the structure zone.
-   - Side-slope points are kept as very short stubs so Corridor Loft keeps a stable point contract.
+   - Both sides are converted to short flat bench-like segments so the section still reads as a constrained crossing zone without breaking loft stability.
 2. `retaining_wall`
    - Affects the declared side only (`left` or `right`).
-   - The wall side is converted to a short stub.
+   - The wall side is converted to a short steep wall-like segment.
    - The opposite side can still keep its normal daylight behavior.
-3. `tag_only`
+3. `bridge_zone`, `abutment_zone`
+   - Affect both sides of the section conservatively.
+   - Daylight is disabled through the active zone.
+   - Both sides are trimmed back rather than flattened completely, so the section shape changes less abruptly but still remains loft-safe.
+4. `tag_only`
    - Adds structure station context and overlay labeling only.
    - Does not change the built section wire.
 
@@ -205,6 +212,13 @@ Practical recommendation:
 1. Start with `tag_only` if you only need structure-aware stations.
 2. Use `section_overlay` when you want sections and overlays to show the structure envelope.
 3. Use `assembly_override` only when the corridor shoulder/daylight should be constrained around the structure zone.
+4. Keep `Auto transition distance` enabled first; turn it off only if you need one manually fixed transition distance for every structure.
+
+Auto transition distance intent:
+1. `retaining_wall` usually gets a shorter transition because it commonly affects one side only.
+2. `culvert` and `crossing` get a moderate transition so both-side section change stays stable.
+3. `bridge_zone` and `abutment_zone` get a longer transition because the influence zone is typically broader and more conservative.
+4. If the structure boundary still looks too sharp, keep auto mode on and increase the structure width/height values only if those values are actually under-represented.
 
 > [Screenshot Needed] Sections panel with `Use linked StructureSet` and structure integration options enabled.
 > Suggested file: `wiki-workflow-07c-structure-sections-options.png`
@@ -214,6 +228,9 @@ Practical recommendation:
 
 > [Screenshot Needed] Corridor Loft options showing `Min Section Spacing`, `Use ruled loft`, and `Auto-fix flipped sections`.
 > Suggested file: `wiki-workflow-07a-corridor-loft-stability-options.png`
+
+> [Screenshot Needed] Corridor Loft options showing `Split at structure zones` and status with `structureSegs`.
+> Suggested file: `wiki-workflow-07e-corridor-loft-structure-split.png`
 
 > [Screenshot Needed] Sections options showing `Daylight Max Width Delta`.
 > Suggested file: `wiki-workflow-07b-daylight-max-width-delta.png`

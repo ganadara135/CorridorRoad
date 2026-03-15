@@ -110,6 +110,26 @@ Action:
 2. Check the structure `Side`.
 3. If you only need tagging and overlays, change `BehaviorMode` to `tag_only`.
 
+## Structure boundary still changes too abruptly
+Symptoms:
+- The section shape looks too sudden at the structure entry or exit even though transition stations are enabled.
+
+Checks:
+1. Confirm `Include transition stations` is enabled.
+2. Confirm `Auto transition distance` is enabled first.
+3. Review the structure `Width` and `Height`; auto transition uses those values as part of its sizing rule.
+
+Actions:
+1. Keep `Auto transition distance` on for mixed structure types.
+2. If one specific structure still changes too abruptly, either:
+   - increase its representative `Width`/`Height` if the current values are too small, or
+   - turn off auto mode and use a larger manual `Transition Distance`.
+3. Regenerate sections and rebuild corridor loft after changing the transition policy.
+
+Interpretation:
+1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
+2. `bridge_zone` and `abutment_zone` use longer transition distances by design.
+
 ## Corridor Loft is twisted or locally flipped
 Symptoms:
 - Corridor solid twists between nearby stations.
