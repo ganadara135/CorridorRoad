@@ -121,6 +121,8 @@ Actions:
   - CorridorRoad commit hash
   - Input CSV snippet
   - Error/status message text
+- For general user/developer questions, please ask in the CorridorRoad project thread on the FreeCAD Forum:
+- https://forum.freecad.org/viewtopic.php?t=103783
 
 ---
 Last verified with commit: `<fill-after-release>`

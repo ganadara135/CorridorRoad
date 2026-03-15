@@ -22,6 +22,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 5. Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
 6. Developer Guide: https://github.com/ganadara135/CorridorRoad/wiki/Developer-Guide
 
+## Questions And Support
+- If general users or developers have questions about this project, please ask in the CorridorRoad project thread on the FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
+- Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
+
 ## Main Commands
 - `New Project`
 - `Project Setup`

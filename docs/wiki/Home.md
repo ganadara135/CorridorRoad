@@ -29,6 +29,11 @@ This wiki is the practical guide for daily use and development.
 4. Open [Troubleshooting](Troubleshooting) when EG/daylight/output issues appear.
 5. Use [Developer Guide](Developer-Guide) for code-level changes.
 
+## Questions And Support
+- If users or developers have questions about CorridorRoad, please ask in the project thread on the FreeCAD Forum:
+- https://forum.freecad.org/viewtopic.php?t=103783
+- Use the forum thread for usage questions, bug discussion, and development feedback.
+
 ## Core Pipeline
 `Terrain (EG) -> Alignment -> Stations -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
 
