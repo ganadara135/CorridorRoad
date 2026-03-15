@@ -421,6 +421,27 @@ Done when:
 1. complex structures can be placed from external models
 2. alignment-based placement remains consistent
 
+## Sprint 6
+1. corridor-mode fields in `StructureSet`
+2. `skip_zone` implementation in `CorridorLoft`
+3. status/result reporting for skipped structure ranges
+4. UI exposure for corridor structure handling
+
+Done when:
+1. corridor solids can omit structure-active spans intentionally
+2. structure-aware segmented loft remains stable outside skipped ranges
+3. results clearly report which station ranges were skipped
+
+## Sprint 7
+1. notch-aware section schema design
+2. notch profile generation for `culvert` / `crossing`
+3. transition-station driven notch ramping
+4. later opt-in boolean cut prototype
+
+Done when:
+1. first notch-capable corridor workflow exists without relying on boolean cut
+2. notch transition remains loft-safe and reproducible
+
 ## Definition Of Done For Phase 1
 1. `Edit Structures` exists and is usable
 2. `StructureSet` is stored in project tree
@@ -434,6 +455,12 @@ Done when:
 2. `box` remains the safe fallback
 3. `template` supports at least culvert and retaining wall
 4. `external_shape` placement works with clear source-path rules
+
+## Definition Of Done For Corridor-Level Structure Consumption
+1. `split_only` remains the safe default
+2. `skip_zone` works for structure-active spans with readable status output
+3. notch-capable profiles use an explicit schema instead of hidden point-count mutations
+4. boolean cut stays opt-in and has a graceful fallback path
 
 ## Recommended First Coding Task
 Start with:

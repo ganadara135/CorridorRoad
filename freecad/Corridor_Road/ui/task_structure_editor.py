@@ -9,6 +9,7 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_project
 from freecad.Corridor_Road.objects.obj_structure_set import (
     ALLOWED_BEHAVIOR_MODES,
+    ALLOWED_CORRIDOR_MODES,
     ALLOWED_SIDES,
     ALLOWED_TYPES,
     StructureSet,
@@ -32,6 +33,8 @@ COL_HEADERS = [
     "Cover",
     "RotationDeg",
     "BehaviorMode",
+    "CorridorMode",
+    "CorridorMargin",
     "Notes",
 ]
 
@@ -39,6 +42,7 @@ COMBO_COLUMN_ITEMS = {
     1: [""] + list(ALLOWED_TYPES),
     5: [""] + list(ALLOWED_SIDES),
     12: [""] + list(ALLOWED_BEHAVIOR_MODES),
+    13: list(ALLOWED_CORRIDOR_MODES),
 }
 STATION_COMBO_COLUMNS = (2, 3, 4)
 
@@ -72,6 +76,8 @@ def _structure_csv_mapping(fieldnames):
         "Cover": ("cover",),
         "RotationDeg": ("rotationdeg", "rotation", "angledeg"),
         "BehaviorMode": ("behaviormode", "mode"),
+        "CorridorMode": ("corridormode", "corridormodepolicy", "corridorpolicy", "corridormodevalue"),
+        "CorridorMargin": ("corridormargin", "margin", "voidmargin"),
         "Notes": ("notes", "note", "remarks", "remark"),
     }
     out = {}
@@ -174,7 +180,9 @@ class StructureEditorTaskPanel:
             (10, 90),
             (11, 100),
             (12, 130),
-            (13, 220),
+            (13, 120),
+            (14, 110),
+            (15, 220),
         ):
             self.table.setColumnWidth(col, width)
         main.addWidget(self.table)
@@ -201,6 +209,8 @@ class StructureEditorTaskPanel:
             + ", ".join(ALLOWED_SIDES)
             + "\nAllowed BehaviorMode: "
             + ", ".join(ALLOWED_BEHAVIOR_MODES)
+            + "\nAllowed CorridorMode: "
+            + ", ".join([m for m in ALLOWED_CORRIDOR_MODES if m])
             + "\nNote: structure station ranges are prepared here, but they should be defined after `Generate Stations`."
         )
         self.lbl_help.setWordWrap(True)
@@ -395,7 +405,9 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 10, f"{float(rec.get('Cover', 0.0)):.3f}")
                 self._set_cell_text(i, 11, f"{float(rec.get('RotationDeg', 0.0)):.3f}")
                 self._set_cell_text(i, 12, rec.get("BehaviorMode", ""))
-                self._set_cell_text(i, 13, rec.get("Notes", ""))
+                self._set_cell_text(i, 13, rec.get("CorridorMode", ""))
+                self._set_cell_text(i, 14, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
+                self._set_cell_text(i, 15, rec.get("Notes", ""))
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
             self._loading = False
@@ -421,7 +433,9 @@ class StructureEditorTaskPanel:
                     "Cover": self._get_cell_float(r, 10),
                     "RotationDeg": self._get_cell_float(r, 11),
                     "BehaviorMode": row[12],
-                    "Notes": row[13],
+                    "CorridorMode": row[13],
+                    "CorridorMargin": self._get_cell_float(r, 14),
+                    "Notes": row[15],
                 }
             )
         return rows
@@ -480,7 +494,9 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 10, f"{float(rec['Cover']):.3f}")
                 self._set_cell_text(i, 11, f"{float(rec['RotationDeg']):.3f}")
                 self._set_cell_text(i, 12, rec["BehaviorMode"])
-                self._set_cell_text(i, 13, rec["Notes"])
+                self._set_cell_text(i, 13, rec.get("CorridorMode", ""))
+                self._set_cell_text(i, 14, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
+                self._set_cell_text(i, 15, rec["Notes"])
         finally:
             self._loading = False
 
@@ -536,6 +552,8 @@ class StructureEditorTaskPanel:
                             "Cover": self._parse_float(row.get(mapping.get("Cover"), "")),
                             "RotationDeg": self._parse_float(row.get(mapping.get("RotationDeg"), "")),
                             "BehaviorMode": str(row.get(mapping.get("BehaviorMode"), "") or "").strip(),
+                            "CorridorMode": str(row.get(mapping.get("CorridorMode"), "") or "").strip(),
+                            "CorridorMargin": self._parse_float(row.get(mapping.get("CorridorMargin"), "")),
                             "Notes": str(row.get(mapping.get("Notes"), "") or "").strip(),
                         }
                     )
@@ -561,7 +579,9 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 10, f"{float(rec['Cover']):.3f}")
                 self._set_cell_text(i, 11, f"{float(rec['RotationDeg']):.3f}")
                 self._set_cell_text(i, 12, rec["BehaviorMode"])
-                self._set_cell_text(i, 13, rec["Notes"])
+                self._set_cell_text(i, 13, rec.get("CorridorMode", ""))
+                self._set_cell_text(i, 14, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
+                self._set_cell_text(i, 15, rec["Notes"])
         finally:
             self._loading = False
         self.lbl_status.setText(f"Loaded CSV rows: {len(rows)}")
@@ -597,6 +617,8 @@ class StructureEditorTaskPanel:
             obj.Covers = [float(r["Cover"]) for r in rows]
             obj.RotationsDeg = [float(r["RotationDeg"]) for r in rows]
             obj.BehaviorModes = [str(r["BehaviorMode"] or "") for r in rows]
+            obj.CorridorModes = [str(r["CorridorMode"] or "") for r in rows]
+            obj.CorridorMargins = [float(r["CorridorMargin"]) for r in rows]
             obj.Notes = [str(r["Notes"] or "") for r in rows]
             obj.touch()
 

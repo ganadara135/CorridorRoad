@@ -23,6 +23,7 @@ ALLOWED_TYPES = (
 )
 ALLOWED_SIDES = ("left", "right", "center", "both")
 ALLOWED_BEHAVIOR_MODES = ("tag_only", "section_overlay", "assembly_override")
+ALLOWED_CORRIDOR_MODES = ("", "none", "split_only", "skip_zone", "notch", "boolean_cut")
 
 
 def _empty_shape():
@@ -137,6 +138,18 @@ def _record_transition_distance(obj, rec, auto_transition: bool = True, transiti
     return max(5.0 * scale, 0.50 * width, 1.00 * height)
 
 
+def _default_corridor_mode(rec, fallback: str = "split_only"):
+    typ = str(rec.get("Type", "") or "").strip().lower()
+    mode = str(rec.get("CorridorMode", "") or "").strip().lower()
+    if mode in ALLOWED_CORRIDOR_MODES:
+        return mode or str(fallback or "split_only").strip().lower()
+    if typ in ("culvert", "crossing", "bridge_zone", "abutment_zone"):
+        return "skip_zone"
+    if typ == "retaining_wall":
+        return "split_only"
+    return "none"
+
+
 def _build_structure_solid(base_pt, tangent, normal, rec):
     if Part is None:
         return None
@@ -246,6 +259,12 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "BehaviorModes"):
         obj.addProperty("App::PropertyStringList", "BehaviorModes", "Structures", "Structure behavior modes")
         obj.BehaviorModes = []
+    if not hasattr(obj, "CorridorModes"):
+        obj.addProperty("App::PropertyStringList", "CorridorModes", "Structures", "Corridor consumption modes")
+        obj.CorridorModes = []
+    if not hasattr(obj, "CorridorMargins"):
+        obj.addProperty("App::PropertyFloatList", "CorridorMargins", "Structures", "Additional structure corridor margins")
+        obj.CorridorMargins = []
     if not hasattr(obj, "Notes"):
         obj.addProperty("App::PropertyStringList", "Notes", "Structures", "Structure notes")
         obj.Notes = []
@@ -321,6 +340,8 @@ class StructureSet:
             "Covers",
             "RotationsDeg",
             "BehaviorModes",
+            "CorridorModes",
+            "CorridorMargins",
             "Notes",
         ):
             try:
@@ -344,6 +365,8 @@ class StructureSet:
             len(list(getattr(obj, "Covers", []) or [])),
             len(list(getattr(obj, "RotationsDeg", []) or [])),
             len(list(getattr(obj, "BehaviorModes", []) or [])),
+            len(list(getattr(obj, "CorridorModes", []) or [])),
+            len(list(getattr(obj, "CorridorMargins", []) or [])),
             len(list(getattr(obj, "Notes", []) or [])),
             0,
         )
@@ -364,6 +387,8 @@ class StructureSet:
         covers = _safe_float_list(getattr(obj, "Covers", []))
         rotations = _safe_float_list(getattr(obj, "RotationsDeg", []))
         behaviors = _safe_str_list(getattr(obj, "BehaviorModes", []))
+        corridor_modes = _safe_str_list(getattr(obj, "CorridorModes", []))
+        corridor_margins = _safe_float_list(getattr(obj, "CorridorMargins", []))
         notes = _safe_str_list(getattr(obj, "Notes", []))
 
         n = StructureSet._record_count(obj)
@@ -385,6 +410,8 @@ class StructureSet:
                     "Cover": covers[i] if i < len(covers) else 0.0,
                     "RotationDeg": rotations[i] if i < len(rotations) else 0.0,
                     "BehaviorMode": behaviors[i] if i < len(behaviors) else "",
+                    "CorridorMode": corridor_modes[i] if i < len(corridor_modes) else "",
+                    "CorridorMargin": corridor_margins[i] if i < len(corridor_margins) else 0.0,
                     "Notes": notes[i] if i < len(notes) else "",
                 }
             )
@@ -398,11 +425,13 @@ class StructureSet:
             typ = str(rec.get("Type", "") or "").strip().lower()
             side = str(rec.get("Side", "") or "").strip().lower()
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
+            cor_mode = str(rec.get("CorridorMode", "") or "").strip().lower()
             s0 = float(rec.get("StartStation", 0.0) or 0.0)
             s1 = float(rec.get("EndStation", 0.0) or 0.0)
             sc = float(rec.get("CenterStation", 0.0) or 0.0)
             w = float(rec.get("Width", 0.0) or 0.0)
             h = float(rec.get("Height", 0.0) or 0.0)
+            cm = float(rec.get("CorridorMargin", 0.0) or 0.0)
 
             if not typ:
                 issues.append(f"{rid}: type is empty")
@@ -416,6 +445,8 @@ class StructureSet:
 
             if mode and mode not in ALLOWED_BEHAVIOR_MODES:
                 issues.append(f"{rid}: unknown behavior mode '{mode}'")
+            if cor_mode and cor_mode not in ALLOWED_CORRIDOR_MODES:
+                issues.append(f"{rid}: unknown corridor mode '{cor_mode}'")
 
             if s1 < s0:
                 issues.append(f"{rid}: end station is smaller than start station")
@@ -425,6 +456,8 @@ class StructureSet:
                 issues.append(f"{rid}: width is negative")
             if h < 0.0:
                 issues.append(f"{rid}: height is negative")
+            if cm < 0.0:
+                issues.append(f"{rid}: corridor margin is negative")
         return issues
 
     @staticmethod
@@ -514,6 +547,23 @@ class StructureSet:
             transition=transition,
         )
         return _unique_sorted_floats([it.get("station", 0.0) for it in items])
+
+    @staticmethod
+    def corridor_zone_records(obj, fallback_mode: str = "split_only"):
+        out = []
+        for rec in StructureSet.records(obj):
+            s0 = float(rec.get("StartStation", 0.0) or 0.0)
+            s1 = float(rec.get("EndStation", 0.0) or 0.0)
+            if s1 < s0:
+                s0, s1 = s1, s0
+            mode = _default_corridor_mode(rec, fallback=fallback_mode)
+            row = dict(rec)
+            row["ResolvedCorridorMode"] = mode
+            row["ResolvedStartStation"] = float(s0)
+            row["ResolvedEndStation"] = float(s1)
+            row["ResolvedCorridorMargin"] = max(0.0, float(rec.get("CorridorMargin", 0.0) or 0.0))
+            out.append(row)
+        return out
 
 
 class ViewProviderStructureSet:

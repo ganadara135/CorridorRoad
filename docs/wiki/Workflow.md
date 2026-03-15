@@ -190,6 +190,7 @@ When `Use linked StructureSet` is enabled, structure records participate in sect
 2. Transition stations can be added automatically before and after structure boundaries.
 3. Child sections receive structure metadata such as IDs, types, and roles.
 4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
+5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or cut with a first-pass `notch`.
 
 Current override policy by structure type:
 1. `culvert`, `crossing`
@@ -213,6 +214,8 @@ Practical recommendation:
 2. Use `section_overlay` when you want sections and overlays to show the structure envelope.
 3. Use `assembly_override` only when the corridor shoulder/daylight should be constrained around the structure zone.
 4. Keep `Auto transition distance` enabled first; turn it off only if you need one manually fixed transition distance for every structure.
+5. Use `CorridorMode=skip_zone` for culvert or abutment spans only when the corridor body should truly be absent across that zone.
+6. Use `CorridorMode=notch` when you want the corridor to remain continuous but still receive a simple structure cut through the active span.
 
 Auto transition distance intent:
 1. `retaining_wall` usually gets a shorter transition because it commonly affects one side only.

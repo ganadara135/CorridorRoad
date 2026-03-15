@@ -250,6 +250,8 @@ Important behavior:
 | `Cover` | Cover depth used when bottom elevation is not specified. | Useful for culverts or buried crossings. |
 | `RotationDeg` | Rotation about the local vertical axis. | Leave `0` unless the structure should be rotated relative to alignment normal/tangent. |
 | `BehaviorMode` | Controls how the structure participates in section generation. | `tag_only` adds metadata only, `section_overlay` adds section-aware overlay behavior, `assembly_override` also enables section override logic. |
+| `CorridorMode` | Controls how the structure should be consumed by `Corridor Loft`. | `none` ignores corridor-level changes, `split_only` only splits loft spans, `skip_zone` omits the corridor body across the active structure span, and `notch` applies a simple structure cut to the corridor solid. |
+| `CorridorMargin` | Expands the corridor skip envelope beyond start/end station. | Use a small positive margin only when the skipped corridor zone should be slightly wider than the structure station range. |
 | `Notes` | Free-form notes. | Use for documentation and later review. |
 
 ### Recommended Usage
@@ -263,6 +265,7 @@ Important behavior:
 2. A `culvert` or `crossing` usually makes more sense with `center` or `both`.
 3. If `BottomElevation` is empty, the display system falls back to centerline Z and `Cover`.
 4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
+5. `CorridorMode` is now the main way to tell `Corridor Loft` whether a structure should only stabilize segmentation or actually omit a corridor span.
 
 > [Screenshot Needed] Edit Structures panel with sample rows loaded.
 > Suggested file: `wiki-menu-reference-edit-structures.png`
@@ -284,6 +287,13 @@ The `Generate Sections` panel now includes structure-aware options that work wit
 | `Transition Distance` | Manual fallback distance used for transition stations when auto mode is off. | Turn off auto mode only when you need to force one fixed distance for all structure records. |
 | `Add structure tags to child sections` | Adds tags and metadata to child sections at structure-related stations. | Keep enabled if you want labels and tree identification. |
 | `Apply structure overrides` | Enables structure-type override logic during section build. | Turn this on when structure zones should constrain daylight/side-slope behavior. |
+
+### Corridor Loft Structure Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Use structure corridor modes` | Reads `CorridorMode` from the linked `StructureSet` during corridor build. | Keep enabled if structures should affect the corridor body, not just sections. |
+| `Default structure corridor mode` | Fallback mode used when a structure record does not specify `CorridorMode`. | `split_only` is the safe default. Use `skip_zone` only when missing corridor modes should still create corridor gaps. |
 
 ### Override Policy Summary
 

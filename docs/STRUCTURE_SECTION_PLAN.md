@@ -5,6 +5,7 @@ Add structured infrastructure input to the section-generation workflow without o
 
 See also:
 1. `docs/STRUCTURE_SECTION_EXECUTION_PLAN.md` for file-by-file implementation tasks.
+2. `docs/CORRIDOR_STRUCTURE_NOTCH_PLAN.md` for corridor-level `skip_zone` / `notch` / `boolean_cut` roadmap.
 
 The immediate target is:
 1. Define structure data explicitly.
@@ -312,6 +313,12 @@ Only after section behavior is stable:
 1. corridor loft can optionally skip or segment structure zones differently
 2. design grading surface can optionally exclude structure void zones
 3. reports can summarize structures by station range
+
+See `docs/CORRIDOR_STRUCTURE_NOTCH_PLAN.md` for the recommended expansion order:
+1. `split_only`
+2. `skip_zone`
+3. `notch`
+4. later `boolean_cut`
 
 ## Recommended Expansion Order
 
