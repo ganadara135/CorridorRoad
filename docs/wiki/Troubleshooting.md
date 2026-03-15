@@ -71,6 +71,45 @@ Actions:
 > [Screenshot Needed] Sections panel showing Daylight Auto and terrain selection.
 > Suggested file: `wiki-troubleshooting-daylight-settings.png`
 
+## Structure overlays do not appear
+Symptoms:
+- `Edit Structures` completed, but no station-based structure overlays are visible.
+- `Structure Sections` folder is missing or empty.
+
+Checks:
+1. Confirm `Generate Stations` was run before `Edit Structures`.
+2. Confirm `Generate Sections` was run with `Use linked StructureSet` enabled.
+3. Confirm structure station ranges fall inside the current section generation range.
+4. Confirm structure rows have positive `Width` and `Height`.
+5. Confirm the relevant structure rows are not all `tag_only` if you expected override-driven section behavior.
+
+Actions:
+1. Re-open `Edit Structures` and verify the `StructureSet` rows.
+2. Re-run `Generate Sections`.
+3. Check the project tree under `02_Alignments/.../Structure Sections`.
+4. If necessary, increase the visible section range or include structure start/end/center stations explicitly.
+
+Notes:
+1. Structure overlays are shown in a separate `Structure Sections` folder on purpose.
+2. They are not embedded inside the base section wire because that would break Corridor Loft point consistency.
+
+> [Screenshot Needed] Alignment tree showing populated `Structure Sections`.
+> Suggested file: `wiki-troubleshooting-structure-sections-tree.png`
+
+## Structure override changes only one side
+Symptoms:
+- A retaining wall or side-specific structure affects only the left or right side of the section.
+
+Interpretation:
+1. This is expected for `retaining_wall` when `Side` is `left` or `right`.
+2. The current override policy keeps the opposite side as normal when possible.
+3. Zone-type structures such as `culvert`, `crossing`, `bridge_zone`, and `abutment_zone` affect both sides more conservatively.
+
+Action:
+1. Check the structure `Type`.
+2. Check the structure `Side`.
+3. If you only need tagging and overlays, change `BehaviorMode` to `tag_only`.
+
 ## Corridor Loft is twisted or locally flipped
 Symptoms:
 - Corridor solid twists between nearby stations.

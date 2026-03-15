@@ -75,6 +75,28 @@ If profile EG contains many blanks or `0` values:
 ![profile table with EG columns](images/wiki-workflow-04-stations-profiles_2.png)
 ![profile table with FG columns](images/wiki-workflow-04-stations-profiles_3.png)
 
+## 4A. Structures
+1. Run `Edit Structures` after `Generate Stations`.
+2. Load a structure CSV or enter rows manually.
+3. Apply the `StructureSet`.
+
+Recommended sample:
+- `tests/samples/structure_utm_realistic_hilly.csv`
+
+Output:
+- `StructureSet` under `01_Inputs/Structures`
+- simple 3D structure solids
+
+Validation:
+- Structure rows use valid `Type`, `Side`, and `BehaviorMode`.
+- Start/end/center stations match generated stationing policy.
+- 3D structure solids appear inside the corridor area.
+
+![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
+> Suggested file: `wiki-workflow-04a-structures-editor.png`
+
+![Screenshot Needed] StructureSet visible in 3D view and input tree.
+> Suggested file: `wiki-workflow-04a-structures-3d.png`
 
 ## 5. 3D Centerline
 1. Run `3D Centerline`.
@@ -93,15 +115,19 @@ Validation:
 ## 6. Sections
 1. Run `Generate Sections`.
 2. Choose mode (`Range` or `Manual`).
-3. Configure daylight options if needed.
-4. Click `Generate Sections Now`.
+3. If structures should drive extra stations, enable `Use linked StructureSet`.
+4. Configure daylight options if needed.
+5. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
+- `Structure Sections` folder with structure overlay objects at matching stations
 
 Validation:
 - Resolved station count matches mode/configuration.
 - Daylight terrain is assigned when Daylight Auto is enabled.
+- `Merged structure stations` is non-zero when structure records are inside range.
+- `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
 
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections.png)
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
@@ -154,6 +180,37 @@ What the current code already does:
 2. Smooths daylight width changes using `Daylight Max Width Delta`.
 3. Auto-fixes likely flipped section orientation in Corridor Loft when enabled.
 4. Falls back to adaptive segmented loft if full loft fails.
+
+## 7B. Structure-Aware Section Behavior
+
+When `Use linked StructureSet` is enabled, structure records participate in section generation in three ways:
+1. Structure start/end/center stations can be merged into the section station list.
+2. Child sections receive structure metadata such as IDs, types, and roles.
+3. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
+
+Current override policy by structure type:
+1. `culvert`, `crossing`, `bridge_zone`, `abutment_zone`
+   - Affect both sides of the section.
+   - Daylight is disabled through the structure zone.
+   - Side-slope points are kept as very short stubs so Corridor Loft keeps a stable point contract.
+2. `retaining_wall`
+   - Affects the declared side only (`left` or `right`).
+   - The wall side is converted to a short stub.
+   - The opposite side can still keep its normal daylight behavior.
+3. `tag_only`
+   - Adds structure station context and overlay labeling only.
+   - Does not change the built section wire.
+
+Practical recommendation:
+1. Start with `tag_only` if you only need structure-aware stations.
+2. Use `section_overlay` when you want sections and overlays to show the structure envelope.
+3. Use `assembly_override` only when the corridor shoulder/daylight should be constrained around the structure zone.
+
+> [Screenshot Needed] Sections panel with `Use linked StructureSet` and structure integration options enabled.
+> Suggested file: `wiki-workflow-07c-structure-sections-options.png`
+
+> [Screenshot Needed] Alignment tree showing both `Sections` and `Structure Sections`.
+> Suggested file: `wiki-workflow-07d-structure-sections-tree.png`
 
 > [Screenshot Needed] Corridor Loft options showing `Min Section Spacing`, `Use ruled loft`, and `Auto-fix flipped sections`.
 > Suggested file: `wiki-workflow-07a-corridor-loft-stability-options.png`

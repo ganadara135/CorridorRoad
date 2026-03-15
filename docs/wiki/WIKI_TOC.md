@@ -42,6 +42,7 @@ This folder contains draft pages to publish to GitHub Wiki.
 ## Current Sample Files For Testing
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly.csv`
 
 ## Screenshot Collection Plan
 1. Capture one screenshot per major workflow stage.

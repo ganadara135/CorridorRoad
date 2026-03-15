@@ -25,6 +25,7 @@ ALIGNMENT_STATIONING = "alignment_stationing"
 ALIGNMENT_VERTICAL = "alignment_vertical_profiles"
 ALIGNMENT_ASSEMBLY = "alignment_assembly"
 ALIGNMENT_SECTIONS = "alignment_sections"
+ALIGNMENT_STRUCTURE_SECTIONS = "alignment_structure_sections"
 ALIGNMENT_CORRIDOR = "alignment_corridor"
 
 BASE_TREE_DEFS = (
@@ -44,6 +45,7 @@ ALIGNMENT_SUBTREE_DEFS = (
     (ALIGNMENT_VERTICAL, "VerticalProfiles", "CR_ALN_VerticalProfiles"),
     (ALIGNMENT_ASSEMBLY, "Assembly", "CR_ALN_Assembly"),
     (ALIGNMENT_SECTIONS, "Sections", "CR_ALN_Sections"),
+    (ALIGNMENT_STRUCTURE_SECTIONS, "Structure Sections", "CR_ALN_StructureSections"),
     (ALIGNMENT_CORRIDOR, "Corridor", "CR_ALN_Corridor"),
 )
 
@@ -781,6 +783,15 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=("SectionStructureOverlay",), name_prefixes=("SectionStructureOverlay",)):
+        sec = getattr(child, "ParentSectionSet", None)
+        if sec is None:
+            slice_obj = getattr(child, "ParentSectionSlice", None)
+            sec = getattr(slice_obj, "ParentSectionSet", None) if slice_obj is not None else None
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         sec = getattr(child, "SourceSectionSet", None)
         aln = _alignment_from_section_set(sec)
@@ -842,6 +853,7 @@ def _is_alignment_related(child):
             "AssemblyTemplate",
             "SectionSet",
             "SectionSlice",
+            "SectionStructureOverlay",
             "CorridorLoft",
         ),
         name_prefixes=(
@@ -855,6 +867,7 @@ def _is_alignment_related(child):
             "AssemblyTemplate",
             "SectionSet",
             "SectionSlice",
+            "SectionStructureOverlay",
             "CorridorLoft",
         ),
     )
@@ -870,6 +883,10 @@ def _is_surface(child):
 
 def _is_analysis(child):
     return _is_type(child, proxy_types=("CutFillCalc",), name_prefixes=("CutFillCalc",))
+
+
+def _is_structure_input(child):
+    return _is_type(child, proxy_types=("StructureSet",), name_prefixes=("StructureSet",))
 
 
 def _is_probable_terrain_input(prj, child):
@@ -911,6 +928,8 @@ def _target_folder_for_alignment_child(prj, child):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
     if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
         return aln_tree.get(ALIGNMENT_SECTIONS, None)
+    if _is_type(child, proxy_types=("SectionStructureOverlay",), name_prefixes=("SectionStructureOverlay",)):
+        return aln_tree.get(ALIGNMENT_STRUCTURE_SECTIONS, None)
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     return aln_tree.get(ALIGNMENT_VERTICAL, None)
@@ -934,6 +953,9 @@ def _resolve_target_container(prj, child, allow_references: bool = True):
 
     if _is_analysis(child):
         return tree.get(TREE_ANALYSIS, None)
+
+    if _is_structure_input(child):
+        return tree.get(TREE_INPUTS_STRUCTURES, None)
 
     if _is_probable_terrain_input(prj, child):
         return tree.get(TREE_INPUTS_TERRAINS, None)
@@ -964,6 +986,7 @@ def _adopt_project_linked_objects(prj):
         "Centerline3D",
         "Centerline3DDisplay",
         "AssemblyTemplate",
+        "StructureSet",
         "SectionSet",
         "CorridorLoft",
         "DesignGradingSurface",
@@ -1242,6 +1265,7 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
     _ensure_hidden_link_property(obj, "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
     _ensure_hidden_link_property(obj, "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
+    _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
     _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
     _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
     _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
@@ -1351,6 +1375,18 @@ class CorridorRoadProject:
                     break
             if a is not None:
                 obj_project.AssemblyTemplate = a
+
+        if hasattr(obj_project, "StructureSet") and obj_project.StructureSet is None:
+            s = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "StructureSet":
+                    s = o
+                    break
+                if o.Name.startswith("StructureSet"):
+                    s = o
+                    break
+            if s is not None:
+                obj_project.StructureSet = s
 
         if hasattr(obj_project, "SectionSet") and obj_project.SectionSet is None:
             s = None

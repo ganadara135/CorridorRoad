@@ -9,7 +9,7 @@ from freecad.Corridor_Road.objects.obj_assembly_template import (
     ViewProviderAssemblyTemplate,
     ensure_assembly_template_properties,
 )
-from freecad.Corridor_Road.objects.doc_query import find_first, find_project
+from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
@@ -60,10 +60,15 @@ def _find_source_centerline_display(doc):
     return find_first(doc, proxy_type="Centerline3DDisplay", name_prefixes=("Centerline3DDisplay",))
 
 
+def _find_structure_sets(doc):
+    return find_all(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
+
+
 class SectionGeneratorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._terrains = []
+        self._structures = []
         self._project = None
         self._coord_mode_initialized = False
         self._loading = False
@@ -129,9 +134,46 @@ class SectionGeneratorTaskPanel:
         self.chk_include_struct_keys.setChecked(False)
         self.txt_struct_stations = QtWidgets.QLineEdit()
         self.txt_struct_stations.setPlaceholderText("e.g. 25, 78.5, 120")
-        fm.addRow(self.chk_include_struct_keys)
-        fm.addRow("Structure/Crossing Stations:", self.txt_struct_stations)
+        self.chk_include_struct_keys.setVisible(False)
+        self.txt_struct_stations.setVisible(False)
         main.addWidget(gb_mode)
+
+        gb_struct = QtWidgets.QGroupBox("StructureSet Integration")
+        form_struct = QtWidgets.QFormLayout(gb_struct)
+        self.chk_use_structure_set = QtWidgets.QCheckBox("Use linked StructureSet")
+        self.chk_use_structure_set.setChecked(False)
+        self.cmb_structure_source = QtWidgets.QComboBox()
+        self.chk_struct_start_end = QtWidgets.QCheckBox("Include start/end stations")
+        self.chk_struct_start_end.setChecked(True)
+        self.chk_struct_centers = QtWidgets.QCheckBox("Include center stations")
+        self.chk_struct_centers.setChecked(True)
+        self.spin_struct_buffer_before = QtWidgets.QDoubleSpinBox()
+        self.spin_struct_buffer_before.setRange(0.0, 1.0e6)
+        self.spin_struct_buffer_before.setDecimals(3)
+        self.spin_struct_buffer_before.setValue(0.0)
+        self.spin_struct_buffer_after = QtWidgets.QDoubleSpinBox()
+        self.spin_struct_buffer_after.setRange(0.0, 1.0e6)
+        self.spin_struct_buffer_after.setDecimals(3)
+        self.spin_struct_buffer_after.setValue(0.0)
+        self.chk_struct_tagged_children = QtWidgets.QCheckBox("Add structure tags to child sections")
+        self.chk_struct_tagged_children.setChecked(True)
+        self.chk_struct_apply_overrides = QtWidgets.QCheckBox("Apply structure overrides (reserved)")
+        self.chk_struct_apply_overrides.setChecked(False)
+        self.lbl_struct_note = QtWidgets.QLabel(
+            "When enabled, StructureSet stations are merged into section generation.\n"
+            "The old manual Structure/Crossing station text workflow is no longer used."
+        )
+        self.lbl_struct_note.setWordWrap(True)
+        form_struct.addRow(self.chk_use_structure_set)
+        form_struct.addRow("Structure Source:", self.cmb_structure_source)
+        form_struct.addRow(self.chk_struct_start_end)
+        form_struct.addRow(self.chk_struct_centers)
+        form_struct.addRow("Buffer Before:", self.spin_struct_buffer_before)
+        form_struct.addRow("Buffer After:", self.spin_struct_buffer_after)
+        form_struct.addRow(self.chk_struct_tagged_children)
+        form_struct.addRow(self.chk_struct_apply_overrides)
+        form_struct.addRow(self.lbl_struct_note)
+        main.addWidget(gb_struct)
 
         gb_opt = QtWidgets.QGroupBox("Options")
         form_opts = QtWidgets.QFormLayout(gb_opt)
@@ -234,7 +276,7 @@ class SectionGeneratorTaskPanel:
         main.addWidget(self.btn_generate)
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
-        self.chk_include_struct_keys.toggled.connect(self._update_mode_ui)
+        self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
         self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
@@ -246,6 +288,7 @@ class SectionGeneratorTaskPanel:
         self.btn_generate.clicked.connect(self._generate)
 
         self._update_mode_ui()
+        self._update_structure_ui()
         self._update_template_pos_ui()
         self._update_side_ui()
         return w
@@ -319,7 +362,16 @@ class SectionGeneratorTaskPanel:
         self.txt_manual.setEnabled(not is_range)
         self.chk_include_ip_keys.setEnabled(is_range)
         self.chk_include_sccs_keys.setEnabled(is_range)
-        self.txt_struct_stations.setEnabled(bool(self.chk_include_struct_keys.isChecked()))
+
+    def _update_structure_ui(self):
+        on = bool(self.chk_use_structure_set.isChecked())
+        self.cmb_structure_source.setEnabled(on)
+        self.chk_struct_start_end.setEnabled(on)
+        self.chk_struct_centers.setEnabled(on)
+        self.spin_struct_buffer_before.setEnabled(on)
+        self.spin_struct_buffer_after.setEnabled(on)
+        self.chk_struct_tagged_children.setEnabled(on)
+        self.chk_struct_apply_overrides.setEnabled(on)
 
     def _update_template_pos_ui(self):
         use_start = bool(self.chk_place_at_start.isChecked())
@@ -350,6 +402,9 @@ class SectionGeneratorTaskPanel:
     def _format_obj(self, obj):
         return f"[Mesh] {obj.Label} ({obj.Name})"
 
+    def _format_structure_obj(self, obj):
+        return f"[StructureSet] {obj.Label} ({obj.Name})"
+
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
         for i, o in enumerate(objects):
@@ -364,11 +419,30 @@ class SectionGeneratorTaskPanel:
                     break
         combo.setCurrentIndex(idx)
 
+    def _fill_structure_combo(self, combo, objects, selected=None):
+        combo.clear()
+        combo.addItem("[None]")
+        for o in objects:
+            combo.addItem(self._format_structure_obj(o))
+        idx = 0
+        if selected is not None:
+            for i, o in enumerate(objects):
+                if o == selected:
+                    idx = i + 1
+                    break
+        combo.setCurrentIndex(idx)
+
     def _current_daylight_terrain(self):
         i = int(self.cmb_day_terrain.currentIndex())
         if i < 0 or i >= len(self._terrains):
             return None
         return self._terrains[i]
+
+    def _current_structure_source(self):
+        i = int(self.cmb_structure_source.currentIndex()) - 1
+        if i < 0 or i >= len(self._structures):
+            return None
+        return self._structures[i]
 
     def _use_selected_day_terrain(self):
         sel = _selected_terrain_source()
@@ -445,6 +519,7 @@ class SectionGeneratorTaskPanel:
         sec = _find_first_by_proxy_type(self.doc, "SectionSet")
         aln = _find_alignment(self.doc)
         prj = _find_project(self.doc)
+        self._structures = _find_structure_sets(self.doc)
         self._project = prj
         self._apply_default_coord_mode()
         self._update_coord_hint()
@@ -463,9 +538,26 @@ class SectionGeneratorTaskPanel:
         self._fill_combo(self.cmb_day_terrain, self._terrains, pref_terrain)
         self._sync_day_coord_mode_from_selected_terrain()
 
+        pref_structure = None
+        if sec is not None and hasattr(sec, "StructureSet"):
+            pref_structure = getattr(sec, "StructureSet", None)
+        if pref_structure is None and prj is not None and hasattr(prj, "StructureSet"):
+            pref_structure = getattr(prj, "StructureSet", None)
+        self._fill_structure_combo(self.cmb_structure_source, self._structures, pref_structure)
+
         if sec is not None:
             try:
                 ensure_section_set_properties(sec)
+                if hasattr(sec, "Mode"):
+                    self.cmb_mode.setCurrentText(str(sec.Mode or "Range"))
+                if hasattr(sec, "StartStation"):
+                    self.spin_start.setValue(float(sec.StartStation))
+                if hasattr(sec, "EndStation"):
+                    self.spin_end.setValue(float(sec.EndStation))
+                if hasattr(sec, "Interval"):
+                    self.spin_itv.setValue(float(sec.Interval))
+                if hasattr(sec, "StationText"):
+                    self.txt_manual.setPlainText(str(sec.StationText or ""))
                 if hasattr(sec, "DaylightAuto"):
                     self.chk_daylight.setChecked(bool(sec.DaylightAuto))
                 if hasattr(sec, "TerrainMeshCoords"):
@@ -479,10 +571,20 @@ class SectionGeneratorTaskPanel:
                     self.chk_include_ip_keys.setChecked(bool(sec.IncludeAlignmentIPStations))
                 if hasattr(sec, "IncludeAlignmentSCCSStations"):
                     self.chk_include_sccs_keys.setChecked(bool(sec.IncludeAlignmentSCCSStations))
-                if hasattr(sec, "IncludeStructureStations"):
-                    self.chk_include_struct_keys.setChecked(bool(sec.IncludeStructureStations))
-                if hasattr(sec, "StructureStationText"):
-                    self.txt_struct_stations.setText(str(sec.StructureStationText or ""))
+                if hasattr(sec, "UseStructureSet"):
+                    self.chk_use_structure_set.setChecked(bool(sec.UseStructureSet))
+                if hasattr(sec, "IncludeStructureStartEnd"):
+                    self.chk_struct_start_end.setChecked(bool(sec.IncludeStructureStartEnd))
+                if hasattr(sec, "IncludeStructureCenters"):
+                    self.chk_struct_centers.setChecked(bool(sec.IncludeStructureCenters))
+                if hasattr(sec, "StructureBufferBefore"):
+                    self.spin_struct_buffer_before.setValue(float(sec.StructureBufferBefore))
+                if hasattr(sec, "StructureBufferAfter"):
+                    self.spin_struct_buffer_after.setValue(float(sec.StructureBufferAfter))
+                if hasattr(sec, "CreateStructureTaggedChildren"):
+                    self.chk_struct_tagged_children.setChecked(bool(sec.CreateStructureTaggedChildren))
+                if hasattr(sec, "ApplyStructureOverrides"):
+                    self.chk_struct_apply_overrides.setChecked(bool(sec.ApplyStructureOverrides))
             except Exception:
                 pass
 
@@ -533,16 +635,19 @@ class SectionGeneratorTaskPanel:
         msg.append(f"Centerline Display: {'FOUND' if src else 'NOT FOUND'}")
         msg.append(f"Assembly Template: {'FOUND' if asm else 'NOT FOUND'}")
         msg.append(f"Section Set: {'FOUND' if sec else 'NOT FOUND'}")
+        msg.append(f"StructureSet sources: {len(self._structures)} found")
         msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
         if pref_terrain is not None:
             msg.append(f"Daylight terrain: {pref_terrain.Label} ({pref_terrain.Name})")
+        if pref_structure is not None:
+            msg.append(f"Structure source: {pref_structure.Label} ({pref_structure.Name})")
         msg.append(f"Daylight terrain coords: {self.cmb_day_coords.currentText()}")
         msg.append("")
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
         msg.append("2) Generate to create/update SectionSet")
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
-        msg.append("   - Structure/Crossing key stations can be merged from text list")
+        msg.append("   - StructureSet integration can merge start/end/center and optional buffer stations")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
         msg.append("   - Daylight terrain coordinate mode can be Local or World")
@@ -550,6 +655,7 @@ class SectionGeneratorTaskPanel:
         self._sync_day_coord_mode_from_selected_terrain()
         self._update_side_ui()
         self._update_mode_ui()
+        self._update_structure_ui()
 
     def _create_assembly_template(self):
         if self.doc is None:
@@ -662,6 +768,15 @@ class SectionGeneratorTaskPanel:
         src = self._resolve_source_display()
         asm = self._resolve_assembly()
         sec = self._create_or_get_section_set()
+        struct_src = self._current_structure_source()
+
+        if bool(self.chk_use_structure_set.isChecked()) and struct_src is None:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Generate Sections",
+                "Use StructureSet is enabled, but no StructureSet source is selected.",
+            )
+            return
 
         try:
             self._set_suspend_recompute(sec, True)
@@ -677,9 +792,25 @@ class SectionGeneratorTaskPanel:
             if hasattr(sec, "IncludeAlignmentSCCSStations"):
                 sec.IncludeAlignmentSCCSStations = bool(self.chk_include_sccs_keys.isChecked())
             if hasattr(sec, "IncludeStructureStations"):
-                sec.IncludeStructureStations = bool(self.chk_include_struct_keys.isChecked())
+                sec.IncludeStructureStations = False
             if hasattr(sec, "StructureStationText"):
-                sec.StructureStationText = str(self.txt_struct_stations.text() or "")
+                sec.StructureStationText = ""
+            if hasattr(sec, "StructureSet"):
+                sec.StructureSet = struct_src
+            if hasattr(sec, "UseStructureSet"):
+                sec.UseStructureSet = bool(self.chk_use_structure_set.isChecked())
+            if hasattr(sec, "IncludeStructureStartEnd"):
+                sec.IncludeStructureStartEnd = bool(self.chk_struct_start_end.isChecked())
+            if hasattr(sec, "IncludeStructureCenters"):
+                sec.IncludeStructureCenters = bool(self.chk_struct_centers.isChecked())
+            if hasattr(sec, "StructureBufferBefore"):
+                sec.StructureBufferBefore = float(self.spin_struct_buffer_before.value())
+            if hasattr(sec, "StructureBufferAfter"):
+                sec.StructureBufferAfter = float(self.spin_struct_buffer_after.value())
+            if hasattr(sec, "CreateStructureTaggedChildren"):
+                sec.CreateStructureTaggedChildren = bool(self.chk_struct_tagged_children.isChecked())
+            if hasattr(sec, "ApplyStructureOverrides"):
+                sec.ApplyStructureOverrides = bool(self.chk_struct_apply_overrides.isChecked())
             sec.CreateChildSections = bool(self.chk_children.isChecked())
             if hasattr(sec, "DaylightAuto"):
                 sec.DaylightAuto = bool(self.chk_daylight.isChecked())
@@ -720,10 +851,21 @@ class SectionGeneratorTaskPanel:
             )
 
         n = len(list(getattr(sec, "StationValues", []) or []))
+        struct_count = int(getattr(sec, "ResolvedStructureCount", 0) or 0)
+        msg = [
+            "Section generation completed.",
+            f"Resolved stations: {n}",
+        ]
+        if bool(self.chk_use_structure_set.isChecked()):
+            if struct_src is not None:
+                msg.append(f"Structure source: {struct_src.Label} ({struct_src.Name})")
+            msg.append(f"Merged structure stations: {struct_count}")
+            if bool(self.chk_struct_apply_overrides.isChecked()):
+                msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, '_StructureOverrideHitCount', 0) or 0))}")
         QtWidgets.QMessageBox.information(
             None,
             "Generate Sections",
-            f"Section generation completed.\nResolved stations: {n}",
+            "\n".join(msg),
         )
 
         try:

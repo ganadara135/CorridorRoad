@@ -44,7 +44,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Fixed Project Tree Schema
 - `CorridorRoad Project`
 - `01_Inputs/{Terrains,Survey,Structures}`
-- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,Assembly,Sections,Corridor}`
+- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,Assembly,Sections,Structure Sections,Corridor}`
 - `03_Surfaces`
 - `04_Analysis`
 - `05_References` (optional)
@@ -58,9 +58,11 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Use the following files for realistic point-cloud terrain testing.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
-3. Run stations/profiles/sections and verify EG coverage and daylight behavior.
+3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
+4. Run sections and verify `Structure Sections` tree objects, EG coverage, and daylight behavior.
 
 ## Loft Twist Reduction Tips
 - If `Corridor Loft` twists or folds, first increase section interval and `Min Section Spacing`.

@@ -1,0 +1,5 @@
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,Notes
+CULV-01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,1.200,0.000,section_overlay,Box culvert crossing
+RW-01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,0.000,0.000,0.000,assembly_override,Right-side retaining wall zone
+ABUT-01,abutment_zone,470.000,515.000,492.500,both,0.000,14.000,5.000,0.000,0.000,0.000,assembly_override,Bridge abutment influence zone
+XING-01,crossing,590.000,615.000,602.500,center,0.000,8.000,3.000,0.000,1.000,0.000,tag_only,Utility crossing reference

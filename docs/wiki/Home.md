@@ -23,6 +23,14 @@ This wiki is the practical guide for daily use and development.
 ## Recommended First Test Data
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly.csv`
+
+Recommended first structure-aware test order:
+1. Import the point cloud DEM sample.
+2. Import the alignment sample.
+3. Generate stations.
+4. Load the structure sample in `Edit Structures`.
+5. Generate sections and confirm `Structure Sections` appears in the alignment tree.
 
 ## How To Use This Wiki
 1. Start from [Quick Start](Quick-Start) for first successful run.
@@ -39,7 +47,7 @@ This wiki is the practical guide for daily use and development.
 - Use the forum thread for usage questions, bug discussion, and development feedback.
 
 ## Core Pipeline
-`Terrain (EG) -> Alignment -> Stations -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
+`Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
 
 ![Project tree and pipeline result objects in one view](images/wiki-home-project-tree-pipeline.png)
 
@@ -58,6 +66,7 @@ This wiki is the practical guide for daily use and development.
 - Daylight terrain source in section workflow is mesh based.
 - Runtime terrain/cut-fill sampling follows DEM-style regular XY grid.
 - For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
+- Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays loft-safe.
 
 ---
 Last verified with commit: `<fill-after-release>`

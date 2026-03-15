@@ -213,11 +213,101 @@ Important behavior:
 > [Screenshot Needed] Edit PVI panel with PVI table and Generate FG options.
 > Suggested file: `wiki-menu-reference-edit-pvi.png`
 
+## 5. Edit Structures
+
+Use `Edit Structures` after `Generate Stations`.
+This panel creates or updates the `StructureSet` object that stores structure zones, structure station ranges, and simple 3D reference geometry.
+
+Important behavior:
+1. `StartStation`, `EndStation`, and `CenterStation` are station-combo values populated from `Stationing`.
+2. `Type`, `Side`, and `BehaviorMode` are controlled lists to keep structure behavior predictable.
+3. `Apply` writes the `StructureSet`, updates simple 3D solids, and links the result into `01_Inputs/Structures`.
+
+### Main Controls
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Target StructureSet` | Chooses whether to edit an existing `StructureSet` or create a new one. | Use the existing set in a single-alignment workflow. Create a new one only when you intentionally want a separate structure dataset. |
+| `CSV File` | Optional path to a structure CSV file. | Use it when bulk-loading structure records instead of typing rows manually. |
+| `Browse CSV` | Opens a file chooser for structure CSV. | Recommended for standard sample/test workflows. |
+| `Load CSV` | Reads the CSV and fills the structure table. | Review the table before `Apply`. |
+| `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
+
+### Table Columns
+
+| Column | Meaning | How to use it |
+|---|---|---|
+| `Id` | Structure identifier. | Use a stable readable ID like `CULV-01` or `RW-02`. |
+| `Type` | Structure classification. | Allowed values are `crossing`, `culvert`, `retaining_wall`, `bridge_zone`, `abutment_zone`, `other`. |
+| `StartStation` | Structure influence start station. | Select from the generated station list when possible. |
+| `EndStation` | Structure influence end station. | Must be greater than or equal to `StartStation`. |
+| `CenterStation` | Main representative station for labeling and midpoint behavior. | Usually set to the center of the structure zone. |
+| `Side` | Which side of the alignment the structure belongs to. | Use `left`, `right`, `center`, or `both`. |
+| `Offset` | Lateral offset from the centerline. | Positive/negative placement depends on the resolved local section frame. Use `0` for center crossings. |
+| `Width` | Structure width or influence width. | Used for both simple 3D display and section overlay envelope. |
+| `Height` | Structure height or influence height. | Used for display and overlay envelope. |
+| `BottomElevation` | Explicit bottom elevation for display/overlay. | Use this when the structure invert or footing elevation is known. |
+| `Cover` | Cover depth used when bottom elevation is not specified. | Useful for culverts or buried crossings. |
+| `RotationDeg` | Rotation about the local vertical axis. | Leave `0` unless the structure should be rotated relative to alignment normal/tangent. |
+| `BehaviorMode` | Controls how the structure participates in section generation. | `tag_only` adds metadata only, `section_overlay` adds section-aware overlay behavior, `assembly_override` also enables section override logic. |
+| `Notes` | Free-form notes. | Use for documentation and later review. |
+
+### Recommended Usage
+1. Generate stations first.
+2. Load `tests/samples/structure_utm_realistic_hilly.csv` or enter rows manually.
+3. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
+4. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
+
+### Practical Notes
+1. A `retaining_wall` should usually use `left` or `right`, not `center`.
+2. A `culvert` or `crossing` usually makes more sense with `center` or `both`.
+3. If `BottomElevation` is empty, the display system falls back to centerline Z and `Cover`.
+4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
+
+> [Screenshot Needed] Edit Structures panel with sample rows loaded.
+> Suggested file: `wiki-menu-reference-edit-structures.png`
+
+## 6. Generate Sections: Structure Options
+
+The `Generate Sections` panel now includes structure-aware options that work with `StructureSet`.
+
+### Structure Integration Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Use linked StructureSet` | Enables station merge and structure-aware section generation from `StructureSet`. | Turn this on when structures should influence section station selection or overlays. |
+| `Structure Source` | Chooses the source `StructureSet`. | Normally use the active project structure set. |
+| `Include start/end stations` | Adds structure start and end stations into the section station list. | Keep enabled in most workflows. |
+| `Include center stations` | Adds structure center stations into the section station list. | Keep enabled when you want a clear mid-structure section. |
+| `Buffer Before` | Adds an extra station before each structure start. | Useful when you want one section just before entering the structure zone. |
+| `Buffer After` | Adds an extra station after each structure end. | Useful when you want one section just after leaving the structure zone. |
+| `Add structure tags to child sections` | Adds tags and metadata to child sections at structure-related stations. | Keep enabled if you want labels and tree identification. |
+| `Apply structure overrides` | Enables structure-type override logic during section build. | Turn this on when structure zones should constrain daylight/side-slope behavior. |
+
+### Override Policy Summary
+
+| Structure Type | Current Section Override Behavior |
+|---|---|
+| `crossing` | Affects both sides; keeps loft-safe stub points through the structure zone. |
+| `culvert` | Affects both sides; disables daylight through the zone and keeps stub side points. |
+| `retaining_wall` | Affects the declared side only; opposite side can remain normal. |
+| `bridge_zone` | Affects both sides conservatively. |
+| `abutment_zone` | Affects both sides conservatively. |
+| `other` | No special type logic beyond the selected `BehaviorMode`. |
+
+### Output To Expect
+1. Standard section children continue to appear under `Sections`.
+2. Structure overlay objects appear under `Structure Sections`.
+3. `SectionSet.Status` reports merged structure count and override hit count.
+
+> [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
+> Suggested file: `wiki-menu-reference-generate-sections-structures.png`
+
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).
 2. Use [Workflow](Workflow) for command order.
 3. Use this page when you need field-by-field option meaning.
-4. Use [Troubleshooting](Troubleshooting) when sampled EG/FG output is incomplete or inconsistent.
+4. Use [Troubleshooting](Troubleshooting) when sampled EG/FG or structure-aware output is incomplete or inconsistent.
 
 ---
 Last verified with commit: `<fill-after-release>`
