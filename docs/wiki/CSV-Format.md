@@ -74,5 +74,38 @@ Recommended sample file:
 - Non-numeric text in numeric columns causes row skips.
 - Mixed coordinate frames (local/world mismatch) produce shifted results.
 
+## 5. DEM Cell Size Tuning
+
+`CellSize` controls how the imported point cloud is sampled into the DEM grid.
+
+How to interpret it:
+- Smaller `CellSize` preserves more local terrain detail.
+- Smaller `CellSize` also makes sparse areas more visible, which can leave holes or weak coverage in the DEM.
+- Larger `CellSize` averages over a wider area and can reduce no-data gaps in sparse point clouds.
+- Larger `CellSize` can help reduce blank or zero EG/profile values when the source point cloud is not dense enough.
+
+When to increase `CellSize`:
+1. EG values are blank at many stations.
+2. Profile data contains long zero-value runs after DEM import.
+3. The terrain mesh looks fragmented or contains many small holes.
+4. Point spacing in the CSV is visibly wider than the current DEM cell size.
+
+Tradeoff:
+1. If `CellSize` is too small, terrain detail is preserved but coverage may be unstable.
+2. If `CellSize` is too large, EG/profile coverage may improve, but the terrain becomes smoother and sharp features may be flattened.
+
+Recommended tuning approach:
+1. Start near the typical XY point spacing of the source CSV.
+2. If EG/profile values contain many blanks or zeros, increase `CellSize` gradually.
+3. Rebuild the terrain and regenerate profiles after each change.
+4. Stop when coverage becomes stable without excessively flattening the terrain.
+
+Practical note:
+- If your point cloud spacing is irregular, it is usually safer to use a slightly larger `CellSize` than the smallest local spacing.
+- For early testing, stable EG coverage is often more important than preserving every small terrain variation.
+
+> [Screenshot Needed] PointCloud DEM task panel showing `CellSize` adjustment.
+> Suggested file: `wiki-csv-dem-cellsize-tuning.png`
+
 ---
 Last verified with commit: `<fill-after-release>`

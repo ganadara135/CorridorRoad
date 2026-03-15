@@ -2,6 +2,8 @@
 
 This page describes the standard end-to-end CorridorRoad workflow.
 
+For field-by-field explanations of task-panel options, see [Menu Reference](Menu-Reference).
+
 ## 1. Project Initialization
 1. `New Project`
 2. `Project Setup`
@@ -27,6 +29,11 @@ Output:
 Validation:
 - Terrain mesh has valid facets.
 - Terrain coverage encloses the intended alignment area.
+
+DEM tuning note:
+1. If EG/profile values later appear as blank or `0` at many stations, rebuild the terrain with a larger DEM `CellSize`.
+2. A larger `CellSize` can reduce holes and weak coverage when the source point cloud is sparse.
+3. Do not increase it too aggressively, because very large cells will smooth out real terrain variation.
 
 ![Point cloud DEM source and generated terrain mesh](images/wiki-workflow-02-terrain-eg.png)
 ![Point cloud DEM source and generated terrain mesh second](images/wiki-workflow-02-terrain-eg_2.png)
@@ -58,6 +65,11 @@ Output:
 Validation:
 - Station list count is reasonable for interval.
 - EG fill coverage is acceptable before FG generation.
+
+If profile EG contains many blanks or `0` values:
+1. Check whether the alignment is fully inside DEM coverage.
+2. Check whether the source point cloud is too sparse for the current DEM `CellSize`.
+3. Rebuild the DEM terrain with a larger `CellSize`, then regenerate stations/profiles.
 
 ![stations](images/wiki-workflow-04-stations-profiles.png)
 ![profile table with EG columns](images/wiki-workflow-04-stations-profiles_2.png)

@@ -19,9 +19,40 @@ Actions:
 1. Re-import terrain from dense point cloud CSV.
 2. Move or regenerate alignment to stay in terrain range.
 3. Regenerate stations and profiles.
+4. If the source point cloud is sparse, regenerate the DEM with a larger `CellSize`.
+5. After changing `CellSize`, rebuild terrain first, then regenerate profile-related objects.
+
+Why larger `CellSize` can help:
+1. A very small DEM cell size preserves detail, but it also exposes sparse gaps in the source point cloud.
+2. Those gaps can produce weak DEM coverage, which later appears as blank or `0` EG/profile values at some stations.
+3. A moderately larger `CellSize` samples the terrain more coarsely and can reduce those gaps.
+4. The tradeoff is that overly large cells can flatten terrain detail, so increase gradually rather than jumping to a very large value.
 
 > [Screenshot Needed] Profile table with EG blank rows example.
 > Suggested file: `wiki-troubleshooting-eg-blank.png`
+
+> [Screenshot Needed] DEM import panel with larger `CellSize` used to improve EG coverage.
+> Suggested file: `wiki-troubleshooting-eg-blank-cellsize-fix.png`
+
+## DEM cell size tuning
+Use DEM cell-size adjustment when terrain coverage is unstable, but the input coordinates and terrain extent are otherwise correct.
+
+Increase `CellSize` when:
+1. The point cloud is sparse or irregularly spaced.
+2. Profile EG repeatedly shows blank rows or `0` values.
+3. The terrain mesh contains many small holes or disconnected-looking areas.
+
+Do not increase `CellSize` blindly when:
+1. The alignment is outside terrain coverage.
+2. Coordinate mode is mismatched.
+3. The terrain object itself failed to generate valid facets.
+
+Recommended tuning workflow:
+1. Confirm the problem is not caused by extent or coordinate mismatch.
+2. Increase DEM `CellSize` by a modest step.
+3. Rebuild the terrain mesh.
+4. Regenerate profiles and compare EG coverage.
+5. Repeat only until coverage becomes acceptable.
 
 ## Daylight Auto does not apply
 Symptoms:

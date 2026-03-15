@@ -6,10 +6,12 @@ This folder contains draft pages to publish to GitHub Wiki.
 1. `Home.md`
 2. `Quick-Start.md`
 3. `Workflow.md`
-4. `CSV-Format.md`
-5. `Troubleshooting.md`
-6. `Developer-Guide.md`
-7. `_Sidebar.md`
+4. `Menu-Reference.md`
+5. `Screenshot-Checklist.md`
+6. `CSV-Format.md`
+7. `Troubleshooting.md`
+8. `Developer-Guide.md`
+9. `_Sidebar.md`
 
 ## Page Purpose
 | Page | Purpose | Main Audience |
@@ -17,6 +19,8 @@ This folder contains draft pages to publish to GitHub Wiki.
 | `Home.md` | Top-level entry and navigation | All users |
 | `Quick-Start.md` | First successful run in 10-15 minutes | New users |
 | `Workflow.md` | End-to-end command sequence and data flow | Designers |
+| `Menu-Reference.md` | Detailed option meaning for key task panels | Daily users |
+| `Screenshot-Checklist.md` | Capture plan and file-by-file screenshot checklist | Documentation maintainers |
 | `CSV-Format.md` | Point cloud/alignment CSV schema and validation rules | Survey + design users |
 | `Troubleshooting.md` | Known issues and direct fixes | All users |
 | `Developer-Guide.md` | Code map, object responsibilities, and update policy | Developers |
@@ -25,7 +29,7 @@ This folder contains draft pages to publish to GitHub Wiki.
 ## Publish Order
 1. Publish `Home.md` and `_Sidebar.md` first.
 2. Publish `Quick-Start.md` and `CSV-Format.md`.
-3. Publish `Workflow.md`.
+3. Publish `Workflow.md`, `Menu-Reference.md`, and `Screenshot-Checklist.md`.
 4. Publish `Troubleshooting.md`.
 5. Publish `Developer-Guide.md`.
 

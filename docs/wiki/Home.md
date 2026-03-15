@@ -6,6 +6,8 @@ This wiki is the practical guide for daily use and development.
 ## Start Here
 - [Quick Start](Quick-Start)
 - [Workflow](Workflow)
+- [Menu Reference](Menu-Reference)
+- [Screenshot Checklist](Screenshot-Checklist)
 - [CSV Format](CSV-Format)
 - [Troubleshooting](Troubleshooting)
 - [Developer Guide](Developer-Guide)
@@ -25,9 +27,11 @@ This wiki is the practical guide for daily use and development.
 ## How To Use This Wiki
 1. Start from [Quick Start](Quick-Start) for first successful run.
 2. Use [Workflow](Workflow) when doing full production sequence.
-3. Use [CSV Format](CSV-Format) before importing external survey/alignment data.
-4. Open [Troubleshooting](Troubleshooting) when EG/daylight/output issues appear.
-5. Use [Developer Guide](Developer-Guide) for code-level changes.
+3. Use [Menu Reference](Menu-Reference) when you need detailed meaning for task-panel options.
+4. Use [Screenshot Checklist](Screenshot-Checklist) when preparing documentation images.
+5. Use [CSV Format](CSV-Format) before importing external survey/alignment data.
+6. Open [Troubleshooting](Troubleshooting) when EG/daylight/output issues appear.
+7. Use [Developer Guide](Developer-Guide) for code-level changes.
 
 ## Questions And Support
 - If users or developers have questions about CorridorRoad, please ask in the project thread on the FreeCAD Forum:
