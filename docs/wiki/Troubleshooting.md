@@ -19,9 +19,40 @@ Actions:
 1. Re-import terrain from dense point cloud CSV.
 2. Move or regenerate alignment to stay in terrain range.
 3. Regenerate stations and profiles.
+4. If the source point cloud is sparse, regenerate the DEM with a larger `CellSize`.
+5. After changing `CellSize`, rebuild terrain first, then regenerate profile-related objects.
+
+Why larger `CellSize` can help:
+1. A very small DEM cell size preserves detail, but it also exposes sparse gaps in the source point cloud.
+2. Those gaps can produce weak DEM coverage, which later appears as blank or `0` EG/profile values at some stations.
+3. A moderately larger `CellSize` samples the terrain more coarsely and can reduce those gaps.
+4. The tradeoff is that overly large cells can flatten terrain detail, so increase gradually rather than jumping to a very large value.
 
 > [Screenshot Needed] Profile table with EG blank rows example.
 > Suggested file: `wiki-troubleshooting-eg-blank.png`
+
+> [Screenshot Needed] DEM import panel with larger `CellSize` used to improve EG coverage.
+> Suggested file: `wiki-troubleshooting-eg-blank-cellsize-fix.png`
+
+## DEM cell size tuning
+Use DEM cell-size adjustment when terrain coverage is unstable, but the input coordinates and terrain extent are otherwise correct.
+
+Increase `CellSize` when:
+1. The point cloud is sparse or irregularly spaced.
+2. Profile EG repeatedly shows blank rows or `0` values.
+3. The terrain mesh contains many small holes or disconnected-looking areas.
+
+Do not increase `CellSize` blindly when:
+1. The alignment is outside terrain coverage.
+2. Coordinate mode is mismatched.
+3. The terrain object itself failed to generate valid facets.
+
+Recommended tuning workflow:
+1. Confirm the problem is not caused by extent or coordinate mismatch.
+2. Increase DEM `CellSize` by a modest step.
+3. Rebuild the terrain mesh.
+4. Regenerate profiles and compare EG coverage.
+5. Repeat only until coverage becomes acceptable.
 
 ## Daylight Auto does not apply
 Symptoms:
@@ -39,6 +70,65 @@ Actions:
 
 > [Screenshot Needed] Sections panel showing Daylight Auto and terrain selection.
 > Suggested file: `wiki-troubleshooting-daylight-settings.png`
+
+## Structure overlays do not appear
+Symptoms:
+- `Edit Structures` completed, but no station-based structure overlays are visible.
+- `Structure Sections` folder is missing or empty.
+
+Checks:
+1. Confirm `Generate Stations` was run before `Edit Structures`.
+2. Confirm `Generate Sections` was run with `Use linked StructureSet` enabled.
+3. Confirm structure station ranges fall inside the current section generation range.
+4. Confirm structure rows have positive `Width` and `Height`.
+5. Confirm the relevant structure rows are not all `tag_only` if you expected override-driven section behavior.
+
+Actions:
+1. Re-open `Edit Structures` and verify the `StructureSet` rows.
+2. Re-run `Generate Sections`.
+3. Check the project tree under `02_Alignments/.../Structure Sections`.
+4. If necessary, increase the visible section range or include structure start/end/center stations explicitly.
+
+Notes:
+1. Structure overlays are shown in a separate `Structure Sections` folder on purpose.
+2. They are not embedded inside the base section wire because that would break Corridor Loft point consistency.
+
+> [Screenshot Needed] Alignment tree showing populated `Structure Sections`.
+> Suggested file: `wiki-troubleshooting-structure-sections-tree.png`
+
+## Structure override changes only one side
+Symptoms:
+- A retaining wall or side-specific structure affects only the left or right side of the section.
+
+Interpretation:
+1. This is expected for `retaining_wall` when `Side` is `left` or `right`.
+2. The current override policy keeps the opposite side as normal when possible.
+3. Zone-type structures such as `culvert`, `crossing`, `bridge_zone`, and `abutment_zone` affect both sides more conservatively.
+
+Action:
+1. Check the structure `Type`.
+2. Check the structure `Side`.
+3. If you only need tagging and overlays, change `BehaviorMode` to `tag_only`.
+
+## Structure boundary still changes too abruptly
+Symptoms:
+- The section shape looks too sudden at the structure entry or exit even though transition stations are enabled.
+
+Checks:
+1. Confirm `Include transition stations` is enabled.
+2. Confirm `Auto transition distance` is enabled first.
+3. Review the structure `Width` and `Height`; auto transition uses those values as part of its sizing rule.
+
+Actions:
+1. Keep `Auto transition distance` on for mixed structure types.
+2. If one specific structure still changes too abruptly, either:
+   - increase its representative `Width`/`Height` if the current values are too small, or
+   - turn off auto mode and use a larger manual `Transition Distance`.
+3. Regenerate sections and rebuild corridor loft after changing the transition policy.
+
+Interpretation:
+1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
+2. `bridge_zone` and `abutment_zone` use longer transition distances by design.
 
 ## Corridor Loft is twisted or locally flipped
 Symptoms:

@@ -44,7 +44,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Fixed Project Tree Schema
 - `CorridorRoad Project`
 - `01_Inputs/{Terrains,Survey,Structures}`
-- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,Assembly,Sections,Corridor}`
+- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,Assembly,Sections,Structure Sections,Corridor}`
 - `03_Surfaces`
 - `04_Analysis`
 - `05_References` (optional)
@@ -58,13 +58,21 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Use the following files for realistic point-cloud terrain testing.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_notch.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
-3. Run stations/profiles/sections and verify EG coverage and daylight behavior.
+3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
+4. Run sections and verify `Structure Sections` tree objects, EG coverage, and daylight behavior.
+5. Build `Corridor Loft` with `Use structure corridor modes` enabled to test `skip_zone` handling from the same structure CSV.
 
 ## Loft Twist Reduction Tips
 - If `Corridor Loft` twists or folds, first increase section interval and `Min Section Spacing`.
 - Turn on `Use ruled loft` and keep `Auto-fix flipped sections` enabled.
+- If structures are active in sections, keep `Split at structure zones` enabled so the loft can break at structure boundaries instead of forcing one continuous span.
+- Keep `Auto transition distance` enabled in structure-aware sections unless you have a clear reason to force one manual distance for all structure types.
+- Current structure override intent: `culvert/crossing` create short flat bench-like sections, `retaining_wall` creates a short steep wall-side section, and `bridge/abutment` zones trim both sides conservatively.
+- For corridor-level structure handling, use `split_only` first, `skip_zone` only when a full gap is intended, and `notch` when the corridor should stay continuous but receive a simple structure cut.
 - If `Daylight Auto` is used, reduce abrupt side-width changes with `Daylight Max Width Delta`.
 - Check section wires first: unstable EG/FG data, terrain holes, or sudden daylight jumps usually appear there before the loft fails.
 - Detailed guidance: https://github.com/ganadara135/CorridorRoad/wiki/Workflow and https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
