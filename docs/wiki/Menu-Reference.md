@@ -250,7 +250,14 @@ Important behavior:
 | `Cover` | Cover depth used when bottom elevation is not specified. | Useful for culverts or buried crossings. |
 | `RotationDeg` | Rotation about the local vertical axis. | Leave `0` unless the structure should be rotated relative to alignment normal/tangent. |
 | `BehaviorMode` | Controls how the structure participates in section generation. | `tag_only` adds metadata only, `section_overlay` adds section-aware overlay behavior, `assembly_override` also enables section override logic. |
-| `CorridorMode` | Controls how the structure should be consumed by `Corridor Loft`. | `none` ignores corridor-level changes, `split_only` only splits loft spans, `skip_zone` omits the corridor body across the active structure span, and `notch` applies a simple structure cut to the corridor solid. |
+| `GeometryMode` | Controls how the structure is displayed in 3D and in `Structure Sections` overlays. | `box` keeps the simple rectangular fallback. `template` enables parametric structure geometry. |
+| `TemplateName` | Selects the template when `GeometryMode=template`. | Current values are `box_culvert` and `retaining_wall`. |
+| `WallThickness` | Template wall thickness. | Used by both `box_culvert` and `retaining_wall`. |
+| `FootingWidth` | Retaining-wall footing width. | Mainly used by the `retaining_wall` template. |
+| `FootingThickness` | Retaining-wall footing thickness. | Mainly used by the `retaining_wall` template. |
+| `CapHeight` | Optional top cap height. | Used by both templates when a raised top cap is needed. |
+| `CellCount` | Number of culvert cells. | Used by the `box_culvert` template. Minimum practical value is `1`. |
+| `CorridorMode` | Controls how the structure should be consumed by `Corridor Loft`. | `none` ignores corridor-level changes, `split_only` only splits loft spans, `skip_zone` omits the corridor body across the active structure span, and `notch` uses a notch-aware loft profile. In the current implementation, `notch` is mainly intended for `culvert` and `crossing`. |
 | `CorridorMargin` | Expands the corridor skip envelope beyond start/end station. | Use a small positive margin only when the skipped corridor zone should be slightly wider than the structure station range. |
 | `Notes` | Free-form notes. | Use for documentation and later review. |
 
@@ -258,7 +265,8 @@ Important behavior:
 1. Generate stations first.
 2. Load `tests/samples/structure_utm_realistic_hilly.csv` or enter rows manually.
 3. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
-4. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
+4. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
+5. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -266,6 +274,14 @@ Important behavior:
 3. If `BottomElevation` is empty, the display system falls back to centerline Z and `Cover`.
 4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
 5. `CorridorMode` is now the main way to tell `Corridor Loft` whether a structure should only stabilize segmentation or actually omit a corridor span.
+6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
+
+### Current Template Support
+
+| Template | Current behavior |
+|---|---|
+| `box_culvert` | Builds an outer culvert shell with internal cell voids in 3D display and shows cell-aware section overlays in `Structure Sections`. |
+| `retaining_wall` | Builds footing + stem + optional cap in 3D display and shows matching retaining-wall section overlays. |
 
 > [Screenshot Needed] Edit Structures panel with sample rows loaded.
 > Suggested file: `wiki-menu-reference-edit-structures.png`
@@ -294,6 +310,12 @@ The `Generate Sections` panel now includes structure-aware options that work wit
 |---|---|---|
 | `Use structure corridor modes` | Reads `CorridorMode` from the linked `StructureSet` during corridor build. | Keep enabled if structures should affect the corridor body, not just sections. |
 | `Default structure corridor mode` | Fallback mode used when a structure record does not specify `CorridorMode`. | `split_only` is the safe default. Use `skip_zone` only when missing corridor modes should still create corridor gaps. |
+| `Notch transition scale` | Scales how gradually a notch ramps in and out around transition stations. | Start with `1.0`. Increase it for a longer, softer notch transition; reduce it if the notch should reach full effect more quickly. |
+
+Recommended user policy:
+1. `culvert`, `crossing` -> `notch`
+2. `bridge_zone`, `abutment_zone` -> `skip_zone`
+3. `retaining_wall` -> `split_only`
 
 ### Override Policy Summary
 
@@ -332,6 +354,7 @@ When to override manually:
 1. Standard section children continue to appear under `Sections`.
 2. Structure overlay objects appear under `Structure Sections`.
 3. `SectionSet.Status` reports merged structure count and override hit count.
+4. `CorridorLoft` can report `Notch-aware stations` and `Closed profile schema` when a notch-aware loft profile is used.
 
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`

@@ -27,7 +27,7 @@ class CorridorLoftTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -74,6 +74,11 @@ class CorridorLoftTaskPanel:
         self.cmb_default_structure_mode = QtWidgets.QComboBox()
         self.cmb_default_structure_mode.addItems(["none", "split_only", "skip_zone"])
         self.cmb_default_structure_mode.setCurrentText("split_only")
+        self.spin_notch_transition_scale = QtWidgets.QDoubleSpinBox()
+        self.spin_notch_transition_scale.setRange(0.1, 10.0)
+        self.spin_notch_transition_scale.setDecimals(2)
+        self.spin_notch_transition_scale.setSingleStep(0.1)
+        self.spin_notch_transition_scale.setValue(1.0)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
         form_opts.addRow("Min Section Spacing:", self.spin_min_spacing)
@@ -82,11 +87,17 @@ class CorridorLoftTaskPanel:
         form_opts.addRow(self.chk_structure_split)
         form_opts.addRow(self.chk_structure_modes)
         form_opts.addRow("Default structure corridor mode:", self.cmb_default_structure_mode)
+        form_opts.addRow("Notch transition scale:", self.spin_notch_transition_scale)
         form_opts.addRow(self.chk_auto)
         main.addWidget(gb_opt)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_build = QtWidgets.QPushButton("Build Corridor Loft")
-        main.addWidget(self.btn_build)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_build)
+        row_btn.addStretch(1)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         gb_run = QtWidgets.QGroupBox("Run")
         fr = QtWidgets.QFormLayout(gb_run)
@@ -98,6 +109,7 @@ class CorridorLoftTaskPanel:
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
         self.btn_build.clicked.connect(self._build)
+        self.btn_close.clicked.connect(self.reject)
         return w
 
     @staticmethod
@@ -146,6 +158,48 @@ class CorridorLoftTaskPanel:
             return None
         return self._corridors[j]
 
+    def _repair_corridor_object(self, cor):
+        if cor is None:
+            return None
+        try:
+            CorridorLoft(cor)
+        except Exception:
+            try:
+                ensure_corridor_loft_properties(cor)
+            except Exception:
+                return None
+        try:
+            ViewProviderCorridorLoft(cor.ViewObject)
+        except Exception:
+            pass
+        return cor
+
+    def _candidate_corridors(self):
+        out = []
+        seen = set()
+
+        def _add(o):
+            if o is None:
+                return
+            key = getattr(o, "Name", None) or str(id(o))
+            if key in seen:
+                return
+            seen.add(key)
+            out.append(o)
+
+        prj = find_project(self.doc)
+        if prj is not None:
+            _add(getattr(prj, "CorridorLoft", None))
+        for o in self._corridors:
+            _add(o)
+        for o in list(getattr(self.doc, "Objects", []) or []):
+            try:
+                if str(getattr(o, "Name", "") or "").startswith("CorridorLoft"):
+                    _add(o)
+            except Exception:
+                pass
+        return out
+
     def _refresh_context(self):
         if self.doc is None:
             self.lbl_info.setText("No active document.")
@@ -181,6 +235,7 @@ class CorridorLoftTaskPanel:
             self.chk_structure_split.setChecked(True)
             self.chk_structure_modes.setChecked(True)
             self.cmb_default_structure_mode.setCurrentText("split_only")
+            self.spin_notch_transition_scale.setValue(1.0)
             self.chk_auto.setChecked(True)
             self.lbl_status.setText("New corridor will be created.")
             return
@@ -198,13 +253,31 @@ class CorridorLoftTaskPanel:
         self.chk_structure_split.setChecked(bool(getattr(cor, "SplitAtStructureZones", True)))
         self.chk_structure_modes.setChecked(bool(getattr(cor, "UseStructureCorridorModes", True)))
         self.cmb_default_structure_mode.setCurrentText(str(getattr(cor, "DefaultStructureCorridorMode", "split_only") or "split_only"))
+        self.spin_notch_transition_scale.setValue(float(getattr(cor, "NotchTransitionScale", 1.0) or 1.0))
         self.chk_auto.setChecked(bool(getattr(cor, "AutoUpdate", True)))
         self.lbl_status.setText(str(getattr(cor, "Status", "Ready")))
 
     def _ensure_target_corridor(self):
         cor = self._current_target()
         if cor is not None:
-            return cor
+            repaired = self._repair_corridor_object(cor)
+            if repaired is not None:
+                return repaired
+
+        sec = self._current_section()
+        for cand in self._candidate_corridors():
+            try:
+                if sec is not None and getattr(cand, "SourceSectionSet", None) == sec:
+                    repaired = self._repair_corridor_object(cand)
+                    if repaired is not None:
+                        return repaired
+            except Exception:
+                pass
+
+        for cand in self._candidate_corridors():
+            repaired = self._repair_corridor_object(cand)
+            if repaired is not None:
+                return repaired
 
         cor = self.doc.addObject("Part::FeaturePython", "CorridorLoft")
         CorridorLoft(cor)
@@ -235,6 +308,7 @@ class CorridorLoftTaskPanel:
             cor.SplitAtStructureZones = bool(self.chk_structure_split.isChecked())
             cor.UseStructureCorridorModes = bool(self.chk_structure_modes.isChecked())
             cor.DefaultStructureCorridorMode = str(self.cmb_default_structure_mode.currentText() or "split_only")
+            cor.NotchTransitionScale = float(self.spin_notch_transition_scale.value())
             cor.AutoUpdate = bool(self.chk_auto.isChecked())
             if hasattr(cor, "MinSectionSpacing"):
                 cor.MinSectionSpacing = float(self.spin_min_spacing.value())
@@ -250,15 +324,38 @@ class CorridorLoftTaskPanel:
                 )
 
             self.doc.recompute()
+            marker_objs = []
+            try:
+                marker_objs = [
+                    o
+                    for o in list(getattr(self.doc, "Objects", []) or [])
+                    if str(getattr(o, "Name", "") or "").startswith("CorridorSkipMarker")
+                    and getattr(o, "ParentCorridorLoft", None) == cor
+                ]
+            except Exception:
+                marker_objs = []
+            if prj is not None:
+                try:
+                    link_project(
+                        prj,
+                        links={"CorridorLoft": cor},
+                        links_if_empty={"SectionSet": sec},
+                        adopt_extra=[cor, sec] + list(marker_objs),
+                    )
+                except Exception:
+                    pass
             self.lbl_status.setText(str(getattr(cor, "Status", "OK")))
             n = len(list(getattr(sec, "StationValues", []) or []))
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
+            notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
+            closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
+            skip_marker_count = int(getattr(cor, "SkipMarkerCount", 0) or 0)
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nApplied notches: {notch_count}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

@@ -32,7 +32,7 @@ class PviEditorTaskPanel:
 
     # ---- TaskPanel API ----
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -110,12 +110,19 @@ class PviEditorTaskPanel:
 
         self.btn_preview = QtWidgets.QPushButton("Preview FG (console)")
         self.btn_generate_only = QtWidgets.QPushButton("Generate FG Now (apply)")
+        self.btn_close = QtWidgets.QPushButton("Close")
 
         gr.addRow(self.lbl_info)
         gr.addRow(self.chk_create_bundle)
         gr.addRow(self.chk_keep_eg)
         gr.addRow(self.btn_preview)
-        gr.addRow(self.btn_generate_only)
+        row_apply = QtWidgets.QHBoxLayout()
+        row_apply.addWidget(self.btn_generate_only)
+        row_apply.addStretch(1)
+        row_apply.addWidget(self.btn_close)
+        w_apply = QtWidgets.QWidget()
+        w_apply.setLayout(row_apply)
+        gr.addRow(w_apply)
 
         top.addWidget(gb_left, 3)
         top.addWidget(gb_right, 2)
@@ -128,6 +135,7 @@ class PviEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_preview.clicked.connect(self._preview_fg)
         self.btn_generate_only.clicked.connect(self._generate_fg_to_profilebundle)
+        self.btn_close.clicked.connect(self.reject)
 
         # Start with 3 blank rows for convenience
         self._set_rows(3)

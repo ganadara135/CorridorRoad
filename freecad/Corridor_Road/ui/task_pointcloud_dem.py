@@ -41,7 +41,7 @@ class PointCloudDEMTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -99,7 +99,7 @@ class PointCloudDEMTaskPanel:
         self.spin_cell = QtWidgets.QDoubleSpinBox()
         self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
         self.spin_cell.setDecimals(3)
-        self.spin_cell.setValue(1.0 * self._scale)
+        self.spin_cell.setValue(4.0 * self._scale)
         self.cmb_agg = QtWidgets.QComboBox()
         self.cmb_agg.addItems(["Mean", "Median", "Min", "Max"])
         self.spin_max_cells = QtWidgets.QSpinBox()
@@ -113,8 +113,13 @@ class PointCloudDEMTaskPanel:
         form_dem.addRow(self.chk_auto)
         main.addWidget(gb_dem)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_build = QtWidgets.QPushButton("Import CSV and Build DEM")
-        main.addWidget(self.btn_build)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_build)
+        row_btn.addStretch(1)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         gb_run = QtWidgets.QGroupBox("Run")
         fr = QtWidgets.QFormLayout(gb_run)
@@ -132,6 +137,7 @@ class PointCloudDEMTaskPanel:
         self.btn_browse.clicked.connect(self._on_browse)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_build.clicked.connect(self._build)
+        self.btn_close.clicked.connect(self.reject)
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_coords.currentIndexChanged.connect(self._update_coord_hint)
         return w
@@ -164,7 +170,7 @@ class PointCloudDEMTaskPanel:
                 self.cmb_out_coords.setCurrentText(str(getattr(obj, "OutputCoords", "Local") or "Local"))
                 self.cmb_delim.setCurrentText(str(getattr(obj, "Delimiter", "Auto") or "Auto"))
                 self.chk_header.setChecked(bool(getattr(obj, "HasHeader", True)))
-                self.spin_cell.setValue(float(getattr(obj, "CellSize", 1.0 * self._scale)))
+                self.spin_cell.setValue(float(getattr(obj, "CellSize", 4.0 * self._scale)))
                 self.cmb_agg.setCurrentText(str(getattr(obj, "Aggregation", "Mean") or "Mean"))
                 self.spin_max_cells.setValue(int(getattr(obj, "MaxCells", 2000000)))
                 self.chk_auto.setChecked(bool(getattr(obj, "AutoUpdate", True)))

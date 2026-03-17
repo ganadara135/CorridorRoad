@@ -76,7 +76,7 @@ class SectionGeneratorTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -275,8 +275,13 @@ class SectionGeneratorTaskPanel:
         form_opts.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_generate = QtWidgets.QPushButton("Generate Sections Now")
-        main.addWidget(self.btn_generate)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_generate)
+        row_btn.addStretch(1)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
         self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
@@ -291,6 +296,7 @@ class SectionGeneratorTaskPanel:
         self.btn_make_assembly.clicked.connect(self._create_assembly_template)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
+        self.btn_close.clicked.connect(self.reject)
 
         self._update_mode_ui()
         self._update_structure_ui()

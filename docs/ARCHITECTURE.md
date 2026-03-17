@@ -143,16 +143,32 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
   - `UseRuled`
   - `AutoFixSectionOrientation`
+  - `SplitAtStructureZones`
+  - `UseStructureCorridorModes`
+  - `DefaultStructureCorridorMode`
+  - `NotchTransitionScale`
   - `AutoUpdate`
   - `RebuildNow`
 - Results:
   - `SectionCount`, `PointCountPerSection`, `SchemaVersion`
   - `AutoFixedSectionCount`
+  - `StructureSegmentCount`, `StructureSplitStations`
+  - `SkippedStationRanges`, `SkipMarkerCount`
+  - `ResolvedStructureNotchCount`, `ResolvedNotchStationCount`
+  - `ClosedProfileSchemaVersion`
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
 - Output mode:
   - `Solid`: loft from closed profiles generated with downward heights
   - Height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+- Structure-aware corridor behavior:
+  - `split_only` keeps corridor continuity while splitting loft at structure boundaries
+  - `skip_zone` omits corridor body across structure-active spans
+  - `notch` is primarily for `culvert` / `crossing` and should prefer a notch-aware closed-profile schema
+- Current notch policy:
+  - transition stations can drive ramped notch entry/exit
+  - result reporting should expose notch-aware station count and closed-profile schema version
+  - boolean cut remains optional and is not required for the first notch-capable workflow
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed

@@ -94,7 +94,7 @@ class ProfileEditorTaskPanel:
 
     # ---- TaskPanel protocol ----
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -178,6 +178,7 @@ class ProfileEditorTaskPanel:
         self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_apply = QtWidgets.QPushButton("Apply")
+        self.btn_close = QtWidgets.QPushButton("Close")
 
         form.addRow(self.chk_create_bundle)
         form.addRow(self.chk_fg_from_va)
@@ -193,7 +194,13 @@ class ProfileEditorTaskPanel:
         w_coord_mode.setLayout(row_coord_mode)
         form.addRow("EG Terrain Coords:", w_coord_mode)
         form.addRow(self.btn_pick_terrain)
-        form.addRow(self.btn_apply)
+        row_apply = QtWidgets.QHBoxLayout()
+        row_apply.addWidget(self.btn_apply)
+        row_apply.addStretch(1)
+        row_apply.addWidget(self.btn_close)
+        w_apply = QtWidgets.QWidget()
+        w_apply.setLayout(row_apply)
+        form.addRow(w_apply)
 
         root.addWidget(gb)
 
@@ -205,6 +212,7 @@ class ProfileEditorTaskPanel:
         self.btn_fill_fg_from_va.clicked.connect(self._fill_fg_from_va)
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
+        self.btn_close.clicked.connect(self.reject)
         self.cmb_terrain_coords.currentIndexChanged.connect(self._on_terrain_coord_mode_changed)
         self.cmb_eg_terrain.currentIndexChanged.connect(self._on_terrain_source_changed)
 

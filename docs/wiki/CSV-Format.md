@@ -64,13 +64,13 @@ Recommended sample file:
 ## 3. Structure CSV
 
 Recommended header:
-`Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,Notes`
+`Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes`
 
 Example:
 ```csv
-Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,Notes
-CULV-01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,1.200,0.000,section_overlay,Box culvert crossing
-RW-01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,0.000,0.000,0.000,assembly_override,Right-side retaining wall zone
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes
+CULV-T01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,1.200,0.000,section_overlay,template,box_culvert,0.350,0.000,0.000,0.200,2,notch,0.000,Two-cell box culvert template
+RW-T01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,0.000,0.000,0.000,assembly_override,template,retaining_wall,0.450,3.200,0.500,0.150,1,split_only,0.000,Right-side retaining wall template
 ```
 
 Rules:
@@ -80,16 +80,25 @@ Rules:
 - `Side`: one of `left`, `right`, `center`, `both`
 - `Width`, `Height`: non-negative numeric values
 - `BehaviorMode`: one of `tag_only`, `section_overlay`, `assembly_override`
+- `GeometryMode`: one of `box`, `template`
+- `TemplateName`: currently `box_culvert`, `retaining_wall`
+- `WallThickness`, `FootingWidth`, `FootingThickness`, `CapHeight`, `CellCount`: template-specific fields
+- `CorridorMode`: one of `none`, `split_only`, `skip_zone`, `notch`
+- `CorridorMargin`: optional non-negative corridor envelope margin
 - `Notes`: optional free text
 
 Recommended sample file:
 - `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_template.csv`
 
 Practical notes:
 1. Run `Generate Stations` before using `Edit Structures`, even if the CSV contains valid station values.
 2. `culvert`, `crossing`, `bridge_zone`, and `abutment_zone` are usually zone-type records that affect both section sides.
 3. `retaining_wall` usually makes sense on only one side.
 4. `tag_only` is the safest mode when you want structure-aware station tags without changing section behavior.
+5. Leave `GeometryMode` empty if you want strict backward-compatible `box` behavior.
+6. Use `template / box_culvert` when you want culvert display solids and `Structure Sections` overlays to show wall and cell layout.
+7. Use `template / retaining_wall` when you want footing + stem display and overlay shapes.
 
 > [Screenshot Needed] Edit Structures panel loading a structure CSV file.
 > Suggested file: `wiki-csv-structure-import-panel.png`

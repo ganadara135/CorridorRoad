@@ -26,7 +26,7 @@ class ProjectSetupTaskPanel:
         self._refresh_context(preferred=preferred_project)
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -112,7 +112,10 @@ class ProjectSetupTaskPanel:
 
         row_btn = QtWidgets.QHBoxLayout()
         self.btn_apply = QtWidgets.QPushButton("Apply Setup")
+        self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_apply)
+        row_btn.addStretch(1)
+        row_btn.addWidget(self.btn_close)
         root.addLayout(row_btn)
 
         self.lbl_result = QtWidgets.QLabel("Idle")
@@ -122,6 +125,7 @@ class ProjectSetupTaskPanel:
         self.btn_refresh.clicked.connect(self._on_refresh)
         self.cmb_project.currentIndexChanged.connect(self._on_project_changed)
         self.btn_apply.clicked.connect(self._apply)
+        self.btn_close.clicked.connect(self.reject)
         return w
 
     @staticmethod

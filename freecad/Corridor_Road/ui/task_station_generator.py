@@ -27,7 +27,7 @@ class StationGeneratorTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -74,8 +74,13 @@ class StationGeneratorTaskPanel:
         form_opts.addRow(self.chk_show_ticks)
         main.addWidget(gb_opt)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_generate = QtWidgets.QPushButton("Generate Stations")
-        main.addWidget(self.btn_generate)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_generate)
+        row_btn.addStretch(1)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         gb_run = QtWidgets.QGroupBox("Run")
         fr = QtWidgets.QFormLayout(gb_run)
@@ -87,6 +92,7 @@ class StationGeneratorTaskPanel:
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
         self.btn_generate.clicked.connect(self._generate)
+        self.btn_close.clicked.connect(self.reject)
         return w
 
     @staticmethod

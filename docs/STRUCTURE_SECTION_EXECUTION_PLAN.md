@@ -403,6 +403,9 @@ Done when:
 2. sample workflow is documented and reproducible
 
 ## Sprint 4
+Status:
+1. functionally complete
+
 1. `GeometryMode` property integration
 2. `template` geometry for `box_culvert`
 3. `template` geometry for `retaining_wall`
@@ -411,6 +414,17 @@ Done when:
 Done when:
 1. at least two reusable parametric structure templates exist
 2. users can choose between simple box and template geometry
+
+Completed:
+1. `StructureSet` supports `GeometryMode` and template-specific parameters
+2. `box_culvert` template geometry is available for 3D structure display
+3. `retaining_wall` template geometry is available for 3D structure display
+4. `Structure Sections` overlays now reflect template-aware cross-section shapes
+5. `Edit Structures` and CSV import support template fields
+
+Remaining validation:
+1. runtime tuning of culvert wall/cell display proportions
+2. user-document calibration for when `box` is still preferable to `template`
 
 ## Sprint 5
 1. external shape reference/path support
@@ -433,14 +447,26 @@ Done when:
 3. results clearly report which station ranges were skipped
 
 ## Sprint 7
+Status:
+1. functionally complete
+
 1. notch-aware section schema design
 2. notch profile generation for `culvert` / `crossing`
 3. transition-station driven notch ramping
-4. later opt-in boolean cut prototype
+4. boolean cut remains optional/later and is no longer required for the first notch-capable workflow
 
 Done when:
 1. first notch-capable corridor workflow exists without relying on boolean cut
 2. notch transition remains loft-safe and reproducible
+
+Completed:
+1. `CorridorLoft` can build notch-aware closed profiles for `culvert` and `crossing`
+2. notch ramping follows structure transition stations
+3. result reporting includes closed-profile schema version and notch-aware station count
+
+Remaining validation:
+1. FreeCAD runtime tuning for notch proportions in real projects
+2. follow-up UI/document calibration for abutment and bridge-zone user guidance
 
 ## Definition Of Done For Phase 1
 1. `Edit Structures` exists and is usable

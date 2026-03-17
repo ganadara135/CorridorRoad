@@ -66,7 +66,7 @@ def ensure_pointcloud_dem_properties(obj):
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "DEM", "DEM cell size (m)")
-        obj.CellSize = 1.0 * scale
+        obj.CellSize = 4.0 * scale
     if not hasattr(obj, "Aggregation"):
         obj.addProperty("App::PropertyEnumeration", "Aggregation", "DEM", "Cell Z aggregation method")
         obj.Aggregation = ["Mean", "Median", "Min", "Max"]
@@ -293,7 +293,7 @@ class PointCloudDEM:
                 raise Exception(f"CSV file not found: {path}")
 
             scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-            cell = float(getattr(obj, "CellSize", 1.0 * scale))
+            cell = float(getattr(obj, "CellSize", 4.0 * scale))
             min_cell = 0.2 * scale
             if (not math.isfinite(cell)) or cell < min_cell:
                 cell = float(min_cell)

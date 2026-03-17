@@ -190,7 +190,7 @@ When `Use linked StructureSet` is enabled, structure records participate in sect
 2. Transition stations can be added automatically before and after structure boundaries.
 3. Child sections receive structure metadata such as IDs, types, and roles.
 4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
-5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or cut with a first-pass `notch`.
+5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or built with a notch-aware closed-profile schema.
 
 Current override policy by structure type:
 1. `culvert`, `crossing`
@@ -215,7 +215,26 @@ Practical recommendation:
 3. Use `assembly_override` only when the corridor shoulder/daylight should be constrained around the structure zone.
 4. Keep `Auto transition distance` enabled first; turn it off only if you need one manually fixed transition distance for every structure.
 5. Use `CorridorMode=skip_zone` for culvert or abutment spans only when the corridor body should truly be absent across that zone.
-6. Use `CorridorMode=notch` when you want the corridor to remain continuous but still receive a simple structure cut through the active span.
+6. Use `CorridorMode=notch` when you want the corridor to remain continuous but still receive a structure-aware recess through the active span. The current implementation is mainly intended for `culvert` and `crossing`, and it ramps the notch using transition stations.
+7. Simple recommended mapping for users:
+   - `culvert`, `crossing` -> `notch`
+   - `bridge_zone`, `abutment_zone` -> `skip_zone`
+   - `retaining_wall` -> `split_only`
+
+Template structure display:
+1. `Edit Structures` now supports `GeometryMode=box|template`.
+2. Current templates are `box_culvert` and `retaining_wall`.
+3. Template mode currently improves:
+   - 3D structure display
+   - `Structure Sections` overlay shape
+4. Template mode does not yet mean full corridor boolean consumption.
+5. Use `tests/samples/structure_utm_realistic_hilly_template.csv` when you want to test the current template workflow directly.
+
+Current notch policy:
+1. `culvert` and `crossing` can switch the corridor loft to a notch-aware closed-profile schema.
+2. notch depth and width are reduced automatically near `transition_before` and `transition_after`, then reach full effect inside the active span.
+3. result reporting now exposes both `Notch-aware stations` and `Closed profile schema`.
+4. `bridge_zone`, `abutment_zone`, and `retaining_wall` are still better handled with `skip_zone` or `split_only`.
 
 Auto transition distance intent:
 1. `retaining_wall` usually gets a shorter transition because it commonly affects one side only.
