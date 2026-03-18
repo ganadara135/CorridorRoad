@@ -684,8 +684,8 @@ class CorridorLoft:
             return {
                 "Enabled": True,
                 "TypeLabel": "culvert",
-                "Width": width * 1.20,
-                "Height": height * 1.25,
+                "Width": width * 1.35,
+                "Height": height * 1.40,
                 "LongPad": max(0.75 * scale, 0.20 * width),
                 "BottomExtra": 0.15 * height,
             }
@@ -693,8 +693,8 @@ class CorridorLoft:
             return {
                 "Enabled": True,
                 "TypeLabel": "crossing",
-                "Width": width * 1.10,
-                "Height": height * 1.15,
+                "Width": width * 1.20,
+                "Height": height * 1.25,
                 "LongPad": max(0.50 * scale, 0.15 * width),
                 "BottomExtra": 0.10 * height,
             }
@@ -819,13 +819,14 @@ class CorridorLoft:
         ramp = max(0.0, min(1.0, float(row.get("Ramp", 0.0) or 0.0)))
         min_width = max(0.002 * scale, 1e-4)
         min_depth = max(0.001 * scale, 1e-4)
+        depth_cap = max(0.0, 0.98 * max(float(h_left), float(h_right)))
         eff_width = min(
-            axis_len * 0.80,
+            axis_len * 0.88,
             max(min_width, float(spec.get("Width", 0.20 * scale) or (0.20 * scale)) * ramp),
         )
         eff_depth = min(
-            max(0.05 * scale, 0.90 * max(float(h_left), float(h_right))),
-            max(min_depth, float(spec.get("Height", 0.10 * scale) or (0.10 * scale)) * 0.35 * ramp),
+            max(0.05 * scale, depth_cap),
+            max(min_depth, float(spec.get("Height", 0.10 * scale) or (0.10 * scale)) * 0.70 * (ramp ** 0.85)),
         )
 
         center_shift = 0.0
@@ -848,16 +849,24 @@ class CorridorLoft:
         notch_rt = CorridorLoft._lerp_point(left_car, right_car, right_t)
         notch_lb = App.Vector(float(notch_lt.x), float(notch_lt.y), float(notch_lt.z) - eff_depth)
         notch_rb = App.Vector(float(notch_rt.x), float(notch_rt.y), float(notch_rt.z) - eff_depth)
+        shoulder_t = min(0.10, max(0.01, 0.22 * half_t))
+        left_shoulder_t = max(0.0, left_t - shoulder_t)
+        right_shoulder_t = min(1.0, right_t + shoulder_t)
+        notch_ls = CorridorLoft._lerp_point(left_car, right_car, left_shoulder_t)
+        notch_rs = CorridorLoft._lerp_point(left_car, right_car, right_shoulder_t)
+        shoulder_drop = max(0.0, min(eff_depth * 0.45, 0.35 * max(float(h_left), float(h_right))))
+        notch_ls = App.Vector(float(notch_ls.x), float(notch_ls.y), float(notch_ls.z) - shoulder_drop)
+        notch_rs = App.Vector(float(notch_rs.x), float(notch_rs.y), float(notch_rs.z) - shoulder_drop)
         right_bottom = App.Vector(float(right_outer.x), float(right_outer.y), float(right_outer.z) - float(h_right))
         left_bottom = App.Vector(float(left_outer.x), float(left_outer.y), float(left_outer.z) - float(h_left))
 
         poly = [
             left_outer,
             left_car,
-            notch_lt,
+            notch_ls,
             notch_lb,
             notch_rb,
-            notch_rt,
+            notch_rs,
             right_car,
             right_outer,
             right_bottom,
