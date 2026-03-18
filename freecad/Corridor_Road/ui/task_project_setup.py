@@ -6,6 +6,20 @@ from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 
 
+_CRS_PRESETS = [
+    ("", "", ""),
+    ("WGS 84 (EPSG:4326)", "EPSG:4326", "Global geographic coordinates"),
+    ("WGS 84 / Pseudo-Mercator (EPSG:3857)", "EPSG:3857", "Common web map projection"),
+    ("WGS 84 / UTM zone 51N (EPSG:32651)", "EPSG:32651", "UTM zone 51N"),
+    ("WGS 84 / UTM zone 52N (EPSG:32652)", "EPSG:32652", "UTM zone 52N"),
+    ("WGS 84 / UTM zone 53N (EPSG:32653)", "EPSG:32653", "UTM zone 53N"),
+    ("Korea 2000 / Central Belt (EPSG:5181)", "EPSG:5181", "Korea local projected CRS"),
+    ("Korea 2000 / West Belt 2010 (EPSG:5185)", "EPSG:5185", "Korea local projected CRS"),
+    ("Korea 2000 / Central Belt 2010 (EPSG:5186)", "EPSG:5186", "Korea local projected CRS"),
+    ("Korea 2000 / East Belt 2010 (EPSG:5187)", "EPSG:5187", "Korea local projected CRS"),
+]
+
+
 def _find_projects(doc):
     out = []
     if doc is None:
@@ -64,8 +78,20 @@ class ProjectSetupTaskPanel:
 
         gb_coord = QtWidgets.QGroupBox("Coordinate System")
         fc = QtWidgets.QFormLayout(gb_coord)
-        self.ed_epsg = QtWidgets.QLineEdit()
-        self.ed_epsg.setPlaceholderText("e.g. EPSG:5186")
+        self.cmb_epsg = QtWidgets.QComboBox()
+        self.cmb_epsg.setEditable(True)
+        self.cmb_epsg.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.cmb_epsg.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.cmb_epsg.setMinimumContentsLength(24)
+        for label, code, desc in _CRS_PRESETS:
+            text = label or "[Custom / Blank]"
+            self.cmb_epsg.addItem(text, {"code": code, "desc": desc})
+        try:
+            self.cmb_epsg.lineEdit().setPlaceholderText("Select a preset or type e.g. EPSG:5186")
+        except Exception:
+            pass
+        self.lbl_epsg_info = QtWidgets.QLabel("")
+        self.lbl_epsg_info.setWordWrap(True)
         self.ed_h_datum = QtWidgets.QLineEdit()
         self.ed_h_datum.setPlaceholderText("Horizontal datum (optional)")
         self.ed_v_datum = QtWidgets.QLineEdit()
@@ -96,7 +122,8 @@ class ProjectSetupTaskPanel:
         self.cmb_status.addItems(["Uninitialized", "Initialized", "Validated"])
         self.cmb_status.setCurrentText("Uninitialized")
 
-        fc.addRow("CRS / EPSG:", self.ed_epsg)
+        fc.addRow("CRS / EPSG:", self.cmb_epsg)
+        fc.addRow("", self.lbl_epsg_info)
         fc.addRow("Horizontal Datum:", self.ed_h_datum)
         fc.addRow("Vertical Datum:", self.ed_v_datum)
         fc.addRow("Project Origin E:", self.sp_e)
@@ -123,9 +150,69 @@ class ProjectSetupTaskPanel:
 
         self.btn_refresh.clicked.connect(self._on_refresh)
         self.cmb_project.currentIndexChanged.connect(self._on_project_changed)
+        self.cmb_epsg.currentIndexChanged.connect(self._on_epsg_combo_changed)
+        self.cmb_epsg.editTextChanged.connect(self._on_epsg_edit_changed)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
         return w
+
+    def _current_epsg_value(self):
+        text = str(self.cmb_epsg.currentText() or "").strip()
+        idx = int(self.cmb_epsg.currentIndex())
+        if 0 <= idx < self.cmb_epsg.count():
+            data = self.cmb_epsg.itemData(idx)
+            if isinstance(data, dict):
+                code = str(data.get("code", "") or "").strip()
+                label = str(self.cmb_epsg.itemText(idx) or "").strip()
+                if code and text == label:
+                    return code
+        return text
+
+    def _set_epsg_value(self, value: str):
+        code = str(value or "").strip()
+        idx = -1
+        for i in range(self.cmb_epsg.count()):
+            data = self.cmb_epsg.itemData(i)
+            if isinstance(data, dict) and str(data.get("code", "") or "").strip() == code:
+                idx = i
+                break
+        if idx >= 0:
+            self.cmb_epsg.setCurrentIndex(idx)
+        else:
+            self.cmb_epsg.setCurrentIndex(0)
+            self.cmb_epsg.setEditText(code)
+        self._update_epsg_info()
+
+    def _update_epsg_info(self):
+        text = self._current_epsg_value()
+        idx = int(self.cmb_epsg.currentIndex())
+        info = ""
+        if 0 <= idx < self.cmb_epsg.count():
+            data = self.cmb_epsg.itemData(idx)
+            if isinstance(data, dict):
+                code = str(data.get("code", "") or "").strip()
+                desc = str(data.get("desc", "") or "").strip()
+                label = str(self.cmb_epsg.itemText(idx) or "").strip()
+                if code and text == code:
+                    info = f"Preset selected: {label}"
+                    if desc:
+                        info += f" - {desc}"
+        if not info:
+            if text:
+                info = f"Custom CRS/EPSG input: {text}"
+            else:
+                info = "Select a common preset or enter a custom CRS/EPSG code."
+        self.lbl_epsg_info.setText(info)
+
+    def _on_epsg_combo_changed(self, _idx):
+        if self._loading:
+            return
+        self._update_epsg_info()
+
+    def _on_epsg_edit_changed(self, _text):
+        if self._loading:
+            return
+        self._update_epsg_info()
 
     @staticmethod
     def _fmt_project(o):
@@ -180,7 +267,7 @@ class ProjectSetupTaskPanel:
 
         self._loading = True
         try:
-            self.ed_epsg.setText(str(getattr(prj, "CRSEPSG", "") or ""))
+            self._set_epsg_value(str(getattr(prj, "CRSEPSG", "") or ""))
             self.sp_scale.setValue(float(getattr(prj, "LengthScale", 1.0)))
             self.cmb_design_standard.setCurrentText(_ds.normalize_standard(getattr(prj, "DesignStandard", _ds.DEFAULT_STANDARD)))
             self.ed_h_datum.setText(str(getattr(prj, "HorizontalDatum", "") or ""))
@@ -197,6 +284,7 @@ class ProjectSetupTaskPanel:
         finally:
             self._loading = False
 
+        self._update_epsg_info()
         self.lbl_result.setText("Loaded.")
 
     def _on_project_changed(self):
@@ -217,7 +305,7 @@ class ProjectSetupTaskPanel:
         if not bool(self.chk_locked.isChecked()):
             return False
 
-        if str(getattr(prj, "CRSEPSG", "") or "") != str(self.ed_epsg.text() or ""):
+        if str(getattr(prj, "CRSEPSG", "") or "") != str(self._current_epsg_value() or ""):
             return True
         if str(getattr(prj, "HorizontalDatum", "") or "") != str(self.ed_h_datum.text() or ""):
             return True
@@ -257,7 +345,7 @@ class ProjectSetupTaskPanel:
             return
 
         try:
-            prj.CRSEPSG = str(self.ed_epsg.text() or "").strip()
+            prj.CRSEPSG = str(self._current_epsg_value() or "").strip()
             prj.LengthScale = float(self.sp_scale.value())
             prj.DesignStandard = _ds.normalize_standard(self.cmb_design_standard.currentText(), default=_ds.DEFAULT_STANDARD)
             prj.HorizontalDatum = str(self.ed_h_datum.text() or "").strip()

@@ -184,28 +184,6 @@ class SectionGeneratorTaskPanel:
         self.chk_create_new.setChecked(True)
         self.chk_children = QtWidgets.QCheckBox("Create child sections in tree")
         self.chk_children.setChecked(True)
-        self.chk_place_at_start = QtWidgets.QCheckBox("Place template at centerline start (Recommended)")
-        self.chk_place_at_start.setChecked(True)
-        self.spin_tpl_x = QtWidgets.QDoubleSpinBox()
-        self.spin_tpl_x.setRange(-1.0e9, 1.0e9)
-        self.spin_tpl_x.setDecimals(3)
-        self.spin_tpl_x.setValue(0.0)
-        self.spin_tpl_y = QtWidgets.QDoubleSpinBox()
-        self.spin_tpl_y.setRange(-1.0e9, 1.0e9)
-        self.spin_tpl_y.setDecimals(3)
-        self.spin_tpl_y.setValue(0.0)
-        self.spin_tpl_z = QtWidgets.QDoubleSpinBox()
-        self.spin_tpl_z.setRange(-1.0e9, 1.0e9)
-        self.spin_tpl_z.setDecimals(3)
-        self.spin_tpl_z.setValue(0.0)
-        self.spin_h_left = QtWidgets.QDoubleSpinBox()
-        self.spin_h_left.setRange(0.0, 100.0 * scale)
-        self.spin_h_left.setDecimals(3)
-        self.spin_h_left.setValue(0.300 * scale)
-        self.spin_h_right = QtWidgets.QDoubleSpinBox()
-        self.spin_h_right.setRange(0.0, 100.0 * scale)
-        self.spin_h_right.setDecimals(3)
-        self.spin_h_right.setValue(0.300 * scale)
         self.chk_side = QtWidgets.QCheckBox("Use side slopes")
         self.chk_side.setChecked(False)
         self.spin_side_w_left = QtWidgets.QDoubleSpinBox()
@@ -244,16 +222,10 @@ class SectionGeneratorTaskPanel:
         self.spin_day_max_delta.setRange(0.0, 1000.0 * scale)
         self.spin_day_max_delta.setDecimals(3)
         self.spin_day_max_delta.setValue(6.0 * scale)
-        self.btn_make_assembly = QtWidgets.QPushButton("Create Assembly Template")
+        self.btn_make_assembly = QtWidgets.QPushButton("Create/Update Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         form_opts.addRow(self.chk_create_new)
         form_opts.addRow(self.chk_children)
-        form_opts.addRow(self.chk_place_at_start)
-        form_opts.addRow("Template X:", self.spin_tpl_x)
-        form_opts.addRow("Template Y:", self.spin_tpl_y)
-        form_opts.addRow("Template Z:", self.spin_tpl_z)
-        form_opts.addRow("Height Left:", self.spin_h_left)
-        form_opts.addRow("Height Right:", self.spin_h_right)
         form_opts.addRow(self.chk_side)
         form_opts.addRow("Side Width Left:", self.spin_side_w_left)
         form_opts.addRow("Side Width Right:", self.spin_side_w_right)
@@ -286,7 +258,6 @@ class SectionGeneratorTaskPanel:
         self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
         self.chk_struct_transition.toggled.connect(self._update_structure_ui)
         self.chk_struct_transition_auto.toggled.connect(self._update_structure_ui)
-        self.chk_place_at_start.toggled.connect(self._update_template_pos_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_daylight.toggled.connect(self._update_side_ui)
         self.cmb_day_coords.currentIndexChanged.connect(self._on_day_coord_changed)
@@ -299,7 +270,6 @@ class SectionGeneratorTaskPanel:
 
         self._update_mode_ui()
         self._update_structure_ui()
-        self._update_template_pos_ui()
         self._update_side_ui()
         return w
 
@@ -385,12 +355,6 @@ class SectionGeneratorTaskPanel:
         )
         self.chk_struct_tagged_children.setEnabled(on)
         self.chk_struct_apply_overrides.setEnabled(on)
-
-    def _update_template_pos_ui(self):
-        use_start = bool(self.chk_place_at_start.isChecked())
-        self.spin_tpl_x.setEnabled(not use_start)
-        self.spin_tpl_y.setEnabled(not use_start)
-        self.spin_tpl_z.setEnabled(not use_start)
 
     def _update_side_ui(self):
         on = bool(self.chk_side.isChecked())
@@ -483,10 +447,6 @@ class SectionGeneratorTaskPanel:
     def _apply_assembly_ui_values(self, asm):
         if asm is None:
             return
-        if hasattr(asm, "HeightLeft"):
-            asm.HeightLeft = float(self.spin_h_left.value())
-        if hasattr(asm, "HeightRight"):
-            asm.HeightRight = float(self.spin_h_right.value())
         if hasattr(asm, "UseSideSlopes"):
             asm.UseSideSlopes = bool(self.chk_side.isChecked())
         if hasattr(asm, "LeftSideWidth"):
@@ -507,20 +467,15 @@ class SectionGeneratorTaskPanel:
             asm.DaylightMaxWidthDelta = float(self.spin_day_max_delta.value())
 
     def _resolve_template_base(self):
-        if bool(self.chk_place_at_start.isChecked()):
-            src = _find_source_centerline_display(self.doc)
-            if src is not None and getattr(src, "Alignment", None) is not None:
-                try:
-                    from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-                    p0 = HorizontalAlignment.point_at_station(src.Alignment, 0.0)
-                    return App.Vector(float(p0.x), float(p0.y), float(p0.z))
-                except Exception:
-                    pass
-        return App.Vector(
-            float(self.spin_tpl_x.value()),
-            float(self.spin_tpl_y.value()),
-            float(self.spin_tpl_z.value()),
-        )
+        src = _find_source_centerline_display(self.doc)
+        if src is not None and getattr(src, "Alignment", None) is not None:
+            try:
+                from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
+                p0 = HorizontalAlignment.point_at_station(src.Alignment, 0.0)
+                return App.Vector(float(p0.x), float(p0.y), float(p0.z))
+            except Exception:
+                pass
+        return App.Vector(0.0, 0.0, 0.0)
 
     def _refresh_context(self):
         if self.doc is None:
@@ -606,10 +561,6 @@ class SectionGeneratorTaskPanel:
         if asm is not None:
             try:
                 ensure_assembly_template_properties(asm)
-                if hasattr(asm, "HeightLeft"):
-                    self.spin_h_left.setValue(float(asm.HeightLeft))
-                if hasattr(asm, "HeightRight"):
-                    self.spin_h_right.setValue(float(asm.HeightRight))
                 if hasattr(asm, "UseSideSlopes"):
                     self.chk_side.setChecked(bool(asm.UseSideSlopes))
                 if hasattr(asm, "LeftSideWidth"):
@@ -664,6 +615,7 @@ class SectionGeneratorTaskPanel:
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
         msg.append("   - StructureSet integration can merge start/end/center and optional transition stations")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
+        msg.append("   - Height Left/Right and other template geometry values are edited in the Assembly Template property editor")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
         msg.append("   - Daylight terrain coordinate mode can be Local or World")
         self.lbl_info.setText("\n".join(msg))
