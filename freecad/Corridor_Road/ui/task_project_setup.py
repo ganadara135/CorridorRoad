@@ -114,7 +114,6 @@ class ProjectSetupTaskPanel:
         self.btn_apply = QtWidgets.QPushButton("Apply Setup")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_apply)
-        row_btn.addStretch(1)
         row_btn.addWidget(self.btn_close)
         root.addLayout(row_btn)
 

@@ -11,6 +11,7 @@ from freecad.Corridor_Road.objects.obj_structure_set import (
     ALLOWED_BEHAVIOR_MODES,
     ALLOWED_CORRIDOR_MODES,
     ALLOWED_GEOMETRY_MODES,
+    ALLOWED_PLACEMENT_MODES,
     ALLOWED_SIDES,
     ALLOWED_TEMPLATE_NAMES,
     ALLOWED_TYPES,
@@ -45,6 +46,10 @@ COL_HEADERS = [
     "CorridorMode",
     "CorridorMargin",
     "Notes",
+    "ShapeSourcePath",
+    "ScaleFactor",
+    "PlacementMode",
+    "UseSourceBaseAsBottom",
 ]
 
 COMBO_COLUMN_ITEMS = {
@@ -54,8 +59,20 @@ COMBO_COLUMN_ITEMS = {
     13: [""] + list(ALLOWED_GEOMETRY_MODES[1:]),
     14: [""] + list(ALLOWED_TEMPLATE_NAMES[1:]),
     20: list(ALLOWED_CORRIDOR_MODES),
+    25: [""] + list(ALLOWED_PLACEMENT_MODES[1:]),
+    26: ["", "true", "false"],
 }
 STATION_COMBO_COLUMNS = (2, 3, 4)
+
+
+def _split_shape_source_path(path: str):
+    raw = str(path or "").strip()
+    if not raw:
+        return "", ""
+    if "#" in raw:
+        src, obj_name = raw.rsplit("#", 1)
+        return os.path.abspath(os.path.expanduser(str(src).strip())), str(obj_name or "").strip()
+    return os.path.abspath(os.path.expanduser(raw)), ""
 
 
 def _recommended_corridor_mode(structure_type: str) -> str:
@@ -137,6 +154,10 @@ def _structure_csv_mapping(fieldnames):
         "CorridorMode": ("corridormode", "corridormodepolicy", "corridorpolicy", "corridormodevalue"),
         "CorridorMargin": ("corridormargin", "margin", "voidmargin"),
         "Notes": ("notes", "note", "remarks", "remark"),
+        "ShapeSourcePath": ("shapesourcepath", "shapepath", "sourcepath", "modelpath"),
+        "ScaleFactor": ("scalefactor", "scale"),
+        "PlacementMode": ("placementmode", "placemode"),
+        "UseSourceBaseAsBottom": ("usesourcebaseasbottom", "sourcebaseasbottom", "alignsourcebasetobottom"),
     }
     out = {}
     for key, cand in aliases.items():
@@ -206,6 +227,16 @@ class StructureEditorTaskPanel:
         row_csv.addWidget(self.btn_load_csv)
         main.addLayout(row_csv)
 
+        row_shape = QtWidgets.QHBoxLayout()
+        self.btn_browse_shape = QtWidgets.QPushButton("Browse Shape")
+        self.btn_pick_fcstd_object = QtWidgets.QPushButton("Pick FCStd Object")
+        self.lbl_shape_status = QtWidgets.QLabel("External shape row: no selection")
+        self.lbl_shape_status.setWordWrap(True)
+        row_shape.addWidget(self.btn_browse_shape)
+        row_shape.addWidget(self.btn_pick_fcstd_object)
+        row_shape.addWidget(self.lbl_shape_status, 1)
+        main.addLayout(row_shape)
+
         self.table = QtWidgets.QTableWidget(0, len(COL_HEADERS))
         self.table.setHorizontalHeaderLabels(COL_HEADERS)
         hdr = self.table.horizontalHeader()
@@ -248,6 +279,10 @@ class StructureEditorTaskPanel:
             (20, 120),
             (21, 110),
             (22, 220),
+            (23, 220),
+            (24, 90),
+            (25, 130),
+            (26, 150),
         ):
             self.table.setColumnWidth(col, width)
         main.addWidget(self.table)
@@ -262,7 +297,6 @@ class StructureEditorTaskPanel:
         row_btn.addWidget(self.btn_remove)
         row_btn.addWidget(self.btn_sort)
         row_btn.addWidget(self.btn_apply)
-        row_btn.addStretch(1)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
 
@@ -281,6 +315,8 @@ class StructureEditorTaskPanel:
             + ", ".join([m for m in ALLOWED_GEOMETRY_MODES if m])
             + "\nAllowed TemplateName: "
             + ", ".join([m for m in ALLOWED_TEMPLATE_NAMES if m])
+            + "\nAllowed PlacementMode: "
+            + ", ".join([m for m in ALLOWED_PLACEMENT_MODES if m])
             + "\nAllowed CorridorMode: "
             + ", ".join([m for m in ALLOWED_CORRIDOR_MODES if m])
             + "\nRecommended Geometry:"
@@ -289,6 +325,7 @@ class StructureEditorTaskPanel:
             + "\n- retaining_wall -> template / retaining_wall"
             + "\n- abutment_zone -> template / abutment_block"
             + "\n- bridge_zone, other -> box"
+            + "\n- external imported models -> external_shape"
             + "\nRecommended CorridorMode:"
             + "\n- culvert, crossing -> notch"
             + "\n- bridge_zone, abutment_zone -> skip_zone"
@@ -308,13 +345,18 @@ class StructureEditorTaskPanel:
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
         self.btn_browse_csv.clicked.connect(self._on_browse_csv)
         self.btn_load_csv.clicked.connect(self._on_load_csv)
+        self.btn_browse_shape.clicked.connect(self._on_browse_shape)
+        self.btn_pick_fcstd_object.clicked.connect(self._on_pick_fcstd_object)
         self.btn_add.clicked.connect(self._add_row)
         self.btn_remove.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
+        self.table.itemSelectionChanged.connect(self._update_shape_status)
+        self.table.itemChanged.connect(self._on_table_item_changed)
 
         self._set_rows(3)
+        self._update_shape_status()
         return w
 
     @staticmethod
@@ -389,6 +431,7 @@ class StructureEditorTaskPanel:
                         self.table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
                 self._ensure_combo_cells(r)
                 self._apply_vertical_input_policy(r)
+                self._apply_shape_source_visual(r)
         finally:
             self._loading = False
 
@@ -438,12 +481,16 @@ class StructureEditorTaskPanel:
         cmb = self.table.cellWidget(r, c)
         if cmb is not None and (c in COMBO_COLUMN_ITEMS or c in STATION_COMBO_COLUMNS):
             self._set_combo_value(cmb, str(txt or ""))
+            if c == 23:
+                self._update_shape_status()
             return
         it = self.table.item(r, c)
         if it is None:
             it = QtWidgets.QTableWidgetItem("")
             self.table.setItem(r, c, it)
         it.setText(str(txt or ""))
+        if c == 23:
+            self._update_shape_status()
 
     def _get_cell_text(self, r, c):
         cmb = self.table.cellWidget(r, c)
@@ -489,6 +536,41 @@ class StructureEditorTaskPanel:
         except Exception:
             pass
 
+    def _apply_shape_source_visual(self, row):
+        try:
+            it = self.table.item(int(row), 23)
+            if it is None:
+                it = QtWidgets.QTableWidgetItem("")
+                self.table.setItem(int(row), 23, it)
+            geom = self._get_cell_text(int(row), 13).strip()
+            src = self._get_cell_text(int(row), 23).strip()
+            src_file, src_obj = _split_shape_source_path(src)
+            if geom != "external_shape":
+                it.setToolTip("ShapeSourcePath is used only when GeometryMode=external_shape.")
+                it.setForeground(self.table.palette().brush(QtGui.QPalette.Text))
+                it.setBackground(self.table.palette().brush(QtGui.QPalette.Base))
+                return
+            if not src:
+                it.setToolTip("ShapeSourcePath is required for GeometryMode=external_shape.")
+                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
+                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+                return
+            if str(src_file).lower().endswith(".fcstd") and not src_obj:
+                it.setToolTip("FCStd external shape requires 'path.FCStd#ObjectName'.")
+                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
+                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+                return
+            if os.path.isfile(src_file):
+                it.setToolTip(f"External shape file found:\n{src}")
+                it.setForeground(self.table.palette().brush(QtGui.QPalette.Text))
+                it.setBackground(QtGui.QBrush(QtGui.QColor(238, 255, 238)))
+            else:
+                it.setToolTip(f"External shape file not found:\n{src}")
+                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
+                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+        except Exception:
+            pass
+
     def _on_type_changed(self, row):
         if self._loading:
             return
@@ -507,6 +589,7 @@ class StructureEditorTaskPanel:
             if (not current_mode) and rec_mode:
                 self._set_cell_text(int(row), 20, rec_mode)
             self._apply_vertical_input_policy(int(row))
+            self._apply_shape_source_visual(int(row))
         except Exception:
             pass
 
@@ -554,10 +637,15 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 20, rec.get("CorridorMode", ""))
                 self._set_cell_text(i, 21, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
                 self._set_cell_text(i, 22, rec.get("Notes", ""))
+                self._set_cell_text(i, 23, rec.get("ShapeSourcePath", ""))
+                self._set_cell_text(i, 24, f"{float(rec.get('ScaleFactor', 1.0) or 1.0):.3f}")
+                self._set_cell_text(i, 25, rec.get("PlacementMode", ""))
+                self._set_cell_text(i, 26, rec.get("UseSourceBaseAsBottom", ""))
                 self._apply_vertical_input_policy(i)
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
             self._loading = False
+        self._update_shape_status()
 
     def _read_rows(self):
         rows = []
@@ -590,6 +678,10 @@ class StructureEditorTaskPanel:
                     "CorridorMode": row[20],
                     "CorridorMargin": self._get_cell_float(r, 21),
                     "Notes": row[22],
+                    "ShapeSourcePath": row[23],
+                    "ScaleFactor": self._get_cell_float(r, 24) or 1.0,
+                    "PlacementMode": row[25],
+                    "UseSourceBaseAsBottom": row[26],
                 }
             )
         return rows
@@ -626,6 +718,7 @@ class StructureEditorTaskPanel:
             r = self.table.rowCount() - 1
         if r >= 0:
             self.table.removeRow(r)
+        self._update_shape_status()
 
     def _sort_rows(self):
         rows = self._read_rows()
@@ -658,6 +751,10 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 20, rec.get("CorridorMode", ""))
                 self._set_cell_text(i, 21, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
                 self._set_cell_text(i, 22, rec["Notes"])
+                self._set_cell_text(i, 23, rec.get("ShapeSourcePath", ""))
+                self._set_cell_text(i, 24, f"{float(rec.get('ScaleFactor', 1.0) or 1.0):.3f}")
+                self._set_cell_text(i, 25, rec.get("PlacementMode", ""))
+                self._set_cell_text(i, 26, rec.get("UseSourceBaseAsBottom", ""))
                 self._apply_vertical_input_policy(i)
         finally:
             self._loading = False
@@ -671,6 +768,177 @@ class StructureEditorTaskPanel:
         )
         if path:
             self.ed_csv.setText(str(path))
+
+    def _on_browse_shape(self):
+        row = int(self.table.currentRow())
+        if row < 0:
+            QtWidgets.QMessageBox.information(None, "Edit Structures", "Select a structure row first.")
+            return
+        current = self._get_cell_text(row, 23).strip()
+        current_file, current_obj = _split_shape_source_path(current)
+        path, _flt = QtWidgets.QFileDialog.getOpenFileName(
+            None,
+            "Select external shape file",
+            current_file or current,
+            "External Shape Files (*.step *.stp *.brep *.brp *.FCStd);;All Files (*.*)",
+        )
+        if path:
+            if str(path).lower().endswith(".fcstd") and current_obj:
+                self._set_cell_text(row, 23, f"{path}#{current_obj}")
+            else:
+                self._set_cell_text(row, 23, str(path))
+            self._update_shape_status()
+
+    @staticmethod
+    def _fcstd_shape_candidates(path: str):
+        src_file, _src_obj = _split_shape_source_path(path)
+        if not src_file or not str(src_file).lower().endswith(".fcstd"):
+            return [], "not_fcstd"
+        if not os.path.isfile(src_file):
+            return [], "not_found"
+
+        doc_ref = None
+        opened_here = False
+        try:
+            for d in list(getattr(App, "listDocuments", lambda: {})().values()):
+                try:
+                    if os.path.abspath(str(getattr(d, "FileName", "") or "")) == src_file:
+                        doc_ref = d
+                        break
+                except Exception:
+                    continue
+            if doc_ref is None:
+                try:
+                    doc_ref = App.openDocument(src_file, True)
+                except Exception:
+                    try:
+                        doc_ref = App.openDocument(src_file, hidden=True)
+                    except Exception:
+                        doc_ref = App.openDocument(src_file)
+                opened_here = doc_ref is not None
+            if doc_ref is None:
+                return [], "open_failed"
+
+            items = []
+            for obj in list(getattr(doc_ref, "Objects", []) or []):
+                try:
+                    shp = getattr(obj, "Shape", None)
+                    if shp is None or shp.isNull():
+                        continue
+                    name = str(getattr(obj, "Name", "") or "").strip()
+                    label = str(getattr(obj, "Label", "") or "").strip()
+                    if not name:
+                        continue
+                    display = name if not label or label == name else f"{name} | {label}"
+                    items.append((display, name))
+                except Exception:
+                    continue
+            return items, "ok"
+        except Exception:
+            return [], "open_failed"
+        finally:
+            if opened_here and doc_ref is not None:
+                try:
+                    App.closeDocument(str(doc_ref.Name))
+                except Exception:
+                    pass
+
+    def _on_pick_fcstd_object(self):
+        row = int(self.table.currentRow())
+        if row < 0:
+            QtWidgets.QMessageBox.information(None, "Edit Structures", "Select a structure row first.")
+            return
+
+        current = self._get_cell_text(row, 23).strip()
+        src_file, current_obj = _split_shape_source_path(current)
+        if not src_file:
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Structures",
+                "Select an .FCStd file first in ShapeSourcePath or with Browse Shape.",
+            )
+            return
+        if not str(src_file).lower().endswith(".fcstd"):
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Structures",
+                "FCStd object picker works only when ShapeSourcePath points to an .FCStd file.",
+            )
+            return
+
+        items, status = self._fcstd_shape_candidates(src_file)
+        if status == "not_found":
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", f"FCStd file not found:\n{src_file}")
+            return
+        if status != "ok":
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Could not open FCStd file:\n{src_file}")
+            return
+        if not items:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Edit Structures",
+                "No shape-bearing objects were found in the selected FCStd file.",
+            )
+            return
+
+        labels = [it[0] for it in items]
+        initial = 0
+        if current_obj:
+            for i, (_display, obj_name) in enumerate(items):
+                if obj_name == current_obj:
+                    initial = i
+                    break
+        picked, ok = QtWidgets.QInputDialog.getItem(
+            None,
+            "Pick FCStd Object",
+            "Object:",
+            labels,
+            initial,
+            False,
+        )
+        if not ok or not picked:
+            return
+        obj_name = items[labels.index(str(picked))][1]
+        self._set_cell_text(row, 23, f"{src_file}#{obj_name}")
+        self._update_shape_status()
+
+    def _update_shape_status(self):
+        row = int(self.table.currentRow())
+        if row < 0:
+            self.lbl_shape_status.setText("External shape row: no selection")
+            return
+        geom = self._get_cell_text(row, 13).strip()
+        src = self._get_cell_text(row, 23).strip()
+        src_file, src_obj = _split_shape_source_path(src)
+        rid = self._get_cell_text(row, 0).strip() or f"row {row + 1}"
+        self._apply_shape_source_visual(row)
+        if geom != "external_shape":
+            self.lbl_shape_status.setText(f"External shape row: {rid} is not using GeometryMode=external_shape")
+            return
+        if not src:
+            self.lbl_shape_status.setText(f"External shape row: {rid} has no ShapeSourcePath")
+            return
+        if str(src_file).lower().endswith(".fcstd") and not src_obj:
+            self.lbl_shape_status.setText(
+                f"External shape row: {rid} | FCSTD OBJECT MISSING | use path.FCStd#ObjectName"
+            )
+            return
+        ok = os.path.isfile(src_file)
+        kind = "FCSTD" if str(src_file).lower().endswith(".fcstd") else "FILE"
+        suffix = f" | object={src_obj}" if src_obj else ""
+        self.lbl_shape_status.setText(
+            f"External shape row: {rid} | {kind} | {'FOUND' if ok else 'NOT FOUND'}{suffix} | {src}"
+        )
+
+    def _on_table_item_changed(self, item):
+        if self._loading:
+            return
+        try:
+            if item is not None and int(item.column()) in (13, 23):
+                self._apply_shape_source_visual(int(item.row()))
+                self._update_shape_status()
+        except Exception:
+            pass
 
     @staticmethod
     def _parse_float(v):
@@ -724,6 +992,10 @@ class StructureEditorTaskPanel:
                             "CorridorMode": str(row.get(mapping.get("CorridorMode"), "") or "").strip(),
                             "CorridorMargin": self._parse_float(row.get(mapping.get("CorridorMargin"), "")),
                             "Notes": str(row.get(mapping.get("Notes"), "") or "").strip(),
+                            "ShapeSourcePath": str(row.get(mapping.get("ShapeSourcePath"), "") or "").strip(),
+                            "ScaleFactor": self._parse_float(row.get(mapping.get("ScaleFactor"), "")) or 1.0,
+                            "PlacementMode": str(row.get(mapping.get("PlacementMode"), "") or "").strip(),
+                            "UseSourceBaseAsBottom": str(row.get(mapping.get("UseSourceBaseAsBottom"), "") or "").strip(),
                         }
                     )
         except Exception as ex:
@@ -758,6 +1030,10 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 20, rec.get("CorridorMode", ""))
                 self._set_cell_text(i, 21, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
                 self._set_cell_text(i, 22, rec["Notes"])
+                self._set_cell_text(i, 23, rec.get("ShapeSourcePath", ""))
+                self._set_cell_text(i, 24, f"{float(rec.get('ScaleFactor', 1.0) or 1.0):.3f}")
+                self._set_cell_text(i, 25, rec.get("PlacementMode", ""))
+                self._set_cell_text(i, 26, rec.get("UseSourceBaseAsBottom", ""))
                 self._apply_vertical_input_policy(i)
         finally:
             self._loading = False
@@ -804,6 +1080,10 @@ class StructureEditorTaskPanel:
             obj.CorridorModes = [str(r["CorridorMode"] or "") for r in rows]
             obj.CorridorMargins = [float(r["CorridorMargin"]) for r in rows]
             obj.Notes = [str(r["Notes"] or "") for r in rows]
+            obj.ShapeSourcePaths = [str(r["ShapeSourcePath"] or "") for r in rows]
+            obj.ScaleFactors = [float(r["ScaleFactor"] or 1.0) for r in rows]
+            obj.PlacementModes = [str(r["PlacementMode"] or "") for r in rows]
+            obj.UseSourceBaseAsBottoms = [str(r["UseSourceBaseAsBottom"] or "") for r in rows]
             obj.touch()
 
             prj = find_project(self.doc)
@@ -812,6 +1092,8 @@ class StructureEditorTaskPanel:
 
             self.doc.recompute()
             issues = StructureSet.validate(obj)
+            shape_status_notes = list(getattr(obj, "ResolvedShapeStatusNotes", []) or [])
+            frame_status_notes = list(getattr(obj, "ResolvedFrameStatusNotes", []) or [])
             st = getattr(prj, "Stationing", None) if prj is not None and hasattr(prj, "Stationing") else None
             if st is None:
                 st = _find_stationing(self.doc)
@@ -821,15 +1103,34 @@ class StructureEditorTaskPanel:
             except Exception:
                 pass
             if issues:
+                msg = [
+                    "Structure set saved with validation warnings.",
+                    f"Records: {len(rows)}",
+                ]
+                msg.extend(list(issues[:10]))
+                if shape_status_notes:
+                    msg.append("")
+                    msg.append("External shape diagnostics:")
+                    msg.extend(list(shape_status_notes[:10]))
+                if frame_status_notes:
+                    msg.append("")
+                    msg.append("Frame diagnostics:")
+                    msg.extend(list(frame_status_notes[:10]))
                 QtWidgets.QMessageBox.information(
                     None,
                     "Edit Structures",
-                    "Structure set saved with validation warnings.\n"
-                    f"Records: {len(rows)}\n"
-                    + "\n".join(issues[:10]),
+                    "\n".join(msg),
                 )
             else:
                 msg = [f"Structure set saved.\nRecords: {len(rows)}"]
+                if shape_status_notes:
+                    msg.append("")
+                    msg.append("External shape diagnostics:")
+                    msg.extend(list(shape_status_notes[:10]))
+                if frame_status_notes:
+                    msg.append("")
+                    msg.append("Frame diagnostics:")
+                    msg.extend(list(frame_status_notes[:10]))
                 if st is None:
                     msg.append("")
                     msg.append("Guide:")

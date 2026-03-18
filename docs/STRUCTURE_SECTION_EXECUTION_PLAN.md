@@ -427,13 +427,30 @@ Remaining validation:
 2. user-document calibration for when `box` is still preferable to `template`
 
 ## Sprint 5
+Status:
+1. functionally complete
+
 1. external shape reference/path support
 2. placement/orientation/scaling rules
 3. import and validation messaging
 
+Execution detail:
+1. see `docs/STRUCTURE_SPRINT5_EXTERNAL_SHAPE_PLAN.md`
+
 Done when:
 1. complex structures can be placed from external models
 2. alignment-based placement remains consistent
+
+Completed:
+1. `GeometryMode=external_shape` supports `.step` / `.brep`
+2. `GeometryMode=external_shape` supports `.FCStd#ObjectName`
+3. external shape placement supports scale, placement mode, and source-base-bottom policy
+4. `Edit Structures` exposes browse/status/color feedback for external shape paths
+5. frame-placement diagnostics are reported for `centerline3d` vs `alignment` fallback
+
+Remaining validation:
+1. live FreeCAD runtime verification for multiple `.FCStd` object naming cases
+2. optional UI enhancement for explicit FCStd object picker
 
 ## Sprint 6
 1. corridor-mode fields in `StructureSet`

@@ -64,13 +64,15 @@ Recommended sample file:
 ## 3. Structure CSV
 
 Recommended header:
-`Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes`
+`Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes,ShapeSourcePath,ScaleFactor,PlacementMode,UseSourceBaseAsBottom`
 
 Example:
 ```csv
-Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes
-CULV-T01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,1.200,0.000,section_overlay,template,box_culvert,0.350,0.000,0.000,0.200,2,notch,0.000,Two-cell box culvert template
-RW-T01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,0.000,0.000,0.000,assembly_override,template,retaining_wall,0.450,3.200,0.500,0.150,1,split_only,0.000,Right-side retaining wall template
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes,ShapeSourcePath,ScaleFactor,PlacementMode,UseSourceBaseAsBottom
+CULV-T01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,1.200,0.000,section_overlay,template,box_culvert,0.350,0.000,0.000,0.200,2,notch,0.000,Two-cell box culvert template,,1.000,,
+RW-T01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,101.800,0.000,0.000,assembly_override,template,retaining_wall,0.450,3.200,0.500,0.150,1,split_only,0.000,Right-side retaining wall template,,1.000,,
+EXT-CULV-01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,0.000,0.000,section_overlay,external_shape,,0.000,0.000,0.000,0.000,1,notch,0.000,Replace with your local STEP file,C:/replace-with-your-models/culvert_box.step,1.000,center_on_station,true
+EXT-ABUT-01,abutment_zone,470.000,515.000,492.500,both,0.000,14.000,5.000,103.800,0.000,0.000,assembly_override,external_shape,,0.000,0.000,0.000,0.000,1,skip_zone,0.000,Replace with your local FCStd object path,C:/replace-with-your-models/bridge_parts.FCStd#AbutmentBlock,1.000,center_on_station,true
 ```
 
 Rules:
@@ -80,16 +82,21 @@ Rules:
 - `Side`: one of `left`, `right`, `center`, `both`
 - `Width`, `Height`: non-negative numeric values
 - `BehaviorMode`: one of `tag_only`, `section_overlay`, `assembly_override`
-- `GeometryMode`: one of `box`, `template`
-- `TemplateName`: currently `box_culvert`, `retaining_wall`
+- `GeometryMode`: one of `box`, `template`, `external_shape`
+- `TemplateName`: currently `box_culvert`, `utility_crossing`, `retaining_wall`, `abutment_block`
 - `WallThickness`, `FootingWidth`, `FootingThickness`, `CapHeight`, `CellCount`: template-specific fields
 - `CorridorMode`: one of `none`, `split_only`, `skip_zone`, `notch`
 - `CorridorMargin`: optional non-negative corridor envelope margin
 - `Notes`: optional free text
+- `ShapeSourcePath`: local `.step`, `.brep`, or `.FCStd#ObjectName` source path when `GeometryMode=external_shape`
+- `ScaleFactor`: optional uniform scale for external geometry
+- `PlacementMode`: currently `center_on_station` or `start_on_station`
+- `UseSourceBaseAsBottom`: `true`/`false` flag for external source Z anchoring
 
 Recommended sample file:
 - `tests/samples/structure_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
+- `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
 
 Practical notes:
 1. Run `Generate Stations` before using `Edit Structures`, even if the CSV contains valid station values.
@@ -99,6 +106,9 @@ Practical notes:
 5. Leave `GeometryMode` empty if you want strict backward-compatible `box` behavior.
 6. Use `template / box_culvert` when you want culvert display solids and `Structure Sections` overlays to show wall and cell layout.
 7. Use `template / retaining_wall` when you want footing + stem display and overlay shapes.
+8. Use `external_shape` when you already have a structure model in `STEP`, `BREP`, or `FCStd` format and want to place that geometry directly.
+9. For `FCStd`, use `ShapeSourcePath` in the form `C:/path/model.FCStd#ObjectName`.
+10. The repository does not currently bundle sample `.step`, `.brep`, or `.FCStd` files, so the sample `ShapeSourcePath` values are placeholders that must be replaced before use.
 
 > [Screenshot Needed] Edit Structures panel loading a structure CSV file.
 > Suggested file: `wiki-csv-structure-import-panel.png`

@@ -95,7 +95,6 @@ class CorridorLoftTaskPanel:
         self.btn_build = QtWidgets.QPushButton("Build Corridor Loft")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_build)
-        row_btn.addStretch(1)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
 

@@ -41,6 +41,10 @@ def _find_centerline3d_display(doc):
     return find_first(doc, proxy_type="Centerline3DDisplay", name_prefixes=("Centerline3DDisplay",))
 
 
+def _find_structure_set(doc):
+    return find_first(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
+
+
 class CmdGenerateCenterline3D:
     def GetResources(self):
         return {
@@ -108,6 +112,14 @@ class CmdGenerateCenterline3D:
                 links_if_empty={"Alignment": aln, "Stationing": st},
                 adopt_extra=[disp],
             )
+        struct = getattr(prj, "StructureSet", None) if prj is not None and hasattr(prj, "StructureSet") else None
+        if struct is None:
+            struct = _find_structure_set(doc)
+        if struct is not None:
+            try:
+                struct.touch()
+            except Exception:
+                pass
 
         doc.recompute()
         n = len(list(getattr(disp, "SampledStations", []) or []))

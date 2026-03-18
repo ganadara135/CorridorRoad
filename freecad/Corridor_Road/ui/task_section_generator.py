@@ -279,7 +279,6 @@ class SectionGeneratorTaskPanel:
         self.btn_generate = QtWidgets.QPushButton("Generate Sections Now")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_generate)
-        row_btn.addStretch(1)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
 

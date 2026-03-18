@@ -216,12 +216,13 @@ Important behavior:
 ## 5. Edit Structures
 
 Use `Edit Structures` after `Generate Stations`.
-This panel creates or updates the `StructureSet` object that stores structure zones, structure station ranges, and simple 3D reference geometry.
+This panel creates or updates the `StructureSet` object that stores structure zones, structure station ranges, and 3D/reference geometry.
 
 Important behavior:
 1. `StartStation`, `EndStation`, and `CenterStation` are station-combo values populated from `Stationing`.
 2. `Type`, `Side`, and `BehaviorMode` are controlled lists to keep structure behavior predictable.
-3. `Apply` writes the `StructureSet`, updates simple 3D solids, and links the result into `01_Inputs/Structures`.
+3. `Apply` writes the `StructureSet`, updates 3D solids, and links the result into `01_Inputs/Structures`.
+4. `Apply` also reports external-shape fallback diagnostics and frame diagnostics when placement had to use `alignment` instead of `centerline3d`.
 
 ### Main Controls
 
@@ -231,6 +232,8 @@ Important behavior:
 | `CSV File` | Optional path to a structure CSV file. | Use it when bulk-loading structure records instead of typing rows manually. |
 | `Browse CSV` | Opens a file chooser for structure CSV. | Recommended for standard sample/test workflows. |
 | `Load CSV` | Reads the CSV and fills the structure table. | Review the table before `Apply`. |
+| `Browse Shape` | Opens a file chooser for the selected row's external shape source. | Supports `.step`, `.brep`, and `.FCStd`. For `FCStd`, append `#ObjectName` in `ShapeSourcePath`. |
+| `Pick FCStd Object` | Opens an object picker for the selected `.FCStd` source. | After selecting the `.FCStd` file, use this to choose a shape-bearing object and automatically fill `ShapeSourcePath` as `path.FCStd#ObjectName`. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -251,7 +254,11 @@ Important behavior:
 | `RotationDeg` | Rotation about the local vertical axis. | Leave `0` unless the structure should be rotated relative to alignment normal/tangent. |
 | `BehaviorMode` | Controls how the structure participates in section generation. | `tag_only` adds metadata only, `section_overlay` adds section-aware overlay behavior, `assembly_override` also enables section override logic. |
 | `GeometryMode` | Controls how the structure is displayed in 3D and in `Structure Sections` overlays. | `box` keeps the simple rectangular fallback. `template` enables parametric structure geometry. |
-| `TemplateName` | Selects the template when `GeometryMode=template`. | Current values are `box_culvert` and `retaining_wall`. |
+| `TemplateName` | Selects the template when `GeometryMode=template`. | Current values are `box_culvert`, `utility_crossing`, `retaining_wall`, and `abutment_block`. |
+| `ShapeSourcePath` | Local source path for `GeometryMode=external_shape`. | First-pass supported formats are `.step` / `.stp`, `.brep` / `.brp`, and `.FCStd#ObjectName`. |
+| `ScaleFactor` | Uniform scale applied to external geometry before placement. | Keep `1.0` unless the source model units require adjustment. |
+| `PlacementMode` | Chooses whether the external model is centered or start-anchored at the selected station. | Use `center_on_station` for symmetric models and `start_on_station` for start-based models. |
+| `UseSourceBaseAsBottom` | Controls whether the source model bottom (`ZMin`) is aligned to the resolved structure bottom. | Keep `true` for most imported solids. |
 | `WallThickness` | Template wall thickness. | Used by both `box_culvert` and `retaining_wall`. |
 | `FootingWidth` | Retaining-wall footing width. | Mainly used by the `retaining_wall` template. |
 | `FootingThickness` | Retaining-wall footing thickness. | Mainly used by the `retaining_wall` template. |
@@ -267,6 +274,9 @@ Important behavior:
 3. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
 4. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
 5. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
+6. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
+7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
+8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -275,6 +285,8 @@ Important behavior:
 4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
 5. `CorridorMode` is now the main way to tell `Corridor Loft` whether a structure should only stabilize segmentation or actually omit a corridor span.
 6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
+7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
+8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
 
 ### Current Template Support
 

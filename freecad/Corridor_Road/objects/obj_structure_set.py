@@ -1,4 +1,5 @@
 import math
+import os
 
 import FreeCAD as App
 
@@ -24,8 +25,21 @@ ALLOWED_TYPES = (
 ALLOWED_SIDES = ("left", "right", "center", "both")
 ALLOWED_BEHAVIOR_MODES = ("tag_only", "section_overlay", "assembly_override")
 ALLOWED_CORRIDOR_MODES = ("", "none", "split_only", "skip_zone", "notch", "boolean_cut")
-ALLOWED_GEOMETRY_MODES = ("", "box", "template")
+ALLOWED_GEOMETRY_MODES = ("", "box", "template", "external_shape")
 ALLOWED_TEMPLATE_NAMES = ("", "box_culvert", "utility_crossing", "retaining_wall", "abutment_block")
+ALLOWED_PLACEMENT_MODES = ("", "center_on_station", "start_on_station")
+
+_EXTERNAL_SHAPE_CACHE = {}
+
+
+def _split_external_shape_source(path: str):
+    raw = str(path or "").strip()
+    if not raw:
+        return "", ""
+    if "#" in raw:
+        src, obj_name = raw.rsplit("#", 1)
+        return os.path.abspath(os.path.expanduser(str(src).strip())), str(obj_name or "").strip()
+    return os.path.abspath(os.path.expanduser(raw)), ""
 
 
 def _empty_shape():
@@ -509,6 +523,11 @@ def _build_structure_solid(base_pt, tangent, normal, rec):
     geom_mode = _default_geometry_mode(rec, fallback="box")
     template_name = _default_template_name(rec)
 
+    if geom_mode == "external_shape":
+        solid = _build_external_shape_geometry(base_pt, t, n, rec, z0)
+        if _shape_is_displayable(solid):
+            return solid
+
     if geom_mode == "template":
         if template_name == "box_culvert":
             solid = _build_box_culvert_template(base_pt, t, n, rec, length, width, height, z0)
@@ -547,6 +566,19 @@ def _safe_float_list(values):
     return out
 
 
+def _safe_bool_text_list(values):
+    out = []
+    for v in list(values or []):
+        txt = str(v or "").strip().lower()
+        if txt in ("1", "true", "yes", "y", "on"):
+            out.append("true")
+        elif txt in ("0", "false", "no", "n", "off"):
+            out.append("false")
+        else:
+            out.append("")
+    return out
+
+
 def _unique_sorted_floats(values, tol: float = 1e-6):
     vals = sorted([float(v) for v in list(values or [])])
     out = []
@@ -554,6 +586,200 @@ def _unique_sorted_floats(values, tol: float = 1e-6):
         if not out or abs(v - out[-1]) > tol:
             out.append(v)
     return out
+
+
+def _resolved_shape_source_kind(path: str) -> str:
+    p, _obj = _split_external_shape_source(path)
+    p = str(p or "").strip().lower()
+    if not p:
+        return ""
+    if p.endswith(".step") or p.endswith(".stp"):
+        return "step"
+    if p.endswith(".brep") or p.endswith(".brp"):
+        return "brep"
+    if p.endswith(".fcstd"):
+        return "fcstd_link"
+    return "invalid"
+
+
+def _shape_is_displayable(shape):
+    if shape is None:
+        return False
+    try:
+        return not shape.isNull()
+    except Exception:
+        return False
+
+
+def _load_external_shape(path: str):
+    if Part is None:
+        return None, "missing_part"
+    src, obj_name = _split_external_shape_source(path)
+    kind = _resolved_shape_source_kind(src)
+    if not src:
+        return None, "missing"
+    if not os.path.isfile(src):
+        return None, "not_found"
+    if kind not in ("step", "brep", "fcstd_link"):
+        return None, kind or "invalid"
+    key = str(src).lower() if kind != "fcstd_link" else f"{str(src).lower()}#{str(obj_name).lower()}"
+    cached = _EXTERNAL_SHAPE_CACHE.get(key)
+    if cached is not None:
+        try:
+            return cached.copy(), kind
+        except Exception:
+            _EXTERNAL_SHAPE_CACHE.pop(key, None)
+    if kind == "fcstd_link":
+        if not obj_name:
+            return None, "fcstd_missing_object"
+        doc_ref = None
+        opened_here = False
+        try:
+            for d in list(getattr(App, "listDocuments", lambda: {})().values()):
+                try:
+                    if os.path.abspath(str(getattr(d, "FileName", "") or "")) == src:
+                        doc_ref = d
+                        break
+                except Exception:
+                    continue
+            if doc_ref is None:
+                try:
+                    doc_ref = App.openDocument(src, True)
+                except Exception:
+                    try:
+                        doc_ref = App.openDocument(src, hidden=True)
+                    except Exception:
+                        doc_ref = App.openDocument(src)
+                opened_here = doc_ref is not None
+            if doc_ref is None:
+                return None, "load_failed"
+            src_obj = None
+            try:
+                src_obj = doc_ref.getObject(str(obj_name))
+            except Exception:
+                src_obj = None
+            if src_obj is None:
+                for candidate in list(getattr(doc_ref, "Objects", []) or []):
+                    if str(getattr(candidate, "Label", "") or "").strip() == str(obj_name):
+                        src_obj = candidate
+                        break
+            if src_obj is None:
+                return None, "fcstd_object_not_found"
+            shp = getattr(src_obj, "Shape", None)
+            if not _shape_is_displayable(shp):
+                return None, "fcstd_missing_shape"
+            try:
+                shp = shp.copy()
+            except Exception:
+                pass
+            _EXTERNAL_SHAPE_CACHE[key] = shp
+            try:
+                return shp.copy(), kind
+            except Exception:
+                return shp, kind
+        except Exception:
+            return None, "load_failed"
+        finally:
+            if opened_here and doc_ref is not None:
+                try:
+                    App.closeDocument(str(doc_ref.Name))
+                except Exception:
+                    pass
+    try:
+        shp = Part.read(src)
+        if not _shape_is_displayable(shp):
+            return None, "invalid_shape"
+        _EXTERNAL_SHAPE_CACHE[key] = shp
+        try:
+            return shp.copy(), kind
+        except Exception:
+            return shp, kind
+    except Exception:
+        return None, "load_failed"
+
+
+def _bool_from_text(v, default: bool = False) -> bool:
+    txt = str(v or "").strip().lower()
+    if txt in ("1", "true", "yes", "y", "on"):
+        return True
+    if txt in ("0", "false", "no", "n", "off"):
+        return False
+    return bool(default)
+
+
+def _scaled_shape(shape, scale_factor: float):
+    if not _shape_is_displayable(shape):
+        return None
+    sf = float(scale_factor or 1.0)
+    if abs(sf - 1.0) <= 1e-12:
+        try:
+            return shape.copy()
+        except Exception:
+            return shape
+    try:
+        m = App.Matrix()
+        m.A11 = sf
+        m.A22 = sf
+        m.A33 = sf
+        m.A44 = 1.0
+        return shape.transformGeometry(m)
+    except Exception:
+        return None
+
+
+def _external_shape_ref_point(shape, placement_mode: str, use_source_base_as_bottom: bool):
+    bb = getattr(shape, "BoundBox", None)
+    if bb is None:
+        return App.Vector(0.0, 0.0, 0.0)
+    mode = str(placement_mode or "").strip().lower()
+    if mode == "start_on_station":
+        x_ref = float(bb.XMin)
+    else:
+        x_ref = 0.5 * (float(bb.XMin) + float(bb.XMax))
+    y_ref = 0.5 * (float(bb.YMin) + float(bb.YMax))
+    z_ref = float(bb.ZMin) if bool(use_source_base_as_bottom) else 0.0
+    return App.Vector(x_ref, y_ref, z_ref)
+
+
+def _external_shape_matrix(origin, t, n, zvec, ref_local):
+    m = App.Matrix()
+    m.A11 = float(t.x)
+    m.A21 = float(t.y)
+    m.A31 = float(t.z)
+    m.A12 = float(n.x)
+    m.A22 = float(n.y)
+    m.A32 = float(n.z)
+    m.A13 = float(zvec.x)
+    m.A23 = float(zvec.y)
+    m.A33 = float(zvec.z)
+    tr = App.Vector(float(origin.x), float(origin.y), float(origin.z)) - (
+        (t * float(ref_local.x)) + (n * float(ref_local.y)) + (zvec * float(ref_local.z))
+    )
+    m.A14 = float(tr.x)
+    m.A24 = float(tr.y)
+    m.A34 = float(tr.z)
+    m.A44 = 1.0
+    return m
+
+
+def _build_external_shape_geometry(base_pt, t, n, rec, z0: float):
+    src_shape, _status = _load_external_shape(str(rec.get("ShapeSourcePath", "") or "").strip())
+    if not _shape_is_displayable(src_shape):
+        return None
+    shp = _scaled_shape(src_shape, float(rec.get("ScaleFactor", 1.0) or 1.0))
+    if not _shape_is_displayable(shp):
+        return None
+    ref_local = _external_shape_ref_point(
+        shp,
+        placement_mode=str(rec.get("PlacementMode", "") or ""),
+        use_source_base_as_bottom=_bool_from_text(rec.get("UseSourceBaseAsBottom", ""), default=True),
+    )
+    origin = App.Vector(float(base_pt.x), float(base_pt.y), float(z0))
+    zvec = App.Vector(0.0, 0.0, 1.0)
+    try:
+        return shp.transformGeometry(_external_shape_matrix(origin, t, n, zvec, ref_local))
+    except Exception:
+        return None
 
 
 def ensure_structure_set_properties(obj):
@@ -602,6 +828,18 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "TemplateNames"):
         obj.addProperty("App::PropertyStringList", "TemplateNames", "Structures", "Structure template names")
         obj.TemplateNames = []
+    if not hasattr(obj, "ShapeSourcePaths"):
+        obj.addProperty("App::PropertyStringList", "ShapeSourcePaths", "Structures", "External shape source paths")
+        obj.ShapeSourcePaths = []
+    if not hasattr(obj, "ScaleFactors"):
+        obj.addProperty("App::PropertyFloatList", "ScaleFactors", "Structures", "External shape scale factors")
+        obj.ScaleFactors = []
+    if not hasattr(obj, "PlacementModes"):
+        obj.addProperty("App::PropertyStringList", "PlacementModes", "Structures", "External shape placement modes")
+        obj.PlacementModes = []
+    if not hasattr(obj, "UseSourceBaseAsBottoms"):
+        obj.addProperty("App::PropertyStringList", "UseSourceBaseAsBottoms", "Structures", "Whether the external source base should align to z0")
+        obj.UseSourceBaseAsBottoms = []
     if not hasattr(obj, "WallThicknesses"):
         obj.addProperty("App::PropertyFloatList", "WallThicknesses", "Structures", "Template wall thickness values")
         obj.WallThicknesses = []
@@ -629,6 +867,18 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "StructureCount"):
         obj.addProperty("App::PropertyInteger", "StructureCount", "Result", "Structure record count")
         obj.StructureCount = 0
+    if not hasattr(obj, "ResolvedShapeSourceKinds"):
+        obj.addProperty("App::PropertyStringList", "ResolvedShapeSourceKinds", "Result", "Resolved external shape source kinds")
+        obj.ResolvedShapeSourceKinds = []
+    if not hasattr(obj, "ResolvedShapeStatusNotes"):
+        obj.addProperty("App::PropertyStringList", "ResolvedShapeStatusNotes", "Result", "Resolved external shape load and fallback notes")
+        obj.ResolvedShapeStatusNotes = []
+    if not hasattr(obj, "ResolvedFrameSources"):
+        obj.addProperty("App::PropertyStringList", "ResolvedFrameSources", "Result", "Resolved frame sources for structure display placement")
+        obj.ResolvedFrameSources = []
+    if not hasattr(obj, "ResolvedFrameStatusNotes"):
+        obj.addProperty("App::PropertyStringList", "ResolvedFrameStatusNotes", "Result", "Resolved frame source diagnostics for structure display placement")
+        obj.ResolvedFrameStatusNotes = []
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
@@ -645,8 +895,15 @@ class StructureSet:
         recs = self.records(obj)
         issues = self.validate(obj)
         obj.StructureCount = int(len(recs))
+        obj.ResolvedShapeSourceKinds = [_resolved_shape_source_kind(rec.get("ShapeSourcePath", "")) for rec in recs]
+        obj.ResolvedShapeStatusNotes = []
+        obj.ResolvedFrameSources = []
+        obj.ResolvedFrameStatusNotes = []
         aln = _resolve_alignment(obj)
         shape_notes = []
+        shape_status_notes = []
+        frame_sources = []
+        frame_status_notes = []
         shp = _empty_shape()
         if Part is not None and hasattr(obj, "Shape") and aln is not None and getattr(aln, "Shape", None):
             total = float(getattr(aln.Shape, "Length", 0.0) or 0.0)
@@ -654,8 +911,10 @@ class StructureSet:
             prev_n = None
             centerline_hits = 0
             alignment_hits = 0
+            fallback_hits = 0
             for rec in recs:
                 try:
+                    rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
                     sta = max(0.0, min(total, float(_station_for_record(rec))))
                     frame = _resolve_station_frame(obj, sta, aln=aln, prev_n=prev_n)
                     p = frame["point"]
@@ -663,10 +922,21 @@ class StructureSet:
                     n = frame["N"]
                     prev_n = n
                     src = str(frame.get("source", "") or "")
+                    frame_sources.append(src)
                     if src == "centerline3d":
                         centerline_hits += 1
                     elif src == "alignment":
                         alignment_hits += 1
+                        frame_status_notes.append(f"{rid}: frame source=alignment")
+                    else:
+                        fallback_hits += 1
+                        frame_status_notes.append(f"{rid}: frame source={src or 'fallback'}")
+                    if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape":
+                        _shp_check, ext_status = _load_external_shape(rec.get("ShapeSourcePath", ""))
+                        if ext_status not in ("step", "brep", "fcstd_link"):
+                            note = f"{rid}: external_shape source={ext_status} -> box fallback"
+                            shape_notes.append(note)
+                            shape_status_notes.append(note)
                     for off in _side_offsets(rec):
                         solid = _build_structure_solid(p + (n * float(off)), t, n, rec)
                         if solid is not None and not solid.isNull():
@@ -686,17 +956,27 @@ class StructureSet:
                     shape_notes.append(f"3D frame source: centerline3d={centerline_hits}")
                 if alignment_hits > 0:
                     shape_notes.append(f"3D frame source: alignment={alignment_hits}")
+                if fallback_hits > 0:
+                    shape_notes.append(f"3D frame source: fallback={fallback_hits}")
         elif recs:
             shape_notes.append("3D display requires a HorizontalAlignment")
 
         if shp is not None and hasattr(obj, "Shape"):
             obj.Shape = shp
+        obj.ResolvedShapeStatusNotes = list(shape_status_notes or [])
+        obj.ResolvedFrameSources = list(frame_sources or [])
+        obj.ResolvedFrameStatusNotes = list(frame_status_notes or [])
 
         note_count = len(issues) + len(shape_notes)
         if note_count == 0:
             obj.Status = f"OK: {len(recs)} records"
         else:
-            obj.Status = f"WARN: {len(recs)} records, {note_count} issue(s)"
+            status = f"WARN: {len(recs)} records, {note_count} issue(s)"
+            if shape_status_notes:
+                status = f"{status} | externalShapeFallbacks={len(shape_status_notes)}"
+            if frame_status_notes:
+                status = f"{status} | frameFallbacks={len(frame_status_notes)}"
+            obj.Status = status
 
     def onChanged(self, obj, prop):
         if prop in (
@@ -715,6 +995,10 @@ class StructureSet:
             "BehaviorModes",
             "GeometryModes",
             "TemplateNames",
+            "ShapeSourcePaths",
+            "ScaleFactors",
+            "PlacementModes",
+            "UseSourceBaseAsBottoms",
             "WallThicknesses",
             "FootingWidths",
             "FootingThicknesses",
@@ -747,6 +1031,10 @@ class StructureSet:
             len(list(getattr(obj, "BehaviorModes", []) or [])),
             len(list(getattr(obj, "GeometryModes", []) or [])),
             len(list(getattr(obj, "TemplateNames", []) or [])),
+            len(list(getattr(obj, "ShapeSourcePaths", []) or [])),
+            len(list(getattr(obj, "ScaleFactors", []) or [])),
+            len(list(getattr(obj, "PlacementModes", []) or [])),
+            len(list(getattr(obj, "UseSourceBaseAsBottoms", []) or [])),
             len(list(getattr(obj, "WallThicknesses", []) or [])),
             len(list(getattr(obj, "FootingWidths", []) or [])),
             len(list(getattr(obj, "FootingThicknesses", []) or [])),
@@ -776,6 +1064,10 @@ class StructureSet:
         behaviors = _safe_str_list(getattr(obj, "BehaviorModes", []))
         geometry_modes = _safe_str_list(getattr(obj, "GeometryModes", []))
         template_names = _safe_str_list(getattr(obj, "TemplateNames", []))
+        shape_source_paths = _safe_str_list(getattr(obj, "ShapeSourcePaths", []))
+        scale_factors = _safe_float_list(getattr(obj, "ScaleFactors", []))
+        placement_modes = _safe_str_list(getattr(obj, "PlacementModes", []))
+        use_source_base_as_bottoms = _safe_bool_text_list(getattr(obj, "UseSourceBaseAsBottoms", []))
         wall_thicknesses = _safe_float_list(getattr(obj, "WallThicknesses", []))
         footing_widths = _safe_float_list(getattr(obj, "FootingWidths", []))
         footing_thicknesses = _safe_float_list(getattr(obj, "FootingThicknesses", []))
@@ -806,6 +1098,10 @@ class StructureSet:
                     "BehaviorMode": behaviors[i] if i < len(behaviors) else "",
                     "GeometryMode": geometry_modes[i] if i < len(geometry_modes) else "",
                     "TemplateName": template_names[i] if i < len(template_names) else "",
+                    "ShapeSourcePath": shape_source_paths[i] if i < len(shape_source_paths) else "",
+                    "ScaleFactor": scale_factors[i] if i < len(scale_factors) else 1.0,
+                    "PlacementMode": placement_modes[i] if i < len(placement_modes) else "",
+                    "UseSourceBaseAsBottom": use_source_base_as_bottoms[i] if i < len(use_source_base_as_bottoms) else "",
                     "WallThickness": wall_thicknesses[i] if i < len(wall_thicknesses) else 0.0,
                     "FootingWidth": footing_widths[i] if i < len(footing_widths) else 0.0,
                     "FootingThickness": footing_thicknesses[i] if i < len(footing_thicknesses) else 0.0,
@@ -828,6 +1124,9 @@ class StructureSet:
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
             geom_mode = str(rec.get("GeometryMode", "") or "").strip().lower()
             template_name = str(rec.get("TemplateName", "") or "").strip().lower()
+            shape_source_path = str(rec.get("ShapeSourcePath", "") or "").strip()
+            scale_factor = float(rec.get("ScaleFactor", 1.0) or 1.0)
+            placement_mode = str(rec.get("PlacementMode", "") or "").strip().lower()
             cor_mode = str(rec.get("CorridorMode", "") or "").strip().lower()
             s0 = float(rec.get("StartStation", 0.0) or 0.0)
             s1 = float(rec.get("EndStation", 0.0) or 0.0)
@@ -857,6 +1156,8 @@ class StructureSet:
                 issues.append(f"{rid}: unknown geometry mode '{geom_mode}'")
             if template_name and template_name not in ALLOWED_TEMPLATE_NAMES:
                 issues.append(f"{rid}: unknown template name '{template_name}'")
+            if placement_mode and placement_mode not in ALLOWED_PLACEMENT_MODES:
+                issues.append(f"{rid}: unknown placement mode '{placement_mode}'")
             if cor_mode and cor_mode not in ALLOWED_CORRIDOR_MODES:
                 issues.append(f"{rid}: unknown corridor mode '{cor_mode}'")
 
@@ -880,11 +1181,21 @@ class StructureSet:
                 issues.append(f"{rid}: cell count is negative")
             if cm < 0.0:
                 issues.append(f"{rid}: corridor margin is negative")
+            if scale_factor <= 0.0:
+                issues.append(f"{rid}: scale factor must be greater than zero")
             if geom_mode == "template":
                 if not template_name:
                     issues.append(f"{rid}: template geometry mode requires TemplateName")
                 if template_name in ("box_culvert", "utility_crossing") and cc < 1.0:
                     issues.append(f"{rid}: {template_name} requires CellCount >= 1")
+            if geom_mode == "external_shape":
+                if not shape_source_path:
+                    issues.append(f"{rid}: external_shape geometry mode requires ShapeSourcePath")
+                kind = _resolved_shape_source_kind(shape_source_path)
+                if shape_source_path and kind == "invalid":
+                    issues.append(f"{rid}: unsupported external shape source '{shape_source_path}'")
+                if kind == "fcstd_link" and "#" not in shape_source_path:
+                    issues.append(f"{rid}: fcstd external shape requires ShapeSourcePath in the form 'path.FCStd#ObjectName'")
         return issues
 
     @staticmethod

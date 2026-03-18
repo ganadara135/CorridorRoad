@@ -264,7 +264,6 @@ class AlignmentEditorTaskPanel:
         self.btn_close = QtWidgets.QPushButton("Close")
         rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
-        rep_row.addStretch(1)
         rep_row.addWidget(self.btn_close)
         root.addLayout(rep_row)
 

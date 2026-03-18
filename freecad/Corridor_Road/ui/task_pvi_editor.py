@@ -118,7 +118,6 @@ class PviEditorTaskPanel:
         gr.addRow(self.btn_preview)
         row_apply = QtWidgets.QHBoxLayout()
         row_apply.addWidget(self.btn_generate_only)
-        row_apply.addStretch(1)
         row_apply.addWidget(self.btn_close)
         w_apply = QtWidgets.QWidget()
         w_apply.setLayout(row_apply)

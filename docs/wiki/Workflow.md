@@ -79,9 +79,12 @@ If profile EG contains many blanks or `0` values:
 1. Run `Edit Structures` after `Generate Stations`.
 2. Load a structure CSV or enter rows manually.
 3. Apply the `StructureSet`.
+4. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
 
 Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_template.csv`
+- `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
 
 Output:
 - `StructureSet` under `01_Inputs/Structures`
@@ -91,6 +94,10 @@ Validation:
 - Structure rows use valid `Type`, `Side`, and `BehaviorMode`.
 - Start/end/center stations match generated stationing policy.
 - 3D structure solids appear inside the corridor area.
+- For `external_shape`, replace placeholder `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources before applying.
+- For `FCStd`, the expected form is `C:/path/model.FCStd#ObjectName`.
+- For `FCStd`, the easiest workflow is `Browse Shape` -> `Pick FCStd Object`.
+- If `Apply` reports `frame source=alignment`, re-run `3D Centerline` and apply the structure set again.
 
 ![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
 > Suggested file: `wiki-workflow-04a-structures-editor.png`
@@ -191,6 +198,11 @@ When `Use linked StructureSet` is enabled, structure records participate in sect
 3. Child sections receive structure metadata such as IDs, types, and roles.
 4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
 5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or built with a notch-aware closed-profile schema.
+
+Structure placement diagnostics:
+1. `Edit Structures > Apply` can report `Frame diagnostics`.
+2. `frame source=centerline3d` means the 3D structure used the 3D centerline frame as intended.
+3. `frame source=alignment` means the structure fell back to the horizontal alignment frame.
 
 Current override policy by structure type:
 1. `culvert`, `crossing`
