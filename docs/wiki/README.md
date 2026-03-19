@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+
 # Wiki Draft Folder
 
 This directory stores draft markdown pages for GitHub Wiki publishing.

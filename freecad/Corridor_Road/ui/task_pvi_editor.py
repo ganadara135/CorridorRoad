@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileNotice: Part of the Corridor Road addon.
+
 # CorridorRoad/ui/task_pvi_editor.py
 import FreeCAD as App
 import FreeCADGui as Gui

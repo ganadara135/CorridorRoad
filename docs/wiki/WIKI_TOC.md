@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+
 # CorridorRoad Wiki TOC (Draft)
 
 This folder contains draft pages to publish to GitHub Wiki.
