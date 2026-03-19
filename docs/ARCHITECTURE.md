@@ -93,6 +93,30 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `Edit Alignment -> Apply Alignment` syncs alignment `SuperelevationPct`
     into `LeftSlopePct/RightSlopePct` when an assembly template is linked/found.
 
+### 2.7A StructureSet (`freecad/Corridor_Road/objects/obj_structure_set.py`)
+- Purpose: structure data source + 3D/reference display geometry.
+- Owns:
+  - structure record arrays
+  - geometry fields (`GeometryMode`, `TemplateName`, `ShapeSourcePath`, `ScaleFactor`, `PlacementMode`, `UseSourceBaseAsBottom`)
+  - result diagnostics (`ResolvedShapeSourceKinds`, `ResolvedShapeStatusNotes`, `ResolvedFrameSources`, `ResolvedFrameStatusNotes`, `Status`)
+- Geometry modes:
+  - `box`
+  - `template`
+  - `external_shape`
+- Template support:
+  - `box_culvert`
+  - `utility_crossing`
+  - `retaining_wall`
+  - `abutment_block`
+- External-shape support:
+  - `.step` / `.stp`
+  - `.brep` / `.brp`
+  - `.FCStd#ObjectName`
+- Placement rule:
+  - prefer `Centerline3D.frame_at_station(...)`
+  - alignment frame is fallback only
+  - centerline regeneration should trigger `StructureSet` recompute
+
 ### 2.8 SectionSet (`freecad/Corridor_Road/objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
 - Inputs:
@@ -110,7 +134,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Range helper:
     - `IncludeAlignmentIPStations` adds alignment IP key stations to range list
     - `IncludeAlignmentSCCSStations` adds transition TS/SC/CS/ST key stations to range list
-    - `IncludeStructureStations` + `StructureStationText` merges structure/crossing key stations
+    - `UseStructureSet`, `StructureSet`
+    - `IncludeStructureStartEnd`, `IncludeStructureCenters`
+    - `IncludeTransitionStations`, `AutoTransitionDistance`, `TransitionDistance`
+    - `CreateStructureTaggedChildren`, `ApplyStructureOverrides`
 - Results:
   - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
   - schema policy:
@@ -129,6 +156,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - neighboring section daylight widths should be smoothed/clamped by `DaylightMaxWidthDelta` to reduce abrupt loft twists.
 - Optional tree children:
   - `SectionSlice` objects under `Group`
+  - `Structure Sections` overlay objects for structure-only section visualization
   - label format: `STA {station}` with optional key tags (e.g., `[PI]`, `[TS]`, `[SC]`, `[CS]`, `[ST]`, `[STR]`)
 - Rebuild controls:
   - `AutoRebuildChildren`
@@ -143,16 +171,32 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
   - `UseRuled`
   - `AutoFixSectionOrientation`
+  - `SplitAtStructureZones`
+  - `UseStructureCorridorModes`
+  - `DefaultStructureCorridorMode`
+  - `NotchTransitionScale`
   - `AutoUpdate`
   - `RebuildNow`
 - Results:
   - `SectionCount`, `PointCountPerSection`, `SchemaVersion`
   - `AutoFixedSectionCount`
+  - `StructureSegmentCount`, `StructureSplitStations`
+  - `SkippedStationRanges`, `SkipMarkerCount`
+  - `ResolvedStructureNotchCount`, `ResolvedNotchStationCount`
+  - `ClosedProfileSchemaVersion`
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
 - Output mode:
   - `Solid`: loft from closed profiles generated with downward heights
   - Height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+- Structure-aware corridor behavior:
+  - `split_only` keeps corridor continuity while splitting loft at structure boundaries
+  - `skip_zone` omits corridor body across structure-active spans
+  - `notch` is primarily for `culvert` / `crossing` and should prefer a notch-aware closed-profile schema
+- Current notch policy:
+  - transition stations can drive ramped notch entry/exit
+  - result reporting should expose notch-aware station count and closed-profile schema version
+  - boolean cut remains optional and is not required for the first notch-capable workflow
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
@@ -336,12 +380,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Auto-links available Alignment/Stationing/VerticalAlignment/ProfileBundle.
 - Uses `Auto` elevation mode by default (VA -> ProfileBundle FG -> FlatZero).
 - Removes legacy `Centerline3D` engine object if present.
+- Touches linked `StructureSet` so structure solids recompute against the latest 3D centerline frame.
 
 ### 3.5 Section Command (`freecad/Corridor_Road/commands/cmd_generate_sections.py`, `freecad/Corridor_Road/ui/task_section_generator.py`)
 - Provides user-facing section workflow:
   - select mode: `Range` or `Manual`
   - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment TS/SC/CS/ST Key Stations`)
-  - optional structure/crossing key-station merge from text list
+  - optional structure-station merge from linked `StructureSet`
+  - transition-station insertion around structure boundaries
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2, Mesh source only)
   - daylight terrain coordinate mode selection (`Local`/`World`)
@@ -349,6 +395,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optionally create child sections per station in tree
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
+
+### 3.5A Edit Structures (`freecad/Corridor_Road/ui/task_structure_editor.py`)
+- Station columns are driven by generated `Stationing` values.
+- `BottomElevation` / `Cover` enablement follows structure type policy.
+- `Browse Shape` supports `.step`, `.brep`, and `.FCStd`.
+- `Apply` reports external-shape fallback diagnostics and frame-source diagnostics.
 
 ### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor_loft.py`)
 - Creates/updates `CorridorLoft`.

@@ -798,6 +798,13 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSkipMarker",)):
+        cor = getattr(child, "ParentCorridorLoft", None)
+        sec = getattr(cor, "SourceSectionSet", None) if cor is not None else None
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
         doc = getattr(prj, "Document", None)
         if doc is not None:
@@ -855,6 +862,7 @@ def _is_alignment_related(child):
             "SectionSlice",
             "SectionStructureOverlay",
             "CorridorLoft",
+            "CorridorSkipMarker",
         ),
         name_prefixes=(
             "HorizontalAlignment",
@@ -869,6 +877,7 @@ def _is_alignment_related(child):
             "SectionSlice",
             "SectionStructureOverlay",
             "CorridorLoft",
+            "CorridorSkipMarker",
         ),
     )
 
@@ -930,6 +939,8 @@ def _target_folder_for_alignment_child(prj, child):
         return aln_tree.get(ALIGNMENT_SECTIONS, None)
     if _is_type(child, proxy_types=("SectionStructureOverlay",), name_prefixes=("SectionStructureOverlay",)):
         return aln_tree.get(ALIGNMENT_STRUCTURE_SECTIONS, None)
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSkipMarker",)):
+        return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     return aln_tree.get(ALIGNMENT_VERTICAL, None)

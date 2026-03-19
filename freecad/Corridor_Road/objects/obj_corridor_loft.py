@@ -8,6 +8,7 @@ from freecad.Corridor_Road.objects.obj_section_set import SectionSet, _resolve_s
 from freecad.Corridor_Road.objects.obj_structure_set import (
     StructureSet as StructureSetSource,
     _build_structure_solid as _structure_record_solid,
+    _record_transition_distance,
     _resolve_alignment as _resolve_structure_alignment,
     _resolve_station_point as _resolve_structure_station_point,
     _side_offsets as _structure_side_offsets,
@@ -189,6 +190,27 @@ def ensure_corridor_loft_properties(obj):
         obj.addProperty("App::PropertyInteger", "ResolvedStructureNotchCount", "Result", "Number of structure notch cuts applied")
         obj.ResolvedStructureNotchCount = 0
 
+    if not hasattr(obj, "ResolvedNotchStationCount"):
+        obj.addProperty("App::PropertyInteger", "ResolvedNotchStationCount", "Result", "Number of stations using the notch-aware profile schema")
+        obj.ResolvedNotchStationCount = 0
+
+    if not hasattr(obj, "ClosedProfileSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "ClosedProfileSchemaVersion", "Result", "Closed-profile schema version used for lofting")
+        obj.ClosedProfileSchemaVersion = 1
+
+    if not hasattr(obj, "SkipMarkerCount"):
+        obj.addProperty("App::PropertyInteger", "SkipMarkerCount", "Result", "Number of skip-zone boundary markers")
+        obj.SkipMarkerCount = 0
+
+    if not hasattr(obj, "NotchTransitionScale"):
+        obj.addProperty(
+            "App::PropertyFloat",
+            "NotchTransitionScale",
+            "Corridor",
+            "Scale factor applied to structure transition distance when deriving notch ramps",
+        )
+        obj.NotchTransitionScale = 1.0
+
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
@@ -235,6 +257,15 @@ class CorridorLoft:
     @staticmethod
     def _make_wire(points):
         return Part.makePolygon(points)
+
+    @staticmethod
+    def _lerp_point(a, b, t: float):
+        tt = max(0.0, min(1.0, float(t)))
+        return App.Vector(
+            float(a.x) + (float(b.x) - float(a.x)) * tt,
+            float(a.y) + (float(b.y) - float(a.y)) * tt,
+            float(a.z) + (float(b.z) - float(a.z)) * tt,
+        )
 
     @staticmethod
     def _should_flip_points(prev_pts, pts):
@@ -515,9 +546,10 @@ class CorridorLoft:
     def _skip_zone_keep_ranges(stations, skip_spans):
         n = len(list(stations or []))
         if n < 2 or not skip_spans:
-            return [], []
+            return [], [], []
 
         skip_mask = [False] * n
+        skip_runs = []
         tol = 1e-6
         for s0, s1, mode in list(skip_spans or []):
             if str(mode or "").strip().lower() != "skip_zone":
@@ -538,6 +570,7 @@ class CorridorLoft:
                 while j + 1 < n and skip_mask[j + 1]:
                     j += 1
                 skipped_rows.append(f"{float(stations[i]):.3f}-{float(stations[j]):.3f}")
+                skip_runs.append((int(i), int(j)))
                 i = j + 1
             else:
                 i += 1
@@ -572,7 +605,295 @@ class CorridorLoft:
             dedup.append(key)
 
         dedup = [(int(a), int(b)) for a, b in dedup if (int(b) - int(a) + 1) >= 2]
-        return dedup, skipped_rows
+        return dedup, skipped_rows, skip_runs
+
+    @staticmethod
+    def _clear_skip_markers(obj):
+        doc = getattr(obj, "Document", None)
+        if doc is None:
+            return
+        for ch in list(getattr(doc, "Objects", []) or []):
+            try:
+                if not str(getattr(ch, "Name", "") or "").startswith("CorridorSkipMarker"):
+                    continue
+                if getattr(ch, "ParentCorridorLoft", None) != obj:
+                    continue
+                doc.removeObject(ch.Name)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _make_skip_marker_face(profile_wire):
+        try:
+            if profile_wire is None or profile_wire.isNull():
+                return None
+            return Part.Face(profile_wire)
+        except Exception:
+            return profile_wire
+
+    @staticmethod
+    def _create_skip_markers(obj, stations, loft_wires, skip_runs):
+        doc = getattr(obj, "Document", None)
+        if doc is None:
+            return 0
+        CorridorLoft._clear_skip_markers(obj)
+        count = 0
+        scale = get_length_scale(doc, default=1.0)
+        for run_idx, (i0, i1) in enumerate(list(skip_runs or []), start=1):
+            for role, idx in (("SKIP_START", int(i0)), ("SKIP_END", int(i1))):
+                if idx < 0 or idx >= len(loft_wires):
+                    continue
+                shp = CorridorLoft._make_skip_marker_face(loft_wires[idx])
+                if shp is None or shp.isNull():
+                    continue
+                try:
+                    mk = doc.addObject("Part::Feature", "CorridorSkipMarker")
+                    mk.Label = f"STA {float(stations[idx]):.3f} [{role}]"
+                    if not hasattr(mk, "ParentCorridorLoft"):
+                        mk.addProperty("App::PropertyLink", "ParentCorridorLoft", "Corridor", "Owning CorridorLoft")
+                    mk.ParentCorridorLoft = obj
+                    if not hasattr(mk, "Station"):
+                        mk.addProperty("App::PropertyFloat", "Station", "Corridor", "Boundary station")
+                    mk.Station = float(stations[idx])
+                    if not hasattr(mk, "MarkerRole"):
+                        mk.addProperty("App::PropertyString", "MarkerRole", "Corridor", "Skip boundary role")
+                    mk.MarkerRole = str(role)
+                    if not hasattr(mk, "SkipRunIndex"):
+                        mk.addProperty("App::PropertyInteger", "SkipRunIndex", "Corridor", "Skip run index")
+                    mk.SkipRunIndex = int(run_idx)
+                    mk.Shape = shp
+                    vobj = getattr(mk, "ViewObject", None)
+                    if vobj is not None:
+                        vobj.DisplayMode = "Flat Lines"
+                        vobj.ShapeColor = (0.96, 0.42, 0.14) if role == "SKIP_START" else (0.90, 0.18, 0.18)
+                        vobj.LineColor = (0.85, 0.32, 0.10) if role == "SKIP_START" else (0.72, 0.12, 0.12)
+                        vobj.Transparency = 55
+                        vobj.LineWidth = max(2, int(round(2.0 * scale)))
+                    count += 1
+                except Exception:
+                    pass
+        return int(count)
+
+    @staticmethod
+    def _structure_notch_spec(rec, scale: float):
+        typ = str(rec.get("Type", "") or "").strip().lower()
+        width = max(0.50 * scale, abs(float(rec.get("Width", 0.0) or 0.0)))
+        height = max(0.50 * scale, abs(float(rec.get("Height", 0.0) or 0.0)))
+
+        if typ == "culvert":
+            return {
+                "Enabled": True,
+                "TypeLabel": "culvert",
+                "Width": width * 1.35,
+                "Height": height * 1.40,
+                "LongPad": max(0.75 * scale, 0.20 * width),
+                "BottomExtra": 0.15 * height,
+            }
+        if typ == "crossing":
+            return {
+                "Enabled": True,
+                "TypeLabel": "crossing",
+                "Width": width * 1.20,
+                "Height": height * 1.25,
+                "LongPad": max(0.50 * scale, 0.15 * width),
+                "BottomExtra": 0.10 * height,
+            }
+        if typ == "retaining_wall":
+            return {
+                "Enabled": False,
+                "Reason": "retaining_wall should use split_only rather than notch",
+            }
+        if typ in ("bridge_zone", "abutment_zone"):
+            return {
+                "Enabled": False,
+                "Reason": f"{typ} should prefer skip_zone rather than notch",
+            }
+        return {
+            "Enabled": True,
+            "TypeLabel": "generic",
+            "Width": width * 1.05,
+            "Height": height * 1.10,
+            "LongPad": max(0.50 * scale, 0.10 * width),
+            "BottomExtra": 0.10 * height,
+        }
+
+    @staticmethod
+    def _notch_profile_spec_rows(src, stations, fallback_mode: str, notch_transition_scale: float):
+        recs = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
+        if not recs:
+            return [], []
+
+        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
+        eligible = []
+        notes = []
+        for rec in list(recs or []):
+            mode = str(rec.get("ResolvedCorridorMode", "") or "").strip().lower()
+            if mode != "notch":
+                continue
+            spec = CorridorLoft._structure_notch_spec(rec, scale)
+            rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
+            if not bool(spec.get("Enabled", False)):
+                notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
+                continue
+            trans = _record_transition_distance(
+                src,
+                rec,
+                auto_transition=True,
+                transition=float(getattr(src, "StructureTransitionDistance", 0.0) or 0.0),
+            )
+            trans = max(0.0, float(trans) * max(0.01, float(notch_transition_scale)))
+            local = dict(rec)
+            local["_notch_spec"] = spec
+            local["_transition"] = trans
+            eligible.append(local)
+
+        if not eligible:
+            return [], notes
+
+        rows = []
+        tol = 1e-6
+        tiny_ramp = 0.004
+        for s in list(stations or []):
+            ss = float(s)
+            best = None
+            best_ramp = 0.0
+            for rec in eligible:
+                s0 = float(rec.get("ResolvedStartStation", rec.get("StartStation", 0.0)) or 0.0)
+                s1 = float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
+                lo = min(s0, s1)
+                hi = max(s0, s1)
+                tt = max(0.0, float(rec.get("_transition", 0.0) or 0.0))
+                if ss < (lo - tt - tol) or ss > (hi + tt + tol):
+                    continue
+                if ss >= lo - tol and ss <= hi + tol:
+                    ramp = 1.0
+                elif tt <= tol:
+                    ramp = 0.0
+                elif ss < lo:
+                    ramp = max(0.0, min(1.0, (ss - (lo - tt)) / tt))
+                else:
+                    ramp = max(0.0, min(1.0, ((hi + tt) - ss) / tt))
+                if ramp > best_ramp + 1e-9:
+                    best_ramp = float(ramp)
+                    best = rec
+            if best is None:
+                rows.append({"Mode": "default", "Ramp": 0.0, "Record": None})
+            else:
+                roles = []
+                if best_ramp >= 1.0 - 1e-6:
+                    roles.append("active")
+                elif ss < float(best.get("ResolvedStartStation", best.get("StartStation", 0.0)) or 0.0):
+                    roles.append("transition_before")
+                else:
+                    roles.append("transition_after")
+                rows.append(
+                    {
+                        "Mode": "notch",
+                        "Ramp": max(tiny_ramp, float(best_ramp)),
+                        "Record": best,
+                        "Roles": roles,
+                    }
+                )
+        return rows, notes
+
+    @staticmethod
+    def _make_notch_profile_for_solid(open_wire, row, h_left: float, h_right: float, scale: float):
+        pts = CorridorLoft._wire_points(open_wire)
+        if len(pts) < 2:
+            raise Exception("Section has insufficient points for notch-aware closed profile.")
+
+        left_outer = pts[0]
+        right_outer = pts[-1]
+        left_car = pts[1] if len(pts) >= 4 else CorridorLoft._lerp_point(left_outer, right_outer, 0.25)
+        right_car = pts[-2] if len(pts) >= 4 else CorridorLoft._lerp_point(left_outer, right_outer, 0.75)
+        axis = right_car - left_car
+        axis_len = float(axis.Length)
+        if axis_len <= 1e-9:
+            axis = right_outer - left_outer
+            axis_len = float(axis.Length)
+        if axis_len <= 1e-9:
+            raise Exception("Section carriage span is degenerate for notch profile.")
+
+        rec = dict(row.get("Record", {}) or {})
+        spec = dict(rec.get("_notch_spec", {}) or {})
+        ramp = max(0.0, min(1.0, float(row.get("Ramp", 0.0) or 0.0)))
+        min_width = max(0.002 * scale, 1e-4)
+        min_depth = max(0.001 * scale, 1e-4)
+        depth_cap = max(0.0, 0.98 * max(float(h_left), float(h_right)))
+        eff_width = min(
+            axis_len * 0.88,
+            max(min_width, float(spec.get("Width", 0.20 * scale) or (0.20 * scale)) * ramp),
+        )
+        eff_depth = min(
+            max(0.05 * scale, depth_cap),
+            max(min_depth, float(spec.get("Height", 0.10 * scale) or (0.10 * scale)) * 0.70 * (ramp ** 0.85)),
+        )
+
+        center_shift = 0.0
+        try:
+            center_shift = float(rec.get("Offset", 0.0) or 0.0)
+        except Exception:
+            center_shift = 0.0
+        center_t = 0.5 + (center_shift / max(axis_len, 1e-9))
+        center_t = max(0.20, min(0.80, center_t))
+
+        half_t = 0.5 * eff_width / max(axis_len, 1e-9)
+        left_t = max(0.02, min(center_t - half_t, 0.48))
+        right_t = min(0.98, max(center_t + half_t, 0.52))
+        if right_t <= left_t + 1e-4:
+            mid = 0.5 * (left_t + right_t)
+            left_t = max(0.02, mid - 5e-4)
+            right_t = min(0.98, mid + 5e-4)
+
+        notch_lt = CorridorLoft._lerp_point(left_car, right_car, left_t)
+        notch_rt = CorridorLoft._lerp_point(left_car, right_car, right_t)
+        notch_lb = App.Vector(float(notch_lt.x), float(notch_lt.y), float(notch_lt.z) - eff_depth)
+        notch_rb = App.Vector(float(notch_rt.x), float(notch_rt.y), float(notch_rt.z) - eff_depth)
+        shoulder_t = min(0.10, max(0.01, 0.22 * half_t))
+        left_shoulder_t = max(0.0, left_t - shoulder_t)
+        right_shoulder_t = min(1.0, right_t + shoulder_t)
+        notch_ls = CorridorLoft._lerp_point(left_car, right_car, left_shoulder_t)
+        notch_rs = CorridorLoft._lerp_point(left_car, right_car, right_shoulder_t)
+        shoulder_drop = max(0.0, min(eff_depth * 0.45, 0.35 * max(float(h_left), float(h_right))))
+        notch_ls = App.Vector(float(notch_ls.x), float(notch_ls.y), float(notch_ls.z) - shoulder_drop)
+        notch_rs = App.Vector(float(notch_rs.x), float(notch_rs.y), float(notch_rs.z) - shoulder_drop)
+        right_bottom = App.Vector(float(right_outer.x), float(right_outer.y), float(right_outer.z) - float(h_right))
+        left_bottom = App.Vector(float(left_outer.x), float(left_outer.y), float(left_outer.z) - float(h_left))
+
+        poly = [
+            left_outer,
+            left_car,
+            notch_ls,
+            notch_lb,
+            notch_rb,
+            notch_rs,
+            right_car,
+            right_outer,
+            right_bottom,
+            left_bottom,
+            left_outer,
+        ]
+        return Part.makePolygon(poly)
+
+    @staticmethod
+    def _make_closed_profiles_with_notch_schema(open_wires, stations, src, h_left: float, h_right: float, fallback_mode: str, notch_transition_scale: float):
+        rows, notes = CorridorLoft._notch_profile_spec_rows(
+            src,
+            stations,
+            fallback_mode=fallback_mode,
+            notch_transition_scale=notch_transition_scale,
+        )
+        if not rows or len(rows) != len(open_wires):
+            return None, 0, notes
+
+        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
+        out = []
+        notch_station_count = 0
+        for w, row in zip(list(open_wires or []), list(rows or [])):
+            if str(row.get("Mode", "default") or "default") == "notch":
+                notch_station_count += 1
+            out.append(CorridorLoft._make_notch_profile_for_solid(w, row, h_left, h_right, scale))
+        return out, int(notch_station_count), notes
 
     @staticmethod
     def _build_notch_cutters(src, corridor_records):
@@ -580,6 +901,7 @@ class CorridorLoft:
         if aln is None or getattr(aln, "Shape", None) is None:
             return [], []
         total = float(getattr(aln.Shape, "Length", 0.0) or 0.0)
+        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
         cutters = []
         notes = []
         for rec in list(corridor_records or []):
@@ -588,13 +910,23 @@ class CorridorLoft:
                 continue
             try:
                 local = dict(rec)
+                spec = CorridorLoft._structure_notch_spec(local, scale)
+                rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
+                if not bool(spec.get("Enabled", False)):
+                    notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
+                    continue
                 mg = max(0.0, float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0))
-                local["StartStation"] = max(0.0, float(rec.get("ResolvedStartStation", 0.0) or 0.0) - mg)
-                local["EndStation"] = min(total, float(rec.get("ResolvedEndStation", 0.0) or 0.0) + mg)
+                local["Width"] = float(spec.get("Width", local.get("Width", 0.0) or 0.0) or 0.0)
+                local["Height"] = float(spec.get("Height", local.get("Height", 0.0) or 0.0) or 0.0)
+                long_pad = max(0.0, float(spec.get("LongPad", 0.0) or 0.0))
+                local["StartStation"] = max(0.0, float(rec.get("ResolvedStartStation", 0.0) or 0.0) - mg - long_pad)
+                local["EndStation"] = min(total, float(rec.get("ResolvedEndStation", 0.0) or 0.0) + mg + long_pad)
                 if float(local["EndStation"]) < float(local["StartStation"]):
                     local["StartStation"], local["EndStation"] = local["EndStation"], local["StartStation"]
                 sta = max(0.0, min(total, 0.5 * (float(local["StartStation"]) + float(local["EndStation"]))))
                 p = _resolve_structure_station_point(src, sta, aln=aln)
+                if abs(float(local.get("BottomElevation", 0.0) or 0.0)) > 1e-9:
+                    local["BottomElevation"] = float(local.get("BottomElevation", 0.0) or 0.0) - float(spec.get("BottomExtra", 0.0) or 0.0)
                 try:
                     from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 
@@ -610,7 +942,6 @@ class CorridorLoft:
                         cutters.append(solid)
                         built += 1
                 if built <= 0:
-                    rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
                     notes.append(f"{rid}: notch cutter skipped")
             except Exception as ex:
                 rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
@@ -683,6 +1014,7 @@ class CorridorLoft:
         try:
             src = getattr(obj, "SourceSectionSet", None)
             if src is None:
+                CorridorLoft._clear_skip_markers(obj)
                 obj.Shape = Part.Shape()
                 obj.SectionCount = 0
                 obj.PointCountPerSection = 0
@@ -693,6 +1025,9 @@ class CorridorLoft:
                 obj.StructureSplitStations = []
                 obj.SkippedStationRanges = []
                 obj.ResolvedStructureNotchCount = 0
+                obj.ResolvedNotchStationCount = 0
+                obj.ClosedProfileSchemaVersion = 1
+                obj.SkipMarkerCount = 0
                 obj.ResolvedHeightLeft = 0.0
                 obj.ResolvedHeightRight = 0.0
                 obj.Status = "Missing SourceSectionSet"
@@ -714,12 +1049,34 @@ class CorridorLoft:
             ruled = bool(getattr(obj, "UseRuled", False))
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
+            closed_profile_schema = 1
             split_count = 0
             split_station_rows = []
             structure_ranges = []
             skipped_station_rows = []
+            skip_runs = []
+            notch_count = 0
             fallback_mode = str(getattr(obj, "DefaultStructureCorridorMode", "split_only") or "split_only").strip().lower()
             corridor_records = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
+            notch_station_count = 0
+            notch_failures = []
+            if bool(getattr(obj, "UseStructureCorridorModes", True)):
+                notch_wires, notch_station_count, notch_notes = CorridorLoft._make_closed_profiles_with_notch_schema(
+                    norm_wires,
+                    stations,
+                    src,
+                    h_left,
+                    h_right,
+                    fallback_mode=fallback_mode,
+                    notch_transition_scale=float(getattr(obj, "NotchTransitionScale", 1.0) or 1.0),
+                )
+                if notch_notes:
+                    notch_failures.extend(list(notch_notes))
+                if notch_wires:
+                    loft_wires = list(notch_wires)
+                    closed_profile_schema = 2
+                    if notch_station_count > 0:
+                        notch_count = max(1, int(notch_count))
             use_segmented_ranges = False
             if bool(getattr(obj, "SplitAtStructureZones", True)):
                 split_idx, split_station_rows = CorridorLoft._structure_split_candidates(src, stations)
@@ -737,7 +1094,7 @@ class CorridorLoft:
                         for rec in list(corridor_records or [])
                     ]
                 )
-                skip_ranges, skipped_station_rows = CorridorLoft._skip_zone_keep_ranges(stations, structure_spans)
+                skip_ranges, skipped_station_rows, skip_runs = CorridorLoft._skip_zone_keep_ranges(stations, structure_spans)
                 if skip_ranges:
                     structure_ranges = list(skip_ranges)
                     split_count = len(structure_ranges) if structure_ranges else 0
@@ -749,8 +1106,7 @@ class CorridorLoft:
                     raise Exception("All corridor sections fall inside skip_zone structure spans.")
 
             failed_ranges = []
-            notch_count = 0
-            notch_failures = []
+            skip_marker_count = 0
             try:
                 if use_segmented_ranges:
                     shape, failed_ranges = CorridorLoft._loft_by_ranges(
@@ -758,13 +1114,14 @@ class CorridorLoft:
                     )
                 else:
                     shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
-                if bool(getattr(obj, "UseStructureCorridorModes", True)):
+                if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
                         notch_failures.extend(list(notch_notes))
                     shape, notch_count, notch_failed = CorridorLoft._apply_notch_cuts(shape, notch_cutters)
                     if notch_failed:
                         notch_failures.extend(list(notch_failed))
+                skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 if failed_ranges:
                     status = (
                         "WARN (Solid): structure-aware segmented fallback used "
@@ -784,8 +1141,14 @@ class CorridorLoft:
                     status += f" structureSegs={int(split_count)}"
                 if skipped_station_rows:
                     status += f" skipZones={len(skipped_station_rows)}"
+                if skip_marker_count > 0:
+                    status += f" skipMarkers={int(skip_marker_count)}"
                 if notch_count > 0:
                     status += f" notches={int(notch_count)}"
+                if notch_station_count > 0:
+                    status += f" notchStations={int(notch_station_count)}"
+                if closed_profile_schema > 1:
+                    status += f" profileSchema={int(closed_profile_schema)}"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
             except Exception as ex:
@@ -797,13 +1160,14 @@ class CorridorLoft:
                     shape, failed_ranges = CorridorLoft._loft_adaptive(
                         loft_wires, stations, ruled=ruled, solid=True
                     )
-                if bool(getattr(obj, "UseStructureCorridorModes", True)):
+                if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
                         notch_failures.extend(list(notch_notes))
                     shape, notch_count, notch_failed = CorridorLoft._apply_notch_cuts(shape, notch_cutters)
                     if notch_failed:
                         notch_failures.extend(list(notch_failed))
+                skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 status = (
                     "WARN (Solid): full loft failed, adaptive fallback used "
                     f"({len(failed_ranges)} failed ranges): {ex} | "
@@ -815,8 +1179,14 @@ class CorridorLoft:
                     status += f" structureSegs={int(split_count)}"
                 if skipped_station_rows:
                     status += f" skipZones={len(skipped_station_rows)}"
+                if skip_marker_count > 0:
+                    status += f" skipMarkers={int(skip_marker_count)}"
                 if notch_count > 0:
                     status += f" notches={int(notch_count)}"
+                if notch_station_count > 0:
+                    status += f" notchStations={int(notch_station_count)}"
+                if closed_profile_schema > 1:
+                    status += f" profileSchema={int(closed_profile_schema)}"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
 
@@ -830,6 +1200,9 @@ class CorridorLoft:
             obj.StructureSplitStations = list(split_station_rows)
             obj.SkippedStationRanges = list(skipped_station_rows)
             obj.ResolvedStructureNotchCount = int(notch_count)
+            obj.ResolvedNotchStationCount = int(notch_station_count)
+            obj.ClosedProfileSchemaVersion = int(closed_profile_schema)
+            obj.SkipMarkerCount = int(skip_marker_count)
             obj.ResolvedHeightLeft = float(h_left)
             obj.ResolvedHeightRight = float(h_right)
             obj.Status = status
@@ -839,6 +1212,7 @@ class CorridorLoft:
                 obj.RebuildNow = False
 
         except Exception as ex:
+            CorridorLoft._clear_skip_markers(obj)
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
             obj.PointCountPerSection = 0
@@ -849,6 +1223,9 @@ class CorridorLoft:
             obj.StructureSplitStations = []
             obj.SkippedStationRanges = []
             obj.ResolvedStructureNotchCount = 0
+            obj.ResolvedNotchStationCount = 0
+            obj.ClosedProfileSchemaVersion = 1
+            obj.SkipMarkerCount = 0
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0
             obj.Status = f"ERROR: {ex}"
@@ -866,6 +1243,7 @@ class CorridorLoft:
             "SplitAtStructureZones",
             "UseStructureCorridorModes",
             "DefaultStructureCorridorMode",
+            "NotchTransitionScale",
             "AutoUpdate",
             "RebuildNow",
         ):

@@ -112,6 +112,63 @@ def _primary_structure_role(meta) -> str:
     return roles[0] if roles else ""
 
 
+def _overlay_signed_side_factor(rec) -> float:
+    side = str(rec.get("Side", "") or "").strip().lower()
+    if side == "left":
+        return 1.0
+    if side == "right":
+        return -1.0
+    off = float(rec.get("Offset", 0.0) or 0.0)
+    if off < -1e-9:
+        return -1.0
+    return 1.0
+
+
+def _overlay_rect_wire(center, nvec, zvec, width: float, height: float):
+    half_w = 0.5 * max(1e-6, float(width))
+    p1 = center - (nvec * half_w)
+    p2 = center + (nvec * half_w)
+    p3 = p2 + (zvec * max(1e-6, float(height)))
+    p4 = p1 + (zvec * max(1e-6, float(height)))
+    return Part.makePolygon([p1, p2, p3, p4, p1])
+
+
+def _overlay_profile_wire(origin, nvec, zvec, coords_nz):
+    pts = []
+    for nn, zz in list(coords_nz or []):
+        pts.append(origin + (nvec * float(nn)) + (zvec * float(zz)))
+    if not pts:
+        return None
+    if (pts[0] - pts[-1]).Length > 1e-9:
+        pts.append(pts[0])
+    return Part.makePolygon(pts)
+
+
+def _overlay_geometry_mode(rec) -> str:
+    mode = str(rec.get("GeometryMode", "") or "").strip().lower()
+    if mode in ("box", "template"):
+        return mode
+    if str(rec.get("TemplateName", "") or "").strip():
+        return "template"
+    return "box"
+
+
+def _overlay_template_name(rec) -> str:
+    name = str(rec.get("TemplateName", "") or "").strip().lower()
+    if name:
+        return name
+    typ = str(rec.get("Type", "") or "").strip().lower()
+    if typ == "culvert":
+        return "box_culvert"
+    if typ == "crossing":
+        return "utility_crossing"
+    if typ == "retaining_wall":
+        return "retaining_wall"
+    if typ == "abutment_zone":
+        return "abutment_block"
+    return ""
+
+
 def _structure_overlay_label(station: float, meta) -> str:
     types = [str(v or "").strip() for v in list(meta.get("StructureTypes", []) or []) if str(v or "").strip()]
     ids = [str(v or "").strip() for v in list(meta.get("StructureIds", []) or []) if str(v or "").strip()]
@@ -829,14 +886,108 @@ class SectionSet:
             z0 = z_ref
 
         wires = []
+        geom_mode = _overlay_geometry_mode(rec)
+        template_name = _overlay_template_name(rec)
         for off in _structure_overlay_offsets(rec):
             c = App.Vector(float(p.x), float(p.y), float(z0)) + (n * float(off))
-            half_w = 0.5 * width
-            p1 = c - (n * half_w)
-            p2 = c + (n * half_w)
-            p3 = p2 + (z * height)
-            p4 = p1 + (z * height)
-            wires.append(Part.makePolygon([p1, p2, p3, p4, p1]))
+            if geom_mode == "template" and template_name == "box_culvert":
+                wall = max(0.10 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
+                top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+                total_h = max(0.2 * scale, height + top_cap)
+                wires.append(_overlay_rect_wire(c, n, z, width, total_h))
+                inner_h = total_h - (2.0 * wall)
+                clear_w = width - (2.0 * wall)
+                if inner_h > 0.05 * scale and clear_w > 0.05 * scale:
+                    gap = wall
+                    total_gap = max(0.0, float(cells - 1)) * gap
+                    cell_w = (clear_w - total_gap) / float(cells)
+                    if cell_w > 0.05 * scale:
+                        inner_center = App.Vector(float(c.x), float(c.y), float(z0) + wall)
+                        start_center = -0.5 * clear_w + 0.5 * cell_w
+                        for i in range(cells):
+                            shift = start_center + (float(i) * (cell_w + gap))
+                            cell_center = inner_center + (n * shift)
+                            wires.append(_overlay_rect_wire(cell_center, n, z, cell_w, inner_h))
+            elif geom_mode == "template" and template_name == "utility_crossing":
+                wall = max(0.08 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
+                top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+                total_h = max(0.2 * scale, height + top_cap)
+                wires.append(_overlay_rect_wire(c, n, z, width, total_h))
+                clear_w = width - (2.0 * wall)
+                duct_h = max(0.10 * scale, min(0.45 * total_h, total_h - (2.0 * wall)))
+                if clear_w > 0.05 * scale and duct_h > 0.05 * scale:
+                    gap = max(0.10 * scale, 0.60 * wall)
+                    total_gap = max(0.0, float(cells - 1)) * gap
+                    duct_w = (clear_w - total_gap) / float(cells)
+                    if duct_w > 0.05 * scale:
+                        z_clear_bottom = max(wall, 0.28 * total_h)
+                        z_clear_top = z_clear_bottom + duct_h
+                        if z_clear_top >= total_h - wall:
+                            z_clear_bottom = max(wall, total_h - wall - duct_h)
+                        inner_center = App.Vector(float(c.x), float(c.y), float(z0) + z_clear_bottom)
+                        start_center = -0.5 * clear_w + 0.5 * duct_w
+                        for i in range(cells):
+                            shift = start_center + (float(i) * (duct_w + gap))
+                            duct_center = inner_center + (n * shift)
+                            wires.append(_overlay_rect_wire(duct_center, n, z, duct_w, duct_h))
+            elif geom_mode == "template" and template_name == "retaining_wall":
+                wall = max(0.10 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                footing_w = max(wall * 2.0, abs(float(rec.get("FootingWidth", 0.0) or 0.0)), max(width, wall * 3.0))
+                footing_h = max(0.10 * scale, abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
+                cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+                sign = _overlay_signed_side_factor(rec)
+                heel = footing_w * 0.65
+                toe = footing_w - heel
+                top_wall = max(0.08 * scale, wall * 0.70)
+                total_h = footing_h + max(0.2 * scale, height)
+                coords = [
+                    (-sign * toe, 0.0),
+                    (sign * heel, 0.0),
+                    (sign * heel, footing_h),
+                    (sign * (0.5 * wall), footing_h),
+                    (sign * (0.5 * top_wall), total_h),
+                    (-sign * (0.5 * top_wall), total_h),
+                    (-sign * (0.5 * wall), footing_h),
+                    (-sign * toe, footing_h),
+                ]
+                pw = _overlay_profile_wire(App.Vector(float(c.x), float(c.y), float(z0)), n, z, coords)
+                if pw is not None:
+                    wires.append(pw)
+                if cap_h > 1e-9:
+                    cap_center = App.Vector(float(c.x), float(c.y), float(z0) + total_h)
+                    cap_center = cap_center + (n * (sign * 0.10 * wall))
+                    wires.append(_overlay_rect_wire(cap_center, n, z, max(top_wall * 1.8, wall + 0.20 * scale), cap_h))
+            elif geom_mode == "template" and template_name == "abutment_block":
+                wall = max(0.20 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)), max(0.20 * scale, 0.35 * height))
+                footing_h = max(0.20 * scale, abs(float(rec.get("FootingThickness", 0.0) or 0.0)), max(0.20 * scale, 0.18 * height))
+                footing_w = max(abs(float(rec.get("FootingWidth", 0.0) or 0.0)), width, wall * 2.5)
+                cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+                stem_w = max(wall * 1.4, min(width * 0.55, footing_w * 0.60))
+                seat_w = max(stem_w * 0.55, wall * 1.4)
+                total_h = footing_h + max(0.2 * scale, height)
+                seat_h0 = footing_h + max(0.30 * scale, 0.60 * height)
+                coords = [
+                    (-0.5 * footing_w, 0.0),
+                    (0.5 * footing_w, 0.0),
+                    (0.5 * footing_w, footing_h),
+                    (0.5 * stem_w, footing_h),
+                    (0.5 * stem_w, seat_h0),
+                    (0.5 * seat_w, total_h),
+                    (-0.5 * seat_w, total_h),
+                    (-0.5 * stem_w, seat_h0),
+                    (-0.5 * stem_w, footing_h),
+                    (-0.5 * footing_w, footing_h),
+                ]
+                pw = _overlay_profile_wire(App.Vector(float(c.x), float(c.y), float(z0)), n, z, coords)
+                if pw is not None:
+                    wires.append(pw)
+                if cap_h > 1e-9:
+                    cap_center = App.Vector(float(c.x), float(c.y), float(z0) + total_h)
+                    wires.append(_overlay_rect_wire(cap_center, n, z, max(seat_w * 1.1, seat_w + 0.20 * scale), cap_h))
+            else:
+                wires.append(_overlay_rect_wire(c, n, z, width, height))
         if not wires:
             return None
         if len(wires) == 1:

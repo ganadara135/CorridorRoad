@@ -70,7 +70,7 @@ class AlignmentEditorTaskPanel:
         self._load_from_doc()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -261,8 +261,10 @@ class AlignmentEditorTaskPanel:
         rep_row = QtWidgets.QHBoxLayout()
         self.btn_apply = QtWidgets.QPushButton("Apply Alignment")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Criteria Report")
+        self.btn_close = QtWidgets.QPushButton("Close")
         rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
+        rep_row.addWidget(self.btn_close)
         root.addLayout(rep_row)
 
         self.txt_report = QtWidgets.QPlainTextEdit()
@@ -275,6 +277,7 @@ class AlignmentEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_refresh.clicked.connect(self._refresh_report)
+        self.btn_close.clicked.connect(self.reject)
         self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
         self.btn_refresh_context.clicked.connect(self._on_refresh_context)
         self.cmb_coord_mode.currentIndexChanged.connect(self._on_coord_mode_changed)

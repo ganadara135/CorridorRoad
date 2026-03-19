@@ -100,7 +100,7 @@ class CutFillCalcTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -245,8 +245,12 @@ class CutFillCalcTaskPanel:
         fv.addRow(self.lbl_palette)
         main.addWidget(gb_vis)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_generate = QtWidgets.QPushButton("Run Cut-Fill Calc")
-        main.addWidget(self.btn_generate)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_generate)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         gb_run = QtWidgets.QGroupBox("Run")
         fr = QtWidgets.QFormLayout(gb_run)
@@ -268,6 +272,7 @@ class CutFillCalcTaskPanel:
         self.btn_pick_sel.clicked.connect(self._use_selected_surface)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_generate.clicked.connect(self._generate)
+        self.btn_close.clicked.connect(self.reject)
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_corridor.currentIndexChanged.connect(self._on_source_changed)
         self.cmb_surface.currentIndexChanged.connect(self._on_source_changed)

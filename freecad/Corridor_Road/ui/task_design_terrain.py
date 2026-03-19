@@ -122,7 +122,7 @@ class DesignTerrainTaskPanel:
         self._refresh_context()
 
     def getStandardButtons(self):
-        return int(QtWidgets.QDialogButtonBox.Close)
+        return 0
 
     def accept(self):
         Gui.Control.closeDialog()
@@ -206,8 +206,12 @@ class DesignTerrainTaskPanel:
         form_opts.addRow("Estimate:", self.lbl_est)
         main.addWidget(gb_opt)
 
+        row_btn = QtWidgets.QHBoxLayout()
         self.btn_build = QtWidgets.QPushButton("Build Design Terrain")
-        main.addWidget(self.btn_build)
+        self.btn_close = QtWidgets.QPushButton("Close")
+        row_btn.addWidget(self.btn_build)
+        row_btn.addWidget(self.btn_close)
+        main.addLayout(row_btn)
 
         gb_run = QtWidgets.QGroupBox("Run")
         fr = QtWidgets.QFormLayout(gb_run)
@@ -225,6 +229,7 @@ class DesignTerrainTaskPanel:
         self.btn_pick_sel.clicked.connect(self._use_selected_terrain)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_build.clicked.connect(self._build)
+        self.btn_close.clicked.connect(self.reject)
         self.btn_cancel.clicked.connect(self._request_cancel)
         self.cmb_dsg.currentIndexChanged.connect(self._on_source_changed)
         self.cmb_eg.currentIndexChanged.connect(self._on_source_changed)

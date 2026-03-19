@@ -60,11 +60,49 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly_notch.csv`
+- `tests/samples/structure_utm_realistic_hilly_template.csv`
+- `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
 3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
 4. Run sections and verify `Structure Sections` tree objects, EG coverage, and daylight behavior.
 5. Build `Corridor Loft` with `Use structure corridor modes` enabled to test `skip_zone` handling from the same structure CSV.
+6. Load `structure_utm_realistic_hilly_template.csv` when you want to test template structure display (`box_culvert`, `retaining_wall`) and template-aware `Structure Sections` overlays.
+7. Load `structure_utm_realistic_hilly_external_shape.csv` when you want to test `GeometryMode=external_shape`. Replace the sample `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources first.
+
+## Template Structures
+- `Edit Structures` now supports `GeometryMode=box|template`.
+- Current template types:
+  - `box_culvert`
+  - `retaining_wall`
+- Template fields currently supported:
+  - `TemplateName`
+  - `WallThickness`
+  - `FootingWidth`
+  - `FootingThickness`
+  - `CapHeight`
+  - `CellCount`
+- Use `tests/samples/structure_utm_realistic_hilly_template.csv` to test the current template workflow.
+- Existing rows with no `GeometryMode` still fall back to simple `box` geometry for backward compatibility.
+
+## External Shape Structures
+- `Edit Structures` now also supports `GeometryMode=external_shape`.
+- Current first-pass supported source formats:
+  - `.step`, `.stp`
+  - `.brep`, `.brp`
+  - `.FCStd#ObjectName`
+- New external-shape fields:
+  - `ShapeSourcePath`
+  - `ScaleFactor`
+  - `PlacementMode`
+  - `UseSourceBaseAsBottom`
+- Use `tests/samples/structure_utm_realistic_hilly_external_shape.csv` as the starter CSV.
+- For `FCStd`, use `ShapeSourcePath` in the form `C:/path/model.FCStd#ObjectName`.
+- A practical workflow for `FCStd` is:
+  1. `Browse Shape` to select the `.FCStd` file
+  2. `Pick FCStd Object` to choose the internal shape-bearing object
+- The sample file contains placeholder paths. Replace them with real local model files and object names before `Apply`.
+- If an external source cannot be loaded, the row falls back to safe `box` display geometry instead of breaking recompute.
 
 ## Loft Twist Reduction Tips
 - If `Corridor Loft` twists or folds, first increase section interval and `Min Section Spacing`.
@@ -72,7 +110,12 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - If structures are active in sections, keep `Split at structure zones` enabled so the loft can break at structure boundaries instead of forcing one continuous span.
 - Keep `Auto transition distance` enabled in structure-aware sections unless you have a clear reason to force one manual distance for all structure types.
 - Current structure override intent: `culvert/crossing` create short flat bench-like sections, `retaining_wall` creates a short steep wall-side section, and `bridge/abutment` zones trim both sides conservatively.
-- For corridor-level structure handling, use `split_only` first, `skip_zone` only when a full gap is intended, and `notch` when the corridor should stay continuous but receive a simple structure cut.
+- For corridor-level structure handling, use `split_only` first, `skip_zone` only when a full gap is intended, and `notch` mainly for `culvert` / `crossing` when the corridor should stay continuous and use a notch-aware loft profile.
+- Current `notch` behavior is not just a visual boolean cut. When possible it switches the loft to a notch-aware closed-profile schema and ramps the notch through transition stations.
+- Recommended user policy:
+  - `culvert`, `crossing` -> `notch`
+  - `bridge_zone`, `abutment_zone` -> `skip_zone`
+  - `retaining_wall` -> `split_only`
 - If `Daylight Auto` is used, reduce abrupt side-width changes with `Daylight Max Width Delta`.
 - Check section wires first: unstable EG/FG data, terrain holes, or sudden daylight jumps usually appear there before the loft fails.
 - Detailed guidance: https://github.com/ganadara135/CorridorRoad/wiki/Workflow and https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
@@ -117,3 +160,4 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ![CorridorRoad screenshot 08](https://github.com/user-attachments/assets/999d9e0c-54ee-4fd1-9b63-c287724899ba)
 ![CorridorRoad screenshot 09](https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c)
 ![CorridorRoad screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
+![CorridorRoad screenshot 11](https://github.com/user-attachments/assets/71d0cb7d-50e9-4c66-be81-727b0e0840b6)

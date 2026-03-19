@@ -96,6 +96,40 @@ Notes:
 > [Screenshot Needed] Alignment tree showing populated `Structure Sections`.
 > Suggested file: `wiki-troubleshooting-structure-sections-tree.png`
 
+## External shape falls back to a box
+Symptoms:
+- An `external_shape` row shows only a simple box in 3D.
+- `Apply` reports external shape diagnostics.
+
+Checks:
+1. Confirm `GeometryMode=external_shape`.
+2. Confirm `ShapeSourcePath` points to a real local file.
+3. If using `FCStd`, confirm the path uses `C:/path/model.FCStd#ObjectName`.
+4. Confirm the referenced FCStd object has a valid `Shape`.
+
+Actions:
+1. Use the `ShapeSourcePath` cell color and `External shape row` status text in `Edit Structures`.
+2. Re-apply and read the reported status:
+   - `not_found`
+   - `fcstd_missing_object`
+   - `fcstd_object_not_found`
+   - `fcstd_missing_shape`
+3. Fix the path/object name and apply again.
+
+## Structure 3D solid is on alignment instead of 3D centerline
+Symptoms:
+- Structure section overlays look correct, but the 3D structure solid appears to sit on the alignment frame instead of the 3D centerline frame.
+
+Checks:
+1. Confirm `3D Centerline` was generated after the latest alignment/profile changes.
+2. Re-open `Edit Structures` and click `Apply` again.
+3. Read `Frame diagnostics` in the completion dialog.
+
+Actions:
+1. Re-run `3D Centerline`.
+2. Re-apply the `StructureSet`.
+3. If the dialog still reports `frame source=alignment`, inspect whether the current project actually has a linked `Centerline3DDisplay`.
+
 ## Structure override changes only one side
 Symptoms:
 - A retaining wall or side-specific structure affects only the left or right side of the section.

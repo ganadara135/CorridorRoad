@@ -4,17 +4,13 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from . import ensure_package_on_sys_path, install_virtual_path_mappings
+from .misc.resources import icon_path
 
 
 ensure_package_on_sys_path()
 install_virtual_path_mappings(eager=True)
 
-_WB_ICON_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "resources",
-    "icons",
-    "corridorroad_workbench.svg",
-)
+_WB_ICON_PATH = icon_path("corridorroad_workbench.svg")
 
 
 class CorridorRoadWorkbench(Gui.Workbench):
@@ -49,8 +45,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",
                 "CorridorRoad_EditPVI",
-                "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateCenterline3D",
+                "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_GenerateCorridorLoft",
                 "CorridorRoad_GenerateDesignGradingSurface",
@@ -69,8 +65,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",
                 "CorridorRoad_EditPVI",
-                "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateCenterline3D",
+                "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_GenerateCorridorLoft",
                 "CorridorRoad_GenerateDesignGradingSurface",
