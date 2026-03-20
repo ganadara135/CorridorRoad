@@ -113,6 +113,55 @@ Practical notes:
 > [Screenshot Needed] Edit Structures panel loading a structure CSV file.
 > Suggested file: `wiki-csv-structure-import-panel.png`
 
+## 3A. Structure Station-Profile CSV
+
+This is an advanced companion CSV format for variable-size structures.
+
+Important note:
+- The current `Edit Structures` task panel edits the base structure header rows only.
+- It does not yet provide a dedicated grid or direct CSV loader for station-profile control points.
+- The sample station-profile CSVs are reference data for property-driven, scripted, or future importer-based workflows.
+
+Recommended header:
+`StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount`
+
+Example:
+```csv
+StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount
+CULV-V01,120.000,0.000,4.000,2.000,103.300,0.000,0.280,0.000,0.000,0.050,1
+CULV-V01,150.000,0.000,6.000,2.600,103.100,0.000,0.320,0.000,0.000,0.120,2
+CULV-V01,180.000,0.000,3.800,1.900,102.950,0.000,0.260,0.000,0.000,0.050,1
+RW-V01,265.000,7.500,0.550,2.800,101.900,0.000,0.320,2.200,0.450,0.120,1
+RW-V01,305.000,8.250,0.700,5.000,101.650,0.000,0.420,3.000,0.600,0.220,1
+RW-V01,345.000,9.000,0.600,3.400,101.450,0.000,0.360,2.400,0.500,0.120,1
+```
+
+How it is used:
+1. Each `StructureId` must match a row in the main structure CSV.
+2. At least two profile points are recommended for a variable structure.
+3. Profile rows for the same structure should be in ascending station order.
+4. Duplicate stations for the same structure should be avoided.
+
+Current runtime consumption:
+1. 3D structure display uses station-profile values.
+2. `Structure Sections` overlay objects use station-profile values.
+3. Section overrides and earthwork use station-profile values.
+4. Corridor `notch` handling uses station-profile values.
+
+Current limits:
+1. `CellCount` is treated as a step/nearest value, not a continuously interpolated value.
+2. `skip_zone` and `split_only` still follow the base structure span (`StartStation`/`EndStation`) rather than profile-point-derived span changes.
+3. The current runtime builds variable structures as profile-driven segments, not as a fully continuous taper loft.
+
+Recommended sample files:
+- `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
+
+> [Screenshot Needed] Structure Sections overlays showing station-profile-driven size changes.
+> Suggested file: `wiki-csv-structure-station-profile-overlays.png`
+
 ## 4. Import Validation Checklist
 1. Header names match exactly.
 2. Numeric fields are finite values.

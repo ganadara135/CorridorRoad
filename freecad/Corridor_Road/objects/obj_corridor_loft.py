@@ -51,6 +51,27 @@ def _merge_station_spans(spans, tol: float = 1e-6):
     return [(float(a), float(b), str(m)) for a, b, m in out]
 
 
+def _resolve_corridor_record_at_station(src, rec, station: float):
+    try:
+        ss = _resolve_structure_source(src)
+        if ss is None:
+            return dict(rec or {})
+        resolved = StructureSetSource.resolve_profile_at_station(ss, rec, float(station))
+        return dict(resolved or rec or {})
+    except Exception:
+        return dict(rec or {})
+
+
+def _resolve_corridor_record_span(src, rec, station_from: float, station_to: float):
+    try:
+        ss = _resolve_structure_source(src)
+        if ss is None:
+            return []
+        return list(StructureSetSource.resolve_profile_span(ss, rec, float(station_from), float(station_to)) or [])
+    except Exception:
+        return []
+
+
 def _mark_recompute_flag(obj, needed: bool):
     try:
         if hasattr(obj, "NeedsRecompute"):
@@ -730,8 +751,13 @@ class CorridorLoft:
             mode = str(rec.get("ResolvedCorridorMode", "") or "").strip().lower()
             if mode != "notch":
                 continue
-            spec = CorridorLoft._structure_notch_spec(rec, scale)
             rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
+            midpoint_station = 0.5 * (
+                float(rec.get("ResolvedStartStation", rec.get("StartStation", 0.0)) or 0.0)
+                + float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
+            )
+            resolved_mid = _resolve_corridor_record_at_station(src, rec, midpoint_station)
+            spec = CorridorLoft._structure_notch_spec(resolved_mid, scale)
             if not bool(spec.get("Enabled", False)):
                 notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                 continue
@@ -742,7 +768,11 @@ class CorridorLoft:
                 transition=float(getattr(src, "StructureTransitionDistance", 0.0) or 0.0),
             )
             trans = max(0.0, float(trans) * max(0.01, float(notch_transition_scale)))
-            local = dict(rec)
+            local = dict(resolved_mid)
+            local["ResolvedStartStation"] = float(rec.get("ResolvedStartStation", rec.get("StartStation", 0.0)) or 0.0)
+            local["ResolvedEndStation"] = float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
+            local["ResolvedCorridorMode"] = str(rec.get("ResolvedCorridorMode", "") or "")
+            local["ResolvedCorridorMargin"] = float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0)
             local["_notch_spec"] = spec
             local["_transition"] = trans
             eligible.append(local)
@@ -779,6 +809,13 @@ class CorridorLoft:
             if best is None:
                 rows.append({"Mode": "default", "Ramp": 0.0, "Record": None})
             else:
+                resolved_best = _resolve_corridor_record_at_station(src, best, ss)
+                resolved_best["ResolvedStartStation"] = float(best.get("ResolvedStartStation", best.get("StartStation", 0.0)) or 0.0)
+                resolved_best["ResolvedEndStation"] = float(best.get("ResolvedEndStation", best.get("EndStation", 0.0)) or 0.0)
+                resolved_best["ResolvedCorridorMode"] = str(best.get("ResolvedCorridorMode", "") or "")
+                resolved_best["ResolvedCorridorMargin"] = float(best.get("ResolvedCorridorMargin", 0.0) or 0.0)
+                resolved_best["_transition"] = float(best.get("_transition", 0.0) or 0.0)
+                resolved_best["_notch_spec"] = CorridorLoft._structure_notch_spec(resolved_best, scale)
                 roles = []
                 if best_ramp >= 1.0 - 1e-6:
                     roles.append("active")
@@ -790,7 +827,7 @@ class CorridorLoft:
                     {
                         "Mode": "notch",
                         "Ramp": max(tiny_ramp, float(best_ramp)),
-                        "Record": best,
+                        "Record": resolved_best,
                         "Roles": roles,
                     }
                 )
@@ -916,31 +953,58 @@ class CorridorLoft:
                     notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                     continue
                 mg = max(0.0, float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0))
-                local["Width"] = float(spec.get("Width", local.get("Width", 0.0) or 0.0) or 0.0)
-                local["Height"] = float(spec.get("Height", local.get("Height", 0.0) or 0.0) or 0.0)
-                long_pad = max(0.0, float(spec.get("LongPad", 0.0) or 0.0))
-                local["StartStation"] = max(0.0, float(rec.get("ResolvedStartStation", 0.0) or 0.0) - mg - long_pad)
-                local["EndStation"] = min(total, float(rec.get("ResolvedEndStation", 0.0) or 0.0) + mg + long_pad)
-                if float(local["EndStation"]) < float(local["StartStation"]):
-                    local["StartStation"], local["EndStation"] = local["EndStation"], local["StartStation"]
-                sta = max(0.0, min(total, 0.5 * (float(local["StartStation"]) + float(local["EndStation"]))))
-                p = _resolve_structure_station_point(src, sta, aln=aln)
-                if abs(float(local.get("BottomElevation", 0.0) or 0.0)) > 1e-9:
-                    local["BottomElevation"] = float(local.get("BottomElevation", 0.0) or 0.0) - float(spec.get("BottomExtra", 0.0) or 0.0)
-                try:
-                    from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-
-                    t = HorizontalAlignment.tangent_at_station(aln, sta)
-                    n = HorizontalAlignment.normal_at_station(aln, sta)
-                except Exception:
-                    t = App.Vector(1, 0, 0)
-                    n = App.Vector(0, 1, 0)
+                base_s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
+                base_s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
+                span_rows = _resolve_corridor_record_span(src, rec, base_s0, base_s1)
+                if len(span_rows) < 2:
+                    span_rows = [
+                        _resolve_corridor_record_at_station(src, rec, base_s0),
+                        _resolve_corridor_record_at_station(src, rec, base_s1),
+                    ]
                 built = 0
-                for off in _structure_side_offsets(local):
-                    solid = _structure_record_solid(p + (n * float(off)), t, n, local)
-                    if solid is not None and not solid.isNull():
-                        cutters.append(solid)
-                        built += 1
+                for i in range(max(0, len(span_rows) - 1)):
+                    a = span_rows[i]
+                    b = span_rows[i + 1]
+                    ss0 = float(a.get("ResolvedProfileStation", base_s0) or base_s0)
+                    ss1 = float(b.get("ResolvedProfileStation", base_s1) or base_s1)
+                    if ss1 < ss0:
+                        ss0, ss1 = ss1, ss0
+                    if ss1 <= ss0 + 1e-9:
+                        continue
+                    sm = 0.5 * (ss0 + ss1)
+                    local_seg = _resolve_corridor_record_at_station(src, rec, sm)
+                    seg_spec = CorridorLoft._structure_notch_spec(local_seg, scale)
+                    if not bool(seg_spec.get("Enabled", False)):
+                        continue
+                    long_pad = max(0.0, float(seg_spec.get("LongPad", 0.0) or 0.0))
+                    seg_s0 = ss0
+                    seg_s1 = ss1
+                    if i == 0:
+                        seg_s0 = max(0.0, seg_s0 - mg - long_pad)
+                    if i == (len(span_rows) - 2):
+                        seg_s1 = min(total, seg_s1 + mg + long_pad)
+                    local_seg["Width"] = float(seg_spec.get("Width", local_seg.get("Width", 0.0) or 0.0) or 0.0)
+                    local_seg["Height"] = float(seg_spec.get("Height", local_seg.get("Height", 0.0) or 0.0) or 0.0)
+                    local_seg["StartStation"] = float(seg_s0)
+                    local_seg["EndStation"] = float(seg_s1)
+                    local_seg["CenterStation"] = float(0.5 * (seg_s0 + seg_s1))
+                    if abs(float(local_seg.get("BottomElevation", 0.0) or 0.0)) > 1e-9:
+                        local_seg["BottomElevation"] = float(local_seg.get("BottomElevation", 0.0) or 0.0) - float(seg_spec.get("BottomExtra", 0.0) or 0.0)
+                    sta = max(0.0, min(total, float(local_seg["CenterStation"])))
+                    p = _resolve_structure_station_point(src, sta, aln=aln)
+                    try:
+                        from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
+
+                        t = HorizontalAlignment.tangent_at_station(aln, sta)
+                        n = HorizontalAlignment.normal_at_station(aln, sta)
+                    except Exception:
+                        t = App.Vector(1, 0, 0)
+                        n = App.Vector(0, 1, 0)
+                    for off in _structure_side_offsets(local_seg):
+                        solid = _structure_record_solid(p + (n * float(off)), t, n, local_seg)
+                        if solid is not None and not solid.isNull():
+                            cutters.append(solid)
+                            built += 1
                 if built <= 0:
                     notes.append(f"{rid}: notch cutter skipped")
             except Exception as ex:

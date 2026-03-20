@@ -52,6 +52,21 @@ COL_HEADERS = [
     "UseSourceBaseAsBottom",
 ]
 
+PROFILE_COL_HEADERS = [
+    "StructureId",
+    "Station",
+    "Offset",
+    "Width",
+    "Height",
+    "BottomElevation",
+    "Cover",
+    "WallThickness",
+    "FootingWidth",
+    "FootingThickness",
+    "CapHeight",
+    "CellCount",
+]
+
 COMBO_COLUMN_ITEMS = {
     1: [""] + list(ALLOWED_TYPES),
     5: [""] + list(ALLOWED_SIDES),
@@ -171,12 +186,43 @@ def _structure_csv_mapping(fieldnames):
     return out
 
 
+def _structure_profile_csv_mapping(fieldnames):
+    cols = list(fieldnames or [])
+    by_norm = {_norm_col(c): c for c in cols}
+    aliases = {
+        "StructureId": ("structureid", "id", "parentid"),
+        "Station": ("station", "sta"),
+        "Offset": ("offset",),
+        "Width": ("width",),
+        "Height": ("height",),
+        "BottomElevation": ("bottomelevation", "invert", "baseelevation"),
+        "Cover": ("cover",),
+        "WallThickness": ("wallthickness", "wall", "wallthk"),
+        "FootingWidth": ("footingwidth", "footing", "basewidth"),
+        "FootingThickness": ("footingthickness", "basethickness"),
+        "CapHeight": ("capheight", "cap", "topcapheight"),
+        "CellCount": ("cellcount", "cells", "numberofcells"),
+    }
+    out = {}
+    for key, cand in aliases.items():
+        hit = None
+        for a in cand:
+            k = _norm_col(a)
+            if k in by_norm:
+                hit = by_norm[k]
+                break
+        out[key] = hit
+    return out
+
+
 class StructureEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._structures = []
         self._stationing = None
         self._station_values = []
+        self._profile_rows = []
+        self._active_profile_structure_id = ""
         self._loading = False
         self.form = self._build_ui()
         self._refresh_context()
@@ -226,6 +272,20 @@ class StructureEditorTaskPanel:
         row_csv.addWidget(self.btn_browse_csv)
         row_csv.addWidget(self.btn_load_csv)
         main.addLayout(row_csv)
+
+        row_profile_csv = QtWidgets.QHBoxLayout()
+        self.ed_profile_csv = QtWidgets.QLineEdit()
+        self.ed_profile_csv.setPlaceholderText("Optional structure station-profile CSV path")
+        self.btn_browse_profile_csv = QtWidgets.QPushButton("Browse Profile CSV")
+        self.btn_load_profile_csv = QtWidgets.QPushButton("Load Profile CSV")
+        row_profile_csv.addWidget(self.ed_profile_csv, 1)
+        row_profile_csv.addWidget(self.btn_browse_profile_csv)
+        row_profile_csv.addWidget(self.btn_load_profile_csv)
+        main.addLayout(row_profile_csv)
+
+        self.lbl_profile_status = QtWidgets.QLabel("Station-profile points: 0")
+        self.lbl_profile_status.setWordWrap(True)
+        main.addWidget(self.lbl_profile_status)
 
         row_shape = QtWidgets.QHBoxLayout()
         self.btn_browse_shape = QtWidgets.QPushButton("Browse Shape")
@@ -287,6 +347,52 @@ class StructureEditorTaskPanel:
             self.table.setColumnWidth(col, width)
         main.addWidget(self.table)
 
+        self.lbl_profile_table = QtWidgets.QLabel("Station profiles for selected structure: no selection")
+        self.lbl_profile_table.setWordWrap(True)
+        main.addWidget(self.lbl_profile_table)
+
+        self.profile_table = QtWidgets.QTableWidget(0, len(PROFILE_COL_HEADERS))
+        self.profile_table.setHorizontalHeaderLabels(PROFILE_COL_HEADERS)
+        profile_hdr = self.profile_table.horizontalHeader()
+        profile_hdr.setStretchLastSection(False)
+        try:
+            profile_hdr.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        except Exception:
+            pass
+        self.profile_table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.profile_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.profile_table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.profile_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.profile_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.profile_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.AnyKeyPressed
+        )
+        for col, width in (
+            (0, 110),
+            (1, 105),
+            (2, 90),
+            (3, 90),
+            (4, 90),
+            (5, 120),
+            (6, 90),
+            (7, 95),
+            (8, 95),
+            (9, 110),
+            (10, 90),
+            (11, 85),
+        ):
+            self.profile_table.setColumnWidth(col, width)
+        main.addWidget(self.profile_table)
+
+        row_profile_btn = QtWidgets.QHBoxLayout()
+        self.btn_add_profile = QtWidgets.QPushButton("Add Profile Row")
+        self.btn_remove_profile = QtWidgets.QPushButton("Remove Profile Row")
+        row_profile_btn.addWidget(self.btn_add_profile)
+        row_profile_btn.addWidget(self.btn_remove_profile)
+        main.addLayout(row_profile_btn)
+
         row_btn = QtWidgets.QHBoxLayout()
         self.btn_add = QtWidgets.QPushButton("Add Row")
         self.btn_remove = QtWidgets.QPushButton("Remove Row")
@@ -332,10 +438,14 @@ class StructureEditorTaskPanel:
             + "\n- retaining_wall -> split_only"
             + "\nVertical input policy:"
             + "\n- culvert, crossing -> Cover enabled / BottomElevation disabled"
-            + "\n- retaining_wall, abutment_zone, bridge_zone -> BottomElevation enabled / Cover disabled"
-            + "\n- other -> both enabled"
-            + "\nNote: structure station ranges are prepared here, but they should be defined after `Generate Stations`."
-        )
+             + "\n- retaining_wall, abutment_zone, bridge_zone -> BottomElevation enabled / Cover disabled"
+             + "\n- other -> both enabled"
+             + "\nNote: structure station ranges are prepared here, but they should be defined after `Generate Stations`."
+             + "\nAdvanced station-profile workflow:"
+             + "\n- load the base structure header CSV first"
+             + "\n- then load the station-profile CSV"
+             + "\n- Apply saves both datasets into the same StructureSet"
+         )
         self.lbl_help.setWordWrap(True)
         fg.addRow("Status:", self.lbl_status)
         fg.addRow(self.lbl_help)
@@ -345,17 +455,23 @@ class StructureEditorTaskPanel:
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
         self.btn_browse_csv.clicked.connect(self._on_browse_csv)
         self.btn_load_csv.clicked.connect(self._on_load_csv)
+        self.btn_browse_profile_csv.clicked.connect(self._on_browse_profile_csv)
+        self.btn_load_profile_csv.clicked.connect(self._on_load_profile_csv)
         self.btn_browse_shape.clicked.connect(self._on_browse_shape)
         self.btn_pick_fcstd_object.clicked.connect(self._on_pick_fcstd_object)
         self.btn_add.clicked.connect(self._add_row)
         self.btn_remove.clicked.connect(self._remove_row)
+        self.btn_add_profile.clicked.connect(self._add_profile_row)
+        self.btn_remove_profile.clicked.connect(self._remove_profile_row)
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
-        self.table.itemSelectionChanged.connect(self._update_shape_status)
+        self.table.itemSelectionChanged.connect(self._on_structure_selection_changed)
         self.table.itemChanged.connect(self._on_table_item_changed)
+        self.profile_table.itemChanged.connect(self._on_profile_item_changed)
 
         self._set_rows(3)
+        self._set_profile_table_rows([])
         self._update_shape_status()
         return w
 
@@ -375,6 +491,107 @@ class StructureEditorTaskPanel:
                     idx = i + 1
                     break
         self.cmb_target.setCurrentIndex(idx)
+
+    def _set_profile_rows(self, rows):
+        self._profile_rows = list(rows or [])
+        count = len(self._profile_rows)
+        by_structure = {}
+        for row in self._profile_rows:
+            sid = str(row.get("StructureId", "") or "").strip()
+            if sid:
+                by_structure[sid] = by_structure.get(sid, 0) + 1
+        if by_structure:
+            summary = ", ".join(f"{sid}={count}" for sid, count in list(sorted(by_structure.items()))[:5])
+            if len(by_structure) > 5:
+                summary += ", ..."
+            self.lbl_profile_status.setText(f"Station-profile points: {count} ({summary})")
+        else:
+            self.lbl_profile_status.setText(f"Station-profile points: {count}")
+
+    def _selected_structure_id(self):
+        row = int(self.table.currentRow())
+        if row < 0:
+            return ""
+        return str(self._get_cell_text(row, 0) or "").strip()
+
+    def _filtered_profile_rows(self, structure_id):
+        sid = str(structure_id or "").strip()
+        if not sid:
+            return []
+        return [dict(row) for row in self._profile_rows if str(row.get("StructureId", "") or "").strip() == sid]
+
+    def _set_profile_table_rows(self, rows, structure_id=""):
+        sid = str(structure_id or "").strip()
+        self._loading = True
+        try:
+            self.profile_table.setRowCount(max(0, len(rows)))
+            for r in range(len(rows)):
+                for c in range(len(PROFILE_COL_HEADERS)):
+                    if self.profile_table.item(r, c) is None:
+                        self.profile_table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
+            for i, rec in enumerate(rows):
+                vals = [
+                    sid or str(rec.get("StructureId", "") or ""),
+                    f"{float(rec.get('Station', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('Offset', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('Width', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('Height', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('BottomElevation', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('Cover', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('WallThickness', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('FootingWidth', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('FootingThickness', 0.0) or 0.0):.3f}",
+                    f"{float(rec.get('CapHeight', 0.0) or 0.0):.3f}",
+                    f"{int(round(float(rec.get('CellCount', 0.0) or 0.0))):d}",
+                ]
+                for c, val in enumerate(vals):
+                    it = self.profile_table.item(i, c)
+                    if it is None:
+                        it = QtWidgets.QTableWidgetItem("")
+                        self.profile_table.setItem(i, c, it)
+                    it.setText(val)
+                    if c == 0:
+                        it.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            self._active_profile_structure_id = sid
+            self.lbl_profile_table.setText(
+                f"Station profiles for selected structure: {sid if sid else 'no selection'}"
+            )
+        finally:
+            self._loading = False
+
+    def _sync_profile_table_to_store(self):
+        sid = str(self._active_profile_structure_id or "").strip()
+        if not sid:
+            return
+        kept = [dict(row) for row in self._profile_rows if str(row.get("StructureId", "") or "").strip() != sid]
+        for r in range(self.profile_table.rowCount()):
+            station_txt = str((self.profile_table.item(r, 1).text() if self.profile_table.item(r, 1) else "") or "").strip()
+            if not station_txt and not any(
+                str((self.profile_table.item(r, c).text() if self.profile_table.item(r, c) else "") or "").strip()
+                for c in range(2, len(PROFILE_COL_HEADERS))
+            ):
+                continue
+            kept.append(
+                {
+                    "StructureId": sid,
+                    "Station": self._parse_float(station_txt),
+                    "Offset": self._parse_float(self.profile_table.item(r, 2).text() if self.profile_table.item(r, 2) else ""),
+                    "Width": self._parse_float(self.profile_table.item(r, 3).text() if self.profile_table.item(r, 3) else ""),
+                    "Height": self._parse_float(self.profile_table.item(r, 4).text() if self.profile_table.item(r, 4) else ""),
+                    "BottomElevation": self._parse_float(self.profile_table.item(r, 5).text() if self.profile_table.item(r, 5) else ""),
+                    "Cover": self._parse_float(self.profile_table.item(r, 6).text() if self.profile_table.item(r, 6) else ""),
+                    "WallThickness": self._parse_float(self.profile_table.item(r, 7).text() if self.profile_table.item(r, 7) else ""),
+                    "FootingWidth": self._parse_float(self.profile_table.item(r, 8).text() if self.profile_table.item(r, 8) else ""),
+                    "FootingThickness": self._parse_float(self.profile_table.item(r, 9).text() if self.profile_table.item(r, 9) else ""),
+                    "CapHeight": self._parse_float(self.profile_table.item(r, 10).text() if self.profile_table.item(r, 10) else ""),
+                    "CellCount": int(round(self._parse_float(self.profile_table.item(r, 11).text() if self.profile_table.item(r, 11) else ""))),
+                }
+            )
+        self._set_profile_rows(sorted(kept, key=lambda row: (str(row.get("StructureId", "") or ""), float(row.get("Station", 0.0) or 0.0))))
+
+    def _refresh_profile_table(self):
+        sid = self._selected_structure_id()
+        self._set_profile_table_rows(self._filtered_profile_rows(sid), structure_id=sid)
 
     def _current_target(self):
         i = int(self.cmb_target.currentIndex())
@@ -417,6 +634,8 @@ class StructureEditorTaskPanel:
                     "A `Stationing` object exists, so these values are ready for downstream section usage."
                 )
             self.btn_apply.setEnabled(st is not None)
+            if self._current_target() is None:
+                self._set_profile_rows([])
         finally:
             self._loading = False
         self._on_target_changed()
@@ -602,6 +821,8 @@ class StructureEditorTaskPanel:
             try:
                 self.table.setRowCount(0)
                 self._set_rows(3)
+                self._set_profile_rows([])
+                self._set_profile_table_rows([])
                 self.lbl_status.setText("New StructureSet will be created.")
             finally:
                 self._loading = False
@@ -609,6 +830,7 @@ class StructureEditorTaskPanel:
 
         ensure_structure_set_properties(obj)
         recs = StructureSet.records(obj)
+        profile_rows = StructureSet.raw_profile_points(obj)
         self._loading = True
         try:
             self.table.setRowCount(0)
@@ -642,6 +864,10 @@ class StructureEditorTaskPanel:
                 self._set_cell_text(i, 25, rec.get("PlacementMode", ""))
                 self._set_cell_text(i, 26, rec.get("UseSourceBaseAsBottom", ""))
                 self._apply_vertical_input_policy(i)
+            self._set_profile_rows(profile_rows)
+            if recs:
+                self.table.selectRow(0)
+            self._refresh_profile_table()
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
             self._loading = False
@@ -720,6 +946,32 @@ class StructureEditorTaskPanel:
             self.table.removeRow(r)
         self._update_shape_status()
 
+    def _add_profile_row(self):
+        sid = self._selected_structure_id()
+        if not sid:
+            QtWidgets.QMessageBox.information(None, "Edit Structures", "Select a structure row first.")
+            return
+        self._sync_profile_table_to_store()
+        self._loading = True
+        try:
+            r = self.profile_table.rowCount()
+            self.profile_table.setRowCount(r + 1)
+            for c in range(len(PROFILE_COL_HEADERS)):
+                if self.profile_table.item(r, c) is None:
+                    self.profile_table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
+            self.profile_table.item(r, 0).setText(sid)
+            self.profile_table.item(r, 0).setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+        finally:
+            self._loading = False
+
+    def _remove_profile_row(self):
+        r = self.profile_table.currentRow()
+        if r < 0:
+            r = self.profile_table.rowCount() - 1
+        if r >= 0:
+            self.profile_table.removeRow(r)
+            self._sync_profile_table_to_store()
+
     def _sort_rows(self):
         rows = self._read_rows()
         rows.sort(key=lambda x: float(x.get("StartStation", 0.0)))
@@ -768,6 +1020,16 @@ class StructureEditorTaskPanel:
         )
         if path:
             self.ed_csv.setText(str(path))
+
+    def _on_browse_profile_csv(self):
+        path, _flt = QtWidgets.QFileDialog.getOpenFileName(
+            None,
+            "Select structure station-profile CSV",
+            str(self.ed_profile_csv.text() or ""),
+            "CSV Files (*.csv *.txt);;All Files (*.*)",
+        )
+        if path:
+            self.ed_profile_csv.setText(str(path))
 
     def _on_browse_shape(self):
         row = int(self.table.currentRow())
@@ -930,13 +1192,49 @@ class StructureEditorTaskPanel:
             f"External shape row: {rid} | {kind} | {'FOUND' if ok else 'NOT FOUND'}{suffix} | {src}"
         )
 
+    def _on_structure_selection_changed(self):
+        if self._loading:
+            return
+        try:
+            self._sync_profile_table_to_store()
+            self._refresh_profile_table()
+            self._update_shape_status()
+        except Exception:
+            pass
+
     def _on_table_item_changed(self, item):
         if self._loading:
             return
         try:
+            if item is not None and int(item.column()) == 0:
+                new_sid = self._selected_structure_id()
+                old_sid = str(self._active_profile_structure_id or "").strip()
+                if old_sid and new_sid and old_sid != new_sid:
+                    for row in self._profile_rows:
+                        if str(row.get("StructureId", "") or "").strip() == old_sid:
+                            row["StructureId"] = new_sid
+                    self._active_profile_structure_id = new_sid
+                    self._refresh_profile_table()
+                    self._set_profile_rows(self._profile_rows)
             if item is not None and int(item.column()) in (13, 23):
                 self._apply_shape_source_visual(int(item.row()))
                 self._update_shape_status()
+        except Exception:
+            pass
+
+    def _on_profile_item_changed(self, item):
+        if self._loading:
+            return
+        try:
+            if item is not None and int(item.column()) == 0:
+                sid = str(self._active_profile_structure_id or "").strip()
+                self._loading = True
+                try:
+                    item.setText(sid)
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                finally:
+                    self._loading = False
+            self._sync_profile_table_to_store()
         except Exception:
             pass
 
@@ -1037,7 +1335,56 @@ class StructureEditorTaskPanel:
                 self._apply_vertical_input_policy(i)
         finally:
             self._loading = False
+        if rows:
+            try:
+                self.table.selectRow(0)
+            except Exception:
+                pass
+        self._refresh_profile_table()
         self.lbl_status.setText(f"Loaded CSV rows: {len(rows)}")
+
+    def _on_load_profile_csv(self):
+        path = str(self.ed_profile_csv.text() or "").strip()
+        if not path:
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", "Profile CSV file path is empty.")
+            return
+        if not os.path.isfile(path):
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Profile CSV file not found:\n{path}")
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
+                rdr = csv.DictReader(f)
+                mapping = _structure_profile_csv_mapping(rdr.fieldnames)
+                if not mapping.get("StructureId") or not mapping.get("Station"):
+                    raise Exception("Profile CSV requires at least StructureId and Station columns.")
+                rows = []
+                for row in rdr:
+                    if not any(str(v or "").strip() for v in row.values()):
+                        continue
+                    rows.append(
+                        {
+                            "StructureId": str(row.get(mapping.get("StructureId"), "") or "").strip(),
+                            "Station": self._parse_float(row.get(mapping.get("Station"), "")),
+                            "Offset": self._parse_float(row.get(mapping.get("Offset"), "")),
+                            "Width": self._parse_float(row.get(mapping.get("Width"), "")),
+                            "Height": self._parse_float(row.get(mapping.get("Height"), "")),
+                            "BottomElevation": self._parse_float(row.get(mapping.get("BottomElevation"), "")),
+                            "Cover": self._parse_float(row.get(mapping.get("Cover"), "")),
+                            "WallThickness": self._parse_float(row.get(mapping.get("WallThickness"), "")),
+                            "FootingWidth": self._parse_float(row.get(mapping.get("FootingWidth"), "")),
+                            "FootingThickness": self._parse_float(row.get(mapping.get("FootingThickness"), "")),
+                            "CapHeight": self._parse_float(row.get(mapping.get("CapHeight"), "")),
+                            "CellCount": self._parse_float(row.get(mapping.get("CellCount"), "")),
+                        }
+                    )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Profile CSV load failed: {ex}")
+            return
+
+        self._set_profile_rows(rows)
+        self._refresh_profile_table()
+        self.lbl_status.setText(f"Loaded profile CSV rows: {len(rows)}")
 
     def _apply(self):
         if self.doc is None:
@@ -1051,6 +1398,7 @@ class StructureEditorTaskPanel:
             )
             return
         rows = self._read_rows()
+        self._sync_profile_table_to_store()
         if not rows:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "No structure rows to save.")
             return
@@ -1084,6 +1432,18 @@ class StructureEditorTaskPanel:
             obj.ScaleFactors = [float(r["ScaleFactor"] or 1.0) for r in rows]
             obj.PlacementModes = [str(r["PlacementMode"] or "") for r in rows]
             obj.UseSourceBaseAsBottoms = [str(r["UseSourceBaseAsBottom"] or "") for r in rows]
+            obj.ProfileStructureIds = [str(r.get("StructureId", "") or "") for r in self._profile_rows]
+            obj.ProfileStations = [float(r.get("Station", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileOffsets = [float(r.get("Offset", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileWidths = [float(r.get("Width", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileHeights = [float(r.get("Height", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileBottomElevations = [float(r.get("BottomElevation", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileCovers = [float(r.get("Cover", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileWallThicknesses = [float(r.get("WallThickness", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileFootingWidths = [float(r.get("FootingWidth", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileFootingThicknesses = [float(r.get("FootingThickness", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileCapHeights = [float(r.get("CapHeight", 0.0) or 0.0) for r in self._profile_rows]
+            obj.ProfileCellCounts = [int(round(float(r.get("CellCount", 0.0) or 0.0))) for r in self._profile_rows]
             obj.touch()
 
             prj = find_project(self.doc)
@@ -1106,6 +1466,7 @@ class StructureEditorTaskPanel:
                 msg = [
                     "Structure set saved with validation warnings.",
                     f"Records: {len(rows)}",
+                    f"Profile points: {len(self._profile_rows)}",
                 ]
                 msg.extend(list(issues[:10]))
                 if shape_status_notes:
@@ -1122,7 +1483,7 @@ class StructureEditorTaskPanel:
                     "\n".join(msg),
                 )
             else:
-                msg = [f"Structure set saved.\nRecords: {len(rows)}"]
+                msg = [f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}"]
                 if shape_status_notes:
                     msg.append("")
                     msg.append("External shape diagnostics:")

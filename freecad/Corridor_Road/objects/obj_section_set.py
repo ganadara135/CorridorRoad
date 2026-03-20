@@ -551,9 +551,17 @@ class SectionSet:
         if not active:
             return ctx
 
+        resolved_active = []
+        for rec in list(active or []):
+            try:
+                resolved = StructureSetSource.resolve_profile_at_station(ss, rec, float(station))
+                resolved_active.append(resolved if resolved else rec)
+            except Exception:
+                resolved_active.append(rec)
+
         ctx["HasStructure"] = True
-        ctx["ActiveRecords"] = list(active)
-        ctx["OverlayRecords"] = list(active)
+        ctx["ActiveRecords"] = list(resolved_active)
+        ctx["OverlayRecords"] = list(resolved_active)
         try:
             station_items, _sk, _so = SectionSet._resolve_structure_station_items(
                 obj,
@@ -578,7 +586,7 @@ class SectionSet:
             return ctx
 
         scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-        for rec in active:
+        for rec in resolved_active:
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
             if mode not in ("section_overlay", "assembly_override"):
                 continue
@@ -867,6 +875,14 @@ class SectionSet:
         src = getattr(section_obj, "SourceCenterlineDisplay", None)
         if src is None:
             return None
+        struct_src = _resolve_structure_source(section_obj)
+        try:
+            if struct_src is not None and str(rec.get("Id", "") or "").strip():
+                resolved = StructureSetSource.resolve_profile_at_station(struct_src, rec, float(station))
+                if resolved:
+                    rec = resolved
+        except Exception:
+            pass
         scale = get_length_scale(getattr(section_obj, "Document", None), default=1.0)
         frame = Centerline3D.frame_at_station(src, float(station), eps=0.1 * scale, prev_n=None)
         p = frame["point"]

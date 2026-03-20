@@ -65,6 +65,7 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 ## If Something Looks Wrong
 - If EG has blanks, see [Troubleshooting](Troubleshooting#eg-values-are-blank-or-partially-missing).
 - If daylight auto does not react, see [Troubleshooting](Troubleshooting#daylight-auto-does-not-apply).
+- If a complex imported structure looks right in 3D but earthwork does not match it, see [Troubleshooting](Troubleshooting#external-shape-is-visible-but-earthwork-does-not-match-it).
 
 ---
 Last verified with commit: `<fill-after-release>`

@@ -234,6 +234,8 @@ Important behavior:
 | `Load CSV` | Reads the CSV and fills the structure table. | Review the table before `Apply`. |
 | `Browse Shape` | Opens a file chooser for the selected row's external shape source. | Supports `.step`, `.brep`, and `.FCStd`. For `FCStd`, append `#ObjectName` in `ShapeSourcePath`. |
 | `Pick FCStd Object` | Opens an object picker for the selected `.FCStd` source. | After selecting the `.FCStd` file, use this to choose a shape-bearing object and automatically fill `ShapeSourcePath` as `path.FCStd#ObjectName`. |
+| `Browse Profile CSV` | Opens a file chooser for station-profile control-point CSV data. | Use after loading or defining the base structure rows. |
+| `Load Profile CSV` | Reads the station-profile CSV and stores control points for later apply. | Load the base structure CSV first, then the profile CSV. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -277,6 +279,7 @@ Important behavior:
 6. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
 7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
 8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
+9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -287,6 +290,26 @@ Important behavior:
 6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
+9. Even when `external_shape` is displayed correctly, current earthwork still uses the structure `Type` and simple dimensional fields rather than the true imported solid.
+
+### Advanced: Station-Profile Data
+The runtime now supports variable-size structures driven by station control points, and `Edit Structures` now exposes this through a second linked table.
+
+Current status:
+1. The upper table edits base structure header rows.
+2. The lower table shows station-profile control points for the currently selected structure row.
+3. `Load Profile CSV` populates the same backing data used by the lower table.
+4. The runtime already consumes station-profile values for:
+   - 3D structure display
+   - `Structure Sections` overlays
+   - section overrides / earthwork
+   - corridor `notch` handling
+
+Current practical workflow:
+1. Use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` as the base structure-header reference.
+2. Use `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv` as the companion station-profile reference.
+3. Or use `tests/samples/structure_utm_realistic_hilly_mixed.csv` and `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv` for one combined multi-structure test set.
+4. Select a structure in the upper table to inspect or edit only that structure's profile rows in the lower table.
 
 ### Current Template Support
 

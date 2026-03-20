@@ -116,6 +116,21 @@ Actions:
    - `fcstd_missing_shape`
 3. Fix the path/object name and apply again.
 
+## External shape is visible, but earthwork does not match it
+Symptoms:
+- A complex STEP/BREP/FCStd structure is displayed correctly in 3D.
+- Sections, grading, or corridor earthwork still follow a simplified culvert / retaining wall / abutment rule.
+
+Interpretation:
+1. This is the current intended behavior.
+2. `external_shape` is used for display/reference placement.
+3. Earthwork is still generated from structure `Type` and basic metadata such as `Width`, `Height`, `BehaviorMode`, and `CorridorMode`.
+
+Actions:
+1. Set the correct structure `Type` first, because that still controls current earthwork behavior.
+2. Use realistic `Width` and `Height` values even when the actual 3D source comes from `external_shape`.
+3. Treat the imported external solid as a reference model until direct shape-based earthwork consumption is implemented.
+
 ## Structure 3D solid is on alignment instead of 3D centerline
 Symptoms:
 - Structure section overlays look correct, but the 3D structure solid appears to sit on the alignment frame instead of the 3D centerline frame.
