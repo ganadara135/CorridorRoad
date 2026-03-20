@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+
 # Menu Reference
 
 This page explains the main task panels used early in the CorridorRoad workflow.

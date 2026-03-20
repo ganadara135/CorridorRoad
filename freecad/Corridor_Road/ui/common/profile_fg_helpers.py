@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileNotice: Part of the Corridor Road addon.
+
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
 
