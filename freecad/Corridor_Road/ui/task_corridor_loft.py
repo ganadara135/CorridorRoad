@@ -353,6 +353,8 @@ class CorridorLoftTaskPanel:
             n = len(list(getattr(sec, "StationValues", []) or []))
             src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
             top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
+            top_edges = str(getattr(sec, "TopProfileEdgeSummary", "-") or "-")
+            pavement_total = float(getattr(cor, "PavementTotalThickness", 0.0) or 0.0)
             pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
             ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
@@ -364,7 +366,7 @@ class CorridorLoftTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

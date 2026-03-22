@@ -426,16 +426,26 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### 3.5B Typical Section (`freecad/Corridor_Road/commands/cmd_edit_typical_section.py`, `freecad/Corridor_Road/ui/task_typical_section_editor.py`)
 - Creates/updates `TypicalSectionTemplate`
 - Supports component-table editing and direct CSV import
+- Supports pavement-layer table editing and direct pavement CSV import
 - Current CSV columns:
   - `Id`, `Type`, `Side`, `Width`, `CrossSlopePct`, `Height`, `Offset`, `Order`, `Enabled`
+- Current pavement CSV columns:
+  - `Id`, `Type`, `Thickness`, `Enabled`
 - Current sample CSVs:
   - `typical_section_basic_rural.csv`
   - `typical_section_urban_complete_street.csv`
   - `typical_section_with_ditch.csv`
+  - `typical_section_pavement_basic.csv`
 - Current component notes:
   - `curb` = vertical step + top width
   - `ditch` = V-like sag break
   - `bench` = flat platform segment
+- Current pavement notes:
+  - pavement layers are data-first, not separate corridor solids yet
+  - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`
+  - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary for downstream reporting
+- execution-plan/status document:
+  - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
 ### 3.5A Edit Structures (`freecad/Corridor_Road/ui/task_structure_editor.py`)
 - Station columns are driven by generated `Stationing` values.

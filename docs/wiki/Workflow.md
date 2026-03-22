@@ -117,6 +117,7 @@ Recommended sample files:
 - `tests/samples/typical_section_basic_rural.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
 
 Current output:
 - `TypicalSectionTemplate` object under the alignment `Assembly` branch
@@ -126,6 +127,8 @@ Current notes:
 1. `TypicalSectionTemplate` defines the finished-grade top profile.
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
+4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
+5. Pavement totals are stored on the template as `PavementTotalThickness`.
 
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`
@@ -163,6 +166,7 @@ Validation:
 - `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
 - When station-profile data exists, overlay size can change from one structure section station to the next.
 - When a typical section is active, `SectionSet` should report `schema=2` and `topProfile=typical_section`.
+- When pavement layers are loaded, `SectionSet` should also report a non-zero `PavementTotalThickness`.
 
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections.png)
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
@@ -181,6 +185,7 @@ Output:
 Validation:
 - Corridor loft status is OK.
 - Completion dialog shows `Source section schema`, `Top profile source`, and `Points per section`.
+- When pavement layers are loaded, completion dialog also shows `Pavement total thickness`.
 - Design terrain/cut-fill status fields show no blocking error.
 
 ## 7A. How To Reduce Corridor Loft Twisting

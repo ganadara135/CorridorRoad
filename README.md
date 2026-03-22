@@ -69,6 +69,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `tests/samples/typical_section_basic_rural.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
 3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
@@ -81,6 +82,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
 11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
 12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `bench` in both `Sections` and `Corridor Loft`.
+13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
@@ -98,11 +100,21 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `tests/samples/typical_section_basic_rural.csv`
   - `tests/samples/typical_section_urban_complete_street.csv`
   - `tests/samples/typical_section_with_ditch.csv`
+  - `tests/samples/typical_section_pavement_basic.csv`
+- `Typical Section` also supports pavement-layer CSV import through `Browse Pavement CSV` -> `Load Pavement CSV`.
+- Pavement CSV columns:
+  - `Id`
+  - `Type`
+  - `Thickness`
+  - `Enabled`
 - Current runtime intent:
   - `Typical Section Template` defines the finished-grade top profile.
   - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
   - `Sections` reports `schema=2` and `topProfile=typical_section` when a typical section drives the top profile.
-  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, and `Top profile source`.
+  - `Sections`, `Design Grading Surface`, and `Corridor Loft` now also carry `PavementTotalThickness`.
+  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, `Top profile source`, and pavement total thickness.
+- Execution-plan/status reference:
+  - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
 ## Template Structures
 - `Edit Structures` now supports `GeometryMode=box|template`.

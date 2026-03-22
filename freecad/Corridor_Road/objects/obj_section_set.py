@@ -437,6 +437,18 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "TopProfileSource"):
         obj.addProperty("App::PropertyString", "TopProfileSource", "Result", "Top-profile source summary")
         obj.TopProfileSource = "assembly_simple"
+    if not hasattr(obj, "TopProfileEdgeSummary"):
+        obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
+        obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled typical-section pavement layer count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
+        obj.PavementTotalThickness = 0.0
     if not hasattr(obj, "SectionCount"):
         obj.addProperty("App::PropertyInteger", "SectionCount", "Result", "Section count")
         obj.SectionCount = 0
@@ -1798,6 +1810,19 @@ class SectionSet:
             # - v2: extended/open profile with additional break points
             obj.SectionSchemaVersion = 2 if (use_typ or (use_ss and (left_on or right_on))) else 1
             obj.TopProfileSource = "typical_section" if use_typ else "assembly_simple"
+            if use_typ:
+                typ = getattr(obj, "TypicalSectionTemplate", None)
+                left_edge = str(getattr(typ, "LeftEdgeComponentType", "") or "-")
+                right_edge = str(getattr(typ, "RightEdgeComponentType", "") or "-")
+                obj.TopProfileEdgeSummary = f"{left_edge}/{right_edge}"
+                obj.PavementLayerCount = int(getattr(typ, "PavementLayerCount", 0) or 0)
+                obj.EnabledPavementLayerCount = int(getattr(typ, "EnabledPavementLayerCount", 0) or 0)
+                obj.PavementTotalThickness = float(getattr(typ, "PavementTotalThickness", 0.0) or 0.0)
+            else:
+                obj.TopProfileEdgeSummary = "-"
+                obj.PavementLayerCount = 0
+                obj.EnabledPavementLayerCount = 0
+                obj.PavementTotalThickness = 0.0
             stations = SectionSet.resolve_station_values(obj)
             obj.StationValues = stations
             obj.SectionCount = len(stations)
@@ -1878,6 +1903,9 @@ class SectionSet:
                 obj.Status = "OK"
             obj.Status = f"{obj.Status} | schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}"
             obj.Status = f"{obj.Status} | topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+            obj.Status = f"{obj.Status} | topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}"
+            if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                obj.Status = f"{obj.Status} | pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
             if bool(getattr(obj, "UseStructureSet", False)) and _resolve_structure_source(obj) is None:
                 obj.Status = f"{obj.Status} | StructureSet missing"
             elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
@@ -1898,6 +1926,10 @@ class SectionSet:
         except Exception as ex:
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
+            obj.TopProfileEdgeSummary = "-"
+            obj.PavementLayerCount = 0
+            obj.EnabledPavementLayerCount = 0
+            obj.PavementTotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):

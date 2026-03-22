@@ -261,6 +261,19 @@ def ensure_corridor_loft_properties(obj):
         obj.addProperty("App::PropertyString", "ResolvedRuledMode", "Result", "Resolved ruled-loft mode")
         obj.ResolvedRuledMode = "off"
 
+    if not hasattr(obj, "TopProfileEdgeSummary"):
+        obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
+        obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled typical-section pavement layer count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
+        obj.PavementTotalThickness = 0.0
+
     try:
         if hasattr(obj, "OutputType"):
             obj.setEditorMode("OutputType", 2)
@@ -497,6 +510,33 @@ class CorridorLoft:
         if int(pt_count) >= 7:
             return True, "auto:point_count"
         return False, "off"
+
+    @staticmethod
+    def _should_retry_with_ruled(src, ruled: bool):
+        if bool(ruled):
+            return False
+        return str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") == "typical_section"
+
+    @staticmethod
+    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True):
+        retry_used = False
+        if ranges:
+            try:
+                shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=ruled, solid=solid)
+                return shape, failed_ranges, retry_used
+            except Exception:
+                if CorridorLoft._should_retry_with_ruled(src, ruled):
+                    shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=True, solid=solid)
+                    return shape, failed_ranges, True
+                raise
+        try:
+            shape = CorridorLoft._loft(wires, ruled=ruled, solid=solid)
+            return shape, [], retry_used
+        except Exception:
+            if CorridorLoft._should_retry_with_ruled(src, ruled):
+                shape = CorridorLoft._loft(wires, ruled=True, solid=solid)
+                return shape, [], True
+            raise
 
     @staticmethod
     def _loft(wires, ruled: bool, solid: bool = True):
@@ -1147,6 +1187,11 @@ class CorridorLoft:
                 obj.SkipMarkerCount = 0
                 obj.ResolvedHeightLeft = 0.0
                 obj.ResolvedHeightRight = 0.0
+                obj.ResolvedRuledMode = "off"
+                obj.TopProfileEdgeSummary = "-"
+                obj.PavementLayerCount = 0
+                obj.EnabledPavementLayerCount = 0
+                obj.PavementTotalThickness = 0.0
                 obj.Status = "Missing SourceSectionSet"
                 _mark_recompute_flag(obj, False)
                 return
@@ -1166,6 +1211,10 @@ class CorridorLoft:
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
             ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
+            obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
+            obj.PavementLayerCount = int(getattr(src, "PavementLayerCount", 0) or 0)
+            obj.EnabledPavementLayerCount = int(getattr(src, "EnabledPavementLayerCount", 0) or 0)
+            obj.PavementTotalThickness = float(getattr(src, "PavementTotalThickness", 0.0) or 0.0)
             closed_profile_schema = 1
             split_count = 0
             split_station_rows = []
@@ -1225,12 +1274,18 @@ class CorridorLoft:
             failed_ranges = []
             skip_marker_count = 0
             try:
-                if use_segmented_ranges:
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
-                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
-                    )
-                else:
-                    shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
+                shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                    loft_wires,
+                    stations,
+                    structure_ranges if use_segmented_ranges else [],
+                    ruled=ruled,
+                    src=src,
+                    solid=True,
+                )
+                if retry_used and str(ruled_mode or "off") == "off":
+                    ruled_mode = "retry:typical_section"
+                elif retry_used:
+                    ruled_mode = f"{ruled_mode}+retry"
                 if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
@@ -1268,17 +1323,33 @@ class CorridorLoft:
                     status += f" profileSchema={int(closed_profile_schema)}"
                 status += f" srcSchema={int(schema)}"
                 status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
+                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
             except Exception as ex:
                 if use_segmented_ranges:
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
-                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
+                    shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                        loft_wires,
+                        stations,
+                        structure_ranges,
+                        ruled=ruled,
+                        src=src,
+                        solid=True,
                     )
                 else:
                     shape, failed_ranges = CorridorLoft._loft_adaptive(
-                        loft_wires, stations, ruled=ruled, solid=True
+                        loft_wires,
+                        stations,
+                        ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
+                        solid=True,
                     )
+                    retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
+                if retry_used and str(ruled_mode or "off") == "off":
+                    ruled_mode = "retry:typical_section"
+                elif retry_used:
+                    ruled_mode = f"{ruled_mode}+retry"
                 if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
@@ -1308,6 +1379,9 @@ class CorridorLoft:
                     status += f" profileSchema={int(closed_profile_schema)}"
                 status += f" srcSchema={int(schema)}"
                 status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
+                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
 
@@ -1351,6 +1425,10 @@ class CorridorLoft:
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0
             obj.ResolvedRuledMode = "off"
+            obj.TopProfileEdgeSummary = "-"
+            obj.PavementLayerCount = 0
+            obj.EnabledPavementLayerCount = 0
+            obj.PavementTotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"
             _mark_recompute_flag(obj, False)
 

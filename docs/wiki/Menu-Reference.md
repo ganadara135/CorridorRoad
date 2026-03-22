@@ -405,6 +405,9 @@ When to override manually:
 | `Component CSV` | Path to the typical-section component CSV. | Select one of the sample files or your own CSV. |
 | `Browse CSV` | Opens a file chooser for a typical-section CSV. | Recommended first step for sample-driven testing. |
 | `Load CSV` | Reads the CSV and fills the component table. | Review or adjust rows before `Apply`. |
+| `Pavement CSV` | Path to the pavement-layer CSV for the same typical section. | Use when you want to track pavement thickness data with the section template. |
+| `Browse Pavement CSV` | Opens a file chooser for a pavement-layer CSV. | Select the sample pavement CSV or your own layer stack file. |
+| `Load Pavement CSV` | Reads the pavement CSV and fills the lower pavement table. | Review or adjust layers before `Apply`. |
 | `Apply` | Saves the component rows into the active `TypicalSectionTemplate`. | Main execution button. |
 
 ### Supported CSV Columns
@@ -426,13 +429,15 @@ When to override manually:
 - `tests/samples/typical_section_basic_rural.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
 
 ### Current Notes
 
 1. `curb` currently creates a vertical step plus top width.
 2. `ditch` currently creates a simple sag/V-style break.
 3. `bench` currently acts as a flat platform segment.
-4. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
+4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
+5. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).

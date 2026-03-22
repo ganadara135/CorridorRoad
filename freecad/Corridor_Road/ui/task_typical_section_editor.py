@@ -10,10 +10,12 @@ from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
     ALLOWED_COMPONENT_TYPES,
+    ALLOWED_PAVEMENT_LAYER_TYPES,
     TypicalSectionTemplate,
     ViewProviderTypicalSectionTemplate,
     component_rows,
     ensure_typical_section_template_properties,
+    pavement_rows,
 )
 from freecad.Corridor_Road.objects.project_links import link_project
 
@@ -27,6 +29,13 @@ COL_HEADERS = [
     "Height",
     "Offset",
     "Order",
+    "Enabled",
+]
+
+PAV_HEADERS = [
+    "Id",
+    "Type",
+    "Thickness",
     "Enabled",
 ]
 
@@ -79,6 +88,17 @@ class TypicalSectionEditorTaskPanel:
         csv_wrap = QtWidgets.QWidget()
         csv_wrap.setLayout(csv_row)
         fs.addRow("Component CSV:", csv_wrap)
+        pav_csv_row = QtWidgets.QHBoxLayout()
+        self.txt_pavement_csv = QtWidgets.QLineEdit()
+        self.txt_pavement_csv.setPlaceholderText("Path to pavement-layer CSV")
+        self.btn_browse_pavement_csv = QtWidgets.QPushButton("Browse Pavement CSV")
+        self.btn_load_pavement_csv = QtWidgets.QPushButton("Load Pavement CSV")
+        pav_csv_row.addWidget(self.txt_pavement_csv, 1)
+        pav_csv_row.addWidget(self.btn_browse_pavement_csv)
+        pav_csv_row.addWidget(self.btn_load_pavement_csv)
+        pav_csv_wrap = QtWidgets.QWidget()
+        pav_csv_wrap.setLayout(pav_csv_row)
+        fs.addRow("Pavement CSV:", pav_csv_wrap)
         main.addWidget(gb_target)
 
         self.table = QtWidgets.QTableWidget(0, len(COL_HEADERS))
@@ -105,11 +125,38 @@ class TypicalSectionEditorTaskPanel:
         row_btns.addWidget(self.btn_sort)
         main.addLayout(row_btns)
 
+        gb_pav = QtWidgets.QGroupBox("Pavement Layers")
+        pav_layout = QtWidgets.QVBoxLayout(gb_pav)
+        self.pav_table = QtWidgets.QTableWidget(0, len(PAV_HEADERS))
+        self.pav_table.setHorizontalHeaderLabels(PAV_HEADERS)
+        self.pav_table.setAlternatingRowColors(True)
+        self.pav_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.pav_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.pav_table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.pav_table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.pav_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.pav_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        hh_pav = self.pav_table.horizontalHeader()
+        hh_pav.setStretchLastSection(False)
+        hh_pav.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        self.pav_table.setMinimumHeight(170)
+        pav_layout.addWidget(self.pav_table)
+        pav_btns = QtWidgets.QHBoxLayout()
+        self.btn_add_pavement = QtWidgets.QPushButton("Add Layer")
+        self.btn_remove_pavement = QtWidgets.QPushButton("Remove Layer")
+        pav_btns.addWidget(self.btn_add_pavement)
+        pav_btns.addWidget(self.btn_remove_pavement)
+        pav_layout.addLayout(pav_btns)
+        main.addWidget(gb_pav)
+
         gb_status = QtWidgets.QGroupBox("Status")
         fr = QtWidgets.QFormLayout(gb_status)
         self.lbl_status = QtWidgets.QLabel("Idle")
         self.lbl_status.setWordWrap(True)
+        self.chk_show_pavement_preview = QtWidgets.QCheckBox("Show pavement preview")
+        self.chk_show_pavement_preview.setChecked(True)
         fr.addRow("Status:", self.lbl_status)
+        fr.addRow(self.chk_show_pavement_preview)
         main.addWidget(gb_status)
 
         bottom = QtWidgets.QHBoxLayout()
@@ -127,11 +174,16 @@ class TypicalSectionEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_browse_csv.clicked.connect(self._browse_csv)
         self.btn_load_csv.clicked.connect(self._load_csv)
+        self.btn_browse_pavement_csv.clicked.connect(self._browse_pavement_csv)
+        self.btn_load_pavement_csv.clicked.connect(self._load_pavement_csv)
+        self.btn_add_pavement.clicked.connect(self._add_pavement_row)
+        self.btn_remove_pavement.clicked.connect(self._remove_pavement_row)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_close.clicked.connect(self.reject)
 
         self._set_rows(4)
+        self._set_pavement_rows(4)
         return w
 
     @staticmethod
@@ -200,6 +252,9 @@ class TypicalSectionEditorTaskPanel:
             try:
                 self.table.setRowCount(0)
                 self._set_rows(4)
+                self.pav_table.setRowCount(0)
+                self._set_pavement_rows(4)
+                self.chk_show_pavement_preview.setChecked(True)
                 self.lbl_status.setText("New TypicalSectionTemplate will be created.")
             finally:
                 self._loading = False
@@ -207,6 +262,7 @@ class TypicalSectionEditorTaskPanel:
 
         ensure_typical_section_template_properties(obj)
         rows = component_rows(obj)
+        pav_rows = pavement_rows(obj)
         self._loading = True
         try:
             self.table.setRowCount(0)
@@ -221,6 +277,14 @@ class TypicalSectionEditorTaskPanel:
                 self._set_cell_text(i, 6, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
                 self._set_cell_text(i, 7, f"{int(row.get('Order', 0) or 0)}")
                 self._set_cell_text(i, 8, "true" if bool(row.get("Enabled", True)) else "false")
+            self.pav_table.setRowCount(0)
+            self._set_pavement_rows(max(4, len(pav_rows)))
+            for i, row in enumerate(pav_rows):
+                self._set_pavement_cell_text(i, 0, row.get("Id", ""))
+                self._set_pavement_cell_text(i, 1, row.get("Type", ""))
+                self._set_pavement_cell_text(i, 2, f"{float(row.get('Thickness', 0.0) or 0.0):.3f}")
+                self._set_pavement_cell_text(i, 3, "true" if bool(row.get("Enabled", True)) else "false")
+            self.chk_show_pavement_preview.setChecked(bool(getattr(obj, "ShowPavementPreview", True)))
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
             self._loading = False
@@ -249,6 +313,29 @@ class TypicalSectionEditorTaskPanel:
                 cmb.addItems(items)
                 self.table.setCellWidget(row, col, cmb)
 
+    def _set_pavement_rows(self, n):
+        self._loading = True
+        try:
+            self.pav_table.setRowCount(n)
+            for r in range(n):
+                for c in range(len(PAV_HEADERS)):
+                    if self.pav_table.item(r, c) is None:
+                        self.pav_table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
+                self._ensure_pavement_combo_cells(r)
+        finally:
+            self._loading = False
+
+    def _ensure_pavement_combo_cells(self, row):
+        for col, items in (
+            (1, [""] + list(ALLOWED_PAVEMENT_LAYER_TYPES)),
+            (3, ["true", "false"]),
+        ):
+            cmb = self.pav_table.cellWidget(row, col)
+            if cmb is None:
+                cmb = QtWidgets.QComboBox()
+                cmb.addItems(items)
+                self.pav_table.setCellWidget(row, col, cmb)
+
     @staticmethod
     def _set_combo_value(cmb, value):
         txt = str(value or "")
@@ -271,11 +358,29 @@ class TypicalSectionEditorTaskPanel:
             self.table.setItem(r, c, it)
         it.setText(str(txt or ""))
 
+    def _set_pavement_cell_text(self, r, c, txt):
+        cmb = self.pav_table.cellWidget(r, c)
+        if cmb is not None and c in (1, 3):
+            self._set_combo_value(cmb, str(txt or ""))
+            return
+        it = self.pav_table.item(r, c)
+        if it is None:
+            it = QtWidgets.QTableWidgetItem("")
+            self.pav_table.setItem(r, c, it)
+        it.setText(str(txt or ""))
+
     def _get_cell_text(self, r, c):
         cmb = self.table.cellWidget(r, c)
         if cmb is not None and c in (1, 2, 8):
             return str(cmb.currentText() or "")
         it = self.table.item(r, c)
+        return (it.text() if it else "") or ""
+
+    def _get_pavement_cell_text(self, r, c):
+        cmb = self.pav_table.cellWidget(r, c)
+        if cmb is not None and c in (1, 3):
+            return str(cmb.currentText() or "")
+        it = self.pav_table.item(r, c)
         return (it.text() if it else "") or ""
 
     @staticmethod
@@ -309,6 +414,22 @@ class TypicalSectionEditorTaskPanel:
                     "Offset": self._parse_float(row[6]),
                     "Order": self._parse_int(row[7]),
                     "Enabled": str(row[8] or "true").strip().lower() not in ("0", "false", "no", "off"),
+                }
+            )
+        return rows
+
+    def _read_pavement_rows(self):
+        rows = []
+        for r in range(self.pav_table.rowCount()):
+            row = [self._get_pavement_cell_text(r, c).strip() for c in range(len(PAV_HEADERS))]
+            if not any(row):
+                continue
+            rows.append(
+                {
+                    "Id": row[0] or f"LAYER-{r+1:02d}",
+                    "Type": row[1],
+                    "Thickness": self._parse_float(row[2]),
+                    "Enabled": str(row[3] or "true").strip().lower() not in ("0", "false", "no", "off"),
                 }
             )
         return rows
@@ -352,6 +473,16 @@ class TypicalSectionEditorTaskPanel:
         if r >= 0:
             self.table.removeRow(r)
 
+    def _add_pavement_row(self):
+        self._set_pavement_rows(self.pav_table.rowCount() + 1)
+
+    def _remove_pavement_row(self):
+        r = self.pav_table.currentRow()
+        if r < 0:
+            r = self.pav_table.rowCount() - 1
+        if r >= 0:
+            self.pav_table.removeRow(r)
+
     def _sort_rows(self):
         rows = self._read_rows()
         rows.sort(key=lambda row: (int(row.get("Order", 0) or 0), str(row.get("Side", "")), str(row.get("Id", ""))))
@@ -366,6 +497,16 @@ class TypicalSectionEditorTaskPanel:
         )
         if path:
             self.txt_csv.setText(path)
+
+    def _browse_pavement_csv(self):
+        path, _flt = QtWidgets.QFileDialog.getOpenFileName(
+            None,
+            "Select Pavement Layer CSV",
+            self.txt_pavement_csv.text().strip() or "",
+            "CSV Files (*.csv);;All Files (*.*)",
+        )
+        if path:
+            self.txt_pavement_csv.setText(path)
 
     def _load_csv(self):
         path = self.txt_csv.text().strip()
@@ -410,6 +551,54 @@ class TypicalSectionEditorTaskPanel:
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"CSV load failed: {ex}")
 
+    def _load_pavement_csv(self):
+        path = self.txt_pavement_csv.text().strip()
+        if not path:
+            QtWidgets.QMessageBox.information(None, "Typical Section", "Select a pavement CSV file first.")
+            return
+        if not os.path.exists(path):
+            QtWidgets.QMessageBox.warning(None, "Typical Section", f"Pavement CSV not found:\n{path}")
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as fp:
+                sample = fp.read(4096)
+                fp.seek(0)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+                except Exception:
+                    dialect = csv.excel
+                reader = csv.DictReader(fp, dialect=dialect)
+                rows = []
+                for i, row_dict in enumerate(reader, start=1):
+                    if not any(str(v or "").strip() for v in dict(row_dict).values()):
+                        continue
+                    rows.append(
+                        {
+                            "Id": str(self._find_col(row_dict, ("Id", "LayerId"), f"LAYER-{i:02d}") or f"LAYER-{i:02d}").strip(),
+                            "Type": str(self._find_col(row_dict, ("Type", "LayerType"), "base") or "base").strip().lower(),
+                            "Thickness": self._parse_float(self._find_col(row_dict, ("Thickness", "Depth"), 0.0)),
+                            "Enabled": str(self._find_col(row_dict, ("Enabled", "Use"), "true")).strip().lower() not in ("0", "false", "no", "off"),
+                        }
+                    )
+            if not rows:
+                QtWidgets.QMessageBox.warning(None, "Typical Section", "No pavement rows were found in the CSV.")
+                return
+            self._loading = True
+            try:
+                self.pav_table.setRowCount(0)
+                self._set_pavement_rows(max(4, len(rows)))
+                for i, row in enumerate(rows):
+                    self._set_pavement_cell_text(i, 0, row.get("Id", ""))
+                    self._set_pavement_cell_text(i, 1, row.get("Type", ""))
+                    self._set_pavement_cell_text(i, 2, f"{float(row.get('Thickness', 0.0) or 0.0):.3f}")
+                    self._set_pavement_cell_text(i, 3, "true" if bool(row.get("Enabled", True)) else "false")
+            finally:
+                self._loading = False
+            self.lbl_status.setText(f"Loaded {len(rows)} pavement rows from CSV.")
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Typical Section", f"Pavement CSV load failed: {ex}")
+
     def _apply(self):
         if self.doc is None:
             QtWidgets.QMessageBox.warning(None, "Typical Section", "No active document.")
@@ -417,6 +606,7 @@ class TypicalSectionEditorTaskPanel:
         try:
             obj = self._ensure_target()
             rows = self._read_rows()
+            pav_rows = self._read_pavement_rows()
             obj.ComponentIds = [str(r.get("Id", "") or "") for r in rows]
             obj.ComponentTypes = [str(r.get("Type", "") or "") for r in rows]
             obj.ComponentSides = [str(r.get("Side", "") or "") for r in rows]
@@ -426,6 +616,11 @@ class TypicalSectionEditorTaskPanel:
             obj.ComponentOffsets = [float(r.get("Offset", 0.0) or 0.0) for r in rows]
             obj.ComponentOrders = [int(r.get("Order", 0) or 0) for r in rows]
             obj.ComponentEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in rows]
+            obj.PavementLayerIds = [str(r.get("Id", "") or "") for r in pav_rows]
+            obj.PavementLayerTypes = [str(r.get("Type", "") or "") for r in pav_rows]
+            obj.PavementLayerThicknesses = [float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows]
+            obj.PavementLayerEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in pav_rows]
+            obj.ShowPavementPreview = bool(self.chk_show_pavement_preview.isChecked())
             obj.touch()
             self.doc.recompute()
             prj = find_project(self.doc)
@@ -438,7 +633,9 @@ class TypicalSectionEditorTaskPanel:
                 None,
                 "Typical Section",
                 "Typical section template updated.\n"
-                f"Components: {len(rows)}",
+                f"Components: {len(rows)}\n"
+                f"Pavement layers: {len(pav_rows)}\n"
+                f"Pavement total thickness: {float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f} m",
             )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Apply failed: {ex}")

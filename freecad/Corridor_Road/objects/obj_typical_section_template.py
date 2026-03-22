@@ -24,6 +24,7 @@ ALLOWED_COMPONENT_TYPES = (
     "bench",
 )
 ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
+ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -79,11 +80,34 @@ def _component_array_specs(scale: float):
     )
 
 
+def _default_pavement_data(scale: float):
+    return {
+        "PavementLayerIds": ["SURF", "BINDER", "BASE", "SUBBASE"],
+        "PavementLayerTypes": ["surface", "binder", "base", "subbase"],
+        "PavementLayerThicknesses": [0.05 * scale, 0.07 * scale, 0.20 * scale, 0.25 * scale],
+        "PavementLayerEnabled": [1, 1, 1, 1],
+    }
+
+
+def _pavement_array_specs(scale: float):
+    defaults = _default_pavement_data(scale)
+    return (
+        ("PavementLayerIds", "App::PropertyStringList", defaults["PavementLayerIds"], "Pavement layer identifiers"),
+        ("PavementLayerTypes", "App::PropertyStringList", defaults["PavementLayerTypes"], "Pavement layer types"),
+        ("PavementLayerThicknesses", "App::PropertyFloatList", defaults["PavementLayerThicknesses"], "Pavement layer thicknesses (m)"),
+        ("PavementLayerEnabled", "App::PropertyIntegerList", defaults["PavementLayerEnabled"], "Pavement layer enabled flags (1/0)"),
+    )
+
+
 def ensure_typical_section_template_properties(obj):
     scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
     for name, ptype, default, doc in _component_array_specs(scale):
         if not hasattr(obj, name):
             obj.addProperty(ptype, name, "Components", doc)
+            setattr(obj, name, list(default))
+    for name, ptype, default, doc in _pavement_array_specs(scale):
+        if not hasattr(obj, name):
+            obj.addProperty(ptype, name, "Pavement", doc)
             setattr(obj, name, list(default))
 
     if not hasattr(obj, "PreviewSchemaVersion"):
@@ -95,6 +119,15 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "EnabledComponentCount"):
         obj.addProperty("App::PropertyInteger", "EnabledComponentCount", "Result", "Enabled component row count")
         obj.EnabledComponentCount = 0
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Total pavement layer row count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled pavement layer row count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Enabled pavement total thickness (m)")
+        obj.PavementTotalThickness = 0.0
     if not hasattr(obj, "LeftEdgeComponentType"):
         obj.addProperty("App::PropertyString", "LeftEdgeComponentType", "Result", "Outermost left component type")
         obj.LeftEdgeComponentType = ""
@@ -107,6 +140,12 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "ShowPreviewWire"):
         obj.addProperty("App::PropertyBool", "ShowPreviewWire", "Display", "Show preview wire")
         obj.ShowPreviewWire = True
+    if not hasattr(obj, "ShowPavementPreview"):
+        obj.addProperty("App::PropertyBool", "ShowPavementPreview", "Display", "Show pavement preview offset wires")
+        obj.ShowPavementPreview = True
+    if not hasattr(obj, "PavementPreviewCount"):
+        obj.addProperty("App::PropertyInteger", "PavementPreviewCount", "Result", "Number of pavement preview wires")
+        obj.PavementPreviewCount = 0
 
 
 def _normalized_component_arrays(obj):
@@ -119,6 +158,31 @@ def _normalized_component_arrays(obj):
     n = max(lengths or [0])
     if n <= 0:
         n = len(_default_component_data(scale)["ComponentIds"])
+
+    out = {}
+    for name, _ptype, default, _doc in specs:
+        vals = list(getattr(obj, name, list(default)) or [])
+        if len(vals) < n:
+            fill = list(default)
+            while len(vals) < n:
+                idx = len(vals)
+                vals.append(fill[idx] if idx < len(fill) else fill[-1])
+        elif len(vals) > n:
+            vals = vals[:n]
+        out[name] = vals
+    return out
+
+
+def _normalized_pavement_arrays(obj):
+    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    specs = _pavement_array_specs(scale)
+    lengths = []
+    for name, _ptype, default, _doc in specs:
+        raw = list(getattr(obj, name, list(default)) or [])
+        lengths.append(len(raw))
+    n = max(lengths or [0])
+    if n <= 0:
+        n = len(_default_pavement_data(scale)["PavementLayerIds"])
 
     out = {}
     for name, _ptype, default, _doc in specs:
@@ -182,6 +246,40 @@ def validate_components(obj):
             issues.append(f"{cid}: height must be finite")
         if not math.isfinite(float(row["Offset"])):
             issues.append(f"{cid}: offset must be finite")
+    return issues
+
+
+def pavement_rows(obj):
+    ensure_typical_section_template_properties(obj)
+    data = _normalized_pavement_arrays(obj)
+    rows = []
+    count = len(data.get("PavementLayerIds", []) or [])
+    for i in range(count):
+        row = {
+            "Id": str(data["PavementLayerIds"][i] or "").strip() or f"LAYER-{i+1:02d}",
+            "Type": str(data["PavementLayerTypes"][i] or "").strip().lower() or "base",
+            "Thickness": max(0.0, _safe_float(data["PavementLayerThicknesses"][i], default=0.0)),
+            "Enabled": _as_bool_flag(data["PavementLayerEnabled"][i]),
+            "_Index": i,
+        }
+        rows.append(row)
+    return rows
+
+
+def validate_pavement_layers(obj):
+    rows = pavement_rows(obj)
+    issues = []
+    seen = set()
+    for row in rows:
+        lid = str(row["Id"] or "").strip()
+        if lid in seen:
+            issues.append(f"Duplicate pavement layer id: {lid}")
+        seen.add(lid)
+        typ = str(row["Type"] or "").strip().lower()
+        if typ not in ALLOWED_PAVEMENT_LAYER_TYPES:
+            issues.append(f"{lid}: unsupported pavement layer type '{typ}'")
+        if float(row["Thickness"]) < 0.0:
+            issues.append(f"{lid}: thickness must be >= 0")
     return issues
 
 
@@ -305,6 +403,30 @@ def build_top_profile(obj):
     return cleaned
 
 
+def build_pavement_preview_profiles(obj):
+    pts = list(build_top_profile(obj) or [])
+    if len(pts) < 2:
+        return []
+    rows = pavement_rows(obj)
+    out = []
+    cumulative = 0.0
+    for row in rows:
+        if not bool(row.get("Enabled", True)):
+            continue
+        thk = max(0.0, float(row.get("Thickness", 0.0) or 0.0))
+        if thk <= 1e-9:
+            continue
+        cumulative += thk
+        offset_pts = [App.Vector(float(p.x), float(p.y) - cumulative, float(p.z)) for p in pts]
+        cleaned = []
+        for pt in offset_pts:
+            if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+                cleaned.append(pt)
+        if len(cleaned) >= 2:
+            out.append(cleaned)
+    return out
+
+
 class TypicalSectionTemplate:
     def __init__(self, obj):
         obj.Proxy = self
@@ -316,10 +438,18 @@ class TypicalSectionTemplate:
         try:
             rows = component_rows(obj)
             issues = validate_components(obj)
+            pav_rows = pavement_rows(obj)
+            pav_issues = validate_pavement_layers(obj)
             enabled_count = sum(1 for r in rows if bool(r.get("Enabled", True)))
+            pav_enabled_count = sum(1 for r in pav_rows if bool(r.get("Enabled", True)))
+            pav_total_thk = sum(float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows if bool(r.get("Enabled", True)))
             left_rows, _center_rows, right_rows = _split_rows_by_side(rows)
             obj.ComponentCount = int(len(rows))
             obj.EnabledComponentCount = int(enabled_count)
+            obj.PavementLayerCount = int(len(pav_rows))
+            obj.EnabledPavementLayerCount = int(pav_enabled_count)
+            obj.PavementTotalThickness = float(pav_total_thk)
+            obj.PavementPreviewCount = 0
             obj.LeftEdgeComponentType = str(left_rows[-1].get("Type", "") or "") if left_rows else ""
             obj.RightEdgeComponentType = str(right_rows[-1].get("Type", "") or "") if right_rows else ""
             obj.PreviewSchemaVersion = 2
@@ -328,7 +458,8 @@ class TypicalSectionTemplate:
                 obj.Shape = Part.Shape()
                 obj.Status = (
                     f"Hidden: edges=({obj.LeftEdgeComponentType or '-'}, "
-                    f"{obj.RightEdgeComponentType or '-'})"
+                    f"{obj.RightEdgeComponentType or '-'}) "
+                    f"pavement={obj.PavementTotalThickness:.3f}m"
                 )
                 return
 
@@ -338,16 +469,29 @@ class TypicalSectionTemplate:
                 obj.Status = "WARN: No enabled components."
                 return
 
-            obj.Shape = Part.makePolygon(pts)
-            if issues:
-                obj.Status = "WARN: " + " | ".join(issues[:4])
+            shapes = [Part.makePolygon(pts)]
+            if bool(getattr(obj, "ShowPavementPreview", True)):
+                pav_profiles = build_pavement_preview_profiles(obj)
+                obj.PavementPreviewCount = int(len(pav_profiles))
+                for row_pts in pav_profiles:
+                    try:
+                        shapes.append(Part.makePolygon(row_pts))
+                    except Exception:
+                        pass
+            obj.Shape = shapes[0] if len(shapes) == 1 else Part.Compound(shapes)
+            all_issues = list(issues) + list(pav_issues)
+            if all_issues:
+                obj.Status = "WARN: " + " | ".join(all_issues[:4])
             else:
                 obj.Status = (
                     f"OK: {enabled_count}/{len(rows)} components enabled; "
-                    f"edges=({obj.LeftEdgeComponentType or '-'}, {obj.RightEdgeComponentType or '-'})"
+                    f"edges=({obj.LeftEdgeComponentType or '-'}, {obj.RightEdgeComponentType or '-'}) "
+                    f"pavement={obj.PavementTotalThickness:.3f}m ({pav_enabled_count}/{len(pav_rows)} layers, "
+                    f"preview={obj.PavementPreviewCount})"
                 )
         except Exception as ex:
             obj.Shape = Part.Shape()
+            obj.PavementPreviewCount = 0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -361,7 +505,12 @@ class TypicalSectionTemplate:
             "ComponentOffsets",
             "ComponentOrders",
             "ComponentEnabled",
+            "PavementLayerIds",
+            "PavementLayerTypes",
+            "PavementLayerThicknesses",
+            "PavementLayerEnabled",
             "ShowPreviewWire",
+            "ShowPavementPreview",
         ):
             try:
                 obj.touch()

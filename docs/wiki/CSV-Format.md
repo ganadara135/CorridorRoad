@@ -193,12 +193,45 @@ Recommended sample files:
 - `tests/samples/typical_section_basic_rural.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
 
 Current notes:
 1. `TypicalSectionTemplate` defines the finished-grade top profile.
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
 4. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
+
+### 3C. Typical Section Pavement CSV
+
+`Typical Section` also supports a first-pass pavement layer CSV.
+
+Current workflow:
+1. Open `Typical Section`
+2. `Browse Pavement CSV`
+3. `Load Pavement CSV`
+4. Review/edit the pavement layer table if needed
+5. `Apply`
+
+Recommended header:
+`Id,Type,Thickness,Enabled`
+
+Example:
+```csv
+Id,Type,Thickness,Enabled
+SURF,surface,0.050,true
+BINDER,binder,0.070,true
+BASE,base,0.200,true
+SUBBASE,subbase,0.250,true
+```
+
+Recommended sample file:
+- `tests/samples/typical_section_pavement_basic.csv`
+
+Current notes:
+1. Pavement layers are stored as data on `TypicalSectionTemplate`.
+2. Current supported layer types are `surface`, `binder`, `base`, `subbase`, `subgrade`.
+3. Current result fields include `PavementLayerCount`, `EnabledPavementLayerCount`, and `PavementTotalThickness`.
+4. These values currently propagate to `SectionSet`, `Corridor Loft`, and `Design Grading Surface`.
 
 ## 4. Import Validation Checklist
 1. Header names match exactly.
