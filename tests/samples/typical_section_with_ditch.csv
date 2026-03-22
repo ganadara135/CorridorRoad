@@ -1,0 +1,11 @@
+Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled
+LANE-L,lane,left,3.500,2.0,0.000,0.000,10,true
+SHL-L,shoulder,left,1.500,4.0,0.000,0.000,20,true
+GUT-L,gutter,left,0.800,6.0,0.000,0.000,30,true
+DITCH-L,ditch,left,2.000,2.0,1.000,0.000,40,true
+BENCH-L,bench,left,1.500,0.0,0.000,0.000,50,true
+LANE-R,lane,right,3.500,2.0,0.000,0.000,10,true
+SHL-R,shoulder,right,1.500,4.0,0.000,0.000,20,true
+GUT-R,gutter,right,0.800,6.0,0.000,0.000,30,true
+DITCH-R,ditch,right,2.000,2.0,1.000,0.000,40,true
+BENCH-R,bench,right,1.500,0.0,0.000,0.000,50,true

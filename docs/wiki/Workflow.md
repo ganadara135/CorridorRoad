@@ -108,6 +108,25 @@ Validation:
 ![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
 > Suggested file: `wiki-workflow-04a-structures-editor.png`
 
+## 4B. Typical Section
+1. Run `Typical Section`.
+2. Either enter component rows manually or use `Browse CSV` -> `Load CSV`.
+3. Click `Apply`.
+
+Recommended sample files:
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+
+Current output:
+- `TypicalSectionTemplate` object under the alignment `Assembly` branch
+- preview wire showing the current top-profile composition
+
+Current notes:
+1. `TypicalSectionTemplate` defines the finished-grade top profile.
+2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
+
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`
 
@@ -129,8 +148,9 @@ Validation:
 1. Run `Generate Sections`.
 2. Choose mode (`Range` or `Manual`).
 3. If structures should drive extra stations, enable `Use linked StructureSet`.
-4. Configure daylight options if needed.
-5. Click `Generate Sections Now`.
+4. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
+5. Configure daylight options if needed.
+6. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
@@ -142,6 +162,7 @@ Validation:
 - `Merged structure stations` is non-zero when structure records are inside range.
 - `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
 - When station-profile data exists, overlay size can change from one structure section station to the next.
+- When a typical section is active, `SectionSet` should report `schema=2` and `topProfile=typical_section`.
 
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections.png)
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
@@ -159,6 +180,7 @@ Output:
 
 Validation:
 - Corridor loft status is OK.
+- Completion dialog shows `Source section schema`, `Top profile source`, and `Points per section`.
 - Design terrain/cut-fill status fields show no blocking error.
 
 ## 7A. How To Reduce Corridor Loft Twisting

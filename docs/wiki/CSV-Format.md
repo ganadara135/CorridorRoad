@@ -117,10 +117,11 @@ Practical notes:
 
 This is an advanced companion CSV format for variable-size structures.
 
-Important note:
-- The current `Edit Structures` task panel edits the base structure header rows only.
-- It does not yet provide a dedicated grid or direct CSV loader for station-profile control points.
-- The sample station-profile CSVs are reference data for property-driven, scripted, or future importer-based workflows.
+Current workflow:
+- `Edit Structures` now supports a two-table workflow.
+- Load the base structure CSV first.
+- Then use `Browse Profile CSV` -> `Load Profile CSV`.
+- The lower table shows the station-profile rows for the currently selected structure.
 
 Recommended header:
 `StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount`
@@ -161,6 +162,43 @@ Recommended sample files:
 
 > [Screenshot Needed] Structure Sections overlays showing station-profile-driven size changes.
 > Suggested file: `wiki-csv-structure-station-profile-overlays.png`
+
+## 3B. Typical Section CSV
+
+`Typical Section` now supports direct CSV import.
+
+Current workflow:
+1. Open `Typical Section`
+2. `Browse CSV`
+3. `Load CSV`
+4. Review/edit the table if needed
+5. `Apply`
+
+Recommended header:
+`Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled`
+
+Example:
+```csv
+Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled
+LANE-L,lane,left,3.500,2.0,0.000,0.000,10,true
+SHL-L,shoulder,left,1.500,4.0,0.000,0.000,20,true
+GUT-L,gutter,left,0.800,6.0,0.000,0.000,30,true
+DITCH-L,ditch,left,2.000,2.0,1.000,0.000,40,true
+BENCH-L,bench,left,1.500,0.0,0.000,0.000,50,true
+LANE-R,lane,right,3.500,2.0,0.000,0.000,10,true
+SHL-R,shoulder,right,1.500,4.0,0.000,0.000,20,true
+```
+
+Recommended sample files:
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+
+Current notes:
+1. `TypicalSectionTemplate` defines the finished-grade top profile.
+2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+3. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
+4. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
 
 ## 4. Import Validation Checklist
 1. Header names match exactly.

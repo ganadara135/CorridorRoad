@@ -65,6 +65,8 @@ class CorridorLoftTaskPanel:
         self.spin_min_spacing.setValue(0.50 * self._scale)
         self.chk_ruled = QtWidgets.QCheckBox("Use ruled loft")
         self.chk_ruled.setChecked(False)
+        self.chk_auto_ruled_typical = QtWidgets.QCheckBox("Auto-use ruled loft for Typical Section")
+        self.chk_auto_ruled_typical.setChecked(True)
         self.chk_fix_orientation = QtWidgets.QCheckBox("Auto-fix flipped sections")
         self.chk_fix_orientation.setChecked(True)
         self.chk_structure_split = QtWidgets.QCheckBox("Split at structure zones")
@@ -83,6 +85,7 @@ class CorridorLoftTaskPanel:
         self.chk_auto.setChecked(True)
         form_opts.addRow("Min Section Spacing:", self.spin_min_spacing)
         form_opts.addRow(self.chk_ruled)
+        form_opts.addRow(self.chk_auto_ruled_typical)
         form_opts.addRow(self.chk_fix_orientation)
         form_opts.addRow(self.chk_structure_split)
         form_opts.addRow(self.chk_structure_modes)
@@ -230,6 +233,7 @@ class CorridorLoftTaskPanel:
         if cor is None:
             self.spin_min_spacing.setValue(0.50 * self._scale)
             self.chk_ruled.setChecked(False)
+            self.chk_auto_ruled_typical.setChecked(True)
             self.chk_fix_orientation.setChecked(True)
             self.chk_structure_split.setChecked(True)
             self.chk_structure_modes.setChecked(True)
@@ -248,6 +252,7 @@ class CorridorLoftTaskPanel:
         except Exception:
             self.spin_min_spacing.setValue(0.50 * self._scale)
         self.chk_ruled.setChecked(bool(getattr(cor, "UseRuled", False)))
+        self.chk_auto_ruled_typical.setChecked(bool(getattr(cor, "AutoUseRuledForTypicalSection", True)))
         self.chk_fix_orientation.setChecked(bool(getattr(cor, "AutoFixSectionOrientation", True)))
         self.chk_structure_split.setChecked(bool(getattr(cor, "SplitAtStructureZones", True)))
         self.chk_structure_modes.setChecked(bool(getattr(cor, "UseStructureCorridorModes", True)))
@@ -303,6 +308,7 @@ class CorridorLoftTaskPanel:
             ensure_corridor_loft_properties(cor)
             cor.SourceSectionSet = sec
             cor.UseRuled = bool(self.chk_ruled.isChecked())
+            cor.AutoUseRuledForTypicalSection = bool(self.chk_auto_ruled_typical.isChecked())
             cor.AutoFixSectionOrientation = bool(self.chk_fix_orientation.isChecked())
             cor.SplitAtStructureZones = bool(self.chk_structure_split.isChecked())
             cor.UseStructureCorridorModes = bool(self.chk_structure_modes.isChecked())
@@ -345,6 +351,10 @@ class CorridorLoftTaskPanel:
                     pass
             self.lbl_status.setText(str(getattr(cor, "Status", "OK")))
             n = len(list(getattr(sec, "StationValues", []) or []))
+            src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
+            top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
+            pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
+            ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
@@ -354,7 +364,7 @@ class CorridorLoftTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

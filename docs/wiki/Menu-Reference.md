@@ -394,6 +394,46 @@ When to override manually:
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`
 
+## 6A. Typical Section
+
+`Typical Section` is the component-based editor for finished-grade top-profile composition.
+
+### CSV Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Component CSV` | Path to the typical-section component CSV. | Select one of the sample files or your own CSV. |
+| `Browse CSV` | Opens a file chooser for a typical-section CSV. | Recommended first step for sample-driven testing. |
+| `Load CSV` | Reads the CSV and fills the component table. | Review or adjust rows before `Apply`. |
+| `Apply` | Saves the component rows into the active `TypicalSectionTemplate`. | Main execution button. |
+
+### Supported CSV Columns
+
+| Column | Meaning |
+|---|---|
+| `Id` | Component identifier |
+| `Type` | `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `curb`, `green_strip`, `gutter`, `ditch`, `bench` |
+| `Side` | `left`, `right`, `center`, `both` |
+| `Width` | Component width |
+| `CrossSlopePct` | Cross slope (%) |
+| `Height` | Vertical step / sag depth depending on component |
+| `Offset` | Additional local lateral offset before the component |
+| `Order` | Per-side build order |
+| `Enabled` | Boolean enable flag |
+
+### Sample CSV Files
+
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+
+### Current Notes
+
+1. `curb` currently creates a vertical step plus top width.
+2. `ditch` currently creates a simple sag/V-style break.
+3. `bench` currently acts as a flat platform segment.
+4. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
+
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).
 2. Use [Workflow](Workflow) for command order.

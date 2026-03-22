@@ -815,6 +815,19 @@ def _resolve_alignment_for_object(prj, child):
                         if aln is not None:
                             return aln
 
+    if _is_type(child, proxy_types=("TypicalSectionTemplate",), name_prefixes=("TypicalSectionTemplate",)):
+        doc = getattr(prj, "Document", None)
+        if doc is not None:
+            for o in doc.Objects:
+                if _is_type(o, proxy_types=("SectionSet",), name_prefixes=("SectionSet",)):
+                    if getattr(o, "TypicalSectionTemplate", None) == child:
+                        aln = _alignment_from_section_set(o)
+                        if aln is not None:
+                            return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("ProfileBundle",), name_prefixes=("ProfileBundle",)):
         aln = _alignment_from_profile_bundle(child)
         if aln is not None:
@@ -858,6 +871,7 @@ def _is_alignment_related(child):
             "Centerline3DDisplay",
             "Centerline3D",
             "AssemblyTemplate",
+            "TypicalSectionTemplate",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
@@ -873,6 +887,7 @@ def _is_alignment_related(child):
             "Centerline3DDisplay",
             "Centerline3D",
             "AssemblyTemplate",
+            "TypicalSectionTemplate",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
@@ -934,6 +949,8 @@ def _target_folder_for_alignment_child(prj, child):
     if _is_type(child, proxy_types=("Stationing",), name_prefixes=("Stationing",)):
         return aln_tree.get(ALIGNMENT_STATIONING, None)
     if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
+        return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
+    if _is_type(child, proxy_types=("TypicalSectionTemplate",), name_prefixes=("TypicalSectionTemplate",)):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
     if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
         return aln_tree.get(ALIGNMENT_SECTIONS, None)
@@ -997,6 +1014,7 @@ def _adopt_project_linked_objects(prj):
         "Centerline3D",
         "Centerline3DDisplay",
         "AssemblyTemplate",
+        "TypicalSectionTemplate",
         "StructureSet",
         "SectionSet",
         "CorridorLoft",
@@ -1138,6 +1156,7 @@ def _hide_project_link_properties(obj):
         "Centerline3D",
         "Centerline3DDisplay",
         "AssemblyTemplate",
+        "TypicalSectionTemplate",
         "SectionSet",
         "CorridorLoft",
         "DesignGradingSurface",
@@ -1276,6 +1295,7 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "Centerline3D", "CorridorRoad", "Link to 3D centerline object")
     _ensure_hidden_link_property(obj, "Centerline3DDisplay", "CorridorRoad", "Link to 3D centerline display object")
     _ensure_hidden_link_property(obj, "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
+    _ensure_hidden_link_property(obj, "TypicalSectionTemplate", "CorridorRoad", "Link to typical section template object")
     _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
     _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
     _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
@@ -1386,6 +1406,18 @@ class CorridorRoadProject:
                     break
             if a is not None:
                 obj_project.AssemblyTemplate = a
+
+        if hasattr(obj_project, "TypicalSectionTemplate") and obj_project.TypicalSectionTemplate is None:
+            t = None
+            for o in doc.Objects:
+                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "TypicalSectionTemplate":
+                    t = o
+                    break
+                if o.Name.startswith("TypicalSectionTemplate"):
+                    t = o
+                    break
+            if t is not None:
+                obj_project.TypicalSectionTemplate = t
 
         if hasattr(obj_project, "StructureSet") and obj_project.StructureSet is None:
             s = None

@@ -126,6 +126,15 @@ def ensure_corridor_loft_properties(obj):
         obj.addProperty("App::PropertyBool", "UseRuled", "Corridor", "Use ruled loft")
         obj.UseRuled = False
 
+    if not hasattr(obj, "AutoUseRuledForTypicalSection"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "AutoUseRuledForTypicalSection",
+            "Corridor",
+            "Automatically prefer ruled loft when Typical Section profiles include richer edge breaks",
+        )
+        obj.AutoUseRuledForTypicalSection = True
+
     if not hasattr(obj, "MinSectionSpacing"):
         obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for loft input (m)")
         obj.MinSectionSpacing = 0.50 * scale
@@ -247,6 +256,10 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "ResolvedHeightRight"):
         obj.addProperty("App::PropertyFloat", "ResolvedHeightRight", "Result", "Resolved right depth used for solid")
         obj.ResolvedHeightRight = 0.0
+
+    if not hasattr(obj, "ResolvedRuledMode"):
+        obj.addProperty("App::PropertyString", "ResolvedRuledMode", "Result", "Resolved ruled-loft mode")
+        obj.ResolvedRuledMode = "off"
 
     try:
         if hasattr(obj, "OutputType"):
@@ -444,6 +457,46 @@ class CorridorLoft:
             pass
 
         raise Exception("Valid HeightLeft/HeightRight are required for Solid output.")
+
+    @staticmethod
+    def _typical_edge_types(src):
+        try:
+            if src is None or not bool(getattr(src, "UseTypicalSectionTemplate", False)):
+                return []
+            typ = getattr(src, "TypicalSectionTemplate", None)
+            if typ is None:
+                return []
+            out = []
+            for v in (
+                getattr(typ, "LeftEdgeComponentType", ""),
+                getattr(typ, "RightEdgeComponentType", ""),
+            ):
+                s = str(v or "").strip().lower()
+                if s:
+                    out.append(s)
+            return out
+        except Exception:
+            return []
+
+    @staticmethod
+    def _resolve_ruled_mode(obj, src, pt_count: int):
+        manual = bool(getattr(obj, "UseRuled", False))
+        if manual:
+            return True, "manual"
+
+        if not bool(getattr(obj, "AutoUseRuledForTypicalSection", True)):
+            return False, "off"
+
+        if str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") != "typical_section":
+            return False, "off"
+
+        edge_types = set(CorridorLoft._typical_edge_types(src))
+        rich_edges = bool(edge_types.intersection({"curb", "ditch", "bench", "gutter"}))
+        if rich_edges:
+            return True, "auto:typical_edges"
+        if int(pt_count) >= 7:
+            return True, "auto:point_count"
+        return False, "off"
 
     @staticmethod
     def _loft(wires, ruled: bool, solid: bool = True):
@@ -1110,9 +1163,9 @@ class CorridorLoft:
                 schema,
                 auto_fix_orientation,
             )
-            ruled = bool(getattr(obj, "UseRuled", False))
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
+            ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
             closed_profile_schema = 1
             split_count = 0
             split_station_rows = []
@@ -1192,14 +1245,14 @@ class CorridorLoft:
                         f"({len(failed_ranges)} failed ranges) | "
                         f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                         f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)}"
+                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                     )
                 else:
                     status = (
                         "OK (Solid) "
                         f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                         f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)}"
+                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                     )
                 if split_count >= 2:
                     status += f" structureSegs={int(split_count)}"
@@ -1213,6 +1266,8 @@ class CorridorLoft:
                     status += f" notchStations={int(notch_station_count)}"
                 if closed_profile_schema > 1:
                     status += f" profileSchema={int(closed_profile_schema)}"
+                status += f" srcSchema={int(schema)}"
+                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
             except Exception as ex:
@@ -1237,7 +1292,7 @@ class CorridorLoft:
                     f"({len(failed_ranges)} failed ranges): {ex} | "
                     f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                     f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                    f"autoFixed={int(fixed_count)}"
+                    f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                 )
                 if split_count >= 2:
                     status += f" structureSegs={int(split_count)}"
@@ -1251,6 +1306,8 @@ class CorridorLoft:
                     status += f" notchStations={int(notch_station_count)}"
                 if closed_profile_schema > 1:
                     status += f" profileSchema={int(closed_profile_schema)}"
+                status += f" srcSchema={int(schema)}"
+                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
 
@@ -1269,6 +1326,7 @@ class CorridorLoft:
             obj.SkipMarkerCount = int(skip_marker_count)
             obj.ResolvedHeightLeft = float(h_left)
             obj.ResolvedHeightRight = float(h_right)
+            obj.ResolvedRuledMode = str(ruled_mode)
             obj.Status = status
             _mark_recompute_flag(obj, False)
 
@@ -1292,6 +1350,7 @@ class CorridorLoft:
             obj.SkipMarkerCount = 0
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0
+            obj.ResolvedRuledMode = "off"
             obj.Status = f"ERROR: {ex}"
             _mark_recompute_flag(obj, False)
 

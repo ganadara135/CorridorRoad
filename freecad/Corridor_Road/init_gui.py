@@ -22,13 +22,14 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_import_pointcloud_dem  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_edit_structures  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_stations  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_profiles  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_pvi  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_centerline3d  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_edit_typical_section  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_edit_structures  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_sections  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_corridor_loft  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_design_grading_surface  # noqa: F401
@@ -46,6 +47,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_EditProfiles",
                 "CorridorRoad_EditPVI",
                 "CorridorRoad_GenerateCenterline3D",
+                "CorridorRoad_EditTypicalSection",
                 "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_GenerateCorridorLoft",
@@ -66,6 +68,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_EditProfiles",
                 "CorridorRoad_EditPVI",
                 "CorridorRoad_GenerateCenterline3D",
+                "CorridorRoad_EditTypicalSection",
                 "CorridorRoad_EditStructures",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_GenerateCorridorLoft",

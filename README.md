@@ -66,6 +66,9 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
 - `tests/samples/structure_utm_realistic_hilly_mixed.csv`
 - `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
 3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
@@ -75,6 +78,31 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 7. Load `structure_utm_realistic_hilly_external_shape.csv` when you want to test `GeometryMode=external_shape`. Replace the sample `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources first.
 8. Use the `station_profile_headers` + `station_profile_points` samples when you want to test variable-size structures driven by station control points.
 9. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
+10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
+11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
+12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `bench` in both `Sections` and `Corridor Loft`.
+
+## Typical Section CSV
+- `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
+- Current CSV columns:
+  - `Id`
+  - `Type`
+  - `Side`
+  - `Width`
+  - `CrossSlopePct`
+  - `Height`
+  - `Offset`
+  - `Order`
+  - `Enabled`
+- Current sample files:
+  - `tests/samples/typical_section_basic_rural.csv`
+  - `tests/samples/typical_section_urban_complete_street.csv`
+  - `tests/samples/typical_section_with_ditch.csv`
+- Current runtime intent:
+  - `Typical Section Template` defines the finished-grade top profile.
+  - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+  - `Sections` reports `schema=2` and `topProfile=typical_section` when a typical section drives the top profile.
+  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, and `Top profile source`.
 
 ## Template Structures
 - `Edit Structures` now supports `GeometryMode=box|template`.

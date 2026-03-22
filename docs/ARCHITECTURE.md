@@ -135,6 +135,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Inputs:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
+  - `TypicalSectionTemplate` (optional, component-based top profile)
   - optional `TerrainMesh` (for daylight-to-terrain, Mesh only)
   - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
@@ -152,10 +153,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `IncludeTransitionStations`, `AutoTransitionDistance`, `TransitionDistance`
     - `CreateStructureTaggedChildren`, `ApplyStructureOverrides`
 - Results:
-  - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
+  - `StationValues`, `SectionSchemaVersion`, `TopProfileSource`, `SectionCount`, `Status`
   - schema policy:
     - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
-    - `SectionSchemaVersion=2`: side-slope extended section (>=3 points)
+    - `SectionSchemaVersion=2`: extended/open profile (side slopes and/or Typical Section break points)
 - daylight runtime status:
   - `WARN: UseDaylightToTerrain=True but no terrain source found...`
   - `WARN: Terrain source found but daylight sampler failed...`
@@ -413,6 +414,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment TS/SC/CS/ST Key Stations`)
   - optional structure-station merge from linked `StructureSet`
   - transition-station insertion around structure boundaries
+  - optional `Typical Section Template` source for finished-grade top profile
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2, Mesh source only)
   - daylight terrain coordinate mode selection (`Local`/`World`)
@@ -420,6 +422,20 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optionally create child sections per station in tree
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
+
+### 3.5B Typical Section (`freecad/Corridor_Road/commands/cmd_edit_typical_section.py`, `freecad/Corridor_Road/ui/task_typical_section_editor.py`)
+- Creates/updates `TypicalSectionTemplate`
+- Supports component-table editing and direct CSV import
+- Current CSV columns:
+  - `Id`, `Type`, `Side`, `Width`, `CrossSlopePct`, `Height`, `Offset`, `Order`, `Enabled`
+- Current sample CSVs:
+  - `typical_section_basic_rural.csv`
+  - `typical_section_urban_complete_street.csv`
+  - `typical_section_with_ditch.csv`
+- Current component notes:
+  - `curb` = vertical step + top width
+  - `ditch` = V-like sag break
+  - `bench` = flat platform segment
 
 ### 3.5A Edit Structures (`freecad/Corridor_Road/ui/task_structure_editor.py`)
 - Station columns are driven by generated `Stationing` values.
