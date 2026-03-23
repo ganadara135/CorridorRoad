@@ -237,6 +237,8 @@ Important behavior:
 | `Load CSV` | Reads the CSV and fills the structure table. | Review the table before `Apply`. |
 | `Browse Shape` | Opens a file chooser for the selected row's external shape source. | Supports `.step`, `.brep`, and `.FCStd`. For `FCStd`, append `#ObjectName` in `ShapeSourcePath`. |
 | `Pick FCStd Object` | Opens an object picker for the selected `.FCStd` source. | After selecting the `.FCStd` file, use this to choose a shape-bearing object and automatically fill `ShapeSourcePath` as `path.FCStd#ObjectName`. |
+| `Browse Profile CSV` | Opens a file chooser for station-profile control-point CSV data. | Use after loading or defining the base structure rows. |
+| `Load Profile CSV` | Reads the station-profile CSV and stores control points for later apply. | Load the base structure CSV first, then the profile CSV. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -280,6 +282,7 @@ Important behavior:
 6. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
 7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
 8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
+9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -290,6 +293,26 @@ Important behavior:
 6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
+9. Even when `external_shape` is displayed correctly, current earthwork still uses the structure `Type` and simple dimensional fields rather than the true imported solid.
+
+### Advanced: Station-Profile Data
+The runtime now supports variable-size structures driven by station control points, and `Edit Structures` now exposes this through a second linked table.
+
+Current status:
+1. The upper table edits base structure header rows.
+2. The lower table shows station-profile control points for the currently selected structure row.
+3. `Load Profile CSV` populates the same backing data used by the lower table.
+4. The runtime already consumes station-profile values for:
+   - 3D structure display
+   - `Structure Sections` overlays
+   - section overrides / earthwork
+   - corridor `notch` handling
+
+Current practical workflow:
+1. Use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` as the base structure-header reference.
+2. Use `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv` as the companion station-profile reference.
+3. Or use `tests/samples/structure_utm_realistic_hilly_mixed.csv` and `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv` for one combined multi-structure test set.
+4. Select a structure in the upper table to inspect or edit only that structure's profile rows in the lower table.
 
 ### Current Template Support
 
@@ -373,6 +396,51 @@ When to override manually:
 
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`
+
+## 6A. Typical Section
+
+`Typical Section` is the component-based editor for finished-grade top-profile composition.
+
+### CSV Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Component CSV` | Path to the typical-section component CSV. | Select one of the sample files or your own CSV. |
+| `Browse CSV` | Opens a file chooser for a typical-section CSV. | Recommended first step for sample-driven testing. |
+| `Load CSV` | Reads the CSV and fills the component table. | Review or adjust rows before `Apply`. |
+| `Pavement CSV` | Path to the pavement-layer CSV for the same typical section. | Use when you want to track pavement thickness data with the section template. |
+| `Browse Pavement CSV` | Opens a file chooser for a pavement-layer CSV. | Select the sample pavement CSV or your own layer stack file. |
+| `Load Pavement CSV` | Reads the pavement CSV and fills the lower pavement table. | Review or adjust layers before `Apply`. |
+| `Apply` | Saves the component rows into the active `TypicalSectionTemplate`. | Main execution button. |
+
+### Supported CSV Columns
+
+| Column | Meaning |
+|---|---|
+| `Id` | Component identifier |
+| `Type` | `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `curb`, `green_strip`, `gutter`, `ditch`, `bench` |
+| `Side` | `left`, `right`, `center`, `both` |
+| `Width` | Component width |
+| `CrossSlopePct` | Cross slope (%) |
+| `Height` | Vertical step / sag depth depending on component |
+| `Offset` | Additional local lateral offset before the component |
+| `Order` | Per-side build order |
+| `Enabled` | Boolean enable flag |
+
+### Sample CSV Files
+
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
+
+### Current Notes
+
+1. `curb` currently creates a vertical step plus top width.
+2. `ditch` currently creates a simple sag/V-style break.
+3. `bench` currently acts as a flat platform segment.
+4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
+5. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).

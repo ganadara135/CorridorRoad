@@ -132,47 +132,27 @@ class AlignmentEditorTaskPanel:
         row_csv.addWidget(self.btn_save_csv)
         root.addLayout(row_csv)
 
-        gb_csv = QtWidgets.QGroupBox("CSV Import Options")
+        gb_csv = QtWidgets.QGroupBox("CSV Column Mapping")
         fcsv = QtWidgets.QFormLayout(gb_csv)
-
-        self.cmb_csv_coord = QtWidgets.QComboBox()
-        self.cmb_csv_coord.addItems(["Use Panel Mode", "Local", "World"])
-        self.cmb_csv_sort = QtWidgets.QComboBox()
-        self.cmb_csv_sort.addItems(["Input Order", "By STA", "By X/Y"])
-        self.cmb_csv_encoding = QtWidgets.QComboBox()
-        self.cmb_csv_encoding.addItems(["Auto", "UTF-8-SIG", "CP949", "UTF-8", "Latin-1"])
-        self.cmb_csv_delim = QtWidgets.QComboBox()
-        self.cmb_csv_delim.addItems(["Auto", "Comma (,)", "Semicolon (;)", "Tab", "Pipe (|)"])
-        self.cmb_csv_header = QtWidgets.QComboBox()
-        self.cmb_csv_header.addItems(["Auto", "Yes", "No"])
-
-        self.chk_csv_drop_dup = QtWidgets.QCheckBox("Drop consecutive duplicates")
-        self.chk_csv_drop_dup.setChecked(True)
-        self.chk_csv_clamp = QtWidgets.QCheckBox("Clamp negative Radius/Ls to 0")
-        self.chk_csv_clamp.setChecked(True)
-        self.chk_csv_end0 = QtWidgets.QCheckBox("Force endpoint Radius/Ls = 0")
-        self.chk_csv_end0.setChecked(True)
 
         self.cmb_csv_map_x = QtWidgets.QComboBox()
         self.cmb_csv_map_y = QtWidgets.QComboBox()
         self.cmb_csv_map_r = QtWidgets.QComboBox()
         self.cmb_csv_map_ls = QtWidgets.QComboBox()
         self.cmb_csv_map_sta = QtWidgets.QComboBox()
+        self.lbl_csv_mapping_note = QtWidgets.QLabel(
+            "CSV delimiter, encoding, header detection, and cleanup rules use automatic defaults.\n"
+            "Set the panel coordinate mode first, then map the CSV columns if needed."
+        )
+        self.lbl_csv_mapping_note.setWordWrap(True)
         self._reset_csv_mapping_combos()
 
-        fcsv.addRow("CSV Coords:", self.cmb_csv_coord)
-        fcsv.addRow("Sort:", self.cmb_csv_sort)
-        fcsv.addRow("Encoding:", self.cmb_csv_encoding)
-        fcsv.addRow("Delimiter:", self.cmb_csv_delim)
-        fcsv.addRow("Has Header:", self.cmb_csv_header)
         fcsv.addRow("Map X:", self.cmb_csv_map_x)
         fcsv.addRow("Map Y:", self.cmb_csv_map_y)
         fcsv.addRow("Map Radius:", self.cmb_csv_map_r)
         fcsv.addRow("Map Transition Ls:", self.cmb_csv_map_ls)
         fcsv.addRow("Map STA (optional):", self.cmb_csv_map_sta)
-        fcsv.addRow(self.chk_csv_drop_dup)
-        fcsv.addRow(self.chk_csv_clamp)
-        fcsv.addRow(self.chk_csv_end0)
+        fcsv.addRow(self.lbl_csv_mapping_note)
         root.addWidget(gb_csv)
 
         row_coord = QtWidgets.QHBoxLayout()
@@ -448,47 +428,24 @@ class AlignmentEditorTaskPanel:
             return None
 
     @staticmethod
-    def _csv_delimiter_value(label: str):
-        s = str(label or "").lower()
-        if "comma" in s:
-            return ","
-        if "semicolon" in s:
-            return ";"
-        if "tab" in s:
-            return "\t"
-        if "pipe" in s:
-            return "|"
+    def _csv_default_delimiter():
         return "auto"
 
-    def _csv_encoding_value(self):
-        t = str(self.cmb_csv_encoding.currentText() or "Auto").strip().lower()
-        if t == "auto":
-            return "auto"
-        return t
-
-    def _csv_header_value(self):
-        t = str(self.cmb_csv_header.currentText() or "Auto").strip().lower()
-        if t.startswith("yes"):
-            return "yes"
-        if t.startswith("no"):
-            return "no"
+    @staticmethod
+    def _csv_default_encoding():
         return "auto"
 
-    def _csv_sort_value(self):
-        t = str(self.cmb_csv_sort.currentText() or "Input Order").strip().lower()
-        if "sta" in t:
-            return "sta"
-        if "x/y" in t or "x" in t:
-            return "xy"
-        return "input"
+    @staticmethod
+    def _csv_default_header():
+        return "auto"
 
-    def _csv_coord_value(self):
-        t = str(self.cmb_csv_coord.currentText() or "Use Panel Mode").strip().lower()
-        if t.startswith("local"):
-            return "local"
-        if t.startswith("world"):
-            return "world"
-        return "panel"
+    def _csv_default_sort(self):
+        sta_col = self._combo_data(self.cmb_csv_map_sta)
+        try:
+            sta_idx = int(sta_col)
+        except Exception:
+            sta_idx = -1
+        return "sta" if sta_idx >= 0 else "input"
 
     def _reset_csv_mapping_combos(self):
         for cmb in (self.cmb_csv_map_x, self.cmb_csv_map_y, self.cmb_csv_map_r, self.cmb_csv_map_ls, self.cmb_csv_map_sta):
@@ -586,8 +543,8 @@ class AlignmentEditorTaskPanel:
         try:
             info = inspect_alignment_csv(
                 path,
-                encoding=self._csv_encoding_value(),
-                delimiter=self._csv_delimiter_value(self.cmb_csv_delim.currentText()),
+                encoding=self._csv_default_encoding(),
+                delimiter=self._csv_default_delimiter(),
             )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Inspect CSV", f"Inspect failed: {ex}")
@@ -651,14 +608,14 @@ class AlignmentEditorTaskPanel:
         try:
             info = read_alignment_csv(
                 path,
-                encoding=self._csv_encoding_value(),
-                delimiter=self._csv_delimiter_value(self.cmb_csv_delim.currentText()),
-                has_header=self._csv_header_value(),
+                encoding=self._csv_default_encoding(),
+                delimiter=self._csv_default_delimiter(),
+                has_header=self._csv_default_header(),
                 mapping=self._build_csv_mapping(),
-                sort_mode=self._csv_sort_value(),
-                drop_consecutive_duplicates=bool(self.chk_csv_drop_dup.isChecked()),
-                clamp_negative=bool(self.chk_csv_clamp.isChecked()),
-                enforce_endpoints=bool(self.chk_csv_end0.isChecked()),
+                sort_mode=self._csv_default_sort(),
+                drop_consecutive_duplicates=True,
+                clamp_negative=True,
+                enforce_endpoints=True,
             )
             rows = list(info.get("rows", []) or [])
         except Exception as ex:
@@ -668,7 +625,7 @@ class AlignmentEditorTaskPanel:
             QtWidgets.QMessageBox.warning(None, "Load from CSV", "CSV must provide at least 2 valid rows.")
             return
 
-        rows_table = self._rows_from_csv_mode_rows(rows, self._csv_coord_value())
+        rows_table = self._rows_from_csv_mode_rows(rows, "panel")
         self._apply_import_rows(rows_table, self.cmb_csv_mode.currentText())
 
         loaded = int(info.get("loaded", len(rows)))
@@ -683,8 +640,8 @@ class AlignmentEditorTaskPanel:
             f"Delimiter: {delim}",
             f"Encoding: {enc}",
             f"Header: {'Yes' if header else 'No'}",
-            f"Sort: {self.cmb_csv_sort.currentText()}",
-            f"CSV Coords: {self.cmb_csv_coord.currentText()}",
+            f"Sort: {'By STA' if self._csv_default_sort() == 'sta' else 'Input Order'}",
+            f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}",
         ]
         if reasons:
             msg_lines.append("")
@@ -711,10 +668,9 @@ class AlignmentEditorTaskPanel:
         if path == "":
             return
 
-        delim = self._csv_delimiter_value(self.cmb_csv_delim.currentText())
-        enc = self._csv_encoding_value()
-        hdr_opt = self._csv_header_value()
-        include_header = hdr_opt != "no"
+        delim = ","
+        enc = "utf-8-sig"
+        include_header = True
         x_header = "E" if self._use_world_mode() else "X"
         y_header = "N" if self._use_world_mode() else "Y"
 

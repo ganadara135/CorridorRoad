@@ -88,6 +88,10 @@ Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
 - `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
 
 Output:
 - `StructureSet` under `01_Inputs/Structures`
@@ -101,9 +105,33 @@ Validation:
 - For `FCStd`, the expected form is `C:/path/model.FCStd#ObjectName`.
 - For `FCStd`, the easiest workflow is `Browse Shape` -> `Pick FCStd Object`.
 - If `Apply` reports `frame source=alignment`, re-run `3D Centerline` and apply the structure set again.
+- If you are testing station-profile-driven structures, load the base structure CSV first, then use `Load Profile CSV`.
+- The lower station-profile table follows the currently selected structure row in the upper table.
 
 ![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
 > Suggested file: `wiki-workflow-04a-structures-editor.png`
+
+## 4B. Typical Section
+1. Run `Typical Section`.
+2. Either enter component rows manually or use `Browse CSV` -> `Load CSV`.
+3. Click `Apply`.
+
+Recommended sample files:
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
+
+Current output:
+- `TypicalSectionTemplate` object under the alignment `Assembly` branch
+- preview wire showing the current top-profile composition
+
+Current notes:
+1. `TypicalSectionTemplate` defines the finished-grade top profile.
+2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
+4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
+5. Pavement totals are stored on the template as `PavementTotalThickness`.
 
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`
@@ -126,8 +154,9 @@ Validation:
 1. Run `Generate Sections`.
 2. Choose mode (`Range` or `Manual`).
 3. If structures should drive extra stations, enable `Use linked StructureSet`.
-4. Configure daylight options if needed.
-5. Click `Generate Sections Now`.
+4. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
+5. Configure daylight options if needed.
+6. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
@@ -138,6 +167,9 @@ Validation:
 - Daylight terrain is assigned when Daylight Auto is enabled.
 - `Merged structure stations` is non-zero when structure records are inside range.
 - `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
+- When station-profile data exists, overlay size can change from one structure section station to the next.
+- When a typical section is active, `SectionSet` should report `schema=2` and `topProfile=typical_section`.
+- When pavement layers are loaded, `SectionSet` should also report a non-zero `PavementTotalThickness`.
 
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections.png)
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
@@ -155,6 +187,8 @@ Output:
 
 Validation:
 - Corridor loft status is OK.
+- Completion dialog shows `Source section schema`, `Top profile source`, and `Points per section`.
+- When pavement layers are loaded, completion dialog also shows `Pavement total thickness`.
 - Design terrain/cut-fill status fields show no blocking error.
 
 ## 7A. How To Reduce Corridor Loft Twisting
@@ -201,6 +235,7 @@ When `Use linked StructureSet` is enabled, structure records participate in sect
 3. Child sections receive structure metadata such as IDs, types, and roles.
 4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
 5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or built with a notch-aware closed-profile schema.
+6. When station-profile control points exist, structure width/height-related values can vary by station and feed 3D structure display, `Structure Sections`, section override behavior, and corridor `notch` handling.
 
 Structure placement diagnostics:
 1. `Edit Structures > Apply` can report `Frame diagnostics`.
@@ -244,6 +279,15 @@ Template structure display:
    - `Structure Sections` overlay shape
 4. Template mode does not yet mean full corridor boolean consumption.
 5. Use `tests/samples/structure_utm_realistic_hilly_template.csv` when you want to test the current template workflow directly.
+
+External-shape earthwork note:
+1. `GeometryMode=external_shape` is currently a display/reference workflow.
+2. `Sections`, `Design Grading Surface`, and `Corridor Loft` still use type-based rules for earthwork.
+3. Use `external_shape` when you need realistic structure appearance and placement, but do not expect the imported STEP/BREP/FCStd solid to define the actual earthwork cut shape yet.
+4. Current type-driven earthwork intent is:
+   - `culvert`, `crossing` -> notch / bench style crossing rules
+   - `retaining_wall` -> one-side retaining-wall rule
+   - `bridge_zone`, `abutment_zone` -> trim / split / skip zone rules
 
 Current notch policy:
 1. `culvert` and `crossing` can switch the corridor loft to a notch-aware closed-profile schema.

@@ -106,6 +106,21 @@ def ensure_design_grading_surface_properties(obj):
     if not hasattr(obj, "SchemaVersion"):
         obj.addProperty("App::PropertyInteger", "SchemaVersion", "Result", "Section schema version used")
         obj.SchemaVersion = 0
+    if not hasattr(obj, "TopProfileSource"):
+        obj.addProperty("App::PropertyString", "TopProfileSource", "Result", "Top-profile source summary")
+        obj.TopProfileSource = "assembly_simple"
+    if not hasattr(obj, "TopProfileEdgeSummary"):
+        obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
+        obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled typical-section pavement layer count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
+        obj.PavementTotalThickness = 0.0
 
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
@@ -227,6 +242,11 @@ class DesignGradingSurface:
                 obj.PointCountPerSection = 0
                 obj.FaceCount = 0
                 obj.SchemaVersion = 0
+                obj.TopProfileSource = "assembly_simple"
+                obj.TopProfileEdgeSummary = "-"
+                obj.PavementLayerCount = 0
+                obj.EnabledPavementLayerCount = 0
+                obj.PavementTotalThickness = 0.0
                 obj.Status = "Missing SourceSectionSet"
                 _mark_recompute_flag(obj, False)
                 return
@@ -243,11 +263,20 @@ class DesignGradingSurface:
             obj.PointCountPerSection = int(pt_count)
             obj.FaceCount = int(quad_count)
             obj.SchemaVersion = int(getattr(src, "SectionSchemaVersion", 0))
+            obj.TopProfileSource = str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple")
+            obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
+            obj.PavementLayerCount = int(getattr(src, "PavementLayerCount", 0) or 0)
+            obj.EnabledPavementLayerCount = int(getattr(src, "EnabledPavementLayerCount", 0) or 0)
+            obj.PavementTotalThickness = float(getattr(src, "PavementTotalThickness", 0.0) or 0.0)
             try:
                 fc = int(getattr(getattr(obj, "Mesh", None), "CountFacets", 0))
             except Exception:
                 fc = 0
-            obj.Status = f"OK (Mesh): quads={quad_count}, facets={fc}"
+            obj.Status = (
+                f"OK (Mesh): quads={quad_count}, facets={fc}, "
+                f"schema={int(obj.SchemaVersion)}, topProfile={obj.TopProfileSource}, "
+                f"topEdges={obj.TopProfileEdgeSummary}, pavement={obj.PavementTotalThickness:.3f}m"
+            )
             _mark_recompute_flag(obj, False)
 
             # Push updates to linked DesignTerrain objects as pending recompute.
@@ -271,6 +300,11 @@ class DesignGradingSurface:
             obj.PointCountPerSection = 0
             obj.FaceCount = 0
             obj.SchemaVersion = 0
+            obj.TopProfileSource = "assembly_simple"
+            obj.TopProfileEdgeSummary = "-"
+            obj.PavementLayerCount = 0
+            obj.EnabledPavementLayerCount = 0
+            obj.PavementTotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"
             _mark_recompute_flag(obj, False)
 

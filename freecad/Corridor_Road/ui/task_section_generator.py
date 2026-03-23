@@ -12,6 +12,7 @@ from freecad.Corridor_Road.objects.obj_assembly_template import (
     ViewProviderAssemblyTemplate,
     ensure_assembly_template_properties,
 )
+from freecad.Corridor_Road.objects.obj_typical_section_template import TypicalSectionTemplate, ViewProviderTypicalSectionTemplate
 from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
@@ -67,11 +68,16 @@ def _find_structure_sets(doc):
     return find_all(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
 
 
+def _find_typical_section_templates(doc):
+    return find_all(doc, proxy_type="TypicalSectionTemplate", name_prefixes=("TypicalSectionTemplate",))
+
+
 class SectionGeneratorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._terrains = []
         self._structures = []
+        self._typicals = []
         self._project = None
         self._coord_mode_initialized = False
         self._loading = False
@@ -181,6 +187,21 @@ class SectionGeneratorTaskPanel:
         form_struct.addRow(self.lbl_struct_note)
         main.addWidget(gb_struct)
 
+        gb_typ = QtWidgets.QGroupBox("Typical Section Integration")
+        form_typ = QtWidgets.QFormLayout(gb_typ)
+        self.chk_use_typical = QtWidgets.QCheckBox("Use Typical Section Template")
+        self.chk_use_typical.setChecked(False)
+        self.cmb_typical_source = QtWidgets.QComboBox()
+        self.lbl_typ_note = QtWidgets.QLabel(
+            "When enabled, the Typical Section Template defines the finished-grade top profile.\n"
+            "Assembly Template still provides corridor depth, side slopes, and daylight defaults."
+        )
+        self.lbl_typ_note.setWordWrap(True)
+        form_typ.addRow(self.chk_use_typical)
+        form_typ.addRow("Typical Section Source:", self.cmb_typical_source)
+        form_typ.addRow(self.lbl_typ_note)
+        main.addWidget(gb_typ)
+
         gb_opt = QtWidgets.QGroupBox("Options")
         form_opts = QtWidgets.QFormLayout(gb_opt)
         self.chk_create_new = QtWidgets.QCheckBox("Create new SectionSet")
@@ -259,6 +280,7 @@ class SectionGeneratorTaskPanel:
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
         self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
+        self.chk_use_typical.toggled.connect(self._update_typical_ui)
         self.chk_struct_transition.toggled.connect(self._update_structure_ui)
         self.chk_struct_transition_auto.toggled.connect(self._update_structure_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
@@ -273,6 +295,7 @@ class SectionGeneratorTaskPanel:
 
         self._update_mode_ui()
         self._update_structure_ui()
+        self._update_typical_ui()
         self._update_side_ui()
         return w
 
@@ -359,6 +382,10 @@ class SectionGeneratorTaskPanel:
         self.chk_struct_tagged_children.setEnabled(on)
         self.chk_struct_apply_overrides.setEnabled(on)
 
+    def _update_typical_ui(self):
+        on = bool(self.chk_use_typical.isChecked())
+        self.cmb_typical_source.setEnabled(on and len(self._typicals) > 0)
+
     def _update_side_ui(self):
         on = bool(self.chk_side.isChecked())
         scale = get_length_scale(self.doc, default=1.0)
@@ -385,6 +412,9 @@ class SectionGeneratorTaskPanel:
     def _format_structure_obj(self, obj):
         return f"[StructureSet] {obj.Label} ({obj.Name})"
 
+    def _format_typical_obj(self, obj):
+        return f"[TypicalSectionTemplate] {obj.Label} ({obj.Name})"
+
     def _fill_combo(self, combo, objects, selected=None):
         combo.clear()
         for i, o in enumerate(objects):
@@ -399,11 +429,14 @@ class SectionGeneratorTaskPanel:
                     break
         combo.setCurrentIndex(idx)
 
-    def _fill_structure_combo(self, combo, objects, selected=None):
+    def _fill_structure_combo(self, combo, objects, selected=None, kind="structure"):
         combo.clear()
         combo.addItem("[None]")
         for o in objects:
-            combo.addItem(self._format_structure_obj(o))
+            if kind == "typical":
+                combo.addItem(self._format_typical_obj(o))
+            else:
+                combo.addItem(self._format_structure_obj(o))
         idx = 0
         if selected is not None:
             for i, o in enumerate(objects):
@@ -423,6 +456,12 @@ class SectionGeneratorTaskPanel:
         if i < 0 or i >= len(self._structures):
             return None
         return self._structures[i]
+
+    def _current_typical_source(self):
+        i = int(self.cmb_typical_source.currentIndex()) - 1
+        if i < 0 or i >= len(self._typicals):
+            return None
+        return self._typicals[i]
 
     def _use_selected_day_terrain(self):
         sel = _selected_terrain_source()
@@ -491,6 +530,7 @@ class SectionGeneratorTaskPanel:
         aln = _find_alignment(self.doc)
         prj = _find_project(self.doc)
         self._structures = _find_structure_sets(self.doc)
+        self._typicals = _find_typical_section_templates(self.doc)
         self._project = prj
         self._apply_default_coord_mode()
         self._update_coord_hint()
@@ -515,6 +555,13 @@ class SectionGeneratorTaskPanel:
         if pref_structure is None and prj is not None and hasattr(prj, "StructureSet"):
             pref_structure = getattr(prj, "StructureSet", None)
         self._fill_structure_combo(self.cmb_structure_source, self._structures, pref_structure)
+
+        pref_typical = None
+        if sec is not None and hasattr(sec, "TypicalSectionTemplate"):
+            pref_typical = getattr(sec, "TypicalSectionTemplate", None)
+        if pref_typical is None and prj is not None and hasattr(prj, "TypicalSectionTemplate"):
+            pref_typical = getattr(prj, "TypicalSectionTemplate", None)
+        self._fill_structure_combo(self.cmb_typical_source, self._typicals, pref_typical, kind="typical")
 
         if sec is not None:
             try:
@@ -544,6 +591,8 @@ class SectionGeneratorTaskPanel:
                     self.chk_include_sccs_keys.setChecked(bool(sec.IncludeAlignmentSCCSStations))
                 if hasattr(sec, "UseStructureSet"):
                     self.chk_use_structure_set.setChecked(bool(sec.UseStructureSet))
+                if hasattr(sec, "UseTypicalSectionTemplate"):
+                    self.chk_use_typical.setChecked(bool(sec.UseTypicalSectionTemplate))
                 if hasattr(sec, "IncludeStructureStartEnd"):
                     self.chk_struct_start_end.setChecked(bool(sec.IncludeStructureStartEnd))
                 if hasattr(sec, "IncludeStructureCenters"):
@@ -605,11 +654,14 @@ class SectionGeneratorTaskPanel:
         msg.append(f"Assembly Template: {'FOUND' if asm else 'NOT FOUND'}")
         msg.append(f"Section Set: {'FOUND' if sec else 'NOT FOUND'}")
         msg.append(f"StructureSet sources: {len(self._structures)} found")
+        msg.append(f"Typical section templates: {len(self._typicals)} found")
         msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
         if pref_terrain is not None:
             msg.append(f"Daylight terrain: {pref_terrain.Label} ({pref_terrain.Name})")
         if pref_structure is not None:
             msg.append(f"Structure source: {pref_structure.Label} ({pref_structure.Name})")
+        if pref_typical is not None:
+            msg.append(f"Typical section source: {pref_typical.Label} ({pref_typical.Name})")
         msg.append(f"Daylight terrain coords: {self.cmb_day_coords.currentText()}")
         msg.append("")
         msg.append("Workflow:")
@@ -617,6 +669,7 @@ class SectionGeneratorTaskPanel:
         msg.append("2) Generate to create/update SectionSet")
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
         msg.append("   - StructureSet integration can merge start/end/center and optional transition stations")
+        msg.append("   - Typical Section Template can replace the simple top-profile width model")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("   - Height Left/Right and other template geometry values are edited in the Assembly Template property editor")
         msg.append("4) Daylight Auto uses Terrain source (Project.Terrain / SectionSet.TerrainMesh, Mesh only)")
@@ -626,6 +679,7 @@ class SectionGeneratorTaskPanel:
         self._update_side_ui()
         self._update_mode_ui()
         self._update_structure_ui()
+        self._update_typical_ui()
 
     def _create_assembly_template(self):
         if self.doc is None:
@@ -703,6 +757,21 @@ class SectionGeneratorTaskPanel:
         self.doc.recompute()
         return asm
 
+    def _resolve_typical_section(self):
+        typ = self._current_typical_source()
+        if typ is not None:
+            return typ
+        typ = _find_first_by_proxy_type(self.doc, "TypicalSectionTemplate")
+        if typ is not None:
+            return typ
+        typ = self.doc.addObject("Part::FeaturePython", "TypicalSectionTemplate")
+        TypicalSectionTemplate(typ)
+        ViewProviderTypicalSectionTemplate(typ.ViewObject)
+        typ.Label = "Typical Section Template"
+        typ.touch()
+        self.doc.recompute()
+        return typ
+
     def _resolve_section_set(self):
         if bool(self.chk_create_new.isChecked()):
             return None
@@ -739,6 +808,7 @@ class SectionGeneratorTaskPanel:
         asm = self._resolve_assembly()
         sec = self._create_or_get_section_set()
         struct_src = self._current_structure_source()
+        typ_src = self._resolve_typical_section() if bool(self.chk_use_typical.isChecked()) else self._current_typical_source()
 
         if bool(self.chk_use_structure_set.isChecked()) and struct_src is None:
             QtWidgets.QMessageBox.warning(
@@ -747,11 +817,22 @@ class SectionGeneratorTaskPanel:
                 "Use StructureSet is enabled, but no StructureSet source is selected.",
             )
             return
+        if bool(self.chk_use_typical.isChecked()) and typ_src is None:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Generate Sections",
+                "Use Typical Section Template is enabled, but no Typical Section source is selected.",
+            )
+            return
 
         try:
             self._set_suspend_recompute(sec, True)
             sec.SourceCenterlineDisplay = src
             sec.AssemblyTemplate = asm
+            if hasattr(sec, "TypicalSectionTemplate"):
+                sec.TypicalSectionTemplate = typ_src
+            if hasattr(sec, "UseTypicalSectionTemplate"):
+                sec.UseTypicalSectionTemplate = bool(self.chk_use_typical.isChecked())
             sec.Mode = self.cmb_mode.currentText()
             sec.StartStation = float(self.spin_start.value())
             sec.EndStation = float(self.spin_end.value())
@@ -817,9 +898,10 @@ class SectionGeneratorTaskPanel:
                 links={
                     "Centerline3DDisplay": src,
                     "AssemblyTemplate": asm,
+                    "TypicalSectionTemplate": typ_src,
                     "SectionSet": sec,
                 },
-                adopt_extra=[src, asm, sec],
+                adopt_extra=[src, asm, typ_src, sec],
             )
 
         n = len(list(getattr(sec, "StationValues", []) or []))
@@ -834,6 +916,8 @@ class SectionGeneratorTaskPanel:
             msg.append(f"Merged structure stations: {struct_count}")
             if bool(self.chk_struct_apply_overrides.isChecked()):
                 msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, '_StructureOverrideHitCount', 0) or 0))}")
+        if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
+            msg.append(f"Typical section source: {typ_src.Label} ({typ_src.Name})")
         QtWidgets.QMessageBox.information(
             None,
             "Generate Sections",

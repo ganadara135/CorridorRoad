@@ -11,6 +11,7 @@ import Part
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
+from freecad.Corridor_Road.objects.obj_typical_section_template import build_top_profile as _build_typical_top_profile
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
@@ -342,6 +343,11 @@ def ensure_section_set_properties(obj):
         obj.addProperty("App::PropertyLink", "SourceCenterlineDisplay", "Sections", "Centerline3DDisplay source link")
     if not hasattr(obj, "AssemblyTemplate"):
         obj.addProperty("App::PropertyLink", "AssemblyTemplate", "Sections", "AssemblyTemplate link")
+    if not hasattr(obj, "TypicalSectionTemplate"):
+        obj.addProperty("App::PropertyLink", "TypicalSectionTemplate", "Sections", "TypicalSectionTemplate link")
+    if not hasattr(obj, "UseTypicalSectionTemplate"):
+        obj.addProperty("App::PropertyBool", "UseTypicalSectionTemplate", "Sections", "Use TypicalSectionTemplate as primary top-profile source")
+        obj.UseTypicalSectionTemplate = False
     if not hasattr(obj, "TerrainMesh"):
         obj.addProperty("App::PropertyLink", "TerrainMesh", "Sections", "Optional terrain source link for daylight (Mesh only)")
     if not hasattr(obj, "TerrainMeshCoords"):
@@ -431,6 +437,21 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "SectionSchemaVersion"):
         obj.addProperty("App::PropertyInteger", "SectionSchemaVersion", "Result", "Section schema version")
         obj.SectionSchemaVersion = 1
+    if not hasattr(obj, "TopProfileSource"):
+        obj.addProperty("App::PropertyString", "TopProfileSource", "Result", "Top-profile source summary")
+        obj.TopProfileSource = "assembly_simple"
+    if not hasattr(obj, "TopProfileEdgeSummary"):
+        obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
+        obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled typical-section pavement layer count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
+        obj.PavementTotalThickness = 0.0
     if not hasattr(obj, "SectionCount"):
         obj.addProperty("App::PropertyInteger", "SectionCount", "Result", "Section count")
         obj.SectionCount = 0
@@ -554,9 +575,17 @@ class SectionSet:
         if not active:
             return ctx
 
+        resolved_active = []
+        for rec in list(active or []):
+            try:
+                resolved = StructureSetSource.resolve_profile_at_station(ss, rec, float(station))
+                resolved_active.append(resolved if resolved else rec)
+            except Exception:
+                resolved_active.append(rec)
+
         ctx["HasStructure"] = True
-        ctx["ActiveRecords"] = list(active)
-        ctx["OverlayRecords"] = list(active)
+        ctx["ActiveRecords"] = list(resolved_active)
+        ctx["OverlayRecords"] = list(resolved_active)
         try:
             station_items, _sk, _so = SectionSet._resolve_structure_station_items(
                 obj,
@@ -581,7 +610,7 @@ class SectionSet:
             return ctx
 
         scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-        for rec in active:
+        for rec in resolved_active:
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
             if mode not in ("section_overlay", "assembly_override"):
                 continue
@@ -870,6 +899,14 @@ class SectionSet:
         src = getattr(section_obj, "SourceCenterlineDisplay", None)
         if src is None:
             return None
+        struct_src = _resolve_structure_source(section_obj)
+        try:
+            if struct_src is not None and str(rec.get("Id", "") or "").strip():
+                resolved = StructureSetSource.resolve_profile_at_station(struct_src, rec, float(station))
+                if resolved:
+                    rec = resolved
+        except Exception:
+            pass
         scale = get_length_scale(getattr(section_obj, "Document", None), default=1.0)
         frame = Centerline3D.frame_at_station(src, float(station), eps=0.1 * scale, prev_n=None)
         p = frame["point"]
@@ -1273,6 +1310,8 @@ class SectionSet:
         use_daylight: bool = False,
         structure_context=None,
         apply_structure_overrides: bool = False,
+        typical_section_obj=None,
+        use_typical_section: bool = False,
     ):
         scale = get_length_scale(getattr(source_obj, "Document", None), default=1.0)
         stub_side_w = max(0.01, 0.01 * scale)
@@ -1390,11 +1429,27 @@ class SectionSet:
         prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
         prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
 
-        dz_l = -lw * ls / 100.0
-        dz_r = -rw * rs / 100.0
+        top_pts = None
+        p_l = None
+        p_r = None
+        if bool(use_typical_section) and typical_section_obj is not None:
+            try:
+                local_pts = list(_build_typical_top_profile(typical_section_obj) or [])
+                if len(local_pts) >= 2:
+                    top_pts = [p + n * float(lp.x) + z * float(lp.y) for lp in local_pts]
+                    p_l = top_pts[0]
+                    p_r = top_pts[-1]
+            except Exception:
+                top_pts = None
+                p_l = None
+                p_r = None
 
-        p_l = p + n * lw + z * dz_l
-        p_r = p - n * rw + z * dz_r
+        if top_pts is None:
+            dz_l = -lw * ls / 100.0
+            dz_r = -rw * rs / 100.0
+            p_l = p + n * lw + z * dz_l
+            p_r = p - n * rw + z * dz_r
+            top_pts = [p_l, p, p_r]
 
         lss_eff = float(lss)
         rss_eff = float(rss)
@@ -1403,7 +1458,7 @@ class SectionSet:
         if use_day_right:
             rss_eff = SectionSet._daylight_signed_slope(p_r, rss, terrain_sampler)
 
-        pts = [p_l, p, p_r]
+        pts = list(top_pts)
         resolved_left_w = None
         resolved_right_w = None
         if use_ss and lsw > 1e-9:
@@ -1462,6 +1517,7 @@ class SectionSet:
     def build_section_wires(obj):
         src = getattr(obj, "SourceCenterlineDisplay", None)
         asm = getattr(obj, "AssemblyTemplate", None)
+        typ = getattr(obj, "TypicalSectionTemplate", None) if hasattr(obj, "TypicalSectionTemplate") else None
         if src is None:
             raise Exception("SourceCenterlineDisplay is missing.")
         if asm is None:
@@ -1505,6 +1561,7 @@ class SectionSet:
         prev_n = None
         prev_day_widths = {"left": None, "right": None}
         override_hits = 0
+        use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and typ is not None
         for s in stations:
             structure_context = None
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
@@ -1527,6 +1584,8 @@ class SectionSet:
                     use_daylight=use_day,
                     structure_context=structure_context,
                     apply_structure_overrides=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                    typical_section_obj=typ,
+                    use_typical_section=use_typ,
                 )
             except Exception:
                 # Per-station fail-safe: fall back to fixed-width side slopes.
@@ -1540,6 +1599,8 @@ class SectionSet:
                     use_daylight=False,
                     structure_context=structure_context,
                     apply_structure_overrides=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                    typical_section_obj=typ,
+                    use_typical_section=use_typ,
                 )
             wires.append(w)
         try:
@@ -1746,10 +1807,25 @@ class SectionSet:
             use_ss = bool(getattr(asm, "UseSideSlopes", False)) if asm is not None else False
             left_on = float(getattr(asm, "LeftSideWidth", 0.0)) > 1e-9 if asm is not None else False
             right_on = float(getattr(asm, "RightSideWidth", 0.0)) > 1e-9 if asm is not None else False
+            use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and getattr(obj, "TypicalSectionTemplate", None) is not None
             # Schema contract:
-            # - v1: 3 points (Left->Center->Right)
-            # - v2: side-slope extended profile (>=3 points)
-            obj.SectionSchemaVersion = 2 if (use_ss and (left_on or right_on)) else 1
+            # - v1: simple 3-point profile (Left->Center->Right)
+            # - v2: extended/open profile with additional break points
+            obj.SectionSchemaVersion = 2 if (use_typ or (use_ss and (left_on or right_on))) else 1
+            obj.TopProfileSource = "typical_section" if use_typ else "assembly_simple"
+            if use_typ:
+                typ = getattr(obj, "TypicalSectionTemplate", None)
+                left_edge = str(getattr(typ, "LeftEdgeComponentType", "") or "-")
+                right_edge = str(getattr(typ, "RightEdgeComponentType", "") or "-")
+                obj.TopProfileEdgeSummary = f"{left_edge}/{right_edge}"
+                obj.PavementLayerCount = int(getattr(typ, "PavementLayerCount", 0) or 0)
+                obj.EnabledPavementLayerCount = int(getattr(typ, "EnabledPavementLayerCount", 0) or 0)
+                obj.PavementTotalThickness = float(getattr(typ, "PavementTotalThickness", 0.0) or 0.0)
+            else:
+                obj.TopProfileEdgeSummary = "-"
+                obj.PavementLayerCount = 0
+                obj.EnabledPavementLayerCount = 0
+                obj.PavementTotalThickness = 0.0
             stations = SectionSet.resolve_station_values(obj)
             obj.StationValues = stations
             obj.SectionCount = len(stations)
@@ -1828,6 +1904,11 @@ class SectionSet:
                 obj.Status = "WARN: Terrain source found but daylight sampler failed. Fixed side widths used."
             else:
                 obj.Status = "OK"
+            obj.Status = f"{obj.Status} | schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}"
+            obj.Status = f"{obj.Status} | topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+            obj.Status = f"{obj.Status} | topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}"
+            if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                obj.Status = f"{obj.Status} | pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
             if bool(getattr(obj, "UseStructureSet", False)) and _resolve_structure_source(obj) is None:
                 obj.Status = f"{obj.Status} | StructureSet missing"
             elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
@@ -1848,6 +1929,10 @@ class SectionSet:
         except Exception as ex:
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
+            obj.TopProfileEdgeSummary = "-"
+            obj.PavementLayerCount = 0
+            obj.EnabledPavementLayerCount = 0
+            obj.PavementTotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -1856,6 +1941,8 @@ class SectionSet:
         if prop in (
             "SourceCenterlineDisplay",
             "AssemblyTemplate",
+            "TypicalSectionTemplate",
+            "UseTypicalSectionTemplate",
             "TerrainMesh",
             "TerrainMeshCoords",
             "DaylightAuto",

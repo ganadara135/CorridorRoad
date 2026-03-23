@@ -54,6 +54,27 @@ def _merge_station_spans(spans, tol: float = 1e-6):
     return [(float(a), float(b), str(m)) for a, b, m in out]
 
 
+def _resolve_corridor_record_at_station(src, rec, station: float):
+    try:
+        ss = _resolve_structure_source(src)
+        if ss is None:
+            return dict(rec or {})
+        resolved = StructureSetSource.resolve_profile_at_station(ss, rec, float(station))
+        return dict(resolved or rec or {})
+    except Exception:
+        return dict(rec or {})
+
+
+def _resolve_corridor_record_span(src, rec, station_from: float, station_to: float):
+    try:
+        ss = _resolve_structure_source(src)
+        if ss is None:
+            return []
+        return list(StructureSetSource.resolve_profile_span(ss, rec, float(station_from), float(station_to)) or [])
+    except Exception:
+        return []
+
+
 def _mark_recompute_flag(obj, needed: bool):
     try:
         if hasattr(obj, "NeedsRecompute"):
@@ -107,6 +128,15 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "UseRuled"):
         obj.addProperty("App::PropertyBool", "UseRuled", "Corridor", "Use ruled loft")
         obj.UseRuled = False
+
+    if not hasattr(obj, "AutoUseRuledForTypicalSection"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "AutoUseRuledForTypicalSection",
+            "Corridor",
+            "Automatically prefer ruled loft when Typical Section profiles include richer edge breaks",
+        )
+        obj.AutoUseRuledForTypicalSection = True
 
     if not hasattr(obj, "MinSectionSpacing"):
         obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for loft input (m)")
@@ -229,6 +259,23 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "ResolvedHeightRight"):
         obj.addProperty("App::PropertyFloat", "ResolvedHeightRight", "Result", "Resolved right depth used for solid")
         obj.ResolvedHeightRight = 0.0
+
+    if not hasattr(obj, "ResolvedRuledMode"):
+        obj.addProperty("App::PropertyString", "ResolvedRuledMode", "Result", "Resolved ruled-loft mode")
+        obj.ResolvedRuledMode = "off"
+
+    if not hasattr(obj, "TopProfileEdgeSummary"):
+        obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
+        obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "PavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
+        obj.PavementLayerCount = 0
+    if not hasattr(obj, "EnabledPavementLayerCount"):
+        obj.addProperty("App::PropertyInteger", "EnabledPavementLayerCount", "Result", "Enabled typical-section pavement layer count")
+        obj.EnabledPavementLayerCount = 0
+    if not hasattr(obj, "PavementTotalThickness"):
+        obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
+        obj.PavementTotalThickness = 0.0
 
     try:
         if hasattr(obj, "OutputType"):
@@ -426,6 +473,73 @@ class CorridorLoft:
             pass
 
         raise Exception("Valid HeightLeft/HeightRight are required for Solid output.")
+
+    @staticmethod
+    def _typical_edge_types(src):
+        try:
+            if src is None or not bool(getattr(src, "UseTypicalSectionTemplate", False)):
+                return []
+            typ = getattr(src, "TypicalSectionTemplate", None)
+            if typ is None:
+                return []
+            out = []
+            for v in (
+                getattr(typ, "LeftEdgeComponentType", ""),
+                getattr(typ, "RightEdgeComponentType", ""),
+            ):
+                s = str(v or "").strip().lower()
+                if s:
+                    out.append(s)
+            return out
+        except Exception:
+            return []
+
+    @staticmethod
+    def _resolve_ruled_mode(obj, src, pt_count: int):
+        manual = bool(getattr(obj, "UseRuled", False))
+        if manual:
+            return True, "manual"
+
+        if not bool(getattr(obj, "AutoUseRuledForTypicalSection", True)):
+            return False, "off"
+
+        if str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") != "typical_section":
+            return False, "off"
+
+        edge_types = set(CorridorLoft._typical_edge_types(src))
+        rich_edges = bool(edge_types.intersection({"curb", "ditch", "bench", "gutter"}))
+        if rich_edges:
+            return True, "auto:typical_edges"
+        if int(pt_count) >= 7:
+            return True, "auto:point_count"
+        return False, "off"
+
+    @staticmethod
+    def _should_retry_with_ruled(src, ruled: bool):
+        if bool(ruled):
+            return False
+        return str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") == "typical_section"
+
+    @staticmethod
+    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True):
+        retry_used = False
+        if ranges:
+            try:
+                shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=ruled, solid=solid)
+                return shape, failed_ranges, retry_used
+            except Exception:
+                if CorridorLoft._should_retry_with_ruled(src, ruled):
+                    shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=True, solid=solid)
+                    return shape, failed_ranges, True
+                raise
+        try:
+            shape = CorridorLoft._loft(wires, ruled=ruled, solid=solid)
+            return shape, [], retry_used
+        except Exception:
+            if CorridorLoft._should_retry_with_ruled(src, ruled):
+                shape = CorridorLoft._loft(wires, ruled=True, solid=solid)
+                return shape, [], True
+            raise
 
     @staticmethod
     def _loft(wires, ruled: bool, solid: bool = True):
@@ -733,8 +847,13 @@ class CorridorLoft:
             mode = str(rec.get("ResolvedCorridorMode", "") or "").strip().lower()
             if mode != "notch":
                 continue
-            spec = CorridorLoft._structure_notch_spec(rec, scale)
             rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
+            midpoint_station = 0.5 * (
+                float(rec.get("ResolvedStartStation", rec.get("StartStation", 0.0)) or 0.0)
+                + float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
+            )
+            resolved_mid = _resolve_corridor_record_at_station(src, rec, midpoint_station)
+            spec = CorridorLoft._structure_notch_spec(resolved_mid, scale)
             if not bool(spec.get("Enabled", False)):
                 notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                 continue
@@ -745,7 +864,11 @@ class CorridorLoft:
                 transition=float(getattr(src, "StructureTransitionDistance", 0.0) or 0.0),
             )
             trans = max(0.0, float(trans) * max(0.01, float(notch_transition_scale)))
-            local = dict(rec)
+            local = dict(resolved_mid)
+            local["ResolvedStartStation"] = float(rec.get("ResolvedStartStation", rec.get("StartStation", 0.0)) or 0.0)
+            local["ResolvedEndStation"] = float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
+            local["ResolvedCorridorMode"] = str(rec.get("ResolvedCorridorMode", "") or "")
+            local["ResolvedCorridorMargin"] = float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0)
             local["_notch_spec"] = spec
             local["_transition"] = trans
             eligible.append(local)
@@ -782,6 +905,13 @@ class CorridorLoft:
             if best is None:
                 rows.append({"Mode": "default", "Ramp": 0.0, "Record": None})
             else:
+                resolved_best = _resolve_corridor_record_at_station(src, best, ss)
+                resolved_best["ResolvedStartStation"] = float(best.get("ResolvedStartStation", best.get("StartStation", 0.0)) or 0.0)
+                resolved_best["ResolvedEndStation"] = float(best.get("ResolvedEndStation", best.get("EndStation", 0.0)) or 0.0)
+                resolved_best["ResolvedCorridorMode"] = str(best.get("ResolvedCorridorMode", "") or "")
+                resolved_best["ResolvedCorridorMargin"] = float(best.get("ResolvedCorridorMargin", 0.0) or 0.0)
+                resolved_best["_transition"] = float(best.get("_transition", 0.0) or 0.0)
+                resolved_best["_notch_spec"] = CorridorLoft._structure_notch_spec(resolved_best, scale)
                 roles = []
                 if best_ramp >= 1.0 - 1e-6:
                     roles.append("active")
@@ -793,7 +923,7 @@ class CorridorLoft:
                     {
                         "Mode": "notch",
                         "Ramp": max(tiny_ramp, float(best_ramp)),
-                        "Record": best,
+                        "Record": resolved_best,
                         "Roles": roles,
                     }
                 )
@@ -919,31 +1049,58 @@ class CorridorLoft:
                     notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                     continue
                 mg = max(0.0, float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0))
-                local["Width"] = float(spec.get("Width", local.get("Width", 0.0) or 0.0) or 0.0)
-                local["Height"] = float(spec.get("Height", local.get("Height", 0.0) or 0.0) or 0.0)
-                long_pad = max(0.0, float(spec.get("LongPad", 0.0) or 0.0))
-                local["StartStation"] = max(0.0, float(rec.get("ResolvedStartStation", 0.0) or 0.0) - mg - long_pad)
-                local["EndStation"] = min(total, float(rec.get("ResolvedEndStation", 0.0) or 0.0) + mg + long_pad)
-                if float(local["EndStation"]) < float(local["StartStation"]):
-                    local["StartStation"], local["EndStation"] = local["EndStation"], local["StartStation"]
-                sta = max(0.0, min(total, 0.5 * (float(local["StartStation"]) + float(local["EndStation"]))))
-                p = _resolve_structure_station_point(src, sta, aln=aln)
-                if abs(float(local.get("BottomElevation", 0.0) or 0.0)) > 1e-9:
-                    local["BottomElevation"] = float(local.get("BottomElevation", 0.0) or 0.0) - float(spec.get("BottomExtra", 0.0) or 0.0)
-                try:
-                    from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-
-                    t = HorizontalAlignment.tangent_at_station(aln, sta)
-                    n = HorizontalAlignment.normal_at_station(aln, sta)
-                except Exception:
-                    t = App.Vector(1, 0, 0)
-                    n = App.Vector(0, 1, 0)
+                base_s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
+                base_s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
+                span_rows = _resolve_corridor_record_span(src, rec, base_s0, base_s1)
+                if len(span_rows) < 2:
+                    span_rows = [
+                        _resolve_corridor_record_at_station(src, rec, base_s0),
+                        _resolve_corridor_record_at_station(src, rec, base_s1),
+                    ]
                 built = 0
-                for off in _structure_side_offsets(local):
-                    solid = _structure_record_solid(p + (n * float(off)), t, n, local)
-                    if solid is not None and not solid.isNull():
-                        cutters.append(solid)
-                        built += 1
+                for i in range(max(0, len(span_rows) - 1)):
+                    a = span_rows[i]
+                    b = span_rows[i + 1]
+                    ss0 = float(a.get("ResolvedProfileStation", base_s0) or base_s0)
+                    ss1 = float(b.get("ResolvedProfileStation", base_s1) or base_s1)
+                    if ss1 < ss0:
+                        ss0, ss1 = ss1, ss0
+                    if ss1 <= ss0 + 1e-9:
+                        continue
+                    sm = 0.5 * (ss0 + ss1)
+                    local_seg = _resolve_corridor_record_at_station(src, rec, sm)
+                    seg_spec = CorridorLoft._structure_notch_spec(local_seg, scale)
+                    if not bool(seg_spec.get("Enabled", False)):
+                        continue
+                    long_pad = max(0.0, float(seg_spec.get("LongPad", 0.0) or 0.0))
+                    seg_s0 = ss0
+                    seg_s1 = ss1
+                    if i == 0:
+                        seg_s0 = max(0.0, seg_s0 - mg - long_pad)
+                    if i == (len(span_rows) - 2):
+                        seg_s1 = min(total, seg_s1 + mg + long_pad)
+                    local_seg["Width"] = float(seg_spec.get("Width", local_seg.get("Width", 0.0) or 0.0) or 0.0)
+                    local_seg["Height"] = float(seg_spec.get("Height", local_seg.get("Height", 0.0) or 0.0) or 0.0)
+                    local_seg["StartStation"] = float(seg_s0)
+                    local_seg["EndStation"] = float(seg_s1)
+                    local_seg["CenterStation"] = float(0.5 * (seg_s0 + seg_s1))
+                    if abs(float(local_seg.get("BottomElevation", 0.0) or 0.0)) > 1e-9:
+                        local_seg["BottomElevation"] = float(local_seg.get("BottomElevation", 0.0) or 0.0) - float(seg_spec.get("BottomExtra", 0.0) or 0.0)
+                    sta = max(0.0, min(total, float(local_seg["CenterStation"])))
+                    p = _resolve_structure_station_point(src, sta, aln=aln)
+                    try:
+                        from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
+
+                        t = HorizontalAlignment.tangent_at_station(aln, sta)
+                        n = HorizontalAlignment.normal_at_station(aln, sta)
+                    except Exception:
+                        t = App.Vector(1, 0, 0)
+                        n = App.Vector(0, 1, 0)
+                    for off in _structure_side_offsets(local_seg):
+                        solid = _structure_record_solid(p + (n * float(off)), t, n, local_seg)
+                        if solid is not None and not solid.isNull():
+                            cutters.append(solid)
+                            built += 1
                 if built <= 0:
                     notes.append(f"{rid}: notch cutter skipped")
             except Exception as ex:
@@ -1033,6 +1190,11 @@ class CorridorLoft:
                 obj.SkipMarkerCount = 0
                 obj.ResolvedHeightLeft = 0.0
                 obj.ResolvedHeightRight = 0.0
+                obj.ResolvedRuledMode = "off"
+                obj.TopProfileEdgeSummary = "-"
+                obj.PavementLayerCount = 0
+                obj.EnabledPavementLayerCount = 0
+                obj.PavementTotalThickness = 0.0
                 obj.Status = "Missing SourceSectionSet"
                 _mark_recompute_flag(obj, False)
                 return
@@ -1049,9 +1211,13 @@ class CorridorLoft:
                 schema,
                 auto_fix_orientation,
             )
-            ruled = bool(getattr(obj, "UseRuled", False))
             h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
             loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
+            ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
+            obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
+            obj.PavementLayerCount = int(getattr(src, "PavementLayerCount", 0) or 0)
+            obj.EnabledPavementLayerCount = int(getattr(src, "EnabledPavementLayerCount", 0) or 0)
+            obj.PavementTotalThickness = float(getattr(src, "PavementTotalThickness", 0.0) or 0.0)
             closed_profile_schema = 1
             split_count = 0
             split_station_rows = []
@@ -1111,12 +1277,18 @@ class CorridorLoft:
             failed_ranges = []
             skip_marker_count = 0
             try:
-                if use_segmented_ranges:
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
-                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
-                    )
-                else:
-                    shape = CorridorLoft._loft(loft_wires, ruled=ruled, solid=True)
+                shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                    loft_wires,
+                    stations,
+                    structure_ranges if use_segmented_ranges else [],
+                    ruled=ruled,
+                    src=src,
+                    solid=True,
+                )
+                if retry_used and str(ruled_mode or "off") == "off":
+                    ruled_mode = "retry:typical_section"
+                elif retry_used:
+                    ruled_mode = f"{ruled_mode}+retry"
                 if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
@@ -1131,14 +1303,14 @@ class CorridorLoft:
                         f"({len(failed_ranges)} failed ranges) | "
                         f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                         f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)}"
+                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                     )
                 else:
                     status = (
                         "OK (Solid) "
                         f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                         f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)}"
+                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                     )
                 if split_count >= 2:
                     status += f" structureSegs={int(split_count)}"
@@ -1152,17 +1324,35 @@ class CorridorLoft:
                     status += f" notchStations={int(notch_station_count)}"
                 if closed_profile_schema > 1:
                     status += f" profileSchema={int(closed_profile_schema)}"
+                status += f" srcSchema={int(schema)}"
+                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
+                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
             except Exception as ex:
                 if use_segmented_ranges:
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
-                        loft_wires, stations, structure_ranges, ruled=ruled, solid=True
+                    shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                        loft_wires,
+                        stations,
+                        structure_ranges,
+                        ruled=ruled,
+                        src=src,
+                        solid=True,
                     )
                 else:
                     shape, failed_ranges = CorridorLoft._loft_adaptive(
-                        loft_wires, stations, ruled=ruled, solid=True
+                        loft_wires,
+                        stations,
+                        ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
+                        solid=True,
                     )
+                    retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
+                if retry_used and str(ruled_mode or "off") == "off":
+                    ruled_mode = "retry:typical_section"
+                elif retry_used:
+                    ruled_mode = f"{ruled_mode}+retry"
                 if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
                     notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
                     if notch_notes:
@@ -1176,7 +1366,7 @@ class CorridorLoft:
                     f"({len(failed_ranges)} failed ranges): {ex} | "
                     f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
                     f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                    f"autoFixed={int(fixed_count)}"
+                    f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
                 )
                 if split_count >= 2:
                     status += f" structureSegs={int(split_count)}"
@@ -1190,6 +1380,11 @@ class CorridorLoft:
                     status += f" notchStations={int(notch_station_count)}"
                 if closed_profile_schema > 1:
                     status += f" profileSchema={int(closed_profile_schema)}"
+                status += f" srcSchema={int(schema)}"
+                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
+                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
+                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
                 if notch_failures:
                     status += f" notchWarn={len(notch_failures)}"
 
@@ -1208,6 +1403,7 @@ class CorridorLoft:
             obj.SkipMarkerCount = int(skip_marker_count)
             obj.ResolvedHeightLeft = float(h_left)
             obj.ResolvedHeightRight = float(h_right)
+            obj.ResolvedRuledMode = str(ruled_mode)
             obj.Status = status
             _mark_recompute_flag(obj, False)
 
@@ -1231,6 +1427,11 @@ class CorridorLoft:
             obj.SkipMarkerCount = 0
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0
+            obj.ResolvedRuledMode = "off"
+            obj.TopProfileEdgeSummary = "-"
+            obj.PavementLayerCount = 0
+            obj.EnabledPavementLayerCount = 0
+            obj.PavementTotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"
             _mark_recompute_flag(obj, False)
 

@@ -100,6 +100,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Purpose: structure data source + 3D/reference display geometry.
 - Owns:
   - structure record arrays
+  - optional station-profile arrays (`ProfileStructureIds`, `ProfileStations`, `ProfileOffsets`, `ProfileWidths`, `ProfileHeights`, ...)
   - geometry fields (`GeometryMode`, `TemplateName`, `ShapeSourcePath`, `ScaleFactor`, `PlacementMode`, `UseSourceBaseAsBottom`)
   - result diagnostics (`ResolvedShapeSourceKinds`, `ResolvedShapeStatusNotes`, `ResolvedFrameSources`, `ResolvedFrameStatusNotes`, `Status`)
 - Geometry modes:
@@ -119,12 +120,25 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - prefer `Centerline3D.frame_at_station(...)`
   - alignment frame is fallback only
   - centerline regeneration should trigger `StructureSet` recompute
+- Station-profile rule:
+  - `resolve_profile_at_station(...)` and `resolve_profile_span(...)` are the shared API for variable-size structure consumption
+  - current runtime consumers:
+    - 3D structure display
+    - `Structure Sections` overlays
+    - section overrides / earthwork
+    - corridor `notch` handling
+  - profile-driven 3D display currently prefers section-wire loft between resolved profile stations and only falls back to segment solids when lofting fails
+- Earthwork rule:
+  - `external_shape` currently affects display/reference placement only
+  - section overrides, grading surface generation, and corridor structure handling must continue to use structure `Type` plus simple dimensional metadata
+  - do not assume imported STEP/BREP/FCStd solids are directly consumed by earthwork
 
 ### 2.8 SectionSet (`freecad/Corridor_Road/objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
 - Inputs:
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
+  - `TypicalSectionTemplate` (optional, component-based top profile)
   - optional `TerrainMesh` (for daylight-to-terrain, Mesh only)
   - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
@@ -142,10 +156,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `IncludeTransitionStations`, `AutoTransitionDistance`, `TransitionDistance`
     - `CreateStructureTaggedChildren`, `ApplyStructureOverrides`
 - Results:
-  - `StationValues`, `SectionSchemaVersion`, `SectionCount`, `Status`
+  - `StationValues`, `SectionSchemaVersion`, `TopProfileSource`, `SectionCount`, `Status`
   - schema policy:
     - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
-    - `SectionSchemaVersion=2`: side-slope extended section (>=3 points)
+    - `SectionSchemaVersion=2`: extended/open profile (side slopes and/or Typical Section break points)
 - daylight runtime status:
   - `WARN: UseDaylightToTerrain=True but no terrain source found...`
   - `WARN: Terrain source found but daylight sampler failed...`
@@ -157,6 +171,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - wide-triangle bucket guard to avoid bucket blow-up
 - daylight continuity policy:
   - neighboring section daylight widths should be smoothed/clamped by `DaylightMaxWidthDelta` to reduce abrupt loft twists.
+- structure-earthwork rule:
+  - structure overrides are type-driven and simplified
+  - `external_shape` does not yet define the true section-cutting profile
+  - when station-profile control points exist, section overlays and section overrides should consume resolved profile values at the active station
 - Optional tree children:
   - `SectionSlice` objects under `Group`
   - `Structure Sections` overlay objects for structure-only section visualization
@@ -200,6 +218,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - transition stations can drive ramped notch entry/exit
   - result reporting should expose notch-aware station count and closed-profile schema version
   - boolean cut remains optional and is not required for the first notch-capable workflow
+  - when station-profile control points exist, notch width/height-related values should consume resolved profile values along the active span
+- External-shape relation:
+  - corridor structure handling is derived from `ResolvedCorridorMode`, structure type, and simplified dimensions
+  - `external_shape` is not yet used as a direct boolean cutter or loft-profile source for earthwork
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
@@ -210,6 +232,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Purpose: visual grading surface (road top + side slopes/daylight) from `SectionSet`.
 - Inputs:
   - `SourceSectionSet`
+- Earthwork/source rule:
+  - consumes section wires rebuilt from `SectionSet`
+  - does not directly consume the real `external_shape` solid
+  - therefore follows the same structure `Type`-based simplification policy used by section overrides
 - Controls:
   - `AutoUpdate`, `RebuildNow`
 - Results:
@@ -391,6 +417,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optional key-station injection in range mode (`Include Alignment IP Key Stations`, `Include Alignment TS/SC/CS/ST Key Stations`)
   - optional structure-station merge from linked `StructureSet`
   - transition-station insertion around structure boundaries
+  - optional `Typical Section Template` source for finished-grade top profile
   - create/update `SectionSet`
   - optional side slopes + terrain-daylight (Stage-2, Mesh source only)
   - daylight terrain coordinate mode selection (`Local`/`World`)
@@ -398,6 +425,30 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - optionally create child sections per station in tree
   - `Close` closes dialog only (no generation)
   - generation action is `Generate Sections Now` button
+
+### 3.5B Typical Section (`freecad/Corridor_Road/commands/cmd_edit_typical_section.py`, `freecad/Corridor_Road/ui/task_typical_section_editor.py`)
+- Creates/updates `TypicalSectionTemplate`
+- Supports component-table editing and direct CSV import
+- Supports pavement-layer table editing and direct pavement CSV import
+- Current CSV columns:
+  - `Id`, `Type`, `Side`, `Width`, `CrossSlopePct`, `Height`, `Offset`, `Order`, `Enabled`
+- Current pavement CSV columns:
+  - `Id`, `Type`, `Thickness`, `Enabled`
+- Current sample CSVs:
+  - `typical_section_basic_rural.csv`
+  - `typical_section_urban_complete_street.csv`
+  - `typical_section_with_ditch.csv`
+  - `typical_section_pavement_basic.csv`
+- Current component notes:
+  - `curb` = vertical step + top width
+  - `ditch` = V-like sag break
+  - `bench` = flat platform segment
+- Current pavement notes:
+  - pavement layers are data-first, not separate corridor solids yet
+  - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`
+  - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary for downstream reporting
+- execution-plan/status document:
+  - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
 ### 3.5A Edit Structures (`freecad/Corridor_Road/ui/task_structure_editor.py`)
 - Station columns are driven by generated `Stationing` values.

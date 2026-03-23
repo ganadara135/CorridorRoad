@@ -116,6 +116,126 @@ Practical notes:
 > [Screenshot Needed] Edit Structures panel loading a structure CSV file.
 > Suggested file: `wiki-csv-structure-import-panel.png`
 
+## 3A. Structure Station-Profile CSV
+
+This is an advanced companion CSV format for variable-size structures.
+
+Current workflow:
+- `Edit Structures` now supports a two-table workflow.
+- Load the base structure CSV first.
+- Then use `Browse Profile CSV` -> `Load Profile CSV`.
+- The lower table shows the station-profile rows for the currently selected structure.
+
+Recommended header:
+`StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount`
+
+Example:
+```csv
+StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount
+CULV-V01,120.000,0.000,4.000,2.000,103.300,0.000,0.280,0.000,0.000,0.050,1
+CULV-V01,150.000,0.000,6.000,2.600,103.100,0.000,0.320,0.000,0.000,0.120,2
+CULV-V01,180.000,0.000,3.800,1.900,102.950,0.000,0.260,0.000,0.000,0.050,1
+RW-V01,265.000,7.500,0.550,2.800,101.900,0.000,0.320,2.200,0.450,0.120,1
+RW-V01,305.000,8.250,0.700,5.000,101.650,0.000,0.420,3.000,0.600,0.220,1
+RW-V01,345.000,9.000,0.600,3.400,101.450,0.000,0.360,2.400,0.500,0.120,1
+```
+
+How it is used:
+1. Each `StructureId` must match a row in the main structure CSV.
+2. At least two profile points are recommended for a variable structure.
+3. Profile rows for the same structure should be in ascending station order.
+4. Duplicate stations for the same structure should be avoided.
+
+Current runtime consumption:
+1. 3D structure display uses station-profile values.
+2. `Structure Sections` overlay objects use station-profile values.
+3. Section overrides and earthwork use station-profile values.
+4. Corridor `notch` handling uses station-profile values.
+
+Current limits:
+1. `CellCount` is treated as a step/nearest value, not a continuously interpolated value.
+2. `skip_zone` and `split_only` still follow the base structure span (`StartStation`/`EndStation`) rather than profile-point-derived span changes.
+3. The current runtime builds variable structures as profile-driven segments, not as a fully continuous taper loft.
+
+Recommended sample files:
+- `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
+
+> [Screenshot Needed] Structure Sections overlays showing station-profile-driven size changes.
+> Suggested file: `wiki-csv-structure-station-profile-overlays.png`
+
+## 3B. Typical Section CSV
+
+`Typical Section` now supports direct CSV import.
+
+Current workflow:
+1. Open `Typical Section`
+2. `Browse CSV`
+3. `Load CSV`
+4. Review/edit the table if needed
+5. `Apply`
+
+Recommended header:
+`Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled`
+
+Example:
+```csv
+Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled
+LANE-L,lane,left,3.500,2.0,0.000,0.000,10,true
+SHL-L,shoulder,left,1.500,4.0,0.000,0.000,20,true
+GUT-L,gutter,left,0.800,6.0,0.000,0.000,30,true
+DITCH-L,ditch,left,2.000,2.0,1.000,0.000,40,true
+BENCH-L,bench,left,1.500,0.0,0.000,0.000,50,true
+LANE-R,lane,right,3.500,2.0,0.000,0.000,10,true
+SHL-R,shoulder,right,1.500,4.0,0.000,0.000,20,true
+```
+
+Recommended sample files:
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
+
+Current notes:
+1. `TypicalSectionTemplate` defines the finished-grade top profile.
+2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+3. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
+4. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
+
+### 3C. Typical Section Pavement CSV
+
+`Typical Section` also supports a first-pass pavement layer CSV.
+
+Current workflow:
+1. Open `Typical Section`
+2. `Browse Pavement CSV`
+3. `Load Pavement CSV`
+4. Review/edit the pavement layer table if needed
+5. `Apply`
+
+Recommended header:
+`Id,Type,Thickness,Enabled`
+
+Example:
+```csv
+Id,Type,Thickness,Enabled
+SURF,surface,0.050,true
+BINDER,binder,0.070,true
+BASE,base,0.200,true
+SUBBASE,subbase,0.250,true
+```
+
+Recommended sample file:
+- `tests/samples/typical_section_pavement_basic.csv`
+
+Current notes:
+1. Pavement layers are stored as data on `TypicalSectionTemplate`.
+2. Current supported layer types are `surface`, `binder`, `base`, `subbase`, `subgrade`.
+3. Current result fields include `PavementLayerCount`, `EnabledPavementLayerCount`, and `PavementTotalThickness`.
+4. These values currently propagate to `SectionSet`, `Corridor Loft`, and `Design Grading Surface`.
+
 ## 4. Import Validation Checklist
 1. Header names match exactly.
 2. Numeric fields are finite values.

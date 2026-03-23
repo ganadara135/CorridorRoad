@@ -1,0 +1,5 @@
+Id,Type,Thickness,Enabled
+SURF,surface,0.050,true
+BINDER,binder,0.070,true
+BASE,base,0.200,true
+SUBBASE,subbase,0.250,true

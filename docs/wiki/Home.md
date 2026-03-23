@@ -70,6 +70,7 @@ Recommended first structure-aware test order:
 - Runtime terrain/cut-fill sampling follows DEM-style regular XY grid.
 - For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
 - Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays loft-safe.
+- `GeometryMode=external_shape` currently improves realistic structure display/reference placement, but earthwork still follows structure `Type`-based rules.
 
 ---
 Last verified with commit: `<fill-after-release>`

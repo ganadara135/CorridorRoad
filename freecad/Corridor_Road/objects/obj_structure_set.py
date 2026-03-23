@@ -33,6 +33,18 @@ ALLOWED_TEMPLATE_NAMES = ("", "box_culvert", "utility_crossing", "retaining_wall
 ALLOWED_PLACEMENT_MODES = ("", "center_on_station", "start_on_station")
 
 _EXTERNAL_SHAPE_CACHE = {}
+_PROFILE_LINEAR_FIELDS = (
+    "Offset",
+    "Width",
+    "Height",
+    "BottomElevation",
+    "Cover",
+    "WallThickness",
+    "FootingWidth",
+    "FootingThickness",
+    "CapHeight",
+)
+_PROFILE_STEP_FIELDS = ("CellCount",)
 
 
 def _split_external_shape_source(path: str):
@@ -286,6 +298,17 @@ def _build_box_geometry(base_pt, t, n, length: float, width: float, height: floa
     return face.extrude(App.Vector(0, 0, max(1e-6, float(height))))
 
 
+def _resolved_bottom_z(base_pt, rec, height: float):
+    z0_raw = float(rec.get("BottomElevation", 0.0) or 0.0)
+    cover = abs(float(rec.get("Cover", 0.0) or 0.0))
+    z_ref = float(getattr(base_pt, "z", 0.0) or 0.0)
+    if abs(z0_raw) > 1e-9:
+        return z0_raw
+    if cover > 1e-9:
+        return z_ref - cover - float(height)
+    return z_ref
+
+
 def _make_profile_wire(origin, nvec, zvec, coords_nz):
     pts = []
     for nn, zz in list(coords_nz or []):
@@ -295,6 +318,74 @@ def _make_profile_wire(origin, nvec, zvec, coords_nz):
     if (pts[0] - pts[-1]).Length > 1e-9:
         pts.append(pts[0])
     return Part.makePolygon(pts)
+
+
+def _outer_profile_coords_nz(rec):
+    width = abs(float(rec.get("Width", 0.0) or 0.0))
+    height = abs(float(rec.get("Height", 0.0) or 0.0))
+    wall = max(0.10, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+    footing_w = max(abs(float(rec.get("FootingWidth", 0.0) or 0.0)), width, wall * 2.5)
+    footing_h = max(0.10, abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
+    cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+    geom_mode = _default_geometry_mode(rec, fallback="box")
+    template_name = _default_template_name(rec)
+
+    if geom_mode == "template" and template_name == "retaining_wall":
+        sign = _signed_side_factor(rec)
+        wall = max(0.10, wall, max(0.10, 0.60 * width))
+        footing_w = max(wall * 2.5, footing_w, max(width * 2.0, wall * 4.0))
+        heel = footing_w * 0.65
+        toe = footing_w - heel
+        top_wall = max(0.08, wall * 0.70)
+        total_h = footing_h + max(0.10, height)
+        return [
+            (-sign * toe, 0.0),
+            (sign * heel, 0.0),
+            (sign * heel, footing_h),
+            (sign * (0.5 * wall), footing_h),
+            (sign * (0.5 * top_wall), total_h),
+            (-sign * (0.5 * top_wall), total_h),
+            (-sign * (0.5 * wall), footing_h),
+            (-sign * toe, footing_h),
+        ]
+
+    if geom_mode == "template" and template_name == "abutment_block":
+        wall = max(0.20, wall, max(0.20, 0.35 * height))
+        footing_h = max(0.20, footing_h, max(0.20, 0.18 * height))
+        footing_w = max(footing_w, wall * 2.5)
+        stem_w = max(wall * 1.4, min(width * 0.55, footing_w * 0.60))
+        seat_w = max(stem_w * 0.55, wall * 1.4)
+        total_h = footing_h + max(0.20, height)
+        seat_h0 = footing_h + max(0.30, 0.60 * height)
+        return [
+            (-0.5 * footing_w, 0.0),
+            (0.5 * footing_w, 0.0),
+            (0.5 * footing_w, footing_h),
+            (0.5 * stem_w, footing_h),
+            (0.5 * stem_w, seat_h0),
+            (0.5 * seat_w, total_h),
+            (-0.5 * seat_w, total_h),
+            (-0.5 * stem_w, seat_h0),
+            (-0.5 * stem_w, footing_h),
+            (-0.5 * footing_w, footing_h),
+        ]
+
+    total_h = max(1e-6, height + cap_h)
+    half_w = 0.5 * max(1e-6, width)
+    return [
+        (-half_w, 0.0),
+        (half_w, 0.0),
+        (half_w, total_h),
+        (-half_w, total_h),
+    ]
+
+
+def _section_wire_for_profile_record(base_pt, normal, zvec, rec):
+    coords = _outer_profile_coords_nz(rec)
+    height = abs(float(rec.get("Height", 0.0) or 0.0))
+    z0 = _resolved_bottom_z(base_pt, rec, height)
+    origin = App.Vector(float(base_pt.x), float(base_pt.y), float(z0))
+    return _make_profile_wire(origin, normal, zvec, coords)
 
 
 def _build_box_culvert_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float):
@@ -514,15 +605,7 @@ def _build_structure_solid(base_pt, tangent, normal, rec):
         t = _safe_vec((t0 * cs) + (n0 * sn), App.Vector(1, 0, 0))
         n = _safe_vec((n0 * cs) - (t0 * sn), App.Vector(0, 1, 0))
 
-    z0_raw = float(rec.get("BottomElevation", 0.0) or 0.0)
-    cover = abs(float(rec.get("Cover", 0.0) or 0.0))
-    z_ref = float(getattr(base_pt, "z", 0.0) or 0.0)
-    if abs(z0_raw) > 1e-9:
-        z0 = z0_raw
-    elif cover > 1e-9:
-        z0 = z_ref - cover - height
-    else:
-        z0 = z_ref
+    z0 = _resolved_bottom_z(base_pt, rec, height)
     geom_mode = _default_geometry_mode(rec, fallback="box")
     template_name = _default_template_name(rec)
 
@@ -550,6 +633,91 @@ def _build_structure_solid(base_pt, tangent, normal, rec):
                 return solid
 
     return _build_box_geometry(base_pt, t, n, length, width, height, z0)
+
+
+def _build_profile_segment_solids(obj, aln, rec, prev_n=None):
+    rid = _structure_ref_id(rec.get("Id", ""))
+    if not rid:
+        return [], prev_n
+    geom_mode = _default_geometry_mode(rec, fallback="box")
+    if geom_mode == "external_shape":
+        return [], prev_n
+
+    pts = StructureSet.profile_points(obj, rid)
+    if len(pts) < 2:
+        return [], prev_n
+
+    s0 = float(rec.get("StartStation", 0.0) or 0.0)
+    s1 = float(rec.get("EndStation", 0.0) or 0.0)
+    if s1 < s0:
+        s0, s1 = s1, s0
+    sample_recs = StructureSet.resolve_profile_span(obj, rec, s0, s1)
+    if len(sample_recs) < 2:
+        return [], prev_n
+
+    frames = []
+    local_prev_n = prev_n
+    for rr in sample_recs:
+        ss = float(rr.get("ResolvedProfileStation", 0.0) or 0.0)
+        frame = _resolve_station_frame(obj, ss, aln=aln, prev_n=local_prev_n)
+        frames.append((rr, frame))
+        local_prev_n = frame["N"]
+
+    if len(frames) < 2:
+        return [], local_prev_n
+
+    solids = []
+    branch_count = max(1, len(_side_offsets(sample_recs[0])))
+    for branch_idx in range(branch_count):
+        wires = []
+        fallback_needed = False
+        for rr, frame in frames:
+            offs = _side_offsets(rr)
+            off = float(offs[min(branch_idx, len(offs) - 1)] if offs else 0.0)
+            wire = _section_wire_for_profile_record(frame["point"] + (frame["N"] * off), frame["N"], frame["Z"], rr)
+            if wire is None:
+                fallback_needed = True
+                break
+            wires.append(wire)
+
+        if not fallback_needed and len(wires) >= 2 and Part is not None:
+            for i in range(len(wires) - 1):
+                try:
+                    solid = Part.makeLoft([wires[i], wires[i + 1]], True, True)
+                    if _usable_solid(solid):
+                        solids.append(solid)
+                        continue
+                except Exception:
+                    pass
+                fallback_needed = True
+                break
+
+        if fallback_needed:
+            for i in range(len(sample_recs) - 1):
+                a = sample_recs[i]
+                b = sample_recs[i + 1]
+                ss0 = float(a.get("ResolvedProfileStation", s0) or s0)
+                ss1 = float(b.get("ResolvedProfileStation", s1) or s1)
+                if ss1 <= ss0 + 1e-9:
+                    continue
+                sm = 0.5 * (ss0 + ss1)
+                seg_rec = StructureSet.resolve_profile_at_station(obj, rec, sm)
+                if not seg_rec:
+                    continue
+                seg_rec["StartStation"] = float(ss0)
+                seg_rec["EndStation"] = float(ss1)
+                seg_rec["CenterStation"] = float(sm)
+                frame = _resolve_station_frame(obj, sm, aln=aln, prev_n=local_prev_n)
+                p = frame["point"]
+                t = frame["T"]
+                n = frame["N"]
+                local_prev_n = n
+                offs = _side_offsets(seg_rec)
+                off = float(offs[min(branch_idx, len(offs) - 1)] if offs else 0.0)
+                solid = _build_structure_solid(p + (n * off), t, n, seg_rec)
+                if solid is not None and not solid.isNull():
+                    solids.append(solid)
+    return solids, local_prev_n
 
 
 def _safe_str_list(values):
@@ -582,6 +750,17 @@ def _safe_bool_text_list(values):
     return out
 
 
+def _safe_int_list(values):
+    out = []
+    for v in list(values or []):
+        try:
+            x = int(round(float(v)))
+        except Exception:
+            x = 0
+        out.append(int(x))
+    return out
+
+
 def _unique_sorted_floats(values, tol: float = 1e-6):
     vals = sorted([float(v) for v in list(values or [])])
     out = []
@@ -589,6 +768,74 @@ def _unique_sorted_floats(values, tol: float = 1e-6):
         if not out or abs(v - out[-1]) > tol:
             out.append(v)
     return out
+
+
+def _lerp(a: float, b: float, t: float):
+    tt = max(0.0, min(1.0, float(t)))
+    return float(a) + ((float(b) - float(a)) * tt)
+
+
+def _profile_row_defaults():
+    return {
+        "StructureId": "",
+        "Station": 0.0,
+        "Offset": 0.0,
+        "Width": 0.0,
+        "Height": 0.0,
+        "BottomElevation": 0.0,
+        "Cover": 0.0,
+        "WallThickness": 0.0,
+        "FootingWidth": 0.0,
+        "FootingThickness": 0.0,
+        "CapHeight": 0.0,
+        "CellCount": 0,
+    }
+
+
+def _structure_ref_id(structure_ref):
+    if isinstance(structure_ref, dict):
+        return str(structure_ref.get("Id", "") or "").strip()
+    return str(structure_ref or "").strip()
+
+
+def _normalize_profile_points(points, tol: float = 1e-6):
+    rows = [dict(_profile_row_defaults(), **dict(p or {})) for p in list(points or [])]
+    rows.sort(key=lambda r: float(r.get("Station", 0.0) or 0.0))
+    out = []
+    for row in rows:
+        if out and abs(float(row.get("Station", 0.0) or 0.0) - float(out[-1].get("Station", 0.0) or 0.0)) <= tol:
+            out[-1] = row
+        else:
+            out.append(row)
+    return out
+
+
+def _resolve_profile_interpolated_value(points, station: float, key: str, base_value):
+    pts = list(points or [])
+    if not pts:
+        return base_value
+    ss = float(station)
+    if len(pts) == 1:
+        return pts[0].get(key, base_value)
+    if ss <= float(pts[0].get("Station", 0.0) or 0.0):
+        return pts[0].get(key, base_value)
+    if ss >= float(pts[-1].get("Station", 0.0) or 0.0):
+        return pts[-1].get(key, base_value)
+    for i in range(len(pts) - 1):
+        p0 = pts[i]
+        p1 = pts[i + 1]
+        s0 = float(p0.get("Station", 0.0) or 0.0)
+        s1 = float(p1.get("Station", 0.0) or 0.0)
+        if ss < s0 or ss > s1:
+            continue
+        if abs(s1 - s0) <= 1e-9:
+            return p1.get(key, p0.get(key, base_value))
+        if key in _PROFILE_LINEAR_FIELDS:
+            return _lerp(p0.get(key, base_value), p1.get(key, base_value), (ss - s0) / (s1 - s0))
+        if key in _PROFILE_STEP_FIELDS:
+            return p0.get(key, base_value)
+        return p0.get(key, base_value)
+    return pts[-1].get(key, base_value)
 
 
 def _resolved_shape_source_kind(path: str) -> str:
@@ -867,9 +1114,48 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "Notes"):
         obj.addProperty("App::PropertyStringList", "Notes", "Structures", "Structure notes")
         obj.Notes = []
+    if not hasattr(obj, "ProfileStructureIds"):
+        obj.addProperty("App::PropertyStringList", "ProfileStructureIds", "StructureProfiles", "Structure-profile parent IDs")
+        obj.ProfileStructureIds = []
+    if not hasattr(obj, "ProfileStations"):
+        obj.addProperty("App::PropertyFloatList", "ProfileStations", "StructureProfiles", "Structure-profile stations")
+        obj.ProfileStations = []
+    if not hasattr(obj, "ProfileOffsets"):
+        obj.addProperty("App::PropertyFloatList", "ProfileOffsets", "StructureProfiles", "Structure-profile offsets")
+        obj.ProfileOffsets = []
+    if not hasattr(obj, "ProfileWidths"):
+        obj.addProperty("App::PropertyFloatList", "ProfileWidths", "StructureProfiles", "Structure-profile widths")
+        obj.ProfileWidths = []
+    if not hasattr(obj, "ProfileHeights"):
+        obj.addProperty("App::PropertyFloatList", "ProfileHeights", "StructureProfiles", "Structure-profile heights")
+        obj.ProfileHeights = []
+    if not hasattr(obj, "ProfileBottomElevations"):
+        obj.addProperty("App::PropertyFloatList", "ProfileBottomElevations", "StructureProfiles", "Structure-profile bottom elevations")
+        obj.ProfileBottomElevations = []
+    if not hasattr(obj, "ProfileCovers"):
+        obj.addProperty("App::PropertyFloatList", "ProfileCovers", "StructureProfiles", "Structure-profile covers")
+        obj.ProfileCovers = []
+    if not hasattr(obj, "ProfileWallThicknesses"):
+        obj.addProperty("App::PropertyFloatList", "ProfileWallThicknesses", "StructureProfiles", "Structure-profile wall thicknesses")
+        obj.ProfileWallThicknesses = []
+    if not hasattr(obj, "ProfileFootingWidths"):
+        obj.addProperty("App::PropertyFloatList", "ProfileFootingWidths", "StructureProfiles", "Structure-profile footing widths")
+        obj.ProfileFootingWidths = []
+    if not hasattr(obj, "ProfileFootingThicknesses"):
+        obj.addProperty("App::PropertyFloatList", "ProfileFootingThicknesses", "StructureProfiles", "Structure-profile footing thicknesses")
+        obj.ProfileFootingThicknesses = []
+    if not hasattr(obj, "ProfileCapHeights"):
+        obj.addProperty("App::PropertyFloatList", "ProfileCapHeights", "StructureProfiles", "Structure-profile cap heights")
+        obj.ProfileCapHeights = []
+    if not hasattr(obj, "ProfileCellCounts"):
+        obj.addProperty("App::PropertyIntegerList", "ProfileCellCounts", "StructureProfiles", "Structure-profile cell counts")
+        obj.ProfileCellCounts = []
     if not hasattr(obj, "StructureCount"):
         obj.addProperty("App::PropertyInteger", "StructureCount", "Result", "Structure record count")
         obj.StructureCount = 0
+    if not hasattr(obj, "StructureProfileCount"):
+        obj.addProperty("App::PropertyInteger", "StructureProfileCount", "Result", "Structure profile point count")
+        obj.StructureProfileCount = 0
     if not hasattr(obj, "ResolvedShapeSourceKinds"):
         obj.addProperty("App::PropertyStringList", "ResolvedShapeSourceKinds", "Result", "Resolved external shape source kinds")
         obj.ResolvedShapeSourceKinds = []
@@ -898,6 +1184,7 @@ class StructureSet:
         recs = self.records(obj)
         issues = self.validate(obj)
         obj.StructureCount = int(len(recs))
+        obj.StructureProfileCount = int(len(StructureSet.profile_points(obj)))
         obj.ResolvedShapeSourceKinds = [_resolved_shape_source_kind(rec.get("ShapeSourcePath", "")) for rec in recs]
         obj.ResolvedShapeStatusNotes = []
         obj.ResolvedFrameSources = []
@@ -915,6 +1202,7 @@ class StructureSet:
             centerline_hits = 0
             alignment_hits = 0
             fallback_hits = 0
+            profile_driven_hits = 0
             for rec in recs:
                 try:
                     rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
@@ -940,10 +1228,15 @@ class StructureSet:
                             note = f"{rid}: external_shape source={ext_status} -> box fallback"
                             shape_notes.append(note)
                             shape_status_notes.append(note)
-                    for off in _side_offsets(rec):
-                        solid = _build_structure_solid(p + (n * float(off)), t, n, rec)
-                        if solid is not None and not solid.isNull():
-                            solids.append(solid)
+                    seg_solids, prev_n = _build_profile_segment_solids(obj, aln, rec, prev_n=prev_n)
+                    if seg_solids:
+                        profile_driven_hits += 1
+                        solids.extend(seg_solids)
+                    else:
+                        for off in _side_offsets(rec):
+                            solid = _build_structure_solid(p + (n * float(off)), t, n, rec)
+                            if solid is not None and not solid.isNull():
+                                solids.append(solid)
                 except Exception:
                     rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
                     shape_notes.append(f"{rid}: display shape skipped")
@@ -961,6 +1254,8 @@ class StructureSet:
                     shape_notes.append(f"3D frame source: alignment={alignment_hits}")
                 if fallback_hits > 0:
                     shape_notes.append(f"3D frame source: fallback={fallback_hits}")
+                if profile_driven_hits > 0:
+                    shape_notes.append(f"3D station-profile records: {profile_driven_hits}")
         elif recs:
             shape_notes.append("3D display requires a HorizontalAlignment")
 
@@ -980,6 +1275,8 @@ class StructureSet:
             if frame_status_notes:
                 status = f"{status} | frameFallbacks={len(frame_status_notes)}"
             obj.Status = status
+        if int(getattr(obj, "StructureProfileCount", 0) or 0) > 0:
+            obj.Status = f"{obj.Status} | profilePoints={int(getattr(obj, 'StructureProfileCount', 0) or 0)}"
 
     def onChanged(self, obj, prop):
         if prop in (
@@ -1010,6 +1307,18 @@ class StructureSet:
             "CorridorModes",
             "CorridorMargins",
             "Notes",
+            "ProfileStructureIds",
+            "ProfileStations",
+            "ProfileOffsets",
+            "ProfileWidths",
+            "ProfileHeights",
+            "ProfileBottomElevations",
+            "ProfileCovers",
+            "ProfileWallThicknesses",
+            "ProfileFootingWidths",
+            "ProfileFootingThicknesses",
+            "ProfileCapHeights",
+            "ProfileCellCounts",
         ):
             try:
                 obj.touch()
@@ -1118,9 +1427,137 @@ class StructureSet:
         return recs
 
     @staticmethod
+    def raw_profile_points(obj, structure_id: str = ""):
+        ensure_structure_set_properties(obj)
+        ids = _safe_str_list(getattr(obj, "ProfileStructureIds", []))
+        stations = _safe_float_list(getattr(obj, "ProfileStations", []))
+        offsets = _safe_float_list(getattr(obj, "ProfileOffsets", []))
+        widths = _safe_float_list(getattr(obj, "ProfileWidths", []))
+        heights = _safe_float_list(getattr(obj, "ProfileHeights", []))
+        bottoms = _safe_float_list(getattr(obj, "ProfileBottomElevations", []))
+        covers = _safe_float_list(getattr(obj, "ProfileCovers", []))
+        wall_thicknesses = _safe_float_list(getattr(obj, "ProfileWallThicknesses", []))
+        footing_widths = _safe_float_list(getattr(obj, "ProfileFootingWidths", []))
+        footing_thicknesses = _safe_float_list(getattr(obj, "ProfileFootingThicknesses", []))
+        cap_heights = _safe_float_list(getattr(obj, "ProfileCapHeights", []))
+        cell_counts = _safe_int_list(getattr(obj, "ProfileCellCounts", []))
+        n = max(
+            len(ids),
+            len(stations),
+            len(offsets),
+            len(widths),
+            len(heights),
+            len(bottoms),
+            len(covers),
+            len(wall_thicknesses),
+            len(footing_widths),
+            len(footing_thicknesses),
+            len(cap_heights),
+            len(cell_counts),
+            0,
+        )
+        wanted = _structure_ref_id(structure_id)
+        pts = []
+        for i in range(n):
+            row = {
+                "Index": int(i),
+                "StructureId": ids[i] if i < len(ids) else "",
+                "Station": stations[i] if i < len(stations) else 0.0,
+                "Offset": offsets[i] if i < len(offsets) else 0.0,
+                "Width": widths[i] if i < len(widths) else 0.0,
+                "Height": heights[i] if i < len(heights) else 0.0,
+                "BottomElevation": bottoms[i] if i < len(bottoms) else 0.0,
+                "Cover": covers[i] if i < len(covers) else 0.0,
+                "WallThickness": wall_thicknesses[i] if i < len(wall_thicknesses) else 0.0,
+                "FootingWidth": footing_widths[i] if i < len(footing_widths) else 0.0,
+                "FootingThickness": footing_thicknesses[i] if i < len(footing_thicknesses) else 0.0,
+                "CapHeight": cap_heights[i] if i < len(cap_heights) else 0.0,
+                "CellCount": cell_counts[i] if i < len(cell_counts) else 0,
+            }
+            sid = _structure_ref_id(row.get("StructureId", ""))
+            if wanted and sid != wanted:
+                continue
+            pts.append(row)
+        return pts
+
+    @staticmethod
+    def profile_points(obj, structure_id: str = ""):
+        return _normalize_profile_points(StructureSet.raw_profile_points(obj, structure_id=structure_id))
+
+    @staticmethod
+    def profile_points_by_structure(obj):
+        grouped = {}
+        for row in StructureSet.profile_points(obj):
+            sid = _structure_ref_id(row.get("StructureId", ""))
+            if not sid:
+                continue
+            grouped.setdefault(sid, []).append(row)
+        return {sid: _normalize_profile_points(rows) for sid, rows in grouped.items()}
+
+    @staticmethod
+    def resolve_profile_at_station(obj, structure_ref, station: float):
+        rec = None
+        wanted = _structure_ref_id(structure_ref)
+        if isinstance(structure_ref, dict):
+            rec = dict(structure_ref)
+            if not wanted:
+                wanted = _structure_ref_id(rec.get("Id", ""))
+        if rec is None and wanted:
+            for row in StructureSet.records(obj):
+                if _structure_ref_id(row.get("Id", "")) == wanted:
+                    rec = dict(row)
+                    break
+        if rec is None:
+            return {}
+
+        pts = StructureSet.profile_points(obj, wanted)
+        resolved = dict(rec)
+        resolved["ResolvedProfileStructureId"] = wanted
+        resolved["ResolvedProfileStation"] = float(station)
+        resolved["ResolvedProfilePointCount"] = int(len(pts))
+        resolved["ResolvedProfileMode"] = "base_row"
+        if not pts:
+            return resolved
+
+        for key in _PROFILE_LINEAR_FIELDS + _PROFILE_STEP_FIELDS:
+            resolved[key] = _resolve_profile_interpolated_value(pts, station, key, rec.get(key, _profile_row_defaults().get(key)))
+        resolved["ResolvedProfileMode"] = "station_profile"
+        return resolved
+
+    @staticmethod
+    def resolve_profile_span(obj, structure_ref, station_from: float, station_to: float):
+        rec = None
+        wanted = _structure_ref_id(structure_ref)
+        if isinstance(structure_ref, dict):
+            rec = dict(structure_ref)
+            if not wanted:
+                wanted = _structure_ref_id(rec.get("Id", ""))
+        if rec is None and wanted:
+            for row in StructureSet.records(obj):
+                if _structure_ref_id(row.get("Id", "")) == wanted:
+                    rec = dict(row)
+                    break
+        if rec is None:
+            return []
+
+        s0 = float(station_from)
+        s1 = float(station_to)
+        if s1 < s0:
+            s0, s1 = s1, s0
+        pts = StructureSet.profile_points(obj, wanted)
+        sample_stations = [s0, s1]
+        for row in pts:
+            ss = float(row.get("Station", 0.0) or 0.0)
+            if ss > s0 + 1e-9 and ss < s1 - 1e-9:
+                sample_stations.append(ss)
+        return [StructureSet.resolve_profile_at_station(obj, rec, ss) for ss in _unique_sorted_floats(sample_stations)]
+
+    @staticmethod
     def validate(obj):
         issues = []
-        for rec in StructureSet.records(obj):
+        recs = StructureSet.records(obj)
+        valid_ids = {_structure_ref_id(rec.get("Id", "")) for rec in recs if _structure_ref_id(rec.get("Id", ""))}
+        for rec in recs:
             rid = str(rec.get("Id", "") or f"#{int(rec['Index']) + 1}")
             typ = str(rec.get("Type", "") or "").strip().lower()
             side = str(rec.get("Side", "") or "").strip().lower()
@@ -1199,6 +1636,36 @@ class StructureSet:
                     issues.append(f"{rid}: unsupported external shape source '{shape_source_path}'")
                 if kind == "fcstd_link" and "#" not in shape_source_path:
                     issues.append(f"{rid}: fcstd external shape requires ShapeSourcePath in the form 'path.FCStd#ObjectName'")
+        grouped = {}
+        raw_points = StructureSet.raw_profile_points(obj)
+        for row in raw_points:
+            sid = _structure_ref_id(row.get("StructureId", ""))
+            grouped.setdefault(sid, []).append(row)
+        for sid, rows in grouped.items():
+            if not sid:
+                issues.append("StructureProfile: StructureId is empty")
+                continue
+            if sid not in valid_ids:
+                issues.append(f"{sid}: structure profile references unknown structure id")
+            if len(rows) < 2:
+                issues.append(f"{sid}: structure profile needs at least 2 station points")
+            prev_station = None
+            seen_station = set()
+            for row in sorted(rows, key=lambda r: float(r.get("Station", 0.0) or 0.0)):
+                ss = float(row.get("Station", 0.0) or 0.0)
+                key_station = round(ss, 9)
+                if prev_station is not None and ss < prev_station - 1e-9:
+                    issues.append(f"{sid}: structure profile stations must be sorted ascending")
+                if key_station in seen_station:
+                    issues.append(f"{sid}: duplicate structure profile station {ss:.3f}")
+                seen_station.add(key_station)
+                prev_station = ss
+                for name in _PROFILE_LINEAR_FIELDS:
+                    vv = float(row.get(name, 0.0) or 0.0)
+                    if name in ("Width", "Height", "WallThickness", "FootingWidth", "FootingThickness", "CapHeight") and vv < 0.0:
+                        issues.append(f"{sid}: structure profile {name} is negative at station {ss:.3f}")
+                if int(row.get("CellCount", 0) or 0) < 0:
+                    issues.append(f"{sid}: structure profile CellCount is negative at station {ss:.3f}")
         return issues
 
     @staticmethod

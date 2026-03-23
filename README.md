@@ -65,6 +65,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `tests/samples/structure_utm_realistic_hilly_notch.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
 - `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv`
+- `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed.csv`
+- `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
 3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
@@ -72,6 +80,44 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 5. Build `Corridor Loft` with `Use structure corridor modes` enabled to test `skip_zone` handling from the same structure CSV.
 6. Load `structure_utm_realistic_hilly_template.csv` when you want to test template structure display (`box_culvert`, `retaining_wall`) and template-aware `Structure Sections` overlays.
 7. Load `structure_utm_realistic_hilly_external_shape.csv` when you want to test `GeometryMode=external_shape`. Replace the sample `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources first.
+8. Use the `station_profile_headers` + `station_profile_points` samples when you want to test variable-size structures driven by station control points.
+9. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
+10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
+11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
+12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `bench` in both `Sections` and `Corridor Loft`.
+13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
+
+## Typical Section CSV
+- `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
+- Current CSV columns:
+  - `Id`
+  - `Type`
+  - `Side`
+  - `Width`
+  - `CrossSlopePct`
+  - `Height`
+  - `Offset`
+  - `Order`
+  - `Enabled`
+- Current sample files:
+  - `tests/samples/typical_section_basic_rural.csv`
+  - `tests/samples/typical_section_urban_complete_street.csv`
+  - `tests/samples/typical_section_with_ditch.csv`
+  - `tests/samples/typical_section_pavement_basic.csv`
+- `Typical Section` also supports pavement-layer CSV import through `Browse Pavement CSV` -> `Load Pavement CSV`.
+- Pavement CSV columns:
+  - `Id`
+  - `Type`
+  - `Thickness`
+  - `Enabled`
+- Current runtime intent:
+  - `Typical Section Template` defines the finished-grade top profile.
+  - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
+  - `Sections` reports `schema=2` and `topProfile=typical_section` when a typical section drives the top profile.
+  - `Sections`, `Design Grading Surface`, and `Corridor Loft` now also carry `PavementTotalThickness`.
+  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, `Top profile source`, and pavement total thickness.
+- Execution-plan/status reference:
+  - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
 ## Template Structures
 - `Edit Structures` now supports `GeometryMode=box|template`.
@@ -106,6 +152,42 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   2. `Pick FCStd Object` to choose the internal shape-bearing object
 - The sample file contains placeholder paths. Replace them with real local model files and object names before `Apply`.
 - If an external source cannot be loaded, the row falls back to safe `box` display geometry instead of breaking recompute.
+- Earthwork note:
+  - `GeometryMode=external_shape` currently improves structure display and reference placement.
+  - Earthwork is still driven by structure `Type`, `Width`, `Height`, `BehaviorMode`, and `CorridorMode`.
+  - The imported `STEP` / `BREP` / `FCStd` solid is not yet consumed directly as the earthwork-cutting shape.
+  - `Sections`, `Design Grading Surface`, and `Corridor Loft` currently follow those type-based rules, not the real imported solid.
+- Current type-driven earthwork intent:
+  - `culvert`, `crossing` -> notch / bench crossing rules
+  - `retaining_wall` -> one-side retaining-wall section rule
+  - `bridge_zone`, `abutment_zone` -> trim / split / skip rules
+
+## Station-Profile Structures
+- `StructureSet` now also supports optional station-profile control-point data for variable-size structures.
+- Current station-profile fields:
+  - `StructureId`
+  - `Station`
+  - `Offset`
+  - `Width`
+  - `Height`
+  - `BottomElevation`
+  - `Cover`
+  - `WallThickness`
+  - `FootingWidth`
+  - `FootingThickness`
+  - `CapHeight`
+  - `CellCount`
+- Current implementation scope:
+  - 3D structure display uses station-profile values
+  - `Structure Sections` overlays use station-profile values
+  - section overrides / earthwork use station-profile values
+  - corridor notch handling uses station-profile values
+- Current user-flow note:
+  - `Edit Structures` now provides a second table for station-profile rows
+  - load the base header CSV first, then load the profile CSV
+  - selecting a structure in the upper table filters the lower table to that structure's profile rows
+  - use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` and `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv` for focused testing
+  - use `tests/samples/structure_utm_realistic_hilly_mixed.csv` and `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv` for combined multi-structure testing
 
 ## Loft Twist Reduction Tips
 - If `Corridor Loft` twists or folds, first increase section interval and `Min Section Spacing`.
