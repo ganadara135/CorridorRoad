@@ -10,6 +10,8 @@ For field-by-field explanations of task-panel options, see [Menu Reference](Menu
 ## 1. Project Initialization
 1. `New Project`
 2. `Project Setup`
+3. If `CRS / EPSG` is set, keep the recommended default `Coordinate Workflow = World-first`.
+4. If the project is a local test/concept model with no real-world CRS, keep `Coordinate Workflow = Local-first`.
 
 Output:
 - Fixed project tree
@@ -18,6 +20,7 @@ Output:
 Validation:
 - Project object links are initialized.
 - Length scale and coordinate policy are confirmed before geometry creation.
+- Downstream task panels start from the same recommended coordinate mode when auto-apply is enabled.
 
 ![Screenshot Needed Project tree immediately after setup](images/wiki-workflow-01-project-init.png)
 
@@ -43,8 +46,10 @@ DEM tuning note:
 
 ## 3. Horizontal Geometry
 1. Open `Alignment`.
-2. Import CSV or edit table (IP, radius, transition).
-3. Apply alignment.
+2. Import CSV, load a built-in `Preset`, or edit the table directly (IP, radius, transition).
+3. Presets are stored as local-pattern rows.
+4. If `Coord Input` is currently `World (E/N)`, `Load Preset` converts those local rows through the active `Project Setup`.
+5. Apply alignment.
 
 Output:
 - Horizontal alignment with key stations
@@ -52,6 +57,7 @@ Output:
 Validation:
 - IP/radius/transition interpretation is correct.
 - Alignment path is inside terrain bounds.
+- If a preset was used in `World` mode, the loaded coordinates should still fall inside terrain coverage and match the project origin/rotation policy.
 
 ![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment.png)
 ![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment_2.png)
@@ -113,8 +119,12 @@ Validation:
 
 ## 4B. Typical Section
 1. Run `Typical Section`.
-2. Either enter component rows manually or use `Browse CSV` -> `Load CSV`.
-3. Click `Apply`.
+2. Either choose a built-in `Preset`, use the quick-add buttons (`Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`), or load rows with `Browse CSV` -> `Load CSV`.
+3. If the section is symmetric, use `Mirror Left -> Right` or `Mirror Right -> Left` to copy edge rows quickly.
+4. Use `Move Up`, `Move Down`, or `Sort by Order` to clean up the component order.
+5. Optionally load pavement layers with `Browse Pavement CSV` -> `Load Pavement CSV`.
+6. Check the `Summary` panel for top width, edge types, and pavement total thickness.
+7. Click `Apply`.
 
 Recommended sample files:
 - `tests/samples/typical_section_basic_rural.csv`
@@ -131,7 +141,9 @@ Current notes:
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
 4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
-5. Pavement totals are stored on the template as `PavementTotalThickness`.
+5. The editor now supports `Save Component CSV` and `Save Pavement CSV` so edited templates can be reused.
+6. Type-aware tooltips and field tinting help show whether `CrossSlopePct` or `Height` matters more for the selected component.
+7. Pavement totals are stored on the template as `PavementTotalThickness`.
 
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`

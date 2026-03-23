@@ -19,6 +19,7 @@ from freecad.Corridor_Road.objects.obj_project import (
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.csv_alignment_import import inspect_alignment_csv, read_alignment_csv, write_alignment_csv
 from freecad.Corridor_Road.objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows
+from freecad.Corridor_Road.objects.terrain_sampler import is_mesh_object, is_shape_object
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -58,6 +59,51 @@ def _find_assembly_template(doc, project=None):
 
 
 class AlignmentEditorTaskPanel:
+    ALIGNMENT_PRESETS = {
+        "Simple Tangent": {
+            "note": "Local starter with a straight tangent and no circular curves.",
+            "rows": [
+                (0.0, 0.0, 0.0, 0.0),
+                (80.0, 0.0, 0.0, 0.0),
+                (160.0, 0.0, 0.0, 0.0),
+            ],
+        },
+        "Single Curve": {
+            "note": "Local starter with one circular curve between tangent points.",
+            "rows": [
+                (0.0, 0.0, 0.0, 0.0),
+                (70.0, 0.0, 120.0, 0.0),
+                (140.0, 45.0, 0.0, 0.0),
+            ],
+        },
+        "S-C-S Curve": {
+            "note": "Local starter for testing spiral-circular-spiral geometry.",
+            "rows": [
+                (0.0, 0.0, 0.0, 0.0),
+                (80.0, 0.0, 180.0, 30.0),
+                (170.0, 55.0, 0.0, 0.0),
+            ],
+        },
+        "Reverse Curve": {
+            "note": "Local starter with alternating curve directions for robustness checks.",
+            "rows": [
+                (0.0, 0.0, 0.0, 0.0),
+                (60.0, 0.0, 120.0, 20.0),
+                (120.0, 45.0, 120.0, 20.0),
+                (180.0, 0.0, 0.0, 0.0),
+            ],
+        },
+        "Sample Local Alignment": {
+            "note": "Local starter with multiple IP rows for quick table editing.",
+            "rows": [
+                (0.0, 0.0, 0.0, 0.0),
+                (55.0, 0.0, 90.0, 15.0),
+                (115.0, 40.0, 140.0, 20.0),
+                (190.0, 60.0, 0.0, 0.0),
+            ],
+        },
+    }
+
     def __init__(self):
         self.doc = App.ActiveDocument
         self.aln = None
@@ -131,6 +177,23 @@ class AlignmentEditorTaskPanel:
         row_csv.addWidget(self.btn_load_csv)
         row_csv.addWidget(self.btn_save_csv)
         root.addLayout(row_csv)
+
+        row_preset = QtWidgets.QHBoxLayout()
+        self.cmb_preset = QtWidgets.QComboBox()
+        self.cmb_preset.addItems(list(self.ALIGNMENT_PRESETS.keys()))
+        self.cmb_preset_placement = QtWidgets.QComboBox()
+        self.cmb_preset_placement.addItems(["Pattern only", "Center on terrain", "Center on project origin"])
+        self.cmb_preset_placement.setCurrentText("Center on terrain")
+        self.btn_load_preset = QtWidgets.QPushButton("Load Preset")
+        self.lbl_preset_note = QtWidgets.QLabel("")
+        self.lbl_preset_note.setWordWrap(True)
+        row_preset.addWidget(QtWidgets.QLabel("Preset:"))
+        row_preset.addWidget(self.cmb_preset)
+        row_preset.addWidget(QtWidgets.QLabel("Placement:"))
+        row_preset.addWidget(self.cmb_preset_placement)
+        row_preset.addWidget(self.btn_load_preset)
+        row_preset.addWidget(self.lbl_preset_note, 1)
+        root.addLayout(row_preset)
 
         gb_csv = QtWidgets.QGroupBox("CSV Column Mapping")
         fcsv = QtWidgets.QFormLayout(gb_csv)
@@ -270,9 +333,13 @@ class AlignmentEditorTaskPanel:
         self.btn_inspect_csv.clicked.connect(self._on_inspect_csv)
         self.btn_load_csv.clicked.connect(self._on_load_from_csv)
         self.btn_save_csv.clicked.connect(self._on_save_csv)
+        self.cmb_preset.currentIndexChanged.connect(self._on_preset_changed)
+        self.cmb_preset_placement.currentIndexChanged.connect(self._on_preset_changed)
+        self.btn_load_preset.clicked.connect(self._on_load_preset)
 
         self._set_rows(4)
         self._update_coord_headers()
+        self._update_preset_note()
         return w
 
     @staticmethod
@@ -310,6 +377,26 @@ class AlignmentEditorTaskPanel:
     def _selected_design_standard(self):
         base = get_design_standard(self.prj if self.prj is not None else self.doc, default=_ds.DEFAULT_STANDARD)
         return _ds.normalize_standard(self.cmb_design_standard.currentText(), default=base)
+
+    def _selected_preset_name(self):
+        return str(self.cmb_preset.currentText() or "").strip()
+
+    def _selected_preset(self):
+        return dict(self.ALIGNMENT_PRESETS.get(self._selected_preset_name(), {}) or {})
+
+    def _selected_preset_placement(self):
+        return str(self.cmb_preset_placement.currentText() or "Pattern only").strip()
+
+    def _update_preset_note(self):
+        info = self._selected_preset()
+        note = str(info.get("note", "") or "")
+        mode_text = "World (E/N)" if self._use_world_mode() else "Local (X/Y)"
+        placement = self._selected_preset_placement()
+        if note:
+            note = f"{note} Placement: {placement}. Loaded into current mode: {mode_text}."
+        else:
+            note = f"Preset rows will use placement '{placement}' and load into current mode: {mode_text}."
+        self.lbl_preset_note.setText(note)
 
     def _load_design_standard(self):
         std = get_design_standard(self.prj if self.prj is not None else self.doc, default=_ds.DEFAULT_STANDARD)
@@ -408,7 +495,13 @@ class AlignmentEditorTaskPanel:
         if self._loading:
             return
         self._update_coord_headers()
+        self._update_preset_note()
         self._load_from_doc()
+
+    def _on_preset_changed(self):
+        if self._loading:
+            return
+        self._update_preset_note()
 
     def _on_refresh_context(self):
         self._refresh_context()
@@ -600,6 +693,56 @@ class AlignmentEditorTaskPanel:
         imported_rows = self._rows_from_local_rows(rows_local)
         self._apply_import_rows(imported_rows, self.cmb_sketch_mode.currentText())
 
+    def _on_load_preset(self):
+        info = self._selected_preset()
+        rows_local = list(info.get("rows", []) or [])
+        if len(rows_local) < 2:
+            QtWidgets.QMessageBox.warning(None, "Load Preset", "Preset does not provide enough rows.")
+            return
+
+        placement = self._selected_preset_placement()
+        placement_used = placement
+        placement_note = ""
+        rows_work = list(rows_local)
+        src_cx, src_cy = self._preset_center_local(rows_work)
+
+        if placement == "Center on terrain":
+            terr = self._selected_terrain_for_preset()
+            center = self._terrain_center_local(terr)
+            if center is not None:
+                tx, ty = center
+                rows_work = self._translate_rows_local(rows_work, float(tx) - float(src_cx), float(ty) - float(src_cy))
+                placement_note = f"Terrain center used: X={float(tx):.3f}, Y={float(ty):.3f}"
+            else:
+                placement_used = "Center on project origin (fallback)"
+                tx, ty = self._project_origin_local_anchor()
+                rows_work = self._translate_rows_local(rows_work, float(tx) - float(src_cx), float(ty) - float(src_cy))
+                placement_note = "Terrain was not available, so preset placement fell back to project local origin."
+        elif placement == "Center on project origin":
+            tx, ty = self._project_origin_local_anchor()
+            rows_work = self._translate_rows_local(rows_work, float(tx) - float(src_cx), float(ty) - float(src_cy))
+            placement_note = f"Project local origin used: X={float(tx):.3f}, Y={float(ty):.3f}"
+        else:
+            placement_note = "Preset kept its original local pattern position."
+
+        imported_rows = self._rows_from_local_rows(rows_work)
+        self._apply_import_rows(imported_rows, "Replace Table")
+
+        mode_text = "World (E/N)" if self._use_world_mode() else "Local (X/Y)"
+        if self._use_world_mode():
+            detail = "Preset rows were converted from local pattern coordinates using Project Setup."
+        else:
+            detail = "Preset rows were loaded directly in local pattern coordinates."
+        msg_lines = [
+            f"Preset: {self._selected_preset_name()}",
+            f"Rows loaded: {len(imported_rows)}",
+            f"Coordinate input mode: {mode_text}",
+            f"Placement: {placement_used}",
+            detail,
+            placement_note,
+        ]
+        QtWidgets.QMessageBox.information(None, "Load Preset", "\n".join(msg_lines))
+
     def _on_load_from_csv(self):
         path = str(self.ed_csv_path.text() or "").strip()
         if path == "":
@@ -736,6 +879,93 @@ class AlignmentEditorTaskPanel:
         for x, y, rr, ls in list(rows_local or []):
             xv, yv = self._table_xy_from_local(float(x), float(y), 0.0)
             out.append((float(xv), float(yv), float(rr), float(ls)))
+        return out
+
+    def _terrain_declared_world_mode(self, terrain_obj):
+        if terrain_obj is None:
+            return None
+        try:
+            mode = str(getattr(terrain_obj, "OutputCoords", "") or "")
+            if mode == "World":
+                return True
+            if mode == "Local":
+                return False
+        except Exception:
+            pass
+        try:
+            if getattr(terrain_obj, "Proxy", None) and getattr(terrain_obj.Proxy, "Type", "") == "PointCloudDEM":
+                return False
+        except Exception:
+            pass
+        return None
+
+    def _selected_terrain_for_preset(self):
+        if self.prj is not None:
+            try:
+                terr = getattr(self.prj, "Terrain", None)
+                if terr is not None and (is_mesh_object(terr) or is_shape_object(terr)):
+                    return terr
+            except Exception:
+                pass
+        try:
+            sel = list(Gui.Selection.getSelection() or [])
+            for obj in sel:
+                if is_mesh_object(obj) or is_shape_object(obj):
+                    return obj
+        except Exception:
+            pass
+        if self.doc is None:
+            return None
+        for obj in getattr(self.doc, "Objects", []) or []:
+            try:
+                if is_mesh_object(obj) or is_shape_object(obj):
+                    return obj
+            except Exception:
+                pass
+        return None
+
+    def _terrain_center_local(self, terrain_obj):
+        if terrain_obj is None:
+            return None
+        try:
+            if is_mesh_object(terrain_obj):
+                bb = terrain_obj.Mesh.BoundBox
+            else:
+                bb = terrain_obj.Shape.BoundBox
+        except Exception:
+            return None
+        cx = 0.5 * (float(bb.XMin) + float(bb.XMax))
+        cy = 0.5 * (float(bb.YMin) + float(bb.YMax))
+        cz = 0.5 * (float(bb.ZMin) + float(bb.ZMax))
+        is_world = self._terrain_declared_world_mode(terrain_obj)
+        if is_world:
+            lx, ly, _lz = world_to_local(self._coord_context_obj(), cx, cy, cz)
+            return float(lx), float(ly)
+        return float(cx), float(cy)
+
+    def _project_origin_local_anchor(self):
+        prj = self.prj
+        if prj is None:
+            return 0.0, 0.0
+        try:
+            return float(getattr(prj, "LocalOriginX", 0.0) or 0.0), float(getattr(prj, "LocalOriginY", 0.0) or 0.0)
+        except Exception:
+            return 0.0, 0.0
+
+    @staticmethod
+    def _preset_center_local(rows_local):
+        vals = list(rows_local or [])
+        if not vals:
+            return 0.0, 0.0
+        xs = [float(r[0]) for r in vals]
+        ys = [float(r[1]) for r in vals]
+        return 0.5 * (min(xs) + max(xs)), 0.5 * (min(ys) + max(ys))
+
+    @staticmethod
+    def _translate_rows_local(rows_local, dx, dy):
+        out = []
+        for x, y, rr, ls in list(rows_local or []):
+            out.append((float(x) + float(dx), float(y) + float(dy), float(rr), float(ls)))
         return out
 
     def _get_float(self, r, c):

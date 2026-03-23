@@ -172,10 +172,11 @@ Recommended sample files:
 
 Current workflow:
 1. Open `Typical Section`
-2. `Browse CSV`
+2. Either choose a built-in `Preset` or use `Browse CSV`
 3. `Load CSV`
-4. Review/edit the table if needed
-5. `Apply`
+4. Use quick-add buttons, mirror buttons, and row-move buttons if needed
+5. Review the `Summary` panel
+6. `Apply`
 
 Recommended header:
 `Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled`
@@ -201,8 +202,11 @@ Recommended sample files:
 Current notes:
 1. `TypicalSectionTemplate` defines the finished-grade top profile.
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
-3. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
-4. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
+3. `Save Component CSV` can export the edited component table back to CSV.
+4. The editor now supports built-in presets and quick-add component buttons for faster setup.
+5. Type-aware tooltips and cell tinting help distinguish slope-driven rows (`lane`, `shoulder`, `gutter`) from height-driven rows (`curb`, `ditch`).
+6. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
+7. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
 
 ### 3C. Typical Section Pavement CSV
 
@@ -213,7 +217,8 @@ Current workflow:
 2. `Browse Pavement CSV`
 3. `Load Pavement CSV`
 4. Review/edit the pavement layer table if needed
-5. `Apply`
+5. Optionally use `Save Pavement CSV` to export the edited stack
+6. `Apply`
 
 Recommended header:
 `Id,Type,Thickness,Enabled`

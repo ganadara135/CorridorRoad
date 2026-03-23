@@ -52,6 +52,10 @@ class PviEditorTaskPanel:
         main.setContentsMargins(10, 10, 10, 10)
         main.setSpacing(10)
 
+        self.lbl_status = QtWidgets.QLabel("")
+        self.lbl_status.setWordWrap(True)
+        main.addWidget(self.lbl_status)
+
         # Top controls
         top = QtWidgets.QHBoxLayout()
         top.setSpacing(10)
@@ -111,6 +115,7 @@ class PviEditorTaskPanel:
         self.chk_keep_eg = QtWidgets.QCheckBox("Keep existing EG values (do not overwrite)")
         self.chk_keep_eg.setChecked(True)
 
+        self.btn_open_profiles = QtWidgets.QPushButton("Open Edit Profiles")
         self.btn_preview = QtWidgets.QPushButton("Preview FG (console)")
         self.btn_generate_only = QtWidgets.QPushButton("Generate FG Now (apply)")
         self.btn_close = QtWidgets.QPushButton("Close")
@@ -118,6 +123,7 @@ class PviEditorTaskPanel:
         gr.addRow(self.lbl_info)
         gr.addRow(self.chk_create_bundle)
         gr.addRow(self.chk_keep_eg)
+        gr.addRow(self.btn_open_profiles)
         gr.addRow(self.btn_preview)
         row_apply = QtWidgets.QHBoxLayout()
         row_apply.addWidget(self.btn_generate_only)
@@ -135,6 +141,7 @@ class PviEditorTaskPanel:
         self.btn_add.clicked.connect(self._add_row)
         self.btn_remove.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
+        self.btn_open_profiles.clicked.connect(self._open_edit_profiles)
         self.btn_preview.clicked.connect(self._preview_fg)
         self.btn_generate_only.clicked.connect(self._generate_fg_to_profilebundle)
         self.btn_close.clicked.connect(self.reject)
@@ -214,13 +221,43 @@ class PviEditorTaskPanel:
         finally:
             self._loading = False
 
+    def _refresh_status_summary(self):
+        if self.doc is None:
+            self.lbl_status.setText("No active document.")
+            return
+        va = _find_vertical_alignment(self.doc)
+        bundle = _find_profile_bundle(self.doc)
+        stationing = _find_stationing(self.doc)
+        target = bundle.Label if bundle is not None else ("Stationing" if stationing is not None else "None")
+        linked = "Yes" if bundle is not None else "No"
+        self.lbl_status.setText(
+            "\n".join(
+                [
+                    f"Target ProfileBundle: {target}",
+                    f"Linked Profiles: {linked}",
+                    "Generate FG Now will update the profile FG values from the current vertical alignment.",
+                ]
+            )
+        )
+
+    def _open_edit_profiles(self):
+        try:
+            from freecad.Corridor_Road.ui.task_profile_editor import ProfileEditorTaskPanel
+
+            Gui.Control.closeDialog()
+            Gui.Control.showDialog(ProfileEditorTaskPanel())
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit PVI", f"Could not open Edit Profiles: {ex}")
+
     def _try_load_existing_va(self):
         if self.doc is None:
+            self._refresh_status_summary()
             return
 
         self._scale = get_length_scale(self.doc, default=1.0)
         va = _find_vertical_alignment(self.doc)
         if va is None:
+            self._refresh_status_summary()
             return
 
         st = list(getattr(va, "PVIStations", []) or [])
@@ -258,6 +295,7 @@ class PviEditorTaskPanel:
             self.spin_min_tan.setValue(float(getattr(va, "MinTangent", 0.0)) / sc)
         except Exception:
             pass
+        self._refresh_status_summary()
 
     # ---- Save VerticalAlignment ----
     def _save_vertical_alignment(self):
@@ -430,8 +468,9 @@ class PviEditorTaskPanel:
         QtWidgets.QMessageBox.information(
             None,
             "Edit PVI",
-            f"FG generation completed.\nStations: {len(stations)}\nProfileBundle and VerticalAlignment updated.",
+            f"FG generation completed.\nStations updated: {len(stations)}\nVerticalAlignment updated.\nProfiles FG refreshed.",
         )
+        self._refresh_status_summary()
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

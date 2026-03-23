@@ -7,7 +7,7 @@ import math
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
@@ -119,34 +119,18 @@ class ProfileEditorTaskPanel:
         self.lbl_info.setWordWrap(True)
         root.addWidget(self.lbl_info)
 
-        # Table
-        self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Station", "EG", "FG", "Delta (FG-EG)"])
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(
-            QtWidgets.QAbstractItemView.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditKeyPressed
-            | QtWidgets.QAbstractItemView.AnyKeyPressed
-        )
+        self.lbl_status = QtWidgets.QLabel("")
+        self.lbl_status.setWordWrap(True)
+        root.addWidget(self.lbl_status)
 
-        root.addWidget(self.table)
+        self.lbl_fg_banner = QtWidgets.QLabel("")
+        self.lbl_fg_banner.setWordWrap(True)
+        self.lbl_fg_banner.setMargin(6)
+        root.addWidget(self.lbl_fg_banner)
 
-        # Buttons row
-        btn_row = QtWidgets.QHBoxLayout()
-        self.btn_add = QtWidgets.QPushButton("Add Row")
-        self.btn_remove = QtWidgets.QPushButton("Remove Row")
-        self.btn_sort = QtWidgets.QPushButton("Sort by Station")
-        self.btn_fill_stations = QtWidgets.QPushButton("Fill Stations from Stationing")
-        self.btn_fill_fg_from_va = QtWidgets.QPushButton("Fill FG from VerticalAlignment")
-
-        btn_row.addWidget(self.btn_add)
-        btn_row.addWidget(self.btn_remove)
-        btn_row.addWidget(self.btn_sort)
-        btn_row.addWidget(self.btn_fill_stations)
-        btn_row.addWidget(self.btn_fill_fg_from_va)
-        root.addLayout(btn_row)
+        self.lbl_state = QtWidgets.QLabel("")
+        self.lbl_state.setWordWrap(True)
+        root.addWidget(self.lbl_state)
 
         # Options group
         gb = QtWidgets.QGroupBox("Options")
@@ -182,6 +166,8 @@ class ProfileEditorTaskPanel:
         self.btn_pick_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_close = QtWidgets.QPushButton("Close")
+        self.btn_open_pvi = QtWidgets.QPushButton("Open Edit PVI")
+        self.btn_refresh_fg_from_va = QtWidgets.QPushButton("Refresh FG from VerticalAlignment")
 
         form.addRow(self.chk_create_bundle)
         form.addRow(self.chk_fg_from_va)
@@ -197,6 +183,12 @@ class ProfileEditorTaskPanel:
         w_coord_mode.setLayout(row_coord_mode)
         form.addRow("EG Terrain Coords:", w_coord_mode)
         form.addRow(self.btn_pick_terrain)
+        row_nav = QtWidgets.QHBoxLayout()
+        row_nav.addWidget(self.btn_open_pvi)
+        row_nav.addWidget(self.btn_refresh_fg_from_va)
+        w_nav = QtWidgets.QWidget()
+        w_nav.setLayout(row_nav)
+        form.addRow(w_nav)
         row_apply = QtWidgets.QHBoxLayout()
         row_apply.addWidget(self.btn_apply)
         row_apply.addWidget(self.btn_close)
@@ -206,15 +198,52 @@ class ProfileEditorTaskPanel:
 
         root.addWidget(gb)
 
+        gb_table = QtWidgets.QGroupBox("Profile Table")
+        vtable = QtWidgets.QVBoxLayout(gb_table)
+
+        self.table = QtWidgets.QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Station", "EG", "FG", "Delta (FG-EG)"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.AnyKeyPressed
+        )
+        vtable.addWidget(self.table)
+
+        self.lbl_table_summary = QtWidgets.QLabel("")
+        self.lbl_table_summary.setWordWrap(True)
+        vtable.addWidget(self.lbl_table_summary)
+
+        # Buttons row
+        btn_row = QtWidgets.QHBoxLayout()
+        self.btn_add = QtWidgets.QPushButton("Add Row")
+        self.btn_remove = QtWidgets.QPushButton("Remove Row")
+        self.btn_sort = QtWidgets.QPushButton("Sort by Station")
+        self.btn_fill_stations = QtWidgets.QPushButton("Fill Stations from Stationing")
+        self.btn_fill_fg_from_va = QtWidgets.QPushButton("Fill FG from VerticalAlignment")
+
+        btn_row.addWidget(self.btn_add)
+        btn_row.addWidget(self.btn_remove)
+        btn_row.addWidget(self.btn_sort)
+        btn_row.addWidget(self.btn_fill_stations)
+        btn_row.addWidget(self.btn_fill_fg_from_va)
+        vtable.addLayout(btn_row)
+        root.addWidget(gb_table)
+
         # Signals
         self.btn_add.clicked.connect(self._add_row)
         self.btn_remove.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_fill_stations.clicked.connect(self._fill_stations_from_stationing)
         self.btn_fill_fg_from_va.clicked.connect(self._fill_fg_from_va)
+        self.btn_refresh_fg_from_va.clicked.connect(self._refresh_fg_from_va)
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_close.clicked.connect(self.reject)
+        self.btn_open_pvi.clicked.connect(self._open_edit_pvi)
         self.cmb_terrain_coords.currentIndexChanged.connect(self._on_terrain_coord_mode_changed)
         self.cmb_eg_terrain.currentIndexChanged.connect(self._on_terrain_source_changed)
 
@@ -296,6 +325,92 @@ class ProfileEditorTaskPanel:
         self._sync_coord_mode_from_selected_terrain()
         self._update_coord_hint()
 
+    def _refresh_status_summary(self):
+        fg_mode = "From VerticalAlignment" if bool(self.chk_fg_from_va.isChecked()) and self.va is not None else "Manual"
+        va_linked = "Yes" if self.va is not None else "No"
+        terr = self._current_terrain()
+        if terr is not None:
+            eg_src = terr.Label
+        elif self.project is not None and getattr(self.project, "Terrain", None) is not None:
+            eg_src = getattr(self.project.Terrain, "Label", "Project Terrain")
+        else:
+            eg_src = "None"
+
+        self.lbl_status.setText(
+            "\n".join(
+                [
+                    f"FG mode: {fg_mode}",
+                    f"VerticalAlignment linked: {va_linked}",
+                    f"EG source: {eg_src}",
+                ]
+            )
+        )
+
+        if bool(self.chk_fg_from_va.isChecked()) and self.va is not None:
+            self.lbl_fg_banner.setStyleSheet("QLabel { background-color: #274b30; color: #f2f7f2; border: 1px solid #3e6d49; }")
+            self.lbl_fg_banner.setText("FG is controlled by VerticalAlignment. The FG column is locked and table FG values follow the current vertical alignment.")
+        else:
+            self.lbl_fg_banner.setStyleSheet("QLabel { background-color: #4b3320; color: #fff6ec; border: 1px solid #6f4d32; }")
+            self.lbl_fg_banner.setText("FG is in manual mode. Editing the FG column can diverge from VerticalAlignment until you refresh or switch the lock back on.")
+        self._update_table_summary()
+
+    def _update_table_summary(self):
+        total = 0
+        missing_eg = 0
+        missing_fg = 0
+        pos_delta = 0
+        neg_delta = 0
+        zero_delta = 0
+        for r in range(self.table.rowCount()):
+            sta = self._get_cell_float(r, 0)
+            if sta is None:
+                continue
+            total += 1
+            eg = self._get_cell_float(r, 1)
+            fg = self._get_cell_float(r, 2)
+            if eg is None:
+                missing_eg += 1
+            if fg is None:
+                missing_fg += 1
+            if eg is None or fg is None:
+                continue
+            d = float(fg - eg)
+            if d > 1e-9:
+                pos_delta += 1
+            elif d < -1e-9:
+                neg_delta += 1
+            else:
+                zero_delta += 1
+        self.lbl_table_summary.setText(
+            f"Rows with stations: {total} | Missing EG: {missing_eg} | Missing FG: {missing_fg} | "
+            f"Delta > 0: {pos_delta} | Delta < 0: {neg_delta} | Delta = 0: {zero_delta}"
+        )
+
+    def _open_edit_pvi(self):
+        try:
+            from freecad.Corridor_Road.ui.task_pvi_editor import PviEditorTaskPanel
+
+            Gui.Control.closeDialog()
+            Gui.Control.showDialog(PviEditorTaskPanel())
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Could not open Edit PVI: {ex}")
+
+    def _refresh_fg_from_va(self):
+        if self.va is None:
+            QtWidgets.QMessageBox.information(None, "Edit Profiles", "VerticalAlignment was not found. Open Edit PVI first.")
+            return
+        self._fill_fg_from_va(force=True)
+        updated = 0
+        for r in range(self.table.rowCount()):
+            if self._get_cell_float(r, 0) is not None and self._get_cell_float(r, 2) is not None:
+                updated += 1
+        self._refresh_status_summary()
+        QtWidgets.QMessageBox.information(
+            None,
+            "Edit Profiles",
+            f"FG refreshed from VerticalAlignment.\nUpdated stations: {updated}\nFG source: VerticalAlignment",
+        )
+
     # ---- Context ----
     def _refresh_context(self):
         if self.doc is None:
@@ -353,12 +468,15 @@ class ProfileEditorTaskPanel:
         self.cmb_eg_terrain.setEnabled(bool(self._terrains))
         self.btn_pick_terrain.setEnabled(bool(self._terrains))
         self.btn_apply.setEnabled(True)
+        self.btn_open_pvi.setEnabled(True)
 
         # default FG-from-VA checkbox based on VA existence
         if self.va is None:
             self.chk_fg_from_va.setChecked(False)
 
         self.btn_fill_fg_from_va.setEnabled(self.va is not None)
+        self.btn_refresh_fg_from_va.setEnabled(self.va is not None)
+        self._refresh_status_summary()
     # ---- Table helpers ----
 
     def _set_rows(self, n):
@@ -474,6 +592,7 @@ class ProfileEditorTaskPanel:
     # ---- Actions ----
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
+        self._update_table_summary()
 
     def _remove_row(self):
         r = self.table.currentRow()
@@ -481,6 +600,7 @@ class ProfileEditorTaskPanel:
             r = self.table.rowCount() - 1
         if r >= 0:
             self.table.removeRow(r)
+        self._update_table_summary()
 
     def _sort_rows(self):
         rows = self._read_table_rows(keep_blanks=False)
@@ -521,6 +641,7 @@ class ProfileEditorTaskPanel:
 
         # If FG locked, auto-fill from VA
         self._fill_fg_from_va()
+        self._update_table_summary()
 
     def _fill_eg_from_terrain(self, overwrite: bool = True, show_message: bool = True, terrain_obj=None):
         if self.alignment is None:
@@ -661,6 +782,7 @@ class ProfileEditorTaskPanel:
             if nodata > 0:
                 msg += f", no-data: {nodata} rows"
             QtWidgets.QMessageBox.information(None, "Edit Profiles", msg)
+        self._update_table_summary()
 
     def _apply_changes(self):
         try:
@@ -668,16 +790,25 @@ class ProfileEditorTaskPanel:
             if terr is not None and self.alignment is not None:
                 self._fill_eg_from_terrain(overwrite=True, show_message=False, terrain_obj=terr)
             self._save_to_document()
-            QtWidgets.QMessageBox.information(None, "Edit Profiles", "Applied.")
+            self._refresh_status_summary()
+            total = 0
+            for r in range(self.table.rowCount()):
+                if self._get_cell_float(r, 0) is not None:
+                    total += 1
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Profiles",
+                f"Applied.\nRows with stations: {total}\nFG mode: {'VerticalAlignment' if bool(self.chk_fg_from_va.isChecked()) and self.va is not None else 'Manual'}",
+            )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Apply failed: {ex}")
 
-    def _fill_fg_from_va(self):
+    def _fill_fg_from_va(self, force: bool = False):
         if self.va is None:
             return
 
         # only fill if lock mode is on (to avoid surprising overwrites)
-        if not self.chk_fg_from_va.isChecked():
+        if (not force) and (not self.chk_fg_from_va.isChecked()):
             return
 
         self._loading = True
@@ -691,6 +822,7 @@ class ProfileEditorTaskPanel:
                 self._update_delta_row(r)
         finally:
             self._loading = False
+        self._update_table_summary()
 
     def _on_table_item_changed(self, item):
         if self._loading:
@@ -711,16 +843,37 @@ class ProfileEditorTaskPanel:
                     self._ensure_fg_hidden("FG cell edited manually")
 
             self._update_delta_row(r)
+            self._update_table_summary()
 
     def _update_delta_row(self, r):
+        it = self.table.item(r, 3)
+        if it is None:
+            it = QtWidgets.QTableWidgetItem("")
+            self.table.setItem(r, 3, it)
+
         eg = self._get_cell_float(r, 1)
         fg = self._get_cell_float(r, 2)
 
         if eg is None or fg is None:
             self._set_cell_text(r, 3, "")
+            it.setBackground(QtGui.QColor("#2a2d33"))
+            it.setToolTip("Delta is unavailable until both EG and FG are filled.")
+            self._update_table_summary()
             return
 
-        self._set_cell_float(r, 3, float(fg - eg))
+        delta = float(fg - eg)
+        self._set_cell_float(r, 3, delta)
+        it = self.table.item(r, 3)
+        if delta > 1e-9:
+            it.setBackground(QtGui.QColor("#284733"))
+            it.setToolTip("Positive delta: FG is above EG.")
+        elif delta < -1e-9:
+            it.setBackground(QtGui.QColor("#4a3424"))
+            it.setToolTip("Negative delta: FG is below EG.")
+        else:
+            it.setBackground(QtGui.QColor("#38404a"))
+            it.setToolTip("Zero delta: FG equals EG.")
+        self._update_table_summary()
 
     # ---- Load/Save ----
     def _load_from_document(self):
@@ -795,6 +948,7 @@ class ProfileEditorTaskPanel:
 
                     self._fill_fg_from_va()
 
+            self._refresh_status_summary()
             return
 
         st = list(getattr(self.bundle, "Stations", []) or [])
@@ -819,6 +973,7 @@ class ProfileEditorTaskPanel:
 
         # if locked FG and VA exists, override FG display values from VA
         self._fill_fg_from_va()
+        self._refresh_status_summary()
 
     def _read_table_rows(self, keep_blanks: bool):
         """
@@ -1081,11 +1236,13 @@ class ProfileEditorTaskPanel:
     def _on_fg_mode_toggled(self, checked):
         # checked=True => FG from VA mode
         self._apply_fg_lock()
+        self._refresh_status_summary()
 
         # UX guardrails
         if checked and self.va is not None:
             # Switch to VA-driven FG
             self.btn_fill_fg_from_va.setEnabled(True)
+            self.btn_refresh_fg_from_va.setEnabled(True)
 
             # Force show VA FG (so user sees the "source of truth")
             # self._ensure_va_fg_shown("mode toggled on")
@@ -1097,6 +1254,7 @@ class ProfileEditorTaskPanel:
         else:
             # Manual FG mode OR no VA
             self.btn_fill_fg_from_va.setEnabled(False)
+            self.btn_refresh_fg_from_va.setEnabled(self.va is not None)
 
             # Prevent mismatch: hide VA FG wire immediately
             # self._ensure_va_fg_hidden("mode toggled off (manual FG)")

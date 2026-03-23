@@ -184,6 +184,8 @@ def get_coordinate_setup(doc_or_project):
             "NorthRotationDeg": 0.0,
             "CoordSetupLocked": False,
             "CoordSetupStatus": "Uninitialized",
+            "CoordinateWorkflow": "Local-first",
+            "AutoApplyCoordinateRecommendations": True,
         }
 
     return {
@@ -199,7 +201,18 @@ def get_coordinate_setup(doc_or_project):
         "NorthRotationDeg": _safe_angle_deg(getattr(prj, "NorthRotationDeg", 0.0), default=0.0),
         "CoordSetupLocked": bool(getattr(prj, "CoordSetupLocked", False)),
         "CoordSetupStatus": str(getattr(prj, "CoordSetupStatus", "Uninitialized") or "Uninitialized"),
+        "CoordinateWorkflow": str(getattr(prj, "CoordinateWorkflow", "") or "").strip(),
+        "AutoApplyCoordinateRecommendations": bool(getattr(prj, "AutoApplyCoordinateRecommendations", True)),
     }
+
+
+def get_coordinate_workflow(doc_or_project, default: str = "") -> str:
+    cst = get_coordinate_setup(doc_or_project)
+    workflow = str(cst.get("CoordinateWorkflow", "") or "").strip()
+    if workflow in ("World-first", "Local-first", "Custom"):
+        return workflow
+    epsg = str(cst.get("CRSEPSG", "") or "").strip()
+    return "World-first" if epsg else ("Local-first" if not default else str(default))
 
 
 def local_to_world(doc_or_project, x: float, y: float, z: float):
@@ -1291,6 +1304,19 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "CoordSetupStatus"):
         obj.addProperty("App::PropertyString", "CoordSetupStatus", "CoordinateSystem", "Coordinate setup status")
         obj.CoordSetupStatus = "Uninitialized"
+    if not hasattr(obj, "CoordinateWorkflow"):
+        obj.addProperty("App::PropertyString", "CoordinateWorkflow", "CoordinateSystem", "Coordinate workflow recommendation")
+        obj.CoordinateWorkflow = "Local-first"
+    try:
+        workflow = str(getattr(obj, "CoordinateWorkflow", "") or "").strip()
+        if workflow not in ("World-first", "Local-first", "Custom"):
+            workflow = "World-first" if str(getattr(obj, "CRSEPSG", "") or "").strip() else "Local-first"
+            obj.CoordinateWorkflow = workflow
+    except Exception:
+        pass
+    if not hasattr(obj, "AutoApplyCoordinateRecommendations"):
+        obj.addProperty("App::PropertyBool", "AutoApplyCoordinateRecommendations", "CoordinateSystem", "Use coordinate workflow as task-panel default")
+        obj.AutoApplyCoordinateRecommendations = True
 
     _ensure_hidden_link_property(obj, "Terrain", "CorridorRoad", "Link to EG terrain object")
     _ensure_hidden_link_property(obj, "Alignment", "CorridorRoad", "Link to horizontal alignment object")
