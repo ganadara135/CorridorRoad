@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+
 # Sprint 5: External Shape Placement Plan
 
 This sprint adds external geometry placement for structures that are too complex to express

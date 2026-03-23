@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileNotice: Part of the Corridor Road addon.
+
 """Virtual module-path mapping for FreeCAD proxy persistence.
 
 FreeCAD can persist Python proxy class module paths in FCStd files.

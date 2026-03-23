@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileNotice: Part of the Corridor Road addon.
+
 # CorridorRoad/commands/cmd_generate_centerline3d.py
 import FreeCAD as App
 import FreeCADGui as Gui

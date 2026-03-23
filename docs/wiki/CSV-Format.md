@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+
 # CSV Format
 
 This page defines CSV input format for point cloud, alignment, and structure import.
