@@ -140,12 +140,6 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "ShowPreviewWire"):
         obj.addProperty("App::PropertyBool", "ShowPreviewWire", "Display", "Show preview wire")
         obj.ShowPreviewWire = True
-    if not hasattr(obj, "ShowPavementPreview"):
-        obj.addProperty("App::PropertyBool", "ShowPavementPreview", "Display", "Show pavement preview offset wires")
-        obj.ShowPavementPreview = True
-    if not hasattr(obj, "PavementPreviewCount"):
-        obj.addProperty("App::PropertyInteger", "PavementPreviewCount", "Result", "Number of pavement preview wires")
-        obj.PavementPreviewCount = 0
 
 
 def _normalized_component_arrays(obj):
@@ -403,30 +397,6 @@ def build_top_profile(obj):
     return cleaned
 
 
-def build_pavement_preview_profiles(obj):
-    pts = list(build_top_profile(obj) or [])
-    if len(pts) < 2:
-        return []
-    rows = pavement_rows(obj)
-    out = []
-    cumulative = 0.0
-    for row in rows:
-        if not bool(row.get("Enabled", True)):
-            continue
-        thk = max(0.0, float(row.get("Thickness", 0.0) or 0.0))
-        if thk <= 1e-9:
-            continue
-        cumulative += thk
-        offset_pts = [App.Vector(float(p.x), float(p.y) - cumulative, float(p.z)) for p in pts]
-        cleaned = []
-        for pt in offset_pts:
-            if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
-                cleaned.append(pt)
-        if len(cleaned) >= 2:
-            out.append(cleaned)
-    return out
-
-
 class TypicalSectionTemplate:
     def __init__(self, obj):
         obj.Proxy = self
@@ -449,7 +419,8 @@ class TypicalSectionTemplate:
             obj.PavementLayerCount = int(len(pav_rows))
             obj.EnabledPavementLayerCount = int(pav_enabled_count)
             obj.PavementTotalThickness = float(pav_total_thk)
-            obj.PavementPreviewCount = 0
+            if hasattr(obj, "PavementPreviewCount"):
+                obj.PavementPreviewCount = 0
             obj.LeftEdgeComponentType = str(left_rows[-1].get("Type", "") or "") if left_rows else ""
             obj.RightEdgeComponentType = str(right_rows[-1].get("Type", "") or "") if right_rows else ""
             obj.PreviewSchemaVersion = 2
@@ -469,16 +440,7 @@ class TypicalSectionTemplate:
                 obj.Status = "WARN: No enabled components."
                 return
 
-            shapes = [Part.makePolygon(pts)]
-            if bool(getattr(obj, "ShowPavementPreview", True)):
-                pav_profiles = build_pavement_preview_profiles(obj)
-                obj.PavementPreviewCount = int(len(pav_profiles))
-                for row_pts in pav_profiles:
-                    try:
-                        shapes.append(Part.makePolygon(row_pts))
-                    except Exception:
-                        pass
-            obj.Shape = shapes[0] if len(shapes) == 1 else Part.Compound(shapes)
+            obj.Shape = Part.makePolygon(pts)
             all_issues = list(issues) + list(pav_issues)
             if all_issues:
                 obj.Status = "WARN: " + " | ".join(all_issues[:4])
@@ -486,12 +448,12 @@ class TypicalSectionTemplate:
                 obj.Status = (
                     f"OK: {enabled_count}/{len(rows)} components enabled; "
                     f"edges=({obj.LeftEdgeComponentType or '-'}, {obj.RightEdgeComponentType or '-'}) "
-                    f"pavement={obj.PavementTotalThickness:.3f}m ({pav_enabled_count}/{len(pav_rows)} layers, "
-                    f"preview={obj.PavementPreviewCount})"
+                    f"pavement={obj.PavementTotalThickness:.3f}m ({pav_enabled_count}/{len(pav_rows)} layers)"
                 )
         except Exception as ex:
             obj.Shape = Part.Shape()
-            obj.PavementPreviewCount = 0
+            if hasattr(obj, "PavementPreviewCount"):
+                obj.PavementPreviewCount = 0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -510,7 +472,6 @@ class TypicalSectionTemplate:
             "PavementLayerThicknesses",
             "PavementLayerEnabled",
             "ShowPreviewWire",
-            "ShowPavementPreview",
         ):
             try:
                 obj.touch()

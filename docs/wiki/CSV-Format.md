@@ -112,6 +112,8 @@ Practical notes:
 8. Use `external_shape` when you already have a structure model in `STEP`, `BREP`, or `FCStd` format and want to place that geometry directly.
 9. For `FCStd`, use `ShapeSourcePath` in the form `C:/path/model.FCStd#ObjectName`.
 10. The repository does not currently bundle sample `.step`, `.brep`, or `.FCStd` files, so the sample `ShapeSourcePath` values are placeholders that must be replaced before use.
+11. The upper structure table now defaults to a compact view; use `Selected Structure Details` for most advanced edits.
+12. The panel now includes quick-add helpers, structure cloning, grouped column toggles, and built-in structure presets.
 
 > [Screenshot Needed] Edit Structures panel loading a structure CSV file.
 > Suggested file: `wiki-csv-structure-import-panel.png`
@@ -125,6 +127,8 @@ Current workflow:
 - Load the base structure CSV first.
 - Then use `Browse Profile CSV` -> `Load Profile CSV`.
 - The lower table shows the station-profile rows for the currently selected structure.
+- The lower table also supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`.
+- The `Profile Preset` controls above the lower table can create starter control points directly from the selected structure row.
 
 Recommended header:
 `StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount`
@@ -240,6 +244,7 @@ Current notes:
 2. Current supported layer types are `surface`, `binder`, `base`, `subbase`, `subgrade`.
 3. Current result fields include `PavementLayerCount`, `EnabledPavementLayerCount`, and `PavementTotalThickness`.
 4. These values currently propagate to `SectionSet`, `Corridor Loft`, and `Design Grading Surface`.
+5. Pavement preview offset wires were removed; pavement data remains available through the stored layer rows and total thickness summary.
 
 ## 4. Import Validation Checklist
 1. Header names match exactly.

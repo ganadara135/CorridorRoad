@@ -267,6 +267,7 @@ Important behavior:
 2. `Type`, `Side`, and `BehaviorMode` are controlled lists to keep structure behavior predictable.
 3. `Apply` writes the `StructureSet`, updates 3D solids, and links the result into `01_Inputs/Structures`.
 4. `Apply` also reports external-shape fallback diagnostics and frame diagnostics when placement had to use `alignment` instead of `centerline3d`.
+5. The upper table now starts in a compact `Basic` view and exposes advanced fields mainly through `Selected Structure Details`.
 
 ### Main Controls
 
@@ -280,6 +281,10 @@ Important behavior:
 | `Pick FCStd Object` | Opens an object picker for the selected `.FCStd` source. | After selecting the `.FCStd` file, use this to choose a shape-bearing object and automatically fill `ShapeSourcePath` as `path.FCStd#ObjectName`. |
 | `Browse Profile CSV` | Opens a file chooser for station-profile control-point CSV data. | Use after loading or defining the base structure rows. |
 | `Load Profile CSV` | Reads the station-profile CSV and stores control points for later apply. | Load the base structure CSV first, then the profile CSV. |
+| `Columns: Template / External Shape / Advanced` | Reveals grouped upper-table columns on demand. | Keep them off for overview work; turn them on temporarily for focused editing. |
+| `Add Common Structure` | Inserts a starter row for the selected structure type. | Useful for quickly adding one culvert, crossing, wall, abutment, bridge zone, or external-shape placeholder. |
+| `Clone Selected` | Duplicates the selected structure row and shifts it forward in station. | Also duplicates station-profile points linked to that structure ID. |
+| `Preset` + `Load Preset` | Loads a built-in structure set preset. | Good for testing drainage, wall, mixed, or variable-size workflows without starting from a blank table. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -324,6 +329,8 @@ Important behavior:
 7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
 8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
 9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
+10. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
+11. The validation summary now reports row-level warnings and errors before apply.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -335,6 +342,8 @@ Important behavior:
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
 9. Even when `external_shape` is displayed correctly, current earthwork still uses the structure `Type` and simple dimensional fields rather than the true imported solid.
+10. The selected-structure summary now reports the interpreted earthwork behavior and the current validation state.
+11. Upper-table context changes are now driven by explicit row press/click; the workflow no longer depends on hover.
 
 ### Advanced: Station-Profile Data
 The runtime now supports variable-size structures driven by station control points, and `Edit Structures` now exposes this through a second linked table.
@@ -348,6 +357,8 @@ Current status:
    - `Structure Sections` overlays
    - section overrides / earthwork
    - corridor `notch` handling
+5. The lower table now also supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`.
+6. A `Profile Preset` row above the lower table can generate starter control points directly from the currently selected structure span and dimensions.
 
 Current practical workflow:
 1. Use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` as the base structure-header reference.

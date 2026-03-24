@@ -87,8 +87,11 @@ If profile EG contains many blanks or `0` values:
 ## 4A. Structures
 1. Run `Edit Structures` after `Generate Stations`.
 2. Load a structure CSV or enter rows manually.
-3. Apply the `StructureSet`.
-4. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
+3. Use the compact upper table for overview, and use `Selected Structure Details` for advanced fields.
+4. If needed, use `Columns: Template / External Shape / Advanced` to temporarily reveal grouped columns in the upper table.
+5. Use `Add Common Structure`, `Clone Selected`, or `Preset -> Load Preset` when you want to build a starter structure set quickly.
+6. Apply the `StructureSet`.
+7. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
 
 Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
@@ -113,6 +116,9 @@ Validation:
 - If `Apply` reports `frame source=alignment`, re-run `3D Centerline` and apply the structure set again.
 - If you are testing station-profile-driven structures, load the base structure CSV first, then use `Load Profile CSV`.
 - The lower station-profile table follows the currently selected structure row in the upper table.
+- The lower station-profile table now also supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`.
+- The `Profile Preset` line above the lower table can generate starter variable-size control points directly from the selected structure span.
+- The validation summary at the bottom now gives a quick `OK / warning / error` view before you apply.
 
 ![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
 > Suggested file: `wiki-workflow-04a-structures-editor.png`
@@ -144,6 +150,7 @@ Current notes:
 5. The editor now supports `Save Component CSV` and `Save Pavement CSV` so edited templates can be reused.
 6. Type-aware tooltips and field tinting help show whether `CrossSlopePct` or `Height` matters more for the selected component.
 7. Pavement totals are stored on the template as `PavementTotalThickness`.
+8. Pavement preview offset wires were removed, so reopening the panel and applying the template should stay lighter than before.
 
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`

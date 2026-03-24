@@ -213,6 +213,11 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Edit Structures` now provides a second table for station-profile rows
   - load the base header CSV first, then load the profile CSV
   - selecting a structure in the upper table filters the lower table to that structure's profile rows
+  - the upper table now defaults to a compact `Basic` column view, while `Selected Structure Details` handles advanced fields
+  - use `Columns: Template / External Shape / Advanced` when you want to temporarily reveal grouped columns in the upper table
+  - use `Add Common Structure`, `Clone Selected`, and the built-in structure `Preset` loader for faster setup
+  - the lower profile table now supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`
+  - row validation is shown directly in the upper table, and the panel now reports an overall validation summary
   - use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` and `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv` for focused testing
   - use `tests/samples/structure_utm_realistic_hilly_mixed.csv` and `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv` for combined multi-structure testing
 
