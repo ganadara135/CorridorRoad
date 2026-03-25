@@ -119,6 +119,25 @@ Actions:
    - `fcstd_missing_shape`
 3. Fix the path/object name and apply again.
 
+## Edit Structures shows warnings before Apply
+Symptoms:
+- The upper table shows tinted rows.
+- The validation summary reports warnings or errors before `Apply`.
+
+Interpretation:
+1. This is expected and is now part of the workflow.
+2. The panel performs first-pass checks on structure type, station order, corridor recommendations, external-shape paths, and station-profile consistency.
+
+Actions:
+1. Select the row and read `Selected Structure Details`.
+2. Read the first validation message shown in the summary card.
+3. Use grouped columns or the details panel to fix the relevant fields.
+4. If the issue is profile-related, use the lower table tools:
+   - `Sort by Station`
+   - `Duplicate Profile Row`
+   - `Add Midpoint`
+   - `Delete All for Selected`
+
 ## External shape is visible, but earthwork does not match it
 Symptoms:
 - A complex STEP/BREP/FCStd structure is displayed correctly in 3D.

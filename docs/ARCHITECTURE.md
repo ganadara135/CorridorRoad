@@ -447,6 +447,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - pavement layers are data-first, not separate corridor solids yet
   - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`
   - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary for downstream reporting
+  - pavement preview offset wires were removed; `TypicalSectionTemplate.Shape` now stays focused on the top-profile wire for faster panel/apply behavior
 - execution-plan/status document:
   - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
@@ -455,6 +456,19 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - `BottomElevation` / `Cover` enablement follows structure type policy.
 - `Browse Shape` supports `.step`, `.brep`, and `.FCStd`.
 - `Apply` reports external-shape fallback diagnostics and frame-source diagnostics.
+- Current editor structure:
+  - upper structure-header table = compact overview
+  - grouped column reveal = `Template`, `External Shape`, `Advanced`
+  - `Selected Structure Details` = preferred advanced-field editor
+  - lower profile table = station-profile control points for the selected structure
+- Current quick actions:
+  - `Add Common Structure`
+  - `Clone Selected`
+  - structure-set `Preset` loader
+  - profile-level `Profile Preset` loader
+- Current UX policy:
+  - selection context updates on explicit row press/click, not hover
+  - row validation state is surfaced directly in the upper table and summary labels
 
 ### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor_loft.py`)
 - Creates/updates `CorridorLoft`.

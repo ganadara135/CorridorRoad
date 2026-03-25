@@ -10,6 +10,8 @@ For field-by-field explanations of task-panel options, see [Menu Reference](Menu
 ## 1. Project Initialization
 1. `New Project`
 2. `Project Setup`
+3. If `CRS / EPSG` is set, keep the recommended default `Coordinate Workflow = World-first`.
+4. If the project is a local test/concept model with no real-world CRS, keep `Coordinate Workflow = Local-first`.
 
 Output:
 - Fixed project tree
@@ -18,6 +20,7 @@ Output:
 Validation:
 - Project object links are initialized.
 - Length scale and coordinate policy are confirmed before geometry creation.
+- Downstream task panels start from the same recommended coordinate mode when auto-apply is enabled.
 
 ![Screenshot Needed Project tree immediately after setup](images/wiki-workflow-01-project-init.png)
 
@@ -43,8 +46,10 @@ DEM tuning note:
 
 ## 3. Horizontal Geometry
 1. Open `Alignment`.
-2. Import CSV or edit table (IP, radius, transition).
-3. Apply alignment.
+2. Import CSV, load a built-in `Preset`, or edit the table directly (IP, radius, transition).
+3. Presets are stored as local-pattern rows.
+4. If `Coord Input` is currently `World (E/N)`, `Load Preset` converts those local rows through the active `Project Setup`.
+5. Apply alignment.
 
 Output:
 - Horizontal alignment with key stations
@@ -52,6 +57,7 @@ Output:
 Validation:
 - IP/radius/transition interpretation is correct.
 - Alignment path is inside terrain bounds.
+- If a preset was used in `World` mode, the loaded coordinates should still fall inside terrain coverage and match the project origin/rotation policy.
 
 ![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment.png)
 ![Imported alignment geometry and key points](images/wiki-workflow-03-horizontal-alignment_2.png)
@@ -81,8 +87,11 @@ If profile EG contains many blanks or `0` values:
 ## 4A. Structures
 1. Run `Edit Structures` after `Generate Stations`.
 2. Load a structure CSV or enter rows manually.
-3. Apply the `StructureSet`.
-4. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
+3. Use the compact upper table for overview, and use `Selected Structure Details` for advanced fields.
+4. If needed, use `Columns: Template / External Shape / Advanced` to temporarily reveal grouped columns in the upper table.
+5. Use `Add Common Structure`, `Clone Selected`, or `Preset -> Load Preset` when you want to build a starter structure set quickly.
+6. Apply the `StructureSet`.
+7. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
 
 Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
@@ -107,14 +116,21 @@ Validation:
 - If `Apply` reports `frame source=alignment`, re-run `3D Centerline` and apply the structure set again.
 - If you are testing station-profile-driven structures, load the base structure CSV first, then use `Load Profile CSV`.
 - The lower station-profile table follows the currently selected structure row in the upper table.
+- The lower station-profile table now also supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`.
+- The `Profile Preset` line above the lower table can generate starter variable-size control points directly from the selected structure span.
+- The validation summary at the bottom now gives a quick `OK / warning / error` view before you apply.
 
 ![Screenshot Needed] Edit Structures task panel with station combo boxes and sample rows.
 > Suggested file: `wiki-workflow-04a-structures-editor.png`
 
 ## 4B. Typical Section
 1. Run `Typical Section`.
-2. Either enter component rows manually or use `Browse CSV` -> `Load CSV`.
-3. Click `Apply`.
+2. Either choose a built-in `Preset`, use the quick-add buttons (`Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`), or load rows with `Browse CSV` -> `Load CSV`.
+3. If the section is symmetric, use `Mirror Left -> Right` or `Mirror Right -> Left` to copy edge rows quickly.
+4. Use `Move Up`, `Move Down`, or `Sort by Order` to clean up the component order.
+5. Optionally load pavement layers with `Browse Pavement CSV` -> `Load Pavement CSV`.
+6. Check the `Summary` panel for top width, edge types, and pavement total thickness.
+7. Click `Apply`.
 
 Recommended sample files:
 - `tests/samples/typical_section_basic_rural.csv`
@@ -131,7 +147,10 @@ Current notes:
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
 4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
-5. Pavement totals are stored on the template as `PavementTotalThickness`.
+5. The editor now supports `Save Component CSV` and `Save Pavement CSV` so edited templates can be reused.
+6. Type-aware tooltips and field tinting help show whether `CrossSlopePct` or `Height` matters more for the selected component.
+7. Pavement totals are stored on the template as `PavementTotalThickness`.
+8. Pavement preview offset wires were removed, so reopening the panel and applying the template should stay lighter than before.
 
 ![Screenshot Needed] StructureSet visible in 3D view and input tree.
 > Suggested file: `wiki-workflow-04a-structures-3d.png`

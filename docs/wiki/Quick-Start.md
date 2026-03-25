@@ -24,6 +24,8 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
    - [Screenshot Needed] New project tree created.
    - Suggested file: `wiki-quickstart-step1-new-project.png`
 2. Run `Project Setup` and confirm project defaults.
+3. If `CRS / EPSG` is filled, keep `Coordinate Workflow = World-first`.
+4. If the project stays in local engineering coordinates, use `Coordinate Workflow = Local-first`.
    - Check design standard and coordinate setup lock status.
    - [Screenshot Needed] Project Setup panel.
    - Suggested file: `wiki-quickstart-step2-project-setup.png`
@@ -32,6 +34,8 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
    - [Screenshot Needed] PointCloud DEM import dialog + generated mesh.
    - Suggested file: `wiki-quickstart-step3-pointcloud-dem.png`
 4. Open `Alignment` and import `alignment_utm_realistic_hilly.csv`.
+   - Alternatively, choose an alignment `Preset` and click `Load Preset` when you want a quick starter geometry instead of a real CSV.
+   - If `Coord Input = World (E/N)`, preset rows are converted from local pattern coordinates using the current `Project Setup`.
    - Verify alignment lies inside terrain extent.
    - [Screenshot Needed] Alignment editor with imported rows.
    - Suggested file: `wiki-quickstart-step4-alignment-import.png`

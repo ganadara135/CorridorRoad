@@ -24,6 +24,8 @@ Important behavior:
 | `Length Scale` | Internal units per meter. `1.0` means meter-native. Larger values such as `1000.0` mean the model uses millimeter-like internal units. | Set this once at the start of the project. Other tools such as DEM import and PVI scaling follow this value. Changing it after data already exists can create inconsistencies. |
 | `Design Standard` | Stores the selected road design standard on the project. | Use the standard that should control alignment/design checks. Even if the current stage is mostly geometric, keep this consistent for later validation work. |
 | `CRS / EPSG` | Coordinate system identifier, for example `EPSG:5186`. | Use this when working with UTM or real-world survey coordinates. It is metadata plus a strong workflow hint for coordinate-sensitive tasks. |
+| `Coordinate Workflow` | Recommended coordinate-input policy for downstream task panels. | `World-first` is recommended when `CRS / EPSG` is set. `Local-first` is recommended when the project stays in local engineering coordinates. `Custom` keeps the project metadata but stops pushing one policy as the main recommendation. |
+| `Auto-apply recommended modes in task panels` | Controls whether task panels should use the workflow recommendation as their initial coordinate mode. | Keep this enabled for a consistent project-wide policy. Turn it off only when each task panel should decide its own coordinate mode manually. |
 | `Horizontal Datum` | Horizontal datum text metadata. | Optional. Fill it when the survey or project requires explicit datum documentation. |
 | `Vertical Datum` | Vertical datum text metadata. | Optional. Fill it when elevations must be traceable to a known datum. |
 | `Project Origin E` | World easting origin of the project anchor point. | Use this when converting between local model coordinates and world coordinates. |
@@ -41,19 +43,54 @@ Important behavior:
 ### Recommended Usage
 1. Set `Length Scale` first.
 2. Enter `CRS / EPSG` and origin values if the workflow uses real-world coordinates.
-3. Leave local origins at zero unless you deliberately want an offset local model.
-4. Apply once and confirm imports behave correctly.
-5. Lock the setup after the coordinate policy is confirmed.
+3. Confirm `Coordinate Workflow`.
+4. In most survey/UTM jobs, use `World-first`.
+5. In simple local test files, use `Local-first`.
+6. Leave local origins at zero unless you deliberately want an offset local model.
+7. Apply once and confirm imports behave correctly.
+8. Lock the setup after the coordinate policy is confirmed.
 
 ### Practical Notes
 1. If point cloud CSV is in UTM, `Project Setup` should usually be completed before `Import PointCloud DEM`.
 2. If alignment and terrain appear shifted, check `Project Origin`, `Local Origin`, and `North Rotation` before changing other tools.
-3. `Setup Status` is useful for team workflow, but it does not prevent generation commands by itself.
+3. If `Auto-apply recommended modes in task panels` is enabled, `Import PointCloud DEM`, `Alignment`, `Edit Profiles`, `Generate Sections`, `Design Terrain`, and `Cut/Fill Calc` will start from the workflow recommendation.
+4. `Setup Status` is useful for team workflow, but it does not prevent generation commands by itself.
 
 > [Screenshot Needed] Project Setup panel with coordinate fields filled.
 > Suggested file: `wiki-menu-reference-project-setup.png`
 
-## 2. Import PointCloud DEM
+## 2. Edit Alignment
+
+Use `Edit Alignment` to create or update the horizontal alignment from table rows, CSV input, sketch geometry, or built-in starter presets.
+
+Important behavior:
+1. The alignment table always stores the values currently shown in the panel coordinate mode.
+2. Built-in presets are defined as local pattern rows.
+3. If `Coord Input = World (E/N)`, `Load Preset` converts those local preset rows through the active `Project Setup`.
+4. CSV import remains the main path for real survey or design data; presets are meant for quick starts and test geometry.
+
+### Alignment Source Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Alignment` | Selects which `HorizontalAlignment` object will be edited. | Choose an existing alignment or let `Apply Alignment` create one when none exists and creation is enabled. |
+| `Sketch` | Selects a sketch for sketch-based row generation. | Use when you already drafted a path in a FreeCAD sketch and want starter IP rows from it. |
+| `Load from Sketch` | Reads the selected sketch into the alignment table. | Good for fast concept geometry. Review radii and transitions after loading. |
+| `CSV` / `Browse CSV` / `Load from CSV` | Reads alignment rows from a CSV file. | Use this for real project data or repeatable exchange files. |
+| `Preset` | Built-in starter geometry such as `Simple Tangent`, `Single Curve`, `S-C-S Curve`, `Reverse Curve`, or `Sample Local Alignment`. | Use when you want to start from a known local-pattern geometry instead of a blank table. |
+| `Load Preset` | Loads the selected preset into the alignment table. | In `Local (X/Y)` mode the preset rows are inserted directly. In `World (E/N)` mode they are converted using the active `Project Setup`. |
+| `Coord Input` | Declares whether the table currently represents local or world coordinates. | Keep this consistent with the source you are loading or the way you want presets to be converted. |
+| `Save CSV` | Writes the current table rows back to a CSV file. | Useful after starting from a preset and refining it into reusable project data. |
+
+### Practical Notes
+1. Presets are best thought of as pattern starters, not authoritative survey coordinates.
+2. If the project uses `World-first`, preset loading is still safe because the conversion uses `Project Origin`, `Local Origin`, and `North Rotation`.
+3. If a preset lands outside the terrain or expected project area, check the current `Coord Input` and `Project Setup` rotation/origin values first.
+
+> [Screenshot Needed] Alignment editor showing the Preset combo, Load Preset, and Coord Input.
+> Suggested file: `wiki-menu-reference-alignment-preset.png`
+
+## 3. Import PointCloud DEM
 
 Use `Import PointCloud DEM` to turn point cloud CSV data into a DEM-style mesh terrain for EG sampling, daylight reference, and terrain-based analysis.
 
@@ -73,6 +110,10 @@ Important behavior:
 | `CSV has header row` | Tells the importer whether the first row is a header. | Keep enabled for normal CSV files. Disable only for raw data files with no header row. |
 | `Coordinate Setup` | Read-only hint showing the active coordinate context. | Use it as a sanity check before import, especially when using `World` coordinates. |
 | `Refresh Context` | Reloads project and DEM object state into the panel. | Useful after changing project setup or DEM properties elsewhere. |
+
+Practical default note:
+1. When `Project Setup` is `World-first`, a new DEM import panel now defaults `Input Coords` to `World`.
+2. When `Project Setup` is `Local-first`, it defaults to `Local`.
 
 ### DEM Options
 
@@ -108,7 +149,7 @@ Important behavior:
 > [Screenshot Needed] PointCloud DEM panel with source and DEM options visible.
 > Suggested file: `wiki-menu-reference-pointcloud-dem.png`
 
-## 3. Edit Profiles
+## 4. Edit Profiles
 
 Use `Edit Profiles` to manage station-based EG/FG profile data.
 This panel is where station lists, sampled EG values, manual FG values, and FG-from-VerticalAlignment behavior come together.
@@ -226,6 +267,7 @@ Important behavior:
 2. `Type`, `Side`, and `BehaviorMode` are controlled lists to keep structure behavior predictable.
 3. `Apply` writes the `StructureSet`, updates 3D solids, and links the result into `01_Inputs/Structures`.
 4. `Apply` also reports external-shape fallback diagnostics and frame diagnostics when placement had to use `alignment` instead of `centerline3d`.
+5. The upper table now starts in a compact `Basic` view and exposes advanced fields mainly through `Selected Structure Details`.
 
 ### Main Controls
 
@@ -239,6 +281,10 @@ Important behavior:
 | `Pick FCStd Object` | Opens an object picker for the selected `.FCStd` source. | After selecting the `.FCStd` file, use this to choose a shape-bearing object and automatically fill `ShapeSourcePath` as `path.FCStd#ObjectName`. |
 | `Browse Profile CSV` | Opens a file chooser for station-profile control-point CSV data. | Use after loading or defining the base structure rows. |
 | `Load Profile CSV` | Reads the station-profile CSV and stores control points for later apply. | Load the base structure CSV first, then the profile CSV. |
+| `Columns: Template / External Shape / Advanced` | Reveals grouped upper-table columns on demand. | Keep them off for overview work; turn them on temporarily for focused editing. |
+| `Add Common Structure` | Inserts a starter row for the selected structure type. | Useful for quickly adding one culvert, crossing, wall, abutment, bridge zone, or external-shape placeholder. |
+| `Clone Selected` | Duplicates the selected structure row and shifts it forward in station. | Also duplicates station-profile points linked to that structure ID. |
+| `Preset` + `Load Preset` | Loads a built-in structure set preset. | Good for testing drainage, wall, mixed, or variable-size workflows without starting from a blank table. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -283,6 +329,8 @@ Important behavior:
 7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
 8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
 9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
+10. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
+11. The validation summary now reports row-level warnings and errors before apply.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -294,6 +342,8 @@ Important behavior:
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
 9. Even when `external_shape` is displayed correctly, current earthwork still uses the structure `Type` and simple dimensional fields rather than the true imported solid.
+10. The selected-structure summary now reports the interpreted earthwork behavior and the current validation state.
+11. Upper-table context changes are now driven by explicit row press/click; the workflow no longer depends on hover.
 
 ### Advanced: Station-Profile Data
 The runtime now supports variable-size structures driven by station control points, and `Edit Structures` now exposes this through a second linked table.
@@ -307,6 +357,8 @@ Current status:
    - `Structure Sections` overlays
    - section overrides / earthwork
    - corridor `notch` handling
+5. The lower table now also supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`.
+6. A `Profile Preset` row above the lower table can generate starter control points directly from the currently selected structure span and dimensions.
 
 Current practical workflow:
 1. Use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` as the base structure-header reference.
@@ -405,13 +457,30 @@ When to override manually:
 
 | Option | Meaning | How to use it |
 |---|---|---|
+| `Preset` | Built-in starter configuration such as `2-Lane Rural`, `Urban Complete Street`, or `Road With Ditch`. | Choose a preset when you want a fast starting point before manual edits. |
+| `Load Preset` | Loads the selected built-in preset into the component table. | Useful when you want to start from a known cross-section pattern instead of a blank table. |
 | `Component CSV` | Path to the typical-section component CSV. | Select one of the sample files or your own CSV. |
 | `Browse CSV` | Opens a file chooser for a typical-section CSV. | Recommended first step for sample-driven testing. |
 | `Load CSV` | Reads the CSV and fills the component table. | Review or adjust rows before `Apply`. |
+| `Save Component CSV` | Writes the current component table back to CSV. | Use when you want to keep an edited template as a reusable file. |
 | `Pavement CSV` | Path to the pavement-layer CSV for the same typical section. | Use when you want to track pavement thickness data with the section template. |
 | `Browse Pavement CSV` | Opens a file chooser for a pavement-layer CSV. | Select the sample pavement CSV or your own layer stack file. |
 | `Load Pavement CSV` | Reads the pavement CSV and fills the lower pavement table. | Review or adjust layers before `Apply`. |
+| `Save Pavement CSV` | Writes the current pavement-layer table back to CSV. | Use when you want to reuse the same pavement stack in another template. |
 | `Apply` | Saves the component rows into the active `TypicalSectionTemplate`. | Main execution button. |
+
+### Editing Buttons
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Add Lane` / `Add Shoulder` / `Add Curb` / `Add Ditch` / `Add Bench` | Inserts a pre-filled component row with sensible defaults. | Fastest way to build a section without starting from a blank row. |
+| `Add Row` | Adds a blank component row. | Use for uncommon component combinations or detailed manual input. |
+| `Remove Row` | Removes the selected component row. | If no row is selected, remove the last row. |
+| `Move Up` / `Move Down` | Reorders the selected component row in the table. | Useful when the visual build order should change without retyping `Order`. |
+| `Mirror Left -> Right` | Copies the selected left-side row to the right side. | Best for lane/shoulder/gutter/ditch/bench rows when building symmetric sections. |
+| `Mirror Right -> Left` | Copies the selected right-side row to the left side. | Use for the reverse direction when the right side is already defined. |
+| `Sort by Order` | Sorts rows by `Order`, then side/id. | Use after large edits or imports to restore predictable build order. |
+| `Add Layer` / `Remove Layer` | Adds or removes pavement-layer rows. | Use after setting up the top profile when pavement data should also be tracked. |
 
 ### Supported CSV Columns
 
@@ -440,7 +509,9 @@ When to override manually:
 2. `ditch` currently creates a simple sag/V-style break.
 3. `bench` currently acts as a flat platform segment.
 4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
-5. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
+5. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
+6. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
+7. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).

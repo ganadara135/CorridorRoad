@@ -22,6 +22,8 @@ _CRS_PRESETS = [
     ("Korea 2000 / East Belt 2010 (EPSG:5187)", "EPSG:5187", "Korea local projected CRS"),
 ]
 
+_COORD_WORKFLOW_VALUES = ["World-first", "Local-first", "Custom"]
+
 
 def _find_projects(doc):
     out = []
@@ -95,6 +97,12 @@ class ProjectSetupTaskPanel:
             pass
         self.lbl_epsg_info = QtWidgets.QLabel("")
         self.lbl_epsg_info.setWordWrap(True)
+        self.cmb_coord_workflow = QtWidgets.QComboBox()
+        self.cmb_coord_workflow.addItems(_COORD_WORKFLOW_VALUES)
+        self.chk_auto_coord_reco = QtWidgets.QCheckBox("Auto-apply recommended modes in task panels")
+        self.chk_auto_coord_reco.setChecked(True)
+        self.lbl_coord_workflow_info = QtWidgets.QLabel("")
+        self.lbl_coord_workflow_info.setWordWrap(True)
         self.ed_h_datum = QtWidgets.QLineEdit()
         self.ed_h_datum.setPlaceholderText("Horizontal datum (optional)")
         self.ed_v_datum = QtWidgets.QLineEdit()
@@ -127,6 +135,9 @@ class ProjectSetupTaskPanel:
 
         fc.addRow("CRS / EPSG:", self.cmb_epsg)
         fc.addRow("", self.lbl_epsg_info)
+        fc.addRow("Coordinate Workflow:", self.cmb_coord_workflow)
+        fc.addRow("", self.lbl_coord_workflow_info)
+        fc.addRow(self.chk_auto_coord_reco)
         fc.addRow("Horizontal Datum:", self.ed_h_datum)
         fc.addRow("Vertical Datum:", self.ed_v_datum)
         fc.addRow("Project Origin E:", self.sp_e)
@@ -155,9 +166,13 @@ class ProjectSetupTaskPanel:
         self.cmb_project.currentIndexChanged.connect(self._on_project_changed)
         self.cmb_epsg.currentIndexChanged.connect(self._on_epsg_combo_changed)
         self.cmb_epsg.editTextChanged.connect(self._on_epsg_edit_changed)
+        self.cmb_coord_workflow.currentIndexChanged.connect(self._on_coord_workflow_changed)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
         return w
+
+    def _recommended_workflow_from_epsg(self, epsg_value: str) -> str:
+        return "World-first" if str(epsg_value or "").strip() else "Local-first"
 
     def _current_epsg_value(self):
         text = str(self.cmb_epsg.currentText() or "").strip()
@@ -206,6 +221,21 @@ class ProjectSetupTaskPanel:
             else:
                 info = "Select a common preset or enter a custom CRS/EPSG code."
         self.lbl_epsg_info.setText(info)
+        if not self._loading and self.cmb_coord_workflow.currentText() != "Custom":
+            self.cmb_coord_workflow.setCurrentText(self._recommended_workflow_from_epsg(text))
+        self._update_coord_workflow_info()
+
+    def _update_coord_workflow_info(self):
+        workflow = str(self.cmb_coord_workflow.currentText() or "").strip() or self._recommended_workflow_from_epsg(self._current_epsg_value())
+        if workflow == "World-first":
+            msg = "Recommended input mode: World coordinates. Terrain and alignment panels will default to World mode."
+        elif workflow == "Local-first":
+            msg = "Recommended input mode: Local coordinates. Terrain and alignment panels will default to Local mode."
+        else:
+            msg = "Recommended input mode: Custom. Task panels keep their own coordinate choice unless changed manually."
+        if not bool(self.chk_auto_coord_reco.isChecked()):
+            msg += " Auto-apply is off, so this is only guidance."
+        self.lbl_coord_workflow_info.setText(msg)
 
     def _on_epsg_combo_changed(self, _idx):
         if self._loading:
@@ -216,6 +246,11 @@ class ProjectSetupTaskPanel:
         if self._loading:
             return
         self._update_epsg_info()
+
+    def _on_coord_workflow_changed(self, _idx):
+        if self._loading:
+            return
+        self._update_coord_workflow_info()
 
     @staticmethod
     def _fmt_project(o):
@@ -273,6 +308,11 @@ class ProjectSetupTaskPanel:
             self._set_epsg_value(str(getattr(prj, "CRSEPSG", "") or ""))
             self.sp_scale.setValue(float(getattr(prj, "LengthScale", 1.0)))
             self.cmb_design_standard.setCurrentText(_ds.normalize_standard(getattr(prj, "DesignStandard", _ds.DEFAULT_STANDARD)))
+            workflow = str(getattr(prj, "CoordinateWorkflow", "") or "").strip()
+            if workflow not in _COORD_WORKFLOW_VALUES:
+                workflow = self._recommended_workflow_from_epsg(str(getattr(prj, "CRSEPSG", "") or ""))
+            self.cmb_coord_workflow.setCurrentText(workflow)
+            self.chk_auto_coord_reco.setChecked(bool(getattr(prj, "AutoApplyCoordinateRecommendations", True)))
             self.ed_h_datum.setText(str(getattr(prj, "HorizontalDatum", "") or ""))
             self.ed_v_datum.setText(str(getattr(prj, "VerticalDatum", "") or ""))
             self.sp_e.setValue(float(getattr(prj, "ProjectOriginE", 0.0)))
@@ -288,6 +328,7 @@ class ProjectSetupTaskPanel:
             self._loading = False
 
         self._update_epsg_info()
+        self._update_coord_workflow_info()
         self.lbl_result.setText("Loaded.")
 
     def _on_project_changed(self):
@@ -313,6 +354,10 @@ class ProjectSetupTaskPanel:
         if str(getattr(prj, "HorizontalDatum", "") or "") != str(self.ed_h_datum.text() or ""):
             return True
         if str(getattr(prj, "VerticalDatum", "") or "") != str(self.ed_v_datum.text() or ""):
+            return True
+        if str(getattr(prj, "CoordinateWorkflow", "") or "") != str(self.cmb_coord_workflow.currentText() or ""):
+            return True
+        if bool(getattr(prj, "AutoApplyCoordinateRecommendations", True)) != bool(self.chk_auto_coord_reco.isChecked()):
             return True
         if not self._f_eq(getattr(prj, "ProjectOriginE", 0.0), self.sp_e.value()):
             return True
@@ -351,6 +396,11 @@ class ProjectSetupTaskPanel:
             prj.CRSEPSG = str(self._current_epsg_value() or "").strip()
             prj.LengthScale = float(self.sp_scale.value())
             prj.DesignStandard = _ds.normalize_standard(self.cmb_design_standard.currentText(), default=_ds.DEFAULT_STANDARD)
+            workflow = str(self.cmb_coord_workflow.currentText() or "").strip()
+            if workflow not in _COORD_WORKFLOW_VALUES:
+                workflow = self._recommended_workflow_from_epsg(prj.CRSEPSG)
+            prj.CoordinateWorkflow = workflow
+            prj.AutoApplyCoordinateRecommendations = bool(self.chk_auto_coord_reco.isChecked())
             prj.HorizontalDatum = str(self.ed_h_datum.text() or "").strip()
             prj.VerticalDatum = str(self.ed_v_datum.text() or "").strip()
             prj.ProjectOriginE = float(self.sp_e.value())
@@ -370,7 +420,7 @@ class ProjectSetupTaskPanel:
 
             self.lbl_result.setText(
                 f"Applied: Scale={float(prj.LengthScale):.6f}, Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
-                f"NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
+                f"Workflow='{prj.CoordinateWorkflow}', NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
             )
             QtWidgets.QMessageBox.information(
                 None,

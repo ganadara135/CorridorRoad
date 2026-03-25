@@ -15,7 +15,7 @@ from freecad.Corridor_Road.objects.obj_pointcloud_dem import (
 )
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
-from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text
+from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
 def _find_pointcloud_dem(doc):
@@ -188,6 +188,12 @@ class PointCloudDEMTaskPanel:
                 )
             )
         else:
+            self._loading = True
+            try:
+                self.cmb_coords.setCurrentText("World" if should_default_world_mode(self._coord_context_obj()) else "Local")
+                self.cmb_out_coords.setCurrentText("Local")
+            finally:
+                self._loading = False
             self.lbl_info.setText("PointCloudDEM object: NOT FOUND (will create)")
 
     def _on_browse(self):

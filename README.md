@@ -55,6 +55,22 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Current Key Policies
 - SectionSet daylight terrain source is `Mesh only`.
 - Project Setup is opened from the project context menu.
+- `Project Setup` now stores a `Coordinate Workflow` recommendation:
+  - `World-first`
+  - `Local-first`
+  - `Custom`
+- Recommended default behavior:
+  - if `CRS / EPSG` is set, workflow defaults to `World-first`
+  - if `CRS / EPSG` is blank, workflow defaults to `Local-first`
+- When `Auto-apply recommended modes in task panels` is enabled, input panels such as `Import PointCloud DEM`, `Alignment`, `Edit Profiles`, `Generate Sections`, `Design Terrain`, and `Cut/Fill Calc` use that workflow as their initial coordinate-mode recommendation.
+- `Alignment` now supports built-in presets for quick starts:
+  - `Simple Tangent`
+  - `Single Curve`
+  - `S-C-S Curve`
+  - `Reverse Curve`
+  - `Sample Local Alignment`
+- Alignment presets are authored as local-pattern rows.
+- If `Alignment` is currently in `World (E/N)` mode, `Load Preset` converts those local preset rows to world coordinates using the active `Project Setup`.
 - `DesignTerrain`/`CutFillCalc` runtime sampling uses a DEM-style regular XY grid (`CellSize` based), with per-cell elevation queried from source mesh triangles.
 
 ## Sample Test Data
@@ -89,6 +105,13 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
+- The panel now also supports:
+  - `Load Preset`
+  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`
+  - `Move Up`, `Move Down`
+  - `Mirror Left -> Right`, `Mirror Right -> Left`
+  - `Save Component CSV`, `Save Pavement CSV`
+  - a live `Summary` panel for component count, top width, edge types, and pavement total
 - Current CSV columns:
   - `Id`
   - `Type`
@@ -110,6 +133,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Type`
   - `Thickness`
   - `Enabled`
+- Editing notes:
+  - `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `green_strip`, and `gutter` emphasize `CrossSlopePct`
+  - `curb` and `ditch` emphasize `Height`
+  - `bench` is typically flat and acts as a platform/break point
 - Current runtime intent:
   - `Typical Section Template` defines the finished-grade top profile.
   - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
@@ -186,6 +213,11 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Edit Structures` now provides a second table for station-profile rows
   - load the base header CSV first, then load the profile CSV
   - selecting a structure in the upper table filters the lower table to that structure's profile rows
+  - the upper table now defaults to a compact `Basic` column view, while `Selected Structure Details` handles advanced fields
+  - use `Columns: Template / External Shape / Advanced` when you want to temporarily reveal grouped columns in the upper table
+  - use `Add Common Structure`, `Clone Selected`, and the built-in structure `Preset` loader for faster setup
+  - the lower profile table now supports `Sort by Station`, `Duplicate Profile Row`, `Add Midpoint`, and `Delete All for Selected`
+  - row validation is shown directly in the upper table, and the panel now reports an overall validation summary
   - use `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv` and `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv` for focused testing
   - use `tests/samples/structure_utm_realistic_hilly_mixed.csv` and `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv` for combined multi-structure testing
 
