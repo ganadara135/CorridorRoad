@@ -21,7 +21,7 @@ ALLOWED_COMPONENT_TYPES = (
     "green_strip",
     "gutter",
     "ditch",
-    "bench",
+    "berm",
 )
 ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
 ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
@@ -210,6 +210,8 @@ def component_rows(obj):
             "Enabled": _as_bool_flag(data["ComponentEnabled"][i]),
             "_Index": i,
         }
+        if row["Type"] == "bench":
+            row["Type"] = "berm"
         rows.append(row)
     return rows
 
@@ -343,7 +345,7 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
         pts.append(App.Vector(x_end, y_end, 0.0))
         return pts
 
-    if typ == "bench":
+    if typ == "berm":
         x, y = _apply_segment(x, y, width, 0.0, height, direction)
         pts.append(App.Vector(x, y, 0.0))
         return pts
@@ -395,6 +397,35 @@ def build_top_profile(obj):
         if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
             cleaned.append(pt)
     return cleaned
+
+
+def build_pavement_layer_shapes(obj):
+    top_pts = build_top_profile(obj)
+    if len(top_pts) < 2:
+        return []
+
+    layers = [r for r in pavement_rows(obj) if bool(r.get("Enabled", True)) and float(r.get("Thickness", 0.0) or 0.0) > 1e-9]
+    if not layers:
+        return []
+
+    shapes = []
+    prev_pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in top_pts]
+    cum_thk = 0.0
+    for row in layers:
+        cum_thk += max(0.0, float(row.get("Thickness", 0.0) or 0.0))
+        bot_pts = [App.Vector(float(p.x), float(p.y) - cum_thk, float(p.z)) for p in top_pts]
+        poly = list(prev_pts) + list(reversed(bot_pts))
+        if poly:
+            poly.append(prev_pts[0])
+        try:
+            shapes.append(Part.Face(Part.makePolygon(poly)))
+        except Exception:
+            try:
+                shapes.append(Part.makePolygon(bot_pts))
+            except Exception:
+                pass
+        prev_pts = bot_pts
+    return shapes
 
 
 class TypicalSectionTemplate:
@@ -507,6 +538,89 @@ class ViewProviderTypicalSectionTemplate:
 
     def getDefaultDisplayMode(self):
         return "Wireframe"
+
+    def setDisplayMode(self, mode):
+        return mode
+
+
+def ensure_typical_section_pavement_display_properties(obj):
+    if not hasattr(obj, "SourceTypicalSection"):
+        obj.addProperty("App::PropertyLink", "SourceTypicalSection", "Display", "Source TypicalSectionTemplate")
+    if not hasattr(obj, "LayerCount"):
+        obj.addProperty("App::PropertyInteger", "LayerCount", "Result", "Enabled pavement layer count")
+        obj.LayerCount = 0
+    if not hasattr(obj, "TotalThickness"):
+        obj.addProperty("App::PropertyFloat", "TotalThickness", "Result", "Enabled pavement total thickness (m)")
+        obj.TotalThickness = 0.0
+    if not hasattr(obj, "Status"):
+        obj.addProperty("App::PropertyString", "Status", "Result", "Display generation status")
+        obj.Status = "Idle"
+
+
+class TypicalSectionPavementDisplay:
+    def __init__(self, obj):
+        obj.Proxy = self
+        self.Type = "TypicalSectionPavementDisplay"
+        ensure_typical_section_pavement_display_properties(obj)
+
+    def execute(self, obj):
+        ensure_typical_section_pavement_display_properties(obj)
+        try:
+            src = getattr(obj, "SourceTypicalSection", None)
+            if src is None:
+                obj.Shape = Part.Shape()
+                obj.LayerCount = 0
+                obj.TotalThickness = 0.0
+                obj.Status = "Missing source TypicalSectionTemplate"
+                return
+
+            enabled_layers = [r for r in pavement_rows(src) if bool(r.get("Enabled", True)) and float(r.get("Thickness", 0.0) or 0.0) > 1e-9]
+            obj.LayerCount = int(len(enabled_layers))
+            obj.TotalThickness = float(sum(float(r.get("Thickness", 0.0) or 0.0) for r in enabled_layers))
+
+            shapes = build_pavement_layer_shapes(src)
+            if not shapes:
+                obj.Shape = Part.Shape()
+                obj.Status = "No enabled pavement layers"
+                return
+
+            obj.Shape = Part.Compound(shapes)
+            obj.Status = f"OK: {obj.LayerCount} layers, total={obj.TotalThickness:.3f}m"
+        except Exception as ex:
+            obj.Shape = Part.Shape()
+            obj.LayerCount = 0
+            obj.TotalThickness = 0.0
+            obj.Status = f"ERROR: {ex}"
+
+
+class ViewProviderTypicalSectionPavementDisplay:
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        try:
+            vobj.Visibility = True
+            vobj.DisplayMode = "Flat Lines"
+            vobj.LineWidth = 1
+            vobj.ShapeColor = (0.80, 0.66, 0.30)
+            vobj.Transparency = 55
+        except Exception:
+            pass
+
+    def getIcon(self):
+        return ""
+
+    def updateData(self, obj, prop):
+        return
+
+    def onChanged(self, vobj, prop):
+        return
+
+    def getDisplayModes(self, vobj):
+        return ["Flat Lines", "Shaded", "Wireframe"]
+
+    def getDefaultDisplayMode(self):
+        return "Flat Lines"
 
     def setDisplayMode(self, mode):
         return mode

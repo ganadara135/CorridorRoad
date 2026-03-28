@@ -226,7 +226,7 @@ def _structure_side_override_spec(rec, side_key: str, scale: float):
 
     if typ in ("culvert", "crossing"):
         return {
-            "Action": "bench",
+            "Action": "berm",
             "TargetWidth": max(1.0 * scale, min(4.0 * scale, 0.35 * width + 0.50 * height)),
             "SlopeMode": "flat",
             "DisableDaylight": True,
@@ -1401,7 +1401,7 @@ class SectionSet:
                 resolved_w = min(resolved_w, max(stub_side_w, target_w if target_w > 1e-9 else stub_side_w))
                 resolved_s = 0.0
                 use_day_side = False
-            elif action == "bench":
+            elif action in ("bench", "berm"):
                 target = max(1.0 * scale, target_w if target_w > 1e-9 else max(stub_side_w, 0.20 * resolved_w))
                 resolved_w = min(resolved_w, target) if resolved_w > 1e-9 else target
                 resolved_s = 0.0
