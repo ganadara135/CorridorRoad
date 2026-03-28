@@ -29,6 +29,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - If general users or developers have questions about this project, please ask in the CorridorRoad project thread on the FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 - Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
 
+## Latest Release
+- Current stable release: `v0.2.0`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
+
 ## Main Commands
 - `New Project`
 - `Project Setup`
@@ -100,14 +104,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 9. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
 10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
 11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
-12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `bench` in both `Sections` and `Corridor Loft`.
+12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
 13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
 - The panel now also supports:
   - `Load Preset`
-  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`
+  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Berm`
   - `Move Up`, `Move Down`
   - `Mirror Left -> Right`, `Mirror Right -> Left`
   - `Save Component CSV`, `Save Pavement CSV`

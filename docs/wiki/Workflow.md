@@ -12,6 +12,7 @@ For field-by-field explanations of task-panel options, see [Menu Reference](Menu
 2. `Project Setup`
 3. If `CRS / EPSG` is set, keep the recommended default `Coordinate Workflow = World-first`.
 4. If the project is a local test/concept model with no real-world CRS, keep `Coordinate Workflow = Local-first`.
+5. Use the editable `CRS / EPSG` preset combo when a built-in code matches your project, or type a custom EPSG code directly when needed.
 
 Output:
 - Fixed project tree
@@ -48,8 +49,9 @@ DEM tuning note:
 1. Open `Alignment`.
 2. Import CSV, load a built-in `Preset`, or edit the table directly (IP, radius, transition).
 3. Presets are stored as local-pattern rows.
-4. If `Coord Input` is currently `World (E/N)`, `Load Preset` converts those local rows through the active `Project Setup`.
-5. Apply alignment.
+4. `Preset Placement` defaults to `Center on terrain`, so starter geometry is usually moved into the current terrain extent automatically.
+5. If `Coord Input` is currently `World (E/N)`, `Load Preset` converts those local rows through the active `Project Setup`.
+6. Apply alignment.
 
 Output:
 - Horizontal alignment with key stations
@@ -90,8 +92,9 @@ If profile EG contains many blanks or `0` values:
 3. Use the compact upper table for overview, and use `Selected Structure Details` for advanced fields.
 4. If needed, use `Columns: Template / External Shape / Advanced` to temporarily reveal grouped columns in the upper table.
 5. Use `Add Common Structure`, `Clone Selected`, or `Preset -> Load Preset` when you want to build a starter structure set quickly.
-6. Apply the `StructureSet`.
-7. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
+6. Use `Profile Preset -> Load Profile Preset` when the selected structure needs starter station-control points without preparing a separate profile CSV.
+7. Apply the `StructureSet`.
+8. If you already have profile/centerline data, run `3D Centerline` first or re-run it before re-applying structures so 3D placement uses the latest centerline frame.
 
 Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
@@ -125,10 +128,10 @@ Validation:
 
 ## 4B. Typical Section
 1. Run `Typical Section`.
-2. Either choose a built-in `Preset`, use the quick-add buttons (`Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`), or load rows with `Browse CSV` -> `Load CSV`.
+2. Either choose a built-in `Preset`, use the quick-add buttons (`Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Berm`), or load rows with `Browse CSV` -> `Load CSV`.
 3. If the section is symmetric, use `Mirror Left -> Right` or `Mirror Right -> Left` to copy edge rows quickly.
 4. Use `Move Up`, `Move Down`, or `Sort by Order` to clean up the component order.
-5. Optionally load pavement layers with `Browse Pavement CSV` -> `Load Pavement CSV`.
+5. Optionally load pavement layers with either `Preset -> Load Pavement Preset` or `Browse Pavement CSV` -> `Load Pavement CSV`.
 6. Check the `Summary` panel for top width, edge types, and pavement total thickness.
 7. Click `Apply`.
 
@@ -145,7 +148,7 @@ Current output:
 Current notes:
 1. `TypicalSectionTemplate` defines the finished-grade top profile.
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
-3. `ditch`, `curb`, and `bench` now affect the preview profile with dedicated break behavior.
+3. `ditch`, `curb`, and `berm` now affect the preview profile with dedicated break behavior.
 4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
 5. The editor now supports `Save Component CSV` and `Save Pavement CSV` so edited templates can be reused.
 6. Type-aware tooltips and field tinting help show whether `CrossSlopePct` or `Height` matters more for the selected component.
@@ -265,7 +268,7 @@ Current override policy by structure type:
 1. `culvert`, `crossing`
    - Affect both sides of the section.
    - Daylight is disabled through the structure zone.
-   - Both sides are converted to short flat bench-like segments so the section still reads as a constrained crossing zone without breaking loft stability.
+   - Both sides are converted to short flat berm-like segments so the section still reads as a constrained crossing zone without breaking loft stability.
 2. `retaining_wall`
    - Affects the declared side only (`left` or `right`).
    - The wall side is converted to a short steep wall-like segment.
@@ -304,7 +307,7 @@ External-shape earthwork note:
 2. `Sections`, `Design Grading Surface`, and `Corridor Loft` still use type-based rules for earthwork.
 3. Use `external_shape` when you need realistic structure appearance and placement, but do not expect the imported STEP/BREP/FCStd solid to define the actual earthwork cut shape yet.
 4. Current type-driven earthwork intent is:
-   - `culvert`, `crossing` -> notch / bench style crossing rules
+   - `culvert`, `crossing` -> notch / flat berm-style crossing rules
    - `retaining_wall` -> one-side retaining-wall rule
    - `bridge_zone`, `abutment_zone` -> trim / split / skip zone rules
 
@@ -348,4 +351,4 @@ Auto transition distance intent:
 - Re-run failed stages after fixing source links or coordinate mode.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `e619bd8` (`v0.2.0`)

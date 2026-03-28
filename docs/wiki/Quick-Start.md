@@ -26,6 +26,7 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 2. Run `Project Setup` and confirm project defaults.
 3. If `CRS / EPSG` is filled, keep `Coordinate Workflow = World-first`.
 4. If the project stays in local engineering coordinates, use `Coordinate Workflow = Local-first`.
+   - The `CRS / EPSG` field is an editable preset-style combo, so you can pick a common EPSG code first and type manually only when needed.
    - Check design standard and coordinate setup lock status.
    - [Screenshot Needed] Project Setup panel.
    - Suggested file: `wiki-quickstart-step2-project-setup.png`
@@ -35,6 +36,7 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
    - Suggested file: `wiki-quickstart-step3-pointcloud-dem.png`
 4. Open `Alignment` and import `alignment_utm_realistic_hilly.csv`.
    - Alternatively, choose an alignment `Preset` and click `Load Preset` when you want a quick starter geometry instead of a real CSV.
+   - `Preset Placement` now defaults to `Center on terrain`, so starter geometry usually lands inside the current terrain extent automatically.
    - If `Coord Input = World (E/N)`, preset rows are converted from local pattern coordinates using the current `Project Setup`.
    - Verify alignment lies inside terrain extent.
    - [Screenshot Needed] Alignment editor with imported rows.
@@ -75,4 +77,4 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 - If a complex imported structure looks right in 3D but earthwork does not match it, see [Troubleshooting](Troubleshooting#external-shape-is-visible-but-earthwork-does-not-match-it).
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `e619bd8` (`v0.2.0`)
