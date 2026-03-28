@@ -23,7 +23,7 @@ Important behavior:
 | `Target Project` | Selects which `CorridorRoadProject` object will be updated. | Normally leave this on the active project created by `New Project`. |
 | `Length Scale` | Internal units per meter. `1.0` means meter-native. Larger values such as `1000.0` mean the model uses millimeter-like internal units. | Set this once at the start of the project. Other tools such as DEM import and PVI scaling follow this value. Changing it after data already exists can create inconsistencies. |
 | `Design Standard` | Stores the selected road design standard on the project. | Use the standard that should control alignment/design checks. Even if the current stage is mostly geometric, keep this consistent for later validation work. |
-| `CRS / EPSG` | Coordinate system identifier, for example `EPSG:5186`. | Use this when working with UTM or real-world survey coordinates. It is metadata plus a strong workflow hint for coordinate-sensitive tasks. |
+| `CRS / EPSG` | Coordinate system identifier, for example `EPSG:5186`. The panel now exposes this through an editable preset-style combo box. | Use the built-in CRS/EPSG presets for common coordinate systems, or type a custom EPSG code directly when the project uses a different CRS. |
 | `Coordinate Workflow` | Recommended coordinate-input policy for downstream task panels. | `World-first` is recommended when `CRS / EPSG` is set. `Local-first` is recommended when the project stays in local engineering coordinates. `Custom` keeps the project metadata but stops pushing one policy as the main recommendation. |
 | `Auto-apply recommended modes in task panels` | Controls whether task panels should use the workflow recommendation as their initial coordinate mode. | Keep this enabled for a consistent project-wide policy. Turn it off only when each task panel should decide its own coordinate mode manually. |
 | `Horizontal Datum` | Horizontal datum text metadata. | Optional. Fill it when the survey or project requires explicit datum documentation. |
@@ -67,7 +67,8 @@ Important behavior:
 1. The alignment table always stores the values currently shown in the panel coordinate mode.
 2. Built-in presets are defined as local pattern rows.
 3. If `Coord Input = World (E/N)`, `Load Preset` converts those local preset rows through the active `Project Setup`.
-4. CSV import remains the main path for real survey or design data; presets are meant for quick starts and test geometry.
+4. `Preset Placement` defaults to `Center on terrain`, so starter geometry tries to land inside the current terrain extent instead of staying near `(0,0)`.
+5. CSV import remains the main path for real survey or design data; presets are meant for quick starts and test geometry.
 
 ### Alignment Source Options
 
@@ -79,13 +80,15 @@ Important behavior:
 | `CSV` / `Browse CSV` / `Load from CSV` | Reads alignment rows from a CSV file. | Use this for real project data or repeatable exchange files. |
 | `Preset` | Built-in starter geometry such as `Simple Tangent`, `Single Curve`, `S-C-S Curve`, `Reverse Curve`, or `Sample Local Alignment`. | Use when you want to start from a known local-pattern geometry instead of a blank table. |
 | `Load Preset` | Loads the selected preset into the alignment table. | In `Local (X/Y)` mode the preset rows are inserted directly. In `World (E/N)` mode they are converted using the active `Project Setup`. |
+| `Preset Placement` | Controls where preset rows are placed before they are written into the table. | `Center on terrain` is the default and is the best choice for sample/test workflows. `Pattern only` keeps the original local pattern location. `Center on project origin` is a safe fallback when no terrain exists yet. |
 | `Coord Input` | Declares whether the table currently represents local or world coordinates. | Keep this consistent with the source you are loading or the way you want presets to be converted. |
 | `Save CSV` | Writes the current table rows back to a CSV file. | Useful after starting from a preset and refining it into reusable project data. |
 
 ### Practical Notes
 1. Presets are best thought of as pattern starters, not authoritative survey coordinates.
 2. If the project uses `World-first`, preset loading is still safe because the conversion uses `Project Origin`, `Local Origin`, and `North Rotation`.
-3. If a preset lands outside the terrain or expected project area, check the current `Coord Input` and `Project Setup` rotation/origin values first.
+3. `Center on terrain` will fall back to `Center on project origin` when no terrain can be resolved.
+4. If a preset still lands outside the expected area, check `Coord Input`, `Preset Placement`, and `Project Setup` rotation/origin values first.
 
 > [Screenshot Needed] Alignment editor showing the Preset combo, Load Preset, and Coord Input.
 > Suggested file: `wiki-menu-reference-alignment-preset.png`
@@ -285,6 +288,7 @@ Important behavior:
 | `Add Common Structure` | Inserts a starter row for the selected structure type. | Useful for quickly adding one culvert, crossing, wall, abutment, bridge zone, or external-shape placeholder. |
 | `Clone Selected` | Duplicates the selected structure row and shifts it forward in station. | Also duplicates station-profile points linked to that structure ID. |
 | `Preset` + `Load Preset` | Loads a built-in structure set preset. | Good for testing drainage, wall, mixed, or variable-size workflows without starting from a blank table. |
+| `Profile Preset` + `Load Profile Preset` | Generates starter station-profile rows for the currently selected structure row. | Use this when one structure needs quick variable-size control points without preparing a separate profile CSV first. |
 | `Apply` | Saves the table into the active `StructureSet`, validates it, recomputes the document, and shows a status message. | Main execution button. |
 
 ### Table Columns
@@ -411,8 +415,8 @@ Recommended user policy:
 
 | Structure Type | Current Section Override Behavior |
 |---|---|
-| `crossing` | Affects both sides; replaces daylight-driven side slopes with short flat bench-like side segments through the active zone. |
-| `culvert` | Affects both sides; behaves like a crossing and keeps a wider flat bench around the structure envelope instead of full daylight slopes. |
+| `crossing` | Affects both sides; replaces daylight-driven side slopes with short flat berm-like side segments through the active zone. |
+| `culvert` | Affects both sides; behaves like a crossing and keeps a wider flat berm around the structure envelope instead of full daylight slopes. |
 | `retaining_wall` | Affects only the declared side; replaces that side with a short steep wall-like segment while the opposite side can stay normal. |
 | `bridge_zone` | Affects both sides conservatively; trims side-slope reach and disables daylight so the section remains loft-stable near the zone. |
 | `abutment_zone` | Affects both sides conservatively; trims side-slope reach and disables daylight so the section remains loft-stable near the zone. |
@@ -464,6 +468,8 @@ When to override manually:
 | `Load CSV` | Reads the CSV and fills the component table. | Review or adjust rows before `Apply`. |
 | `Save Component CSV` | Writes the current component table back to CSV. | Use when you want to keep an edited template as a reusable file. |
 | `Pavement CSV` | Path to the pavement-layer CSV for the same typical section. | Use when you want to track pavement thickness data with the section template. |
+| `Pavement Preset` | Built-in pavement-layer starter stack such as `Asphalt Basic`, `Asphalt Thin`, or `Concrete Road`. | Use this when you want to fill the pavement-layer table quickly without a separate CSV file. |
+| `Load Pavement Preset` | Loads the selected pavement-layer preset into the pavement table. | Best for quick trials before refining layer thicknesses manually or saving them to CSV. |
 | `Browse Pavement CSV` | Opens a file chooser for a pavement-layer CSV. | Select the sample pavement CSV or your own layer stack file. |
 | `Load Pavement CSV` | Reads the pavement CSV and fills the lower pavement table. | Review or adjust layers before `Apply`. |
 | `Save Pavement CSV` | Writes the current pavement-layer table back to CSV. | Use when you want to reuse the same pavement stack in another template. |
@@ -473,11 +479,11 @@ When to override manually:
 
 | Option | Meaning | How to use it |
 |---|---|---|
-| `Add Lane` / `Add Shoulder` / `Add Curb` / `Add Ditch` / `Add Bench` | Inserts a pre-filled component row with sensible defaults. | Fastest way to build a section without starting from a blank row. |
+| `Add Lane` / `Add Shoulder` / `Add Curb` / `Add Ditch` / `Add Berm` | Inserts a pre-filled component row with sensible defaults. | Fastest way to build a section without starting from a blank row. |
 | `Add Row` | Adds a blank component row. | Use for uncommon component combinations or detailed manual input. |
 | `Remove Row` | Removes the selected component row. | If no row is selected, remove the last row. |
 | `Move Up` / `Move Down` | Reorders the selected component row in the table. | Useful when the visual build order should change without retyping `Order`. |
-| `Mirror Left -> Right` | Copies the selected left-side row to the right side. | Best for lane/shoulder/gutter/ditch/bench rows when building symmetric sections. |
+| `Mirror Left -> Right` | Copies the selected left-side row to the right side. | Best for lane/shoulder/gutter/ditch/berm rows when building symmetric sections. |
 | `Mirror Right -> Left` | Copies the selected right-side row to the left side. | Use for the reverse direction when the right side is already defined. |
 | `Sort by Order` | Sorts rows by `Order`, then side/id. | Use after large edits or imports to restore predictable build order. |
 | `Add Layer` / `Remove Layer` | Adds or removes pavement-layer rows. | Use after setting up the top profile when pavement data should also be tracked. |
@@ -487,7 +493,7 @@ When to override manually:
 | Column | Meaning |
 |---|---|
 | `Id` | Component identifier |
-| `Type` | `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `curb`, `green_strip`, `gutter`, `ditch`, `bench` |
+| `Type` | `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `curb`, `green_strip`, `gutter`, `ditch`, `berm` |
 | `Side` | `left`, `right`, `center`, `both` |
 | `Width` | Component width |
 | `CrossSlopePct` | Cross slope (%) |
@@ -507,7 +513,8 @@ When to override manually:
 
 1. `curb` currently creates a vertical step plus top width.
 2. `ditch` currently creates a simple sag/V-style break.
-3. `bench` currently acts as a flat platform segment.
+3. `berm` currently acts as a flat road-edge platform segment.
+4. `bench` is reserved for future earthwork mid-slope benching terminology.
 4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
 5. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
 6. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.

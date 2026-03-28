@@ -442,7 +442,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Current component notes:
   - `curb` = vertical step + top width
   - `ditch` = V-like sag break
-  - `bench` = flat platform segment
+  - `berm` = flat road-edge platform segment
+  - `bench` = reserved term for future earthwork mid-slope benching
 - Current pavement notes:
   - pavement layers are data-first, not separate corridor solids yet
   - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`

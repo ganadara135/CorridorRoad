@@ -73,6 +73,26 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - If `Alignment` is currently in `World (E/N)` mode, `Load Preset` converts those local preset rows to world coordinates using the active `Project Setup`.
 - `DesignTerrain`/`CutFillCalc` runtime sampling uses a DEM-style regular XY grid (`CellSize` based), with per-cell elevation queried from source mesh triangles.
 
+## Release And Versioning Policy
+- Addon listing remains branch-based.
+- The catalog should continue to track the stable branch, not individual release tags.
+- Recommended branch roles:
+  - `ganada` = ongoing development branch
+  - `main` = release/stable branch
+- Release procedure:
+  1. continue feature work on `ganada`
+  2. when a release is ready, merge or squash `ganada` into `main`
+  3. update `package.xml` version on `main`
+  4. update `CHANGELOG.md` on `main`
+  5. create an annotated Git tag from `main`
+  6. create the GitHub Release from that tag
+- Recommended tag naming:
+  - `vX.Y.Z`
+  - example: `v0.6.0`
+- Important note:
+  - if addon listing stays branch-based, each new release does not require changing the catalog just because a new tag/release was created
+  - a catalog PR is only needed when repository/branch/subdirectory tracking changes
+
 ## Sample Test Data
 - Use the following files for realistic point-cloud terrain testing.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
@@ -100,14 +120,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 9. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
 10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
 11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
-12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `bench` in both `Sections` and `Corridor Loft`.
+12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
 13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
 - The panel now also supports:
   - `Load Preset`
-  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Bench`
+  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Berm`
   - `Move Up`, `Move Down`
   - `Mirror Left -> Right`, `Mirror Right -> Left`
   - `Save Component CSV`, `Save Pavement CSV`
@@ -136,7 +156,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Editing notes:
   - `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `green_strip`, and `gutter` emphasize `CrossSlopePct`
   - `curb` and `ditch` emphasize `Height`
-  - `bench` is typically flat and acts as a platform/break point
+  - `berm` is typically flat and acts as a road-edge platform/break point
+  - `bench` is reserved for future earthwork mid-slope benching terminology
 - Current runtime intent:
   - `Typical Section Template` defines the finished-grade top profile.
   - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
@@ -185,7 +206,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - The imported `STEP` / `BREP` / `FCStd` solid is not yet consumed directly as the earthwork-cutting shape.
   - `Sections`, `Design Grading Surface`, and `Corridor Loft` currently follow those type-based rules, not the real imported solid.
 - Current type-driven earthwork intent:
-  - `culvert`, `crossing` -> notch / bench crossing rules
+  - `culvert`, `crossing` -> notch / flat side-segment crossing rules
   - `retaining_wall` -> one-side retaining-wall section rule
   - `bridge_zone`, `abutment_zone` -> trim / split / skip rules
 
@@ -226,7 +247,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Turn on `Use ruled loft` and keep `Auto-fix flipped sections` enabled.
 - If structures are active in sections, keep `Split at structure zones` enabled so the loft can break at structure boundaries instead of forcing one continuous span.
 - Keep `Auto transition distance` enabled in structure-aware sections unless you have a clear reason to force one manual distance for all structure types.
-- Current structure override intent: `culvert/crossing` create short flat bench-like sections, `retaining_wall` creates a short steep wall-side section, and `bridge/abutment` zones trim both sides conservatively.
+- Current structure override intent: `culvert/crossing` create short flat berm-like side sections, `retaining_wall` creates a short steep wall-side section, and `bridge/abutment` zones trim both sides conservatively.
 - For corridor-level structure handling, use `split_only` first, `skip_zone` only when a full gap is intended, and `notch` mainly for `culvert` / `crossing` when the corridor should stay continuous and use a notch-aware loft profile.
 - Current `notch` behavior is not just a visual boolean cut. When possible it switches the loft to a notch-aware closed-profile schema and ramps the notch through transition stations.
 - Recommended user policy:

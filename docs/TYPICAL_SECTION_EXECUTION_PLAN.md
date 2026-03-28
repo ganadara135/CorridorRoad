@@ -71,7 +71,7 @@ Status: functionally complete
 Completed:
 - `curb` step behavior
 - `ditch` sag/V-style break behavior
-- `bench` flat-platform behavior
+- `berm` flat-platform behavior
 - top-profile edge tracking for outer component types
 
 Current scope:
@@ -174,7 +174,7 @@ It currently supports:
 
 ## Open Follow-up Work
 
-1. advanced ditch/curb/bench parameterization
+1. advanced ditch/curb/berm parameterization
 2. pavement layers as separate geometric/reportable corridor outputs
 3. richer component presets and mirroring tools
 4. integrated runtime validation on complex mixed workflows

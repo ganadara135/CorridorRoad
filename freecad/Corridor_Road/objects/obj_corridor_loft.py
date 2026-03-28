@@ -507,7 +507,7 @@ class CorridorLoft:
             return False, "off"
 
         edge_types = set(CorridorLoft._typical_edge_types(src))
-        rich_edges = bool(edge_types.intersection({"curb", "ditch", "bench", "gutter"}))
+        rich_edges = bool(edge_types.intersection({"curb", "ditch", "berm", "gutter"}))
         if rich_edges:
             return True, "auto:typical_edges"
         if int(pt_count) >= 7:

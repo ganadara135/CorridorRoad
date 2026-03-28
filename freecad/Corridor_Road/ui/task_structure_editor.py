@@ -286,6 +286,65 @@ class StructureEditorTaskPanel:
         self.form = self._build_ui()
         self._refresh_context()
 
+    @staticmethod
+    def _brush(color_hex: str):
+        return QtGui.QBrush(QtGui.QColor(color_hex))
+
+    def _item_brushes(self):
+        return {
+            "text": self._brush("#ececec"),
+            "base": self._brush("#2f2f2f"),
+            "disabled_text": self._brush("#989898"),
+            "disabled_base": self._brush("#262626"),
+            "ok_base": self._brush("#2f2f2f"),
+            "warn_base": self._brush("#5a481c"),
+            "err_base": self._brush("#5a2323"),
+            "good_base": self._brush("#1f4d36"),
+        }
+
+    @staticmethod
+    def _apply_table_theme(table):
+        try:
+            table.setMouseTracking(False)
+            table.viewport().setMouseTracking(False)
+        except Exception:
+            pass
+        table.setStyleSheet(
+            """
+            QTableWidget {
+                background-color: #2f2f2f;
+                color: #ececec;
+                gridline-color: #505050;
+                selection-background-color: #4a90d9;
+                selection-color: #ffffff;
+            }
+            QTableWidget::item {
+                background-color: #2f2f2f;
+                color: #ececec;
+            }
+            QTableWidget::item:hover {
+                background-color: #2f2f2f;
+                color: #ececec;
+            }
+            QTableWidget::item:selected {
+                background-color: #4a90d9;
+                color: #ffffff;
+            }
+            QTableWidget QLineEdit {
+                background-color: #2f2f2f;
+                color: #ececec;
+                selection-background-color: #4a90d9;
+                selection-color: #ffffff;
+            }
+            QTableWidget QComboBox {
+                background-color: #3a3a3a;
+                color: #ececec;
+                selection-background-color: #4a90d9;
+                selection-color: #ffffff;
+            }
+            """
+        )
+
     def getStandardButtons(self):
         return 0
 
@@ -444,6 +503,7 @@ class StructureEditorTaskPanel:
             (26, 150),
         ):
             self.table.setColumnWidth(col, width)
+        self._apply_table_theme(self.table)
         self._apply_default_column_visibility()
         main.addWidget(self.table)
 
@@ -522,6 +582,7 @@ class StructureEditorTaskPanel:
             (11, 85),
         ):
             self.profile_table.setColumnWidth(col, width)
+        self._apply_table_theme(self.profile_table)
         main.addWidget(self.profile_table)
 
         row_profile_btn = QtWidgets.QHBoxLayout()
@@ -1253,6 +1314,7 @@ class StructureEditorTaskPanel:
         return severity, msgs
 
     def _refresh_validation_visuals(self):
+        brushes = self._item_brushes()
         ok_count = 0
         warn_count = 0
         err_count = 0
@@ -1263,13 +1325,13 @@ class StructureEditorTaskPanel:
                 continue
             sev, msgs = self._row_validation_messages(row)
             tip = "\n".join(msgs) if msgs else "Validation: OK"
-            brush_bg = self.table.palette().brush(QtGui.QPalette.Base)
+            brush_bg = brushes["ok_base"]
             if sev == 2:
                 err_count += 1
-                brush_bg = QtGui.QBrush(QtGui.QColor(90, 35, 35))
+                brush_bg = brushes["err_base"]
             elif sev == 1:
                 warn_count += 1
-                brush_bg = QtGui.QBrush(QtGui.QColor(90, 72, 28))
+                brush_bg = brushes["warn_base"]
             else:
                 ok_count += 1
             if msgs:
@@ -1279,6 +1341,7 @@ class StructureEditorTaskPanel:
                 if item is None:
                     item = QtWidgets.QTableWidgetItem("")
                     self.table.setItem(row, col, item)
+                item.setForeground(brushes["text"])
                 item.setBackground(brush_bg)
                 item.setToolTip(tip)
             if row == self._current_structure_row():
@@ -1518,6 +1581,7 @@ class StructureEditorTaskPanel:
             return 0.0
 
     def _set_item_enabled(self, row, col, enabled, tooltip=""):
+        brushes = self._item_brushes()
         it = self.table.item(row, col)
         if it is None:
             it = QtWidgets.QTableWidgetItem("")
@@ -1529,11 +1593,11 @@ class StructureEditorTaskPanel:
         it.setToolTip(str(tooltip or ""))
         try:
             if enabled:
-                it.setForeground(self.table.palette().brush(QtGui.QPalette.Text))
-                it.setBackground(self.table.palette().brush(QtGui.QPalette.Base))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["base"])
             else:
-                it.setForeground(self.table.palette().brush(QtGui.QPalette.Disabled, QtGui.QPalette.Text))
-                it.setBackground(self.table.palette().brush(QtGui.QPalette.Disabled, QtGui.QPalette.Base))
+                it.setForeground(brushes["disabled_text"])
+                it.setBackground(brushes["disabled_base"])
         except Exception:
             pass
 
@@ -1546,6 +1610,7 @@ class StructureEditorTaskPanel:
             pass
 
     def _apply_shape_source_visual(self, row):
+        brushes = self._item_brushes()
         try:
             it = self.table.item(int(row), 23)
             if it is None:
@@ -1556,27 +1621,27 @@ class StructureEditorTaskPanel:
             src_file, src_obj = _split_shape_source_path(src)
             if geom != "external_shape":
                 it.setToolTip("ShapeSourcePath is used only when GeometryMode=external_shape.")
-                it.setForeground(self.table.palette().brush(QtGui.QPalette.Text))
-                it.setBackground(self.table.palette().brush(QtGui.QPalette.Base))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["base"])
                 return
             if not src:
                 it.setToolTip("ShapeSourcePath is required for GeometryMode=external_shape.")
-                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
-                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["err_base"])
                 return
             if str(src_file).lower().endswith(".fcstd") and not src_obj:
                 it.setToolTip("FCStd external shape requires 'path.FCStd#ObjectName'.")
-                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
-                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["err_base"])
                 return
             if os.path.isfile(src_file):
                 it.setToolTip(f"External shape file found:\n{src}")
-                it.setForeground(self.table.palette().brush(QtGui.QPalette.Text))
-                it.setBackground(QtGui.QBrush(QtGui.QColor(238, 255, 238)))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["good_base"])
             else:
                 it.setToolTip(f"External shape file not found:\n{src}")
-                it.setForeground(QtGui.QBrush(QtGui.QColor(150, 40, 40)))
-                it.setBackground(QtGui.QBrush(QtGui.QColor(255, 238, 238)))
+                it.setForeground(brushes["text"])
+                it.setBackground(brushes["err_base"])
         except Exception:
             pass
 

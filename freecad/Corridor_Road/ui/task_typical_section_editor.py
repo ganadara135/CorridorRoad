@@ -12,7 +12,9 @@ from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
     ALLOWED_COMPONENT_TYPES,
     ALLOWED_PAVEMENT_LAYER_TYPES,
+    TypicalSectionPavementDisplay,
     TypicalSectionTemplate,
+    ViewProviderTypicalSectionPavementDisplay,
     ViewProviderTypicalSectionTemplate,
     component_rows,
     ensure_typical_section_template_properties,
@@ -51,7 +53,7 @@ COMPONENT_TYPE_HINTS = {
     "gutter": {"row": "Gutter/drain strip. Width and CrossSlopePct control the shallow drainage break.", "highlight": "slope"},
     "curb": {"row": "Curb step. Height is the vertical curb rise; Width is the curb top width.", "highlight": "height"},
     "ditch": {"row": "Ditch profile. Height is treated as ditch depth; Width is the ditch span.", "highlight": "height"},
-    "bench": {"row": "Bench/platform. Usually flat, so CrossSlopePct is often 0 and Height is usually 0.", "highlight": "width"},
+    "berm": {"row": "Berm/platform at the road edge. Usually flat, so CrossSlopePct is often 0 and Height is usually 0.", "highlight": "width"},
 }
 
 
@@ -89,12 +91,12 @@ TYPICAL_SECTION_PRESETS = {
             {"Id": "SHL-L", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
             {"Id": "GUT-L", "Type": "gutter", "Side": "left", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "Offset": 0.000, "Order": 30, "Enabled": True},
             {"Id": "DITCH-L", "Type": "ditch", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "Offset": 0.000, "Order": 40, "Enabled": True},
-            {"Id": "BENCH-L", "Type": "bench", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
+            {"Id": "BERM-L", "Type": "berm", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
             {"Id": "LANE-R", "Type": "lane", "Side": "right", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
             {"Id": "SHL-R", "Type": "shoulder", "Side": "right", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
             {"Id": "GUT-R", "Type": "gutter", "Side": "right", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "Offset": 0.000, "Order": 30, "Enabled": True},
             {"Id": "DITCH-R", "Type": "ditch", "Side": "right", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "Offset": 0.000, "Order": 40, "Enabled": True},
-            {"Id": "BENCH-R", "Type": "bench", "Side": "right", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
+            {"Id": "BERM-R", "Type": "berm", "Side": "right", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
         ],
         "pavement": [],
     },
@@ -106,7 +108,7 @@ QUICK_COMPONENT_TEMPLATES = {
     "shoulder": {"Id": "SHL", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
     "curb": {"Id": "CURB", "Type": "curb", "Side": "left", "Width": 0.180, "CrossSlopePct": 0.0, "Height": 0.150, "Offset": 0.000, "Order": 40, "Enabled": True},
     "ditch": {"Id": "DITCH", "Type": "ditch", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "Offset": 0.000, "Order": 40, "Enabled": True},
-    "bench": {"Id": "BENCH", "Type": "bench", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
+    "berm": {"Id": "BERM", "Type": "berm", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "Offset": 0.000, "Order": 50, "Enabled": True},
 }
 
 
@@ -206,7 +208,7 @@ class TypicalSectionEditorTaskPanel:
         self.btn_add_shoulder = QtWidgets.QPushButton("Add Shoulder")
         self.btn_add_curb = QtWidgets.QPushButton("Add Curb")
         self.btn_add_ditch = QtWidgets.QPushButton("Add Ditch")
-        self.btn_add_bench = QtWidgets.QPushButton("Add Bench")
+        self.btn_add_bench = QtWidgets.QPushButton("Add Berm")
         quick_btns.addWidget(self.btn_add_lane)
         quick_btns.addWidget(self.btn_add_shoulder)
         quick_btns.addWidget(self.btn_add_curb)
@@ -339,7 +341,7 @@ class TypicalSectionEditorTaskPanel:
         self.btn_add_shoulder.clicked.connect(lambda: self._add_component_template("shoulder"))
         self.btn_add_curb.clicked.connect(lambda: self._add_component_template("curb"))
         self.btn_add_ditch.clicked.connect(lambda: self._add_component_template("ditch"))
-        self.btn_add_bench.clicked.connect(lambda: self._add_component_template("bench"))
+        self.btn_add_bench.clicked.connect(lambda: self._add_component_template("berm"))
         self.btn_browse_csv.clicked.connect(self._browse_csv)
         self.btn_load_csv.clicked.connect(self._load_csv)
         self.btn_export_csv.clicked.connect(self._export_csv)
@@ -582,10 +584,13 @@ class TypicalSectionEditorTaskPanel:
             row = [self._get_cell_text(r, c).strip() for c in range(len(COL_HEADERS))]
             if not any(row):
                 continue
+            typ = str(row[1] or "").strip().lower()
+            if typ == "bench":
+                typ = "berm"
             rows.append(
                 {
                     "Id": row[0] or f"COMP-{r+1:02d}",
-                    "Type": row[1],
+                    "Type": typ,
                     "Side": row[2],
                     "Width": self._parse_float(row[3]),
                     "CrossSlopePct": self._parse_float(row[4]),
@@ -657,6 +662,29 @@ class TypicalSectionEditorTaskPanel:
         ViewProviderTypicalSectionTemplate(obj.ViewObject)
         obj.Label = "Typical Section Template"
         return obj
+
+    def _find_pavement_display(self, src_obj):
+        if self.doc is None or src_obj is None:
+            return None
+        for o in list(getattr(self.doc, "Objects", []) or []):
+            try:
+                if getattr(getattr(o, "Proxy", None), "Type", "") == "TypicalSectionPavementDisplay":
+                    if getattr(o, "SourceTypicalSection", None) == src_obj:
+                        return o
+            except Exception:
+                pass
+        return None
+
+    def _ensure_pavement_display(self, src_obj):
+        disp = self._find_pavement_display(src_obj)
+        if disp is not None:
+            return disp
+        disp = self.doc.addObject("Part::FeaturePython", "TypicalSectionPavementDisplay")
+        TypicalSectionPavementDisplay(disp)
+        ViewProviderTypicalSectionPavementDisplay(disp.ViewObject)
+        disp.Label = "Typical Section Pavement"
+        disp.SourceTypicalSection = src_obj
+        return disp
 
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
@@ -902,6 +930,9 @@ class TypicalSectionEditorTaskPanel:
             if not rows:
                 QtWidgets.QMessageBox.warning(None, "Typical Section", "No component rows were found in the CSV.")
                 return
+            for row in rows:
+                if str(row.get("Type", "") or "").strip().lower() == "bench":
+                    row["Type"] = "berm"
             self._write_rows_to_table(rows)
             self.lbl_status.setText(f"Loaded {len(rows)} component rows from CSV.")
         except Exception as ex:
@@ -1064,6 +1095,7 @@ class TypicalSectionEditorTaskPanel:
             obj = self._ensure_target()
             rows = self._read_rows()
             pav_rows = self._read_pavement_rows()
+            pav_disp = self._ensure_pavement_display(obj)
             obj.ComponentIds = [str(r.get("Id", "") or "") for r in rows]
             obj.ComponentTypes = [str(r.get("Type", "") or "") for r in rows]
             obj.ComponentSides = [str(r.get("Side", "") or "") for r in rows]
@@ -1077,11 +1109,17 @@ class TypicalSectionEditorTaskPanel:
             obj.PavementLayerTypes = [str(r.get("Type", "") or "") for r in pav_rows]
             obj.PavementLayerThicknesses = [float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows]
             obj.PavementLayerEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in pav_rows]
+            if pav_disp is not None:
+                pav_disp.SourceTypicalSection = obj
+                pav_disp.touch()
             obj.touch()
             self.doc.recompute()
             prj = find_project(self.doc)
             if prj is not None:
-                link_project(prj, links={"TypicalSectionTemplate": obj}, adopt_extra=[obj])
+                extras = [obj]
+                if pav_disp is not None:
+                    extras.append(pav_disp)
+                link_project(prj, links={"TypicalSectionTemplate": obj}, adopt_extra=extras)
             self._refresh_context()
             self._fill_targets(selected=obj)
             self.lbl_status.setText(str(getattr(obj, "Status", "Updated")))

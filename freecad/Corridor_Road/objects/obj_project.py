@@ -844,6 +844,21 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=("TypicalSectionPavementDisplay",), name_prefixes=("TypicalSectionPavementDisplay",)):
+        src = getattr(child, "SourceTypicalSection", None)
+        if src is not None:
+            doc = getattr(prj, "Document", None)
+            if doc is not None:
+                for o in doc.Objects:
+                    if _is_type(o, proxy_types=("SectionSet",), name_prefixes=("SectionSet",)):
+                        if getattr(o, "TypicalSectionTemplate", None) == src:
+                            aln = _alignment_from_section_set(o)
+                            if aln is not None:
+                                return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("ProfileBundle",), name_prefixes=("ProfileBundle",)):
         aln = _alignment_from_profile_bundle(child)
         if aln is not None:
@@ -888,6 +903,7 @@ def _is_alignment_related(child):
             "Centerline3D",
             "AssemblyTemplate",
             "TypicalSectionTemplate",
+            "TypicalSectionPavementDisplay",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
@@ -904,6 +920,7 @@ def _is_alignment_related(child):
             "Centerline3D",
             "AssemblyTemplate",
             "TypicalSectionTemplate",
+            "TypicalSectionPavementDisplay",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
@@ -967,6 +984,8 @@ def _target_folder_for_alignment_child(prj, child):
     if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
     if _is_type(child, proxy_types=("TypicalSectionTemplate",), name_prefixes=("TypicalSectionTemplate",)):
+        return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
+    if _is_type(child, proxy_types=("TypicalSectionPavementDisplay",), name_prefixes=("TypicalSectionPavementDisplay",)):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
     if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
         return aln_tree.get(ALIGNMENT_SECTIONS, None)
