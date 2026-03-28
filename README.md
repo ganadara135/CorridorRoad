@@ -29,6 +29,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - If general users or developers have questions about this project, please ask in the CorridorRoad project thread on the FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 - Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
 
+## Latest Release
+- Current stable release: `v0.2.0`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
+
 ## Main Commands
 - `New Project`
 - `Project Setup`

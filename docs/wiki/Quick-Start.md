@@ -77,4 +77,4 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 - If a complex imported structure looks right in 3D but earthwork does not match it, see [Troubleshooting](Troubleshooting#external-shape-is-visible-but-earthwork-does-not-match-it).
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `e619bd8` (`v0.2.0`)

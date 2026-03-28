@@ -49,6 +49,10 @@ Recommended first structure-aware test order:
 - https://forum.freecad.org/viewtopic.php?t=103783
 - Use the forum thread for usage questions, bug discussion, and development feedback.
 
+## Latest Release
+- Current stable release: `v0.2.0`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
+
 ## Core Pipeline
 `Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
 
@@ -73,4 +77,4 @@ Recommended first structure-aware test order:
 - `GeometryMode=external_shape` currently improves realistic structure display/reference placement, but earthwork still follows structure `Type`-based rules.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `e619bd8` (`v0.2.0`)

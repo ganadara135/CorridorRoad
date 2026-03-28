@@ -351,4 +351,4 @@ Auto transition distance intent:
 - Re-run failed stages after fixing source links or coordinate mode.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `e619bd8` (`v0.2.0`)
