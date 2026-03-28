@@ -9,8 +9,20 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
-### Added
+### Changed
 - Placeholder for upcoming changes.
+
+## [0.2.0] - 2026-03-28
+
+### Added
+- Typical Section workflow with component presets, pavement layer presets, CSV import/export, and section/corridor integration.
+- Expanded structure workflow with template, external-shape, and station-profile support.
+- Alignment presets and project-driven coordinate workflow defaults for faster setup.
+
+### Changed
+- Improved task panel UX for Typical Section, Edit Structures, Alignment, and Profiles/PVI workflows.
+- Clarified terminology by using `berm` for road-edge platforms and reserving `bench` for future earthwork mid-slope use.
+- Adopted branch-based addon listing with release/version management on `main` using `package.xml`, `CHANGELOG.md`, tags, and GitHub Releases.
 
 ## [0.1.0] - 2026-03-08
 
