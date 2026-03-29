@@ -163,8 +163,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
     - `SectionSchemaVersion=2`: extended/open profile (side slopes and/or Typical Section break points)
 - daylight runtime status:
-  - `WARN: UseDaylightToTerrain=True but no terrain source found...`
-  - `WARN: Terrain source found but daylight sampler failed...`
+  - `daylight=off`
+  - `daylight=terrain:local` / `daylight=terrain:world`
+  - `daylight=fallback:no_terrain`
+  - `daylight=fallback:sampler_failed`
+  - warning text should also include the next-step guidance for the fallback case
 - daylight coordinate rule:
   - when `TerrainMeshCoords=World`, daylight terrain triangles are transformed to local before section sampling
 - daylight performance guards:
@@ -177,6 +180,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - structure overrides are type-driven and simplified
   - `external_shape` does not yet define the true section-cutting profile
   - when station-profile control points exist, section overlays and section overrides should consume resolved profile values at the active station
+  - status should make this visible with:
+    - `earthwork=full` or `earthwork=simplified_type_driven`
+    - `displayOnly=external_shape:N` when imported solids are still display/reference only
 - Optional tree children:
   - `SectionSlice` objects under `Group`
   - `Structure Sections` overlay objects for structure-only section visualization
@@ -216,6 +222,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `split_only` keeps corridor continuity while splitting loft at structure boundaries
   - `skip_zone` omits corridor body across structure-active spans
   - `notch` is primarily for `culvert` / `crossing` and should prefer a notch-aware closed-profile schema
+- corridor status convention:
+  - `corridorRule=full` for a standard full-span loft
+  - `corridorRule=structure_aware` when structure modes or segmented structure handling affect the output
+  - keep `corridorModes=...`, `skipZones=...`, `skipCaps=...`, and `skipBoundary=...` as supporting diagnostics
 - Current notch policy:
   - transition stations can drive ramped notch entry/exit
   - result reporting should expose notch-aware station count and closed-profile schema version

@@ -292,6 +292,30 @@ class CorridorLoftTaskPanel:
         cor.Label = "Corridor Loft"
         return cor
 
+    def _preflight_warnings(self, sec):
+        warnings = []
+        if sec is None:
+            return warnings
+
+        try:
+            if bool(self.chk_structure_modes.isChecked()) and bool(getattr(sec, "UseStructureSet", False)):
+                fallback_mode = str(self.cmb_default_structure_mode.currentText() or "split_only")
+                rows = CorridorLoft._resolve_structure_corridor_records(sec, fallback_mode=fallback_mode)
+                _detail_rows, corridor_warning_rows, mode_summary, spans = CorridorLoft._describe_structure_corridor_records(rows)
+                if any(str(mode or "").strip().lower() == "skip_zone" for _s0, _s1, mode in list(spans or [])):
+                    warnings.append(
+                        "skip_zone omits corridor body across active spans. Skip boundary caps are deferred in this phase and only skip markers are generated."
+                    )
+                if corridor_warning_rows:
+                    warnings.append(
+                        f"Structure corridor span resolution reported {len(list(corridor_warning_rows or []))} warning(s). Review StructureSet diagnostics if the result looks unexpected."
+                    )
+                if str(mode_summary or "-") not in ("", "-"):
+                    warnings.append(f"Resolved structure corridor modes: {mode_summary}")
+        except Exception:
+            pass
+        return warnings
+
     def _build(self):
         if self.doc is None:
             QtWidgets.QMessageBox.warning(None, "Corridor Loft", "No active document.")
@@ -305,6 +329,19 @@ class CorridorLoftTaskPanel:
                 "No SectionSet found. Run Generate Sections first.",
             )
             return
+
+        preflight = self._preflight_warnings(sec)
+        if preflight:
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                "Corridor Loft",
+                "Build with warnings?\n\n" + "\n".join([f"- {line}" for line in preflight]),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                self.lbl_status.setText("Build cancelled after warning review.")
+                return
 
         try:
             cor = self._ensure_target_corridor()
@@ -364,6 +401,8 @@ class CorridorLoftTaskPanel:
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
             corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
             corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
+            skip_boundary_behavior = str(getattr(cor, "ResolvedSkipBoundaryBehavior", "-") or "-")
+            skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
             notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
             closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
@@ -371,7 +410,7 @@ class CorridorLoftTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

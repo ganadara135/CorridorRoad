@@ -108,7 +108,9 @@ def _assert_basic_pipeline(sec, cor):
     _assert(int(getattr(sec, "SectionCount", 0) or 0) == 5, f"{sec.Name} section count mismatch")
     _assert(float(getattr(sec, "PavementTotalThickness", 0.0) or 0.0) > 1e-9, f"{sec.Name} pavement thickness missing")
     _assert("schema=2" in str(getattr(sec, "Status", "") or ""), f"{sec.Name} status missing schema summary")
-    _assert("topProfile=typical_section" in str(getattr(sec, "Status", "") or ""), f"{sec.Name} status missing typical-section summary")
+    sec_status = str(getattr(sec, "Status", "") or "")
+    _assert("topProfile=typical_section" in sec_status, f"{sec.Name} status missing typical-section summary")
+    _assert("earthwork=full" in sec_status, f"{sec.Name} status missing full earthwork summary")
 
     _assert(int(getattr(cor, "SchemaVersion", 0) or 0) == 2, f"{cor.Name} source schema should be 2")
     _assert(int(getattr(cor, "PointCountPerSection", 0) or 0) >= 5, f"{cor.Name} point count per section is too low")
@@ -116,6 +118,8 @@ def _assert_basic_pipeline(sec, cor):
     _assert("topProfile=typical_section" in cor_status, f"{cor.Name} status missing typical-section summary")
     _assert("srcSchema=2" in cor_status, f"{cor.Name} status missing source schema summary")
     _assert("pavement=" in cor_status, f"{cor.Name} status missing pavement summary")
+    _assert("corridorRule=full" in cor_status, f"{cor.Name} status missing full corridor summary")
+    _assert("earthwork=full" in cor_status, f"{cor.Name} status missing full earthwork summary")
 
 
 def run():

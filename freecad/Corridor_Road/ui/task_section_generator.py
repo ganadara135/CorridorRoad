@@ -17,6 +17,7 @@ from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_p
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -800,6 +801,38 @@ class SectionGeneratorTaskPanel:
             return
         SectionSet.rebuild_child_sections(sec_obj)
 
+    def _preflight_warnings(self, src, asm, struct_src, typ_src):
+        warnings = []
+        if src is None or asm is None:
+            return warnings
+
+        if bool(self.chk_daylight.isChecked()) and self._current_daylight_terrain() is None:
+            prj0 = _find_project(self.doc)
+            fallback_terrain = getattr(prj0, "Terrain", None) if prj0 is not None and hasattr(prj0, "Terrain") else None
+            if not _is_mesh_obj(fallback_terrain):
+                warnings.append("Daylight Auto is enabled without a mesh terrain source. Section generation will fall back to fixed side widths.")
+
+        if bool(self.chk_use_structure_set.isChecked()) and struct_src is not None:
+            if bool(self.chk_struct_apply_overrides.isChecked()):
+                warnings.append("Apply structure overrides is still partial/reserved behavior. Daylight and side-slope edits may remain simplified.")
+            try:
+                ext_count = sum(
+                    1
+                    for rec in list(StructureSetSource.records(struct_src) or [])
+                    if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+                )
+            except Exception:
+                ext_count = 0
+            if ext_count > 0:
+                warnings.append(
+                    f"StructureSet contains {int(ext_count)} external_shape record(s). Imported solids remain display/reference placement only for section/corridor/earthwork logic."
+                )
+
+        if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
+            warnings.append("Typical Section replaces the simple top-profile source, while Assembly Template still controls corridor depth and daylight defaults.")
+
+        return warnings
+
     def _generate(self):
         if self.doc is None:
             return
@@ -824,6 +857,18 @@ class SectionGeneratorTaskPanel:
                 "Use Typical Section Template is enabled, but no Typical Section source is selected.",
             )
             return
+
+        preflight = self._preflight_warnings(src, asm, struct_src, typ_src)
+        if preflight:
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                "Generate Sections",
+                "Generate with warnings?\n\n" + "\n".join([f"- {line}" for line in preflight]),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
 
         try:
             self._set_suspend_recompute(sec, True)

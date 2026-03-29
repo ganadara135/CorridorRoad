@@ -2,9 +2,13 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 # CorridorRoad/objects/obj_design_grading_surface.py
-from freecad.Corridor_Road.objects.obj_section_set import SectionSet
-from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
-
+from freecad.Corridor_Road.objects.obj_section_set import (
+    SectionSet,
+    _display_only_status_token,
+    _earthwork_status_token,
+    _external_shape_display_count,
+    _status_join,
+)
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
 
@@ -273,31 +277,35 @@ class DesignGradingSurface:
                 fc = int(getattr(getattr(obj, "Mesh", None), "CountFacets", 0))
             except Exception:
                 fc = 0
-            obj.Status = (
-                f"OK (Mesh): quads={quad_count}, facets={fc}, "
-                f"schema={int(obj.SchemaVersion)}, topProfile={obj.TopProfileSource}, "
-                f"topEdges={obj.TopProfileEdgeSummary}, pavement={obj.PavementTotalThickness:.3f}m"
-            )
+            try:
+                ss = getattr(src, "StructureSet", None) if bool(getattr(src, "UseStructureSet", False)) else None
+            except Exception:
+                ss = None
+            ext_count = _external_shape_display_count(ss)
+            status_tokens = [
+                f"quads={quad_count}",
+                f"facets={fc}",
+                f"schema={int(obj.SchemaVersion)}",
+                f"topProfile={obj.TopProfileSource}",
+                f"topEdges={obj.TopProfileEdgeSummary}",
+                f"pavement={obj.PavementTotalThickness:.3f}m",
+                _earthwork_status_token(
+                    struct_src=ss,
+                    resolved_count=int(getattr(src, "ResolvedStructureCount", 0) or 0),
+                    ext_count=ext_count,
+                    overrides_enabled=bool(getattr(src, "ApplyStructureOverrides", False)),
+                ),
+            ]
             try:
                 st_count = int(getattr(src, "ResolvedStructureCount", 0) or 0)
             except Exception:
                 st_count = 0
             if st_count > 0:
-                obj.Status = f"{obj.Status} | structures={st_count}"
-            try:
-                ss = getattr(src, "StructureSet", None) if bool(getattr(src, "UseStructureSet", False)) else None
-                if ss is not None:
-                    ext_count = sum(
-                        1
-                        for rec in list(StructureSet.records(ss) or [])
-                        if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
-                    )
-                else:
-                    ext_count = 0
-            except Exception:
-                ext_count = 0
+                status_tokens.append(f"structures={st_count}")
             if ext_count > 0:
-                obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(ext_count)}"
+                status_tokens.append(_display_only_status_token(ext_count))
+                status_tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
+            obj.Status = _status_join("OK (Mesh)", *status_tokens)
             _mark_recompute_flag(obj, False)
 
             # Push updates to linked DesignTerrain objects as pending recompute.

@@ -7,7 +7,14 @@ import math
 import FreeCAD as App
 import Part
 
-from freecad.Corridor_Road.objects.obj_section_set import SectionSet, _resolve_structure_source
+from freecad.Corridor_Road.objects.obj_section_set import (
+    SectionSet,
+    _display_only_status_token,
+    _earthwork_status_token,
+    _external_shape_display_count,
+    _resolve_structure_source,
+    _status_join,
+)
 from freecad.Corridor_Road.objects.obj_structure_set import (
     StructureSet as StructureSetSource,
     _build_structure_solid as _structure_record_solid,
@@ -52,6 +59,17 @@ def _merge_station_spans(spans, tol: float = 1e-6):
         else:
             out.append([s0, s1, mode])
     return [(float(a), float(b), str(m)) for a, b, m in out]
+
+
+def _corridor_rule_status_token(split_count: int, corridor_mode_summary, skipped_station_rows, corridor_warning_rows) -> str:
+    if (
+        int(split_count or 0) >= 2
+        or str(corridor_mode_summary or "-") != "-"
+        or bool(list(skipped_station_rows or []))
+        or bool(list(corridor_warning_rows or []))
+    ):
+        return "corridorRule=structure_aware"
+    return "corridorRule=full"
 
 
 def _resolve_corridor_record_at_station(src, rec, station: float):
@@ -230,6 +248,18 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "ResolvedStructureCorridorModeSummary"):
         obj.addProperty("App::PropertyString", "ResolvedStructureCorridorModeSummary", "Result", "Resolved structure corridor mode summary")
         obj.ResolvedStructureCorridorModeSummary = "-"
+
+    if not hasattr(obj, "ResolvedSkipBoundaryBehavior"):
+        obj.addProperty("App::PropertyString", "ResolvedSkipBoundaryBehavior", "Result", "Resolved skip-zone boundary behavior summary")
+        obj.ResolvedSkipBoundaryBehavior = "-"
+
+    if not hasattr(obj, "ResolvedSkipBoundaryStates"):
+        obj.addProperty("App::PropertyStringList", "ResolvedSkipBoundaryStates", "Result", "Resolved skip-zone boundary states")
+        obj.ResolvedSkipBoundaryStates = []
+
+    if not hasattr(obj, "ResolvedSkipBoundaryCapCount"):
+        obj.addProperty("App::PropertyInteger", "ResolvedSkipBoundaryCapCount", "Result", "Resolved skip-zone cap count")
+        obj.ResolvedSkipBoundaryCapCount = 0
 
     if not hasattr(obj, "ResolvedStructureNotchCount"):
         obj.addProperty("App::PropertyInteger", "ResolvedStructureNotchCount", "Result", "Number of structure notch cuts applied")
@@ -724,6 +754,34 @@ class CorridorLoft:
 
         dedup = [(int(a), int(b)) for a, b in dedup if (int(b) - int(a) + 1) >= 2]
         return dedup, skipped_rows, skip_runs
+
+    @staticmethod
+    def _skip_zone_boundary_summary(stations, skip_runs):
+        vals = list(stations or [])
+        n = len(vals)
+        if n < 1:
+            return "-", [], 0
+
+        rows = []
+        labels = []
+        for i0, i1 in list(skip_runs or []):
+            lo = float(vals[max(0, min(n - 1, int(i0)))])
+            hi = float(vals[max(0, min(n - 1, int(i1)))])
+            span_txt = CorridorLoft._format_station_span(lo, hi)
+            if int(i0) <= 0:
+                rows.append(f"open_start:{span_txt}")
+                if "open_start" not in labels:
+                    labels.append("open_start")
+            if int(i1) >= (n - 1):
+                rows.append(f"open_end:{span_txt}")
+                if "open_end" not in labels:
+                    labels.append("open_end")
+
+        if rows:
+            return "caps_deferred", rows, 0
+        if skip_runs:
+            return "internal_only", [], 0
+        return "-", [], 0
 
     @staticmethod
     def _corridor_record_ref(rec) -> str:
@@ -1249,6 +1307,9 @@ class CorridorLoft:
                 obj.ResolvedStructureCorridorRanges = []
                 obj.ResolvedStructureCorridorWarnings = []
                 obj.ResolvedStructureCorridorModeSummary = "-"
+                obj.ResolvedSkipBoundaryBehavior = "-"
+                obj.ResolvedSkipBoundaryStates = []
+                obj.ResolvedSkipBoundaryCapCount = 0
                 obj.ResolvedStructureNotchCount = 0
                 obj.ResolvedNotchStationCount = 0
                 obj.ClosedProfileSchemaVersion = 1
@@ -1289,6 +1350,9 @@ class CorridorLoft:
             structure_ranges = []
             skipped_station_rows = []
             skip_runs = []
+            skip_boundary_behavior = "-"
+            skip_boundary_rows = []
+            skip_boundary_cap_count = 0
             notch_count = 0
             fallback_mode = str(getattr(obj, "DefaultStructureCorridorMode", "split_only") or "split_only").strip().lower()
             corridor_records = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
@@ -1322,6 +1386,7 @@ class CorridorLoft:
                 use_segmented_ranges = bool(structure_ranges and len(structure_ranges) >= 2)
             if bool(getattr(obj, "UseStructureCorridorModes", True)):
                 skip_ranges, skipped_station_rows, skip_runs = CorridorLoft._skip_zone_keep_ranges(stations, structure_spans)
+                skip_boundary_behavior, skip_boundary_rows, skip_boundary_cap_count = CorridorLoft._skip_zone_boundary_summary(stations, skip_runs)
                 if skip_ranges:
                     structure_ranges = list(skip_ranges)
                     split_count = len(structure_ranges) if structure_ranges else 0
@@ -1334,6 +1399,64 @@ class CorridorLoft:
 
             failed_ranges = []
             skip_marker_count = 0
+            struct_src = _resolve_structure_source(src) if bool(getattr(src, "UseStructureSet", False)) else None
+            ext_count = _external_shape_display_count(struct_src)
+
+            def _build_status(head: str):
+                tokens = [
+                    f"hL={float(h_left):.3f}m",
+                    f"hR={float(h_right):.3f}m",
+                    f"heightFrom={height_source}",
+                    f"minSpacing={float(min_spacing):.3f}",
+                    f"used={len(stations)}",
+                    f"dropped={int(dropped)}",
+                    f"autoFixed={int(fixed_count)}",
+                    f"ruled={ruled_mode}",
+                    _corridor_rule_status_token(split_count, corridor_mode_summary, skipped_station_rows, corridor_warning_rows),
+                    _earthwork_status_token(
+                        struct_src=struct_src,
+                        resolved_count=int(getattr(src, "ResolvedStructureCount", 0) or 0),
+                        ext_count=ext_count,
+                        overrides_enabled=bool(getattr(src, "ApplyStructureOverrides", False)),
+                    ),
+                ]
+                if split_count >= 2:
+                    tokens.append(f"structureSegs={int(split_count)}")
+                if str(corridor_mode_summary or "-") != "-":
+                    tokens.append(f"corridorModes={corridor_mode_summary}")
+                if skipped_station_rows:
+                    tokens.append(f"skipZones={len(skipped_station_rows)}")
+                if skip_marker_count > 0:
+                    tokens.append(f"skipMarkers={int(skip_marker_count)}")
+                if str(skip_boundary_behavior or "-") == "caps_deferred":
+                    tokens.append("skipCaps=deferred")
+                if skip_boundary_rows:
+                    tags = []
+                    for row in skip_boundary_rows:
+                        tag = str(row).split(":", 1)[0]
+                        if tag not in tags:
+                            tags.append(tag)
+                    tokens.append(f"skipBoundary={','.join(tags)}")
+                if corridor_warning_rows:
+                    tokens.append(f"corridorWarn={len(corridor_warning_rows)}")
+                if notch_count > 0:
+                    tokens.append(f"notches={int(notch_count)}")
+                if notch_station_count > 0:
+                    tokens.append(f"notchStations={int(notch_station_count)}")
+                if closed_profile_schema > 1:
+                    tokens.append(f"profileSchema={int(closed_profile_schema)}")
+                tokens.append(f"srcSchema={int(schema)}")
+                tokens.append(f"topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}")
+                tokens.append(f"topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}")
+                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                    tokens.append(f"pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m")
+                if ext_count > 0:
+                    tokens.append(_display_only_status_token(ext_count))
+                    tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
+                if notch_failures:
+                    tokens.append(f"notchWarn={len(notch_failures)}")
+                return _status_join(head, *tokens)
+
             try:
                 shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
                     loft_wires,
@@ -1356,43 +1479,11 @@ class CorridorLoft:
                         notch_failures.extend(list(notch_failed))
                 skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 if failed_ranges:
-                    status = (
-                        "WARN (Solid): structure-aware segmented fallback used "
-                        f"({len(failed_ranges)} failed ranges) | "
-                        f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                        f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
+                    status = _build_status(
+                        f"WARN (Solid): structure-aware segmented fallback used ({len(failed_ranges)} failed ranges)"
                     )
                 else:
-                    status = (
-                        "OK (Solid) "
-                        f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                        f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                        f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
-                    )
-                if split_count >= 2:
-                    status += f" structureSegs={int(split_count)}"
-                if str(corridor_mode_summary or "-") != "-":
-                    status += f" corridorModes={corridor_mode_summary}"
-                if skipped_station_rows:
-                    status += f" skipZones={len(skipped_station_rows)}"
-                if skip_marker_count > 0:
-                    status += f" skipMarkers={int(skip_marker_count)}"
-                if corridor_warning_rows:
-                    status += f" corridorWarn={len(corridor_warning_rows)}"
-                if notch_count > 0:
-                    status += f" notches={int(notch_count)}"
-                if notch_station_count > 0:
-                    status += f" notchStations={int(notch_station_count)}"
-                if closed_profile_schema > 1:
-                    status += f" profileSchema={int(closed_profile_schema)}"
-                status += f" srcSchema={int(schema)}"
-                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
-                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
-                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
-                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
-                if notch_failures:
-                    status += f" notchWarn={len(notch_failures)}"
+                    status = _build_status("OK (Solid)")
             except Exception as ex:
                 if use_segmented_ranges:
                     shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
@@ -1423,36 +1514,9 @@ class CorridorLoft:
                     if notch_failed:
                         notch_failures.extend(list(notch_failed))
                 skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
-                status = (
-                    "WARN (Solid): full loft failed, adaptive fallback used "
-                    f"({len(failed_ranges)} failed ranges): {ex} | "
-                    f"hL={float(h_left):.3f}m hR={float(h_right):.3f}m from {height_source} | "
-                    f"minSpacing={float(min_spacing):.3f} used={len(stations)} dropped={int(dropped)} "
-                    f"autoFixed={int(fixed_count)} ruled={ruled_mode}"
+                status = _build_status(
+                    f"WARN (Solid): full loft failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
                 )
-                if split_count >= 2:
-                    status += f" structureSegs={int(split_count)}"
-                if str(corridor_mode_summary or "-") != "-":
-                    status += f" corridorModes={corridor_mode_summary}"
-                if skipped_station_rows:
-                    status += f" skipZones={len(skipped_station_rows)}"
-                if skip_marker_count > 0:
-                    status += f" skipMarkers={int(skip_marker_count)}"
-                if corridor_warning_rows:
-                    status += f" corridorWarn={len(corridor_warning_rows)}"
-                if notch_count > 0:
-                    status += f" notches={int(notch_count)}"
-                if notch_station_count > 0:
-                    status += f" notchStations={int(notch_station_count)}"
-                if closed_profile_schema > 1:
-                    status += f" profileSchema={int(closed_profile_schema)}"
-                status += f" srcSchema={int(schema)}"
-                status += f" topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
-                status += f" topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}"
-                if float(getattr(src, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
-                    status += f" pavement={float(getattr(src, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
-                if notch_failures:
-                    status += f" notchWarn={len(notch_failures)}"
 
             obj.Shape = shape
             obj.SectionCount = len(stations)
@@ -1466,6 +1530,9 @@ class CorridorLoft:
             obj.ResolvedStructureCorridorRanges = list(corridor_range_rows)
             obj.ResolvedStructureCorridorWarnings = list(corridor_warning_rows)
             obj.ResolvedStructureCorridorModeSummary = str(corridor_mode_summary or "-")
+            obj.ResolvedSkipBoundaryBehavior = str(skip_boundary_behavior or "-")
+            obj.ResolvedSkipBoundaryStates = list(skip_boundary_rows)
+            obj.ResolvedSkipBoundaryCapCount = int(skip_boundary_cap_count)
             obj.ResolvedStructureNotchCount = int(notch_count)
             obj.ResolvedNotchStationCount = int(notch_station_count)
             obj.ClosedProfileSchemaVersion = int(closed_profile_schema)
@@ -1493,6 +1560,9 @@ class CorridorLoft:
             obj.ResolvedStructureCorridorRanges = []
             obj.ResolvedStructureCorridorWarnings = []
             obj.ResolvedStructureCorridorModeSummary = "-"
+            obj.ResolvedSkipBoundaryBehavior = "-"
+            obj.ResolvedSkipBoundaryStates = []
+            obj.ResolvedSkipBoundaryCapCount = 0
             obj.ResolvedStructureNotchCount = 0
             obj.ResolvedNotchStationCount = 0
             obj.ClosedProfileSchemaVersion = 1

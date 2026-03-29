@@ -113,6 +113,7 @@ Current limitation:
 Validation expectation:
 - warn that `external_shape` is display/reference placement only
 - warn when users combine `external_shape` with expectations of direct notch or boolean consumption
+- runtime status should expose `earthwork=simplified_type_driven` plus `displayOnly=external_shape:N`
 
 ### 8. external_shape + notch / boolean_cut expectations
 Status:
@@ -159,6 +160,7 @@ Expected behavior:
 
 Validation expectation:
 - status should distinguish between no terrain source, sampler failure, and successful daylight resolution
+- preferred tokens are `daylight=fallback:no_terrain`, `daylight=fallback:sampler_failed`, `daylight=terrain:local`, and `daylight=terrain:world`
 
 ### 12. Coordinate workflow recommendation + task-panel defaults
 Status:

@@ -30,10 +30,10 @@ Sprint 1 goal:
 - Freeze the validation/test target before heavier geometry work.
 
 #### Sprint 2. `skip_zone` output + first regression coverage
-- [ ] Complete `1-3. Output generation`
-- [ ] Complete `1-5. Failure and edge-case handling`
-- [ ] Complete `2-2. Runtime validation rules`
-- [ ] Complete `2-3. User-facing warnings`
+- [x] Complete `1-3. Output generation`
+- [x] Complete `1-5. Failure and edge-case handling`
+- [x] Complete `2-2. Runtime validation rules`
+- [x] Complete `2-3. User-facing warnings`
 - [x] Complete `3-2. Typical-section pipeline tests`
 - [x] Complete `3-3. Structure workflow tests`
 
@@ -43,10 +43,10 @@ Sprint 2 goal:
 - Reduce the chance of silent geometry misunderstandings.
 
 #### Sprint 3. status cleanup + terrain/coordinate regression hardening
-- [ ] Complete `2-4. Status message cleanup`
-- [ ] Complete `2-5. Documentation sync`
-- [ ] Complete `3-4. Coordinate and terrain interpretation tests`
-- [ ] Complete `3-5. Test suite maintenance`
+- [x] Complete `2-4. Status message cleanup`
+- [x] Complete `2-5. Documentation sync`
+- [x] Complete `3-4. Coordinate and terrain interpretation tests`
+- [x] Complete `3-5. Test suite maintenance`
 
 Sprint 3 goal:
 - Normalize the user-facing messaging.
@@ -70,8 +70,8 @@ Sprint 3 goal:
 #### 1-3. Output generation
 - [x] Omit loft generation inside `skip_zone` spans.
 - [x] Combine surviving loft bodies into a stable compound result.
-- [ ] Decide whether skipped-span caps are deferred or partially supported in this phase.
-- [ ] Confirm behavior when the skipped span is at corridor start or end.
+- [x] Decide whether skipped-span caps are deferred or partially supported in this phase.
+- [x] Confirm behavior when the skipped span is at corridor start or end.
 
 #### 1-4. Status and diagnostics
 - [x] Add result/status reporting for active corridor mode, skip-zone count, and skipped station ranges.
@@ -97,17 +97,17 @@ Reference:
 #### 2-2. Runtime validation rules
 - [x] Add stronger runtime validation for mixed workflows involving `TypicalSection`, `StructureSet`, daylight, and coordinate workflow settings.
 - [x] Add validation for partial-feature combinations where geometry is shown but earthwork logic is simplified.
-- [ ] Confirm that validation does not break legacy simple workflows.
+- [x] Confirm that validation does not break legacy simple workflows.
 
 #### 2-3. User-facing warnings
 - [x] Warn clearly when user expectations and runtime behavior differ, especially for `external_shape`.
 - [x] Add focused warnings for display-only versus analysis-affecting behavior.
-- [ ] Review task panels for places where warnings should appear before `Apply`.
+- [x] Review task panels for places where warnings should appear before `Apply`.
 
 #### 2-4. Status message cleanup
-- [ ] Improve status messages so users can tell whether a result is using display-only logic, simplified earthwork logic, or a full corridor rule.
-- [ ] Normalize wording across `SectionSet`, `CorridorLoft`, `DesignGradingSurface`, and related panels.
-- [ ] Review existing status text for ambiguity, duplication, or missing next-step guidance.
+- [x] Improve status messages so users can tell whether a result is using display-only logic, simplified earthwork logic, or a full corridor rule.
+- [x] Normalize wording across `SectionSet`, `CorridorLoft`, `DesignGradingSurface`, and related panels.
+- [x] Review existing status text for ambiguity, duplication, or missing next-step guidance.
 
 #### 2-5. Documentation sync
 - [x] Align runtime warnings with README and architecture wording.
@@ -135,9 +135,9 @@ Reference:
 - [x] Add checks for structure-driven section tagging and structure-aware station expansion.
 
 #### 3-4. Coordinate and terrain interpretation tests
-- [ ] Add regression coverage for coordinate workflow edge cases that affect section or terrain interpretation.
-- [ ] Add checks for `Local` versus `World` terrain interpretation where daylight sampling is involved.
-- [ ] Confirm that fallback behavior is stable when terrain sampling fails.
+- [x] Add regression coverage for coordinate workflow edge cases that affect section or terrain interpretation.
+- [x] Add checks for `Local` versus `World` terrain interpretation where daylight sampling is involved.
+- [x] Confirm that fallback behavior is stable when terrain sampling fails.
 
 #### 3-5. Test suite maintenance
 - [x] Keep the fixed-tree smoke test and extend the suite rather than replacing it.

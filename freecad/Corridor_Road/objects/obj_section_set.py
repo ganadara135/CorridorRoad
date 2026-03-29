@@ -94,6 +94,48 @@ def _resolve_structure_source(obj):
     return None
 
 
+def _status_join(head: str, *tokens):
+    parts = []
+    for tok in list(tokens or []):
+        txt = str(tok or "").strip()
+        if txt:
+            parts.append(txt)
+    if not parts:
+        return str(head or "").strip()
+    base = str(head or "").strip()
+    if not base:
+        return " | ".join(parts)
+    return f"{base} | " + " | ".join(parts)
+
+
+def _external_shape_display_count(struct_src) -> int:
+    if struct_src is None:
+        return 0
+    try:
+        return sum(
+            1
+            for rec in list(StructureSetSource.records(struct_src) or [])
+            if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+        )
+    except Exception:
+        return 0
+
+
+def _display_only_status_token(ext_count: int) -> str:
+    count = int(ext_count or 0)
+    if count <= 0:
+        return ""
+    return f"displayOnly=external_shape:{count}"
+
+
+def _earthwork_status_token(struct_src=None, resolved_count: int = 0, ext_count: int = 0, overrides_enabled: bool = False) -> str:
+    if int(ext_count or 0) > 0:
+        return "earthwork=simplified_type_driven"
+    if struct_src is not None or int(resolved_count or 0) > 0 or bool(overrides_enabled):
+        return "earthwork=simplified_type_driven"
+    return "earthwork=full"
+
+
 def _structure_overlay_offsets(rec):
     side = str(rec.get("Side", "") or "").strip().lower()
     off = float(rec.get("Offset", 0.0) or 0.0)
@@ -1084,6 +1126,17 @@ class SectionSet:
         return None
 
     @staticmethod
+    def _resolved_terrain_coord_mode(obj, terrain_source=None) -> str:
+        terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
+        tsrc = terrain_source if terrain_source is not None else SectionSet._resolve_terrain_source(obj)
+        src_mode = str(getattr(tsrc, "OutputCoords", "") or "")
+        if src_mode in ("Local", "World"):
+            terrain_mode = src_mode
+        if terrain_mode not in ("Local", "World"):
+            terrain_mode = "Local"
+        return str(terrain_mode)
+
+    @staticmethod
     def _triangle_bbox_xy(p0, p1, p2):
         return _ssc.triangle_bbox_xy(p0, p1, p2)
 
@@ -1541,13 +1594,7 @@ class SectionSet:
                 terrain_found = tsrc is not None
                 if tsrc is not None:
                     day_max = int(getattr(asm, "DaylightMaxTriangles", 300000))
-                    terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
-                    # Prefer explicit source declaration when available.
-                    src_mode = str(getattr(tsrc, "OutputCoords", "") or "")
-                    if src_mode in ("Local", "World"):
-                        terrain_mode = src_mode
-                    if terrain_mode not in ("Local", "World"):
-                        terrain_mode = "Local"
+                    terrain_mode = SectionSet._resolved_terrain_coord_mode(obj, terrain_source=tsrc)
                     terrain_sampler = SectionSet._terrain_sampler(
                         tsrc,
                         max_triangles=day_max,
@@ -1898,36 +1945,49 @@ class SectionSet:
             if bool(getattr(obj, "RebuildNow", False)):
                 obj.RebuildNow = False
             use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and (left_on or right_on)
-            if use_day and (not terrain_found):
-                obj.Status = "WARN: DaylightAuto=True but no terrain source found. Fixed side widths used."
-            elif use_day and terrain_found and (not sampler_ok):
-                obj.Status = "WARN: Terrain source found but daylight sampler failed. Fixed side widths used."
-            else:
-                obj.Status = "OK"
-            obj.Status = f"{obj.Status} | schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}"
-            obj.Status = f"{obj.Status} | topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
-            obj.Status = f"{obj.Status} | topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}"
-            if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
-                obj.Status = f"{obj.Status} | pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
+            terrain_mode = SectionSet._resolved_terrain_coord_mode(obj) if use_day else ""
             struct_src = _resolve_structure_source(obj) if bool(getattr(obj, "UseStructureSet", False)) else None
+            resolved_structure_count = int(getattr(obj, "ResolvedStructureCount", 0) or 0)
+            ext_count = _external_shape_display_count(struct_src)
+            if use_day and (not terrain_found):
+                head = "WARN: daylight=no_terrain; fixed side widths used. Add TerrainMesh or disable DaylightAuto."
+                daylight_token = "daylight=fallback:no_terrain"
+            elif use_day and terrain_found and (not sampler_ok):
+                head = "WARN: daylight=sampler_failed; fixed side widths used. Check TerrainMeshCoords or terrain mesh validity."
+                daylight_token = "daylight=fallback:sampler_failed"
+            else:
+                head = "OK"
+                if use_day:
+                    daylight_token = f"daylight=terrain:{str(terrain_mode or 'Local').lower()}"
+                else:
+                    daylight_token = "daylight=off"
+            status_tokens = [
+                daylight_token,
+                f"schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}",
+                f"topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}",
+                f"topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}",
+            ]
+            if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
+                status_tokens.append(f"pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m")
+            status_tokens.append(
+                _earthwork_status_token(
+                    struct_src=struct_src,
+                    resolved_count=resolved_structure_count,
+                    ext_count=ext_count,
+                    overrides_enabled=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                )
+            )
             if bool(getattr(obj, "UseStructureSet", False)) and struct_src is None:
-                obj.Status = f"{obj.Status} | StructureSet missing"
-            elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
-                obj.Status = f"{obj.Status} | structures={int(getattr(obj, 'ResolvedStructureCount', 0) or 0)}"
-            if struct_src is not None:
-                try:
-                    ext_count = sum(
-                        1
-                        for rec in list(StructureSetSource.records(struct_src) or [])
-                        if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
-                    )
-                except Exception:
-                    ext_count = 0
-                if ext_count > 0:
-                    obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(ext_count)}"
+                status_tokens.append("StructureSet missing")
+            elif resolved_structure_count > 0:
+                status_tokens.append(f"structures={resolved_structure_count}")
+            if ext_count > 0:
+                status_tokens.append(_display_only_status_token(ext_count))
+                status_tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
                 ovh = int(getattr(obj, "_StructureOverrideHitCount", 0) or 0)
-                obj.Status = f"{obj.Status} | overrides={ovh}"
+                status_tokens.append(f"overrides={ovh}")
+            obj.Status = _status_join(head, *status_tokens)
 
             # Push parametric updates to linked corridor objects.
             if obj.Document is not None:

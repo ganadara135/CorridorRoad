@@ -23,6 +23,10 @@ Run these before merging short-term structure/corridor validation work:
 3. `smoke_structure_recompute_chain.py`
 4. `smoke_typical_section_pipeline.py`
 5. `smoke_structure_station_merge.py`
+6. `smoke_skip_zone_boundary_behavior.py`
+7. `smoke_legacy_simple_workflow.py`
+8. `smoke_daylight_coordinate_modes.py`
+9. `smoke_daylight_fallback_status.py`
 
 ## How To Run
 
@@ -36,6 +40,10 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_structure_corridor_diagnostics
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_structure_recompute_chain.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_typical_section_pipeline.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_structure_station_merge.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_skip_zone_boundary_behavior.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_legacy_simple_workflow.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_daylight_coordinate_modes.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_daylight_fallback_status.py', 'r', encoding='utf-8').read())"
 ```
 
 If you need an explicit executable path, use your local FreeCAD installation path:
@@ -46,6 +54,16 @@ If you need an explicit executable path, use your local FreeCAD installation pat
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_structure_recompute_chain.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_typical_section_pipeline.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_structure_station_merge.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_skip_zone_boundary_behavior.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_legacy_simple_workflow.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_daylight_coordinate_modes.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_daylight_fallback_status.py', 'r', encoding='utf-8').read())"
+```
+
+For a repeatable short-term pass, you can also use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tests/regression/run_short_term_smokes.ps1 -FreeCADCmdPath 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe'
 ```
 
 ## Scope Notes
