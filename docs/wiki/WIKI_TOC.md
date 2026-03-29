@@ -46,6 +46,17 @@ This folder contains draft pages to publish to GitHub Wiki.
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_notch.csv`
+- `tests/samples/structure_utm_realistic_hilly_template.csv`
+- `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
+- `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_urban_complete_street.csv`
+- `tests/samples/typical_section_with_ditch.csv`
+- `tests/samples/typical_section_pavement_basic.csv`
+- See `docs/PRACTICAL_SAMPLE_SET.md` for the maintained practical sample inventory.
+
+## Current Practical Regression Runner
+- `tests/regression/run_practical_scope_smokes.ps1`
 
 ## Screenshot Collection Plan
 1. Capture one screenshot per major workflow stage.

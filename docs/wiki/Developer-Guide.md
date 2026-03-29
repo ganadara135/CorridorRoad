@@ -61,11 +61,20 @@ Practical debugging order:
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - Alignment: `tests/samples/alignment_utm_realistic_hilly.csv`
+- Maintained practical sample inventory: `docs/PRACTICAL_SAMPLE_SET.md`
+- Maintained practical regression runner: `tests/regression/run_practical_scope_smokes.ps1`
+- Practical starter structure CSVs:
+  - `tests/samples/structure_utm_realistic_hilly.csv`
+  - `tests/samples/structure_utm_realistic_hilly_notch.csv`
+  - `tests/samples/structure_utm_realistic_hilly_template.csv`
+  - `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
 
 ## Documentation Update Policy
 1. If command behavior changes, update `README.md` and related wiki page together.
 2. If CSV schema changes, update `CSV-Format.md` and sample files together.
 3. Add `Last verified with commit` to changed wiki pages.
+4. Keep `docs/PRACTICAL_SAMPLE_SET.md` synchronized with any sample-file additions or removals.
+5. Keep `run_practical_scope_smokes.ps1` synchronized with the practical-engineering scope.
 
 ## Recommended Contribution Flow
 1. Reproduce issue using sample files.
@@ -73,6 +82,12 @@ Practical debugging order:
 3. Verify with real command flow in FreeCAD.
 4. Update docs/wiki draft pages under `docs/wiki`.
 5. Sync approved pages to GitHub Wiki repo.
+
+## Current Long-Term Scope Notes
+1. The focused long-term track is `Expand practical engineering scope`.
+2. Current scope includes practical subassembly contracts, report contracts, sample-driven validation, and surface-comparison review outputs.
+3. `boolean_cut` work is intentionally excluded from the current long-term practical scope.
+4. release-readiness / packaging work is also intentionally excluded from that current long-term scope.
 
 ## Debug Checklist For Field Issues
 1. Capture command click path and timestamp.

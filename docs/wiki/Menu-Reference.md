@@ -326,15 +326,17 @@ Important behavior:
 ### Recommended Usage
 1. Generate stations first.
 2. Load `tests/samples/structure_utm_realistic_hilly.csv` or enter rows manually.
-3. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
-4. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
-5. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
-6. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
-7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
-8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
-9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
-10. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
-11. The validation summary now reports row-level warnings and errors before apply.
+3. Use `tests/samples/structure_utm_realistic_hilly_notch.csv` when you want a focused `CorridorMode=notch` starter.
+4. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
+5. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
+6. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
+7. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
+8. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
+9. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
+10. `GeometryMode=external_shape` is currently for realistic structure display/reference placement plus proxy-earthwork reporting; it is not direct boolean consumption.
+11. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
+12. The validation summary now reports row-level warnings and errors before apply.
+13. See `docs/PRACTICAL_SAMPLE_SET.md` for the maintained starter and mixed sample bundles.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -498,6 +500,8 @@ When to override manually:
 | `Width` | Component width |
 | `CrossSlopePct` | Cross slope (%) |
 | `Height` | Vertical step / sag depth depending on component |
+| `ExtraWidth` | Secondary width used by advanced components such as curb face run, ditch bottom width, or berm taper width |
+| `BackSlopePct` | Secondary slope used by advanced components such as curb top/back slope, ditch outer slope, or berm taper slope |
 | `Offset` | Additional local lateral offset before the component |
 | `Order` | Per-side build order |
 | `Enabled` | Boolean enable flag |
@@ -512,12 +516,13 @@ When to override manually:
 ### Current Notes
 
 1. `curb` currently creates a vertical step plus top width.
-2. `ditch` currently creates a simple sag/V-style break.
-3. `berm` currently acts as a flat road-edge platform segment.
-4. `bench` is reserved for future earthwork mid-slope benching terminology.
-4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
-5. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
-6. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
+2. `curb` also uses `ExtraWidth` and `BackSlopePct` for face/top shaping.
+3. `ditch` now uses `ExtraWidth` for flat-bottom width and `BackSlopePct` for the outer slope.
+4. `berm` now uses `ExtraWidth` and `BackSlopePct` for outer taper behavior.
+5. `bench` is reserved for future earthwork mid-slope benching terminology.
+6. Pavement layers are currently data-only and tracked as total thickness/result metadata.
+7. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
+8. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
 7. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order

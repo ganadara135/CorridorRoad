@@ -98,12 +98,14 @@ If profile EG contains many blanks or `0` values:
 
 Recommended sample:
 - `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_notch.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
 - `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
 - `tests/samples/structure_utm_realistic_hilly_station_profile_headers.csv`
 - `tests/samples/structure_utm_realistic_hilly_station_profile_points.csv`
 - `tests/samples/structure_utm_realistic_hilly_mixed.csv`
 - `tests/samples/structure_utm_realistic_hilly_mixed_profile_points.csv`
+- See [../PRACTICAL_SAMPLE_SET.md](../PRACTICAL_SAMPLE_SET.md) for the maintained practical scenario bundles.
 
 Output:
 - `StructureSet` under `01_Inputs/Structures`
@@ -140,6 +142,7 @@ Recommended sample files:
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
 - `tests/samples/typical_section_pavement_basic.csv`
+- The maintained practical sample inventory is [../PRACTICAL_SAMPLE_SET.md](../PRACTICAL_SAMPLE_SET.md).
 
 Current output:
 - `TypicalSectionTemplate` object under the alignment `Assembly` branch
@@ -149,6 +152,7 @@ Current notes:
 1. `TypicalSectionTemplate` defines the finished-grade top profile.
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. `ditch`, `curb`, and `berm` now affect the preview profile with dedicated break behavior.
+4. Current component CSVs now use `ExtraWidth` and `BackSlopePct` in addition to the earlier width/slope/height fields.
 4. Pavement layers can be loaded separately with `Browse Pavement CSV` -> `Load Pavement CSV`.
 5. The editor now supports `Save Component CSV` and `Save Pavement CSV` so edited templates can be reused.
 6. Type-aware tooltips and field tinting help show whether `CrossSlopePct` or `Height` matters more for the selected component.
@@ -303,10 +307,11 @@ Template structure display:
 5. Use `tests/samples/structure_utm_realistic_hilly_template.csv` when you want to test the current template workflow directly.
 
 External-shape earthwork note:
-1. `GeometryMode=external_shape` is currently a display/reference workflow.
+1. `GeometryMode=external_shape` is currently a display/reference plus proxy-earthwork workflow.
 2. `Sections`, `Design Grading Surface`, and `Corridor Loft` still use type-based rules for earthwork.
-3. Use `external_shape` when you need realistic structure appearance and placement, but do not expect the imported STEP/BREP/FCStd solid to define the actual earthwork cut shape yet.
-4. Current type-driven earthwork intent is:
+3. Current status wording may report `earthwork=external_shape_proxy` when the loaded external shape contributes width/height proxy values.
+4. Use `external_shape` when you need realistic structure appearance and placement, but do not expect the imported STEP/BREP/FCStd solid to define the actual earthwork cut shape yet.
+5. Current type-driven earthwork intent is:
    - `culvert`, `crossing` -> notch / flat berm-style crossing rules
    - `retaining_wall` -> one-side retaining-wall rule
    - `bridge_zone`, `abutment_zone` -> trim / split / skip zone rules
@@ -349,6 +354,7 @@ Auto transition distance intent:
 - Verify daylight intersections where required.
 - Check status fields for warnings/errors on generated objects.
 - Re-run failed stages after fixing source links or coordinate mode.
+- For the maintained Long-Term practical bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ---
 Last verified with commit: `e619bd8` (`v0.2.0`)

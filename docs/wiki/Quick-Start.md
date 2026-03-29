@@ -17,6 +17,8 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 
+For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](../PRACTICAL_SAMPLE_SET.md).
+
 ## Steps
 1. Run `New Project`.
    - Confirm project tree is created.
