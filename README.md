@@ -17,6 +17,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Online Wiki: https://github.com/ganadara135/CorridorRoad/wiki
 - Wiki draft source in this repo: `docs/wiki/`
 - Wiki page map: `docs/wiki/WIKI_TOC.md`
+- Mixed workflow support/validation matrix: `docs/MIXED_WORKFLOW_VALIDATION_MATRIX.md`
 - Main wiki pages:
 1. Home: https://github.com/ganadara135/CorridorRoad/wiki
 2. Quick Start: https://github.com/ganadara135/CorridorRoad/wiki/Quick-Start

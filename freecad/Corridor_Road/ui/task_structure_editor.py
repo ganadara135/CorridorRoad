@@ -1245,6 +1245,8 @@ class StructureEditorTaskPanel:
         cor_mode = self._get_cell_text(row, 20).strip().lower()
         start = self._get_cell_float(row, 2)
         end = self._get_cell_float(row, 3)
+        center = self._get_cell_float(row, 4)
+        corridor_margin = self._get_cell_float(row, 21)
         msgs = []
         severity = 0
 
@@ -1292,6 +1294,21 @@ class StructureEditorTaskPanel:
             elif src_file and (not os.path.isfile(src_file)):
                 msgs.append(f"{rid}: external shape file not found")
                 severity = max(severity, 1)
+            msgs.append(f"{rid}: external_shape is display/reference placement only; earthwork still uses Type/Width/Height")
+            severity = max(severity, 1)
+            if cor_mode in ("notch", "boolean_cut"):
+                msgs.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly")
+                severity = max(severity, 1)
+
+        has_start_end = abs(start) > 1e-9 or abs(end) > 1e-9 or abs(end - start) > 1e-9
+        has_center = abs(center) > 1e-9
+        if cor_mode in ("skip_zone", "notch", "boolean_cut"):
+            if not has_start_end and not has_center:
+                msgs.append(f"{rid}: corridor mode '{cor_mode}' has no usable station span")
+                severity = max(severity, 1)
+            elif abs(end - start) <= 1e-9 and corridor_margin <= 1e-9:
+                msgs.append(f"{rid}: corridor mode '{cor_mode}' is point-like; add CorridorMargin or explicit Start/End span")
+                severity = max(severity, 1)
 
         prow = self._filtered_profile_rows(rid)
         if len(prow) == 1:
@@ -1315,27 +1332,21 @@ class StructureEditorTaskPanel:
 
     def _refresh_validation_visuals(self):
         brushes = self._item_brushes()
-        ok_count = 0
-        warn_count = 0
-        err_count = 0
-        lines = []
+        ok_count, warn_count, err_count, lines = self._validation_snapshot()
+        row_states = []
         for row in range(self.table.rowCount()):
             row_vals = [self._get_cell_text(row, c).strip() for c in range(len(COL_HEADERS))]
             if not any(row_vals):
                 continue
             sev, msgs = self._row_validation_messages(row)
+            row_states.append((row, sev, msgs))
+        for row, sev, msgs in row_states:
             tip = "\n".join(msgs) if msgs else "Validation: OK"
             brush_bg = brushes["ok_base"]
             if sev == 2:
-                err_count += 1
                 brush_bg = brushes["err_base"]
             elif sev == 1:
-                warn_count += 1
                 brush_bg = brushes["warn_base"]
-            else:
-                ok_count += 1
-            if msgs:
-                lines.extend(msgs[:2])
             for col in BASIC_VISIBLE_COLS:
                 item = self.table.item(row, col)
                 if item is None:
@@ -1361,6 +1372,26 @@ class StructureEditorTaskPanel:
                 self.lbl_validation_summary.setStyleSheet("color: #ffb3b3;")
             else:
                 self.lbl_validation_summary.setStyleSheet("color: #ffd27f;")
+
+    def _validation_snapshot(self):
+        ok_count = 0
+        warn_count = 0
+        err_count = 0
+        lines = []
+        for row in range(self.table.rowCount()):
+            row_vals = [self._get_cell_text(row, c).strip() for c in range(len(COL_HEADERS))]
+            if not any(row_vals):
+                continue
+            sev, msgs = self._row_validation_messages(row)
+            if sev == 2:
+                err_count += 1
+            elif sev == 1:
+                warn_count += 1
+            else:
+                ok_count += 1
+            if msgs:
+                lines.extend(msgs[:2])
+        return ok_count, warn_count, err_count, lines
 
     def _set_profile_table_rows(self, rows, structure_id=""):
         sid = str(structure_id or "").strip()
@@ -2390,6 +2421,37 @@ class StructureEditorTaskPanel:
         if not rows:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "No structure rows to save.")
             return
+        ok_count, warn_count, err_count, lines = self._validation_snapshot()
+        if err_count > 0:
+            msg = [
+                "Fix validation errors before Apply.",
+                f"OK rows: {ok_count}",
+                f"Warnings: {warn_count}",
+                f"Errors: {err_count}",
+            ]
+            if lines:
+                msg.append("")
+                msg.extend(list(lines[:10]))
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", "\n".join(msg))
+            return
+        if warn_count > 0:
+            msg = [
+                "Apply with validation warnings?",
+                f"OK rows: {ok_count}",
+                f"Warnings: {warn_count}",
+            ]
+            if lines:
+                msg.append("")
+                msg.extend(list(lines[:8]))
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                "Edit Structures",
+                "\n".join(msg),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
 
         try:
             obj = self._ensure_target()
@@ -2455,6 +2517,7 @@ class StructureEditorTaskPanel:
                     "Structure set saved with validation warnings.",
                     f"Records: {len(rows)}",
                     f"Profile points: {len(self._profile_rows)}",
+                    f"Status: {getattr(obj, 'Status', 'Applied')}",
                 ]
                 msg.extend(list(issues[:10]))
                 if shape_status_notes:
@@ -2471,7 +2534,9 @@ class StructureEditorTaskPanel:
                     "\n".join(msg),
                 )
             else:
-                msg = [f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}"]
+                msg = [
+                    f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}\nStatus: {getattr(obj, 'Status', 'Applied')}"
+                ]
                 if shape_status_notes:
                     msg.append("")
                     msg.append("External shape diagnostics:")

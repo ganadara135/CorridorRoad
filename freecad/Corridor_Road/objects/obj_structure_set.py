@@ -45,6 +45,7 @@ _PROFILE_LINEAR_FIELDS = (
     "CapHeight",
 )
 _PROFILE_STEP_FIELDS = ("CellCount",)
+_RECOMP_LABEL_SUFFIX = " [Recompute]"
 
 
 def _split_external_shape_source(path: str):
@@ -92,6 +93,104 @@ def _safe_vec(v, fallback):
     except Exception:
         pass
     return App.Vector(fallback.x, fallback.y, fallback.z)
+
+
+def _mark_dependency_needs_recompute(obj_dep, status_text: str):
+    try:
+        if hasattr(obj_dep, "NeedsRecompute"):
+            obj_dep.NeedsRecompute = True
+    except Exception:
+        pass
+    try:
+        st = str(getattr(obj_dep, "Status", "") or "")
+        if "NEEDS_RECOMPUTE" not in st:
+            obj_dep.Status = str(status_text or "NEEDS_RECOMPUTE")
+    except Exception:
+        pass
+    try:
+        label = str(getattr(obj_dep, "Label", "") or "")
+        if _RECOMP_LABEL_SUFFIX not in label:
+            obj_dep.Label = f"{label}{_RECOMP_LABEL_SUFFIX}"
+    except Exception:
+        pass
+    try:
+        obj_dep.touch()
+    except Exception:
+        pass
+
+
+def _structure_source_matches(section_obj, structure_obj) -> bool:
+    try:
+        if not bool(getattr(section_obj, "UseStructureSet", False)):
+            return False
+    except Exception:
+        return False
+
+    try:
+        from freecad.Corridor_Road.objects.obj_section_set import _resolve_structure_source
+
+        return _resolve_structure_source(section_obj) == structure_obj
+    except Exception:
+        pass
+
+    try:
+        if getattr(section_obj, "StructureSet", None) == structure_obj:
+            return True
+    except Exception:
+        pass
+
+    try:
+        prj = find_project(getattr(section_obj, "Document", None))
+        if prj is not None and getattr(prj, "StructureSet", None) == structure_obj:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _mark_dependents_from_structure_set(structure_obj):
+    doc = getattr(structure_obj, "Document", None)
+    if doc is None:
+        return
+
+    dependent_sections = []
+    for o in list(getattr(doc, "Objects", []) or []):
+        try:
+            proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
+            if proxy_type != "SectionSet":
+                continue
+            if not _structure_source_matches(o, structure_obj):
+                continue
+            _mark_dependency_needs_recompute(o, "NEEDS_RECOMPUTE: Source StructureSet changed.")
+            dependent_sections.append(o)
+        except Exception:
+            continue
+
+    for sec in dependent_sections:
+        for o in list(getattr(doc, "Objects", []) or []):
+            try:
+                proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
+                if getattr(o, "SourceSectionSet", None) == sec:
+                    if proxy_type == "CorridorLoft":
+                        _mark_dependency_needs_recompute(o, "NEEDS_RECOMPUTE: Source SectionSet changed.")
+                        for dep in list(getattr(doc, "Objects", []) or []):
+                            try:
+                                dep_type = str(getattr(getattr(dep, "Proxy", None), "Type", "") or "")
+                                if dep_type == "CutFillCalc" and getattr(dep, "SourceCorridor", None) == o:
+                                    _mark_dependency_needs_recompute(dep, "NEEDS_RECOMPUTE: Source CorridorLoft changed.")
+                            except Exception:
+                                continue
+                    elif proxy_type == "DesignGradingSurface":
+                        _mark_dependency_needs_recompute(o, "NEEDS_RECOMPUTE: Source SectionSet changed.")
+                        for dep in list(getattr(doc, "Objects", []) or []):
+                            try:
+                                dep_type = str(getattr(getattr(dep, "Proxy", None), "Type", "") or "")
+                                if dep_type == "DesignTerrain" and getattr(dep, "SourceDesignSurface", None) == o:
+                                    _mark_dependency_needs_recompute(dep, "NEEDS_RECOMPUTE: Source DesignGradingSurface changed.")
+                            except Exception:
+                                continue
+            except Exception:
+                continue
 
 
 def _resolve_alignment(obj):
@@ -724,16 +823,20 @@ def _safe_str_list(values):
     return [str(v or "") for v in list(values or [])]
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        out = float(default)
+    if not math.isfinite(out):
+        out = float(default)
+    return float(out)
+
+
 def _safe_float_list(values):
     out = []
     for v in list(values or []):
-        try:
-            x = float(v)
-        except Exception:
-            x = 0.0
-        if not math.isfinite(x):
-            x = 0.0
-        out.append(float(x))
+        out.append(_safe_float(v, default=0.0))
     return out
 
 
@@ -1266,6 +1369,7 @@ class StructureSet:
         obj.ResolvedFrameStatusNotes = list(frame_status_notes or [])
 
         note_count = len(issues) + len(shape_notes)
+        external_shape_count = sum(1 for rec in recs if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape")
         if note_count == 0:
             obj.Status = f"OK: {len(recs)} records"
         else:
@@ -1275,6 +1379,8 @@ class StructureSet:
             if frame_status_notes:
                 status = f"{status} | frameFallbacks={len(frame_status_notes)}"
             obj.Status = status
+        if external_shape_count > 0:
+            obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(external_shape_count)}"
         if int(getattr(obj, "StructureProfileCount", 0) or 0) > 0:
             obj.Status = f"{obj.Status} | profilePoints={int(getattr(obj, 'StructureProfileCount', 0) or 0)}"
 
@@ -1322,6 +1428,7 @@ class StructureSet:
         ):
             try:
                 obj.touch()
+                _mark_dependents_from_structure_set(obj)
             except Exception:
                 pass
 
@@ -1557,6 +1664,7 @@ class StructureSet:
         issues = []
         recs = StructureSet.records(obj)
         valid_ids = {_structure_ref_id(rec.get("Id", "")) for rec in recs if _structure_ref_id(rec.get("Id", ""))}
+        tol = 1e-6
         for rec in recs:
             rid = str(rec.get("Id", "") or f"#{int(rec['Index']) + 1}")
             typ = str(rec.get("Type", "") or "").strip().lower()
@@ -1623,6 +1731,8 @@ class StructureSet:
                 issues.append(f"{rid}: corridor margin is negative")
             if scale_factor <= 0.0:
                 issues.append(f"{rid}: scale factor must be greater than zero")
+            has_start_end = abs(s0) > tol or abs(s1) > tol or abs(s1 - s0) > tol
+            has_center = abs(sc) > tol
             if geom_mode == "template":
                 if not template_name:
                     issues.append(f"{rid}: template geometry mode requires TemplateName")
@@ -1636,6 +1746,14 @@ class StructureSet:
                     issues.append(f"{rid}: unsupported external shape source '{shape_source_path}'")
                 if kind == "fcstd_link" and "#" not in shape_source_path:
                     issues.append(f"{rid}: fcstd external shape requires ShapeSourcePath in the form 'path.FCStd#ObjectName'")
+                issues.append(f"{rid}: external_shape is display/reference placement only; earthwork still uses Type/Width/Height")
+                if cor_mode in ("notch", "boolean_cut"):
+                    issues.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly")
+            if cor_mode in ("skip_zone", "notch", "boolean_cut"):
+                if not has_start_end and not has_center:
+                    issues.append(f"{rid}: corridor mode '{cor_mode}' has no usable station span")
+                elif abs(s1 - s0) <= tol and cm <= tol:
+                    issues.append(f"{rid}: corridor mode '{cor_mode}' is point-like; add CorridorMargin or explicit Start/End span")
         grouped = {}
         raw_points = StructureSet.raw_profile_points(obj)
         for row in raw_points:
@@ -1759,17 +1877,39 @@ class StructureSet:
     @staticmethod
     def corridor_zone_records(obj, fallback_mode: str = "split_only"):
         out = []
+        tol = 1e-6
         for rec in StructureSet.records(obj):
-            s0 = float(rec.get("StartStation", 0.0) or 0.0)
-            s1 = float(rec.get("EndStation", 0.0) or 0.0)
+            s0 = _safe_float(rec.get("StartStation", 0.0), default=0.0)
+            s1 = _safe_float(rec.get("EndStation", 0.0), default=0.0)
+            sc = _safe_float(rec.get("CenterStation", 0.0), default=0.0)
+            station_source = "start_end"
+            warnings = []
+            has_start_end = abs(s0) > tol or abs(s1) > tol or abs(s1 - s0) > tol
+            has_center = abs(sc) > tol
+            if not has_start_end and has_center:
+                s0 = sc
+                s1 = sc
+                station_source = "center_fallback"
+                warnings.append("used CenterStation because Start/EndStation were empty")
             if s1 < s0:
                 s0, s1 = s1, s0
+                warnings.append("swapped StartStation/EndStation order")
             mode = _default_corridor_mode(rec, fallback=fallback_mode)
+            corridor_margin = max(0.0, _safe_float(rec.get("CorridorMargin", 0.0), default=0.0))
+            if not has_start_end and not has_center and mode not in ("", "none"):
+                station_source = "missing"
+                warnings.append("no usable station span; corridor logic falls back to 0.000")
+            if has_center and (sc < (s0 - tol) or sc > (s1 + tol)):
+                warnings.append("CenterStation lies outside the resolved corridor span")
+            if mode == "skip_zone" and abs(s1 - s0) <= tol and corridor_margin <= tol:
+                warnings.append("zero-length skip_zone span without CorridorMargin")
             row = dict(rec)
             row["ResolvedCorridorMode"] = mode
             row["ResolvedStartStation"] = float(s0)
             row["ResolvedEndStation"] = float(s1)
-            row["ResolvedCorridorMargin"] = max(0.0, float(rec.get("CorridorMargin", 0.0) or 0.0))
+            row["ResolvedCorridorMargin"] = corridor_margin
+            row["ResolvedStationSource"] = station_source
+            row["ResolvedCorridorWarnings"] = list(warnings)
             out.append(row)
         return out
 

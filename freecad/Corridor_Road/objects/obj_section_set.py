@@ -1909,10 +1909,22 @@ class SectionSet:
             obj.Status = f"{obj.Status} | topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}"
             if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
                 obj.Status = f"{obj.Status} | pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
-            if bool(getattr(obj, "UseStructureSet", False)) and _resolve_structure_source(obj) is None:
+            struct_src = _resolve_structure_source(obj) if bool(getattr(obj, "UseStructureSet", False)) else None
+            if bool(getattr(obj, "UseStructureSet", False)) and struct_src is None:
                 obj.Status = f"{obj.Status} | StructureSet missing"
             elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
                 obj.Status = f"{obj.Status} | structures={int(getattr(obj, 'ResolvedStructureCount', 0) or 0)}"
+            if struct_src is not None:
+                try:
+                    ext_count = sum(
+                        1
+                        for rec in list(StructureSetSource.records(struct_src) or [])
+                        if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+                    )
+                except Exception:
+                    ext_count = 0
+                if ext_count > 0:
+                    obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(ext_count)}"
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
                 ovh = int(getattr(obj, "_StructureOverrideHitCount", 0) or 0)
                 obj.Status = f"{obj.Status} | overrides={ovh}"

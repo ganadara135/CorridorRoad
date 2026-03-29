@@ -362,6 +362,8 @@ class CorridorLoftTaskPanel:
             ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
+            corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
+            corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
             notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
             closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
@@ -369,7 +371,7 @@ class CorridorLoftTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

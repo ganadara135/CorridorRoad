@@ -3,6 +3,8 @@
 
 # CorridorRoad Architecture
 
+For current mixed-workflow support and warning expectations, also see `docs/MIXED_WORKFLOW_VALIDATION_MATRIX.md`.
+
 ## 1) Pipeline View
 Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 

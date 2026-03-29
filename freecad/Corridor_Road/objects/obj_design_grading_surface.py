@@ -3,6 +3,7 @@
 
 # CorridorRoad/objects/obj_design_grading_surface.py
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
+from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
@@ -277,6 +278,26 @@ class DesignGradingSurface:
                 f"schema={int(obj.SchemaVersion)}, topProfile={obj.TopProfileSource}, "
                 f"topEdges={obj.TopProfileEdgeSummary}, pavement={obj.PavementTotalThickness:.3f}m"
             )
+            try:
+                st_count = int(getattr(src, "ResolvedStructureCount", 0) or 0)
+            except Exception:
+                st_count = 0
+            if st_count > 0:
+                obj.Status = f"{obj.Status} | structures={st_count}"
+            try:
+                ss = getattr(src, "StructureSet", None) if bool(getattr(src, "UseStructureSet", False)) else None
+                if ss is not None:
+                    ext_count = sum(
+                        1
+                        for rec in list(StructureSet.records(ss) or [])
+                        if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+                    )
+                else:
+                    ext_count = 0
+            except Exception:
+                ext_count = 0
+            if ext_count > 0:
+                obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(ext_count)}"
             _mark_recompute_flag(obj, False)
 
             # Push updates to linked DesignTerrain objects as pending recompute.
