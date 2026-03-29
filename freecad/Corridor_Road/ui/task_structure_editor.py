@@ -1294,10 +1294,10 @@ class StructureEditorTaskPanel:
             elif src_file and (not os.path.isfile(src_file)):
                 msgs.append(f"{rid}: external shape file not found")
                 severity = max(severity, 1)
-            msgs.append(f"{rid}: external_shape is display/reference placement only; earthwork still uses Type/Width/Height")
+            msgs.append(f"{rid}: external_shape may drive an indirect bbox-based earthwork proxy; direct solid consumption is still unsupported")
             severity = max(severity, 1)
             if cor_mode in ("notch", "boolean_cut"):
-                msgs.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly")
+                msgs.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly; current runtime can only use bbox proxy or Type/Width/Height")
                 severity = max(severity, 1)
 
         has_start_end = abs(start) > 1e-9 or abs(end) > 1e-9 or abs(end - start) > 1e-9

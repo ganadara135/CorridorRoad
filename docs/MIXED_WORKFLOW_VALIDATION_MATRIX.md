@@ -105,15 +105,17 @@ Status:
 
 Expected behavior:
 - imported external shapes improve 3D display and reference placement
+- when the source loads successfully, section/grading/corridor logic may use an indirect bounding-box proxy from the imported shape
 
 Current limitation:
 - imported `STEP` / `BREP` / `FCStd` solids are not yet consumed directly as earthwork-cutting geometry
-- sections, grading, and corridor handling still follow structure `Type` and simple dimensional fields
+- sections, grading, and corridor handling still follow structure `Type` and simplified dimensional fields rather than the true imported solid
 
 Validation expectation:
-- warn that `external_shape` is display/reference placement only
+- warn that `external_shape` uses only an indirect bounding-box proxy and not direct solid consumption
 - warn when users combine `external_shape` with expectations of direct notch or boolean consumption
-- runtime status should expose `earthwork=simplified_type_driven` plus `displayOnly=external_shape:N`
+- runtime status should expose `earthwork=external_shape_proxy` plus `externalShapeProxy=N` when the proxy is active
+- runtime status should expose `earthwork=simplified_type_driven` plus `displayOnly=external_shape:N` when the imported shape is still display/reference only
 
 ### 8. external_shape + notch / boolean_cut expectations
 Status:

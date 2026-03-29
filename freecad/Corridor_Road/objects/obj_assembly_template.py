@@ -95,6 +95,18 @@ def ensure_assembly_template_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "PracticalRole"):
+        obj.addProperty("App::PropertyString", "PracticalRole", "Result", "Practical engineering role summary")
+        obj.PracticalRole = "assembly_core"
+    if not hasattr(obj, "GeometryDrivingFieldSummary"):
+        obj.addProperty("App::PropertyString", "GeometryDrivingFieldSummary", "Result", "Geometry-driving field summary")
+        obj.GeometryDrivingFieldSummary = ""
+    if not hasattr(obj, "AnalysisDrivingFieldSummary"):
+        obj.addProperty("App::PropertyString", "AnalysisDrivingFieldSummary", "Result", "Analysis-driving field summary")
+        obj.AnalysisDrivingFieldSummary = ""
+    if not hasattr(obj, "ReportOnlyFieldSummary"):
+        obj.addProperty("App::PropertyString", "ReportOnlyFieldSummary", "Result", "Report-only field summary")
+        obj.ReportOnlyFieldSummary = "-"
 
 
 class AssemblyTemplate:
@@ -113,7 +125,11 @@ class AssemblyTemplate:
         try:
             if not bool(getattr(obj, "ShowTemplateWire", True)):
                 obj.Shape = Part.Shape()
-                obj.Status = "Hidden"
+                obj.PracticalRole = "assembly_core"
+                obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct"
+                obj.AnalysisDrivingFieldSummary = "UseSideSlopes,UseDaylightToTerrain,DaylightSearchStep,DaylightMaxSearchWidth,DaylightMaxWidthDelta,DaylightMaxTriangles"
+                obj.ReportOnlyFieldSummary = "-"
+                obj.Status = "Hidden | role=assembly_core"
                 return
 
             lw = max(0.0, float(getattr(obj, "LeftWidth", 0.0)))
@@ -158,7 +174,11 @@ class AssemblyTemplate:
                     h = (1.0 - alpha) * hl + alpha * hr
                     q_pts.append(App.Vector(tp.x, tp.y - h, tp.z))
                 obj.Shape = Part.makePolygon(list(top_pts) + list(reversed(q_pts)) + [top_pts[0]])
-            obj.Status = "OK"
+            obj.PracticalRole = "assembly_core"
+            obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct"
+            obj.AnalysisDrivingFieldSummary = "UseSideSlopes,UseDaylightToTerrain,DaylightSearchStep,DaylightMaxSearchWidth,DaylightMaxWidthDelta,DaylightMaxTriangles"
+            obj.ReportOnlyFieldSummary = "-"
+            obj.Status = "OK | role=assembly_core"
         except Exception as ex:
             obj.Shape = Part.Shape()
             obj.Status = f"ERROR: {ex}"

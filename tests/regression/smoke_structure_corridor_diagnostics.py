@@ -73,7 +73,7 @@ def run():
     ss.ShapeSourcePaths = ["D:/missing/sample.step", "", ""]
     issues_ext = StructureSet.validate(ss)
     joined_ext = "\n".join(list(issues_ext or []))
-    _assert("external_shape is display/reference placement only" in joined_ext, "Expected display-only external_shape warning")
+    _assert("external_shape may drive an indirect bbox-based earthwork proxy" in joined_ext, "Expected external_shape proxy warning")
     _assert("external shape file not found" not in joined_ext, "StructureSet.validate should not perform filesystem existence checks")
 
     doc.recompute()

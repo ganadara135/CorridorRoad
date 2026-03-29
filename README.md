@@ -99,7 +99,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - a catalog PR is only needed when repository/branch/subdirectory tracking changes
 
 ## Sample Test Data
-- Use the following files for realistic point-cloud terrain testing.
+- Use the following files for realistic practical-workflow testing.
+- The maintained sample inventory and scenario bundles are documented in [PRACTICAL_SAMPLE_SET.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/PRACTICAL_SAMPLE_SET.md).
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
@@ -127,12 +128,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
 12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
 13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
+14. For the maintained Long-Term practical regression bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
 - The panel now also supports:
   - `Load Preset`
   - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Berm`
+  - roadside helper buttons such as `Add Rural Ditch Pair` and `Add Urban Edge Pair`
   - `Move Up`, `Move Down`
   - `Mirror Left -> Right`, `Mirror Right -> Left`
   - `Save Component CSV`, `Save Pavement CSV`
@@ -144,6 +147,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Width`
   - `CrossSlopePct`
   - `Height`
+  - `ExtraWidth`
+  - `BackSlopePct`
   - `Offset`
   - `Order`
   - `Enabled`
@@ -160,15 +165,18 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Enabled`
 - Editing notes:
   - `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `green_strip`, and `gutter` emphasize `CrossSlopePct`
-  - `curb` and `ditch` emphasize `Height`
-  - `berm` is typically flat and acts as a road-edge platform/break point
+  - `curb` uses `Height` for curb rise, `Width` for top width, `ExtraWidth` for face/gutter run, and `BackSlopePct` for the top/back slope
+  - `ditch` uses `Width` for total span, `Height` for depth, `ExtraWidth` for flat bottom width, and `BackSlopePct` for the outer-side slope
+  - `berm` uses `Width` for bench width and can extend with `ExtraWidth` + `BackSlopePct` for an outer taper
   - `bench` is reserved for future earthwork mid-slope benching terminology
 - Current runtime intent:
   - `Typical Section Template` defines the finished-grade top profile.
   - `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
   - `Sections` reports `schema=2` and `topProfile=typical_section` when a typical section drives the top profile.
-  - `Sections`, `Design Grading Surface`, and `Corridor Loft` now also carry `PavementTotalThickness`.
-  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, `Top profile source`, and pavement total thickness.
+  - `TypicalSectionPavementDisplay` now acts as the first separate pavement geometry/report object, with enabled layer ids, layer types, thicknesses, and summary rows.
+  - `Sections`, `Design Grading Surface`, and `Corridor Loft` now carry `PavementTotalThickness`, pavement layer report rows, and advanced-component counts.
+  - Status text now surfaces `typicalAdvanced=...` and `pavLayers=...` when a richer typical section is active.
+  - `Corridor Loft` completion/status now reports `Points per section`, `Source section schema`, `Top profile source`, pavement layer counts, and advanced typical-component counts.
 - Execution-plan/status reference:
   - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
 
@@ -207,9 +215,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - If an external source cannot be loaded, the row falls back to safe `box` display geometry instead of breaking recompute.
 - Earthwork note:
   - `GeometryMode=external_shape` currently improves structure display and reference placement.
-  - Earthwork is still driven by structure `Type`, `Width`, `Height`, `BehaviorMode`, and `CorridorMode`.
+  - `Sections`, `Design Grading Surface`, and `Corridor Loft` can now consume an indirect bounding-box proxy from the imported shape when the source loads successfully.
+  - Earthwork is still driven by structure `Type`, `BehaviorMode`, `CorridorMode`, and simplified dimensions; the imported shape only contributes that bounded proxy envelope.
   - The imported `STEP` / `BREP` / `FCStd` solid is not yet consumed directly as the earthwork-cutting shape.
-  - `Sections`, `Design Grading Surface`, and `Corridor Loft` currently follow those type-based rules, not the real imported solid.
+  - Explicit station-profile values still override the indirect proxy when they are present.
 - Current type-driven earthwork intent:
   - `culvert`, `crossing` -> notch / flat side-segment crossing rules
   - `retaining_wall` -> one-side retaining-wall section rule

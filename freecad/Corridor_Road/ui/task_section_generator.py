@@ -825,7 +825,7 @@ class SectionGeneratorTaskPanel:
                 ext_count = 0
             if ext_count > 0:
                 warnings.append(
-                    f"StructureSet contains {int(ext_count)} external_shape record(s). Imported solids remain display/reference placement only for section/corridor/earthwork logic."
+                    f"StructureSet contains {int(ext_count)} external_shape record(s). Current section/corridor logic can use only an indirect bounding-box proxy when the source loads; direct solid consumption is still unsupported."
                 )
 
         if bool(self.chk_use_typical.isChecked()) and typ_src is not None:

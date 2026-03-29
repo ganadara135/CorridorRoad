@@ -394,6 +394,9 @@ class CorridorLoftTaskPanel:
             src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
             top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
             top_edges = str(getattr(sec, "TopProfileEdgeSummary", "-") or "-")
+            advanced_components = int(getattr(cor, "TypicalSectionAdvancedComponentCount", 0) or 0)
+            pavement_layers = int(getattr(cor, "PavementLayerCount", 0) or 0)
+            pavement_layers_enabled = int(getattr(cor, "EnabledPavementLayerCount", 0) or 0)
             pavement_total = float(getattr(cor, "PavementTotalThickness", 0.0) or 0.0)
             pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
             ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
@@ -405,12 +408,16 @@ class CorridorLoftTaskPanel:
             skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
             notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
+            notch_schema_name = str(getattr(cor, "ResolvedNotchSchemaName", "-") or "-")
+            notch_profile_summary = str(getattr(cor, "ResolvedNotchProfileSummary", "-") or "-")
+            notch_build_mode = str(getattr(cor, "ResolvedNotchBuildMode", "-") or "-")
+            notch_cutter_count = int(getattr(cor, "ResolvedNotchCutterCount", 0) or 0)
             closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
             skip_marker_count = int(getattr(cor, "SkipMarkerCount", 0) or 0)
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nClosed profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

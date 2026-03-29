@@ -70,6 +70,8 @@ def _make_typical(doc, richer=False):
         typ.ComponentWidths = [3.50, 2.00, 3.50, 1.50]
         typ.ComponentCrossSlopes = [2.0, 4.0, 2.0, 0.0]
         typ.ComponentHeights = [0.0, 0.80, 0.0, 0.20]
+        typ.ComponentExtraWidths = [0.0, 0.60, 0.0, 0.80]
+        typ.ComponentBackSlopes = [0.0, -8.0, 0.0, 6.0]
         typ.ComponentOffsets = [0.0, 0.0, 0.0, 0.0]
         typ.ComponentOrders = [10, 20, 10, 20]
         typ.ComponentEnabled = [1, 1, 1, 1]
@@ -118,6 +120,7 @@ def _assert_basic_pipeline(sec, cor):
     _assert("topProfile=typical_section" in cor_status, f"{cor.Name} status missing typical-section summary")
     _assert("srcSchema=2" in cor_status, f"{cor.Name} status missing source schema summary")
     _assert("pavement=" in cor_status, f"{cor.Name} status missing pavement summary")
+    _assert("pavLayers=" in cor_status, f"{cor.Name} status missing pavement layer summary")
     _assert("corridorRule=full" in cor_status, f"{cor.Name} status missing full corridor summary")
     _assert("earthwork=full" in cor_status, f"{cor.Name} status missing full earthwork summary")
 
@@ -141,17 +144,26 @@ def run():
 
     _assert(_shape_ok(aln), "Alignment shape was not built")
     _assert(abs(float(getattr(aln.Shape, "Length", 0.0) or 0.0) - 100.0) < 1e-6, "Alignment length mismatch")
+    _assert(int(getattr(typ_simple, "AdvancedComponentCount", 0) or 0) == 0, "Simple template should not report advanced components")
     _assert(str(getattr(typ_simple, "LeftEdgeComponentType", "") or "") == "shoulder", "Simple template left edge mismatch")
     _assert(str(getattr(typ_simple, "RightEdgeComponentType", "") or "") == "shoulder", "Simple template right edge mismatch")
     _assert_basic_pipeline(sec_simple, cor_simple)
     _assert(str(getattr(sec_simple, "TopProfileEdgeSummary", "") or "") == "shoulder/shoulder", "Simple section edge summary mismatch")
+    _assert(int(getattr(sec_simple, "TypicalSectionAdvancedComponentCount", 0) or 0) == 0, "Simple section should not report advanced components")
 
     _assert(str(getattr(typ_rich, "LeftEdgeComponentType", "") or "") == "ditch", "Rich template left edge mismatch")
     _assert(str(getattr(typ_rich, "RightEdgeComponentType", "") or "") == "berm", "Rich template right edge mismatch")
+    _assert(int(getattr(typ_rich, "AdvancedComponentCount", 0) or 0) >= 2, "Rich template should report advanced components")
+    _assert(len(list(getattr(typ_rich, "PavementLayerSummaryRows", []) or [])) >= 1, "Rich template pavement report rows missing")
     _assert_basic_pipeline(sec_rich, cor_rich)
     _assert(str(getattr(sec_rich, "TopProfileEdgeSummary", "") or "") == "ditch/berm", "Rich section edge summary mismatch")
+    _assert(int(getattr(sec_rich, "TypicalSectionAdvancedComponentCount", 0) or 0) >= 2, "Rich section should report advanced components")
+    _assert("typicalAdvanced=" in str(getattr(sec_rich, "Status", "") or ""), "Rich section status missing advanced component summary")
+    _assert(len(list(getattr(sec_rich, "PavementLayerSummaryRows", []) or [])) >= 1, "Rich section pavement report rows missing")
     _assert(int(getattr(cor_rich, "PointCountPerSection", 0) or 0) >= 6, "Rich corridor should have expanded point count")
     _assert("topEdges=ditch/berm" in str(getattr(cor_rich, "Status", "") or ""), "Rich corridor status missing edge summary")
+    _assert("typicalAdvanced=" in str(getattr(cor_rich, "Status", "") or ""), "Rich corridor status missing advanced component summary")
+    _assert(len(list(getattr(cor_rich, "PavementLayerSummaryRows", []) or [])) >= 1, "Rich corridor pavement report rows missing")
 
     App.closeDocument(doc.Name)
     print("[PASS] Typical-section pipeline smoke test completed.")

@@ -33,6 +33,7 @@ ALLOWED_TEMPLATE_NAMES = ("", "box_culvert", "utility_crossing", "retaining_wall
 ALLOWED_PLACEMENT_MODES = ("", "center_on_station", "start_on_station")
 
 _EXTERNAL_SHAPE_CACHE = {}
+_EXTERNAL_SHAPE_PROXY_CACHE = {}
 _PROFILE_LINEAR_FIELDS = (
     "Offset",
     "Width",
@@ -1135,6 +1136,79 @@ def _build_external_shape_geometry(base_pt, t, n, rec, z0: float):
         return None
 
 
+def _external_shape_proxy_key(path: str, scale_factor: float):
+    src, obj_name = _split_external_shape_source(path)
+    kind = _resolved_shape_source_kind(src)
+    key = str(src).lower()
+    if kind == "fcstd_link":
+        key = f"{key}#{str(obj_name).lower()}"
+    return f"{key}|{float(scale_factor or 1.0):.9g}"
+
+
+def _external_shape_bbox_proxy(rec):
+    geom_mode = str(rec.get("GeometryMode", "") or "").strip().lower()
+    if geom_mode != "external_shape":
+        return None, ""
+    path = str(rec.get("ShapeSourcePath", "") or "").strip()
+    if not path:
+        return None, "missing"
+    scale_factor = _safe_float(rec.get("ScaleFactor", 1.0), default=1.0)
+    cache_key = _external_shape_proxy_key(path, scale_factor)
+    cached = _EXTERNAL_SHAPE_PROXY_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached), str(cached.get("SourceMode", "external_shape_bbox") or "external_shape_bbox")
+
+    shp, status = _load_external_shape(path)
+    if not _shape_is_displayable(shp):
+        return None, str(status or "missing")
+    shp = _scaled_shape(shp, scale_factor)
+    if not _shape_is_displayable(shp):
+        return None, "scale_failed"
+    bb = getattr(shp, "BoundBox", None)
+    if bb is None:
+        return None, "bbox_missing"
+
+    width = max(0.0, float(getattr(bb, "YLength", 0.0) or 0.0))
+    height = max(0.0, float(getattr(bb, "ZLength", 0.0) or 0.0))
+    length = max(0.0, float(getattr(bb, "XLength", 0.0) or 0.0))
+    if width <= 1e-9 or height <= 1e-9:
+        return None, "bbox_flat"
+
+    proxy = {
+        "Width": float(width),
+        "Height": float(height),
+        "Length": float(length),
+        "SourceMode": "external_shape_bbox",
+        "ShapeSourceKind": str(status or ""),
+    }
+    _EXTERNAL_SHAPE_PROXY_CACHE[cache_key] = dict(proxy)
+    return dict(proxy), "external_shape_bbox"
+
+
+def _apply_external_shape_earthwork_proxy(rec, prefer_proxy: bool):
+    out = dict(rec or {})
+    proxy, status = _external_shape_bbox_proxy(out)
+    if proxy is None:
+        if str(out.get("GeometryMode", "") or "").strip().lower() == "external_shape":
+            out["ResolvedEarthworkProxyMode"] = "-"
+            out["ResolvedEarthworkProxyStatus"] = str(status or "unavailable")
+        return out
+
+    out["ResolvedEarthworkProxyMode"] = str(proxy.get("SourceMode", "external_shape_bbox") or "external_shape_bbox")
+    out["ResolvedEarthworkProxyStatus"] = str(status or "external_shape_bbox")
+    out["ResolvedEarthworkProxyWidth"] = float(proxy.get("Width", 0.0) or 0.0)
+    out["ResolvedEarthworkProxyHeight"] = float(proxy.get("Height", 0.0) or 0.0)
+    out["ResolvedEarthworkProxyLength"] = float(proxy.get("Length", 0.0) or 0.0)
+
+    cur_width = abs(float(out.get("Width", 0.0) or 0.0))
+    cur_height = abs(float(out.get("Height", 0.0) or 0.0))
+    if bool(prefer_proxy) or cur_width <= 1e-9:
+        out["Width"] = float(proxy.get("Width", 0.0) or 0.0)
+    if bool(prefer_proxy) or cur_height <= 1e-9:
+        out["Height"] = float(proxy.get("Height", 0.0) or 0.0)
+    return out
+
+
 def ensure_structure_set_properties(obj):
     if not hasattr(obj, "StructureIds"):
         obj.addProperty("App::PropertyStringList", "StructureIds", "Structures", "Structure identifiers")
@@ -1265,6 +1339,15 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "ResolvedShapeStatusNotes"):
         obj.addProperty("App::PropertyStringList", "ResolvedShapeStatusNotes", "Result", "Resolved external shape load and fallback notes")
         obj.ResolvedShapeStatusNotes = []
+    if not hasattr(obj, "ResolvedEarthworkProxyIds"):
+        obj.addProperty("App::PropertyStringList", "ResolvedEarthworkProxyIds", "Result", "Structure ids using indirect external-shape earthwork proxy")
+        obj.ResolvedEarthworkProxyIds = []
+    if not hasattr(obj, "ResolvedEarthworkProxyNotes"):
+        obj.addProperty("App::PropertyStringList", "ResolvedEarthworkProxyNotes", "Result", "Resolved external-shape earthwork proxy diagnostics")
+        obj.ResolvedEarthworkProxyNotes = []
+    if not hasattr(obj, "ResolvedEarthworkProxyCount"):
+        obj.addProperty("App::PropertyInteger", "ResolvedEarthworkProxyCount", "Result", "Resolved count of indirect external-shape earthwork proxies")
+        obj.ResolvedEarthworkProxyCount = 0
     if not hasattr(obj, "ResolvedFrameSources"):
         obj.addProperty("App::PropertyStringList", "ResolvedFrameSources", "Result", "Resolved frame sources for structure display placement")
         obj.ResolvedFrameSources = []
@@ -1290,11 +1373,16 @@ class StructureSet:
         obj.StructureProfileCount = int(len(StructureSet.profile_points(obj)))
         obj.ResolvedShapeSourceKinds = [_resolved_shape_source_kind(rec.get("ShapeSourcePath", "")) for rec in recs]
         obj.ResolvedShapeStatusNotes = []
+        obj.ResolvedEarthworkProxyIds = []
+        obj.ResolvedEarthworkProxyNotes = []
+        obj.ResolvedEarthworkProxyCount = 0
         obj.ResolvedFrameSources = []
         obj.ResolvedFrameStatusNotes = []
         aln = _resolve_alignment(obj)
         shape_notes = []
         shape_status_notes = []
+        earthwork_proxy_ids = []
+        earthwork_proxy_notes = []
         frame_sources = []
         frame_status_notes = []
         shp = _empty_shape()
@@ -1331,6 +1419,16 @@ class StructureSet:
                             note = f"{rid}: external_shape source={ext_status} -> box fallback"
                             shape_notes.append(note)
                             shape_status_notes.append(note)
+                        proxy, proxy_status = _external_shape_bbox_proxy(rec)
+                        if proxy is not None:
+                            earthwork_proxy_ids.append(rid)
+                            earthwork_proxy_notes.append(
+                                f"{rid}: external_shape bbox proxy width={float(proxy.get('Width', 0.0) or 0.0):.3f} height={float(proxy.get('Height', 0.0) or 0.0):.3f}"
+                            )
+                        else:
+                            earthwork_proxy_notes.append(
+                                f"{rid}: external_shape earthwork proxy unavailable ({proxy_status or 'missing'}); fallback to Type/Width/Height"
+                            )
                     seg_solids, prev_n = _build_profile_segment_solids(obj, aln, rec, prev_n=prev_n)
                     if seg_solids:
                         profile_driven_hits += 1
@@ -1365,6 +1463,9 @@ class StructureSet:
         if shp is not None and hasattr(obj, "Shape"):
             obj.Shape = shp
         obj.ResolvedShapeStatusNotes = list(shape_status_notes or [])
+        obj.ResolvedEarthworkProxyIds = list(earthwork_proxy_ids or [])
+        obj.ResolvedEarthworkProxyNotes = list(earthwork_proxy_notes or [])
+        obj.ResolvedEarthworkProxyCount = int(len(list(earthwork_proxy_ids or [])))
         obj.ResolvedFrameSources = list(frame_sources or [])
         obj.ResolvedFrameStatusNotes = list(frame_status_notes or [])
 
@@ -1379,8 +1480,12 @@ class StructureSet:
             if frame_status_notes:
                 status = f"{status} | frameFallbacks={len(frame_status_notes)}"
             obj.Status = status
-        if external_shape_count > 0:
-            obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(external_shape_count)}"
+        proxy_count = int(len(list(earthwork_proxy_ids or [])))
+        display_only_count = max(0, int(external_shape_count) - int(proxy_count))
+        if proxy_count > 0:
+            obj.Status = f"{obj.Status} | externalShapeProxy={int(proxy_count)}"
+        if display_only_count > 0:
+            obj.Status = f"{obj.Status} | externalShapeDisplayOnly={int(display_only_count)}"
         if int(getattr(obj, "StructureProfileCount", 0) or 0) > 0:
             obj.Status = f"{obj.Status} | profilePoints={int(getattr(obj, 'StructureProfileCount', 0) or 0)}"
 
@@ -1624,12 +1729,12 @@ class StructureSet:
         resolved["ResolvedProfilePointCount"] = int(len(pts))
         resolved["ResolvedProfileMode"] = "base_row"
         if not pts:
-            return resolved
+            return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=True)
 
         for key in _PROFILE_LINEAR_FIELDS + _PROFILE_STEP_FIELDS:
             resolved[key] = _resolve_profile_interpolated_value(pts, station, key, rec.get(key, _profile_row_defaults().get(key)))
         resolved["ResolvedProfileMode"] = "station_profile"
-        return resolved
+        return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=False)
 
     @staticmethod
     def resolve_profile_span(obj, structure_ref, station_from: float, station_to: float):
@@ -1746,9 +1851,18 @@ class StructureSet:
                     issues.append(f"{rid}: unsupported external shape source '{shape_source_path}'")
                 if kind == "fcstd_link" and "#" not in shape_source_path:
                     issues.append(f"{rid}: fcstd external shape requires ShapeSourcePath in the form 'path.FCStd#ObjectName'")
-                issues.append(f"{rid}: external_shape is display/reference placement only; earthwork still uses Type/Width/Height")
+                issues.append(f"{rid}: external_shape may drive an indirect bbox-based earthwork proxy; direct solid consumption is still unsupported")
                 if cor_mode in ("notch", "boolean_cut"):
-                    issues.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly")
+                    issues.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly; current runtime can only use bbox proxy or Type/Width/Height")
+            if cor_mode == "notch" and typ not in ("culvert", "crossing"):
+                if typ == "retaining_wall":
+                    issues.append(f"{rid}: retaining_wall should use split_only rather than notch")
+                elif typ in ("bridge_zone", "abutment_zone"):
+                    issues.append(f"{rid}: {typ} should prefer skip_zone rather than notch")
+                else:
+                    issues.append(f"{rid}: notch first sprint supports culvert/crossing only")
+            if cor_mode == "boolean_cut":
+                issues.append(f"{rid}: boolean_cut remains later opt-in scope; keep notch/skip_zone as the current stable corridor modes")
             if cor_mode in ("skip_zone", "notch", "boolean_cut"):
                 if not has_start_end and not has_center:
                     issues.append(f"{rid}: corridor mode '{cor_mode}' has no usable station span")

@@ -66,17 +66,21 @@ Key files:
 - `freecad/Corridor_Road/ui/task_section_generator.py`
 
 ### Sprint F: Earthwork-Oriented Components
-Status: functionally complete
+Status: complete
 
 Completed:
 - `curb` step behavior
 - `ditch` sag/V-style break behavior
 - `berm` flat-platform behavior
 - top-profile edge tracking for outer component types
+- advanced component parameters for roadside work:
+  - `ExtraWidth`
+  - `BackSlopePct`
+- advanced component usage count/result reporting
 
 Current scope:
-- first-pass profile logic only
-- no advanced ditch geometry parameters yet
+- `curb`, `ditch`, and `berm` stay within the current section-wire contract
+- advanced parameters extend the profile shape without introducing a new corridor schema
 
 Key files:
 - `freecad/Corridor_Road/objects/obj_typical_section_template.py`
@@ -111,7 +115,7 @@ Key files:
 - `freecad/Corridor_Road/ui/task_corridor_loft.py`
 
 ### Sprint H: Pavement Data (First Pass)
-Status: first-pass complete
+Status: complete
 
 Completed:
 - pavement layer data model added to `TypicalSectionTemplate`
@@ -126,10 +130,12 @@ Completed:
   - `SectionSet`
   - `CorridorLoft`
   - `DesignGradingSurface`
+- `TypicalSectionPavementDisplay` now provides separate pavement geometry/report output
+- pavement layer report rows now propagate downstream with the summary fields
 
 Current scope:
-- data-first implementation
-- pavement layers are not yet separate corridor solids
+- pavement layers are still not separate corridor solids
+- pavement promotion currently stops at the display/report-object level and downstream reporting
 
 Key files:
 - `freecad/Corridor_Road/objects/obj_typical_section_template.py`
@@ -168,13 +174,13 @@ It currently supports:
 - component CSV import
 - pavement layer editing
 - pavement CSV import
+- helper insertion for common roadside pairs
 - preview wire
-- pavement preview wires
-- section/corridor/grading summary propagation
+- separate pavement display/report geometry
+- section/corridor/grading summary + pavement-report propagation
 
 ## Open Follow-up Work
 
-1. advanced ditch/curb/berm parameterization
-2. pavement layers as separate geometric/reportable corridor outputs
-3. richer component presets and mirroring tools
-4. integrated runtime validation on complex mixed workflows
+1. pavement layers as true corridor solids or section-only faces if a later scope needs them
+2. richer runtime validation on complex mixed workflows
+3. broader sample CSV coverage for advanced roadside parameter combinations

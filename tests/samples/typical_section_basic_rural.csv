@@ -1,5 +1,5 @@
-Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled
-LANE-L,lane,left,3.500,2.0,0.000,0.000,10,true
-SHL-L,shoulder,left,1.500,4.0,0.000,0.000,20,true
-LANE-R,lane,right,3.500,2.0,0.000,0.000,10,true
-SHL-R,shoulder,right,1.500,4.0,0.000,0.000,20,true
+Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
+LANE-L,lane,left,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-L,shoulder,left,1.500,4.0,0.000,0.000,0.000,0.000,20,true
+LANE-R,lane,right,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-R,shoulder,right,1.500,4.0,0.000,0.000,0.000,0.000,20,true
