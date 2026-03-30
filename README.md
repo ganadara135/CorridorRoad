@@ -299,7 +299,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - See [LICENSE](./LICENSE).
 
 ## Video
-- https://youtu.be/22JhV0dys3E
+- https://youtu.be/P0kiPREy2qE
 
 ## Screenshots
 ![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
