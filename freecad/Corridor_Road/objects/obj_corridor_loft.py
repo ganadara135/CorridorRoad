@@ -140,10 +140,10 @@ def ensure_corridor_loft_properties(obj):
 
     if not hasattr(obj, "OutputType"):
         obj.addProperty("App::PropertyEnumeration", "OutputType", "Corridor", "Output type")
-    # Solid-only policy.
+    # Surface-only policy.
     try:
-        obj.OutputType = ["Solid"]
-        obj.OutputType = "Solid"
+        obj.OutputType = ["Surface"]
+        obj.OutputType = "Surface"
     except Exception:
         pass
 
@@ -306,8 +306,8 @@ def ensure_corridor_loft_properties(obj):
         obj.ResolvedNotchCutterCount = 0
 
     if not hasattr(obj, "ClosedProfileSchemaVersion"):
-        obj.addProperty("App::PropertyInteger", "ClosedProfileSchemaVersion", "Result", "Closed-profile schema version used for lofting")
-        obj.ClosedProfileSchemaVersion = 1
+        obj.addProperty("App::PropertyInteger", "ClosedProfileSchemaVersion", "Result", "Legacy loft-profile schema version used for corridor generation")
+        obj.ClosedProfileSchemaVersion = 0
 
     if not hasattr(obj, "SkipMarkerCount"):
         obj.addProperty("App::PropertyInteger", "SkipMarkerCount", "Result", "Number of skip-zone boundary markers")
@@ -331,11 +331,11 @@ def ensure_corridor_loft_properties(obj):
         obj.NeedsRecompute = False
 
     if not hasattr(obj, "ResolvedHeightLeft"):
-        obj.addProperty("App::PropertyFloat", "ResolvedHeightLeft", "Result", "Resolved left depth used for solid")
+        obj.addProperty("App::PropertyFloat", "ResolvedHeightLeft", "Result", "Legacy resolved left depth (unused in surface mode)")
         obj.ResolvedHeightLeft = 0.0
 
     if not hasattr(obj, "ResolvedHeightRight"):
-        obj.addProperty("App::PropertyFloat", "ResolvedHeightRight", "Result", "Resolved right depth used for solid")
+        obj.addProperty("App::PropertyFloat", "ResolvedHeightRight", "Result", "Legacy resolved right depth (unused in surface mode)")
         obj.ResolvedHeightRight = 0.0
 
     if not hasattr(obj, "ResolvedRuledMode"):
@@ -397,13 +397,17 @@ def ensure_corridor_loft_properties(obj):
     try:
         if hasattr(obj, "OutputType"):
             obj.setEditorMode("OutputType", 2)
+        if hasattr(obj, "HeightLeft"):
+            obj.setEditorMode("HeightLeft", 2)
+        if hasattr(obj, "HeightRight"):
+            obj.setEditorMode("HeightRight", 2)
     except Exception:
         pass
 
 
 class CorridorLoft:
     """
-    Corridor loft from SectionSet (Solid-only).
+    Corridor loft from SectionSet (surface-first).
     """
 
     def __init__(self, obj):
@@ -1197,10 +1201,10 @@ class CorridorLoft:
         return " ".join(parts), diag_rows, ids
 
     @staticmethod
-    def _make_notch_profile_for_solid(open_wire, row, h_left: float, h_right: float, scale: float):
+    def _make_notch_profile_for_surface(open_wire, row, scale: float):
         pts = CorridorLoft._wire_points(open_wire)
         if len(pts) < 2:
-            raise Exception("Section has insufficient points for notch-aware closed profile.")
+            raise Exception("Section has insufficient points for notch-aware surface profile.")
 
         left_outer = pts[0]
         right_outer = pts[-1]
@@ -1219,8 +1223,7 @@ class CorridorLoft:
         mode = str(row.get("Mode", "default") or "default").strip().lower()
         ramp = max(0.0, min(1.0, float(row.get("Ramp", 0.0) or 0.0)))
         min_width = max(0.002 * scale, 1e-4)
-        min_depth = max(0.001 * scale, 1e-4)
-        depth_cap = max(0.0, 0.98 * max(float(h_left), float(h_right)))
+        min_depth = max(0.005 * scale, 1e-4)
         if mode != "notch":
             eff_width = 0.0
             eff_depth = 0.0
@@ -1230,7 +1233,7 @@ class CorridorLoft:
                 max(min_width, float(spec.get("Width", 0.20 * scale) or (0.20 * scale)) * ramp),
             )
             eff_depth = min(
-                max(0.05 * scale, depth_cap),
+                max(0.20 * scale, 0.45 * axis_len),
                 max(min_depth, float(spec.get("Height", 0.10 * scale) or (0.10 * scale)) * 0.70 * (ramp ** 0.85)),
             )
 
@@ -1264,13 +1267,10 @@ class CorridorLoft:
             right_shoulder_t = min(1.0, right_t + shoulder_t)
             notch_ls = CorridorLoft._lerp_point(left_car, right_car, left_shoulder_t)
             notch_rs = CorridorLoft._lerp_point(left_car, right_car, right_shoulder_t)
-            shoulder_drop = max(0.0, min(eff_depth * 0.45, 0.35 * max(float(h_left), float(h_right))))
+            shoulder_drop = max(0.0, eff_depth * 0.45)
             notch_ls = App.Vector(float(notch_ls.x), float(notch_ls.y), float(notch_ls.z) - shoulder_drop)
             notch_rs = App.Vector(float(notch_rs.x), float(notch_rs.y), float(notch_rs.z) - shoulder_drop)
-        right_bottom = App.Vector(float(right_outer.x), float(right_outer.y), float(right_outer.z) - float(h_right))
-        left_bottom = App.Vector(float(left_outer.x), float(left_outer.y), float(left_outer.z) - float(h_left))
-
-        poly = [
+        wire_pts = [
             left_outer,
             left_car,
             notch_ls,
@@ -1279,14 +1279,11 @@ class CorridorLoft:
             notch_rs,
             right_car,
             right_outer,
-            right_bottom,
-            left_bottom,
-            left_outer,
         ]
-        return Part.makePolygon(poly)
+        return CorridorLoft._make_wire(_dedupe_consecutive_points(wire_pts))
 
     @staticmethod
-    def _make_closed_profiles_with_notch_schema(open_wires, stations, src, h_left: float, h_right: float, fallback_mode: str, notch_transition_scale: float):
+    def _make_profiles_with_notch_schema(open_wires, stations, src, fallback_mode: str, notch_transition_scale: float):
         rows, notes = CorridorLoft._notch_profile_spec_rows(
             src,
             stations,
@@ -1302,7 +1299,7 @@ class CorridorLoft:
         for w, row in zip(list(open_wires or []), list(rows or [])):
             if str(row.get("Mode", "default") or "default") == "notch":
                 notch_station_count += 1
-            out.append(CorridorLoft._make_notch_profile_for_solid(w, row, h_left, h_right, scale))
+            out.append(CorridorLoft._make_notch_profile_for_surface(w, row, scale))
         summary, diag_rows, ids = CorridorLoft._describe_notch_profile_rows(rows)
         schema_name = _notch_schema_name() if int(notch_station_count) > 0 else "-"
         return out, int(notch_station_count), notes, {"schema_name": schema_name, "summary": summary, "rows": diag_rows, "ids": ids, "spec_rows": rows}
@@ -1517,7 +1514,7 @@ class CorridorLoft:
                 obj.ResolvedNotchStructureIds = []
                 obj.ResolvedNotchBuildMode = "-"
                 obj.ResolvedNotchCutterCount = 0
-                obj.ClosedProfileSchemaVersion = 1
+                obj.ClosedProfileSchemaVersion = 0
                 obj.SkipMarkerCount = 0
                 obj.ResolvedHeightLeft = 0.0
                 obj.ResolvedHeightRight = 0.0
@@ -1555,8 +1552,10 @@ class CorridorLoft:
                 schema,
                 auto_fix_orientation,
             )
-            h_left, h_right, height_source = CorridorLoft._resolve_heights(obj, src)
-            loft_wires = CorridorLoft._make_closed_profiles_for_solid(norm_wires, h_left, h_right)
+            h_left = 0.0
+            h_right = 0.0
+            height_source = "surface_only"
+            loft_wires = list(norm_wires)
             ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
             obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
             obj.SubassemblySchemaVersion = int(getattr(src, "SubassemblySchemaVersion", 0) or 0)
@@ -1574,7 +1573,7 @@ class CorridorLoft:
             obj.SectionComponentSummaryRows = list(getattr(src, "SectionComponentSummaryRows", []) or [])
             obj.PavementScheduleRows = list(getattr(src, "PavementScheduleRows", []) or [])
             obj.StructureInteractionSummaryRows = list(getattr(src, "StructureInteractionSummaryRows", []) or [])
-            closed_profile_schema = 1
+            closed_profile_schema = 0
             split_count = 0
             split_station_rows = []
             structure_ranges = []
@@ -1600,12 +1599,10 @@ class CorridorLoft:
             notch_failures = []
             loft_retry_count = 0
             if bool(getattr(obj, "UseStructureCorridorModes", True)):
-                notch_wires, notch_station_count, notch_notes, notch_meta = CorridorLoft._make_closed_profiles_with_notch_schema(
+                notch_wires, notch_station_count, notch_notes, notch_meta = CorridorLoft._make_profiles_with_notch_schema(
                     norm_wires,
                     stations,
                     src,
-                    h_left,
-                    h_right,
                     fallback_mode=fallback_mode,
                     notch_transition_scale=float(getattr(obj, "NotchTransitionScale", 1.0) or 1.0),
                 )
@@ -1665,9 +1662,7 @@ class CorridorLoft:
 
             def _build_status(head: str):
                 tokens = [
-                    f"hL={float(h_left):.3f}m",
-                    f"hR={float(h_right):.3f}m",
-                    f"heightFrom={height_source}",
+                    "output=surface",
                     f"minSpacing={float(min_spacing):.3f}",
                     f"used={len(stations)}",
                     f"dropped={int(dropped)}",
@@ -1751,24 +1746,12 @@ class CorridorLoft:
                     structure_ranges if use_segmented_ranges else [],
                     ruled=ruled,
                     src=src,
-                    solid=True,
+                    solid=False,
                 )
                 if retry_used and str(ruled_mode or "off") == "off":
                     ruled_mode = "retry:typical_section"
                 elif retry_used:
                     ruled_mode = f"{ruled_mode}+retry"
-                if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
-                    notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
-                    if notch_notes:
-                        notch_failures.extend(list(notch_notes))
-                    shape, notch_count, notch_failed = CorridorLoft._apply_notch_cuts(shape, notch_cutters)
-                    notch_cutter_count = int(notch_count or 0)
-                    if notch_cutter_count > 0:
-                        notch_build_mode = "cutter_fallback"
-                    elif notch_notes or notch_failed:
-                        notch_build_mode = "cutter_failed"
-                    if notch_failed:
-                        notch_failures.extend(list(notch_failed))
                 try:
                     skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 except Exception as marker_ex:
@@ -1778,10 +1761,10 @@ class CorridorLoft:
                     if str(notch_build_mode or "-") == "schema_profiles":
                         notch_build_mode = "schema_profiles+adaptive_loft"
                     status = _build_status(
-                        f"WARN (Solid): structure-aware segmented fallback used ({len(failed_ranges)} failed ranges)"
+                        f"WARN (Surface): structure-aware segmented fallback used ({len(failed_ranges)} failed ranges)"
                     )
                 else:
-                    status = _build_status("OK (Solid)")
+                    status = _build_status("OK (Surface)")
             except Exception as ex:
                 if use_segmented_ranges:
                     shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
@@ -1790,32 +1773,20 @@ class CorridorLoft:
                         structure_ranges,
                         ruled=ruled,
                         src=src,
-                        solid=True,
+                        solid=False,
                     )
                 else:
                     shape, failed_ranges = CorridorLoft._loft_adaptive(
                         loft_wires,
                         stations,
                         ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
-                        solid=True,
+                        solid=False,
                     )
                     retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
                 if retry_used and str(ruled_mode or "off") == "off":
                     ruled_mode = "retry:typical_section"
                 elif retry_used:
                     ruled_mode = f"{ruled_mode}+retry"
-                if bool(getattr(obj, "UseStructureCorridorModes", True)) and closed_profile_schema <= 1:
-                    notch_cutters, notch_notes = CorridorLoft._build_notch_cutters(src, corridor_records)
-                    if notch_notes:
-                        notch_failures.extend(list(notch_notes))
-                    shape, notch_count, notch_failed = CorridorLoft._apply_notch_cuts(shape, notch_cutters)
-                    notch_cutter_count = int(notch_count or 0)
-                    if notch_cutter_count > 0:
-                        notch_build_mode = "cutter_fallback"
-                    elif notch_notes or notch_failed:
-                        notch_build_mode = "cutter_failed"
-                    if notch_failed:
-                        notch_failures.extend(list(notch_failed))
                 try:
                     skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 except Exception as marker_ex:
@@ -1823,12 +1794,12 @@ class CorridorLoft:
                     notch_failures.append(f"skipMarkers: {marker_ex}")
                 loft_retry_count = 1
                 if use_segmented_ranges and not failed_ranges:
-                    status = _build_status(f"OK (Solid): recovered after loft retry ({ex})")
+                    status = _build_status(f"OK (Surface): recovered after loft retry ({ex})")
                 else:
                     if str(notch_build_mode or "-") == "schema_profiles":
                         notch_build_mode = "schema_profiles+adaptive_loft"
                     status = _build_status(
-                        f"WARN (Solid): full loft failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
+                        f"WARN (Surface): full loft failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
                     )
 
             obj.Shape = shape
@@ -1856,14 +1827,15 @@ class CorridorLoft:
             obj.ResolvedNotchCutterCount = int(notch_cutter_count)
             obj.ClosedProfileSchemaVersion = int(closed_profile_schema)
             obj.SkipMarkerCount = int(skip_marker_count)
-            obj.ResolvedHeightLeft = float(h_left)
-            obj.ResolvedHeightRight = float(h_right)
+            obj.ResolvedHeightLeft = 0.0
+            obj.ResolvedHeightRight = 0.0
             obj.ResolvedRuledMode = str(ruled_mode)
             obj.ExportSummaryRows = [
                 _report_row(
                     "export",
                     target="corridor_loft",
                     reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
+                    output="surface",
                     sectionSchema=int(schema or 0),
                     practical=str(getattr(obj, "PracticalSectionMode", "simple") or "simple"),
                     sections=int(len(stations)),
@@ -1905,7 +1877,7 @@ class CorridorLoft:
             obj.ResolvedNotchStructureIds = []
             obj.ResolvedNotchBuildMode = "-"
             obj.ResolvedNotchCutterCount = 0
-            obj.ClosedProfileSchemaVersion = 1
+            obj.ClosedProfileSchemaVersion = 0
             obj.SkipMarkerCount = 0
             obj.ResolvedHeightLeft = 0.0
             obj.ResolvedHeightRight = 0.0

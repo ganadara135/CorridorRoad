@@ -105,7 +105,7 @@ def run():
     _assert(int(getattr(cor, "StructureSegmentCount", 0) or 0) == 2, "Expected mixed structure segmentation to preserve two kept ranges around skip-zone gaps")
     _assert(int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0) == 1, "Expected exactly one notch structure")
     _assert(int(getattr(cor, "ResolvedNotchStationCount", 0) or 0) == 5, "Unexpected notch station count in mixed-mode case")
-    _assert(str(getattr(cor, "ResolvedNotchBuildMode", "") or "") == "schema_profiles+adaptive_loft", "Mixed corridor modes should report segmented fallback when a notch range still needs adaptive help")
+    _assert(str(getattr(cor, "ResolvedNotchBuildMode", "") or "") == "schema_profiles", "Mixed corridor modes should keep schema-profile notch build in surface mode")
 
     mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "") or "")
     _assert("split_only=1" in mode_summary, "Mode summary missing split_only count")
@@ -116,11 +116,13 @@ def run():
     _assert(skipped_ranges == ["20.000-30.000"], "Unexpected skip-zone station ranges in mixed-mode case")
 
     status = str(getattr(cor, "Status", "") or "")
-    _assert(status.startswith("WARN (Solid): structure-aware segmented fallback used"), "Mixed-mode corridor should report segmented fallback")
+    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "Mixed-mode corridor should stay surface-only")
+    _assert(status.startswith("OK (Surface)"), "Mixed-mode corridor should report successful surface build")
+    _assert("output=surface" in status, "Status missing surface-output token")
     _assert("structureSegs=2" in status, "Status missing structure segmentation token")
     _assert("corridorModes=split_only=1, skip_zone=1, notch=1" in status, "Status missing mixed corridor mode summary")
     _assert("skipMarkers=2" in status, "Status missing skip-marker token")
-    _assert("notchBuild=schema_profiles+adaptive_loft" in status, "Status missing adaptive notch build token")
+    _assert("notchBuild=schema_profiles" in status, "Status missing notch build token")
     _assert("skipZones=" in status, "Status missing skip-zone token")
 
     App.closeDocument(doc.Name)

@@ -116,6 +116,7 @@ def run():
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
     _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
     _assert(int(getattr(cor, "ClosedProfileSchemaVersion", 0) or 0) == 2, "Notch workflow should use closed profile schema 2")
+    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "CorridorLoft should not generate solids in surface mode")
     _assert(str(getattr(cor, "ResolvedNotchSchemaName", "") or "") == "notch_v1_8pt", "Unexpected notch schema name")
     _assert(int(getattr(cor, "ResolvedNotchStationCount", 0) or 0) == 5, "Unexpected notch-aware station count")
     _assert(int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0) == 1, "Unexpected notch structure count")
@@ -142,7 +143,8 @@ def run():
     _assert(split_stations == ["45.000", "50.000", "75.000", "80.000"], "Unexpected structure split-station diagnostics")
 
     cor_status = str(getattr(cor, "Status", "") or "")
-    _assert(cor_status.startswith("OK (Solid)"), "Corridor status should report successful solid build")
+    _assert(cor_status.startswith("OK (Surface)"), "Corridor status should report successful surface build")
+    _assert("output=surface" in cor_status, "Corridor status should report surface output")
     _assert("notchSchema=notch_v1_8pt" in cor_status, "Corridor status missing notch schema token")
     _assert("notchProfile=schema=notch_v1_8pt" in cor_status, "Corridor status missing notch profile summary token")
     _assert("notchBuild=schema_profiles" in cor_status, "Corridor status missing notch build-mode token")

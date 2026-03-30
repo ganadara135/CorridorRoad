@@ -250,7 +250,7 @@ def ensure_cut_fill_calc_properties(obj):
 class CutFillCalc:
     """
     Existing/Design surface comparison:
-    - Design source: top faces extracted from CorridorLoft solid
+    - Design source: upward faces extracted from CorridorLoft surface
     - Existing source: mesh object
     - Method: grid sampling and delta integration
     """
@@ -293,13 +293,13 @@ class CutFillCalc:
                 continue
 
         if not top_faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         return top_faces
 
     @staticmethod
     def _top_shape_from_faces(top_faces):
         if not top_faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         return top_faces[0] if len(top_faces) == 1 else Part.Compound(top_faces)
 
     @staticmethod
@@ -328,7 +328,7 @@ class CutFillCalc:
 
     def _triangles_from_faces_progress(self, faces, deflection: float, pct0: float, pct1: float):
         if not faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         triangles = []
         n = max(1, int(len(faces)))
         report_every = max(1, min(20, n // 20))

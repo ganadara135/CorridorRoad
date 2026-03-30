@@ -6,7 +6,7 @@
 For current mixed-workflow support and warning expectations, also see `docs/MIXED_WORKFLOW_VALIDATION_MATRIX.md`.
 
 ## 1) Pipeline View
-Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
+Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Surface) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 
 ## 2) Object Responsibilities
 ### 2.1 VerticalAlignment (`freecad/Corridor_Road/objects/obj_vertical_alignment.py`)
@@ -224,8 +224,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Inputs:
   - `SourceSectionSet`
 - Controls:
-  - `OutputType` (`Solid` only)
-  - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
+  - `OutputType` (`Surface` only)
   - `UseRuled`
   - `AutoFixSectionOrientation`
   - `SplitAtStructureZones`
@@ -240,13 +239,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `StructureSegmentCount`, `StructureSplitStations`
   - `SkippedStationRanges`, `SkipMarkerCount`
   - `ResolvedStructureNotchCount`, `ResolvedNotchStationCount`
-  - `ClosedProfileSchemaVersion`
+  - `ClosedProfileSchemaVersion` (legacy loft-profile schema diagnostic)
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
   - structured report contract copied from `SectionSet` plus corridor-specific `ExportSummaryRows`
 - Output mode:
-  - `Solid`: loft from closed profiles generated with downward heights
-  - Height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+  - `Surface`: loft from open section wires
+  - notch-aware structure handling reshapes the loft profile instead of cutting corridor solids
 - Structure-aware corridor behavior:
   - `split_only` keeps corridor continuity while splitting loft at structure boundaries
   - `skip_zone` omits corridor body across structure-active spans
@@ -598,7 +597,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Profile data storage != FG display
   - Centerline3D engine != Centerline3DDisplay rendering
 - Model representation policy:
-  - `CorridorLoft` is Solid model
+  - `CorridorLoft` is Surface model
   - `DesignGradingSurface` is Mesh model (visual grading)
   - `DesignTerrain` is Mesh model (composite terrain)
   - other design/analysis objects are Surface/Wire based
@@ -633,9 +632,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - If mismatch is detected, Loft must stop with explicit status/error
 
 ### 6.2 Output Type Policy
-- `OutputType` is `Solid` only
-- `Solid` uses closed profiles built from section wires + `HeightLeft/HeightRight` (downward)
-- `HeightLeft/HeightRight` must be finite and non-negative, and at least one side must be > 0
+- `OutputType` is `Surface` only
+- `Surface` uses open section wires directly; corridor body solids are not generated
 
 ### 6.3 Parametric Update Policy
 - Default: `AutoUpdate = True`
@@ -679,7 +677,7 @@ Before entering `Existing/Design Surface` comparison stage, these are fixed:
 - Recompute is explicit (manual trigger/command).
 
 2. Design Surface extraction
-- Comparison design surface is extracted from `CorridorLoft` top surface only.
+- Comparison design surface is extracted from upward faces of `CorridorLoft`.
 
 3. Existing Surface input format
 - Phase-1 existing surface input is `Mesh` only.

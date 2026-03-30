@@ -116,7 +116,10 @@ def _assert_basic_pipeline(sec, cor):
 
     _assert(int(getattr(cor, "SchemaVersion", 0) or 0) == 2, f"{cor.Name} source schema should be 2")
     _assert(int(getattr(cor, "PointCountPerSection", 0) or 0) >= 5, f"{cor.Name} point count per section is too low")
+    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, f"{cor.Name} should not generate corridor solids")
     cor_status = str(getattr(cor, "Status", "") or "")
+    _assert(cor_status.startswith("OK (Surface)") or cor_status.startswith("WARN (Surface)"), f"{cor.Name} should report surface output status")
+    _assert("output=surface" in cor_status, f"{cor.Name} status missing surface-output token")
     _assert("topProfile=typical_section" in cor_status, f"{cor.Name} status missing typical-section summary")
     _assert("srcSchema=2" in cor_status, f"{cor.Name} status missing source schema summary")
     _assert("pavement=" in cor_status, f"{cor.Name} status missing pavement summary")
