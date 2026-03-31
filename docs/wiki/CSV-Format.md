@@ -64,6 +64,52 @@ Recommended sample file:
 
 ![Alignment CSV import result](images/wiki-csv-alignment-import-result.png)
 
+## 2A. Profile FG CSV
+
+Use this format with `Edit Profiles -> Import FG CSV` when you want to start from manual FG values instead of generating FG from `Edit PVI`.
+
+Recommended header:
+`Station,FG`
+
+Also accepted header aliases:
+- station column: `Station`, `Sta`, `Chainage`, `PK`, `KP`, `Distance`
+- FG column: `FG`, `ElevFG`, `DesignElevation`, `DesignGrade`, `FinishedElevation`, `Z`, `Elevation`
+
+Example:
+```csv
+Station,FG
+0.000,118.200
+40.000,118.550
+80.000,118.980
+120.000,119.430
+```
+
+Alias example:
+```csv
+PK,DesignElevation
+0.000,118.000
+50.000,118.350
+100.000,118.820
+150.000,119.260
+```
+
+Rules:
+- one station column and one FG column are required
+- station values should be numeric and increasing for readability
+- duplicate station rows are allowed in the file, but the last one wins during import
+- matching stations update existing profile rows
+- stations not yet in the table are appended, then the table is re-sorted
+- manual FG import works best after `Fill Stations from Stationing`, but it can also create rows in an empty table
+
+Recommended sample files:
+- `tests/samples/profile_fg_manual_import_basic.csv`
+- `tests/samples/profile_fg_manual_import_aliases.csv`
+
+Practical notes:
+1. If `FG from VerticalAlignment` is currently enabled, the panel asks whether it should switch to manual FG first.
+2. `FG Wizard` is the companion tool for generating manual FG values without preparing a CSV file.
+3. `Sort by Station` now preserves rows that have FG but blank EG.
+
 ## 3. Structure CSV
 
 Recommended header:

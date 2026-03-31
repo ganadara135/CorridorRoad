@@ -147,7 +147,7 @@ def run():
             "structure|source=structure_set|stations=3|tags=3"
         ]
         expected_sec_export = [
-            "export|target=section_set|reportSchema=1|sectionSchema=2|topProfile=typical_section|practical=advanced|sections=6|structures=3|pavementLayers=2|roadside=shoulder_edge:1"
+            "export|target=section_set|reportSchema=1|sectionSchema=2|topProfile=typical_section|practical=advanced|sections=6|structures=3|benchSections=0|benchMode=-|benchAdjusted=0|benchSkipped=0|pavementLayers=2|roadside=shoulder_edge:1"
         ]
 
         _assert(int(getattr(typ, "ReportSchemaVersion", 0) or 0) == 1, "TypicalSectionTemplate report schema mismatch")

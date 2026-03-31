@@ -45,6 +45,8 @@ This folder contains draft pages to publish to GitHub Wiki.
 ## Current Sample Files For Testing
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/profile_fg_manual_import_basic.csv`
+- `tests/samples/profile_fg_manual_import_aliases.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly_notch.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`

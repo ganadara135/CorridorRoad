@@ -15,6 +15,14 @@ It is the source of truth for:
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 
+### Profile FG Starter CSVs
+- `tests/samples/profile_fg_manual_import_basic.csv`
+  - starter `Station,FG` import example for `Edit Profiles -> Import FG CSV`
+  - good for first manual FG round-trip checks
+- `tests/samples/profile_fg_manual_import_aliases.csv`
+  - alias-header example using `PK,DesignElevation`
+  - validates flexible header handling in FG import
+
 ### Structure Starter CSVs
 - `tests/samples/structure_utm_realistic_hilly.csv`
   - baseline simple-geometry structure starter
@@ -105,6 +113,17 @@ It is the source of truth for:
   - validate starter CSV format for `GeometryMode=external_shape`
   - validate placeholder-path warning behavior
   - confirm current scope is `external_shape_proxy`, not direct boolean cutting
+
+### 7. Manual FG Import Workflow
+- Terrain: `pointcloud_utm_realistic_hilly.csv`
+- Alignment: `alignment_utm_realistic_hilly.csv`
+- FG import:
+  - `profile_fg_manual_import_basic.csv`
+  - `profile_fg_manual_import_aliases.csv`
+- Goal:
+  - validate `Edit Profiles -> Import FG CSV`
+  - validate station update + append behavior
+  - validate header alias support for manual FG onboarding
 
 ## Regression Mapping
 

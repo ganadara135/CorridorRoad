@@ -2,7 +2,9 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 # CorridorRoad/ui/task_profile_editor.py
+import csv
 import math
+import os
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -54,6 +56,29 @@ def _selected_terrain():
     except Exception:
         pass
     return None
+
+
+def _try_float(value):
+    try:
+        if value is None:
+            return None
+        txt = str(value).strip()
+        if txt == "":
+            return None
+        return float(txt)
+    except Exception:
+        return None
+
+
+def _normalize_fg_header(text: str) -> str:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return ""
+    keep = []
+    for ch in raw:
+        if ch.isalnum():
+            keep.append(ch)
+    return "".join(keep)
 
 
 class ProfileEditorTaskPanel:
@@ -168,6 +193,8 @@ class ProfileEditorTaskPanel:
         self.btn_close = QtWidgets.QPushButton("Close")
         self.btn_open_pvi = QtWidgets.QPushButton("Open Edit PVI")
         self.btn_refresh_fg_from_va = QtWidgets.QPushButton("Refresh FG from VerticalAlignment")
+        self.btn_import_fg = QtWidgets.QPushButton("Import FG CSV")
+        self.btn_fg_wizard = QtWidgets.QPushButton("FG Wizard")
 
         form.addRow(self.chk_create_bundle)
         form.addRow(self.chk_fg_from_va)
@@ -218,19 +245,27 @@ class ProfileEditorTaskPanel:
         vtable.addWidget(self.lbl_table_summary)
 
         # Buttons row
-        btn_row = QtWidgets.QHBoxLayout()
+        btn_row_top = QtWidgets.QHBoxLayout()
+        btn_row_bottom = QtWidgets.QHBoxLayout()
+        btn_rows = QtWidgets.QVBoxLayout()
         self.btn_add = QtWidgets.QPushButton("Add Row")
         self.btn_remove = QtWidgets.QPushButton("Remove Row")
         self.btn_sort = QtWidgets.QPushButton("Sort by Station")
         self.btn_fill_stations = QtWidgets.QPushButton("Fill Stations from Stationing")
         self.btn_fill_fg_from_va = QtWidgets.QPushButton("Fill FG from VerticalAlignment")
 
-        btn_row.addWidget(self.btn_add)
-        btn_row.addWidget(self.btn_remove)
-        btn_row.addWidget(self.btn_sort)
-        btn_row.addWidget(self.btn_fill_stations)
-        btn_row.addWidget(self.btn_fill_fg_from_va)
-        vtable.addLayout(btn_row)
+        btn_row_top.addWidget(self.btn_add)
+        btn_row_top.addWidget(self.btn_remove)
+        btn_row_top.addWidget(self.btn_sort)
+        btn_row_top.addWidget(self.btn_fill_stations)
+        btn_row_bottom.addWidget(self.btn_fill_fg_from_va)
+        btn_row_bottom.addWidget(self.btn_import_fg)
+        btn_row_bottom.addWidget(self.btn_fg_wizard)
+        btn_row_top.addStretch(1)
+        btn_row_bottom.addStretch(1)
+        btn_rows.addLayout(btn_row_top)
+        btn_rows.addLayout(btn_row_bottom)
+        vtable.addLayout(btn_rows)
         root.addWidget(gb_table)
 
         # Signals
@@ -239,6 +274,8 @@ class ProfileEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_fill_stations.clicked.connect(self._fill_stations_from_stationing)
         self.btn_fill_fg_from_va.clicked.connect(self._fill_fg_from_va)
+        self.btn_import_fg.clicked.connect(self._import_fg_from_file)
+        self.btn_fg_wizard.clicked.connect(self._open_fg_wizard)
         self.btn_refresh_fg_from_va.clicked.connect(self._refresh_fg_from_va)
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
@@ -410,6 +447,339 @@ class ProfileEditorTaskPanel:
             "Edit Profiles",
             f"FG refreshed from VerticalAlignment.\nUpdated stations: {updated}\nFG source: VerticalAlignment",
         )
+
+    def _ensure_manual_fg_mode(self, action_label: str) -> bool:
+        if not bool(self.chk_fg_from_va.isChecked()):
+            return True
+        resp = QtWidgets.QMessageBox.question(
+            None,
+            "Edit Profiles",
+            f"{action_label} writes manual FG values.\nSwitch FG mode from VerticalAlignment to Manual and continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes,
+        )
+        if resp != QtWidgets.QMessageBox.Yes:
+            return False
+        self.chk_fg_from_va.setChecked(False)
+        return True
+
+    def _table_station_bounds(self):
+        vals = []
+        for r in range(self.table.rowCount()):
+            sta = self._get_cell_float(r, 0)
+            if sta is not None:
+                vals.append(float(sta))
+        if not vals:
+            return 0.0, 0.0
+        return min(vals), max(vals)
+
+    @staticmethod
+    def _parse_fg_import_file(path: str):
+        if not path or not os.path.isfile(path):
+            raise Exception("FG import file was not found.")
+
+        with open(path, "r", encoding="utf-8-sig", newline="") as fh:
+            sample = fh.read(2048)
+            fh.seek(0)
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            except Exception:
+                class _SimpleDialect(csv.Dialect):
+                    delimiter = ","
+                    quotechar = '"'
+                    doublequote = True
+                    skipinitialspace = True
+                    lineterminator = "\n"
+                    quoting = csv.QUOTE_MINIMAL
+
+                dialect = _SimpleDialect
+            reader = csv.reader(fh, dialect)
+            raw_rows = []
+            for row in reader:
+                vals = [str(v).strip() for v in list(row or [])]
+                if not vals or all(v == "" for v in vals):
+                    continue
+                if str(vals[0]).strip().startswith("#"):
+                    continue
+                raw_rows.append(vals)
+
+        if not raw_rows:
+            raise Exception("FG import file has no usable rows.")
+
+        station_aliases = {
+            "station",
+            "sta",
+            "chainage",
+            "pk",
+            "kp",
+            "distance",
+            "dist",
+        }
+        fg_aliases = {
+            "fg",
+            "finishedgrade",
+            "finishedgr",
+            "finishedelevation",
+            "fgelevation",
+            "elevfg",
+            "designfg",
+            "designgrade",
+            "designelevation",
+            "grade",
+            "z",
+            "elevation",
+        }
+
+        first = list(raw_rows[0] or [])
+        first_station = _try_float(first[0] if len(first) >= 1 else None)
+        first_fg = _try_float(first[1] if len(first) >= 2 else None)
+        has_header = (first_station is None) or (first_fg is None)
+
+        station_idx = 0
+        fg_idx = 1
+        rows = list(raw_rows)
+        if has_header:
+            header = [_normalize_fg_header(v) for v in first]
+            station_idx = -1
+            fg_idx = -1
+            for i, key in enumerate(header):
+                if key in station_aliases and station_idx < 0:
+                    station_idx = i
+                if key in fg_aliases and fg_idx < 0:
+                    fg_idx = i
+            if station_idx < 0 and len(header) >= 1:
+                station_idx = 0
+            if fg_idx < 0 and len(header) >= 2:
+                fg_idx = 1 if station_idx != 1 else (2 if len(header) >= 3 else -1)
+            rows = rows[1:]
+
+        if station_idx < 0 or fg_idx < 0:
+            raise Exception("FG import file must include station and FG columns.")
+
+        parsed = []
+        seen = {}
+        for row in rows:
+            if max(station_idx, fg_idx) >= len(row):
+                continue
+            sta = _try_float(row[station_idx])
+            fg = _try_float(row[fg_idx])
+            if sta is None or fg is None:
+                continue
+            key = round(float(sta), 6)
+            seen[key] = (float(sta), float(fg))
+
+        parsed = [seen[k] for k in sorted(seen)]
+        if not parsed:
+            raise Exception("FG import file did not yield any valid Station/FG rows.")
+        return parsed
+
+    def _apply_imported_fg_rows(self, imported_rows):
+        rows = list(imported_rows or [])
+        if not rows:
+            return 0, 0
+
+        existing_station_rows = []
+        for r in range(self.table.rowCount()):
+            sta = self._get_cell_float(r, 0)
+            if sta is None:
+                continue
+            existing_station_rows.append((r, float(sta)))
+
+        self._loading = True
+        updated = 0
+        appended = 0
+        try:
+            if not existing_station_rows:
+                self.table.setRowCount(0)
+                self._set_rows(len(rows))
+                for i, (sta, fg) in enumerate(rows):
+                    self._set_cell_float(i, 0, sta)
+                    self._set_cell_text(i, 1, "")
+                    self._set_cell_float(i, 2, fg)
+                    self._update_delta_row(i)
+                updated = len(rows)
+                return updated, 0
+
+            row_by_station = {round(float(sta), 6): int(r) for r, sta in existing_station_rows}
+            for sta, fg in rows:
+                key = round(float(sta), 6)
+                if key in row_by_station:
+                    r = row_by_station[key]
+                    self._set_cell_float(r, 2, fg)
+                    self._update_delta_row(r)
+                    updated += 1
+                else:
+                    r = self.table.rowCount()
+                    self._set_rows(r + 1)
+                    self._set_cell_float(r, 0, sta)
+                    self._set_cell_text(r, 1, "")
+                    self._set_cell_float(r, 2, fg)
+                    self._update_delta_row(r)
+                    row_by_station[key] = r
+                    appended += 1
+        finally:
+            self._loading = False
+
+        self._sort_rows()
+        self._update_table_summary()
+        return updated, appended
+
+    def _import_fg_from_file(self):
+        if not self._ensure_manual_fg_mode("FG import"):
+            return
+        path, _flt = QtWidgets.QFileDialog.getOpenFileName(
+            None,
+            "Import FG CSV",
+            "",
+            "CSV Files (*.csv *.txt);;All Files (*.*)",
+        )
+        if not path:
+            return
+        try:
+            rows = self._parse_fg_import_file(path)
+            updated, appended = self._apply_imported_fg_rows(rows)
+            self._refresh_status_summary()
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Profiles",
+                f"FG import completed.\nFile: {os.path.basename(path)}\nRows read: {len(rows)}\nUpdated existing stations: {updated}\nAppended new stations: {appended}",
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"FG import failed: {ex}")
+
+    def _apply_fg_wizard_values(self, mode: str, start_station: float, end_station: float, start_value: float, end_value: float):
+        mode_key = str(mode or "").strip().lower()
+        s0 = float(min(start_station, end_station))
+        s1 = float(max(start_station, end_station))
+        if abs(s1 - s0) <= 1e-9:
+            s1 = s0
+
+        updated = 0
+        skipped_missing_eg = 0
+        self._loading = True
+        try:
+            for r in range(self.table.rowCount()):
+                sta = self._get_cell_float(r, 0)
+                if sta is None:
+                    continue
+                sta = float(sta)
+                if sta < (s0 - 1e-9) or sta > (s1 + 1e-9):
+                    continue
+                t = 0.0 if abs(s1 - s0) <= 1e-9 else ((sta - s0) / (s1 - s0))
+                eg = self._get_cell_float(r, 1)
+                fg = None
+                if mode_key == "eg_offset":
+                    if eg is None:
+                        skipped_missing_eg += 1
+                        continue
+                    fg = float(eg) + float(start_value)
+                elif mode_key == "eg_offset_ramp":
+                    if eg is None:
+                        skipped_missing_eg += 1
+                        continue
+                    delta = float(start_value) + (float(end_value) - float(start_value)) * t
+                    fg = float(eg) + delta
+                elif mode_key == "absolute_interp":
+                    fg = float(start_value) + (float(end_value) - float(start_value)) * t
+                else:
+                    raise Exception(f"Unsupported FG wizard mode: {mode}")
+                self._set_cell_float(r, 2, fg)
+                self._update_delta_row(r)
+                updated += 1
+        finally:
+            self._loading = False
+        self._update_table_summary()
+        return updated, skipped_missing_eg
+
+    def _open_fg_wizard(self):
+        if not self._ensure_manual_fg_mode("FG wizard"):
+            return
+
+        smin, smax = self._table_station_bounds()
+        dlg = QtWidgets.QDialog(None)
+        dlg.setWindowTitle("FG Wizard")
+        lay = QtWidgets.QVBoxLayout(dlg)
+        form = QtWidgets.QFormLayout()
+
+        cmb_mode = QtWidgets.QComboBox()
+        cmb_mode.addItem("EG + constant offset", "eg_offset")
+        cmb_mode.addItem("EG + start/end offset ramp", "eg_offset_ramp")
+        cmb_mode.addItem("Absolute FG interpolation", "absolute_interp")
+
+        spin_s0 = QtWidgets.QDoubleSpinBox()
+        spin_s0.setRange(-1e9, 1e9)
+        spin_s0.setDecimals(3)
+        spin_s0.setValue(float(smin))
+        spin_s1 = QtWidgets.QDoubleSpinBox()
+        spin_s1.setRange(-1e9, 1e9)
+        spin_s1.setDecimals(3)
+        spin_s1.setValue(float(smax))
+        spin_v0 = QtWidgets.QDoubleSpinBox()
+        spin_v0.setRange(-1e9, 1e9)
+        spin_v0.setDecimals(3)
+        spin_v0.setValue(0.0)
+        spin_v1 = QtWidgets.QDoubleSpinBox()
+        spin_v1.setRange(-1e9, 1e9)
+        spin_v1.setDecimals(3)
+        spin_v1.setValue(0.0)
+
+        lbl_v0 = QtWidgets.QLabel("Offset:")
+        lbl_v1 = QtWidgets.QLabel("End Offset:")
+        lbl_hint = QtWidgets.QLabel("")
+        lbl_hint.setWordWrap(True)
+
+        form.addRow("Mode:", cmb_mode)
+        form.addRow("Start Station:", spin_s0)
+        form.addRow("End Station:", spin_s1)
+        form.addRow(lbl_v0, spin_v0)
+        form.addRow(lbl_v1, spin_v1)
+        lay.addLayout(form)
+        lay.addWidget(lbl_hint)
+
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        lay.addWidget(btn_box)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+
+        def _refresh_mode_widgets():
+            mode_key = str(cmb_mode.currentData() or "eg_offset")
+            if mode_key == "eg_offset":
+                lbl_v0.setText("Offset:")
+                lbl_v1.setText("End Offset:")
+                spin_v1.setEnabled(False)
+                lbl_hint.setText("Sets FG = EG + offset for all rows in the selected station range.")
+            elif mode_key == "eg_offset_ramp":
+                lbl_v0.setText("Start Offset:")
+                lbl_v1.setText("End Offset:")
+                spin_v1.setEnabled(True)
+                lbl_hint.setText("Interpolates offset along the station range, then sets FG = EG + interpolated offset.")
+            else:
+                lbl_v0.setText("Start FG:")
+                lbl_v1.setText("End FG:")
+                spin_v1.setEnabled(True)
+                lbl_hint.setText("Ignores EG and linearly interpolates absolute FG values across the selected station range.")
+
+        cmb_mode.currentIndexChanged.connect(_refresh_mode_widgets)
+        _refresh_mode_widgets()
+
+        if dlg.exec_() != int(QtWidgets.QDialog.Accepted):
+            return
+
+        try:
+            updated, skipped_missing_eg = self._apply_fg_wizard_values(
+                str(cmb_mode.currentData() or "eg_offset"),
+                float(spin_s0.value()),
+                float(spin_s1.value()),
+                float(spin_v0.value()),
+                float(spin_v1.value()),
+            )
+            self._refresh_status_summary()
+            msg = f"FG wizard applied.\nUpdated rows: {updated}"
+            if skipped_missing_eg > 0:
+                msg += f"\nSkipped rows missing EG: {skipped_missing_eg}"
+            QtWidgets.QMessageBox.information(None, "Edit Profiles", msg)
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"FG wizard failed: {ex}")
 
     # ---- Context ----
     def _refresh_context(self):
@@ -603,7 +973,7 @@ class ProfileEditorTaskPanel:
         self._update_table_summary()
 
     def _sort_rows(self):
-        rows = self._read_table_rows(keep_blanks=False)
+        rows = self._read_table_rows(keep_blanks=True)
         rows.sort(key=lambda x: x[0])
 
         self._loading = True
@@ -612,8 +982,14 @@ class ProfileEditorTaskPanel:
             self._set_rows(len(rows))
             for i, (s, eg, fg) in enumerate(rows):
                 self._set_cell_float(i, 0, s)
-                self._set_cell_float(i, 1, eg)
-                self._set_cell_float(i, 2, fg)
+                if eg is None:
+                    self._set_cell_text(i, 1, "")
+                else:
+                    self._set_cell_float(i, 1, eg)
+                if fg is None:
+                    self._set_cell_text(i, 2, "")
+                else:
+                    self._set_cell_float(i, 2, fg)
                 self._update_delta_row(i)
         finally:
             self._loading = False
@@ -1009,7 +1385,8 @@ class ProfileEditorTaskPanel:
 
         b = self.doc.addObject("Part::FeaturePython", "ProfileBundle")
         ProfileBundle(b)
-        ViewProviderProfileBundle(b.ViewObject)
+        if getattr(b, "ViewObject", None) is not None:
+            ViewProviderProfileBundle(b.ViewObject)
         b.Label = PROFILE_BUNDLE_LABEL
         self.bundle = b
 

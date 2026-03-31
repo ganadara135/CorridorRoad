@@ -31,12 +31,17 @@ Run these before merging short-term structure/corridor validation work:
 11. `smoke_legacy_simple_workflow.py`
 12. `smoke_daylight_coordinate_modes.py`
 13. `smoke_daylight_fallback_status.py`
-14. `smoke_external_shape_earthwork_proxy.py`
-15. `smoke_notch_profile_contract.py`
-16. `smoke_notch_neighbor_modes.py`
-17. `smoke_boolean_cut_scope_guard.py`
-18. `smoke_cutfill_source_matrix.py`
-19. `smoke_cutfill_quality_review.py`
+14. `smoke_side_slope_bench_profile.py`
+15. `smoke_side_slope_multi_bench_profile.py`
+16. `smoke_side_slope_bench_daylight.py`
+17. `smoke_external_shape_earthwork_proxy.py`
+18. `smoke_notch_profile_contract.py`
+19. `smoke_notch_neighbor_modes.py`
+20. `smoke_boolean_cut_scope_guard.py`
+21. `smoke_cutfill_source_matrix.py`
+22. `smoke_cutfill_quality_review.py`
+23. `smoke_profile_fg_tools.py`
+24. `smoke_pvi_starter_defaults.py`
 
 ## How To Run
 
@@ -58,12 +63,17 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_skip_zone_boundary_behavior.py
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_legacy_simple_workflow.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_daylight_coordinate_modes.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_daylight_fallback_status.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_side_slope_bench_profile.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_side_slope_multi_bench_profile.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_side_slope_bench_daylight.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_external_shape_earthwork_proxy.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_notch_profile_contract.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_notch_neighbor_modes.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_boolean_cut_scope_guard.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_cutfill_source_matrix.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_cutfill_quality_review.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
 ```
 
 If you need an explicit executable path, use your local FreeCAD installation path:
@@ -82,12 +92,17 @@ If you need an explicit executable path, use your local FreeCAD installation pat
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_legacy_simple_workflow.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_daylight_coordinate_modes.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_daylight_fallback_status.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_side_slope_bench_profile.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_side_slope_multi_bench_profile.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_side_slope_bench_daylight.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_external_shape_earthwork_proxy.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_notch_profile_contract.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_notch_neighbor_modes.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_boolean_cut_scope_guard.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_cutfill_source_matrix.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_cutfill_quality_review.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
 ```
 
 For a repeatable short-term pass, you can also use:

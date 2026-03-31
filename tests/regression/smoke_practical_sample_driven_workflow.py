@@ -163,6 +163,8 @@ def run():
     required = [
         "alignment_utm_realistic_hilly.csv",
         "pointcloud_utm_realistic_hilly.csv",
+        "profile_fg_manual_import_basic.csv",
+        "profile_fg_manual_import_aliases.csv",
         "structure_utm_realistic_hilly.csv",
         "structure_utm_realistic_hilly_notch.csv",
         "structure_utm_realistic_hilly_template.csv",
@@ -182,6 +184,8 @@ def run():
     urban_rows = _read_csv_rows(os.path.join(samples, "typical_section_urban_complete_street.csv"))
     ditch_rows = _read_csv_rows(os.path.join(samples, "typical_section_with_ditch.csv"))
     pavement_rows = _read_csv_rows(os.path.join(samples, "typical_section_pavement_basic.csv"))
+    fg_basic_rows = _read_csv_rows(os.path.join(samples, "profile_fg_manual_import_basic.csv"))
+    fg_alias_rows = _read_csv_rows(os.path.join(samples, "profile_fg_manual_import_aliases.csv"))
     simple_structure_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly.csv"))
     notch_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly_notch.csv"))
     template_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly_template.csv"))
@@ -194,6 +198,12 @@ def run():
     ditch_types = {str(r.get("Type", "") or "").strip().lower() for r in ditch_rows}
     _assert({"ditch", "berm"}.issubset(ditch_types), "Ditch sample is missing ditch/berm components")
     _assert(sum(_to_float(r, "Thickness") for r in pavement_rows if _to_bool(r, "Enabled", default=True)) > 0.5, "Pavement sample total thickness is unexpectedly small")
+    _assert(len(fg_basic_rows) >= 8, "FG basic import sample should have at least 8 rows")
+    _assert("Station" in list((fg_basic_rows[0] or {}).keys()), "FG basic import sample should expose Station header")
+    _assert("FG" in list((fg_basic_rows[0] or {}).keys()), "FG basic import sample should expose FG header")
+    _assert(len(fg_alias_rows) >= 8, "FG alias import sample should have at least 8 rows")
+    alias_keys = {str(k) for k in list((fg_alias_rows[0] or {}).keys())}
+    _assert({"PK", "DesignElevation"}.issubset(alias_keys), "FG alias import sample should expose PK/DesignElevation headers")
     _assert(all(str(r.get("CorridorMode", "") or "").strip().lower() == "notch" for r in notch_rows), "Notch starter sample should contain only notch corridor rows")
     _assert(all(str(r.get("GeometryMode", "") or "").strip().lower() == "template" for r in template_rows), "Template starter sample should contain only template geometry rows")
     _assert(all(str(r.get("GeometryMode", "") or "").strip().lower() == "external_shape" for r in external_rows), "External-shape starter sample should contain only external-shape rows")

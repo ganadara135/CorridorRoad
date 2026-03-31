@@ -316,7 +316,7 @@ class DesignGradingSurface:
                 _mark_recompute_flag(obj, False)
                 return
 
-            stations, wires, _tf, _so = SectionSet.build_section_wires(src)
+            stations, wires, _tf, _so, _bench_info = SectionSet.build_section_wires(src)
             pts, pt_count = DesignGradingSurface._validate_and_points(stations, wires)
             mesh_out, quad_count, tri_count = DesignGradingSurface._build_mesh_from_sections(pts)
             if tri_count <= 0:
@@ -375,6 +375,18 @@ class DesignGradingSurface:
                 status_tokens.append(f"practical={str(getattr(obj, 'PracticalSectionMode', 'simple') or 'simple')}")
             if str(getattr(obj, "RoadsideLibrarySummary", "-") or "-") != "-":
                 status_tokens.append(f"roadside={str(getattr(obj, 'RoadsideLibrarySummary', '-') or '-')}")
+            if int(getattr(src, "BenchAppliedSectionCount", 0) or 0) > 0:
+                bench_summary = str(getattr(src, "BenchSummary", "-") or "-")
+                if bench_summary.startswith("mode="):
+                    bench_mode = bench_summary.split(",", 1)[0].split("=", 1)[-1].strip() or "both"
+                else:
+                    bench_mode = "both"
+                status_tokens.append(f"bench={bench_mode}")
+                status_tokens.append(f"benchSections={int(getattr(src, 'BenchAppliedSectionCount', 0) or 0)}")
+                if int(getattr(src, "BenchDaylightAdjustedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDayAdj={int(getattr(src, 'BenchDaylightAdjustedSectionCount', 0) or 0)}")
+                if int(getattr(src, "BenchDaylightSkippedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDaySkip={int(getattr(src, 'BenchDaylightSkippedSectionCount', 0) or 0)}")
             if len(list(getattr(obj, "SubassemblyValidationRows", []) or [])) > 0:
                 status_tokens.append(f"subWarn={len(list(getattr(obj, 'SubassemblyValidationRows', []) or []))}")
             if int(getattr(obj, "TypicalSectionAdvancedComponentCount", 0) or 0) > 0:
@@ -405,6 +417,9 @@ class DesignGradingSurface:
                     sections=int(len(stations)),
                     faces=int(quad_count),
                     pointCount=int(pt_count),
+                    benchSections=int(getattr(src, "BenchAppliedSectionCount", 0) or 0),
+                    benchAdjusted=int(getattr(src, "BenchDaylightAdjustedSectionCount", 0) or 0),
+                    benchSkipped=int(getattr(src, "BenchDaylightSkippedSectionCount", 0) or 0),
                     roadside=str(getattr(obj, "RoadsideLibrarySummary", "-") or "-"),
                 )
             ]

@@ -93,6 +93,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `UseSideSlopes`
     - `LeftSideWidth`, `RightSideWidth`
     - `LeftSideSlopePct`, `RightSideSlopePct`
+    - single-bench options:
+      - `UseLeftBench`, `UseRightBench`
+      - `LeftBenchDrop`, `RightBenchDrop`
+      - `LeftBenchWidth`, `RightBenchWidth`
+      - `LeftBenchSlopePct`, `RightBenchSlopePct`
+      - `LeftPostBenchSlopePct`, `RightPostBenchSlopePct`
+      - with daylight enabled, bench sections can now be kept, shortened, or skipped per section depending on terrain intersection
     - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxSearchWidth`, `DaylightMaxWidthDelta`, `DaylightMaxTriangles`
 - Display behavior:
   - template wire shows crown line and depth envelope
@@ -466,6 +473,22 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Profile editor EG terrain sampling coordinate mode:
   - `Local (X/Y)` samples terrain with local alignment XY directly
   - `World (E/N)` converts local alignment XY to world XY for sampling, then converts sampled Z back to local
+- Profile editor manual FG tooling:
+  - `Import FG CSV` updates matching stations and appends new stations for manual FG workflows
+  - `FG Wizard` supports `EG + constant offset`, `EG + start/end offset ramp`, and `absolute FG interpolation`
+  - if `FG from VerticalAlignment` is active, manual FG tools must confirm the switch to manual FG first
+- Profile editor layout policy:
+  - the table-action area uses two rows to stay readable in narrow task-panel widths
+  - top row keeps station/table actions
+  - bottom row keeps FG-generation/import actions
+- `Sort by Station` in the profile editor keeps FG-only rows; it must not drop rows just because EG is still blank.
+- PVI editor UX policy:
+  - inline guide explains PVI terminology in plain language
+  - under-table summary previews first grade percentages and `BVC` / `EVC` windows
+  - `Vertical Curve L` wording must state that it is total curve length centered on the PVI, not next-row spacing
+  - if no saved VA exists, the panel auto-seeds a starter PVI from the resolved station range
+  - `Load Starter PVI` rebuilds starter rows
+  - `Clear to Blank` resets to an empty input state
 - `freecad/Corridor_Road/ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
 - `Generate FG Now (apply)` shows a completion dialog on success.
 - saved/generated `Vertical Alignment (PVI)` is visible in 3D view by default.
@@ -509,7 +532,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `curb` = optional face/gutter run + vertical rise + curb top width
   - `ditch` = total span with optional flat bottom width + outer-side slope
   - `berm` = bench/platform segment with optional outer taper
-  - `bench` = reserved term for future earthwork mid-slope benching
+  - mid-slope earthwork benching now lives in `AssemblyTemplate` / `Generate Sections` side-slope controls, including multi-bench terrace rows, not as a `Typical Section` component type
 - Current pavement notes:
   - pavement layers are still not separate corridor solids
   - `TypicalSectionPavementDisplay` is the first separate pavement geometry/report object

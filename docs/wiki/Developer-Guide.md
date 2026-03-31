@@ -58,6 +58,25 @@ Practical debugging order:
 - Keep error behavior separate: warnings/errors should not show success dialogs.
 - Include simple runtime summary in dialog where possible (count/status).
 
+## Task-Panel Consistency Notes
+- `Edit Profiles` currently uses a two-row table-action layout to keep long button labels readable.
+- `Edit Profiles` top row is station/table oriented:
+  - `Add Row`, `Remove Row`, `Sort by Station`, `Fill Stations from Stationing`
+- `Edit Profiles` bottom row is FG/manual-entry oriented:
+  - `Fill FG from VerticalAlignment`, `Import FG CSV`, `FG Wizard`
+- Manual FG helpers must ask before leaving `FG from VerticalAlignment` mode.
+- Headless-safe object creation matters for regression scripts:
+  - only attach a `ViewProvider` when `ViewObject` exists
+- `Edit PVI` should explain PVI semantics inline instead of assuming road-design terminology:
+  - `PVI Station` = grade-break station
+  - `PVI Elev` = FG elevation at that station
+  - `Vertical Curve L` = total symmetric curve length centered on that PVI
+- `Edit PVI` should auto-seed a starter vertical alignment when no saved VA exists and station/profile context is available.
+- `Edit PVI` should provide:
+  - `Load Starter PVI`
+  - `Clear to Blank`
+- `Edit PVI` should show a live under-table summary for first grades and curve windows so users can sanity-check inputs before `Generate FG Now`.
+
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - Alignment: `tests/samples/alignment_utm_realistic_hilly.csv`

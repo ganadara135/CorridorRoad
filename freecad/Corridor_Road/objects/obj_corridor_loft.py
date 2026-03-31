@@ -624,6 +624,9 @@ class CorridorLoft:
         if not bool(getattr(obj, "AutoUseRuledForTypicalSection", True)):
             return False, "off"
 
+        if int(getattr(src, "BenchAppliedSectionCount", 0) or 0) > 0:
+            return True, "auto:bench_profile"
+
         if str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") != "typical_section":
             return False, "off"
 
@@ -1540,7 +1543,7 @@ class CorridorLoft:
                 _mark_recompute_flag(obj, False)
                 return
 
-            stations, wires, _tf, _so = SectionSet.build_section_wires(src)
+            stations, wires, _tf, _so, _bench_info = SectionSet.build_section_wires(src)
             min_spacing = max(0.0, float(getattr(obj, "MinSectionSpacing", 0.0)))
             stations, wires, dropped = CorridorLoft._filter_close_sections(stations, wires, min_spacing)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
@@ -1720,6 +1723,18 @@ class CorridorLoft:
                     tokens.append(f"practical={str(getattr(src, 'PracticalSectionMode', 'simple') or 'simple')}")
                 if str(getattr(src, "RoadsideLibrarySummary", "-") or "-") != "-":
                     tokens.append(f"roadside={str(getattr(src, 'RoadsideLibrarySummary', '-') or '-')}")
+                if int(getattr(src, "BenchAppliedSectionCount", 0) or 0) > 0:
+                    bench_summary = str(getattr(src, "BenchSummary", "-") or "-")
+                    if bench_summary.startswith("mode="):
+                        bench_mode = bench_summary.split(",", 1)[0].split("=", 1)[-1].strip() or "both"
+                    else:
+                        bench_mode = "both"
+                    tokens.append(f"bench={bench_mode}")
+                    tokens.append(f"benchSections={int(getattr(src, 'BenchAppliedSectionCount', 0) or 0)}")
+                    if int(getattr(src, "BenchDaylightAdjustedSectionCount", 0) or 0) > 0:
+                        tokens.append(f"benchDayAdj={int(getattr(src, 'BenchDaylightAdjustedSectionCount', 0) or 0)}")
+                    if int(getattr(src, "BenchDaylightSkippedSectionCount", 0) or 0) > 0:
+                        tokens.append(f"benchDaySkip={int(getattr(src, 'BenchDaylightSkippedSectionCount', 0) or 0)}")
                 if len(list(getattr(src, "SubassemblyValidationRows", []) or [])) > 0:
                     tokens.append(f"subWarn={len(list(getattr(src, 'SubassemblyValidationRows', []) or []))}")
                 if int(getattr(src, "TypicalSectionAdvancedComponentCount", 0) or 0) > 0:

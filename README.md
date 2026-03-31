@@ -103,6 +103,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - The maintained sample inventory and scenario bundles are documented in [PRACTICAL_SAMPLE_SET.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/PRACTICAL_SAMPLE_SET.md).
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- `tests/samples/profile_fg_manual_import_basic.csv`
+- `tests/samples/profile_fg_manual_import_aliases.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly_notch.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
@@ -117,18 +119,19 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `tests/samples/typical_section_pavement_basic.csv`
 1. Import `pointcloud_utm_realistic_hilly.csv` as DEM terrain source.
 2. Import `alignment_utm_realistic_hilly.csv` as horizontal alignment.
-3. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
-4. Run sections and verify `Structure Sections` tree objects, EG coverage, and daylight behavior.
-5. Build `Corridor Loft` with `Use structure corridor modes` enabled to test `skip_zone` handling from the same structure CSV.
-6. Load `structure_utm_realistic_hilly_template.csv` when you want to test template structure display (`box_culvert`, `retaining_wall`) and template-aware `Structure Sections` overlays.
-7. Load `structure_utm_realistic_hilly_external_shape.csv` when you want to test `GeometryMode=external_shape`. Replace the sample `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources first.
-8. Use the `station_profile_headers` + `station_profile_points` samples when you want to test variable-size structures driven by station control points.
-9. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
-10. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
-11. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
-12. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
-13. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
-14. For the maintained Long-Term practical regression bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
+3. After `Generate Stations`, use `profile_fg_manual_import_basic.csv` or `profile_fg_manual_import_aliases.csv` in `Edit Profiles -> Import FG CSV` when you want a manual FG starting point without `Edit PVI`.
+4. After `Generate Stations`, load `structure_utm_realistic_hilly.csv` in `Edit Structures`.
+5. Run sections and verify `Structure Sections` tree objects, EG coverage, and daylight behavior.
+6. Build `Corridor Loft` with `Use structure corridor modes` enabled to test `skip_zone` handling from the same structure CSV.
+7. Load `structure_utm_realistic_hilly_template.csv` when you want to test template structure display (`box_culvert`, `retaining_wall`) and template-aware `Structure Sections` overlays.
+8. Load `structure_utm_realistic_hilly_external_shape.csv` when you want to test `GeometryMode=external_shape`. Replace the sample `ShapeSourcePath` values with your own local `.step`, `.brep`, or `.FCStd#ObjectName` sources first.
+9. Use the `station_profile_headers` + `station_profile_points` samples when you want to test variable-size structures driven by station control points.
+10. Use the `mixed` + `mixed_profile_points` samples when you want one combined test set that includes `culvert`, `crossing`, `retaining_wall`, `abutment_zone`, `bridge_zone`, `other`, and one `external_shape` placeholder row.
+11. Use `typical_section_basic_rural.csv` when you want a simple lane + shoulder test for `Typical Section`.
+12. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
+13. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
+14. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
+15. For the maintained Long-Term practical regression bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.

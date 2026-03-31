@@ -36,12 +36,17 @@ $tests = @(
     "tests/regression/smoke_legacy_simple_workflow.py",
     "tests/regression/smoke_daylight_coordinate_modes.py",
     "tests/regression/smoke_daylight_fallback_status.py",
+    "tests/regression/smoke_side_slope_bench_profile.py",
+    "tests/regression/smoke_side_slope_multi_bench_profile.py",
+    "tests/regression/smoke_side_slope_bench_daylight.py",
     "tests/regression/smoke_external_shape_earthwork_proxy.py",
     "tests/regression/smoke_notch_profile_contract.py",
     "tests/regression/smoke_notch_neighbor_modes.py",
     "tests/regression/smoke_boolean_cut_scope_guard.py",
     "tests/regression/smoke_cutfill_source_matrix.py",
-    "tests/regression/smoke_cutfill_quality_review.py"
+    "tests/regression/smoke_cutfill_quality_review.py",
+    "tests/regression/smoke_profile_fg_tools.py",
+    "tests/regression/smoke_pvi_starter_defaults.py"
 )
 
 foreach ($test in $tests) {

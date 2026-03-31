@@ -68,6 +68,7 @@ Validation:
 1. `Generate Stations`
 2. `Edit Profiles` for EG/FG data
 3. `Edit PVI` for FG vertical geometry (optional)
+4. Or use `Edit Profiles -> Import FG CSV` / `FG Wizard` for a manual FG starting point
 
 Output:
 - Stationing object
@@ -76,6 +77,11 @@ Output:
 Validation:
 - Station list count is reasonable for interval.
 - EG fill coverage is acceptable before FG generation.
+- Manual FG import can start from either `Station,FG` or alias headers such as `PK,DesignElevation`.
+
+Recommended manual FG sample files:
+- `tests/samples/profile_fg_manual_import_basic.csv`
+- `tests/samples/profile_fg_manual_import_aliases.csv`
 
 If profile EG contains many blanks or `0` values:
 1. Check whether the alignment is fully inside DEM coverage.

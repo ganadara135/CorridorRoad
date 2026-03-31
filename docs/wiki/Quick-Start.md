@@ -16,6 +16,9 @@ Create a minimal but realistic run using sample point cloud and alignment CSV fi
 ## Input Files
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
 - `tests/samples/alignment_utm_realistic_hilly.csv`
+- Optional manual FG starter:
+  - `tests/samples/profile_fg_manual_import_basic.csv`
+  - `tests/samples/profile_fg_manual_import_aliases.csv`
 
 For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](../PRACTICAL_SAMPLE_SET.md).
 
@@ -49,6 +52,7 @@ For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](.
    - Suggested file: `wiki-quickstart-step5-stations-complete.png`
 6. Open `Edit Profiles` and fill stations from stationing, then save/apply.
    - Check EG values are filled for most stations.
+   - If you want a manual FG start without `Edit PVI`, turn off `FG from VerticalAlignment` and use `Import FG CSV` with `profile_fg_manual_import_basic.csv` or `profile_fg_manual_import_aliases.csv`.
    - [Screenshot Needed] Profile table with EG values.
    - Suggested file: `wiki-quickstart-step6-profiles-eg.png`
 7. Run `3D Centerline`.
