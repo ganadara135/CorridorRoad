@@ -487,14 +487,14 @@ When to override manually:
 | `Side Width Left/Right` | Horizontal reach of the side slope before daylight or fixed-width termination. | Use larger values for wider cut/fill wings. |
 | `Side Slope Left/Right (%)` | Base side-slope gradient used for the wing. | Positive values slope downward outward in fill-like conditions. |
 | `Use Left Bench` / `Use Right Bench` | Enables benching on that side. | Turn this on when that side should use one or more terrace rows. |
-| `Left Bench Rows` / `Right Bench Rows` | Unified bench editor, one bench per line as `drop,width,slope,postSlope`. | The first line becomes the primary bench and later lines become additional terraces for multi-bench side slopes. |
+| `Left Bench Rows` / `Right Bench Rows` | Table-based bench editor with `Drop`, `Width`, `Slope`, and `Post-Slope` columns. | Add one row per terrace. Single-bench and multi-bench cases use the same table workflow. |
 | `Daylight Auto (SectionSet)` | Searches for terrain intersection automatically. | When a bench is enabled, daylight is applied only on the post-bench slope segment. |
 
 ### Practical Notes
 
 1. Current bench support is still conservative, but it now supports multi-bench terrace stacks on each side through the unified `Left Bench Rows` and `Right Bench Rows` editors.
 2. Structure override modes still take precedence. If a structure trims/stubs a side, the bench on that side is disabled for that section.
-3. The first line in the bench editor becomes the primary bench used for backward-compatible storage. Later lines are stored as additional terrace rows and inherit the previous post-bench slope as their incoming slope.
+3. Bench input is now one unified row list per side. Users no longer need to think in terms of “primary bench” versus “extra bench”.
 4. With `Daylight Auto`, terrain is checked along the whole bench path. If terrain is reached before a later bench starts, that section can shorten the terrace stack or skip the remaining benches.
 5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
 6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.

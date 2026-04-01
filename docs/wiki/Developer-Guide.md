@@ -76,6 +76,10 @@ Practical debugging order:
   - `Load Starter PVI`
   - `Clear to Blank`
 - `Edit PVI` should show a live under-table summary for first grades and curve windows so users can sanity-check inputs before `Generate FG Now`.
+- `Generate Sections` bench editing now uses one table per side:
+  - `Drop`, `Width`, `Slope`, `Post-Slope`
+  - internal runtime should treat `LeftBenchRows` / `RightBenchRows` as the primary bench contract
+  - legacy single-bench properties remain as compatibility shadow values only
 
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`

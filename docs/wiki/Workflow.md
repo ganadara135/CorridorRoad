@@ -188,7 +188,8 @@ Validation:
 3. If structures should drive extra stations, enable `Use linked StructureSet`.
 4. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
 5. Configure daylight options if needed.
-6. Click `Generate Sections Now`.
+6. If cut/fill terraces are needed, turn on `Use Left Bench` / `Use Right Bench` and edit the `Bench Rows` tables directly.
+7. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
