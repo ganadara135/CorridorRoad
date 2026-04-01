@@ -12,6 +12,20 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Changed
 - Placeholder for upcoming changes.
 
+## [0.2.2] - 2026-04-01
+
+### Added
+- Surface-first corridor workflow with practical grading/cut-fill expansion, including structure-aware notch/skip diagnostics and richer section/corridor report contracts.
+- Manual FG productivity tools in `Edit Profiles`, including FG CSV import, FG wizard generation modes, and starter FG sample files.
+- Starter-default and inline-guided `Edit PVI` workflow with BVC/EVC-aware summaries.
+- Side-slope bench workflow with daylight-aware bench shaping, multi-bench support, table-based bench-row editing, and expanded headless smoke coverage.
+- Practical-scope and short-term regression runners plus new sample-driven smoke tests for structures, typical sections, cut/fill, FG tools, and bench workflows.
+
+### Changed
+- `CorridorLoft` now uses surface output as the primary corridor representation instead of closed solid generation.
+- Structure, section, grading, and cut/fill status wording was expanded for validation, trust/quality reporting, and mixed-workflow diagnostics.
+- Wiki and developer documentation were updated for practical engineering scope, FG/PVI workflows, and bench-row editing.
+
 ## [0.2.0] - 2026-03-28
 
 ### Added
