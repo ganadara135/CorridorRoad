@@ -42,6 +42,7 @@ Run these before merging short-term structure/corridor validation work:
 22. `smoke_cutfill_quality_review.py`
 23. `smoke_profile_fg_tools.py`
 24. `smoke_pvi_starter_defaults.py`
+25. `smoke_cross_section_viewer_payload.py`
 
 ## How To Run
 
@@ -74,6 +75,7 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_cutfill_source_matrix.py', 'r'
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_cutfill_quality_review.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_cross_section_viewer_payload.py', 'r', encoding='utf-8').read())"
 ```
 
 If you need an explicit executable path, use your local FreeCAD installation path:
@@ -103,6 +105,7 @@ If you need an explicit executable path, use your local FreeCAD installation pat
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_cutfill_quality_review.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_cross_section_viewer_payload.py', 'r', encoding='utf-8').read())"
 ```
 
 For a repeatable short-term pass, you can also use:

@@ -499,7 +499,48 @@ When to override manually:
 5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
 6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.
 
-## 6B. Typical Section
+## 6B. Cross Section Viewer
+
+`Cross Section Viewer` is the first dedicated 2D station-review panel for `SectionSet`.
+
+### Current Scope
+
+1. It reads section geometry directly from `SectionSet`.
+2. It renders one station at a time in a separate 2D viewer instead of asking the user to interpret the section only in 3D.
+3. It can follow `SectionSlice` and `SectionStructureOverlay` selection from the tree or 3D view.
+4. It can optionally draw structure overlay wires on top of the base section linework.
+
+### Main Controls
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Section Set` | Chooses the `SectionSet` to inspect. | Use this when multiple section sets exist in one document. |
+| `Station` | Chooses one generated section station. | This is the main selector for the active cross-section. |
+| `Sync with 3D selection` | Follows `SectionSlice` or `SectionStructureOverlay` selection automatically. | Keep this enabled for the recommended hybrid workflow. |
+| `Show structure overlays` | Toggles structure overlay linework in the 2D viewer. | Turn this off when you only want to read the road/earthwork section shape. |
+| `Show labels` | Shows station tags, top-edge notes, structure summary, and daylight note directly in the 2D view. | Keep this on during review and turn it off only when you want a very clean line-only view. |
+| `Show dimensions` | Shows basic width dimensions for the current section. | The first version reports left reach, right reach, and overall width from the rendered section bounds. |
+| `Show diagnostics` | Expands the lower summary panel with bench/component/structure report rows and status-derived tokens. | Use this when checking bench/daylight/structure behavior without opening raw object properties. |
+| `Use Selected Section` | Forces the viewer to adopt the currently selected `SectionSet`, `SectionSlice`, or `SectionStructureOverlay`. | Fastest way to jump from 3D context into 2D review. |
+| `Refresh Context` | Reloads available section sets and current station rows. | Use this after regenerating sections. |
+| `Previous` / `Next` | Moves to the neighboring station in the active set. | Useful for stepping through a corridor station by station. |
+| `Fit View` | Re-frames the current 2D cross-section drawing. | Use this after panning or zooming. |
+| `Export PNG` | Saves the currently rendered section scene as a PNG image. | Use this for quick review snapshots or issue discussions. |
+| `Export SVG` | Saves the current section as a vector SVG built from the viewer payload. | Use this when you want a lightweight scalable review graphic. |
+| `Export Sheet SVG` | Saves a print-style SVG sheet with the section drawing, title block, and review summary. | Use this when you want a cleaner review sheet for markup or sharing. |
+
+### Practical Notes
+
+1. This first version focuses on `station navigation + clean 2D linework + structure overlay`.
+2. Bench and side-slope breakpoints are shown through the same `SectionSet` wire that downstream grading uses.
+3. The dashed vertical marker is the roadway centerline in section space.
+4. `Show labels` now places station-tag, top-edge, structure, and daylight notes directly in the 2D scene.
+5. `Show diagnostics` expands the lower summary with payload/report rows derived from `SectionSet` result contracts.
+6. `Show dimensions` currently draws overall width plus centerline-to-left/right reach dimensions from the section linework.
+7. `Export PNG` writes the current scene as rendered, `Export SVG` writes a compact vector export, and `Export Sheet SVG` writes a print-style review sheet with a summary panel.
+8. More detailed engineering dimensions are still future work in the viewer roadmap.
+
+## 6C. Typical Section
 
 `Typical Section` is the component-based editor for finished-grade top-profile composition.
 

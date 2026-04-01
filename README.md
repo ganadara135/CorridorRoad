@@ -3,7 +3,7 @@
 
 # CorridorRoad
 
-CorridorRoad is a FreeCAD workbench for road corridor design.
+CorridorRoad is a FreeCAD workbench for corridor style road design.
 It covers a practical pipeline from alignment to sections, corridor geometry, design terrain, and cut/fill analysis.
 
 ## What This Project Does
