@@ -10,6 +10,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_assembly_template import (
     AssemblyTemplate,
     ViewProviderAssemblyTemplate,
+    _parse_bench_row,
     ensure_assembly_template_properties,
 )
 from freecad.Corridor_Road.objects.obj_typical_section_template import TypicalSectionTemplate, ViewProviderTypicalSectionTemplate
@@ -17,6 +18,7 @@ from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_p
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
 
@@ -73,6 +75,136 @@ def _find_typical_section_templates(doc):
 
 
 class SectionGeneratorTaskPanel:
+    _BENCH_HEADERS = ("Drop", "Width", "Slope", "Post-Slope")
+
+    @staticmethod
+    def _normalize_bench_row(row):
+        if isinstance(row, dict) and ("post_slope" in row):
+            try:
+                return {
+                    "drop": max(0.0, float(row.get("drop", 0.0) or 0.0)),
+                    "width": max(0.0, float(row.get("width", 0.0) or 0.0)),
+                    "slope": float(row.get("slope", 0.0) or 0.0),
+                    "post_slope": float(row.get("post_slope", 0.0) or 0.0),
+                }
+            except Exception:
+                return None
+        return _parse_bench_row(row, 0.0)
+
+    @classmethod
+    def _bench_row_to_line(cls, row) -> str:
+        parsed = cls._normalize_bench_row(row)
+        if parsed is None:
+            return ""
+        return "{drop:.3f},{width:.3f},{slope:.3f},{post_slope:.3f}".format(**parsed)
+
+    @classmethod
+    def _bench_row_to_storage(cls, row) -> str:
+        parsed = cls._normalize_bench_row(row)
+        if parsed is None:
+            return ""
+        return "drop={drop:.6f}|width={width:.6f}|slope={slope:.6f}|post={post_slope:.6f}".format(**parsed)
+
+    def _default_bench_row(self, side: str):
+        scale = get_length_scale(self.doc, default=1.0)
+        side_key = str(side or "").strip().lower()
+        post = float(self.spin_side_s_left.value()) if side_key == "left" else float(self.spin_side_s_right.value())
+        return {
+            "drop": 1.0 * scale,
+            "width": 1.5 * scale,
+            "slope": 0.0,
+            "post_slope": post,
+        }
+
+    def _bench_table(self, side: str):
+        return self.tbl_left_bench_rows if str(side or "").strip().lower() == "left" else self.tbl_right_bench_rows
+
+    def _insert_bench_table_row(self, side: str, row_data=None, row_index=None):
+        table = self._bench_table(side)
+        row = dict(self._normalize_bench_row(row_data) or self._default_bench_row(side))
+        if row_index is None or int(row_index) < 0 or int(row_index) > table.rowCount():
+            row_index = table.rowCount()
+        table.insertRow(int(row_index))
+        values = (
+            float(row.get("drop", 0.0) or 0.0),
+            float(row.get("width", 0.0) or 0.0),
+            float(row.get("slope", 0.0) or 0.0),
+            float(row.get("post_slope", 0.0) or 0.0),
+        )
+        for col, value in enumerate(values):
+            item = QtWidgets.QTableWidgetItem(f"{float(value):.3f}")
+            table.setItem(int(row_index), col, item)
+        table.setCurrentCell(int(row_index), 0)
+
+    def _bench_rows_from_table(self, side: str):
+        table = self._bench_table(side)
+        fallback_post = float(self.spin_side_s_left.value()) if str(side or "").strip().lower() == "left" else float(self.spin_side_s_right.value())
+        rows = []
+        for row in range(int(table.rowCount())):
+            vals = []
+            for col in range(4):
+                item = table.item(row, col)
+                vals.append("" if item is None else str(item.text() or "").strip())
+            if not any(vals):
+                continue
+            parsed = _parse_bench_row(",".join(vals), fallback_post)
+            if parsed is not None:
+                rows.append(parsed)
+        return rows
+
+    def _set_bench_table_rows(self, side: str, rows):
+        table = self._bench_table(side)
+        table.setRowCount(0)
+        for row in list(rows or []):
+            self._insert_bench_table_row(side, row)
+
+    def _add_bench_row(self, side: str):
+        table = self._bench_table(side)
+        cur = int(table.currentRow())
+        if cur < 0:
+            cur = table.rowCount() - 1
+        self._insert_bench_table_row(side, row_index=cur + 1)
+
+    def _remove_bench_row(self, side: str):
+        table = self._bench_table(side)
+        cur = int(table.currentRow())
+        if cur < 0:
+            cur = table.rowCount() - 1
+        if cur >= 0:
+            table.removeRow(cur)
+
+    def _assembly_bench_rows(self, asm, side: str):
+        side_key = str(side or "").strip().lower()
+        if asm is None:
+            return []
+        if side_key == "left":
+            stored = list(getattr(asm, "LeftBenchRows", []) or [])
+            primary = {
+                "drop": float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
+                "width": float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+                "slope": float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
+                "post": float(getattr(asm, "LeftPostBenchSlopePct", getattr(asm, "LeftSideSlopePct", 0.0)) or getattr(asm, "LeftSideSlopePct", 0.0)),
+            }
+        else:
+            stored = list(getattr(asm, "RightBenchRows", []) or [])
+            primary = {
+                "drop": float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
+                "width": float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+                "slope": float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
+                "post": float(getattr(asm, "RightPostBenchSlopePct", getattr(asm, "RightSideSlopePct", 0.0)) or getattr(asm, "RightSideSlopePct", 0.0)),
+            }
+        rows = []
+        for row in stored:
+            parsed = _parse_bench_row(row, float(primary.get("post", 0.0) or 0.0))
+            if parsed is not None:
+                rows.append(parsed)
+        if rows:
+            return rows
+        parsed_primary = _parse_bench_row(primary, float(primary.get("post", 0.0) or 0.0))
+        if parsed_primary is not None:
+            rows.append(parsed_primary)
+        return rows
+
     def __init__(self):
         self.doc = App.ActiveDocument
         self._terrains = []
@@ -226,6 +358,26 @@ class SectionGeneratorTaskPanel:
         self.spin_side_s_right.setRange(-1000.0, 1000.0)
         self.spin_side_s_right.setDecimals(3)
         self.spin_side_s_right.setValue(50.0)
+        self.chk_left_bench = QtWidgets.QCheckBox("Use Left Bench")
+        self.chk_right_bench = QtWidgets.QCheckBox("Use Right Bench")
+        self.tbl_left_bench_rows = QtWidgets.QTableWidget(0, 4)
+        self.tbl_left_bench_rows.setHorizontalHeaderLabels(list(self._BENCH_HEADERS))
+        self.tbl_left_bench_rows.verticalHeader().setVisible(False)
+        self.tbl_left_bench_rows.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tbl_left_bench_rows.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tbl_left_bench_rows.setMinimumHeight(110)
+        self.tbl_left_bench_rows.horizontalHeader().setStretchLastSection(True)
+        self.tbl_right_bench_rows = QtWidgets.QTableWidget(0, 4)
+        self.tbl_right_bench_rows.setHorizontalHeaderLabels(list(self._BENCH_HEADERS))
+        self.tbl_right_bench_rows.verticalHeader().setVisible(False)
+        self.tbl_right_bench_rows.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tbl_right_bench_rows.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tbl_right_bench_rows.setMinimumHeight(110)
+        self.tbl_right_bench_rows.horizontalHeader().setStretchLastSection(True)
+        self.btn_add_left_bench_row = QtWidgets.QPushButton("Add Row")
+        self.btn_remove_left_bench_row = QtWidgets.QPushButton("Remove Row")
+        self.btn_add_right_bench_row = QtWidgets.QPushButton("Add Row")
+        self.btn_remove_right_bench_row = QtWidgets.QPushButton("Remove Row")
         self.chk_daylight = QtWidgets.QCheckBox("Daylight Auto (SectionSet)")
         self.chk_daylight.setChecked(True)
         self.cmb_day_terrain = QtWidgets.QComboBox()
@@ -255,6 +407,24 @@ class SectionGeneratorTaskPanel:
         form_opts.addRow("Side Width Right:", self.spin_side_w_right)
         form_opts.addRow("Side Slope Left (%):", self.spin_side_s_left)
         form_opts.addRow("Side Slope Right (%):", self.spin_side_s_right)
+        row_left_bench_btns = QtWidgets.QHBoxLayout()
+        row_left_bench_btns.addWidget(self.btn_add_left_bench_row)
+        row_left_bench_btns.addWidget(self.btn_remove_left_bench_row)
+        row_left_bench_btns.addStretch(1)
+        w_left_bench_btns = QtWidgets.QWidget()
+        w_left_bench_btns.setLayout(row_left_bench_btns)
+        row_right_bench_btns = QtWidgets.QHBoxLayout()
+        row_right_bench_btns.addWidget(self.btn_add_right_bench_row)
+        row_right_bench_btns.addWidget(self.btn_remove_right_bench_row)
+        row_right_bench_btns.addStretch(1)
+        w_right_bench_btns = QtWidgets.QWidget()
+        w_right_bench_btns.setLayout(row_right_bench_btns)
+        form_opts.addRow(self.chk_left_bench)
+        form_opts.addRow("Left Bench Rows:", self.tbl_left_bench_rows)
+        form_opts.addRow("", w_left_bench_btns)
+        form_opts.addRow(self.chk_right_bench)
+        form_opts.addRow("Right Bench Rows:", self.tbl_right_bench_rows)
+        form_opts.addRow("", w_right_bench_btns)
         form_opts.addRow(self.chk_daylight)
         form_opts.addRow("Daylight Terrain (Mesh):", self.cmb_day_terrain)
         row_coords = QtWidgets.QHBoxLayout()
@@ -284,6 +454,12 @@ class SectionGeneratorTaskPanel:
         self.chk_struct_transition.toggled.connect(self._update_structure_ui)
         self.chk_struct_transition_auto.toggled.connect(self._update_structure_ui)
         self.chk_side.toggled.connect(self._update_side_ui)
+        self.chk_left_bench.toggled.connect(self._update_side_ui)
+        self.chk_right_bench.toggled.connect(self._update_side_ui)
+        self.btn_add_left_bench_row.clicked.connect(lambda: self._add_bench_row("left"))
+        self.btn_remove_left_bench_row.clicked.connect(lambda: self._remove_bench_row("left"))
+        self.btn_add_right_bench_row.clicked.connect(lambda: self._add_bench_row("right"))
+        self.btn_remove_right_bench_row.clicked.connect(lambda: self._remove_bench_row("right"))
         self.chk_daylight.toggled.connect(self._update_side_ui)
         self.cmb_day_coords.currentIndexChanged.connect(self._on_day_coord_changed)
         self.cmb_day_terrain.currentIndexChanged.connect(self._on_day_terrain_changed)
@@ -394,10 +570,26 @@ class SectionGeneratorTaskPanel:
                 self.spin_side_w_left.setValue(2.0 * scale)
             if float(self.spin_side_w_right.value()) <= 1e-9:
                 self.spin_side_w_right.setValue(2.0 * scale)
+        left_bench_on = on and bool(self.chk_left_bench.isChecked())
+        right_bench_on = on and bool(self.chk_right_bench.isChecked())
+        if left_bench_on:
+            if int(self.tbl_left_bench_rows.rowCount()) <= 0:
+                self._insert_bench_table_row("left", self._default_bench_row("left"))
+        if right_bench_on:
+            if int(self.tbl_right_bench_rows.rowCount()) <= 0:
+                self._insert_bench_table_row("right", self._default_bench_row("right"))
         self.spin_side_w_left.setEnabled(on)
         self.spin_side_w_right.setEnabled(on)
         self.spin_side_s_left.setEnabled(on)
         self.spin_side_s_right.setEnabled(on)
+        self.chk_left_bench.setEnabled(on)
+        self.chk_right_bench.setEnabled(on)
+        self.tbl_left_bench_rows.setEnabled(left_bench_on)
+        self.tbl_right_bench_rows.setEnabled(right_bench_on)
+        self.btn_add_left_bench_row.setEnabled(left_bench_on)
+        self.btn_remove_left_bench_row.setEnabled(left_bench_on)
+        self.btn_add_right_bench_row.setEnabled(right_bench_on)
+        self.btn_remove_right_bench_row.setEnabled(right_bench_on)
         self.chk_daylight.setEnabled(on)
         self.cmb_day_terrain.setEnabled(on and bool(self.chk_daylight.isChecked()))
         self.cmb_day_coords.setEnabled(on and bool(self.chk_daylight.isChecked()))
@@ -499,6 +691,38 @@ class SectionGeneratorTaskPanel:
             asm.LeftSideSlopePct = float(self.spin_side_s_left.value())
         if hasattr(asm, "RightSideSlopePct"):
             asm.RightSideSlopePct = float(self.spin_side_s_right.value())
+        if hasattr(asm, "UseLeftBench"):
+            asm.UseLeftBench = bool(self.chk_left_bench.isChecked())
+        if hasattr(asm, "UseRightBench"):
+            asm.UseRightBench = bool(self.chk_right_bench.isChecked())
+        left_rows = self._bench_rows_from_table("left")
+        right_rows = self._bench_rows_from_table("right")
+        if bool(self.chk_left_bench.isChecked()) and not left_rows:
+            left_rows = [self._default_bench_row("left")]
+        if bool(self.chk_right_bench.isChecked()) and not right_rows:
+            right_rows = [self._default_bench_row("right")]
+        left_rows = [row for row in left_rows if row is not None]
+        right_rows = [row for row in right_rows if row is not None]
+        if hasattr(asm, "LeftBenchDrop"):
+            asm.LeftBenchDrop = float(left_rows[0].get("drop", 0.0) or 0.0) if left_rows else 0.0
+        if hasattr(asm, "RightBenchDrop"):
+            asm.RightBenchDrop = float(right_rows[0].get("drop", 0.0) or 0.0) if right_rows else 0.0
+        if hasattr(asm, "LeftBenchWidth"):
+            asm.LeftBenchWidth = float(left_rows[0].get("width", 0.0) or 0.0) if left_rows else 0.0
+        if hasattr(asm, "RightBenchWidth"):
+            asm.RightBenchWidth = float(right_rows[0].get("width", 0.0) or 0.0) if right_rows else 0.0
+        if hasattr(asm, "LeftBenchSlopePct"):
+            asm.LeftBenchSlopePct = float(left_rows[0].get("slope", 0.0) or 0.0) if left_rows else 0.0
+        if hasattr(asm, "RightBenchSlopePct"):
+            asm.RightBenchSlopePct = float(right_rows[0].get("slope", 0.0) or 0.0) if right_rows else 0.0
+        if hasattr(asm, "LeftPostBenchSlopePct"):
+            asm.LeftPostBenchSlopePct = float(left_rows[0].get("post_slope", self.spin_side_s_left.value()) or self.spin_side_s_left.value()) if left_rows else float(self.spin_side_s_left.value())
+        if hasattr(asm, "RightPostBenchSlopePct"):
+            asm.RightPostBenchSlopePct = float(right_rows[0].get("post_slope", self.spin_side_s_right.value()) or self.spin_side_s_right.value()) if right_rows else float(self.spin_side_s_right.value())
+        if hasattr(asm, "LeftBenchRows"):
+            asm.LeftBenchRows = [str(self._bench_row_to_storage(row)).strip() for row in left_rows if str(self._bench_row_to_storage(row)).strip()]
+        if hasattr(asm, "RightBenchRows"):
+            asm.RightBenchRows = [str(self._bench_row_to_storage(row)).strip() for row in right_rows if str(self._bench_row_to_storage(row)).strip()]
         if hasattr(asm, "UseDaylightToTerrain"):
             asm.UseDaylightToTerrain = bool(self.chk_daylight.isChecked())
         if hasattr(asm, "DaylightSearchStep"):
@@ -623,6 +847,12 @@ class SectionGeneratorTaskPanel:
                     self.spin_side_s_left.setValue(float(asm.LeftSideSlopePct))
                 if hasattr(asm, "RightSideSlopePct"):
                     self.spin_side_s_right.setValue(float(asm.RightSideSlopePct))
+                if hasattr(asm, "UseLeftBench"):
+                    self.chk_left_bench.setChecked(bool(asm.UseLeftBench))
+                if hasattr(asm, "UseRightBench"):
+                    self.chk_right_bench.setChecked(bool(asm.UseRightBench))
+                self._set_bench_table_rows("left", self._assembly_bench_rows(asm, "left"))
+                self._set_bench_table_rows("right", self._assembly_bench_rows(asm, "right"))
                 # Backward-compat fallback: if SectionSet.DaylightAuto is not available,
                 # keep using legacy AssemblyTemplate.UseDaylightToTerrain.
                 if (sec is None or (not hasattr(sec, "DaylightAuto"))) and hasattr(asm, "UseDaylightToTerrain"):
@@ -800,6 +1030,38 @@ class SectionGeneratorTaskPanel:
             return
         SectionSet.rebuild_child_sections(sec_obj)
 
+    def _preflight_warnings(self, src, asm, struct_src, typ_src):
+        warnings = []
+        if src is None or asm is None:
+            return warnings
+
+        if bool(self.chk_daylight.isChecked()) and self._current_daylight_terrain() is None:
+            prj0 = _find_project(self.doc)
+            fallback_terrain = getattr(prj0, "Terrain", None) if prj0 is not None and hasattr(prj0, "Terrain") else None
+            if not _is_mesh_obj(fallback_terrain):
+                warnings.append("Daylight Auto is enabled without a mesh terrain source. Section generation will fall back to fixed side widths.")
+
+        if bool(self.chk_use_structure_set.isChecked()) and struct_src is not None:
+            if bool(self.chk_struct_apply_overrides.isChecked()):
+                warnings.append("Apply structure overrides is still partial/reserved behavior. Daylight and side-slope edits may remain simplified.")
+            try:
+                ext_count = sum(
+                    1
+                    for rec in list(StructureSetSource.records(struct_src) or [])
+                    if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+                )
+            except Exception:
+                ext_count = 0
+            if ext_count > 0:
+                warnings.append(
+                    f"StructureSet contains {int(ext_count)} external_shape record(s). Current section/corridor logic can use only an indirect bounding-box proxy when the source loads; direct solid consumption is still unsupported."
+                )
+
+        if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
+            warnings.append("Typical Section replaces the simple top-profile source, while Assembly Template still controls corridor depth and daylight defaults.")
+
+        return warnings
+
     def _generate(self):
         if self.doc is None:
             return
@@ -824,6 +1086,18 @@ class SectionGeneratorTaskPanel:
                 "Use Typical Section Template is enabled, but no Typical Section source is selected.",
             )
             return
+
+        preflight = self._preflight_warnings(src, asm, struct_src, typ_src)
+        if preflight:
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                "Generate Sections",
+                "Generate with warnings?\n\n" + "\n".join([f"- {line}" for line in preflight]),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
 
         try:
             self._set_suspend_recompute(sec, True)

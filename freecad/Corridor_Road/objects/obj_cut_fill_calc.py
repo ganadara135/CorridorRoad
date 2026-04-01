@@ -2,11 +2,13 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 # CorridorRoad/objects/obj_cut_fill_calc.py
+import bisect
 import math
 
 import FreeCAD as App
 import Part
 
+from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
@@ -43,6 +45,13 @@ def _to_vec(p):
 
 def _is_mesh_object(obj) -> bool:
     return _ssc.is_mesh_object(obj)
+
+
+def _report_row(kind: str, **fields) -> str:
+    parts = [str(kind or "").strip() or "row"]
+    for key, value in fields.items():
+        parts.append(f"{str(key)}={value}")
+    return "|".join(parts)
 
 
 def ensure_cut_fill_calc_properties(obj):
@@ -132,6 +141,9 @@ def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "NoDataWarnRatio"):
         obj.addProperty("App::PropertyFloat", "NoDataWarnRatio", "Comparison", "Warn threshold for no-data area ratio [0..1]")
         obj.NoDataWarnRatio = 0.05
+    if not hasattr(obj, "StationBinSize"):
+        obj.addProperty("App::PropertyFloat", "StationBinSize", "Comparison", "Optional station bin size (m); 0 uses SectionSet stations")
+        obj.StationBinSize = 0.0
 
     if not hasattr(obj, "ShowDeltaMap"):
         obj.addProperty("App::PropertyBool", "ShowDeltaMap", "Display", "Show cut/fill delta map in 3D")
@@ -179,9 +191,57 @@ def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "NoDataRatio"):
         obj.addProperty("App::PropertyFloat", "NoDataRatio", "Result", "No-data area ratio [0..1]")
         obj.NoDataRatio = 0.0
+    if not hasattr(obj, "ComparedCellCount"):
+        obj.addProperty("App::PropertyInteger", "ComparedCellCount", "Result", "Compared/valid sample cell count")
+        obj.ComparedCellCount = 0
+    if not hasattr(obj, "ExcludedCellCount"):
+        obj.addProperty("App::PropertyInteger", "ExcludedCellCount", "Result", "Excluded/no-data sample cell count")
+        obj.ExcludedCellCount = 0
     if not hasattr(obj, "SignConvention"):
         obj.addProperty("App::PropertyString", "SignConvention", "Result", "Fixed cut/fill sign convention")
         obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
+    if not hasattr(obj, "ComparisonSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "ComparisonSchemaVersion", "Result", "Surface-comparison schema version")
+        obj.ComparisonSchemaVersion = 1
+    if not hasattr(obj, "ComparisonSourceMode"):
+        obj.addProperty("App::PropertyString", "ComparisonSourceMode", "Result", "Resolved comparison source mode")
+        obj.ComparisonSourceMode = "-"
+    if not hasattr(obj, "ComparisonSourceSupport"):
+        obj.addProperty("App::PropertyString", "ComparisonSourceSupport", "Result", "Resolved comparison support level")
+        obj.ComparisonSourceSupport = "-"
+    if not hasattr(obj, "ComparisonSourceSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ComparisonSourceSummaryRows", "Result", "Structured comparison source summary rows")
+        obj.ComparisonSourceSummaryRows = []
+    if not hasattr(obj, "AnalysisDomainMode"):
+        obj.addProperty("App::PropertyString", "AnalysisDomainMode", "Result", "Resolved analysis-domain mode")
+        obj.AnalysisDomainMode = "-"
+    if not hasattr(obj, "DomainSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "DomainSummaryRows", "Result", "Structured domain/clip summary rows")
+        obj.DomainSummaryRows = []
+    if not hasattr(obj, "StationBinnedSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "StationBinnedSummaryRows", "Result", "Structured station-binned analysis rows")
+        obj.StationBinnedSummaryRows = []
+    if not hasattr(obj, "FallbackEventCount"):
+        obj.addProperty("App::PropertyInteger", "FallbackEventCount", "Result", "Fallback-event count affecting confidence")
+        obj.FallbackEventCount = 0
+    if not hasattr(obj, "CoordinateTransformCount"):
+        obj.addProperty("App::PropertyInteger", "CoordinateTransformCount", "Result", "Coordinate-transform count affecting comparison context")
+        obj.CoordinateTransformCount = 0
+    if not hasattr(obj, "TrustLevel"):
+        obj.addProperty("App::PropertyString", "TrustLevel", "Result", "Review trust level")
+        obj.TrustLevel = "-"
+    if not hasattr(obj, "TrustBlockerCount"):
+        obj.addProperty("App::PropertyInteger", "TrustBlockerCount", "Result", "Trust blocker count")
+        obj.TrustBlockerCount = 0
+    if not hasattr(obj, "QualitySummaryRows"):
+        obj.addProperty("App::PropertyStringList", "QualitySummaryRows", "Result", "Structured quality/confidence summary rows")
+        obj.QualitySummaryRows = []
+    if not hasattr(obj, "ReviewSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ReviewSummaryRows", "Result", "Structured review-oriented summary rows")
+        obj.ReviewSummaryRows = []
+    if not hasattr(obj, "ExportSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ExportSummaryRows", "Result", "Structured export-ready summary rows")
+        obj.ExportSummaryRows = []
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
@@ -190,7 +250,7 @@ def ensure_cut_fill_calc_properties(obj):
 class CutFillCalc:
     """
     Existing/Design surface comparison:
-    - Design source: top faces extracted from CorridorLoft solid
+    - Design source: upward faces extracted from CorridorLoft surface
     - Existing source: mesh object
     - Method: grid sampling and delta integration
     """
@@ -233,13 +293,13 @@ class CutFillCalc:
                 continue
 
         if not top_faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         return top_faces
 
     @staticmethod
     def _top_shape_from_faces(top_faces):
         if not top_faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         return top_faces[0] if len(top_faces) == 1 else Part.Compound(top_faces)
 
     @staticmethod
@@ -268,7 +328,7 @@ class CutFillCalc:
 
     def _triangles_from_faces_progress(self, faces, deflection: float, pct0: float, pct1: float):
         if not faces:
-            raise Exception("No top faces found from corridor solid.")
+            raise Exception("No usable upward faces found from corridor surface.")
         triangles = []
         n = max(1, int(len(faces)))
         report_every = max(1, min(20, n // 20))
@@ -557,7 +617,7 @@ class CutFillCalc:
         return _lerp_rgb(neutral, cut_hi, t)
 
     @staticmethod
-    def _resolve_domain(obj, design_shape):
+    def _resolve_domain_info(obj, design_shape):
         use_corr = bool(getattr(obj, "UseCorridorBounds", True))
         if use_corr:
             bb = design_shape.BoundBox
@@ -567,6 +627,8 @@ class CutFillCalc:
                 float(bb.XMax + m),
                 float(bb.YMin - m),
                 float(bb.YMax + m),
+                "corridor_bounds",
+                "Local",
             )
 
         x0 = float(getattr(obj, "XMin", 0.0))
@@ -581,7 +643,243 @@ class CutFillCalc:
         mode = str(getattr(obj, "DomainCoords", "Local") or "Local")
         if mode == "World":
             x0, x1, y0, y1 = _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=obj)
-        return x0, x1, y0, y1
+        return x0, x1, y0, y1, f"manual_bounds_{str(mode or 'Local').lower()}", str(mode or "Local")
+
+    @staticmethod
+    def _resolve_alignment_and_station_values(corridor_obj):
+        sec = getattr(corridor_obj, "SourceSectionSet", None)
+        if sec is None:
+            return None, []
+        try:
+            disp = getattr(sec, "SourceCenterlineDisplay", None)
+            aln = getattr(disp, "Alignment", None) if disp is not None else None
+        except Exception:
+            aln = None
+        vals = []
+        for raw in list(getattr(sec, "StationValues", []) or []):
+            try:
+                vals.append(float(raw))
+            except Exception:
+                continue
+        vals = sorted(set(vals))
+        return aln, vals
+
+    @staticmethod
+    def _station_bin_edges(obj, corridor_obj, alignment_obj, station_values):
+        edges = []
+        raw_bin = float(getattr(obj, "StationBinSize", 0.0) or 0.0)
+        total = float(getattr(getattr(alignment_obj, "Shape", None), "Length", 0.0) or 0.0) if alignment_obj is not None else 0.0
+        if raw_bin > 1e-9:
+            lo = float(station_values[0]) if station_values else 0.0
+            hi = float(station_values[-1]) if len(station_values) >= 2 else float(total)
+            if hi > lo + 1e-9:
+                cur = float(lo)
+                edges = [cur]
+                step = float(raw_bin)
+                while cur < hi - 1e-9:
+                    cur = min(float(hi), float(cur + step))
+                    if cur <= edges[-1] + 1e-9:
+                        break
+                    edges.append(cur)
+        elif len(station_values) >= 2:
+            edges = list(station_values)
+        out = []
+        for val in edges:
+            if not out or abs(float(val) - float(out[-1])) > 1e-9:
+                out.append(float(val))
+        return out
+
+    @staticmethod
+    def _station_side_label(alignment_obj, station: float, x: float, y: float) -> str:
+        try:
+            pt = HorizontalAlignment.point_at_station(alignment_obj, float(station))
+            n = HorizontalAlignment.normal_at_station(alignment_obj, float(station))
+            vec = App.Vector(float(x) - float(pt.x), float(y) - float(pt.y), 0.0)
+            dot = float(vec.x * n.x + vec.y * n.y)
+            if dot > 1e-6:
+                return "left"
+            if dot < -1e-6:
+                return "right"
+            return "center"
+        except Exception:
+            return "unknown"
+
+    @staticmethod
+    def _empty_bin_stat():
+        return {
+            "samples": 0,
+            "valid": 0,
+            "cut": 0.0,
+            "fill": 0.0,
+            "nodata": 0.0,
+            "delta_sum": 0.0,
+            "delta_min": None,
+            "delta_max": None,
+        }
+
+    @staticmethod
+    def _update_bin_stat(stat, delta, area: float, valid: bool):
+        stat["samples"] = int(stat.get("samples", 0) or 0) + 1
+        if not valid:
+            stat["nodata"] = float(stat.get("nodata", 0.0) or 0.0) + float(area)
+            return
+        d = float(delta)
+        stat["valid"] = int(stat.get("valid", 0) or 0) + 1
+        stat["delta_sum"] = float(stat.get("delta_sum", 0.0) or 0.0) + d
+        stat["delta_min"] = d if stat.get("delta_min", None) is None else min(float(stat["delta_min"]), d)
+        stat["delta_max"] = d if stat.get("delta_max", None) is None else max(float(stat["delta_max"]), d)
+        if d >= 0.0:
+            stat["fill"] = float(stat.get("fill", 0.0) or 0.0) + d * float(area)
+        else:
+            stat["cut"] = float(stat.get("cut", 0.0) or 0.0) + (-d) * float(area)
+
+    @staticmethod
+    def _station_bin_rows(bin_edges, bin_stats):
+        rows = []
+        if len(bin_edges) < 2 or not bin_stats:
+            return rows
+        for idx in range(len(bin_edges) - 1):
+            s0 = float(bin_edges[idx])
+            s1 = float(bin_edges[idx + 1])
+            for side in ("all", "left", "right"):
+                stat = bin_stats.get((idx, side))
+                if not stat or int(stat.get("samples", 0) or 0) <= 0:
+                    continue
+                valid = int(stat.get("valid", 0) or 0)
+                rows.append(
+                    _report_row(
+                        "stationBin",
+                        fromStation=f"{s0:.3f}",
+                        toStation=f"{s1:.3f}",
+                        side=side,
+                        samples=int(stat.get("samples", 0) or 0),
+                        valid=valid,
+                        cut=f"{float(stat.get('cut', 0.0) or 0.0):.3f}",
+                        fill=f"{float(stat.get('fill', 0.0) or 0.0):.3f}",
+                        nodataArea=f"{float(stat.get('nodata', 0.0) or 0.0):.3f}",
+                        deltaMean=f"{(float(stat.get('delta_sum', 0.0) or 0.0) / float(valid)) if valid > 0 else 0.0:.3f}",
+                        deltaMin=f"{float(stat.get('delta_min', 0.0) or 0.0):.3f}" if valid > 0 else "0.000",
+                        deltaMax=f"{float(stat.get('delta_max', 0.0) or 0.0):.3f}" if valid > 0 else "0.000",
+                    )
+                )
+        return rows
+
+    @staticmethod
+    def _best_station_bin(bin_edges, bin_stats, metric: str, side: str = "all"):
+        best = None
+        if len(bin_edges) < 2 or not bin_stats:
+            return None
+        for idx in range(len(bin_edges) - 1):
+            stat = bin_stats.get((idx, side))
+            if not stat:
+                continue
+            value = float(stat.get(metric, 0.0) or 0.0)
+            if value <= 1e-12:
+                continue
+            if best is None or value > float(best["value"]):
+                best = {
+                    "index": idx,
+                    "value": value,
+                    "from": float(bin_edges[idx]),
+                    "to": float(bin_edges[idx + 1]),
+                    "side": side,
+                }
+        return best
+
+    @staticmethod
+    def _quality_summary_rows(
+        *,
+        trust_level: str,
+        blocker_count: int,
+        compared_cells: int,
+        excluded_cells: int,
+        no_data_ratio: float,
+        fallback_events: int,
+        coord_transforms: int,
+        domain_mode: str,
+        source_mode: str,
+    ):
+        trust_state = "block" if int(blocker_count or 0) > 0 else ("warn" if str(trust_level or "") == "review_with_warnings" else "ok")
+        return [
+            _report_row(
+                "quality",
+                metric="trust",
+                value=str(trust_level or "-"),
+                state=trust_state,
+                blockers=int(blocker_count or 0),
+                source=str(source_mode or "-"),
+                domain=str(domain_mode or "-"),
+            ),
+            _report_row(
+                "quality",
+                metric="coverage",
+                comparedCells=int(compared_cells or 0),
+                excludedCells=int(excluded_cells or 0),
+                noDataRatio=f"{float(no_data_ratio or 0.0):.6f}",
+            ),
+            _report_row(
+                "quality",
+                metric="fallbacks",
+                fallbackEvents=int(fallback_events or 0),
+                coordinateTransforms=int(coord_transforms or 0),
+            ),
+        ]
+
+    @staticmethod
+    def _review_summary_rows(
+        *,
+        cut_volume: float,
+        fill_volume: float,
+        delta_min: float,
+        delta_max: float,
+        delta_mean: float,
+        no_data_ratio: float,
+        trust_level: str,
+        bin_edges,
+        bin_stats,
+    ):
+        rows = [
+            _report_row(
+                "review",
+                metric="overall",
+                trust=str(trust_level or "-"),
+                cut=f"{float(cut_volume or 0.0):.3f}",
+                fill=f"{float(fill_volume or 0.0):.3f}",
+                deltaMin=f"{float(delta_min or 0.0):.3f}",
+                deltaMax=f"{float(delta_max or 0.0):.3f}",
+                deltaMean=f"{float(delta_mean or 0.0):.3f}",
+            ),
+            _report_row(
+                "review",
+                metric="coverage",
+                noDataRatio=f"{float(no_data_ratio or 0.0):.6f}",
+            ),
+        ]
+        best_fill = CutFillCalc._best_station_bin(bin_edges, bin_stats, "fill", side="all")
+        if best_fill is not None:
+            rows.append(
+                _report_row(
+                    "review",
+                    metric="max_fill_bin",
+                    side=str(best_fill["side"]),
+                    fromStation=f"{float(best_fill['from']):.3f}",
+                    toStation=f"{float(best_fill['to']):.3f}",
+                    fill=f"{float(best_fill['value']):.3f}",
+                )
+            )
+        best_cut = CutFillCalc._best_station_bin(bin_edges, bin_stats, "cut", side="all")
+        if best_cut is not None:
+            rows.append(
+                _report_row(
+                    "review",
+                    metric="max_cut_bin",
+                    side=str(best_cut["side"]),
+                    fromStation=f"{float(best_cut['from']):.3f}",
+                    toStation=f"{float(best_cut['to']):.3f}",
+                    cut=f"{float(best_cut['value']):.3f}",
+                )
+            )
+        return rows
 
     @staticmethod
     def _iter_grid_centers(xmin, xmax, ymin, ymax, step):
@@ -627,6 +925,13 @@ class CutFillCalc:
                 raise _CanceledError("Canceled by user.")
             top_faces = CutFillCalc._top_faces_from_corridor(src.Shape)
             design_top = CutFillCalc._top_shape_from_faces(top_faces)
+            alignment_obj, station_values = CutFillCalc._resolve_alignment_and_station_values(src)
+            bin_edges = CutFillCalc._station_bin_edges(obj, src, alignment_obj, station_values)
+            bin_stats = {}
+            if len(bin_edges) >= 2:
+                for idx in range(len(bin_edges) - 1):
+                    for side in ("all", "left", "right"):
+                        bin_stats[(idx, side)] = CutFillCalc._empty_bin_stat()
 
             cell = float(getattr(obj, "CellSize", 1.0 * scale))
             if not _is_finite(cell) or cell <= 1e-6:
@@ -639,7 +944,7 @@ class CutFillCalc:
                 cell = min_cell
                 obj.CellSize = min_cell
 
-            xmin, xmax, ymin, ymax = CutFillCalc._resolve_domain(obj, design_top)
+            xmin, xmax, ymin, ymax, domain_mode, domain_coords = CutFillCalc._resolve_domain_info(obj, design_top)
             if xmax <= xmin + 1e-9 or ymax <= ymin + 1e-9:
                 raise Exception("Invalid comparison domain.")
 
@@ -661,7 +966,11 @@ class CutFillCalc:
             defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
             tri_design = self._triangles_from_faces_progress(top_faces, defl, 10.0, 18.0)
             tri_exist = self._triangles_from_mesh_progress(eg, 18.0, 24.0)
+            design_tri_before = int(len(tri_design))
+            existing_tri_before = int(len(tri_exist))
+            coord_transform_count = 0
             if use_world_existing:
+                coord_transform_count += 1
                 tri_exist = self._triangles_world_to_local_progress(
                     obj,
                     tri_exist,
@@ -676,6 +985,12 @@ class CutFillCalc:
                 tri_design = CutFillCalc._decimate_triangles(tri_design, max_tri)
             if len(tri_exist) > max_tri:
                 tri_exist = CutFillCalc._decimate_triangles(tri_exist, max_tri)
+            design_tri_after = int(len(tri_design))
+            existing_tri_after = int(len(tri_exist))
+            decimated_design = max(0, int(design_tri_before - design_tri_after))
+            decimated_existing = max(0, int(existing_tri_before - existing_tri_after))
+            if str(domain_mode or "").endswith("_world"):
+                coord_transform_count += 1
 
             buck_d, wide_d, wide_cell_d = self._build_xy_buckets_progress(
                 tri_design, cell, 28.0, 34.0, "Bucketing design triangles"
@@ -753,6 +1068,17 @@ class CutFillCalc:
                 vis_pick = show_map and ((s_cnt % vis_stride) == 0)
                 if zd is None or ze is None:
                     nodata += area
+                    if len(bin_edges) >= 2 and alignment_obj is not None:
+                        try:
+                            sta = float(HorizontalAlignment.station_at_xy(alignment_obj, float(x), float(y), samples_per_edge=24))
+                            if sta >= bin_edges[0] - 1e-9 and sta <= bin_edges[-1] + 1e-9:
+                                bin_idx = min(len(bin_edges) - 2, max(0, bisect.bisect_right(bin_edges, sta) - 1))
+                                CutFillCalc._update_bin_stat(bin_stats[(bin_idx, "all")], 0.0, area, valid=False)
+                                side = CutFillCalc._station_side_label(alignment_obj, sta, x, y)
+                                if side in ("left", "right"):
+                                    CutFillCalc._update_bin_stat(bin_stats[(bin_idx, side)], 0.0, area, valid=False)
+                        except Exception:
+                            pass
                     if vis_pick and (zd is not None):
                         try:
                             vis_faces.append(CutFillCalc._make_cell_face(x, y, cell, float(zd) + zoff))
@@ -770,6 +1096,17 @@ class CutFillCalc:
                     fill += d * area
                 else:
                     cut += (-d) * area
+                if len(bin_edges) >= 2 and alignment_obj is not None:
+                    try:
+                        sta = float(HorizontalAlignment.station_at_xy(alignment_obj, float(x), float(y), samples_per_edge=24))
+                        if sta >= bin_edges[0] - 1e-9 and sta <= bin_edges[-1] + 1e-9:
+                            bin_idx = min(len(bin_edges) - 2, max(0, bisect.bisect_right(bin_edges, sta) - 1))
+                            CutFillCalc._update_bin_stat(bin_stats[(bin_idx, "all")], d, area, valid=True)
+                            side = CutFillCalc._station_side_label(alignment_obj, sta, x, y)
+                            if side in ("left", "right"):
+                                CutFillCalc._update_bin_stat(bin_stats[(bin_idx, side)], d, area, valid=True)
+                    except Exception:
+                        pass
 
                 if vis_pick:
                     try:
@@ -815,18 +1152,109 @@ class CutFillCalc:
             nodata_ratio = float((nodata / dom_area) if dom_area > 1e-12 else 0.0)
             obj.DomainArea = dom_area
             obj.NoDataRatio = nodata_ratio
+            obj.ComparedCellCount = int(v_cnt)
+            obj.ExcludedCellCount = int(max(0, s_cnt - v_cnt))
             obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
-
+            obj.ComparisonSchemaVersion = 1
+            obj.ComparisonSourceMode = "corridor_top_vs_existing_mesh"
+            obj.ComparisonSourceSupport = "supported"
+            obj.ComparisonSourceSummaryRows = [
+                _report_row(
+                    "source",
+                    design="corridor_top",
+                    existing="mesh",
+                    existingCoords=str(eg_coords or "Local"),
+                    mode="corridor_top_vs_existing_mesh",
+                    support="supported",
+                )
+            ]
+            obj.AnalysisDomainMode = str(domain_mode or "-")
+            compared_area = float(area * float(v_cnt))
+            obj.DomainSummaryRows = [
+                _report_row(
+                    "domain",
+                    mode=str(domain_mode or "-"),
+                    coords=str(domain_coords or "Local"),
+                    xmin=f"{float(xmin):.3f}",
+                    xmax=f"{float(xmax):.3f}",
+                    ymin=f"{float(ymin):.3f}",
+                    ymax=f"{float(ymax):.3f}",
+                    domainArea=f"{float(dom_area):.3f}",
+                    comparedArea=f"{float(compared_area):.3f}",
+                    excludedArea=f"{float(nodata):.3f}",
+                )
+            ]
+            obj.StationBinnedSummaryRows = list(CutFillCalc._station_bin_rows(bin_edges, bin_stats))
+            fallback_events = int((1 if decimated_design > 0 else 0) + (1 if decimated_existing > 0 else 0))
+            blocker_count = 0
+            if int(v_cnt) <= 0:
+                blocker_count += 1
             warn_ratio = float(getattr(obj, "NoDataWarnRatio", 0.05))
+            if nodata_ratio > max(0.0, float(warn_ratio) * 2.0):
+                blocker_count += 1
+            if blocker_count > 0:
+                trust_level = "low_confidence"
+            elif nodata_ratio > max(0.0, warn_ratio) or fallback_events > 0 or coord_transform_count > 0:
+                trust_level = "review_with_warnings"
+            else:
+                trust_level = "review_ready"
+            obj.FallbackEventCount = int(fallback_events)
+            obj.CoordinateTransformCount = int(coord_transform_count)
+            obj.TrustLevel = str(trust_level)
+            obj.TrustBlockerCount = int(blocker_count)
+            obj.QualitySummaryRows = list(
+                CutFillCalc._quality_summary_rows(
+                    trust_level=trust_level,
+                    blocker_count=blocker_count,
+                    compared_cells=v_cnt,
+                    excluded_cells=max(0, s_cnt - v_cnt),
+                    no_data_ratio=nodata_ratio,
+                    fallback_events=fallback_events,
+                    coord_transforms=coord_transform_count,
+                    domain_mode=domain_mode,
+                    source_mode="corridor_top_vs_existing_mesh",
+                )
+            )
+            obj.ReviewSummaryRows = list(
+                CutFillCalc._review_summary_rows(
+                    cut_volume=cut,
+                    fill_volume=fill,
+                    delta_min=float(d_min if d_min is not None else 0.0),
+                    delta_max=float(d_max if d_max is not None else 0.0),
+                    delta_mean=float((d_sum / float(v_cnt)) if v_cnt > 0 else 0.0),
+                    no_data_ratio=nodata_ratio,
+                    trust_level=trust_level,
+                    bin_edges=bin_edges,
+                    bin_stats=bin_stats,
+                )
+            )
+            obj.ExportSummaryRows = [
+                _report_row(
+                    "export",
+                    target="cut_fill_calc",
+                    schema=int(getattr(obj, "ComparisonSchemaVersion", 1) or 1),
+                    source=str(getattr(obj, "ComparisonSourceMode", "-") or "-"),
+                    trust=str(trust_level),
+                    comparedCells=int(v_cnt),
+                    noDataRatio=f"{float(nodata_ratio):.6f}",
+                    cut=f"{float(cut):.3f}",
+                    fill=f"{float(fill):.3f}",
+                    bins=int(len(obj.StationBinnedSummaryRows)),
+                )
+            ]
+
             prefix = "OK"
             note = ""
-            if nodata_ratio > max(0.0, warn_ratio):
+            if blocker_count > 0 or nodata_ratio > max(0.0, warn_ratio):
                 prefix = "WARN"
                 note = f", nodata={100.0 * nodata_ratio:.2f}%"
 
             obj.Status = (
-                f"{prefix}: samples={s_cnt}, valid={v_cnt}, "
-                f"cut={cut:.3f} (scaled^3), fill={fill:.3f} (scaled^3){note}, vis_stride={vis_stride}"
+                f"{prefix}: trust={obj.TrustLevel}, blockers={int(obj.TrustBlockerCount or 0)}, "
+                f"samples={s_cnt}, valid={v_cnt}, cut={cut:.3f} (scaled^3), fill={fill:.3f} (scaled^3){note}, "
+                f"sourceMatrix={obj.ComparisonSourceMode}:{obj.ComparisonSourceSupport}, "
+                f"domain={obj.AnalysisDomainMode}, bins={len(obj.StationBinnedSummaryRows)}, "
+                f"fallbacks={int(obj.FallbackEventCount or 0)}, coordXf={int(obj.CoordinateTransformCount or 0)}, vis_stride={vis_stride}"
             )
 
             if bool(getattr(obj, "RebuildNow", False)):
@@ -857,7 +1285,23 @@ class CutFillCalc:
             obj.NoDataArea = 0.0
             obj.DomainArea = 0.0
             obj.NoDataRatio = 0.0
+            obj.ComparedCellCount = 0
+            obj.ExcludedCellCount = 0
             obj.SignConvention = "delta = Design - Existing; delta>0 Fill; delta<0 Cut"
+            obj.ComparisonSchemaVersion = 1
+            obj.ComparisonSourceMode = "-"
+            obj.ComparisonSourceSupport = "-"
+            obj.ComparisonSourceSummaryRows = []
+            obj.AnalysisDomainMode = "-"
+            obj.DomainSummaryRows = []
+            obj.StationBinnedSummaryRows = []
+            obj.FallbackEventCount = 0
+            obj.CoordinateTransformCount = 0
+            obj.TrustLevel = "-"
+            obj.TrustBlockerCount = 0
+            obj.QualitySummaryRows = []
+            obj.ReviewSummaryRows = []
+            obj.ExportSummaryRows = []
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -881,6 +1325,7 @@ class CutFillCalc:
             "XMax",
             "YMin",
             "YMax",
+            "StationBinSize",
             "NoDataWarnRatio",
             "ShowDeltaMap",
             "DeltaDeadband",

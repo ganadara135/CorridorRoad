@@ -25,6 +25,25 @@ ALLOWED_COMPONENT_TYPES = (
 )
 ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
 ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
+ROADSIDE_ADVANCED_TYPES = ("curb", "ditch", "berm")
+ROADSIDE_LIBRARY_BUNDLES = {
+    "shoulder_edge": [
+        {"Id": "SHL", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
+    ],
+    "ditch_edge": [
+        {"Id": "GUT", "Type": "gutter", "Side": "left", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
+        {"Id": "DITCH", "Type": "ditch", "Side": "left", "Width": 2.400, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.800, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 20, "Enabled": True},
+        {"Id": "BERM", "Type": "berm", "Side": "left", "Width": 1.200, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.800, "BackSlopePct": 6.0, "Offset": 0.000, "Order": 30, "Enabled": True},
+    ],
+    "urban_edge": [
+        {"Id": "CURB", "Type": "curb", "Side": "left", "Width": 0.180, "CrossSlopePct": 0.0, "Height": 0.150, "ExtraWidth": 0.060, "BackSlopePct": 1.0, "Offset": 0.000, "Order": 10, "Enabled": True},
+        {"Id": "WALK", "Type": "sidewalk", "Side": "left", "Width": 2.000, "CrossSlopePct": 1.5, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
+        {"Id": "GREEN", "Type": "green_strip", "Side": "left", "Width": 1.200, "CrossSlopePct": 4.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 30, "Enabled": True},
+    ],
+    "median_core": [
+        {"Id": "MED", "Type": "median", "Side": "center", "Width": 2.000, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 5, "Enabled": True},
+    ],
+}
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -59,6 +78,8 @@ def _default_component_data(scale: float):
         "ComponentWidths": [3.50 * scale, 1.50 * scale, 3.50 * scale, 1.50 * scale],
         "ComponentCrossSlopes": [2.0, 4.0, 2.0, 4.0],
         "ComponentHeights": [0.0, 0.0, 0.0, 0.0],
+        "ComponentExtraWidths": [0.0, 0.0, 0.0, 0.0],
+        "ComponentBackSlopes": [0.0, 0.0, 0.0, 0.0],
         "ComponentOffsets": [0.0, 0.0, 0.0, 0.0],
         "ComponentOrders": [10, 20, 10, 20],
         "ComponentEnabled": [1, 1, 1, 1],
@@ -74,6 +95,8 @@ def _component_array_specs(scale: float):
         ("ComponentWidths", "App::PropertyFloatList", defaults["ComponentWidths"], "Component widths (m)"),
         ("ComponentCrossSlopes", "App::PropertyFloatList", defaults["ComponentCrossSlopes"], "Cross slopes (%)"),
         ("ComponentHeights", "App::PropertyFloatList", defaults["ComponentHeights"], "Vertical steps/heights (m)"),
+        ("ComponentExtraWidths", "App::PropertyFloatList", defaults["ComponentExtraWidths"], "Type-specific extra widths (m)"),
+        ("ComponentBackSlopes", "App::PropertyFloatList", defaults["ComponentBackSlopes"], "Type-specific secondary/back slopes (%)"),
         ("ComponentOffsets", "App::PropertyFloatList", defaults["ComponentOffsets"], "Optional local lateral offsets (m)"),
         ("ComponentOrders", "App::PropertyIntegerList", defaults["ComponentOrders"], "Sort order per side"),
         ("ComponentEnabled", "App::PropertyIntegerList", defaults["ComponentEnabled"], "Enabled flags (1/0)"),
@@ -113,12 +136,33 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "PreviewSchemaVersion"):
         obj.addProperty("App::PropertyInteger", "PreviewSchemaVersion", "Result", "Preview schema version")
         obj.PreviewSchemaVersion = 2
+    if not hasattr(obj, "SubassemblySchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "SubassemblySchemaVersion", "Result", "Practical subassembly schema version")
+        obj.SubassemblySchemaVersion = 1
+    if not hasattr(obj, "PracticalRole"):
+        obj.addProperty("App::PropertyString", "PracticalRole", "Result", "Practical engineering role summary")
+        obj.PracticalRole = "top_profile_subassembly"
+    if not hasattr(obj, "PracticalSectionMode"):
+        obj.addProperty("App::PropertyString", "PracticalSectionMode", "Result", "Practical section mode summary")
+        obj.PracticalSectionMode = "simple"
+    if not hasattr(obj, "GeometryDrivingFieldSummary"):
+        obj.addProperty("App::PropertyString", "GeometryDrivingFieldSummary", "Result", "Geometry-driving field summary")
+        obj.GeometryDrivingFieldSummary = ""
+    if not hasattr(obj, "AnalysisDrivingFieldSummary"):
+        obj.addProperty("App::PropertyString", "AnalysisDrivingFieldSummary", "Result", "Analysis-driving field summary")
+        obj.AnalysisDrivingFieldSummary = ""
+    if not hasattr(obj, "ReportOnlyFieldSummary"):
+        obj.addProperty("App::PropertyString", "ReportOnlyFieldSummary", "Result", "Report-only field summary")
+        obj.ReportOnlyFieldSummary = ""
     if not hasattr(obj, "ComponentCount"):
         obj.addProperty("App::PropertyInteger", "ComponentCount", "Result", "Total component row count")
         obj.ComponentCount = 0
     if not hasattr(obj, "EnabledComponentCount"):
         obj.addProperty("App::PropertyInteger", "EnabledComponentCount", "Result", "Enabled component row count")
         obj.EnabledComponentCount = 0
+    if not hasattr(obj, "AdvancedComponentCount"):
+        obj.addProperty("App::PropertyInteger", "AdvancedComponentCount", "Result", "Enabled component rows using advanced geometry parameters")
+        obj.AdvancedComponentCount = 0
     if not hasattr(obj, "PavementLayerCount"):
         obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Total pavement layer row count")
         obj.PavementLayerCount = 0
@@ -128,6 +172,36 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "PavementTotalThickness"):
         obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Enabled pavement total thickness (m)")
         obj.PavementTotalThickness = 0.0
+    if not hasattr(obj, "PavementLayerSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "PavementLayerSummaryRows", "Result", "Enabled pavement layer report rows")
+        obj.PavementLayerSummaryRows = []
+    if not hasattr(obj, "SubassemblyContractRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyContractRows", "Result", "Resolved subassembly contract rows")
+        obj.SubassemblyContractRows = []
+    if not hasattr(obj, "SubassemblyValidationRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyValidationRows", "Result", "Resolved subassembly validation rows")
+        obj.SubassemblyValidationRows = []
+    if not hasattr(obj, "RoadsideLibraryRows"):
+        obj.addProperty("App::PropertyStringList", "RoadsideLibraryRows", "Result", "Detected reusable roadside-library rows")
+        obj.RoadsideLibraryRows = []
+    if not hasattr(obj, "RoadsideLibrarySummary"):
+        obj.addProperty("App::PropertyString", "RoadsideLibrarySummary", "Result", "Detected reusable roadside-library summary")
+        obj.RoadsideLibrarySummary = "-"
+    if not hasattr(obj, "ReportSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "ReportSchemaVersion", "Result", "Structured report schema version")
+        obj.ReportSchemaVersion = 1
+    if not hasattr(obj, "SectionComponentSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "SectionComponentSummaryRows", "Result", "Structured section-component summary rows")
+        obj.SectionComponentSummaryRows = []
+    if not hasattr(obj, "PavementScheduleRows"):
+        obj.addProperty("App::PropertyStringList", "PavementScheduleRows", "Result", "Structured pavement schedule rows")
+        obj.PavementScheduleRows = []
+    if not hasattr(obj, "StructureInteractionSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "StructureInteractionSummaryRows", "Result", "Structured structure-interaction summary rows")
+        obj.StructureInteractionSummaryRows = []
+    if not hasattr(obj, "ExportSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ExportSummaryRows", "Result", "Structured export-ready summary rows")
+        obj.ExportSummaryRows = []
     if not hasattr(obj, "LeftEdgeComponentType"):
         obj.addProperty("App::PropertyString", "LeftEdgeComponentType", "Result", "Outermost left component type")
         obj.LeftEdgeComponentType = ""
@@ -205,6 +279,8 @@ def component_rows(obj):
             "Width": max(0.0, _safe_float(data["ComponentWidths"][i], default=0.0)),
             "CrossSlopePct": _safe_float(data["ComponentCrossSlopes"][i], default=0.0),
             "Height": _safe_float(data["ComponentHeights"][i], default=0.0),
+            "ExtraWidth": max(0.0, _safe_float(data["ComponentExtraWidths"][i], default=0.0)),
+            "BackSlopePct": _safe_float(data["ComponentBackSlopes"][i], default=0.0),
             "Offset": _safe_float(data["ComponentOffsets"][i], default=0.0),
             "Order": _safe_int(data["ComponentOrders"][i], default=i + 1),
             "Enabled": _as_bool_flag(data["ComponentEnabled"][i]),
@@ -236,8 +312,12 @@ def validate_components(obj):
 
         if float(row["Width"]) < 0.0:
             issues.append(f"{cid}: width must be >= 0")
+        if float(row["ExtraWidth"]) < 0.0:
+            issues.append(f"{cid}: extra width must be >= 0")
         if not math.isfinite(float(row["CrossSlopePct"])):
             issues.append(f"{cid}: cross slope must be finite")
+        if not math.isfinite(float(row["BackSlopePct"])):
+            issues.append(f"{cid}: back slope must be finite")
         if not math.isfinite(float(row["Height"])):
             issues.append(f"{cid}: height must be finite")
         if not math.isfinite(float(row["Offset"])):
@@ -277,6 +357,266 @@ def validate_pavement_layers(obj):
         if float(row["Thickness"]) < 0.0:
             issues.append(f"{lid}: thickness must be >= 0")
     return issues
+
+
+def _component_effective_width(row) -> float:
+    typ = str(row.get("Type", "") or "").strip().lower()
+    width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
+    extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
+    if typ in ("curb", "berm"):
+        return float(width + extra_width)
+    return float(width)
+
+
+def _uses_advanced_component_geometry(row) -> bool:
+    if not bool(row.get("Enabled", True)):
+        return False
+    typ = str(row.get("Type", "") or "").strip().lower()
+    width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
+    extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
+    slope = _safe_float(row.get("CrossSlopePct", 0.0), default=0.0)
+    back_slope = _safe_float(row.get("BackSlopePct", 0.0), default=0.0)
+    if typ == "ditch":
+        return bool(extra_width > 1e-9 or abs(back_slope - slope) > 1e-9)
+    if typ == "curb":
+        return bool(extra_width > 1e-9 or abs(back_slope) > 1e-9)
+    if typ == "berm":
+        return bool(extra_width > 1e-9 or abs(back_slope) > 1e-9 or abs(slope) > 1e-9)
+    return False
+
+
+def _component_contract_row(row):
+    typ = str(row.get("Type", "") or "").strip().lower()
+    side = str(row.get("Side", "") or "").strip().lower() or "-"
+    cid = str(row.get("Id", "") or "").strip() or "-"
+    if typ in ROADSIDE_ADVANCED_TYPES:
+        mode = "advanced" if _uses_advanced_component_geometry(row) else "core"
+    else:
+        mode = "core"
+    return f"{cid}:{typ}:{side}:{mode}"
+
+
+def _component_validation_rows(rows):
+    notes = []
+    for row in rows:
+        if not bool(row.get("Enabled", True)):
+            continue
+        cid = str(row.get("Id", "") or "").strip() or "-"
+        typ = str(row.get("Type", "") or "").strip().lower()
+        side = str(row.get("Side", "") or "").strip().lower()
+        width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
+        extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
+        slope = _safe_float(row.get("CrossSlopePct", 0.0), default=0.0)
+        back_slope = _safe_float(row.get("BackSlopePct", 0.0), default=0.0)
+
+        if typ in ROADSIDE_ADVANCED_TYPES and side in ("center", "both"):
+            notes.append(f"{cid}: {typ} should use left/right side for deterministic practical-section behavior")
+        if typ not in ROADSIDE_ADVANCED_TYPES and (extra_width > 1e-9 or abs(back_slope) > 1e-9):
+            notes.append(f"{cid}: ExtraWidth/BackSlopePct are currently ignored for type '{typ}'")
+        if typ == "ditch" and extra_width >= max(width, 1e-9):
+            notes.append(f"{cid}: ditch ExtraWidth should stay smaller than Width")
+        if typ == "curb" and abs(_safe_float(row.get("Height", 0.0), default=0.0)) <= 1e-9:
+            notes.append(f"{cid}: curb Height is 0, so the curb behaves like a flat edge")
+        if typ == "berm" and extra_width > 1e-9 and abs(back_slope) <= 1e-9:
+            notes.append(f"{cid}: berm ExtraWidth is set but BackSlopePct is 0")
+        if typ == "ditch" and extra_width > 1e-9 and abs(back_slope - slope) <= 1e-9:
+            notes.append(f"{cid}: ditch BackSlopePct matches CrossSlopePct, so outer slope is not differentiated")
+    return notes
+
+
+def pavement_layer_summary_rows(obj):
+    rows = pavement_rows(obj)
+    out = []
+    for row in rows:
+        if not bool(row.get("Enabled", True)):
+            continue
+        thickness = max(0.0, float(row.get("Thickness", 0.0) or 0.0))
+        if thickness <= 1e-9:
+            continue
+        out.append(
+            f"{str(row.get('Id', '') or '').strip() or '-'}:"
+            f"{str(row.get('Type', '') or '').strip() or '-'}:"
+            f"{thickness:.3f}m"
+        )
+    return out
+
+
+def _report_row(kind: str, **fields) -> str:
+    parts = [str(kind or "").strip() or "row"]
+    for key, value in fields.items():
+        parts.append(f"{str(key)}={value}")
+    return "|".join(parts)
+
+
+def section_component_summary_rows(rows):
+    out = []
+    for row in rows:
+        if not bool(row.get("Enabled", True)):
+            continue
+        out.append(
+            _report_row(
+                "component",
+                id=str(row.get("Id", "") or "").strip() or "-",
+                type=str(row.get("Type", "") or "").strip().lower() or "-",
+                side=str(row.get("Side", "") or "").strip().lower() or "-",
+                width=f"{max(0.0, _safe_float(row.get('Width', 0.0), default=0.0)):.3f}",
+                crossSlopePct=f"{_safe_float(row.get('CrossSlopePct', 0.0), default=0.0):.3f}",
+                height=f"{_safe_float(row.get('Height', 0.0), default=0.0):.3f}",
+                extraWidth=f"{max(0.0, _safe_float(row.get('ExtraWidth', 0.0), default=0.0)):.3f}",
+                backSlopePct=f"{_safe_float(row.get('BackSlopePct', 0.0), default=0.0):.3f}",
+                offset=f"{_safe_float(row.get('Offset', 0.0), default=0.0):.3f}",
+                order=int(_safe_int(row.get("Order", 0), default=0)),
+            )
+        )
+    return out
+
+
+def pavement_schedule_rows(rows):
+    out = []
+    for row in rows:
+        if not bool(row.get("Enabled", True)):
+            continue
+        out.append(
+            _report_row(
+                "pavement",
+                id=str(row.get("Id", "") or "").strip() or "-",
+                type=str(row.get("Type", "") or "").strip().lower() or "-",
+                thickness=f"{max(0.0, _safe_float(row.get('Thickness', 0.0), default=0.0)):.3f}",
+            )
+        )
+    return out
+
+
+def export_summary_rows_for_typical_section(
+    *,
+    report_schema_version: int,
+    practical_mode: str,
+    component_count: int,
+    advanced_count: int,
+    pavement_layers: int,
+    pavement_total_thickness: float,
+    roadside_summary: str,
+    validation_count: int,
+):
+    return [
+        _report_row(
+            "export",
+            target="typical_section",
+            reportSchema=int(report_schema_version or 0),
+            practical=str(practical_mode or "simple"),
+            components=int(component_count or 0),
+            advanced=int(advanced_count or 0),
+            pavementLayers=int(pavement_layers or 0),
+            pavementTotal=f"{float(pavement_total_thickness or 0.0):.3f}",
+            roadside=str(roadside_summary or "-"),
+            validation=int(validation_count or 0),
+        )
+    ]
+
+
+def _row_side_key(row) -> str:
+    side = str(row.get("Side", "") or "").strip().lower()
+    if side in ("left", "right", "center", "both"):
+        return side
+    return "-"
+
+
+def normalize_roadside_bundle_side_mode(value) -> str:
+    mode = str(value or "").strip().lower()
+    if mode.startswith("left"):
+        return "left"
+    if mode.startswith("right"):
+        return "right"
+    if mode.startswith("center"):
+        return "center"
+    return "both"
+
+
+def mirror_roadside_bundle_row(row, target_side):
+    out = dict(row or {})
+    src_side = str(out.get("Side", "") or "").strip().lower()
+    side = str(target_side or src_side or "left").strip().lower()
+    out["Side"] = side
+    base_id = str(out.get("Id", "") or "").strip() or "COMP"
+    if base_id.endswith("-L") or base_id.endswith("-R") or base_id.endswith("_L") or base_id.endswith("_R"):
+        base_id = base_id[:-2]
+    suffix = ""
+    if side == "left":
+        suffix = "-L"
+    elif side == "right":
+        suffix = "-R"
+    elif side == "center":
+        suffix = "-C"
+    out["Id"] = f"{base_id}{suffix}" if suffix else base_id
+    return out
+
+
+def expand_roadside_library_bundle(bundle_key, side_mode="both"):
+    key = str(bundle_key or "").strip().lower()
+    base = [dict(row) for row in list(ROADSIDE_LIBRARY_BUNDLES.get(key, []) or [])]
+    if not base:
+        return []
+    mode = normalize_roadside_bundle_side_mode(side_mode)
+    if mode == "center":
+        if all(str(r.get("Side", "") or "").strip().lower() == "center" for r in base):
+            return base
+        return []
+    if any(str(r.get("Side", "") or "").strip().lower() == "center" for r in base):
+        if mode != "both":
+            return []
+        return base
+    if mode == "left":
+        return [mirror_roadside_bundle_row(r, "left") for r in base]
+    if mode == "right":
+        return [mirror_roadside_bundle_row(r, "right") for r in base]
+    out = []
+    for side in ("left", "right"):
+        out.extend(mirror_roadside_bundle_row(r, side) for r in base)
+    return out
+
+
+def _side_has_types(rows, side: str, required_types) -> bool:
+    side_key = str(side or "").strip().lower()
+    side_rows = [
+        str(r.get("Type", "") or "").strip().lower()
+        for r in rows
+        if bool(r.get("Enabled", True)) and _row_side_key(r) == side_key
+    ]
+    return all(req in side_rows for req in list(required_types or []))
+
+
+def roadside_library_rows(rows):
+    out = []
+    if _side_has_types(rows, "left", ("gutter", "ditch", "berm")):
+        out.append("ditch_edge:left")
+    if _side_has_types(rows, "right", ("gutter", "ditch", "berm")):
+        out.append("ditch_edge:right")
+    if _side_has_types(rows, "left", ("curb", "sidewalk")):
+        out.append("urban_edge:left")
+    if _side_has_types(rows, "right", ("curb", "sidewalk")):
+        out.append("urban_edge:right")
+    if _side_has_types(rows, "left", ("shoulder",)) and not _side_has_types(rows, "left", ("ditch", "curb")):
+        out.append("shoulder_edge:left")
+    if _side_has_types(rows, "right", ("shoulder",)) and not _side_has_types(rows, "right", ("ditch", "curb")):
+        out.append("shoulder_edge:right")
+    center_types = [
+        str(r.get("Type", "") or "").strip().lower()
+        for r in rows
+        if bool(r.get("Enabled", True)) and _row_side_key(r) == "center"
+    ]
+    if "median" in center_types:
+        out.append("median_core:center")
+    return out
+
+
+def roadside_library_summary(rows):
+    counts = {}
+    for item in roadside_library_rows(rows):
+        fam = str(item).split(":", 1)[0]
+        counts[fam] = int(counts.get(fam, 0) or 0) + 1
+    if not counts:
+        return "-"
+    return ",".join(f"{fam}:{int(counts[fam])}" for fam in sorted(counts))
 
 
 def _split_rows_by_side(rows):
@@ -323,31 +663,53 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
     width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
     slope = _safe_float(row.get("CrossSlopePct", 0.0), default=0.0)
     height = _safe_float(row.get("Height", 0.0), default=0.0)
+    extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
+    back_slope = _safe_float(row.get("BackSlopePct", 0.0), default=slope)
     pts = []
     x = float(x0)
     y = float(y0)
 
     if typ == "curb":
+        if extra_width > 1e-9:
+            x, y = _apply_segment(x, y, extra_width, slope, 0.0, direction)
+            pts.append(App.Vector(x, y, 0.0))
         if abs(height) > 1e-9:
             y += height
             pts.append(App.Vector(x, y, 0.0))
-        x, y = _apply_segment(x, y, width, slope, 0.0, direction)
+        x, y = _apply_segment(x, y, width, back_slope, 0.0, direction)
         pts.append(App.Vector(x, y, 0.0))
         return pts
 
     if typ == "ditch" and width > 1e-9 and abs(height) > 1e-9:
-        half_w = 0.5 * width
-        x_mid = x + float(direction) * half_w
+        bottom_w = min(width - 1e-9, extra_width) if extra_width > 1e-9 else 0.0
+        if bottom_w <= 1e-9:
+            half_w = 0.5 * width
+            x_mid = x + float(direction) * half_w
+            y_mid = y - abs(height)
+            pts.append(App.Vector(x_mid, y_mid, 0.0))
+            x_end = x + float(direction) * width
+            y_end = y - (width * slope / 100.0)
+            pts.append(App.Vector(x_end, y_end, 0.0))
+            return pts
+        outer_total = max(0.0, width - bottom_w)
+        inner_w = 0.5 * outer_total
+        outer_w = max(0.0, outer_total - inner_w)
+        x_mid = x + float(direction) * inner_w
         y_mid = y - abs(height)
         pts.append(App.Vector(x_mid, y_mid, 0.0))
-        x_end = x + float(direction) * width
-        y_end = y - (width * slope / 100.0)
+        x_bottom = x_mid + float(direction) * bottom_w
+        pts.append(App.Vector(x_bottom, y_mid, 0.0))
+        x_end = x_bottom + float(direction) * outer_w
+        y_end = y_mid - (outer_w * back_slope / 100.0)
         pts.append(App.Vector(x_end, y_end, 0.0))
         return pts
 
     if typ == "berm":
-        x, y = _apply_segment(x, y, width, 0.0, height, direction)
+        x, y = _apply_segment(x, y, width, slope, height, direction)
         pts.append(App.Vector(x, y, 0.0))
+        if extra_width > 1e-9:
+            x, y = _apply_segment(x, y, extra_width, back_slope, 0.0, direction)
+            pts.append(App.Vector(x, y, 0.0))
         return pts
 
     x, y = _apply_segment(x, y, width, slope, height, direction)
@@ -442,14 +804,54 @@ class TypicalSectionTemplate:
             pav_rows = pavement_rows(obj)
             pav_issues = validate_pavement_layers(obj)
             enabled_count = sum(1 for r in rows if bool(r.get("Enabled", True)))
+            advanced_count = sum(1 for r in rows if _uses_advanced_component_geometry(r))
             pav_enabled_count = sum(1 for r in pav_rows if bool(r.get("Enabled", True)))
             pav_total_thk = sum(float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows if bool(r.get("Enabled", True)))
+            pav_summary_rows = pavement_layer_summary_rows(obj)
+            contract_rows = [_component_contract_row(r) for r in rows if bool(r.get("Enabled", True))]
+            validation_rows = _component_validation_rows(rows)
+            roadside_rows = roadside_library_rows(rows)
+            roadside_summary = roadside_library_summary(rows)
+            component_summary = section_component_summary_rows(rows)
+            pavement_schedule = pavement_schedule_rows(pav_rows)
             left_rows, _center_rows, right_rows = _split_rows_by_side(rows)
+            practical_mode = "advanced" if advanced_count > 0 else "simple"
             obj.ComponentCount = int(len(rows))
             obj.EnabledComponentCount = int(enabled_count)
+            obj.AdvancedComponentCount = int(advanced_count)
+            obj.SubassemblySchemaVersion = 1
+            obj.PracticalRole = "top_profile_subassembly"
+            obj.PracticalSectionMode = practical_mode
+            obj.GeometryDrivingFieldSummary = "Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled"
+            obj.AnalysisDrivingFieldSummary = "ComponentIds,ComponentTypes,ComponentSides,ComponentWidths,ComponentCrossSlopes,ComponentHeights,ComponentExtraWidths,ComponentBackSlopes"
+            obj.ReportOnlyFieldSummary = (
+                "PavementLayerIds,PavementLayerTypes,PavementLayerThicknesses,PavementLayerEnabled,"
+                "PavementLayerSummaryRows,SectionComponentSummaryRows,PavementScheduleRows,ExportSummaryRows"
+            )
             obj.PavementLayerCount = int(len(pav_rows))
             obj.EnabledPavementLayerCount = int(pav_enabled_count)
             obj.PavementTotalThickness = float(pav_total_thk)
+            obj.PavementLayerSummaryRows = list(pav_summary_rows)
+            obj.SubassemblyContractRows = list(contract_rows)
+            obj.SubassemblyValidationRows = list(validation_rows)
+            obj.RoadsideLibraryRows = list(roadside_rows)
+            obj.RoadsideLibrarySummary = str(roadside_summary or "-")
+            obj.ReportSchemaVersion = 1
+            obj.SectionComponentSummaryRows = list(component_summary)
+            obj.PavementScheduleRows = list(pavement_schedule)
+            obj.StructureInteractionSummaryRows = []
+            obj.ExportSummaryRows = list(
+                export_summary_rows_for_typical_section(
+                    report_schema_version=1,
+                    practical_mode=practical_mode,
+                    component_count=enabled_count,
+                    advanced_count=advanced_count,
+                    pavement_layers=pav_enabled_count,
+                    pavement_total_thickness=pav_total_thk,
+                    roadside_summary=roadside_summary,
+                    validation_count=len(validation_rows),
+                )
+            )
             if hasattr(obj, "PavementPreviewCount"):
                 obj.PavementPreviewCount = 0
             obj.LeftEdgeComponentType = str(left_rows[-1].get("Type", "") or "") if left_rows else ""
@@ -459,7 +861,10 @@ class TypicalSectionTemplate:
             if not bool(getattr(obj, "ShowPreviewWire", True)):
                 obj.Shape = Part.Shape()
                 obj.Status = (
-                    f"Hidden: edges=({obj.LeftEdgeComponentType or '-'}, "
+                    f"Hidden: role={obj.PracticalRole} practical={obj.PracticalSectionMode} subSchema={int(obj.SubassemblySchemaVersion)} "
+                    f"advanced={int(advanced_count)} validation={len(validation_rows)} "
+                    f"roadside={obj.RoadsideLibrarySummary} "
+                    f"edges=({obj.LeftEdgeComponentType or '-'}, "
                     f"{obj.RightEdgeComponentType or '-'}) "
                     f"pavement={obj.PavementTotalThickness:.3f}m"
                 )
@@ -468,23 +873,51 @@ class TypicalSectionTemplate:
             pts = build_top_profile(obj)
             if len(pts) < 2:
                 obj.Shape = Part.Shape()
-                obj.Status = "WARN: No enabled components."
+                obj.Status = (
+                    f"WARN: role={obj.PracticalRole} practical=fallback subSchema={int(obj.SubassemblySchemaVersion)} "
+                    f"roadside={obj.RoadsideLibrarySummary} "
+                    "No enabled components."
+                )
                 return
 
             obj.Shape = Part.makePolygon(pts)
-            all_issues = list(issues) + list(pav_issues)
+            all_issues = list(issues) + list(pav_issues) + list(validation_rows)
             if all_issues:
-                obj.Status = "WARN: " + " | ".join(all_issues[:4])
+                obj.Status = (
+                    f"WARN: role={obj.PracticalRole} practical={obj.PracticalSectionMode} subSchema={int(obj.SubassemblySchemaVersion)} "
+                    f"roadside={obj.RoadsideLibrarySummary} | "
+                    + " | ".join(all_issues[:4])
+                )
             else:
                 obj.Status = (
-                    f"OK: {enabled_count}/{len(rows)} components enabled; "
+                    f"OK: role={obj.PracticalRole} practical={obj.PracticalSectionMode} subSchema={int(obj.SubassemblySchemaVersion)} "
+                    f"{enabled_count}/{len(rows)} components enabled; "
+                    f"roadside={obj.RoadsideLibrarySummary} "
                     f"edges=({obj.LeftEdgeComponentType or '-'}, {obj.RightEdgeComponentType or '-'}) "
-                    f"pavement={obj.PavementTotalThickness:.3f}m ({pav_enabled_count}/{len(pav_rows)} layers)"
+                    f"pavement={obj.PavementTotalThickness:.3f}m ({pav_enabled_count}/{len(pav_rows)} layers) "
+                    f"advanced={int(advanced_count)}"
                 )
         except Exception as ex:
             obj.Shape = Part.Shape()
             if hasattr(obj, "PavementPreviewCount"):
                 obj.PavementPreviewCount = 0
+            obj.SubassemblySchemaVersion = 1
+            obj.PracticalRole = "top_profile_subassembly"
+            obj.PracticalSectionMode = "fallback"
+            obj.GeometryDrivingFieldSummary = ""
+            obj.AnalysisDrivingFieldSummary = ""
+            obj.ReportOnlyFieldSummary = ""
+            obj.AdvancedComponentCount = 0
+            obj.PavementLayerSummaryRows = []
+            obj.SubassemblyContractRows = []
+            obj.SubassemblyValidationRows = []
+            obj.RoadsideLibraryRows = []
+            obj.RoadsideLibrarySummary = "-"
+            obj.ReportSchemaVersion = 1
+            obj.SectionComponentSummaryRows = []
+            obj.PavementScheduleRows = []
+            obj.StructureInteractionSummaryRows = []
+            obj.ExportSummaryRows = []
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -495,6 +928,8 @@ class TypicalSectionTemplate:
             "ComponentWidths",
             "ComponentCrossSlopes",
             "ComponentHeights",
+            "ComponentExtraWidths",
+            "ComponentBackSlopes",
             "ComponentOffsets",
             "ComponentOrders",
             "ComponentEnabled",
@@ -546,6 +981,18 @@ class ViewProviderTypicalSectionTemplate:
 def ensure_typical_section_pavement_display_properties(obj):
     if not hasattr(obj, "SourceTypicalSection"):
         obj.addProperty("App::PropertyLink", "SourceTypicalSection", "Display", "Source TypicalSectionTemplate")
+    if not hasattr(obj, "LayerIds"):
+        obj.addProperty("App::PropertyStringList", "LayerIds", "Result", "Enabled pavement layer ids")
+        obj.LayerIds = []
+    if not hasattr(obj, "LayerTypes"):
+        obj.addProperty("App::PropertyStringList", "LayerTypes", "Result", "Enabled pavement layer types")
+        obj.LayerTypes = []
+    if not hasattr(obj, "LayerThicknesses"):
+        obj.addProperty("App::PropertyFloatList", "LayerThicknesses", "Result", "Enabled pavement layer thicknesses")
+        obj.LayerThicknesses = []
+    if not hasattr(obj, "LayerSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "LayerSummaryRows", "Result", "Enabled pavement layer report rows")
+        obj.LayerSummaryRows = []
     if not hasattr(obj, "LayerCount"):
         obj.addProperty("App::PropertyInteger", "LayerCount", "Result", "Enabled pavement layer count")
         obj.LayerCount = 0
@@ -569,12 +1016,20 @@ class TypicalSectionPavementDisplay:
             src = getattr(obj, "SourceTypicalSection", None)
             if src is None:
                 obj.Shape = Part.Shape()
+                obj.LayerIds = []
+                obj.LayerTypes = []
+                obj.LayerThicknesses = []
+                obj.LayerSummaryRows = []
                 obj.LayerCount = 0
                 obj.TotalThickness = 0.0
                 obj.Status = "Missing source TypicalSectionTemplate"
                 return
 
             enabled_layers = [r for r in pavement_rows(src) if bool(r.get("Enabled", True)) and float(r.get("Thickness", 0.0) or 0.0) > 1e-9]
+            obj.LayerIds = [str(r.get("Id", "") or "") for r in enabled_layers]
+            obj.LayerTypes = [str(r.get("Type", "") or "") for r in enabled_layers]
+            obj.LayerThicknesses = [float(r.get("Thickness", 0.0) or 0.0) for r in enabled_layers]
+            obj.LayerSummaryRows = list(pavement_layer_summary_rows(src))
             obj.LayerCount = int(len(enabled_layers))
             obj.TotalThickness = float(sum(float(r.get("Thickness", 0.0) or 0.0) for r in enabled_layers))
 
@@ -588,6 +1043,10 @@ class TypicalSectionPavementDisplay:
             obj.Status = f"OK: {obj.LayerCount} layers, total={obj.TotalThickness:.3f}m"
         except Exception as ex:
             obj.Shape = Part.Shape()
+            obj.LayerIds = []
+            obj.LayerTypes = []
+            obj.LayerThicknesses = []
+            obj.LayerSummaryRows = []
             obj.LayerCount = 0
             obj.TotalThickness = 0.0
             obj.Status = f"ERROR: {ex}"

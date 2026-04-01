@@ -12,6 +12,7 @@ from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.objects.obj_typical_section_template import build_top_profile as _build_typical_top_profile
+from freecad.Corridor_Road.objects.obj_assembly_template import _collect_side_bench_rows, _resolve_side_bench_profile
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
@@ -68,6 +69,244 @@ def _clamp(value: float, lo: float, hi: float):
     return max(float(lo), min(float(hi), float(value)))
 
 
+def _resolve_side_bench_segments(total_w: float, side_slope_pct: float, use_bench: bool, bench_drop: float, bench_width: float, bench_slope_pct: float, post_bench_slope_pct: float):
+    total = max(0.0, float(total_w))
+    side_slope = float(side_slope_pct)
+    out = {
+        "active": False,
+        "pre_width": 0.0,
+        "bench_width": 0.0,
+        "post_width": total,
+        "pre_slope": side_slope,
+        "bench_slope": float(bench_slope_pct),
+        "post_slope": side_slope,
+    }
+    if (not bool(use_bench)) or total <= 1e-9:
+        return out
+
+    bench_w = max(0.0, float(bench_width))
+    if bench_w <= 1e-9:
+        return out
+
+    drop = max(0.0, float(bench_drop))
+    pre_w = 0.0
+    if drop > 1e-9 and abs(side_slope) > 1e-9:
+        pre_w = min(total, drop * 100.0 / abs(side_slope))
+
+    remain = max(0.0, total - pre_w)
+    bench_w = min(remain, bench_w)
+    if bench_w <= 1e-9:
+        return out
+
+    post_w = max(0.0, total - pre_w - bench_w)
+    post_slope = float(post_bench_slope_pct)
+    if post_w > 1e-9 and abs(post_slope) <= 1e-9:
+        post_slope = side_slope
+
+    out.update(
+        {
+            "active": True,
+            "pre_width": float(pre_w),
+            "bench_width": float(bench_w),
+            "post_width": float(post_w),
+            "pre_slope": side_slope,
+            "bench_slope": float(bench_slope_pct),
+            "post_slope": float(post_slope),
+        }
+    )
+    return out
+
+
+def _profile_segments(profile):
+    return list(profile.get("segments", []) or [])
+
+
+def _append_side_segment_points(points, edge_p: App.Vector, dir_n: App.Vector, z: App.Vector, profile):
+    cur = App.Vector(float(edge_p.x), float(edge_p.y), float(edge_p.z))
+    out_pts = []
+    total_w = 0.0
+
+    for seg in _profile_segments(profile):
+        seg_w = float(seg.get("width", 0.0) or 0.0)
+        if seg_w <= 1e-9:
+            continue
+        seg_s = float(seg.get("slope", 0.0) or 0.0)
+        cur = cur + dir_n * seg_w + z * (-seg_w * seg_s / 100.0)
+        out_pts.append(cur)
+        total_w += seg_w
+
+    points.extend(out_pts)
+    return cur, float(total_w)
+
+
+def _point_on_side_segments(edge_p: App.Vector, outward_n: App.Vector, up_z: App.Vector, profile, total_w: float):
+    cur = App.Vector(float(edge_p.x), float(edge_p.y), float(edge_p.z))
+    rem = max(0.0, float(total_w))
+
+    for seg in _profile_segments(profile):
+        seg_w = min(rem, float(seg.get("width", 0.0) or 0.0))
+        if seg_w > 1e-9:
+            seg_s = float(seg.get("slope", 0.0) or 0.0)
+            cur = cur + outward_n * seg_w + up_z * (-seg_w * seg_s / 100.0)
+            rem -= seg_w
+        if rem <= 1e-9:
+            break
+
+    return cur
+
+
+def _profile_total_width(profile) -> float:
+    return float(sum(max(0.0, float(seg.get("width", 0.0) or 0.0)) for seg in _profile_segments(profile)))
+
+
+def _resolve_daylight_bench_spec(edge_p, outward_n, up_z, profile, sampler, step: float, search_post_w: float, prev_total_w, max_delta: float):
+    base_segments = [dict(seg) for seg in _profile_segments(profile)]
+    base_total = _profile_total_width({"segments": base_segments})
+    total_search = _profile_total_width({"segments": base_segments})
+    out = dict(profile)
+    work_segments = [dict(seg) for seg in base_segments]
+    if work_segments:
+        last = dict(work_segments[-1])
+        if str(last.get("kind", "") or "") == "slope":
+            last["width"] = max(float(last.get("width", 0.0) or 0.0), float(search_post_w))
+            work_segments[-1] = last
+        else:
+            work_segments.append({"kind": "slope", "width": float(search_post_w), "slope": float(last.get("slope", 0.0) or 0.0)})
+    total_search = _profile_total_width({"segments": work_segments})
+    out["daylightAdjusted"] = False
+    out["daylightSkipped"] = False
+    out["benchVisible"] = any(str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > 1e-9 for seg in base_segments)
+    out["daylightMode"] = "fixed"
+
+    if sampler is None or total_search <= 1e-9:
+        out["segments"] = base_segments
+        out["bench_count"] = int(sum(1 for seg in base_segments if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > 1e-9))
+        return out, _profile_total_width(out)
+
+    st = max(0.2, float(step))
+    if st > total_search:
+        st = total_search
+    if st <= 1e-12:
+        out["segments"] = base_segments
+        out["bench_count"] = int(sum(1 for seg in base_segments if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > 1e-9))
+        return out, base_total
+
+    max_iter = 5000
+    est_iter = int(math.ceil(total_search / st)) + 1
+    if est_iter > max_iter:
+        st = max(st, float(total_search) / float(max_iter))
+
+    def f_at(w):
+        q = _point_on_side_segments(edge_p, outward_n, up_z, {"segments": work_segments}, float(w))
+        zt = SectionSet._terrain_z_at(sampler, q.x, q.y)
+        if zt is None:
+            return None
+        return float(q.z - zt)
+
+    had_sample = False
+    prev_w = None
+    prev_f = None
+    best_w = None
+    best_abs_f = None
+    hit = False
+    resolved_total = total_search
+    w = 0.0
+    while w <= total_search + 1e-9:
+        fv = f_at(w)
+        if fv is not None:
+            had_sample = True
+            af = abs(float(fv))
+            if best_abs_f is None or af < best_abs_f:
+                best_abs_f = af
+                best_w = float(w)
+            if prev_f is not None and (prev_f == 0.0 or fv == 0.0 or (prev_f > 0.0 and fv < 0.0) or (prev_f < 0.0 and fv > 0.0)):
+                if prev_w is None:
+                    resolved_total = float(w)
+                else:
+                    den = (fv - prev_f)
+                    if abs(den) <= 1e-12:
+                        resolved_total = float(w)
+                    else:
+                        t = -prev_f / den
+                        resolved_total = max(0.0, min(total_search, prev_w + (w - prev_w) * t))
+                hit = True
+                break
+            prev_w = w
+            prev_f = fv
+        w += st
+
+    if not hit:
+        if not had_sample:
+            resolved_total = base_total
+        elif best_w is not None:
+            resolved_total = float(best_w)
+            hit = True
+        else:
+            resolved_total = base_total
+
+    resolved_total = SectionSet._stabilize_daylight_width(
+        resolved_total,
+        prev_total_w,
+        max_delta,
+        0.01 if total_search > 1e-9 else 0.0,
+        total_search,
+    )
+
+    tol = 1e-6
+    kept_segments = []
+    rem = max(0.0, float(resolved_total))
+    for seg in work_segments:
+        base_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
+        if base_w <= 1e-9 and rem <= 1e-9:
+            kept_segments.append(dict(seg))
+            continue
+        take = min(rem, base_w)
+        row = dict(seg)
+        row["width"] = float(max(0.0, take))
+        kept_segments.append(row)
+        rem -= take
+    if len(kept_segments) > len(base_segments):
+        kept_segments = kept_segments[: len(base_segments)]
+    elif len(kept_segments) < len(base_segments):
+        for seg in base_segments[len(kept_segments):]:
+            row = dict(seg)
+            row["width"] = 0.0
+            kept_segments.append(row)
+
+    base_bench_count = int(sum(1 for seg in base_segments if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > tol))
+    visible_bench_count = int(sum(1 for seg in kept_segments if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > tol))
+    out["segments"] = kept_segments
+    out["benchVisible"] = bool(visible_bench_count > 0)
+    out["bench_count"] = int(visible_bench_count)
+    out["daylightSkipped"] = bool(base_bench_count > 0 and visible_bench_count < base_bench_count)
+    out["daylightAdjusted"] = bool(hit or abs(_profile_total_width({"segments": kept_segments}) - _profile_total_width({"segments": base_segments})) > tol)
+    out["daylightMode"] = "hit" if hit else "search"
+    return out, _profile_total_width(out)
+
+
+def _preserve_bench_point_contract(profile, min_seg: float):
+    eps = max(1e-4, float(min_seg))
+    out = dict(profile)
+    segments = [dict(seg) for seg in _profile_segments(profile)]
+    if not segments:
+        out["segments"] = [{"kind": "slope", "width": eps, "slope": 0.0}]
+        return out
+    adjusted = []
+    for seg in segments:
+        row = dict(seg)
+        row["width"] = max(eps, float(seg.get("width", 0.0) or 0.0))
+        adjusted.append(row)
+    out["segments"] = adjusted
+    return out
+
+
+def _report_row(kind: str, **fields) -> str:
+    parts = [str(kind or "").strip() or "row"]
+    for key, value in fields.items():
+        parts.append(f"{str(key)}={value}")
+    return "|".join(parts)
+
+
 def _parse_station_text(text: str):
     if not text:
         return []
@@ -92,6 +331,67 @@ def _resolve_structure_source(obj):
     if prj is not None and hasattr(prj, "StructureSet"):
         return getattr(prj, "StructureSet", None)
     return None
+
+
+def _status_join(head: str, *tokens):
+    parts = []
+    for tok in list(tokens or []):
+        txt = str(tok or "").strip()
+        if txt:
+            parts.append(txt)
+    if not parts:
+        return str(head or "").strip()
+    base = str(head or "").strip()
+    if not base:
+        return " | ".join(parts)
+    return f"{base} | " + " | ".join(parts)
+
+
+def _external_shape_total_count(struct_src) -> int:
+    if struct_src is None:
+        return 0
+    try:
+        return sum(
+            1
+            for rec in list(StructureSetSource.records(struct_src) or [])
+            if str(rec.get("GeometryMode", "") or "").strip().lower() == "external_shape"
+        )
+    except Exception:
+        return 0
+
+
+def _external_shape_proxy_count(struct_src) -> int:
+    if struct_src is None:
+        return 0
+    try:
+        return int(getattr(struct_src, "ResolvedEarthworkProxyCount", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _external_shape_display_count(struct_src) -> int:
+    total = int(_external_shape_total_count(struct_src) or 0)
+    proxy = int(_external_shape_proxy_count(struct_src) or 0)
+    if total <= 0:
+        return 0
+    return max(0, total - proxy)
+
+
+def _display_only_status_token(ext_count: int) -> str:
+    count = int(ext_count or 0)
+    if count <= 0:
+        return ""
+    return f"displayOnly=external_shape:{count}"
+
+
+def _earthwork_status_token(struct_src=None, resolved_count: int = 0, ext_count: int = 0, proxy_count: int = 0, overrides_enabled: bool = False) -> str:
+    if int(proxy_count or 0) > 0:
+        return "earthwork=external_shape_proxy"
+    if int(ext_count or 0) > 0:
+        return "earthwork=simplified_type_driven"
+    if struct_src is not None or int(resolved_count or 0) > 0 or bool(overrides_enabled):
+        return "earthwork=simplified_type_driven"
+    return "earthwork=full"
 
 
 def _structure_overlay_offsets(rec):
@@ -440,9 +740,18 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "TopProfileSource"):
         obj.addProperty("App::PropertyString", "TopProfileSource", "Result", "Top-profile source summary")
         obj.TopProfileSource = "assembly_simple"
+    if not hasattr(obj, "SubassemblySchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "SubassemblySchemaVersion", "Result", "Practical subassembly schema version")
+        obj.SubassemblySchemaVersion = 0
+    if not hasattr(obj, "PracticalSectionMode"):
+        obj.addProperty("App::PropertyString", "PracticalSectionMode", "Result", "Practical section mode summary")
+        obj.PracticalSectionMode = "simple"
     if not hasattr(obj, "TopProfileEdgeSummary"):
         obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
         obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "TypicalSectionAdvancedComponentCount"):
+        obj.addProperty("App::PropertyInteger", "TypicalSectionAdvancedComponentCount", "Result", "Advanced typical-section component count")
+        obj.TypicalSectionAdvancedComponentCount = 0
     if not hasattr(obj, "PavementLayerCount"):
         obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
         obj.PavementLayerCount = 0
@@ -452,6 +761,51 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "PavementTotalThickness"):
         obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
         obj.PavementTotalThickness = 0.0
+    if not hasattr(obj, "PavementLayerSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "PavementLayerSummaryRows", "Result", "Enabled pavement layer report rows")
+        obj.PavementLayerSummaryRows = []
+    if not hasattr(obj, "SubassemblyContractRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyContractRows", "Result", "Resolved subassembly contract rows")
+        obj.SubassemblyContractRows = []
+    if not hasattr(obj, "SubassemblyValidationRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyValidationRows", "Result", "Resolved subassembly validation rows")
+        obj.SubassemblyValidationRows = []
+    if not hasattr(obj, "RoadsideLibraryRows"):
+        obj.addProperty("App::PropertyStringList", "RoadsideLibraryRows", "Result", "Detected reusable roadside-library rows")
+        obj.RoadsideLibraryRows = []
+    if not hasattr(obj, "RoadsideLibrarySummary"):
+        obj.addProperty("App::PropertyString", "RoadsideLibrarySummary", "Result", "Detected reusable roadside-library summary")
+        obj.RoadsideLibrarySummary = "-"
+    if not hasattr(obj, "ReportSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "ReportSchemaVersion", "Result", "Structured report schema version")
+        obj.ReportSchemaVersion = 1
+    if not hasattr(obj, "SectionComponentSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "SectionComponentSummaryRows", "Result", "Structured section-component summary rows")
+        obj.SectionComponentSummaryRows = []
+    if not hasattr(obj, "PavementScheduleRows"):
+        obj.addProperty("App::PropertyStringList", "PavementScheduleRows", "Result", "Structured pavement schedule rows")
+        obj.PavementScheduleRows = []
+    if not hasattr(obj, "StructureInteractionSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "StructureInteractionSummaryRows", "Result", "Structured structure-interaction summary rows")
+        obj.StructureInteractionSummaryRows = []
+    if not hasattr(obj, "ExportSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ExportSummaryRows", "Result", "Structured export-ready summary rows")
+        obj.ExportSummaryRows = []
+    if not hasattr(obj, "BenchAppliedSectionCount"):
+        obj.addProperty("App::PropertyInteger", "BenchAppliedSectionCount", "Result", "Count of sections using bench-expanded side slopes")
+        obj.BenchAppliedSectionCount = 0
+    if not hasattr(obj, "BenchSummary"):
+        obj.addProperty("App::PropertyString", "BenchSummary", "Result", "Resolved side-bench usage summary")
+        obj.BenchSummary = "-"
+    if not hasattr(obj, "BenchSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "BenchSummaryRows", "Result", "Structured side-bench summary rows")
+        obj.BenchSummaryRows = []
+    if not hasattr(obj, "BenchDaylightAdjustedSectionCount"):
+        obj.addProperty("App::PropertyInteger", "BenchDaylightAdjustedSectionCount", "Result", "Count of bench-enabled sections adjusted by daylight")
+        obj.BenchDaylightAdjustedSectionCount = 0
+    if not hasattr(obj, "BenchDaylightSkippedSectionCount"):
+        obj.addProperty("App::PropertyInteger", "BenchDaylightSkippedSectionCount", "Result", "Count of bench-enabled sections where terrain hit before the bench")
+        obj.BenchDaylightSkippedSectionCount = 0
     if not hasattr(obj, "SectionCount"):
         obj.addProperty("App::PropertyInteger", "SectionCount", "Result", "Section count")
         obj.SectionCount = 0
@@ -1084,6 +1438,17 @@ class SectionSet:
         return None
 
     @staticmethod
+    def _resolved_terrain_coord_mode(obj, terrain_source=None) -> str:
+        terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
+        tsrc = terrain_source if terrain_source is not None else SectionSet._resolve_terrain_source(obj)
+        src_mode = str(getattr(tsrc, "OutputCoords", "") or "")
+        if src_mode in ("Local", "World"):
+            terrain_mode = src_mode
+        if terrain_mode not in ("Local", "World"):
+            terrain_mode = "Local"
+        return str(terrain_mode)
+
+    @staticmethod
     def _triangle_bbox_xy(p0, p1, p2):
         return _ssc.triangle_bbox_xy(p0, p1, p2)
 
@@ -1338,6 +1703,8 @@ class SectionSet:
         right_spec = None
         use_day_left = bool(use_day and left_has_side)
         use_day_right = bool(use_day and right_has_side)
+        use_left_bench = bool(getattr(asm_obj, "UseLeftBench", False)) and left_has_side
+        use_right_bench = bool(getattr(asm_obj, "UseRightBench", False)) and right_has_side
         if bool(apply_structure_overrides) and structure_context is not None:
             left_action = str(structure_context.get("LeftAction", "keep") or "keep").strip().lower()
             right_action = str(structure_context.get("RightAction", "keep") or "keep").strip().lower()
@@ -1374,6 +1741,10 @@ class SectionSet:
                 use_day_left = False
             if bool(structure_context.get("RightDisableDaylight", False)):
                 use_day_right = False
+            if left_action != "keep" or bool(structure_context.get("SuppressSideSlopes", False)):
+                use_left_bench = False
+            if right_action != "keep" or bool(structure_context.get("SuppressSideSlopes", False)):
+                use_right_bench = False
 
         def _apply_side_override(base_w, base_s, has_side, action, spec, use_day_side):
             if (not has_side) or action == "keep":
@@ -1423,11 +1794,35 @@ class SectionSet:
         if bool(apply_structure_overrides) and structure_context is not None:
             lsw, lss, use_day_left = _apply_side_override(lsw, lss, left_has_side, left_action, left_spec, use_day_left)
             rsw, rss, use_day_right = _apply_side_override(rsw, rss, right_has_side, right_action, right_spec, use_day_right)
+        left_has_side = bool(use_ss) and lsw > 1e-9
+        right_has_side = bool(use_ss) and rsw > 1e-9
+        use_left_bench = bool(use_left_bench) and left_has_side
+        use_right_bench = bool(use_right_bench) and right_has_side
+        left_bench_rows = _collect_side_bench_rows(
+            use_left_bench,
+            float(getattr(asm_obj, "LeftBenchDrop", 0.0) or 0.0),
+            float(getattr(asm_obj, "LeftBenchWidth", 0.0) or 0.0),
+            float(getattr(asm_obj, "LeftBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm_obj, "LeftPostBenchSlopePct", lss) or lss),
+            list(getattr(asm_obj, "LeftBenchRows", []) or []),
+        )
+        right_bench_rows = _collect_side_bench_rows(
+            use_right_bench,
+            float(getattr(asm_obj, "RightBenchDrop", 0.0) or 0.0),
+            float(getattr(asm_obj, "RightBenchWidth", 0.0) or 0.0),
+            float(getattr(asm_obj, "RightBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm_obj, "RightPostBenchSlopePct", rss) or rss),
+            list(getattr(asm_obj, "RightBenchRows", []) or []),
+        )
+        left_bench = _resolve_side_bench_profile(lsw, lss, left_bench_rows)
+        right_bench = _resolve_side_bench_profile(rsw, rss, right_bench_rows)
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
         day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
         day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
         prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
         prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
+        prev_left_post_w = None if prev_day_widths is None else prev_day_widths.get("left_post")
+        prev_right_post_w = None if prev_day_widths is None else prev_day_widths.get("right_post")
 
         top_pts = None
         p_l = None
@@ -1461,57 +1856,180 @@ class SectionSet:
         pts = list(top_pts)
         resolved_left_w = None
         resolved_right_w = None
+        resolved_left_post_w = None
+        resolved_right_post_w = None
+        bench_left_applied = False
+        bench_right_applied = False
+        bench_left_adjusted = False
+        bench_right_adjusted = False
+        bench_left_skipped = False
+        bench_right_skipped = False
         if use_ss and lsw > 1e-9:
-            w_l = lsw
-            if use_day_left:
-                try:
-                    search_w_l = max(lsw, day_max_w)
-                    w_l_day, hit_l = SectionSet._solve_daylight_width(
-                        p_l, n, z, lss_eff, search_w_l, terrain_sampler, day_step
+            if bool(left_bench.get("active", False)):
+                spec_l = {"segments": [dict(seg) for seg in _profile_segments(left_bench)], "active": True}
+                left_visible_bench_count = int(
+                    sum(
+                        1
+                        for seg in _profile_segments(spec_l)
+                        if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > 1e-9
                     )
-                    w_l = w_l_day if hit_l else lsw
-                    w_l = SectionSet._stabilize_daylight_width(
-                        w_l,
-                        prev_left_w,
-                        day_max_delta,
-                        0.01 if lsw > 1e-9 else 0.0,
-                        search_w_l,
-                    )
-                except Exception:
-                    # Fail-safe: never block section creation due to daylight solve failure.
-                    w_l = max(0.01 if lsw > 1e-9 else 0.0, lsw)
+                )
+                spec_l["bench_count"] = int(left_visible_bench_count)
+                spec_l["benchVisible"] = bool(left_visible_bench_count > 0)
+                spec_l["daylightAdjusted"] = False
+                spec_l["daylightSkipped"] = False
+                if use_day_left:
+                    segs = []
+                    for seg in _profile_segments(spec_l):
+                        row = dict(seg)
+                        if str(row.get("kind", "") or "") == "slope":
+                            row["slope"] = SectionSet._daylight_signed_slope(p_l, float(row.get("slope", 0.0) or 0.0), terrain_sampler)
+                        segs.append(row)
+                    spec_l["segments"] = segs
+                if use_day_left and _profile_total_width(spec_l) > 1e-9:
+                    try:
+                        search_w_l = max(_profile_total_width(spec_l), day_max_w)
+                        spec_l, total_left_w = _resolve_daylight_bench_spec(
+                            p_l,
+                            n,
+                            z,
+                            spec_l,
+                            terrain_sampler,
+                            day_step,
+                            search_w_l,
+                            prev_left_w,
+                            day_max_delta,
+                        )
+                    except Exception:
+                        total_left_w = _profile_total_width(spec_l)
+                else:
+                    total_left_w = _profile_total_width(spec_l)
+                bench_left_applied = bool(spec_l.get("benchVisible", int(spec_l.get("bench_count", 0) or 0) > 0))
+                bench_left_adjusted = bool(spec_l.get("daylightAdjusted", False))
+                bench_left_skipped = bool(spec_l.get("daylightSkipped", False))
+                if use_day_left:
+                    spec_l = _preserve_bench_point_contract(spec_l, stub_side_w)
+                left_pts = []
+                _left_end, total_left_w = _append_side_segment_points(left_pts, p_l, n, z, spec_l)
+                resolved_left_w = float(total_left_w)
+                left_seg_list = _profile_segments(spec_l)
+                resolved_left_post_w = float(left_seg_list[-1].get("width", 0.0) or 0.0) if left_seg_list else 0.0
+                pts = list(reversed(left_pts)) + pts
             else:
-                w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
-            resolved_left_w = float(w_l)
-            p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
-            pts = [p_lt] + pts
+                w_l = lsw
+                if use_day_left:
+                    try:
+                        search_w_l = max(lsw, day_max_w)
+                        w_l_day, hit_l = SectionSet._solve_daylight_width(
+                            p_l, n, z, lss_eff, search_w_l, terrain_sampler, day_step
+                        )
+                        w_l = w_l_day if hit_l else lsw
+                        w_l = SectionSet._stabilize_daylight_width(
+                            w_l,
+                            prev_left_w,
+                            day_max_delta,
+                            0.01 if lsw > 1e-9 else 0.0,
+                            search_w_l,
+                        )
+                    except Exception:
+                        # Fail-safe: never block section creation due to daylight solve failure.
+                        w_l = max(0.01 if lsw > 1e-9 else 0.0, lsw)
+                else:
+                    w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
+                resolved_left_w = float(w_l)
+                resolved_left_post_w = float(w_l)
+                p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
+                pts = [p_lt] + pts
         if use_ss and rsw > 1e-9:
-            w_r = rsw
-            if use_day_right:
-                try:
-                    search_w_r = max(rsw, day_max_w)
-                    w_r_day, hit_r = SectionSet._solve_daylight_width(
-                        p_r, -n, z, rss_eff, search_w_r, terrain_sampler, day_step
+            if bool(right_bench.get("active", False)):
+                spec_r = {"segments": [dict(seg) for seg in _profile_segments(right_bench)], "active": True}
+                right_visible_bench_count = int(
+                    sum(
+                        1
+                        for seg in _profile_segments(spec_r)
+                        if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > 1e-9
                     )
-                    w_r = w_r_day if hit_r else rsw
-                    w_r = SectionSet._stabilize_daylight_width(
-                        w_r,
-                        prev_right_w,
-                        day_max_delta,
-                        0.01 if rsw > 1e-9 else 0.0,
-                        search_w_r,
-                    )
-                except Exception:
-                    # Fail-safe: never block section creation due to daylight solve failure.
-                    w_r = max(0.01 if rsw > 1e-9 else 0.0, rsw)
+                )
+                spec_r["bench_count"] = int(right_visible_bench_count)
+                spec_r["benchVisible"] = bool(right_visible_bench_count > 0)
+                spec_r["daylightAdjusted"] = False
+                spec_r["daylightSkipped"] = False
+                if use_day_right:
+                    segs = []
+                    for seg in _profile_segments(spec_r):
+                        row = dict(seg)
+                        if str(row.get("kind", "") or "") == "slope":
+                            row["slope"] = SectionSet._daylight_signed_slope(p_r, float(row.get("slope", 0.0) or 0.0), terrain_sampler)
+                        segs.append(row)
+                    spec_r["segments"] = segs
+                if use_day_right and _profile_total_width(spec_r) > 1e-9:
+                    try:
+                        search_w_r = max(_profile_total_width(spec_r), day_max_w)
+                        spec_r, total_right_w = _resolve_daylight_bench_spec(
+                            p_r,
+                            -n,
+                            z,
+                            spec_r,
+                            terrain_sampler,
+                            day_step,
+                            search_w_r,
+                            prev_right_w,
+                            day_max_delta,
+                        )
+                    except Exception:
+                        total_right_w = _profile_total_width(spec_r)
+                else:
+                    total_right_w = _profile_total_width(spec_r)
+                bench_right_applied = bool(spec_r.get("benchVisible", int(spec_r.get("bench_count", 0) or 0) > 0))
+                bench_right_adjusted = bool(spec_r.get("daylightAdjusted", False))
+                bench_right_skipped = bool(spec_r.get("daylightSkipped", False))
+                if use_day_right:
+                    spec_r = _preserve_bench_point_contract(spec_r, stub_side_w)
+                right_pts = []
+                _right_end, total_right_w = _append_side_segment_points(right_pts, p_r, -n, z, spec_r)
+                resolved_right_w = float(total_right_w)
+                right_seg_list = _profile_segments(spec_r)
+                resolved_right_post_w = float(right_seg_list[-1].get("width", 0.0) or 0.0) if right_seg_list else 0.0
+                pts = pts + right_pts
             else:
-                w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
-            resolved_right_w = float(w_r)
-            p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
-            pts = pts + [p_rt]
+                w_r = rsw
+                if use_day_right:
+                    try:
+                        search_w_r = max(rsw, day_max_w)
+                        w_r_day, hit_r = SectionSet._solve_daylight_width(
+                            p_r, -n, z, rss_eff, search_w_r, terrain_sampler, day_step
+                        )
+                        w_r = w_r_day if hit_r else rsw
+                        w_r = SectionSet._stabilize_daylight_width(
+                            w_r,
+                            prev_right_w,
+                            day_max_delta,
+                            0.01 if rsw > 1e-9 else 0.0,
+                            search_w_r,
+                        )
+                    except Exception:
+                        # Fail-safe: never block section creation due to daylight solve failure.
+                        w_r = max(0.01 if rsw > 1e-9 else 0.0, rsw)
+                else:
+                    w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
+                resolved_right_w = float(w_r)
+                resolved_right_post_w = float(w_r)
+                p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
+                pts = pts + [p_rt]
 
         w = Part.makePolygon(pts)
-        return w, n, {"left": resolved_left_w, "right": resolved_right_w}
+        return w, n, {
+            "left": resolved_left_w,
+            "right": resolved_right_w,
+            "left_post": resolved_left_post_w,
+            "right_post": resolved_right_post_w,
+            "bench_left": bool(bench_left_applied),
+            "bench_right": bool(bench_right_applied),
+            "bench_left_adjusted": bool(bench_left_adjusted),
+            "bench_right_adjusted": bool(bench_right_adjusted),
+            "bench_left_skipped": bool(bench_left_skipped),
+            "bench_right_skipped": bool(bench_right_skipped),
+        }
 
     @staticmethod
     def build_section_wires(obj):
@@ -1541,13 +2059,7 @@ class SectionSet:
                 terrain_found = tsrc is not None
                 if tsrc is not None:
                     day_max = int(getattr(asm, "DaylightMaxTriangles", 300000))
-                    terrain_mode = str(getattr(obj, "TerrainMeshCoords", "Local") or "Local")
-                    # Prefer explicit source declaration when available.
-                    src_mode = str(getattr(tsrc, "OutputCoords", "") or "")
-                    if src_mode in ("Local", "World"):
-                        terrain_mode = src_mode
-                    if terrain_mode not in ("Local", "World"):
-                        terrain_mode = "Local"
+                    terrain_mode = SectionSet._resolved_terrain_coord_mode(obj, terrain_source=tsrc)
                     terrain_sampler = SectionSet._terrain_sampler(
                         tsrc,
                         max_triangles=day_max,
@@ -1557,10 +2069,35 @@ class SectionSet:
         except Exception:
             terrain_sampler = None
 
+        left_cfg_count = len(
+            _collect_side_bench_rows(
+                bool(getattr(asm, "UseLeftBench", False)),
+                float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
+                float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+                float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
+                float(getattr(asm, "LeftPostBenchSlopePct", getattr(asm, "LeftSideSlopePct", 0.0)) or getattr(asm, "LeftSideSlopePct", 0.0)),
+                list(getattr(asm, "LeftBenchRows", []) or []),
+            )
+        )
+        right_cfg_count = len(
+            _collect_side_bench_rows(
+                bool(getattr(asm, "UseRightBench", False)),
+                float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
+                float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+                float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
+                float(getattr(asm, "RightPostBenchSlopePct", getattr(asm, "RightSideSlopePct", 0.0)) or getattr(asm, "RightSideSlopePct", 0.0)),
+                list(getattr(asm, "RightBenchRows", []) or []),
+            )
+        )
         wires = []
         prev_n = None
         prev_day_widths = {"left": None, "right": None}
         override_hits = 0
+        bench_left_hits = 0
+        bench_right_hits = 0
+        bench_section_hits = 0
+        bench_adjusted_hits = 0
+        bench_skipped_hits = 0
         use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and typ is not None
         for s in stations:
             structure_context = None
@@ -1602,12 +2139,42 @@ class SectionSet:
                     typical_section_obj=typ,
                     use_typical_section=use_typ,
                 )
+            left_bench_here = bool(prev_day_widths.get("bench_left", False))
+            right_bench_here = bool(prev_day_widths.get("bench_right", False))
+            if bool(prev_day_widths.get("bench_left_adjusted", False)) or bool(prev_day_widths.get("bench_right_adjusted", False)):
+                bench_adjusted_hits += 1
+            if bool(prev_day_widths.get("bench_left_skipped", False)) or bool(prev_day_widths.get("bench_right_skipped", False)):
+                bench_skipped_hits += 1
+            if left_bench_here:
+                bench_left_hits += 1
+            if right_bench_here:
+                bench_right_hits += 1
+            if left_bench_here or right_bench_here:
+                bench_section_hits += 1
             wires.append(w)
         try:
-            obj._StructureOverrideHitCount = int(override_hits)
+            bench_info = {
+                "overrideHits": int(override_hits),
+                "benchLeft": int(bench_left_hits),
+                "benchRight": int(bench_right_hits),
+                "benchSections": int(bench_section_hits),
+                "benchAdjusted": int(bench_adjusted_hits),
+                "benchSkipped": int(bench_skipped_hits),
+                "benchLeftConfigured": int(left_cfg_count),
+                "benchRightConfigured": int(right_cfg_count),
+            }
         except Exception:
-            pass
-        return stations, wires, terrain_found, (terrain_sampler is not None)
+            bench_info = {
+                "overrideHits": int(override_hits),
+                "benchLeft": 0,
+                "benchRight": 0,
+                "benchSections": 0,
+                "benchAdjusted": 0,
+                "benchSkipped": 0,
+                "benchLeftConfigured": int(left_cfg_count),
+                "benchRightConfigured": int(right_cfg_count),
+            }
+        return stations, wires, terrain_found, (terrain_sampler is not None), bench_info
 
     @staticmethod
     def clear_child_sections(obj):
@@ -1631,7 +2198,7 @@ class SectionSet:
             return
 
         if stations is None or wires is None:
-            stations, wires, _tf, _so = SectionSet.build_section_wires(obj)
+            stations, wires, _tf, _so, _bi = SectionSet.build_section_wires(obj)
         if len(stations) != len(wires):
             raise Exception("Child rebuild failed: stations/wires size mismatch.")
         if station_tags is None or len(station_tags) != len(stations):
@@ -1815,17 +2382,44 @@ class SectionSet:
             obj.TopProfileSource = "typical_section" if use_typ else "assembly_simple"
             if use_typ:
                 typ = getattr(obj, "TypicalSectionTemplate", None)
+                obj.SubassemblySchemaVersion = int(getattr(typ, "SubassemblySchemaVersion", 1) or 1)
+                obj.PracticalSectionMode = str(getattr(typ, "PracticalSectionMode", "simple") or "simple")
+                obj.ReportSchemaVersion = int(getattr(typ, "ReportSchemaVersion", 1) or 1)
                 left_edge = str(getattr(typ, "LeftEdgeComponentType", "") or "-")
                 right_edge = str(getattr(typ, "RightEdgeComponentType", "") or "-")
                 obj.TopProfileEdgeSummary = f"{left_edge}/{right_edge}"
+                obj.TypicalSectionAdvancedComponentCount = int(getattr(typ, "AdvancedComponentCount", 0) or 0)
                 obj.PavementLayerCount = int(getattr(typ, "PavementLayerCount", 0) or 0)
                 obj.EnabledPavementLayerCount = int(getattr(typ, "EnabledPavementLayerCount", 0) or 0)
                 obj.PavementTotalThickness = float(getattr(typ, "PavementTotalThickness", 0.0) or 0.0)
+                obj.PavementLayerSummaryRows = list(getattr(typ, "PavementLayerSummaryRows", []) or [])
+                obj.SubassemblyContractRows = list(getattr(typ, "SubassemblyContractRows", []) or [])
+                obj.SubassemblyValidationRows = list(getattr(typ, "SubassemblyValidationRows", []) or [])
+                obj.RoadsideLibraryRows = list(getattr(typ, "RoadsideLibraryRows", []) or [])
+                obj.RoadsideLibrarySummary = str(getattr(typ, "RoadsideLibrarySummary", "-") or "-")
+                obj.SectionComponentSummaryRows = list(getattr(typ, "SectionComponentSummaryRows", []) or [])
+                obj.PavementScheduleRows = list(getattr(typ, "PavementScheduleRows", []) or [])
             else:
+                obj.SubassemblySchemaVersion = 0
+                obj.PracticalSectionMode = "simple"
+                obj.ReportSchemaVersion = 1
                 obj.TopProfileEdgeSummary = "-"
+                obj.TypicalSectionAdvancedComponentCount = 0
                 obj.PavementLayerCount = 0
                 obj.EnabledPavementLayerCount = 0
                 obj.PavementTotalThickness = 0.0
+                obj.PavementLayerSummaryRows = []
+                obj.SubassemblyContractRows = []
+                obj.SubassemblyValidationRows = []
+                obj.RoadsideLibraryRows = []
+                obj.RoadsideLibrarySummary = "-"
+                obj.SectionComponentSummaryRows = []
+                obj.PavementScheduleRows = []
+            obj.BenchAppliedSectionCount = 0
+            obj.BenchSummary = "-"
+            obj.BenchSummaryRows = []
+            obj.BenchDaylightAdjustedSectionCount = 0
+            obj.BenchDaylightSkippedSectionCount = 0
             stations = SectionSet.resolve_station_values(obj)
             obj.StationValues = stations
             obj.SectionCount = len(stations)
@@ -1848,6 +2442,20 @@ class SectionSet:
                 obj.ResolvedStructureTags = []
                 st_kind = ""
                 st_obj = None
+            structure_rows = []
+            if bool(getattr(obj, "UseStructureSet", False)):
+                if st_obj is None:
+                    structure_rows.append(_report_row("structure", source="missing", stations=0, tags=0))
+                elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
+                    structure_rows.append(
+                        _report_row(
+                            "structure",
+                            source=str(st_kind or "structure_set"),
+                            stations=int(getattr(obj, "ResolvedStructureCount", 0) or 0),
+                            tags=len(list(getattr(obj, "ResolvedStructureTags", []) or [])),
+                        )
+                    )
+            obj.StructureInteractionSummaryRows = list(structure_rows)
 
             if not bool(getattr(obj, "ShowSectionWires", True)):
                 obj.Shape = Part.Shape()
@@ -1859,11 +2467,82 @@ class SectionSet:
                 obj.Status = "No stations"
                 return
 
-            _stations, wires, terrain_found, sampler_ok = SectionSet.build_section_wires(obj)
+            _stations, wires, terrain_found, sampler_ok, bench_info = SectionSet.build_section_wires(obj)
             if len(wires) < 1:
                 obj.Shape = Part.Shape()
                 obj.Status = "No section wires"
                 return
+
+            bench_left_hits = int((bench_info or {}).get("benchLeft", 0) or 0)
+            bench_right_hits = int((bench_info or {}).get("benchRight", 0) or 0)
+            bench_section_hits = int((bench_info or {}).get("benchSections", 0) or 0)
+            bench_adjusted_hits = int((bench_info or {}).get("benchAdjusted", 0) or 0)
+            bench_skipped_hits = int((bench_info or {}).get("benchSkipped", 0) or 0)
+            bench_left_cfg = int((bench_info or {}).get("benchLeftConfigured", 0) or 0)
+            bench_right_cfg = int((bench_info or {}).get("benchRightConfigured", 0) or 0)
+            bench_mode = "-"
+            if bench_left_hits > 0 and bench_right_hits > 0:
+                bench_mode = "both"
+            elif bench_left_hits > 0:
+                bench_mode = "left"
+            elif bench_right_hits > 0:
+                bench_mode = "right"
+            obj.BenchAppliedSectionCount = int(bench_section_hits)
+            obj.BenchDaylightAdjustedSectionCount = int(bench_adjusted_hits)
+            obj.BenchDaylightSkippedSectionCount = int(bench_skipped_hits)
+            if bench_mode == "-":
+                obj.BenchSummary = "-"
+            else:
+                obj.BenchSummary = (
+                    f"mode={bench_mode},left={bench_left_hits}/{bench_left_cfg},"
+                    f"right={bench_right_hits}/{bench_right_cfg}"
+                )
+            bench_rows = []
+            if bench_left_hits > 0:
+                bench_rows.append(
+                    _report_row(
+                        "bench",
+                        side="left",
+                        sections=bench_left_hits,
+                        mode="multi" if bench_left_cfg > 1 else "single",
+                        benches=bench_left_cfg,
+                        daylightAdjusted=int(bench_adjusted_hits),
+                        daylightSkipped=int(bench_skipped_hits),
+                    )
+                )
+            if bench_right_hits > 0:
+                bench_rows.append(
+                    _report_row(
+                        "bench",
+                        side="right",
+                        sections=bench_right_hits,
+                        mode="multi" if bench_right_cfg > 1 else "single",
+                        benches=bench_right_cfg,
+                        daylightAdjusted=int(bench_adjusted_hits),
+                        daylightSkipped=int(bench_skipped_hits),
+                    )
+                )
+            obj.BenchSummaryRows = list(bench_rows)
+            if bench_rows:
+                obj.SectionComponentSummaryRows = list(getattr(obj, "SectionComponentSummaryRows", []) or []) + list(bench_rows)
+            obj.ExportSummaryRows = [
+                _report_row(
+                    "export",
+                    target="section_set",
+                    reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
+                    sectionSchema=int(getattr(obj, "SectionSchemaVersion", 1) or 1),
+                    topProfile=str(getattr(obj, "TopProfileSource", "assembly_simple") or "assembly_simple"),
+                    practical=str(getattr(obj, "PracticalSectionMode", "simple") or "simple"),
+                    sections=int(len(stations)),
+                    structures=int(getattr(obj, "ResolvedStructureCount", 0) or 0),
+                    benchSections=int(bench_section_hits),
+                    benchMode=str(bench_mode),
+                    benchAdjusted=int(bench_adjusted_hits),
+                    benchSkipped=int(bench_skipped_hits),
+                    pavementLayers=int(getattr(obj, "EnabledPavementLayerCount", 0) or 0),
+                    roadside=str(getattr(obj, "RoadsideLibrarySummary", "-") or "-"),
+                )
+            ]
 
             if len(wires) == 1:
                 obj.Shape = wires[0]
@@ -1898,24 +2577,73 @@ class SectionSet:
             if bool(getattr(obj, "RebuildNow", False)):
                 obj.RebuildNow = False
             use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and (left_on or right_on)
+            terrain_mode = SectionSet._resolved_terrain_coord_mode(obj) if use_day else ""
+            struct_src = _resolve_structure_source(obj) if bool(getattr(obj, "UseStructureSet", False)) else None
+            resolved_structure_count = int(getattr(obj, "ResolvedStructureCount", 0) or 0)
+            ext_count = _external_shape_display_count(struct_src)
+            ext_proxy_count = _external_shape_proxy_count(struct_src)
             if use_day and (not terrain_found):
-                obj.Status = "WARN: DaylightAuto=True but no terrain source found. Fixed side widths used."
+                head = "WARN: daylight=no_terrain; fixed side widths used. Add TerrainMesh or disable DaylightAuto."
+                daylight_token = "daylight=fallback:no_terrain"
             elif use_day and terrain_found and (not sampler_ok):
-                obj.Status = "WARN: Terrain source found but daylight sampler failed. Fixed side widths used."
+                head = "WARN: daylight=sampler_failed; fixed side widths used. Check TerrainMeshCoords or terrain mesh validity."
+                daylight_token = "daylight=fallback:sampler_failed"
             else:
-                obj.Status = "OK"
-            obj.Status = f"{obj.Status} | schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}"
-            obj.Status = f"{obj.Status} | topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}"
-            obj.Status = f"{obj.Status} | topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}"
+                head = "OK"
+                if use_day:
+                    daylight_token = f"daylight=terrain:{str(terrain_mode or 'Local').lower()}"
+                else:
+                    daylight_token = "daylight=off"
+            status_tokens = [
+                daylight_token,
+                f"schema={int(getattr(obj, 'SectionSchemaVersion', 1) or 1)}",
+                f"topProfile={str(getattr(obj, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}",
+                f"topEdges={str(getattr(obj, 'TopProfileEdgeSummary', '-') or '-')}",
+            ]
+            if int(getattr(obj, "SubassemblySchemaVersion", 0) or 0) > 0:
+                status_tokens.append(f"subSchema={int(getattr(obj, 'SubassemblySchemaVersion', 0) or 0)}")
+                status_tokens.append(f"practical={str(getattr(obj, 'PracticalSectionMode', 'simple') or 'simple')}")
+            if str(getattr(obj, "RoadsideLibrarySummary", "-") or "-") != "-":
+                status_tokens.append(f"roadside={str(getattr(obj, 'RoadsideLibrarySummary', '-') or '-')}")
+            if int(getattr(obj, "BenchAppliedSectionCount", 0) or 0) > 0:
+                status_tokens.append(f"bench={bench_mode}")
+                status_tokens.append(f"benchSections={int(getattr(obj, 'BenchAppliedSectionCount', 0) or 0)}")
+                if int(getattr(obj, "BenchDaylightAdjustedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDayAdj={int(getattr(obj, 'BenchDaylightAdjustedSectionCount', 0) or 0)}")
+                if int(getattr(obj, "BenchDaylightSkippedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDaySkip={int(getattr(obj, 'BenchDaylightSkippedSectionCount', 0) or 0)}")
+            if len(list(getattr(obj, "SubassemblyValidationRows", []) or [])) > 0:
+                status_tokens.append(f"subWarn={len(list(getattr(obj, 'SubassemblyValidationRows', []) or []))}")
+            if int(getattr(obj, "TypicalSectionAdvancedComponentCount", 0) or 0) > 0:
+                status_tokens.append(f"typicalAdvanced={int(getattr(obj, 'TypicalSectionAdvancedComponentCount', 0) or 0)}")
             if float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0) > 1e-9:
-                obj.Status = f"{obj.Status} | pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m"
-            if bool(getattr(obj, "UseStructureSet", False)) and _resolve_structure_source(obj) is None:
-                obj.Status = f"{obj.Status} | StructureSet missing"
-            elif int(getattr(obj, "ResolvedStructureCount", 0) or 0) > 0:
-                obj.Status = f"{obj.Status} | structures={int(getattr(obj, 'ResolvedStructureCount', 0) or 0)}"
+                status_tokens.append(f"pavement={float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f}m")
+            if int(getattr(obj, "PavementLayerCount", 0) or 0) > 0:
+                status_tokens.append(
+                    f"pavLayers={int(getattr(obj, 'EnabledPavementLayerCount', 0) or 0)}/{int(getattr(obj, 'PavementLayerCount', 0) or 0)}"
+                )
+            status_tokens.append(
+                _earthwork_status_token(
+                    struct_src=struct_src,
+                    resolved_count=resolved_structure_count,
+                    ext_count=ext_count,
+                    proxy_count=ext_proxy_count,
+                    overrides_enabled=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                )
+            )
+            if bool(getattr(obj, "UseStructureSet", False)) and struct_src is None:
+                status_tokens.append("StructureSet missing")
+            elif resolved_structure_count > 0:
+                status_tokens.append(f"structures={resolved_structure_count}")
+            if ext_count > 0:
+                status_tokens.append(_display_only_status_token(ext_count))
+                status_tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
+            if ext_proxy_count > 0:
+                status_tokens.append(f"externalShapeProxy={int(ext_proxy_count)}")
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
-                ovh = int(getattr(obj, "_StructureOverrideHitCount", 0) or 0)
-                obj.Status = f"{obj.Status} | overrides={ovh}"
+                ovh = int((bench_info or {}).get("overrideHits", 0) or 0)
+                status_tokens.append(f"overrides={ovh}")
+            obj.Status = _status_join(head, *status_tokens)
 
             # Push parametric updates to linked corridor objects.
             if obj.Document is not None:
@@ -1930,9 +2658,27 @@ class SectionSet:
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
             obj.TopProfileEdgeSummary = "-"
+            obj.SubassemblySchemaVersion = 0
+            obj.PracticalSectionMode = "fallback"
+            obj.TypicalSectionAdvancedComponentCount = 0
             obj.PavementLayerCount = 0
             obj.EnabledPavementLayerCount = 0
             obj.PavementTotalThickness = 0.0
+            obj.PavementLayerSummaryRows = []
+            obj.SubassemblyContractRows = []
+            obj.SubassemblyValidationRows = []
+            obj.RoadsideLibraryRows = []
+            obj.RoadsideLibrarySummary = "-"
+            obj.ReportSchemaVersion = 1
+            obj.SectionComponentSummaryRows = []
+            obj.PavementScheduleRows = []
+            obj.StructureInteractionSummaryRows = []
+            obj.ExportSummaryRows = []
+            obj.BenchAppliedSectionCount = 0
+            obj.BenchSummary = "-"
+            obj.BenchSummaryRows = []
+            obj.BenchDaylightAdjustedSectionCount = 0
+            obj.BenchDaylightSkippedSectionCount = 0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):

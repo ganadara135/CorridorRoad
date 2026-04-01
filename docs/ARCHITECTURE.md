@@ -3,8 +3,10 @@
 
 # CorridorRoad Architecture
 
+For current mixed-workflow support and warning expectations, also see `docs/MIXED_WORKFLOW_VALIDATION_MATRIX.md`.
+
 ## 1) Pipeline View
-Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Solid) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
+Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Surface) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 
 ## 2) Object Responsibilities
 ### 2.1 VerticalAlignment (`freecad/Corridor_Road/objects/obj_vertical_alignment.py`)
@@ -79,6 +81,10 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### 2.7 AssemblyTemplate (`freecad/Corridor_Road/objects/obj_assembly_template.py`)
 - Purpose: cross-section template parameters.
+- Practical-engineering role split:
+  - `AssemblyTemplate` owns the corridor-envelope baseline, depth, side slopes, and daylight-related analysis defaults
+  - it does not own detailed roadside subassembly composition
+  - runtime role/result summary is exposed as `PracticalRole=assembly_core`
 - Key params:
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
@@ -87,6 +93,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `UseSideSlopes`
     - `LeftSideWidth`, `RightSideWidth`
     - `LeftSideSlopePct`, `RightSideSlopePct`
+    - single-bench options:
+      - `UseLeftBench`, `UseRightBench`
+      - `LeftBenchDrop`, `RightBenchDrop`
+      - `LeftBenchWidth`, `RightBenchWidth`
+      - `LeftBenchSlopePct`, `RightBenchSlopePct`
+      - `LeftPostBenchSlopePct`, `RightPostBenchSlopePct`
+      - with daylight enabled, bench sections can now be kept, shortened, or skipped per section depending on terrain intersection
     - `UseDaylightToTerrain`, `DaylightSearchStep`, `DaylightMaxSearchWidth`, `DaylightMaxWidthDelta`, `DaylightMaxTriangles`
 - Display behavior:
   - template wire shows crown line and depth envelope
@@ -129,9 +142,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - corridor `notch` handling
   - profile-driven 3D display currently prefers section-wire loft between resolved profile stations and only falls back to segment solids when lofting fails
 - Earthwork rule:
-  - `external_shape` currently affects display/reference placement only
-  - section overrides, grading surface generation, and corridor structure handling must continue to use structure `Type` plus simple dimensional metadata
-  - do not assume imported STEP/BREP/FCStd solids are directly consumed by earthwork
+  - `external_shape` always affects display/reference placement
+  - section overrides, grading surface generation, and corridor structure handling may also consume an indirect bounding-box proxy derived from the imported shape
+  - the imported STEP/BREP/FCStd solid is still not consumed directly as the true earthwork-cutting solid
 
 ### 2.8 SectionSet (`freecad/Corridor_Road/objects/obj_section_set.py`)
 - Purpose: section generation settings + aggregate section wire display.
@@ -139,6 +152,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `SourceCenterlineDisplay`
   - `AssemblyTemplate`
   - `TypicalSectionTemplate` (optional, component-based top profile)
+  - practical-engineering role split:
+    - `TypicalSectionTemplate` owns top-profile subassembly composition
+    - `AssemblyTemplate` still owns depth/side-slope/daylight defaults
   - optional `TerrainMesh` (for daylight-to-terrain, Mesh only)
   - `TerrainMeshCoords` (`Local` or `World`) for daylight terrain interpretation
   - terrain source resolve order when daylight is enabled:
@@ -157,12 +173,30 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
     - `CreateStructureTaggedChildren`, `ApplyStructureOverrides`
 - Results:
   - `StationValues`, `SectionSchemaVersion`, `TopProfileSource`, `SectionCount`, `Status`
+  - practical-section contract summary:
+    - `SubassemblySchemaVersion`
+    - `PracticalSectionMode`
+    - `SubassemblyContractRows`
+    - `SubassemblyValidationRows`
+    - `RoadsideLibraryRows`
+    - `RoadsideLibrarySummary`
+  - structured report contract:
+    - `ReportSchemaVersion`
+    - `SectionComponentSummaryRows`
+    - `PavementScheduleRows`
+    - `StructureInteractionSummaryRows`
+    - `ExportSummaryRows`
+  - row encoding:
+    - machine-readable `kind|key=value|...` strings so report rows remain stable even when UI wording changes
   - schema policy:
     - `SectionSchemaVersion=1`: 3-point section (`Left->Center->Right`)
     - `SectionSchemaVersion=2`: extended/open profile (side slopes and/or Typical Section break points)
 - daylight runtime status:
-  - `WARN: UseDaylightToTerrain=True but no terrain source found...`
-  - `WARN: Terrain source found but daylight sampler failed...`
+  - `daylight=off`
+  - `daylight=terrain:local` / `daylight=terrain:world`
+  - `daylight=fallback:no_terrain`
+  - `daylight=fallback:sampler_failed`
+  - warning text should also include the next-step guidance for the fallback case
 - daylight coordinate rule:
   - when `TerrainMeshCoords=World`, daylight terrain triangles are transformed to local before section sampling
 - daylight performance guards:
@@ -173,8 +207,12 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - neighboring section daylight widths should be smoothed/clamped by `DaylightMaxWidthDelta` to reduce abrupt loft twists.
 - structure-earthwork rule:
   - structure overrides are type-driven and simplified
-  - `external_shape` does not yet define the true section-cutting profile
+  - `external_shape` does not yet define the true section-cutting profile, but it may provide an indirect bounding-box proxy for width/height-driven behavior
   - when station-profile control points exist, section overlays and section overrides should consume resolved profile values at the active station
+  - status should make this visible with:
+    - `earthwork=full`, `earthwork=simplified_type_driven`, or `earthwork=external_shape_proxy`
+    - `displayOnly=external_shape:N` when imported solids remain display/reference only
+    - `externalShapeProxy=N` when imported solids contribute the indirect proxy envelope
 - Optional tree children:
   - `SectionSlice` objects under `Group`
   - `Structure Sections` overlay objects for structure-only section visualization
@@ -182,14 +220,18 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Rebuild controls:
   - `AutoRebuildChildren`
   - `RebuildNow` (property-panel trigger)
+- practical status convention:
+  - `subSchema=N` for the practical subassembly contract version
+  - `practical=simple|advanced|fallback`
+  - `subWarn=N` when subassembly validation notes are active
+  - `roadside=ditch_edge:1,urban_edge:1,...` when reusable roadside families are detected
 
 ### 2.9 CorridorLoft (`freecad/Corridor_Road/objects/obj_corridor_loft.py`)
 - Purpose: corridor loft generation from `SectionSet`.
 - Inputs:
   - `SourceSectionSet`
 - Controls:
-  - `OutputType` (`Solid` only)
-  - `HeightLeft`, `HeightRight` (fallback when template values are unavailable)
+  - `OutputType` (`Surface` only)
   - `UseRuled`
   - `AutoFixSectionOrientation`
   - `SplitAtStructureZones`
@@ -204,16 +246,21 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `StructureSegmentCount`, `StructureSplitStations`
   - `SkippedStationRanges`, `SkipMarkerCount`
   - `ResolvedStructureNotchCount`, `ResolvedNotchStationCount`
-  - `ClosedProfileSchemaVersion`
+  - `ClosedProfileSchemaVersion` (legacy loft-profile schema diagnostic)
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
+  - structured report contract copied from `SectionSet` plus corridor-specific `ExportSummaryRows`
 - Output mode:
-  - `Solid`: loft from closed profiles generated with downward heights
-  - Height source priority: `AssemblyTemplate.HeightLeft/HeightRight` -> `CorridorLoft.HeightLeft/HeightRight`
+  - `Surface`: loft from open section wires
+  - notch-aware structure handling reshapes the loft profile instead of cutting corridor solids
 - Structure-aware corridor behavior:
   - `split_only` keeps corridor continuity while splitting loft at structure boundaries
   - `skip_zone` omits corridor body across structure-active spans
   - `notch` is primarily for `culvert` / `crossing` and should prefer a notch-aware closed-profile schema
+- corridor status convention:
+  - `corridorRule=full` for a standard full-span loft
+  - `corridorRule=structure_aware` when structure modes or segmented structure handling affect the output
+  - keep `corridorModes=...`, `skipZones=...`, `skipCaps=...`, and `skipBoundary=...` as supporting diagnostics
 - Current notch policy:
   - transition stations can drive ramped notch entry/exit
   - result reporting should expose notch-aware station count and closed-profile schema version
@@ -221,6 +268,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - when station-profile control points exist, notch width/height-related values should consume resolved profile values along the active span
 - External-shape relation:
   - corridor structure handling is derived from `ResolvedCorridorMode`, structure type, and simplified dimensions
+  - `external_shape` may contribute an indirect bounding-box proxy to those simplified dimensions
   - `external_shape` is not yet used as a direct boolean cutter or loft-profile source for earthwork
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
@@ -241,6 +289,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Results:
   - `SectionCount`, `PointCountPerSection`, `FaceCount`, `SchemaVersion`
   - `NeedsRecompute`, `Status`
+  - structured report contract copied from `SectionSet` plus grading-surface `ExportSummaryRows`
 - Output mode:
   - ruled-surface base is tessellated to output mesh facets
   - intended for 3D visualization of cut/fill side slopes and mesh-based analysis
@@ -267,6 +316,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `DomainArea`, `NoDataRatio`
   - `SignConvention`
   - `Status`
+  - comparison/report contract:
+    - `ComparisonSchemaVersion`
+    - `ComparisonSourceMode`, `ComparisonSourceSupport`
+    - `ComparisonSourceSummaryRows`
+    - `AnalysisDomainMode`, `DomainSummaryRows`
+    - `StationBinnedSummaryRows`
+    - `ComparedCellCount`, `ExcludedCellCount`
+    - `FallbackEventCount`, `CoordinateTransformCount`
+    - `TrustLevel`, `TrustBlockerCount`
+    - `QualitySummaryRows`, `ReviewSummaryRows`, `ExportSummaryRows`
 - 3D delta map controls:
   - `ShowDeltaMap`
   - `DeltaDeadband`
@@ -279,10 +338,24 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - design side uses top surface extracted from `CorridorLoft`
   - existing side uses mesh triangles
   - grid sampling integrates `delta = Design - Existing`
+  - current supported source mode is explicitly reported as `corridor_top_vs_existing_mesh`
+  - source-pair status is tracked in `docs/SURFACE_COMPARISON_SOURCE_MATRIX.md`
 - Coordinate rule:
   - design side is local-model coordinates
   - manual domain is interpreted by `DomainCoords` (world input is converted to local bbox)
   - when `ExistingSurfaceCoords=World`, existing mesh triangles are transformed to local before sampling
+ - Domain/clip reporting:
+   - `AnalysisDomainMode` distinguishes `corridor_bounds` vs `manual_bounds_local/world`
+   - `DomainSummaryRows` report used bounds plus compared/excluded area
+ - Station binning:
+   - `StationBinSize=0` uses sorted `SectionSet.StationValues`
+   - positive `StationBinSize` forces evenly sized bins over the resolved station span
+   - rows are emitted as `stationBin|...|side=all/left/right|...` using `HorizontalAlignment.station_at_xy(...)`
+ - Quality/trust policy:
+   - `TrustLevel=review_ready` when no blockers are present and no warning-level transforms/fallbacks are active
+   - `TrustLevel=review_with_warnings` when comparison is usable but coordinate transforms, decimation fallback, or moderate no-data risk are present
+   - `TrustLevel=low_confidence` when blocker conditions are present, such as no valid cells or severe no-data ratio
+   - `QualitySummaryRows` and `ReviewSummaryRows` should use the same trust wording as `Status`
 - Runtime/UX:
   - supports progress callback (stage + percent)
   - supports cancel request during run
@@ -400,6 +473,22 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Profile editor EG terrain sampling coordinate mode:
   - `Local (X/Y)` samples terrain with local alignment XY directly
   - `World (E/N)` converts local alignment XY to world XY for sampling, then converts sampled Z back to local
+- Profile editor manual FG tooling:
+  - `Import FG CSV` updates matching stations and appends new stations for manual FG workflows
+  - `FG Wizard` supports `EG + constant offset`, `EG + start/end offset ramp`, and `absolute FG interpolation`
+  - if `FG from VerticalAlignment` is active, manual FG tools must confirm the switch to manual FG first
+- Profile editor layout policy:
+  - the table-action area uses two rows to stay readable in narrow task-panel widths
+  - top row keeps station/table actions
+  - bottom row keeps FG-generation/import actions
+- `Sort by Station` in the profile editor keeps FG-only rows; it must not drop rows just because EG is still blank.
+- PVI editor UX policy:
+  - inline guide explains PVI terminology in plain language
+  - under-table summary previews first grade percentages and `BVC` / `EVC` windows
+  - `Vertical Curve L` wording must state that it is total curve length centered on the PVI, not next-row spacing
+  - if no saved VA exists, the panel auto-seeds a starter PVI from the resolved station range
+  - `Load Starter PVI` rebuilds starter rows
+  - `Clear to Blank` resets to an empty input state
 - `freecad/Corridor_Road/ui/task_pvi_editor.py` ensures FGDisplay exists and links to current VA.
 - `Generate FG Now (apply)` shows a completion dialog on success.
 - saved/generated `Vertical Alignment (PVI)` is visible in 3D view by default.
@@ -431,7 +520,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Supports component-table editing and direct CSV import
 - Supports pavement-layer table editing and direct pavement CSV import
 - Current CSV columns:
-  - `Id`, `Type`, `Side`, `Width`, `CrossSlopePct`, `Height`, `Offset`, `Order`, `Enabled`
+  - `Id`, `Type`, `Side`, `Width`, `CrossSlopePct`, `Height`, `ExtraWidth`, `BackSlopePct`, `Offset`, `Order`, `Enabled`
 - Current pavement CSV columns:
   - `Id`, `Type`, `Thickness`, `Enabled`
 - Current sample CSVs:
@@ -440,17 +529,21 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `typical_section_with_ditch.csv`
   - `typical_section_pavement_basic.csv`
 - Current component notes:
-  - `curb` = vertical step + top width
-  - `ditch` = V-like sag break
-  - `berm` = flat road-edge platform segment
-  - `bench` = reserved term for future earthwork mid-slope benching
+  - `curb` = optional face/gutter run + vertical rise + curb top width
+  - `ditch` = total span with optional flat bottom width + outer-side slope
+  - `berm` = bench/platform segment with optional outer taper
+  - mid-slope earthwork benching now lives in `AssemblyTemplate` / `Generate Sections` side-slope controls, including multi-bench terrace rows, not as a `Typical Section` component type
 - Current pavement notes:
-  - pavement layers are data-first, not separate corridor solids yet
+  - pavement layers are still not separate corridor solids
+  - `TypicalSectionPavementDisplay` is the first separate pavement geometry/report object
   - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`
-  - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary for downstream reporting
+  - `TypicalSectionTemplate` and `TypicalSectionPavementDisplay` also store enabled pavement layer report rows
+  - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary and report rows for downstream reporting
   - pavement preview offset wires were removed; `TypicalSectionTemplate.Shape` now stays focused on the top-profile wire for faster panel/apply behavior
 - execution-plan/status document:
   - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
+- practical sample inventory:
+  - `docs/PRACTICAL_SAMPLE_SET.md`
 
 ### 3.5A Edit Structures (`freecad/Corridor_Road/ui/task_structure_editor.py`)
 - Station columns are driven by generated `Stationing` values.
@@ -470,6 +563,16 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Current UX policy:
   - selection context updates on explicit row press/click, not hover
   - row validation state is surfaced directly in the upper table and summary labels
+- current starter structure CSVs:
+  - `structure_utm_realistic_hilly.csv`
+  - `structure_utm_realistic_hilly_notch.csv`
+  - `structure_utm_realistic_hilly_template.csv`
+  - `structure_utm_realistic_hilly_external_shape.csv`
+- current combined/profile-driven structure CSVs:
+  - `structure_utm_realistic_hilly_station_profile_headers.csv` + `structure_utm_realistic_hilly_station_profile_points.csv`
+  - `structure_utm_realistic_hilly_mixed.csv` + `structure_utm_realistic_hilly_mixed_profile_points.csv`
+- practical sample inventory:
+  - `docs/PRACTICAL_SAMPLE_SET.md`
 
 ### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor_loft.py`)
 - Creates/updates `CorridorLoft`.
@@ -517,7 +620,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - Profile data storage != FG display
   - Centerline3D engine != Centerline3DDisplay rendering
 - Model representation policy:
-  - `CorridorLoft` is Solid model
+  - `CorridorLoft` is Surface model
   - `DesignGradingSurface` is Mesh model (visual grading)
   - `DesignTerrain` is Mesh model (composite terrain)
   - other design/analysis objects are Surface/Wire based
@@ -552,9 +655,8 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - If mismatch is detected, Loft must stop with explicit status/error
 
 ### 6.2 Output Type Policy
-- `OutputType` is `Solid` only
-- `Solid` uses closed profiles built from section wires + `HeightLeft/HeightRight` (downward)
-- `HeightLeft/HeightRight` must be finite and non-negative, and at least one side must be > 0
+- `OutputType` is `Surface` only
+- `Surface` uses open section wires directly; corridor body solids are not generated
 
 ### 6.3 Parametric Update Policy
 - Default: `AutoUpdate = True`
@@ -598,7 +700,7 @@ Before entering `Existing/Design Surface` comparison stage, these are fixed:
 - Recompute is explicit (manual trigger/command).
 
 2. Design Surface extraction
-- Comparison design surface is extracted from `CorridorLoft` top surface only.
+- Comparison design surface is extracted from upward faces of `CorridorLoft`.
 
 3. Existing Surface input format
 - Phase-1 existing surface input is `Mesh` only.

@@ -30,6 +30,7 @@ class PviEditorTaskPanel:
         self.doc = App.ActiveDocument
         self._scale = get_length_scale(self.doc, default=1.0)
         self._loading = False
+        self._starter_source_name = ""
         self.form = self._build_ui()
         self._try_load_existing_va()
 
@@ -46,7 +47,7 @@ class PviEditorTaskPanel:
     # ---- UI ----
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - PVI Editor (Generate FG)")
+        w.setWindowTitle("CorridorRoad - Edit PVI (Vertical Alignment / FG)")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)
@@ -56,32 +57,62 @@ class PviEditorTaskPanel:
         self.lbl_status.setWordWrap(True)
         main.addWidget(self.lbl_status)
 
-        # Top controls
-        top = QtWidgets.QHBoxLayout()
-        top.setSpacing(10)
-
         gb_left = QtWidgets.QGroupBox("PVI Input")
         gl = QtWidgets.QVBoxLayout(gb_left)
 
+        self.lbl_pvi_guide = QtWidgets.QLabel(
+            "How to fill the table:\n"
+            "- Grade Break Station (PVI): station where the incoming and outgoing grades meet\n"
+            "- FG Elev at PVI: finished-grade elevation at that same station\n"
+            "- Vertical Curve L: total vertical-curve length centered on that PVI\n"
+            "  Use 0 for a sharp grade break. L is not the distance to the next row."
+        )
+        self.lbl_pvi_guide.setWordWrap(True)
+        gl.addWidget(self.lbl_pvi_guide)
+
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row2 = QtWidgets.QHBoxLayout()
         self.btn_add = QtWidgets.QPushButton("Add Row")
         self.btn_remove = QtWidgets.QPushButton("Remove Row")
         self.btn_sort = QtWidgets.QPushButton("Sort by Station")
+        self.btn_load_starter = QtWidgets.QPushButton("Load Starter PVI")
+        self.btn_clear_blank = QtWidgets.QPushButton("Clear to Blank")
 
         btn_row.addWidget(self.btn_add)
         btn_row.addWidget(self.btn_remove)
         btn_row.addWidget(self.btn_sort)
+        btn_row2.addWidget(self.btn_load_starter)
+        btn_row2.addWidget(self.btn_clear_blank)
 
         gl.addLayout(btn_row)
+        gl.addLayout(btn_row2)
 
         self.table = QtWidgets.QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["PVI Station", "PVI Elev", "Curve Length"])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setHorizontalHeaderLabels(["Grade Break Station", "FG Elev at PVI", "Vertical Curve L"])
+        hdr = self.table.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
+        hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
+        self.table.setColumnWidth(0, 180)
+        self.table.setColumnWidth(1, 150)
+        self.table.setToolTip(
+            "Enter grade-break stations in ascending order.\n"
+            "PVI elevation is the finished grade at that station.\n"
+            "Vertical Curve L is the total curve length centered on the PVI."
+        )
+        self.table.horizontalHeaderItem(0).setToolTip("Station where the incoming and outgoing grades meet (PVI station).")
+        self.table.horizontalHeaderItem(1).setToolTip("Finished-grade elevation at that PVI station.")
+        self.table.horizontalHeaderItem(2).setToolTip("Total vertical-curve length L centered on that PVI. Use 0 for no curve.")
 
         gl.addWidget(self.table)
+
+        self.lbl_pvi_summary = QtWidgets.QLabel("")
+        self.lbl_pvi_summary.setWordWrap(True)
+        gl.addWidget(self.lbl_pvi_summary)
 
         gb_right = QtWidgets.QGroupBox("Generate FG")
         gr = QtWidgets.QFormLayout(gb_right)
@@ -105,7 +136,8 @@ class PviEditorTaskPanel:
             "FG will be generated on Station list:\n"
             "- ProfileBundle.Stations (if exists)\n"
             "- else Stationing.StationValues\n\n"
-            "Step 1: Linear grade only (no vertical curves)."
+            "Use Edit PVI when FG should be controlled by vertical geometry.\n"
+            "Use Edit Profiles manual FG tools when you want CSV import or quick offset/interpolation workflows."
         )
         self.lbl_info.setWordWrap(True)
 
@@ -132,32 +164,45 @@ class PviEditorTaskPanel:
         w_apply.setLayout(row_apply)
         gr.addRow(w_apply)
 
-        top.addWidget(gb_left, 3)
-        top.addWidget(gb_right, 2)
-
-        main.addLayout(top)
+        main.addWidget(gb_left)
+        main.addWidget(gb_right)
 
         # Signals
         self.btn_add.clicked.connect(self._add_row)
         self.btn_remove.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
+        self.btn_load_starter.clicked.connect(self._load_starter_pvi)
+        self.btn_clear_blank.clicked.connect(self._clear_to_blank)
         self.btn_open_profiles.clicked.connect(self._open_edit_profiles)
         self.btn_preview.clicked.connect(self._preview_fg)
         self.btn_generate_only.clicked.connect(self._generate_fg_to_profilebundle)
         self.btn_close.clicked.connect(self.reject)
+        self.table.itemChanged.connect(self._on_table_item_changed)
 
         # Start with 3 blank rows for convenience
         self._set_rows(3)
+        self._refresh_pvi_summary()
 
         return w
 
     # ---- Table helpers ----
     def _set_rows(self, n):
-        self.table.setRowCount(n)
-        for r in range(n):
-            for c in range(3):
-                if self.table.item(r, c) is None:
-                    self.table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
+        self._loading = True
+        try:
+            self.table.setRowCount(n)
+            for r in range(n):
+                for c in range(3):
+                    if self.table.item(r, c) is None:
+                        it = QtWidgets.QTableWidgetItem("")
+                        if c == 0:
+                            it.setToolTip("Station where grade changes at this PVI.")
+                        elif c == 1:
+                            it.setToolTip("Finished-grade elevation at this PVI station.")
+                        else:
+                            it.setToolTip("Total vertical-curve length L centered on this PVI. Use 0 for no curve.")
+                        self.table.setItem(r, c, it)
+        finally:
+            self._loading = False
 
     def _get_float(self, r, c):
         it = self.table.item(r, c)
@@ -197,8 +242,28 @@ class PviEditorTaskPanel:
 
     # ---- Actions ----
     def _add_row(self):
-        n = self.table.rowCount()
-        self._set_rows(n + 1)
+        insert_at = self.table.currentRow()
+        if insert_at < 0:
+            insert_at = self.table.rowCount() - 1
+        insert_at += 1
+
+        self._loading = True
+        try:
+            self.table.insertRow(insert_at)
+            for c in range(3):
+                it = QtWidgets.QTableWidgetItem("")
+                if c == 0:
+                    it.setToolTip("Station where grade changes at this PVI.")
+                elif c == 1:
+                    it.setToolTip("Finished-grade elevation at this PVI station.")
+                else:
+                    it.setToolTip("Total vertical-curve length L centered on this PVI. Use 0 for no curve.")
+                self.table.setItem(insert_at, c, it)
+        finally:
+            self._loading = False
+
+        self.table.setCurrentCell(insert_at, 0)
+        self._refresh_pvi_summary()
 
     def _remove_row(self):
         r = self.table.currentRow()
@@ -207,6 +272,7 @@ class PviEditorTaskPanel:
 
         if r >= 0:
             self.table.removeRow(r)
+        self._refresh_pvi_summary()
 
     def _sort_rows(self):
         pairs = self._read_pvi()
@@ -220,6 +286,160 @@ class PviEditorTaskPanel:
                 self._set_float(i, 2, L)
         finally:
             self._loading = False
+        self._refresh_pvi_summary()
+
+    @staticmethod
+    def _station_key(value):
+        return round(float(value), 6)
+
+    def _resolve_starter_seed_values(self, stations):
+        bundle = _find_profile_bundle(self.doc) if self.doc is not None else None
+        if bundle is not None:
+            bundle_stations = [float(s) for s in list(getattr(bundle, "Stations", []) or [])]
+            if len(bundle_stations) >= 2:
+                fg_vals = list(getattr(bundle, "ElevFG", []) or [])
+                eg_vals = list(getattr(bundle, "ElevEG", []) or [])
+                if len(fg_vals) == len(bundle_stations) and any(abs(float(v)) > 1e-9 for v in fg_vals):
+                    return "ProfileBundle FG", {
+                        self._station_key(s): float(fg_vals[i]) for i, s in enumerate(bundle_stations)
+                    }
+                if len(eg_vals) == len(bundle_stations) and any(abs(float(v)) > 1e-9 for v in eg_vals):
+                    return "ProfileBundle EG", {
+                        self._station_key(s): float(eg_vals[i]) for i, s in enumerate(bundle_stations)
+                    }
+        return "Flat 0.000", {self._station_key(s): 0.0 for s in stations}
+
+    def _build_starter_pvi_rows(self):
+        stations = sorted({float(s) for s in self._resolve_station_list()})
+        if len(stations) < 2:
+            return [], ""
+
+        chosen = [stations[0]]
+        if len(stations) >= 3 and abs(stations[-1] - stations[0]) > 1e-9:
+            interior = [float(s) for s in stations[1:-1]]
+            if interior:
+                target_mid = 0.5 * (stations[0] + stations[-1])
+                mid = min(interior, key=lambda s: abs(float(s) - target_mid))
+                if abs(mid - chosen[0]) > 1e-9 and abs(stations[-1] - mid) > 1e-9:
+                    chosen.append(mid)
+        chosen.append(stations[-1])
+
+        source_name, value_map = self._resolve_starter_seed_values(stations)
+        rows = []
+        for station in chosen:
+            elev = value_map.get(self._station_key(station), 0.0)
+            rows.append([float(station), float(elev), 0.0])
+
+        if len(rows) >= 3:
+            total_range = max(0.0, rows[-1][0] - rows[0][0])
+            base_length = min(40.0, max(20.0, total_range * 0.10))
+            for i in range(1, len(rows) - 1):
+                left = max(0.0, rows[i][0] - rows[i - 1][0])
+                right = max(0.0, rows[i + 1][0] - rows[i][0])
+                limit = max(0.0, 1.6 * min(left, right))
+                rows[i][2] = min(base_length, limit) if limit > 1e-9 else 0.0
+
+        return [(r[0], r[1], r[2]) for r in rows], source_name
+
+    def _apply_pvi_rows(self, rows):
+        self._loading = True
+        try:
+            self.table.setRowCount(0)
+            self._set_rows(max(3, len(rows)))
+            for i, (s, z, L) in enumerate(rows):
+                self._set_float(i, 0, s)
+                self._set_float(i, 1, z)
+                self._set_float(i, 2, L)
+            for i in range(len(rows), self.table.rowCount()):
+                self.table.item(i, 0).setText("")
+                self.table.item(i, 1).setText("")
+                self.table.item(i, 2).setText("")
+        finally:
+            self._loading = False
+        self._refresh_pvi_summary()
+
+    def _load_starter_pvi(self, checked=False, show_message=True):
+        del checked
+        rows, source_name = self._build_starter_pvi_rows()
+        if len(rows) < 2:
+            if show_message:
+                QtWidgets.QMessageBox.information(
+                    None,
+                    "Edit PVI",
+                    "Starter PVI could not be generated.\nCreate Stationing or ProfileBundle first.",
+                )
+            return False
+
+        sc = max(1e-12, float(self._scale))
+        display_rows = [(float(s) / sc, float(z) / sc, float(L) / sc) for s, z, L in rows]
+        self._starter_source_name = source_name
+        self._apply_pvi_rows(display_rows)
+        self._refresh_status_summary()
+
+        if show_message:
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit PVI",
+                f"Starter PVI loaded.\nRows: {len(display_rows)}\nSeed source: {source_name}",
+            )
+        return True
+
+    def _clear_to_blank(self):
+        self._starter_source_name = ""
+        self._apply_pvi_rows([])
+        self._refresh_status_summary()
+
+    def _format_grade_pct(self, z0, z1, s0, s1):
+        ds = float(s1) - float(s0)
+        if abs(ds) < 1e-12:
+            return "n/a"
+        return f"{((float(z1) - float(z0)) / ds) * 100.0:+.3f}%"
+
+    def _refresh_pvi_summary(self):
+        rows = self._read_pvi()
+        if len(rows) < 2:
+            self.lbl_pvi_summary.setText(
+                "Input guide:\n"
+                "- Add at least 2 rows.\n"
+                "- Start and end rows usually use `Vertical Curve L = 0`.\n"
+                "- Interior rows use `Vertical Curve L` only when you want a smooth vertical curve through that PVI."
+            )
+            return
+
+        lines = [
+            f"Valid PVI rows: {len(rows)}",
+            "Preview meaning:",
+        ]
+
+        grade_count = min(len(rows) - 1, 3)
+        for i in range(grade_count):
+            s0, z0, _l0 = rows[i]
+            s1, z1, _l1 = rows[i + 1]
+            lines.append(
+                f"- Grade {i + 1}: {s0:.3f} -> {s1:.3f} = {self._format_grade_pct(z0, z1, s0, s1)}"
+            )
+
+        curve_lines = []
+        for i in range(1, min(len(rows) - 1, 4)):
+            si, _zi, Li = rows[i]
+            Li = max(0.0, float(Li))
+            if Li <= 0.0:
+                curve_lines.append(f"- PVI @{si:.3f}: no vertical curve (L=0)")
+            else:
+                curve_lines.append(
+                    f"- PVI @{si:.3f}: L={Li:.3f} -> BVC {si - 0.5 * Li:.3f}, EVC {si + 0.5 * Li:.3f}"
+                )
+
+        if curve_lines:
+            lines.append("Curve preview:")
+            lines.extend(curve_lines)
+
+        self.lbl_pvi_summary.setText("\n".join(lines))
+
+    def _on_table_item_changed(self, _item):
+        if self._loading:
+            return
+        self._refresh_pvi_summary()
 
     def _refresh_status_summary(self):
         if self.doc is None:
@@ -235,6 +455,8 @@ class PviEditorTaskPanel:
                 [
                     f"Target ProfileBundle: {target}",
                     f"Linked Profiles: {linked}",
+                    f"Starter PVI seed: {self._starter_source_name or '-'}",
+                    "PVI = grade-break point for FG vertical alignment.",
                     "Generate FG Now will update the profile FG values from the current vertical alignment.",
                 ]
             )
@@ -258,6 +480,8 @@ class PviEditorTaskPanel:
         va = _find_vertical_alignment(self.doc)
         if va is None:
             self._refresh_status_summary()
+            self._refresh_pvi_summary()
+            self._load_starter_pvi(show_message=False)
             return
 
         st = list(getattr(va, "PVIStations", []) or [])
@@ -296,6 +520,7 @@ class PviEditorTaskPanel:
         except Exception:
             pass
         self._refresh_status_summary()
+        self._refresh_pvi_summary()
 
     # ---- Save VerticalAlignment ----
     def _save_vertical_alignment(self):
@@ -312,7 +537,8 @@ class PviEditorTaskPanel:
         if va is None:
             va = self.doc.addObject("Part::FeaturePython", "VerticalAlignment")
             VerticalAlignment(va)
-            ViewProviderVerticalAlignment(va.ViewObject)
+            if getattr(va, "ViewObject", None) is not None:
+                ViewProviderVerticalAlignment(va.ViewObject)
             va.Label = "Vertical Alignment (PVI)"
         _ensure_fg_display(self.doc, va)
 
@@ -400,7 +626,8 @@ class PviEditorTaskPanel:
 
             b = self.doc.addObject("Part::FeaturePython", "ProfileBundle")
             ProfileBundle(b)
-            ViewProviderProfileBundle(b.ViewObject)
+            if getattr(b, "ViewObject", None) is not None:
+                ViewProviderProfileBundle(b.ViewObject)
             b.Label = PROFILE_BUNDLE_LABEL
 
             # If we created from Stationing, set Stations now

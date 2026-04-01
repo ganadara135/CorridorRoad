@@ -64,6 +64,52 @@ Recommended sample file:
 
 ![Alignment CSV import result](images/wiki-csv-alignment-import-result.png)
 
+## 2A. Profile FG CSV
+
+Use this format with `Edit Profiles -> Import FG CSV` when you want to start from manual FG values instead of generating FG from `Edit PVI`.
+
+Recommended header:
+`Station,FG`
+
+Also accepted header aliases:
+- station column: `Station`, `Sta`, `Chainage`, `PK`, `KP`, `Distance`
+- FG column: `FG`, `ElevFG`, `DesignElevation`, `DesignGrade`, `FinishedElevation`, `Z`, `Elevation`
+
+Example:
+```csv
+Station,FG
+0.000,118.200
+40.000,118.550
+80.000,118.980
+120.000,119.430
+```
+
+Alias example:
+```csv
+PK,DesignElevation
+0.000,118.000
+50.000,118.350
+100.000,118.820
+150.000,119.260
+```
+
+Rules:
+- one station column and one FG column are required
+- station values should be numeric and increasing for readability
+- duplicate station rows are allowed in the file, but the last one wins during import
+- matching stations update existing profile rows
+- stations not yet in the table are appended, then the table is re-sorted
+- manual FG import works best after `Fill Stations from Stationing`, but it can also create rows in an empty table
+
+Recommended sample files:
+- `tests/samples/profile_fg_manual_import_basic.csv`
+- `tests/samples/profile_fg_manual_import_aliases.csv`
+
+Practical notes:
+1. If `FG from VerticalAlignment` is currently enabled, the panel asks whether it should switch to manual FG first.
+2. `FG Wizard` is the companion tool for generating manual FG values without preparing a CSV file.
+3. `Sort by Station` now preserves rows that have FG but blank EG.
+
 ## 3. Structure CSV
 
 Recommended header:
@@ -98,8 +144,10 @@ Rules:
 
 Recommended sample file:
 - `tests/samples/structure_utm_realistic_hilly.csv`
+- `tests/samples/structure_utm_realistic_hilly_notch.csv`
 - `tests/samples/structure_utm_realistic_hilly_template.csv`
 - `tests/samples/structure_utm_realistic_hilly_external_shape.csv`
+- See `docs/PRACTICAL_SAMPLE_SET.md` for the maintained starter/mixed sample grouping.
 
 Practical notes:
 1. Run `Generate Stations` before using `Edit Structures`, even if the CSV contains valid station values.
@@ -183,18 +231,18 @@ Current workflow:
 6. `Apply`
 
 Recommended header:
-`Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled`
+`Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled`
 
 Example:
 ```csv
-Id,Type,Side,Width,CrossSlopePct,Height,Offset,Order,Enabled
-LANE-L,lane,left,3.500,2.0,0.000,0.000,10,true
-SHL-L,shoulder,left,1.500,4.0,0.000,0.000,20,true
-GUT-L,gutter,left,0.800,6.0,0.000,0.000,30,true
-DITCH-L,ditch,left,2.000,2.0,1.000,0.000,40,true
-BERM-L,berm,left,1.500,0.0,0.000,0.000,50,true
-LANE-R,lane,right,3.500,2.0,0.000,0.000,10,true
-SHL-R,shoulder,right,1.500,4.0,0.000,0.000,20,true
+Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
+LANE-L,lane,left,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-L,shoulder,left,1.500,4.0,0.000,0.000,0.000,0.000,20,true
+GUT-L,gutter,left,0.800,6.0,0.000,0.000,0.000,0.000,30,true
+DITCH-L,ditch,left,2.000,2.0,1.000,0.700,-10.000,0.000,40,true
+BERM-L,berm,left,1.500,0.0,0.000,1.000,8.000,0.000,50,true
+LANE-R,lane,right,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-R,shoulder,right,1.500,4.0,0.000,0.000,0.000,0.000,20,true
 ```
 
 Recommended sample files:
@@ -208,9 +256,10 @@ Current notes:
 2. `AssemblyTemplate` still provides corridor depth, side slopes, and daylight defaults.
 3. `Save Component CSV` can export the edited component table back to CSV.
 4. The editor now supports built-in presets and quick-add component buttons for faster setup.
-5. Type-aware tooltips and cell tinting help distinguish slope-driven rows (`lane`, `shoulder`, `gutter`) from height-driven rows (`curb`, `ditch`).
-6. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
-7. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
+5. `ExtraWidth` and `BackSlopePct` are now part of the maintained component CSV contract.
+6. Type-aware tooltips and cell tinting help distinguish slope-driven rows (`lane`, `shoulder`, `gutter`) from height-driven rows (`curb`, `ditch`).
+7. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
+8. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
 
 ### 3C. Typical Section Pavement CSV
 

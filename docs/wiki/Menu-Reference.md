@@ -162,6 +162,8 @@ Important behavior:
 2. `Apply` can sample EG from the selected terrain before saving.
 3. If `FG from VerticalAlignment` is enabled and a vertical alignment exists, the `FG` column becomes read-only and is regenerated from the vertical alignment.
 4. If manual FG editing is used, the FG display wire is hidden to avoid showing stale geometry.
+5. `Import FG CSV` and `FG Wizard` both write manual FG values. If FG is currently locked to `VerticalAlignment`, the panel asks whether it should switch to manual FG first.
+6. The table-action buttons are split into two rows on purpose so long labels stay readable in narrower task panels.
 
 ### Table Columns
 
@@ -174,13 +176,19 @@ Important behavior:
 
 ### Buttons
 
+Current layout:
+1. Top row: `Add Row`, `Remove Row`, `Sort by Station`, `Fill Stations from Stationing`
+2. Bottom row: `Fill FG from VerticalAlignment`, `Import FG CSV`, `FG Wizard`
+
 | Option | Meaning | How to use it |
 |---|---|---|
 | `Add Row` | Adds one blank table row. | Use for manual editing. |
 | `Remove Row` | Removes the selected row. | If no row is selected, the last row is removed. |
-| `Sort by Station` | Sorts valid rows by station. | Use before saving if rows were manually edited out of order. |
+| `Sort by Station` | Sorts rows by station. | Use before saving if rows were manually edited out of order. Rows with FG but blank EG are preserved. |
 | `Fill Stations from Stationing` | Replaces the table with `Stationing.StationValues`. | Use after `Generate Stations`. This is the fastest way to build the profile table. |
 | `Fill FG from VerticalAlignment` | Fills FG values from the current `VerticalAlignment`. | Useful after editing PVIs. It only matters when a vertical alignment exists. |
+| `Import FG CSV` | Imports `Station` + `FG` pairs from CSV/text and writes them into manual FG. | Existing matching stations are updated. Imported stations that do not exist yet are appended, then the table is re-sorted. |
+| `FG Wizard` | Generates manual FG values over a selected station range. | Supports `EG + constant offset`, `EG + start/end offset ramp`, and `absolute FG interpolation`. |
 
 ### Options
 
@@ -203,7 +211,8 @@ Important behavior:
 3. Click `Fill Stations from Stationing`.
 4. Choose the DEM terrain as `EG Terrain Source`.
 5. Keep `FG from VerticalAlignment` enabled if FG should be driven by `Edit PVI`.
-6. Click `Apply`.
+6. If you want a non-PVI starting point, switch to manual FG and use `Import FG CSV` or `FG Wizard`.
+7. Click `Apply`.
 
 ### Practical Notes
 1. If EG sampling fails or coverage is poor, first verify terrain extent and coordinate mode.
@@ -223,6 +232,8 @@ Important behavior:
 1. `Vertical Alignment (PVI)` is now shown in 3D view by default.
 2. The station list used for FG generation comes from `ProfileBundle.Stations` if available, otherwise from `Stationing.StationValues`.
 3. `Generate FG Now (apply)` updates both the `VerticalAlignment` and the `ProfileBundle`.
+4. The left side of the panel now includes an inline input guide and a live grade/curve preview summary so users can understand what each PVI row means before generation.
+5. If no existing vertical alignment is found, the panel now auto-loads a starter PVI from the resolved station range.
 
 ### PVI Table Columns
 
@@ -230,7 +241,7 @@ Important behavior:
 |---|---|---|
 | `PVI Station` | Station of the PVI point. | Required. Rows are sorted by station before use. |
 | `PVI Elev` | Elevation at the PVI point. | Required. |
-| `Curve Length` | Vertical curve length `L` at that PVI. | Use `0` for no vertical curve at that PVI. Positive values create symmetric vertical curves. |
+| `Curve Length` | Vertical curve length `L` at that PVI. | Use `0` for no vertical curve at that PVI. Positive values create a symmetric vertical curve centered on that PVI. It is not the distance to the next row. |
 
 ### Generate FG Options
 
@@ -240,16 +251,25 @@ Important behavior:
 | `Min Tangent` | Minimum required tangent length between adjacent vertical curves. | Increase this when you want to enforce a minimum straight grade segment between curves. |
 | `Create ProfileBundle if missing` | Allows FG generation to create a profile bundle if one does not exist yet. | Keep enabled unless you want generation to fail when prerequisites are incomplete. |
 | `Keep existing EG values (do not overwrite)` | Preserves current EG values in the profile bundle during FG generation. | Recommended in normal workflows because `Edit PVI` is for FG generation, not terrain resampling. |
+| `Load Starter PVI` | Rebuilds the table with starter PVI rows based on the resolved station range. | Use when you want a safe starting point after clearing the table or when there is no saved vertical alignment yet. |
+| `Clear to Blank` | Clears valid PVI input rows and restores a blank starter-sized table. | Use when you want to type the vertical alignment from scratch. |
 | `Preview FG (console)` | Saves the current PVI table, resolves a station list, and prints sample FG elevations to the FreeCAD console. | Use for quick validation before writing data into the profile bundle. |
 | `Generate FG Now (apply)` | Saves the vertical alignment, computes FG on the resolved stations, updates the profile bundle, and shows a completion dialog. | Main execution button. |
 
 ### Recommended Usage
 1. Create or confirm stationing first.
-2. Enter PVI rows in station order or click `Sort by Station`.
-3. Use `Curve Length = 0` where you want simple grade breaks.
-4. Keep `Clamp overlapping vertical curves` enabled unless you are intentionally checking invalid geometry.
-5. Click `Generate FG Now (apply)`.
-6. Return to `Edit Profiles` with `FG from VerticalAlignment` enabled if you want the profile table locked to the generated FG.
+2. Let the panel auto-load the starter PVI, or click `Load Starter PVI`.
+3. Read the inline guide:
+   - `PVI Station` = where the incoming and outgoing grades meet
+   - `PVI Elev` = finished-grade elevation at that station
+   - `Curve Length` = total vertical-curve length centered on that PVI
+4. Use `Clear to Blank` if you want to start from an empty table instead.
+5. Enter PVI rows in station order or click `Sort by Station`.
+6. Use `Curve Length = 0` where you want simple grade breaks.
+7. Check the live summary under the table to confirm grades and BVC/EVC ranges look reasonable.
+8. Keep `Clamp overlapping vertical curves` enabled unless you are intentionally checking invalid geometry.
+9. Click `Generate FG Now (apply)`.
+10. Return to `Edit Profiles` with `FG from VerticalAlignment` enabled if you want the profile table locked to the generated FG.
 
 ### Practical Notes
 1. If no profile bundle exists, FG generation can create one and seed it from the resolved station list.
@@ -326,15 +346,17 @@ Important behavior:
 ### Recommended Usage
 1. Generate stations first.
 2. Load `tests/samples/structure_utm_realistic_hilly.csv` or enter rows manually.
-3. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
-4. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
-5. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
-6. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
-7. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
-8. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
-9. `GeometryMode=external_shape` is currently for realistic structure display/reference placement; earthwork still follows type-based rules.
-10. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
-11. The validation summary now reports row-level warnings and errors before apply.
+3. Use `tests/samples/structure_utm_realistic_hilly_notch.csv` when you want a focused `CorridorMode=notch` starter.
+4. Use `tag_only` for reference structures and `section_overlay`/`assembly_override` only where section behavior should change.
+5. Choose `GeometryMode=template` when you want parametric structure display instead of the simple rectangular fallback.
+6. Apply and verify that the `StructureSet` appears under `01_Inputs/Structures`.
+7. If you use `GeometryMode=external_shape`, replace placeholder sample paths with real local `.step`, `.brep`, or `.FCStd#ObjectName` sources before `Apply`.
+8. If `Apply` reports `frame source=alignment`, run `3D Centerline` again and re-apply the structure set.
+9. For `FCStd`, the easiest path is `Browse Shape` -> `Pick FCStd Object`.
+10. `GeometryMode=external_shape` is currently for realistic structure display/reference placement plus proxy-earthwork reporting; it is not direct boolean consumption.
+11. Use `Selected Structure Details` for most advanced edits instead of turning on every table column.
+12. The validation summary now reports row-level warnings and errors before apply.
+13. See `docs/PRACTICAL_SAMPLE_SET.md` for the maintained starter and mixed sample bundles.
 
 ### Practical Notes
 1. A `retaining_wall` should usually use `left` or `right`, not `center`.
@@ -453,7 +475,31 @@ When to override manually:
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`
 
-## 6A. Typical Section
+## 6A. Generate Sections: Side Slopes and Bench
+
+`Generate Sections` can also build earthwork-style side slopes directly from the linked `AssemblyTemplate`.
+
+### Side Slope / Bench Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Use side slopes` | Adds left/right side-slope wings outside the main carriageway/top profile. | Turn this on when the section should extend beyond the finished-grade top width. |
+| `Side Width Left/Right` | Horizontal reach of the side slope before daylight or fixed-width termination. | Use larger values for wider cut/fill wings. |
+| `Side Slope Left/Right (%)` | Base side-slope gradient used for the wing. | Positive values slope downward outward in fill-like conditions. |
+| `Use Left Bench` / `Use Right Bench` | Enables benching on that side. | Turn this on when that side should use one or more terrace rows. |
+| `Left Bench Rows` / `Right Bench Rows` | Table-based bench editor with `Drop`, `Width`, `Slope`, and `Post-Slope` columns. | Add one row per terrace. Single-bench and multi-bench cases use the same table workflow. |
+| `Daylight Auto (SectionSet)` | Searches for terrain intersection automatically. | When a bench is enabled, daylight is applied only on the post-bench slope segment. |
+
+### Practical Notes
+
+1. Current bench support is still conservative, but it now supports multi-bench terrace stacks on each side through the unified `Left Bench Rows` and `Right Bench Rows` editors.
+2. Structure override modes still take precedence. If a structure trims/stubs a side, the bench on that side is disabled for that section.
+3. Bench input is now one unified row list per side. Users no longer need to think in terms of “primary bench” versus “extra bench”.
+4. With `Daylight Auto`, terrain is checked along the whole bench path. If terrain is reached before a later bench starts, that section can shorten the terrace stack or skip the remaining benches.
+5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
+6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.
+
+## 6B. Typical Section
 
 `Typical Section` is the component-based editor for finished-grade top-profile composition.
 
@@ -498,6 +544,8 @@ When to override manually:
 | `Width` | Component width |
 | `CrossSlopePct` | Cross slope (%) |
 | `Height` | Vertical step / sag depth depending on component |
+| `ExtraWidth` | Secondary width used by advanced components such as curb face run, ditch bottom width, or berm taper width |
+| `BackSlopePct` | Secondary slope used by advanced components such as curb top/back slope, ditch outer slope, or berm taper slope |
 | `Offset` | Additional local lateral offset before the component |
 | `Order` | Per-side build order |
 | `Enabled` | Boolean enable flag |
@@ -512,12 +560,13 @@ When to override manually:
 ### Current Notes
 
 1. `curb` currently creates a vertical step plus top width.
-2. `ditch` currently creates a simple sag/V-style break.
-3. `berm` currently acts as a flat road-edge platform segment.
-4. `bench` is reserved for future earthwork mid-slope benching terminology.
-4. Pavement layers are currently data-only and tracked as total thickness/result metadata.
-5. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
-6. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
+2. `curb` also uses `ExtraWidth` and `BackSlopePct` for face/top shaping.
+3. `ditch` now uses `ExtraWidth` for flat-bottom width and `BackSlopePct` for the outer slope.
+4. `berm` now uses `ExtraWidth` and `BackSlopePct` for outer taper behavior.
+5. Mid-slope earthwork benching is now handled in `Generate Sections` side-slope controls, not as a `Typical Section` top-profile component type.
+6. Pavement layers are currently data-only and tracked as total thickness/result metadata.
+7. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
+8. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
 7. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order

@@ -1,0 +1,3 @@
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes,ShapeSourcePath,ScaleFactor,PlacementMode,UseSourceBaseAsBottom
+CULV-N01,culvert,120.000,160.000,140.000,center,0.000,6.000,2.500,103.200,0.000,0.000,section_overlay,template,box_culvert,0.350,0.000,0.000,0.150,2,notch,0.000,Starter notch culvert row using template geometry,,1.000,,
+XING-N01,crossing,190.000,215.000,202.500,center,0.000,7.000,2.400,0.000,0.900,0.000,section_overlay,template,utility_crossing,0.220,0.000,0.000,0.120,3,notch,0.000,Starter notch crossing row using template geometry,,1.000,,

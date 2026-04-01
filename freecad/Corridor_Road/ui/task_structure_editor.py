@@ -124,6 +124,33 @@ COMBO_COLUMN_ITEMS = {
 STATION_COMBO_COLUMNS = (2, 3, 4)
 
 
+class _RowAwareComboBox(QtWidgets.QComboBox):
+    def __init__(self, on_interact=None, parent=None):
+        super().__init__(parent)
+        self._on_interact = on_interact
+
+    def _notify_interact(self):
+        cb = getattr(self, "_on_interact", None)
+        if cb is None:
+            return
+        try:
+            cb(self)
+        except Exception:
+            pass
+
+    def mousePressEvent(self, event):
+        self._notify_interact()
+        super().mousePressEvent(event)
+
+    def focusInEvent(self, event):
+        self._notify_interact()
+        super().focusInEvent(event)
+
+    def showPopup(self):
+        self._notify_interact()
+        super().showPopup()
+
+
 def _split_shape_source_path(path: str):
     raw = str(path or "").strip()
     if not raw:
@@ -282,6 +309,7 @@ class StructureEditorTaskPanel:
         self._profile_rows = []
         self._active_profile_structure_id = ""
         self._active_structure_row = -1
+        self._enforcing_structure_selection = False
         self._loading = False
         self.form = self._build_ui()
         self._refresh_context()
@@ -307,6 +335,9 @@ class StructureEditorTaskPanel:
         try:
             table.setMouseTracking(False)
             table.viewport().setMouseTracking(False)
+            table.setFocusPolicy(QtCore.Qt.ClickFocus)
+            table.setAttribute(QtCore.Qt.WA_Hover, False)
+            table.viewport().setAttribute(QtCore.Qt.WA_Hover, False)
         except Exception:
             pass
         table.setStyleSheet(
@@ -507,6 +538,16 @@ class StructureEditorTaskPanel:
         self._apply_default_column_visibility()
         main.addWidget(self.table)
 
+        row_structure_btn = QtWidgets.QHBoxLayout()
+        self.btn_add = QtWidgets.QPushButton("Add Row")
+        self.btn_remove = QtWidgets.QPushButton("Remove Row")
+        self.btn_sort = QtWidgets.QPushButton("Sort by Start")
+        row_structure_btn.addWidget(self.btn_add)
+        row_structure_btn.addWidget(self.btn_remove)
+        row_structure_btn.addWidget(self.btn_sort)
+        row_structure_btn.addStretch(1)
+        main.addLayout(row_structure_btn)
+
         self.gb_details = QtWidgets.QGroupBox("Selected Structure Details")
         fd = QtWidgets.QGridLayout(self.gb_details)
         fd.setContentsMargins(8, 8, 8, 8)
@@ -601,14 +642,9 @@ class StructureEditorTaskPanel:
         main.addLayout(row_profile_btn)
 
         row_btn = QtWidgets.QHBoxLayout()
-        self.btn_add = QtWidgets.QPushButton("Add Row")
-        self.btn_remove = QtWidgets.QPushButton("Remove Row")
-        self.btn_sort = QtWidgets.QPushButton("Sort by Start")
         self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_close = QtWidgets.QPushButton("Close")
-        row_btn.addWidget(self.btn_add)
-        row_btn.addWidget(self.btn_remove)
-        row_btn.addWidget(self.btn_sort)
+        row_btn.addStretch(1)
         row_btn.addWidget(self.btn_apply)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
@@ -688,6 +724,7 @@ class StructureEditorTaskPanel:
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
         self.table.cellPressed.connect(self._on_structure_row_pressed)
+        self.table.itemSelectionChanged.connect(self._enforce_structure_row_selection)
         self.table.itemChanged.connect(self._on_table_item_changed)
         self.profile_table.itemChanged.connect(self._on_profile_item_changed)
 
@@ -758,9 +795,6 @@ class StructureEditorTaskPanel:
             row_vals = [self._get_cell_text(row, c).strip() for c in range(len(COL_HEADERS))]
             if any(row_vals):
                 return row
-        row = int(self.table.currentRow())
-        if 0 <= row < self.table.rowCount():
-            return row
         return -1
 
     def _set_active_structure_row(self, row):
@@ -772,10 +806,56 @@ class StructureEditorTaskPanel:
             self._active_structure_row = -1
             return
         self._active_structure_row = row
+        self._select_structure_row(row)
+
+    def _select_structure_row(self, row):
         try:
-            self.table.selectRow(row)
+            self._enforcing_structure_selection = True
+            self.table.blockSignals(True)
+            self.table.clearSelection()
+            self.table.setCurrentCell(int(row), 0)
+            self.table.selectRow(int(row))
         except Exception:
             pass
+        finally:
+            try:
+                self.table.blockSignals(False)
+            except Exception:
+                pass
+            self._enforcing_structure_selection = False
+
+    def _enforce_structure_row_selection(self):
+        if self._loading or self._enforcing_structure_selection:
+            return
+        row = int(self._active_structure_row)
+        if row < 0 or row >= self.table.rowCount():
+            return
+        try:
+            selected_rows = list(self.table.selectionModel().selectedRows())
+        except Exception:
+            selected_rows = []
+        if len(selected_rows) == 1:
+            try:
+                if int(selected_rows[0].row()) == row:
+                    return
+            except Exception:
+                pass
+        self._select_structure_row(row)
+
+    def _activate_structure_row_from_widget(self, widget):
+        if self._loading or widget is None:
+            return
+        try:
+            pos = widget.mapTo(self.table.viewport(), QtCore.QPoint(1, 1))
+            idx = self.table.indexAt(pos)
+            row = int(idx.row())
+        except Exception:
+            row = -1
+        if row < 0 or row >= self.table.rowCount():
+            return
+        if row != int(self._active_structure_row):
+            self._set_active_structure_row(row)
+            self._on_structure_selection_changed()
 
     def _selected_structure_record(self):
         row = self._current_structure_row()
@@ -1245,6 +1325,8 @@ class StructureEditorTaskPanel:
         cor_mode = self._get_cell_text(row, 20).strip().lower()
         start = self._get_cell_float(row, 2)
         end = self._get_cell_float(row, 3)
+        center = self._get_cell_float(row, 4)
+        corridor_margin = self._get_cell_float(row, 21)
         msgs = []
         severity = 0
 
@@ -1292,6 +1374,21 @@ class StructureEditorTaskPanel:
             elif src_file and (not os.path.isfile(src_file)):
                 msgs.append(f"{rid}: external shape file not found")
                 severity = max(severity, 1)
+            msgs.append(f"{rid}: external_shape may drive an indirect bbox-based earthwork proxy; direct solid consumption is still unsupported")
+            severity = max(severity, 1)
+            if cor_mode in ("notch", "boolean_cut"):
+                msgs.append(f"{rid}: {cor_mode} does not yet consume the imported external solid directly; current runtime can only use bbox proxy or Type/Width/Height")
+                severity = max(severity, 1)
+
+        has_start_end = abs(start) > 1e-9 or abs(end) > 1e-9 or abs(end - start) > 1e-9
+        has_center = abs(center) > 1e-9
+        if cor_mode in ("skip_zone", "notch", "boolean_cut"):
+            if not has_start_end and not has_center:
+                msgs.append(f"{rid}: corridor mode '{cor_mode}' has no usable station span")
+                severity = max(severity, 1)
+            elif abs(end - start) <= 1e-9 and corridor_margin <= 1e-9:
+                msgs.append(f"{rid}: corridor mode '{cor_mode}' is point-like; add CorridorMargin or explicit Start/End span")
+                severity = max(severity, 1)
 
         prow = self._filtered_profile_rows(rid)
         if len(prow) == 1:
@@ -1315,27 +1412,21 @@ class StructureEditorTaskPanel:
 
     def _refresh_validation_visuals(self):
         brushes = self._item_brushes()
-        ok_count = 0
-        warn_count = 0
-        err_count = 0
-        lines = []
+        ok_count, warn_count, err_count, lines = self._validation_snapshot()
+        row_states = []
         for row in range(self.table.rowCount()):
             row_vals = [self._get_cell_text(row, c).strip() for c in range(len(COL_HEADERS))]
             if not any(row_vals):
                 continue
             sev, msgs = self._row_validation_messages(row)
+            row_states.append((row, sev, msgs))
+        for row, sev, msgs in row_states:
             tip = "\n".join(msgs) if msgs else "Validation: OK"
             brush_bg = brushes["ok_base"]
             if sev == 2:
-                err_count += 1
                 brush_bg = brushes["err_base"]
             elif sev == 1:
-                warn_count += 1
                 brush_bg = brushes["warn_base"]
-            else:
-                ok_count += 1
-            if msgs:
-                lines.extend(msgs[:2])
             for col in BASIC_VISIBLE_COLS:
                 item = self.table.item(row, col)
                 if item is None:
@@ -1361,6 +1452,26 @@ class StructureEditorTaskPanel:
                 self.lbl_validation_summary.setStyleSheet("color: #ffb3b3;")
             else:
                 self.lbl_validation_summary.setStyleSheet("color: #ffd27f;")
+
+    def _validation_snapshot(self):
+        ok_count = 0
+        warn_count = 0
+        err_count = 0
+        lines = []
+        for row in range(self.table.rowCount()):
+            row_vals = [self._get_cell_text(row, c).strip() for c in range(len(COL_HEADERS))]
+            if not any(row_vals):
+                continue
+            sev, msgs = self._row_validation_messages(row)
+            if sev == 2:
+                err_count += 1
+            elif sev == 1:
+                warn_count += 1
+            else:
+                ok_count += 1
+            if msgs:
+                lines.extend(msgs[:2])
+        return ok_count, warn_count, err_count, lines
 
     def _set_profile_table_rows(self, rows, structure_id=""):
         sid = str(structure_id or "").strip()
@@ -1511,7 +1622,14 @@ class StructureEditorTaskPanel:
         for col, items in COMBO_COLUMN_ITEMS.items():
             cmb = self.table.cellWidget(row, col)
             if cmb is None:
-                cmb = QtWidgets.QComboBox()
+                cmb = _RowAwareComboBox(on_interact=self._activate_structure_row_from_widget)
+                try:
+                    cmb.setFocusPolicy(QtCore.Qt.NoFocus)
+                    cmb.setMouseTracking(False)
+                    cmb.setAttribute(QtCore.Qt.WA_Hover, False)
+                    cmb.view().setMouseTracking(False)
+                except Exception:
+                    pass
                 cmb.addItems(list(items))
                 self.table.setCellWidget(row, col, cmb)
                 if col == 1:
@@ -1520,7 +1638,14 @@ class StructureEditorTaskPanel:
             cmb = self.table.cellWidget(row, col)
             station_items = self._station_combo_items()
             if cmb is None:
-                cmb = QtWidgets.QComboBox()
+                cmb = _RowAwareComboBox(on_interact=self._activate_structure_row_from_widget)
+                try:
+                    cmb.setFocusPolicy(QtCore.Qt.NoFocus)
+                    cmb.setMouseTracking(False)
+                    cmb.setAttribute(QtCore.Qt.WA_Hover, False)
+                    cmb.view().setMouseTracking(False)
+                except Exception:
+                    pass
                 self.table.setCellWidget(row, col, cmb)
             cur = str(cmb.currentText() or "")
             cmb.clear()
@@ -1831,19 +1956,40 @@ class StructureEditorTaskPanel:
             QtWidgets.QMessageBox.information(None, "Edit Structures", "Select a structure row first.")
             return
         self._sync_profile_table_to_store()
-        self._loading = True
-        try:
-            r = self.profile_table.rowCount()
-            self.profile_table.setRowCount(r + 1)
-            for c in range(len(PROFILE_COL_HEADERS)):
-                if self.profile_table.item(r, c) is None:
-                    self.profile_table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
-            self.profile_table.item(r, 0).setText(sid)
-            self.profile_table.item(r, 0).setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-        finally:
-            self._loading = False
-        self._sync_profile_table_to_store()
+        rows = self._filtered_profile_rows(sid)
+        rec = self._selected_structure_record() or {}
+        if rows:
+            try:
+                station_val = float(rows[-1].get("Station", 0.0) or 0.0)
+            except Exception:
+                station_val = 0.0
+        else:
+            station_val = float(rec.get("CenterStation", 0.0) or 0.0)
+            if abs(station_val) <= 1e-9:
+                station_val = float(rec.get("StartStation", 0.0) or 0.0)
+        new_row = {
+            "StructureId": sid,
+            "Station": float(station_val),
+            "Offset": float(rec.get("Offset", 0.0) or 0.0),
+            "Width": float(rec.get("Width", 0.0) or 0.0),
+            "Height": float(rec.get("Height", 0.0) or 0.0),
+            "BottomElevation": float(rec.get("BottomElevation", 0.0) or 0.0),
+            "Cover": float(rec.get("Cover", 0.0) or 0.0),
+            "WallThickness": float(rec.get("WallThickness", 0.0) or 0.0),
+            "FootingWidth": float(rec.get("FootingWidth", 0.0) or 0.0),
+            "FootingThickness": float(rec.get("FootingThickness", 0.0) or 0.0),
+            "CapHeight": float(rec.get("CapHeight", 0.0) or 0.0),
+            "CellCount": int(round(float(rec.get("CellCount", 1.0) or 1.0))),
+        }
+        kept = [dict(row) for row in self._profile_rows if str(row.get("StructureId", "") or "").strip() != sid]
+        rows.append(new_row)
+        kept.extend(rows)
+        self._set_profile_rows(sorted(kept, key=lambda row: (str(row.get("StructureId", "") or ""), float(row.get("Station", 0.0) or 0.0))))
         self._refresh_profile_table()
+        try:
+            self.profile_table.selectRow(max(0, self.profile_table.rowCount() - 1))
+        except Exception:
+            pass
 
     def _remove_profile_row(self):
         r = self.profile_table.currentRow()
@@ -2390,6 +2536,37 @@ class StructureEditorTaskPanel:
         if not rows:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "No structure rows to save.")
             return
+        ok_count, warn_count, err_count, lines = self._validation_snapshot()
+        if err_count > 0:
+            msg = [
+                "Fix validation errors before Apply.",
+                f"OK rows: {ok_count}",
+                f"Warnings: {warn_count}",
+                f"Errors: {err_count}",
+            ]
+            if lines:
+                msg.append("")
+                msg.extend(list(lines[:10]))
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", "\n".join(msg))
+            return
+        if warn_count > 0:
+            msg = [
+                "Apply with validation warnings?",
+                f"OK rows: {ok_count}",
+                f"Warnings: {warn_count}",
+            ]
+            if lines:
+                msg.append("")
+                msg.extend(list(lines[:8]))
+            reply = QtWidgets.QMessageBox.question(
+                None,
+                "Edit Structures",
+                "\n".join(msg),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
 
         try:
             obj = self._ensure_target()
@@ -2455,6 +2632,7 @@ class StructureEditorTaskPanel:
                     "Structure set saved with validation warnings.",
                     f"Records: {len(rows)}",
                     f"Profile points: {len(self._profile_rows)}",
+                    f"Status: {getattr(obj, 'Status', 'Applied')}",
                 ]
                 msg.extend(list(issues[:10]))
                 if shape_status_notes:
@@ -2471,7 +2649,9 @@ class StructureEditorTaskPanel:
                     "\n".join(msg),
                 )
             else:
-                msg = [f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}"]
+                msg = [
+                    f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}\nStatus: {getattr(obj, 'Status', 'Applied')}"
+                ]
                 if shape_status_notes:
                     msg.append("")
                     msg.append("External shape diagnostics:")

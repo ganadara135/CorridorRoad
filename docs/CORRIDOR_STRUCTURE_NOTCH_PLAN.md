@@ -195,6 +195,16 @@ Risks:
 
 Recommendation:
 1. keep this for a later opt-in mode only
+2. start `boolean_cut` only after notch regression is stable across standalone and mixed corridor-mode cases
+3. keep `boolean_cut` status/result tokens separate from notch schema reporting
+4. do not extend notch-specific profile schema to simulate imported-solid subtraction
+
+### Handoff boundary from `notch` to `boolean_cut`
+Treat the work as `boolean_cut` and not a notch extension when any of the following becomes necessary:
+1. the void/cut shape must come from a true 3D solid rather than the closed-profile notch schema
+2. imported or external structure geometry is expected to participate directly in corridor subtraction
+3. status output would need to imply solid boolean consumption instead of section-schema-based recession
+4. failure handling must distinguish boolean-topology errors from notch profile/segmentation errors
 
 ## Recommended First Implementation: `skip_zone`
 

@@ -1,0 +1,5 @@
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,BottomElevation,Cover,RotationDeg,BehaviorMode,GeometryMode,TemplateName,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount,CorridorMode,CorridorMargin,Notes,ShapeSourcePath,ScaleFactor,PlacementMode,UseSourceBaseAsBottom
+CULV-B01,culvert,120.000,160.000,140.000,center,0.000,6.000,2.500,103.200,0.000,0.000,section_overlay,box,,0.000,0.000,0.000,0.000,1,none,0.000,Baseline culvert row using simple box geometry,,1.000,,
+RW-B01,retaining_wall,265.000,345.000,305.000,right,8.000,0.650,4.200,101.800,0.000,0.000,assembly_override,box,,0.000,0.000,0.000,0.000,1,split_only,0.000,Baseline retaining wall row for split-only corridor checks,,1.000,,
+ABUT-B01,abutment_zone,470.000,520.000,495.000,both,0.000,14.000,5.500,103.800,0.000,0.000,assembly_override,box,,0.000,0.000,0.000,0.000,1,skip_zone,2.000,Baseline abutment zone row for skip-zone corridor checks,,1.000,,
+BRDG-B01,bridge_zone,540.000,585.000,562.500,both,0.000,16.000,5.500,103.900,0.000,0.000,tag_only,box,,0.000,0.000,0.000,0.000,1,skip_zone,3.000,Baseline bridge-zone reference row using simple box display,,1.000,,

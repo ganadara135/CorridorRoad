@@ -28,12 +28,20 @@ This wiki is the practical guide for daily use and development.
 - `tests/samples/alignment_utm_realistic_hilly.csv`
 - `tests/samples/structure_utm_realistic_hilly.csv`
 
+Extended practical sample inventory:
+- See [../PRACTICAL_SAMPLE_SET.md](../PRACTICAL_SAMPLE_SET.md) for the maintained starter CSV set, mixed practical scenarios, and sample-to-regression mapping.
+
 Recommended first structure-aware test order:
 1. Import the point cloud DEM sample.
 2. Import the alignment sample.
 3. Generate stations.
 4. Load the structure sample in `Edit Structures`.
 5. Generate sections and confirm `Structure Sections` appears in the alignment tree.
+
+Practical validation note:
+1. The maintained practical-engineering regression bundle is `tests/regression/run_practical_scope_smokes.ps1`.
+2. Current long-term practical scope is centered on subassembly/report/surface-comparison workflows.
+3. `boolean_cut` and release-readiness work are currently outside that focused roadmap scope.
 
 ## How To Use This Wiki
 1. Start from [Quick Start](Quick-Start) for first successful run.
@@ -75,6 +83,7 @@ Recommended first structure-aware test order:
 - For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
 - Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays loft-safe.
 - `GeometryMode=external_shape` currently improves realistic structure display/reference placement, but earthwork still follows structure `Type`-based rules.
+- The maintained practical sample inventory lives in `docs/PRACTICAL_SAMPLE_SET.md`.
 
 ---
 Last verified with commit: `e619bd8` (`v0.2.0`)

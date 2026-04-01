@@ -33,7 +33,8 @@ Corridor-oriented road design workflow with a fixed project tree and guided task
 - FreeCAD Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 ## Video
-- https://youtu.be/22JhV0dys3E
+- https://youtu.be/P0kiPREy2qE
+
 
 ## Screenshots
 ![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)

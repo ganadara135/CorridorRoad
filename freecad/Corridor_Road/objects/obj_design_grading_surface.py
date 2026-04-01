@@ -2,8 +2,14 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 # CorridorRoad/objects/obj_design_grading_surface.py
-from freecad.Corridor_Road.objects.obj_section_set import SectionSet
-
+from freecad.Corridor_Road.objects.obj_section_set import (
+    SectionSet,
+    _display_only_status_token,
+    _earthwork_status_token,
+    _external_shape_display_count,
+    _external_shape_proxy_count,
+    _status_join,
+)
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
 
@@ -25,6 +31,13 @@ def _dedupe_consecutive_points(points, tol: float = 1e-9):
         if (p - out[-1]).Length > tol:
             out.append(p)
     return out
+
+
+def _report_row(kind: str, **fields) -> str:
+    parts = [str(kind or "").strip() or "row"]
+    for key, value in fields.items():
+        parts.append(f"{str(key)}={value}")
+    return "|".join(parts)
 
 
 def _mark_recompute_flag(obj, needed: bool):
@@ -112,6 +125,15 @@ def ensure_design_grading_surface_properties(obj):
     if not hasattr(obj, "TopProfileEdgeSummary"):
         obj.addProperty("App::PropertyString", "TopProfileEdgeSummary", "Result", "Outermost top-profile edge component summary")
         obj.TopProfileEdgeSummary = "-"
+    if not hasattr(obj, "SubassemblySchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "SubassemblySchemaVersion", "Result", "Practical subassembly schema version")
+        obj.SubassemblySchemaVersion = 0
+    if not hasattr(obj, "PracticalSectionMode"):
+        obj.addProperty("App::PropertyString", "PracticalSectionMode", "Result", "Practical section mode summary")
+        obj.PracticalSectionMode = "simple"
+    if not hasattr(obj, "TypicalSectionAdvancedComponentCount"):
+        obj.addProperty("App::PropertyInteger", "TypicalSectionAdvancedComponentCount", "Result", "Advanced typical-section component count")
+        obj.TypicalSectionAdvancedComponentCount = 0
     if not hasattr(obj, "PavementLayerCount"):
         obj.addProperty("App::PropertyInteger", "PavementLayerCount", "Result", "Typical-section pavement layer count")
         obj.PavementLayerCount = 0
@@ -121,6 +143,36 @@ def ensure_design_grading_surface_properties(obj):
     if not hasattr(obj, "PavementTotalThickness"):
         obj.addProperty("App::PropertyFloat", "PavementTotalThickness", "Result", "Typical-section pavement total thickness")
         obj.PavementTotalThickness = 0.0
+    if not hasattr(obj, "PavementLayerSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "PavementLayerSummaryRows", "Result", "Enabled pavement layer report rows")
+        obj.PavementLayerSummaryRows = []
+    if not hasattr(obj, "SubassemblyContractRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyContractRows", "Result", "Resolved subassembly contract rows")
+        obj.SubassemblyContractRows = []
+    if not hasattr(obj, "SubassemblyValidationRows"):
+        obj.addProperty("App::PropertyStringList", "SubassemblyValidationRows", "Result", "Resolved subassembly validation rows")
+        obj.SubassemblyValidationRows = []
+    if not hasattr(obj, "RoadsideLibraryRows"):
+        obj.addProperty("App::PropertyStringList", "RoadsideLibraryRows", "Result", "Detected reusable roadside-library rows")
+        obj.RoadsideLibraryRows = []
+    if not hasattr(obj, "RoadsideLibrarySummary"):
+        obj.addProperty("App::PropertyString", "RoadsideLibrarySummary", "Result", "Detected reusable roadside-library summary")
+        obj.RoadsideLibrarySummary = "-"
+    if not hasattr(obj, "ReportSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "ReportSchemaVersion", "Result", "Structured report schema version")
+        obj.ReportSchemaVersion = 1
+    if not hasattr(obj, "SectionComponentSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "SectionComponentSummaryRows", "Result", "Structured section-component summary rows")
+        obj.SectionComponentSummaryRows = []
+    if not hasattr(obj, "PavementScheduleRows"):
+        obj.addProperty("App::PropertyStringList", "PavementScheduleRows", "Result", "Structured pavement schedule rows")
+        obj.PavementScheduleRows = []
+    if not hasattr(obj, "StructureInteractionSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "StructureInteractionSummaryRows", "Result", "Structured structure-interaction summary rows")
+        obj.StructureInteractionSummaryRows = []
+    if not hasattr(obj, "ExportSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ExportSummaryRows", "Result", "Structured export-ready summary rows")
+        obj.ExportSummaryRows = []
 
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
@@ -244,14 +296,27 @@ class DesignGradingSurface:
                 obj.SchemaVersion = 0
                 obj.TopProfileSource = "assembly_simple"
                 obj.TopProfileEdgeSummary = "-"
+                obj.SubassemblySchemaVersion = 0
+                obj.PracticalSectionMode = "simple"
+                obj.TypicalSectionAdvancedComponentCount = 0
                 obj.PavementLayerCount = 0
                 obj.EnabledPavementLayerCount = 0
                 obj.PavementTotalThickness = 0.0
+                obj.PavementLayerSummaryRows = []
+                obj.SubassemblyContractRows = []
+                obj.SubassemblyValidationRows = []
+                obj.RoadsideLibraryRows = []
+                obj.RoadsideLibrarySummary = "-"
+                obj.ReportSchemaVersion = 1
+                obj.SectionComponentSummaryRows = []
+                obj.PavementScheduleRows = []
+                obj.StructureInteractionSummaryRows = []
+                obj.ExportSummaryRows = []
                 obj.Status = "Missing SourceSectionSet"
                 _mark_recompute_flag(obj, False)
                 return
 
-            stations, wires, _tf, _so = SectionSet.build_section_wires(src)
+            stations, wires, _tf, _so, _bench_info = SectionSet.build_section_wires(src)
             pts, pt_count = DesignGradingSurface._validate_and_points(stations, wires)
             mesh_out, quad_count, tri_count = DesignGradingSurface._build_mesh_from_sections(pts)
             if tri_count <= 0:
@@ -265,18 +330,99 @@ class DesignGradingSurface:
             obj.SchemaVersion = int(getattr(src, "SectionSchemaVersion", 0))
             obj.TopProfileSource = str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple")
             obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
+            obj.SubassemblySchemaVersion = int(getattr(src, "SubassemblySchemaVersion", 0) or 0)
+            obj.PracticalSectionMode = str(getattr(src, "PracticalSectionMode", "simple") or "simple")
+            obj.TypicalSectionAdvancedComponentCount = int(getattr(src, "TypicalSectionAdvancedComponentCount", 0) or 0)
             obj.PavementLayerCount = int(getattr(src, "PavementLayerCount", 0) or 0)
             obj.EnabledPavementLayerCount = int(getattr(src, "EnabledPavementLayerCount", 0) or 0)
             obj.PavementTotalThickness = float(getattr(src, "PavementTotalThickness", 0.0) or 0.0)
+            obj.PavementLayerSummaryRows = list(getattr(src, "PavementLayerSummaryRows", []) or [])
+            obj.SubassemblyContractRows = list(getattr(src, "SubassemblyContractRows", []) or [])
+            obj.SubassemblyValidationRows = list(getattr(src, "SubassemblyValidationRows", []) or [])
+            obj.RoadsideLibraryRows = list(getattr(src, "RoadsideLibraryRows", []) or [])
+            obj.RoadsideLibrarySummary = str(getattr(src, "RoadsideLibrarySummary", "-") or "-")
+            obj.ReportSchemaVersion = int(getattr(src, "ReportSchemaVersion", 1) or 1)
+            obj.SectionComponentSummaryRows = list(getattr(src, "SectionComponentSummaryRows", []) or [])
+            obj.PavementScheduleRows = list(getattr(src, "PavementScheduleRows", []) or [])
+            obj.StructureInteractionSummaryRows = list(getattr(src, "StructureInteractionSummaryRows", []) or [])
             try:
                 fc = int(getattr(getattr(obj, "Mesh", None), "CountFacets", 0))
             except Exception:
                 fc = 0
-            obj.Status = (
-                f"OK (Mesh): quads={quad_count}, facets={fc}, "
-                f"schema={int(obj.SchemaVersion)}, topProfile={obj.TopProfileSource}, "
-                f"topEdges={obj.TopProfileEdgeSummary}, pavement={obj.PavementTotalThickness:.3f}m"
-            )
+            try:
+                ss = getattr(src, "StructureSet", None) if bool(getattr(src, "UseStructureSet", False)) else None
+            except Exception:
+                ss = None
+            ext_count = _external_shape_display_count(ss)
+            ext_proxy_count = _external_shape_proxy_count(ss)
+            status_tokens = [
+                f"quads={quad_count}",
+                f"facets={fc}",
+                f"schema={int(obj.SchemaVersion)}",
+                f"topProfile={obj.TopProfileSource}",
+                f"topEdges={obj.TopProfileEdgeSummary}",
+                f"pavement={obj.PavementTotalThickness:.3f}m",
+                _earthwork_status_token(
+                    struct_src=ss,
+                    resolved_count=int(getattr(src, "ResolvedStructureCount", 0) or 0),
+                    ext_count=ext_count,
+                    proxy_count=ext_proxy_count,
+                    overrides_enabled=bool(getattr(src, "ApplyStructureOverrides", False)),
+                ),
+            ]
+            if int(getattr(obj, "SubassemblySchemaVersion", 0) or 0) > 0:
+                status_tokens.append(f"subSchema={int(getattr(obj, 'SubassemblySchemaVersion', 0) or 0)}")
+                status_tokens.append(f"practical={str(getattr(obj, 'PracticalSectionMode', 'simple') or 'simple')}")
+            if str(getattr(obj, "RoadsideLibrarySummary", "-") or "-") != "-":
+                status_tokens.append(f"roadside={str(getattr(obj, 'RoadsideLibrarySummary', '-') or '-')}")
+            if int(getattr(src, "BenchAppliedSectionCount", 0) or 0) > 0:
+                bench_summary = str(getattr(src, "BenchSummary", "-") or "-")
+                if bench_summary.startswith("mode="):
+                    bench_mode = bench_summary.split(",", 1)[0].split("=", 1)[-1].strip() or "both"
+                else:
+                    bench_mode = "both"
+                status_tokens.append(f"bench={bench_mode}")
+                status_tokens.append(f"benchSections={int(getattr(src, 'BenchAppliedSectionCount', 0) or 0)}")
+                if int(getattr(src, "BenchDaylightAdjustedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDayAdj={int(getattr(src, 'BenchDaylightAdjustedSectionCount', 0) or 0)}")
+                if int(getattr(src, "BenchDaylightSkippedSectionCount", 0) or 0) > 0:
+                    status_tokens.append(f"benchDaySkip={int(getattr(src, 'BenchDaylightSkippedSectionCount', 0) or 0)}")
+            if len(list(getattr(obj, "SubassemblyValidationRows", []) or [])) > 0:
+                status_tokens.append(f"subWarn={len(list(getattr(obj, 'SubassemblyValidationRows', []) or []))}")
+            if int(getattr(obj, "TypicalSectionAdvancedComponentCount", 0) or 0) > 0:
+                status_tokens.append(f"typicalAdvanced={int(getattr(obj, 'TypicalSectionAdvancedComponentCount', 0) or 0)}")
+            if int(getattr(obj, "PavementLayerCount", 0) or 0) > 0:
+                status_tokens.append(
+                    f"pavLayers={int(getattr(obj, 'EnabledPavementLayerCount', 0) or 0)}/{int(getattr(obj, 'PavementLayerCount', 0) or 0)}"
+                )
+            try:
+                st_count = int(getattr(src, "ResolvedStructureCount", 0) or 0)
+            except Exception:
+                st_count = 0
+            if st_count > 0:
+                status_tokens.append(f"structures={st_count}")
+            if ext_count > 0:
+                status_tokens.append(_display_only_status_token(ext_count))
+                status_tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
+            if ext_proxy_count > 0:
+                status_tokens.append(f"externalShapeProxy={int(ext_proxy_count)}")
+            obj.Status = _status_join("OK (Mesh)", *status_tokens)
+            obj.ExportSummaryRows = [
+                _report_row(
+                    "export",
+                    target="design_grading_surface",
+                    reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
+                    sectionSchema=int(getattr(obj, "SchemaVersion", 0) or 0),
+                    practical=str(getattr(obj, "PracticalSectionMode", "simple") or "simple"),
+                    sections=int(len(stations)),
+                    faces=int(quad_count),
+                    pointCount=int(pt_count),
+                    benchSections=int(getattr(src, "BenchAppliedSectionCount", 0) or 0),
+                    benchAdjusted=int(getattr(src, "BenchDaylightAdjustedSectionCount", 0) or 0),
+                    benchSkipped=int(getattr(src, "BenchDaylightSkippedSectionCount", 0) or 0),
+                    roadside=str(getattr(obj, "RoadsideLibrarySummary", "-") or "-"),
+                )
+            ]
             _mark_recompute_flag(obj, False)
 
             # Push updates to linked DesignTerrain objects as pending recompute.
@@ -302,9 +448,22 @@ class DesignGradingSurface:
             obj.SchemaVersion = 0
             obj.TopProfileSource = "assembly_simple"
             obj.TopProfileEdgeSummary = "-"
+            obj.SubassemblySchemaVersion = 0
+            obj.PracticalSectionMode = "fallback"
+            obj.TypicalSectionAdvancedComponentCount = 0
             obj.PavementLayerCount = 0
             obj.EnabledPavementLayerCount = 0
             obj.PavementTotalThickness = 0.0
+            obj.PavementLayerSummaryRows = []
+            obj.SubassemblyContractRows = []
+            obj.SubassemblyValidationRows = []
+            obj.RoadsideLibraryRows = []
+            obj.RoadsideLibrarySummary = "-"
+            obj.ReportSchemaVersion = 1
+            obj.SectionComponentSummaryRows = []
+            obj.PavementScheduleRows = []
+            obj.StructureInteractionSummaryRows = []
+            obj.ExportSummaryRows = []
             obj.Status = f"ERROR: {ex}"
             _mark_recompute_flag(obj, False)
 

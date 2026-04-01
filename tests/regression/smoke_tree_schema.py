@@ -13,6 +13,7 @@ or inside Python console:
 import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import (
+    ALN_REF_NAME_PROP,
     ALN_REF_PROP,
     ALIGNMENT_ASSEMBLY,
     ALIGNMENT_CORRIDOR,
@@ -184,14 +185,16 @@ def run():
     aln_root_1 = None
     aln_root_2 = None
     for r in roots:
-        if getattr(r, ALN_REF_PROP, None) == aln:
+        if str(getattr(r, ALN_REF_NAME_PROP, "") or "") == str(getattr(aln, "Name", "") or ""):
             aln_root_1 = r
-        if getattr(r, ALN_REF_PROP, None) == aln2:
+        if str(getattr(r, ALN_REF_NAME_PROP, "") or "") == str(getattr(aln2, "Name", "") or ""):
             aln_root_2 = r
     _assert(aln_root_1 is not None, "Missing alignment root for first alignment")
     _assert(aln_root_2 is not None, "Missing alignment root for second alignment")
     _assert(aln_root_1 != aln_root_2, "Two alignments were mapped to the same root")
     _assert(str(getattr(aln_root_1, "Label", "")) != str(getattr(aln_root_2, "Label", "")), "Duplicate alignment root labels")
+    _assert(getattr(aln_root_1, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
+    _assert(getattr(aln_root_2, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
 
     # Surface / analysis / input / optional references.
     terr = doc.addObject("App::FeaturePython", "ExistingTerrain")
@@ -242,7 +245,9 @@ def run():
         got_key = _owner_key(prj, obj)
         _assert(got_key == want_key, f"{obj.Name} owner mismatch: got={got_key}, want={want_key}")
 
-    # Truly unassigned case: no project links available.
+    # No direct project links: object should still land under a valid alignment root.
+    # Current routing prefers a document-level fallback alignment when one exists,
+    # and only falls back to ALN_Unassigned when no alignment context is available.
     prj2 = doc.addObject("App::FeaturePython", "CorridorRoadProject")
     CorridorRoadProject(prj2)
     prj2.Label = "CorridorRoad Project (No Links)"
@@ -255,7 +260,11 @@ def run():
     va2_root = _parent_folder(prj2, va2_owner)
     _assert(va2_root is not None, "No-links VA alignment root not found")
     _assert(_key(va2_root) == ALIGNMENT_ROOT, "No-links VA parent must be alignment root")
-    _assert(str(getattr(va2_root, "Label", "")).startswith("ALN_Unassigned"), "No-links VA should map to ALN_Unassigned")
+    _assert(str(getattr(va2_root, "Label", "") or "").startswith("ALN_"), "No-links VA should map to an alignment root label")
+    _assert(
+        str(getattr(va2_root, ALN_REF_NAME_PROP, "") or "") in ("", str(getattr(aln, "Name", "") or "")),
+        "No-links VA should use the doc fallback alignment root or ALN_Unassigned",
+    )
 
     doc.recompute()
     print("[PASS] CorridorRoad fixed-tree smoke test completed.")
