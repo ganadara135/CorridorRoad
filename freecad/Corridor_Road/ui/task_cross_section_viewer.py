@@ -139,17 +139,32 @@ class CrossSectionViewerTaskPanel:
         self.chk_show_dimensions.setChecked(True)
         self.chk_show_diagnostics = QtWidgets.QCheckBox("Show diagnostics")
         self.chk_show_diagnostics.setChecked(True)
+        self.chk_show_typical = QtWidgets.QCheckBox("Show typical components")
+        self.chk_show_typical.setChecked(True)
+        self.chk_show_side_slope = QtWidgets.QCheckBox("Show side-slope components")
+        self.chk_show_side_slope.setChecked(True)
+        self.chk_show_daylight = QtWidgets.QCheckBox("Show daylight markers")
+        self.chk_show_daylight.setChecked(True)
         self.btn_use_selected = QtWidgets.QPushButton("Use Selected Section")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
+        self.chk_show_labels.hide()
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.setContentsMargins(0, 0, 0, 0)
+        action_row.setSpacing(8)
+        action_row.addWidget(self.btn_use_selected)
+        action_row.addWidget(self.btn_refresh)
+        action_widget = QtWidgets.QWidget()
+        action_widget.setLayout(action_row)
         fs.addRow("Section Set:", self.cmb_section_set)
-        fs.addRow("Station:", self.cmb_station)
+        fs.addRow(action_widget)
         fs.addRow(self.chk_sync_selection)
         fs.addRow(self.chk_show_structures)
-        fs.addRow(self.chk_show_labels)
         fs.addRow(self.chk_show_dimensions)
         fs.addRow(self.chk_show_diagnostics)
-        fs.addRow(self.btn_use_selected)
-        fs.addRow(self.btn_refresh)
+        fs.addRow(self.chk_show_typical)
+        fs.addRow(self.chk_show_side_slope)
+        fs.addRow(self.chk_show_daylight)
+        fs.addRow("Station:", self.cmb_station)
         main.addWidget(gb_src)
 
         row_nav = QtWidgets.QHBoxLayout()
@@ -190,6 +205,9 @@ class CrossSectionViewerTaskPanel:
         self.chk_show_labels.toggled.connect(self._render_current_payload)
         self.chk_show_dimensions.toggled.connect(self._render_current_payload)
         self.chk_show_diagnostics.toggled.connect(self._render_current_payload)
+        self.chk_show_typical.toggled.connect(self._render_current_payload)
+        self.chk_show_side_slope.toggled.connect(self._render_current_payload)
+        self.chk_show_daylight.toggled.connect(self._render_current_payload)
         self.btn_use_selected.clicked.connect(self._use_selected_section)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_prev.clicked.connect(self._go_previous)
@@ -326,6 +344,8 @@ class CrossSectionViewerTaskPanel:
             "lane": QtGui.QColor(255, 214, 102),
             "carriageway": QtGui.QColor(255, 214, 102),
             "side_slope": QtGui.QColor(132, 210, 132),
+            "cut_slope": QtGui.QColor(255, 170, 122),
+            "fill_slope": QtGui.QColor(132, 210, 132),
             "shoulder": QtGui.QColor(186, 220, 132),
             "median": QtGui.QColor(214, 160, 255),
             "curb": QtGui.QColor(255, 160, 92),
@@ -363,12 +383,21 @@ class CrossSectionViewerTaskPanel:
         return max(0.45, float(len(raw)) * float(svg_font_size) * 0.56)
 
     @staticmethod
+    def _estimate_vertical_text_bandwidth(svg_font_size=0.48, kind="label"):
+        base = max(0.0, float(svg_font_size or 0.0))
+        factor = 2.15 if str(kind or "label") == "value" else 2.45
+        floor = 0.14 if str(kind or "label") == "value" else 0.18
+        return max(float(floor), base * factor)
+
+    @staticmethod
     def _short_component_name(role: str):
         role = str(role or "").strip().lower()
         mapping = {
             "lane": "Lane",
             "carriageway": "Carr",
             "side_slope": "Slope",
+            "cut_slope": "Cut",
+            "fill_slope": "Fill",
             "shoulder": "Shldr",
             "median": "Med",
             "curb": "Curb",
@@ -388,6 +417,8 @@ class CrossSectionViewerTaskPanel:
             "lane": 100,
             "carriageway": 98,
             "side_slope": 72,
+            "cut_slope": 72,
+            "fill_slope": 72,
             "shoulder": 95,
             "median": 88,
             "bike_lane": 82,
@@ -521,6 +552,7 @@ class CrossSectionViewerTaskPanel:
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
                     "label": str(row.get("label", "") or "").strip(),
+                    "scope": str(row.get("scope", "") or "").strip().lower(),
                     "source": str(row.get("source", "") or "").strip(),
                 }
             )
@@ -561,6 +593,7 @@ class CrossSectionViewerTaskPanel:
                     "order": int(float(row.get("order", 0) or 0)),
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
+                    "scope": str(row.get("scope", "") or "").strip().lower(),
                 }
             )
             cur = x0
@@ -582,6 +615,7 @@ class CrossSectionViewerTaskPanel:
                     "order": int(float(row.get("order", 0) or 0)),
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
+                    "scope": str(row.get("scope", "") or "").strip().lower(),
                 }
             )
             cur = x1
@@ -625,6 +659,8 @@ class CrossSectionViewerTaskPanel:
             "lane": "Lane",
             "carriageway": "Carriageway",
             "side_slope": "Side Slope",
+            "cut_slope": "Cut Slope",
+            "fill_slope": "Fill Slope",
             "shoulder": "Shoulder",
             "median": "Median",
             "curb": "Curb",
@@ -648,7 +684,104 @@ class CrossSectionViewerTaskPanel:
         return "Component"
 
     @staticmethod
-    def _append_summary_row(summary_rows, summary_seen, *, role: str, text: str, priority: int, placement_mode: str = "summary_only", category: str = "label"):
+    def _component_scope(seg):
+        scope = str(seg.get("scope", "") or "").strip().lower()
+        if scope:
+            return scope
+        typ = str(seg.get("type", "") or "").strip().lower()
+        if typ in ("side_slope", "bench", "cut_slope", "fill_slope", "daylight"):
+            return "side_slope"
+        return "typical"
+
+    @staticmethod
+    def _component_scope_priority(scope: str):
+        scope = str(scope or "").strip().lower()
+        if scope == "typical":
+            return 3
+        if scope == "daylight":
+            return 2
+        if scope == "side_slope":
+            return 1
+        return 0
+
+    @staticmethod
+    def _component_scope_counts(rows):
+        counts = {"typical": 0, "side_slope": 0, "daylight": 0, "other": 0}
+        for row in list(rows or []):
+            scope = CrossSectionViewerTaskPanel._component_scope(row)
+            if scope in counts:
+                counts[scope] += 1
+            else:
+                counts["other"] += 1
+        return counts
+
+    @staticmethod
+    def _planned_component_scope_counts(rows):
+        counts = {"typical": 0, "side_slope": 0, "daylight": 0, "other": 0}
+        for row in list(rows or []):
+            role = str(row.get("role", "") or "").strip()
+            if not (role.startswith("component:") or role.startswith("component_value:") or role.startswith("daylight")):
+                continue
+            scope = str(row.get("scope", "") or "").strip().lower()
+            key = scope if scope in counts else "other"
+            counts[key] += 1
+        return counts
+
+    @staticmethod
+    def _scope_enabled(scope: str, show_typical: bool = True, show_side_slope: bool = True, show_daylight: bool = True):
+        scope = str(scope or "").strip().lower()
+        if scope == "typical":
+            return bool(show_typical)
+        if scope == "side_slope":
+            return bool(show_side_slope)
+        if scope == "daylight":
+            return bool(show_daylight)
+        return True
+
+    @staticmethod
+    def _row_scope(row):
+        row = dict(row or {})
+        scope = str(row.get("scope", "") or "").strip().lower()
+        if scope:
+            return scope
+        role = str(row.get("role", "") or "").strip().lower()
+        if role.startswith("daylight") or role == "daylight_marker":
+            return "daylight"
+        if role.startswith("component:") or role.startswith("component_value:"):
+            return "side_slope" if "side_slope" in role or "cut_slope" in role or "fill_slope" in role or "bench" in role else "typical"
+        return ""
+
+    @staticmethod
+    def _filter_layout_by_scope(payload, show_typical: bool = True, show_side_slope: bool = True, show_daylight: bool = True):
+        payload = dict(payload or {})
+
+        def _keep(row):
+            scope = CrossSectionViewerTaskPanel._row_scope(row)
+            return CrossSectionViewerTaskPanel._scope_enabled(
+                scope,
+                show_typical=show_typical,
+                show_side_slope=show_side_slope,
+                show_daylight=show_daylight,
+            )
+
+        for key in ("planned_label_rows", "planned_component_marker_rows", "planned_summary_rows"):
+            payload[key] = [dict(row) for row in list(payload.get(key, []) or []) if _keep(row)]
+        return payload
+
+    @staticmethod
+    def _summary_rows_grouped(summary_rows):
+        groups = {"typical": [], "side_slope": [], "daylight": [], "other": []}
+        for row in list(summary_rows or []):
+            scope = str(row.get("scope", "") or "").strip().lower()
+            text = str(row.get("text", "") or "").strip()
+            if not text:
+                continue
+            key = scope if scope in groups else "other"
+            groups[key].append(text)
+        return groups
+
+    @staticmethod
+    def _append_summary_row(summary_rows, summary_seen, *, role: str, text: str, priority: int, placement_mode: str = "summary_only", category: str = "label", scope: str = ""):
         text = str(text or "").strip()
         role = str(role or "").strip()
         if not text:
@@ -665,6 +798,7 @@ class CrossSectionViewerTaskPanel:
                 "text": text,
                 "priority": int(priority or 0),
                 "placement_mode": str(placement_mode or "summary_only"),
+                "scope": str(scope or "").strip().lower(),
             }
         )
 
@@ -758,6 +892,7 @@ class CrossSectionViewerTaskPanel:
         summary_seen = set()
         has_component_rows = bool(list(payload.get("component_rows", []) or []))
         summary_preferred_roles = {"structure_summary", "daylight_note", "station_tags"}
+        has_daylight_rows = bool(list(payload.get("daylight_rows", []) or []))
         for row in planned_title_rows:
             title_span = CrossSectionViewerTaskPanel._anchored_text_span(
                 float(row.get("x", xmin) or xmin),
@@ -773,6 +908,18 @@ class CrossSectionViewerTaskPanel:
             if not text:
                 continue
             priority = CrossSectionViewerTaskPanel._label_priority(role)
+            if role == "daylight_note" and has_daylight_rows:
+                CrossSectionViewerTaskPanel._append_summary_row(
+                    planned_summary_rows,
+                    summary_seen,
+                    role=role,
+                    text=text,
+                    priority=priority,
+                    placement_mode="summary_only",
+                    category="diagnostic_label",
+                    scope="daylight",
+                )
+                continue
             if has_component_rows and (
                 role in summary_preferred_roles
                 or role in ("top_edge_left", "top_edge_right")
@@ -905,22 +1052,115 @@ class CrossSectionViewerTaskPanel:
                 }
             )
 
+        for row in list(payload.get("daylight_rows", []) or []):
+            side = str(row.get("side", "") or "").strip().lower()
+            scope = str(row.get("scope", "daylight") or "daylight").strip().lower() or "daylight"
+            role = "daylight_marker"
+            priority = 42
+            x = float(row.get("x", 0.0) or 0.0)
+            base_y = float(row.get("y", ymin) or ymin)
+            marker_top_y = float(base_y + (0.34 * height))
+            planned_component_marker_rows.append(
+                {
+                    "kind": "component_marker",
+                    "role": role,
+                    "scope": scope,
+                    "side": side,
+                    "x0": x,
+                    "x1": x,
+                    "mid": x,
+                    "y_base": base_y,
+                    "y_base_left": base_y,
+                    "y_base_right": base_y,
+                    "y_top": marker_top_y,
+                    "color": "#b7d88a",
+                    "tick_len": float(max(0.12, min(0.24, 0.06 * height))),
+                    "stroke_width": 0.16,
+                    "marker_style": "daylight_marker",
+                    "cap_mode": "base",
+                }
+            )
+            daylight_band = f"daylight_{side or 'center'}"
+            text = str(row.get("label", "daylight") or "daylight")
+            svg_font_size = 0.15
+            font_scale = 1.0
+            available = max(0.50, 0.30 * height)
+            fit_scale = CrossSectionViewerTaskPanel._fit_font_scale(text, svg_font_size, available, min_scale=0.40, orientation="vertical")
+            if fit_scale is not None:
+                font_scale = float(fit_scale)
+            y, slot = CrossSectionViewerTaskPanel._place_text_in_band(
+                occupancy,
+                daylight_band,
+                x,
+                "center",
+                max(0.10, (svg_font_size * max(0.40, font_scale) * 1.30)),
+                marker_top_y + (0.04 * height),
+                0.14 * height,
+                max_slots=2,
+                pad=0.16,
+                linked_bands=[f"component_label_side_slope_{side or 'center'}"],
+            )
+            if y is None:
+                CrossSectionViewerTaskPanel._append_summary_row(
+                    planned_summary_rows,
+                    summary_seen,
+                    role=role,
+                    text="daylight",
+                    priority=priority,
+                    placement_mode="summary_only",
+                    category="component_label",
+                    scope=scope,
+                )
+            else:
+                planned_labels.append(
+                    {
+                        "kind": "label",
+                        "role": "daylight_label",
+                        "scope": scope,
+                        "priority": priority,
+                        "text": text,
+                        "x": x,
+                        "y": float(y),
+                        "anchor": "center",
+                        "orientation": "vertical",
+                        "rotation_deg": -90.0,
+                        "font_scale": float(font_scale),
+                        "min_font_scale": 0.40,
+                        "fit_mode": "vertical",
+                        "svg_font_size": svg_font_size * max(0.40, font_scale),
+                        "viewer_point_size": 1.05 * max(0.40, font_scale),
+                        "color": "#b7d88a",
+                        "placement_mode": "daylight_vertical",
+                        "slot": int(slot or 0),
+                    }
+                )
+
         raw_dimension_rows = list(payload.get("dimension_rows", []) or [])
         component_segments = list(CrossSectionViewerTaskPanel._component_segments_from_payload(payload) or [])
         component_segments = sorted(
             component_segments,
             key=lambda seg: (
+                -CrossSectionViewerTaskPanel._component_scope_priority(
+                    CrossSectionViewerTaskPanel._component_scope(seg)
+                ),
                 float(seg.get("x0", 0.0) or 0.0),
                 float(seg.get("x1", 0.0) or 0.0),
                 -CrossSectionViewerTaskPanel._component_label_priority(seg.get("type", "")),
                 int(float(seg.get("order", 0) or 0)),
             ),
         )
+        component_count = max(1, int(len(component_segments) or 0))
+        component_crowd_scale = 1.0
+        if component_count > 6:
+            component_crowd_scale = max(0.45, min(1.0, 6.0 / float(component_count)))
         for seg in component_segments:
             typ = str(seg.get("type", "") or "").strip().lower()
+            scope = CrossSectionViewerTaskPanel._component_scope(seg)
             role = f"component:{typ}"
             value_role = f"component_value:{typ}"
             priority = CrossSectionViewerTaskPanel._component_label_priority(typ)
+            if scope == "side_slope":
+                priority = max(24, priority - 18)
             full_name = CrossSectionViewerTaskPanel._component_visual_label(seg)
             short_name = CrossSectionViewerTaskPanel._short_component_name(typ)
             full_text = str(full_name or short_name or typ.title() or "Comp")
@@ -928,9 +1168,11 @@ class CrossSectionViewerTaskPanel:
             span = max(0.0, float(seg.get("span", 0.0) or 0.0))
             value_text = f"{span:.3f} m"
             side = str(seg.get("side", "") or "").strip().lower()
-            band_name = f"component_label_{side or 'center'}"
-            value_band_name = f"component_value_{side or 'center'}"
-            svg_font_size = 0.16
+            band_name = f"component_label_{scope}_{side or 'center'}"
+            value_band_name = f"component_value_{scope}_{side or 'center'}"
+            counterpart_band = f"component_label_{'side_slope' if scope == 'typical' else 'typical'}_{side or 'center'}"
+            counterpart_value_band = f"component_value_{'side_slope' if scope == 'typical' else 'typical'}_{side or 'center'}"
+            svg_font_size = 0.16 * component_crowd_scale * (0.74 if scope == "side_slope" else 1.0)
             available = max(0.0, span - 0.10)
             local_top_y = CrossSectionViewerTaskPanel._sample_section_top_y(
                 payload,
@@ -952,8 +1194,10 @@ class CrossSectionViewerTaskPanel:
             chosen = None
             font_scale = None
             if available > 1e-6:
-                vert_full_scale = CrossSectionViewerTaskPanel._fit_font_scale(full_text, svg_font_size, available, min_scale=0.34, orientation="vertical")
-                vert_short_scale = CrossSectionViewerTaskPanel._fit_font_scale(short_text, svg_font_size, available, min_scale=0.30, orientation="vertical")
+                min_full_scale = 0.22 if scope == "side_slope" else 0.34
+                min_short_scale = 0.20 if scope == "side_slope" else 0.30
+                vert_full_scale = CrossSectionViewerTaskPanel._fit_font_scale(full_text, svg_font_size, available, min_scale=min_full_scale, orientation="vertical")
+                vert_short_scale = CrossSectionViewerTaskPanel._fit_font_scale(short_text, svg_font_size, available, min_scale=min_short_scale, orientation="vertical")
                 if vert_full_scale is not None:
                     chosen = full_text
                     font_scale = vert_full_scale
@@ -969,15 +1213,18 @@ class CrossSectionViewerTaskPanel:
                     priority=priority,
                     placement_mode="summary_only",
                     category="component_label",
+                    scope=scope,
                 )
                 continue
             guide_base_y = max(float(local_top_y), float(base_left_y), float(base_right_y))
             guide_top_y = float(guide_base_y + (0.82 * height))
             marker_tick = max(0.18, min(0.44, 0.10 * height))
             marker_stroke = 0.22 if typ in ("lane", "carriageway", "median") else 0.18
+            marker_color = "#eef2f8" if scope == "typical" else "#d6dcc6"
             marker_row = {
                 "kind": "component_marker",
                 "role": role,
+                "scope": scope,
                 "side": side,
                 "x0": float(seg.get("x0", 0.0) or 0.0),
                 "x1": float(seg.get("x1", 0.0) or 0.0),
@@ -986,43 +1233,118 @@ class CrossSectionViewerTaskPanel:
                 "y_base_left": float(base_left_y),
                 "y_base_right": float(base_right_y),
                 "y_top": guide_top_y,
-                "color": "#eef2f8",
+                "color": marker_color,
                 "tick_len": float(marker_tick),
                 "stroke_width": float(marker_stroke),
                 "marker_style": "dimension_guide",
                 "cap_mode": "both",
             }
             planned_component_marker_rows.append(marker_row)
-            text_width = max(0.10, (svg_font_size * max(0.30, float(font_scale or 1.0)) * 1.40))
-            y, slot = CrossSectionViewerTaskPanel._place_text_in_band(
+            min_render_scale = 0.20 if scope == "side_slope" else 0.30
+            label_svg_font_size = svg_font_size * max(min_render_scale, float(font_scale or 1.0))
+            text_width = max(
+                0.08,
+                CrossSectionViewerTaskPanel._estimate_vertical_text_bandwidth(
+                    label_svg_font_size,
+                    kind="label",
+                ),
+            )
+            value_svg_font_size = 0.12 * max(0.80, component_crowd_scale) * (0.66 if scope == "side_slope" else 1.0)
+            value_scale = CrossSectionViewerTaskPanel._fit_font_scale(
+                value_text,
+                value_svg_font_size,
+                available,
+                min_scale=(0.18 if scope == "side_slope" else 0.30),
+                orientation="vertical",
+            )
+            min_value_scale = 0.18 if scope == "side_slope" else 0.30
+            value_text_width = 0.0
+            fitted_value_svg_font_size = 0.0
+            if value_scale is not None:
+                fitted_value_svg_font_size = value_svg_font_size * max(min_value_scale, float(value_scale or 1.0))
+                value_text_width = max(
+                    0.06,
+                    CrossSectionViewerTaskPanel._estimate_vertical_text_bandwidth(
+                        fitted_value_svg_font_size,
+                        kind="value",
+                    ),
+                )
+            render_text = chosen if value_scale is None else f"{chosen} {value_text}"
+            render_font_scale = max(
+                min_render_scale,
+                float(font_scale or 1.0),
+                float(value_scale or 0.0),
+            )
+            render_svg_font_size = max(label_svg_font_size, fitted_value_svg_font_size or 0.0)
+            if render_svg_font_size <= 1e-9:
+                render_svg_font_size = svg_font_size * render_font_scale
+            label_extent = CrossSectionViewerTaskPanel._estimate_text_width(
+                render_text,
+                render_svg_font_size,
+            )
+            guide_len = max(0.20, guide_top_y - guide_base_y)
+            block_start_y = guide_base_y + (0.33 * guide_len)
+            type_width_floor = 0.24 if typ in ("bench", "cut_slope", "fill_slope", "side_slope") else 0.18
+            block_width = max(text_width, value_text_width, type_width_floor)
+            block_band = f"component_block_{scope}_{side or 'center'}"
+            block_max_slots = 4 if scope == "typical" else 7
+            block_step_y = max(0.18 * height, 0.58 * label_extent)
+            block_y, slot = CrossSectionViewerTaskPanel._place_text_in_band(
                 occupancy,
-                band_name,
+                block_band,
                 float(seg.get("mid", 0.0) or 0.0),
                 "center",
-                text_width,
-                guide_top_y + (0.03 * height),
-                0.16 * height,
-                max_slots=4,
-                pad=0.20,
-                linked_bands=["top_left"] if side == "left" else (["top_right"] if side == "right" else []),
+                block_width,
+                block_start_y,
+                block_step_y,
+                max_slots=block_max_slots,
+                pad=0.22 if scope == "side_slope" else 0.20,
+                linked_bands=(
+                    ([counterpart_band, counterpart_value_band] + (["top_left"] if side == "left" else (["top_right"] if side == "right" else [])))
+                    if scope == "side_slope"
+                    else (["top_left"] if side == "left" else (["top_right"] if side == "right" else []))
+                ),
             )
-            if y is None and chosen != short_text:
+            if block_y is None and chosen != short_text:
                 chosen = short_text
-                font_scale = CrossSectionViewerTaskPanel._fit_font_scale(chosen, svg_font_size, available, min_scale=0.30, orientation="vertical")
-                text_width = max(0.10, (svg_font_size * max(0.30, float(font_scale or 1.0)) * 1.40))
-                y, slot = CrossSectionViewerTaskPanel._place_text_in_band(
+                font_scale = CrossSectionViewerTaskPanel._fit_font_scale(
+                    chosen,
+                    svg_font_size,
+                    available,
+                    min_scale=(0.20 if scope == "side_slope" else 0.30),
+                    orientation="vertical",
+                )
+                label_svg_font_size = svg_font_size * max(min_render_scale, float(font_scale or 1.0))
+                text_width = max(
+                    0.08,
+                    CrossSectionViewerTaskPanel._estimate_vertical_text_bandwidth(
+                        label_svg_font_size,
+                        kind="label",
+                    ),
+                )
+                label_extent = CrossSectionViewerTaskPanel._estimate_text_width(
+                    chosen if value_scale is None else f"{chosen} {value_text}",
+                    max(label_svg_font_size, fitted_value_svg_font_size or 0.0, svg_font_size * max(min_render_scale, float(font_scale or 1.0))),
+                )
+                block_width = max(text_width, value_text_width, type_width_floor)
+                block_step_y = max(0.18 * height, 0.58 * label_extent)
+                block_y, slot = CrossSectionViewerTaskPanel._place_text_in_band(
                     occupancy,
-                    band_name,
+                    block_band,
                     float(seg.get("mid", 0.0) or 0.0),
                     "center",
-                    text_width,
-                    guide_top_y + (0.03 * height),
-                    0.16 * height,
-                    max_slots=4,
-                    pad=0.20,
-                    linked_bands=["top_left"] if side == "left" else (["top_right"] if side == "right" else []),
+                    block_width,
+                    block_start_y,
+                    block_step_y,
+                    max_slots=block_max_slots,
+                    pad=0.22 if scope == "side_slope" else 0.20,
+                    linked_bands=(
+                        ([counterpart_band, counterpart_value_band] + (["top_left"] if side == "left" else (["top_right"] if side == "right" else [])))
+                        if scope == "side_slope"
+                        else (["top_left"] if side == "left" else (["top_right"] if side == "right" else []))
+                    ),
                 )
-            if y is None:
+            if block_y is None:
                 CrossSectionViewerTaskPanel._append_summary_row(
                     planned_summary_rows,
                     summary_seen,
@@ -1031,71 +1353,53 @@ class CrossSectionViewerTaskPanel:
                     priority=priority,
                     placement_mode="summary_only",
                     category="component_label",
+                    scope=scope,
                 )
                 continue
-            marker_row["y_top"] = max(float(marker_row.get("y_top", guide_top_y) or guide_top_y), float(y) - (0.06 * height))
+            render_text = chosen if value_scale is None else f"{chosen} {value_text}"
+            render_font_scale = max(
+                min_render_scale,
+                float(font_scale or 1.0),
+                float(value_scale or 0.0),
+            )
+            render_svg_font_size = max(label_svg_font_size, fitted_value_svg_font_size or 0.0)
+            if render_svg_font_size <= 1e-9:
+                render_svg_font_size = svg_font_size * render_font_scale
+            label_y = float(block_y)
+            marker_row["y_top"] = max(float(marker_row.get("y_top", guide_top_y) or guide_top_y), float(label_y) - (0.06 * height))
             planned_labels.append(
                 {
                     "kind": "label",
                     "role": role,
+                    "scope": scope,
                     "priority": priority,
-                    "text": chosen,
+                    "text": render_text,
                     "x": float(seg.get("mid", 0.0) or 0.0),
-                    "y": float(y),
+                    "y": float(label_y),
                     "anchor": "center",
                     "orientation": orientation,
                     "rotation_deg": rotation_deg,
-                    "font_scale": float(font_scale or 1.0),
-                    "min_font_scale": 0.30,
-                    "fit_mode": "span_fit" if float(font_scale or 1.0) < 0.999 else "vertical",
-                    "svg_font_size": svg_font_size * max(0.30, float(font_scale or 1.0)),
-                    "viewer_point_size": 1.10 * max(0.30, float(font_scale or 1.0)),
+                    "font_scale": float(render_font_scale or 1.0),
+                    "min_font_scale": min_render_scale,
+                    "fit_mode": "span_fit" if float(render_font_scale or 1.0) < 0.999 else "vertical",
+                    "svg_font_size": render_svg_font_size,
+                    "viewer_point_size": (0.78 if scope == "side_slope" else 1.02) * max(min_render_scale, float(render_font_scale or 1.0)),
                     "color": CrossSectionViewerTaskPanel._svg_label_color(role),
-                    "placement_mode": "component_vertical" if int(slot or 0) == 0 else "stacked",
+                    "placement_mode": "component_block" if int(slot or 0) == 0 else "stacked_block",
                     "slot": int(slot or 0),
                 }
             )
-
-            value_svg_font_size = 0.12
-            value_scale = CrossSectionViewerTaskPanel._fit_font_scale(value_text, value_svg_font_size, available, min_scale=0.30, orientation="vertical")
-            if value_scale is not None:
-                outward_sign = -1.0 if side == "left" else (1.0 if side == "right" else 1.0)
-                value_x = float(seg.get("mid", 0.0) or 0.0) + (outward_sign * max(0.12, min(0.24, (0.08 * max(1.0, span)) + 0.04)))
-                value_text_width = max(0.08, (value_svg_font_size * max(0.30, float(value_scale or 1.0)) * 1.25))
-                value_y, value_slot = CrossSectionViewerTaskPanel._place_text_in_band(
-                    occupancy,
-                    value_band_name,
-                    value_x,
-                    "center",
-                    value_text_width,
-                    float(y),
-                    0.16 * height,
-                    max_slots=4,
-                    pad=0.16,
-                    linked_bands=[band_name],
+            if value_scale is None and scope == "side_slope":
+                CrossSectionViewerTaskPanel._append_summary_row(
+                    planned_summary_rows,
+                    summary_seen,
+                    role=value_role,
+                    text=f"{full_text} {value_text}",
+                    priority=max(30, priority - 16),
+                    placement_mode="summary_only",
+                    category="component_value",
+                    scope=scope,
                 )
-                if value_y is not None:
-                    planned_labels.append(
-                        {
-                            "kind": "label",
-                            "role": value_role,
-                            "priority": max(40, priority - 12),
-                            "text": value_text,
-                            "x": float(value_x),
-                            "y": float(value_y),
-                            "anchor": "center",
-                            "orientation": orientation,
-                            "rotation_deg": rotation_deg,
-                            "font_scale": float(value_scale or 1.0),
-                            "min_font_scale": 0.30,
-                            "fit_mode": "span_fit" if float(value_scale or 1.0) < 0.999 else "vertical",
-                            "svg_font_size": value_svg_font_size * max(0.30, float(value_scale or 1.0)),
-                            "viewer_point_size": 0.95 * max(0.30, float(value_scale or 1.0)),
-                            "color": CrossSectionViewerTaskPanel._svg_dimension_color(typ),
-                            "placement_mode": "component_value_vertical" if int(value_slot or 0) == 0 else "stacked",
-                            "slot": int(value_slot or 0),
-                        }
-                    )
 
         planned_dims = []
         dim_rows = sorted(
@@ -1288,6 +1592,12 @@ class CrossSectionViewerTaskPanel:
         payload = dict(payload)
         payload.update(self.build_layout_plan(payload))
         self._current_payload = dict(payload)
+        payload = self._filter_layout_by_scope(
+            payload,
+            show_typical=bool(self.chk_show_typical.isChecked()),
+            show_side_slope=bool(self.chk_show_side_slope.isChecked()),
+            show_daylight=bool(self.chk_show_daylight.isChecked()),
+        )
 
         bounds = dict(payload.get("bounds", {}) or {})
         xmin = float(bounds.get("xmin", -1.0))
@@ -1407,6 +1717,34 @@ class CrossSectionViewerTaskPanel:
             f"Polylines: section={len(list(payload.get('section_polylines', []) or []))}, "
             f"overlay={len(list(payload.get('overlay_polylines', []) or []))}",
         ]
+        component_rows = list(payload.get("component_rows", []) or [])
+        if component_rows:
+            scope_counts = CrossSectionViewerTaskPanel._component_scope_counts(component_rows)
+            lines.append(
+                "Component Scopes: "
+                f"typical={int(scope_counts.get('typical', 0) or 0)}, "
+                f"side_slope={int(scope_counts.get('side_slope', 0) or 0)}"
+            )
+        daylight_rows = list(payload.get("daylight_rows", []) or [])
+        if daylight_rows:
+            lines.append(f"Daylight Markers: {len(daylight_rows)}")
+            daylight_mode = str(payload.get("daylight_mode", "") or "").strip()
+            if daylight_mode:
+                lines.append(f"Daylight Mode: {daylight_mode}")
+            daylight_sides = [str(row.get("side", "") or "").strip().lower() for row in daylight_rows]
+            daylight_sides = [side for side in daylight_sides if side]
+            if daylight_sides:
+                lines.append(f"Daylight Sides: {', '.join(daylight_sides)}")
+        visible_scope_counts = CrossSectionViewerTaskPanel._planned_component_scope_counts(
+            list(payload.get("planned_label_rows", []) or [])
+        )
+        if sum(int(v or 0) for v in visible_scope_counts.values()) > 0:
+            lines.append(
+                "Visible Component Annotations: "
+                f"typical={int(visible_scope_counts.get('typical', 0) or 0)}, "
+                f"side_slope={int(visible_scope_counts.get('side_slope', 0) or 0)}, "
+                f"daylight={int(visible_scope_counts.get('daylight', 0) or 0)}"
+            )
         dim_rows = list(payload.get("planned_dimension_rows", payload.get("dimension_rows", [])) or [])
         if dim_rows:
             lines.append("Dimensions:")
@@ -1414,13 +1752,27 @@ class CrossSectionViewerTaskPanel:
                 lines.append(f"  {str(row.get('text', row.get('label', '')) or '')}")
         summary_rows = list(payload.get("planned_summary_rows", []) or [])
         if summary_rows:
+            grouped = CrossSectionViewerTaskPanel._summary_rows_grouped(summary_rows)
             lines.append("Summary Fallbacks:")
-            for row in summary_rows[:8]:
-                lines.append(f"  {str(row.get('text', '') or '')}")
+            if grouped.get("typical"):
+                lines.append("  Typical:")
+                for txt in grouped.get("typical", [])[:4]:
+                    lines.append(f"    {txt}")
+            if grouped.get("side_slope"):
+                lines.append("  Side Slope:")
+                for txt in grouped.get("side_slope", [])[:4]:
+                    lines.append(f"    {txt}")
+            if grouped.get("daylight"):
+                lines.append("  Daylight:")
+                for txt in grouped.get("daylight", [])[:4]:
+                    lines.append(f"    {txt}")
+            if grouped.get("other"):
+                lines.append("  Other:")
+                for txt in grouped.get("other", [])[:4]:
+                    lines.append(f"    {txt}")
         if include_diagnostics:
             diag = list(payload.get("diagnostic_tokens", []) or [])
             lines.append(f"Diagnostics: {', '.join(diag) if diag else '-'}")
-            component_rows = list(payload.get("component_rows", []) or [])
             bench_rows = list(payload.get("bench_rows", []) or [])
             structure_rows = list(payload.get("structure_rows", []) or [])
             component_row_texts = [str(row.get("raw", "") or "") for row in component_rows if str(row.get("raw", "") or "")]
@@ -1490,6 +1842,19 @@ class CrossSectionViewerTaskPanel:
             y_top = float(row.get("y_top", 0.0) or 0.0)
             tick_len = max(0.04, float(row.get("tick_len", 0.12) or 0.12))
             cap_mode = str(row.get("cap_mode", "both") or "both")
+            marker_style = str(row.get("marker_style", "dimension_guide") or "dimension_guide")
+            if marker_style == "daylight_marker":
+                self.scene.addLine(x0, -y_base_left, x0, -y_top, pen)
+                self.scene.addEllipse(
+                    x0 - (0.35 * tick_len),
+                    -y_base_left - (0.35 * tick_len),
+                    0.70 * tick_len,
+                    0.70 * tick_len,
+                    pen,
+                    QtGui.QBrush(color),
+                )
+                self.scene.addLine(x0 - (0.5 * tick_len), -y_top, x0 + (0.5 * tick_len), -y_top, pen)
+                continue
             self.scene.addLine(x0, -y_base_left, x0, -y_top, pen)
             self.scene.addLine(x1, -y_base_right, x1, -y_top, pen)
             self.scene.addLine(x0, -y_top, x1, -y_top, pen)
@@ -1594,9 +1959,23 @@ class CrossSectionViewerTaskPanel:
         )
 
     @staticmethod
-    def build_svg_markup(payload, show_structures: bool = True, show_labels: bool = True, show_dimensions: bool = True):
+    def build_svg_markup(
+        payload,
+        show_structures: bool = True,
+        show_labels: bool = True,
+        show_dimensions: bool = True,
+        show_typical: bool = True,
+        show_side_slope: bool = True,
+        show_daylight: bool = True,
+    ):
         payload = dict(payload or {})
         payload.update(CrossSectionViewerTaskPanel.build_layout_plan(payload))
+        payload = CrossSectionViewerTaskPanel._filter_layout_by_scope(
+            payload,
+            show_typical=show_typical,
+            show_side_slope=show_side_slope,
+            show_daylight=show_daylight,
+        )
         bounds = dict(payload.get("bounds", {}) or {})
         xmin = float(bounds.get("xmin", -1.0))
         xmax = float(bounds.get("xmax", 1.0))
@@ -1642,6 +2021,12 @@ class CrossSectionViewerTaskPanel:
             tick = max(0.04, float(row.get("tick_len", 0.12) or 0.12))
             stroke_w = max(0.02, float(row.get("stroke_width", 0.03) or 0.03))
             cap_mode = str(row.get("cap_mode", "both") or "both")
+            marker_style = str(row.get("marker_style", "dimension_guide") or "dimension_guide")
+            if marker_style == "daylight_marker":
+                lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y0_left:.3f}\" x2=\"{x0:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                lines.append(f"<circle cx=\"{x0:.3f}\" cy=\"{y0_left:.3f}\" r=\"{(0.35 * tick):.3f}\" fill=\"{color}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                lines.append(f"<line x1=\"{(x0 - (0.5 * tick)):.3f}\" y1=\"{y1:.3f}\" x2=\"{(x0 + (0.5 * tick)):.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                continue
             lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y0_left:.3f}\" x2=\"{x0:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
             lines.append(f"<line x1=\"{x1:.3f}\" y1=\"{y0_right:.3f}\" x2=\"{x1:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
             lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y1:.3f}\" x2=\"{x1:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
@@ -1703,9 +2088,18 @@ class CrossSectionViewerTaskPanel:
         show_labels: bool = True,
         show_dimensions: bool = True,
         include_diagnostics: bool = True,
+        show_typical: bool = True,
+        show_side_slope: bool = True,
+        show_daylight: bool = True,
     ):
         payload = dict(payload or {})
         payload.update(CrossSectionViewerTaskPanel.build_layout_plan(payload))
+        payload = CrossSectionViewerTaskPanel._filter_layout_by_scope(
+            payload,
+            show_typical=show_typical,
+            show_side_slope=show_side_slope,
+            show_daylight=show_daylight,
+        )
         bounds = dict(payload.get("bounds", {}) or {})
         xmin = float(bounds.get("xmin", -1.0))
         xmax = float(bounds.get("xmax", 1.0))
@@ -1733,6 +2127,11 @@ class CrossSectionViewerTaskPanel:
         station_label = CrossSectionViewerTaskPanel._svg_escape(str(payload.get("station_label", "STA") or "STA"))
         diag = ", ".join(list(payload.get("diagnostic_tokens", []) or [])) or "-"
         summary_fallback_rows = list(payload.get("planned_summary_rows", []) or [])
+        scope_counts = CrossSectionViewerTaskPanel._component_scope_counts(list(payload.get("component_rows", []) or []))
+        visible_scope_counts = CrossSectionViewerTaskPanel._planned_component_scope_counts(
+            list(payload.get("planned_label_rows", []) or [])
+        )
+        daylight_rows = list(payload.get("daylight_rows", []) or [])
         summary_lines = [
             f"Section Set: {section_set_label}",
             f"Station: {float(payload.get('station', 0.0) or 0.0):.3f}",
@@ -1741,13 +2140,38 @@ class CrossSectionViewerTaskPanel:
             f"Structure Summary: {str(payload.get('structure_summary', '-') or '-')}",
             f"Bench Summary: {str(payload.get('bench_summary', '-') or '-')}",
             f"Pavement: {float(payload.get('pavement_total_thickness', 0.0) or 0.0):.3f} m",
+            f"Component Scopes: typical={int(scope_counts.get('typical', 0) or 0)}, side_slope={int(scope_counts.get('side_slope', 0) or 0)}",
+            f"Daylight Markers: {len(daylight_rows)}",
+            f"Visible Component Annotations: typical={int(visible_scope_counts.get('typical', 0) or 0)}, side_slope={int(visible_scope_counts.get('side_slope', 0) or 0)}, daylight={int(visible_scope_counts.get('daylight', 0) or 0)}",
         ]
+        daylight_mode = str(payload.get("daylight_mode", "") or "").strip()
+        if daylight_mode:
+            summary_lines.append(f"Daylight Mode: {daylight_mode}")
+        daylight_sides = [str(row.get("side", "") or "").strip().lower() for row in daylight_rows]
+        daylight_sides = [side for side in daylight_sides if side]
+        if daylight_sides:
+            summary_lines.append(f"Daylight Sides: {', '.join(daylight_sides)}")
         if include_diagnostics:
             summary_lines.append(f"Diagnostics: {diag}")
         if summary_fallback_rows:
+            grouped = CrossSectionViewerTaskPanel._summary_rows_grouped(summary_fallback_rows)
             summary_lines.append("Hidden Labels:")
-            for row in summary_fallback_rows[:6]:
-                summary_lines.append(f"  {str(row.get('text', '') or '')}")
+            if grouped.get("typical"):
+                summary_lines.append("  Typical:")
+                for txt in grouped.get("typical", [])[:3]:
+                    summary_lines.append(f"    {txt}")
+            if grouped.get("side_slope"):
+                summary_lines.append("  Side Slope:")
+                for txt in grouped.get("side_slope", [])[:3]:
+                    summary_lines.append(f"    {txt}")
+            if grouped.get("daylight"):
+                summary_lines.append("  Daylight:")
+                for txt in grouped.get("daylight", [])[:3]:
+                    summary_lines.append(f"    {txt}")
+            if grouped.get("other"):
+                summary_lines.append("  Other:")
+                for txt in grouped.get("other", [])[:3]:
+                    summary_lines.append(f"    {txt}")
         summary_lines = [CrossSectionViewerTaskPanel._svg_escape(line) for line in summary_lines]
 
         sheet_w = 1200
@@ -1789,6 +2213,12 @@ class CrossSectionViewerTaskPanel:
             tick = max(0.04, float(row.get("tick_len", 0.12) or 0.12))
             stroke_w = max(0.02, float(row.get("stroke_width", 0.03) or 0.03))
             cap_mode = str(row.get("cap_mode", "both") or "both")
+            marker_style = str(row.get("marker_style", "dimension_guide") or "dimension_guide")
+            if marker_style == "daylight_marker":
+                lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y0_left:.3f}\" x2=\"{x0:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                lines.append(f"<circle cx=\"{x0:.3f}\" cy=\"{y0_left:.3f}\" r=\"{(0.35 * tick):.3f}\" fill=\"{color}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                lines.append(f"<line x1=\"{(x0 - (0.5 * tick)):.3f}\" y1=\"{y1:.3f}\" x2=\"{(x0 + (0.5 * tick)):.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
+                continue
             lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y0_left:.3f}\" x2=\"{x0:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
             lines.append(f"<line x1=\"{x1:.3f}\" y1=\"{y0_right:.3f}\" x2=\"{x1:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
             lines.append(f"<line x1=\"{x0:.3f}\" y1=\"{y1:.3f}\" x2=\"{x1:.3f}\" y2=\"{y1:.3f}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.3f}\"/>")
@@ -1865,6 +2295,9 @@ class CrossSectionViewerTaskPanel:
             show_structures=bool(self.chk_show_structures.isChecked()),
             show_labels=bool(self.chk_show_labels.isChecked()),
             show_dimensions=bool(self.chk_show_dimensions.isChecked()),
+            show_typical=bool(self.chk_show_typical.isChecked()),
+            show_side_slope=bool(self.chk_show_side_slope.isChecked()),
+            show_daylight=bool(self.chk_show_daylight.isChecked()),
         )
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(markup)
@@ -1879,6 +2312,9 @@ class CrossSectionViewerTaskPanel:
             show_labels=bool(self.chk_show_labels.isChecked()),
             show_dimensions=bool(self.chk_show_dimensions.isChecked()),
             include_diagnostics=bool(self.chk_show_diagnostics.isChecked()),
+            show_typical=bool(self.chk_show_typical.isChecked()),
+            show_side_slope=bool(self.chk_show_side_slope.isChecked()),
+            show_daylight=bool(self.chk_show_daylight.isChecked()),
         )
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(markup)

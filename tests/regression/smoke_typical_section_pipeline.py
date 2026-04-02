@@ -23,6 +23,20 @@ def _assert(cond, msg):
         raise Exception(msg)
 
 
+def _parse_row(text: str):
+    raw = str(text or "").strip()
+    out = {}
+    for idx, part in enumerate(raw.split("|")):
+        if idx == 0:
+            out["kind"] = part
+            continue
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        out[str(key or "").strip()] = str(value or "").strip()
+    return out
+
+
 def _shape_ok(obj) -> bool:
     shp = getattr(obj, "Shape", None)
     if shp is None:
@@ -57,6 +71,19 @@ def _make_assembly(doc):
     asm.UseSideSlopes = False
     asm.HeightLeft = 0.40
     asm.HeightRight = 0.35
+    return asm
+
+
+def _make_side_slope_assembly(doc):
+    asm = doc.addObject("Part::FeaturePython", "AssemblyTemplate")
+    AssemblyTemplate(asm)
+    asm.UseSideSlopes = True
+    asm.HeightLeft = 0.40
+    asm.HeightRight = 0.35
+    asm.LeftSideWidth = 8.0
+    asm.RightSideWidth = 8.0
+    asm.LeftSideSlopePct = -33.0
+    asm.RightSideSlopePct = 33.0
     return asm
 
 
@@ -134,13 +161,14 @@ def run():
     aln = _make_alignment(doc, length=100.0)
     disp = _make_display(doc, aln)
     asm = _make_assembly(doc)
+    asm_slope = _make_side_slope_assembly(doc)
 
     typ_simple = _make_typical(doc, richer=False)
     sec_simple = _make_section_set(doc, "SectionSetSimple", disp, asm, typ_simple)
     cor_simple = _make_corridor(doc, sec_simple)
 
     typ_rich = _make_typical(doc, richer=True)
-    sec_rich = _make_section_set(doc, "SectionSetRich", disp, asm, typ_rich)
+    sec_rich = _make_section_set(doc, "SectionSetRich", disp, asm_slope, typ_rich)
     cor_rich = _make_corridor(doc, sec_rich)
 
     doc.recompute()
@@ -167,6 +195,24 @@ def run():
     _assert("topEdges=ditch/berm" in str(getattr(cor_rich, "Status", "") or ""), "Rich corridor status missing edge summary")
     _assert("typicalAdvanced=" in str(getattr(cor_rich, "Status", "") or ""), "Rich corridor status missing advanced component summary")
     _assert(len(list(getattr(cor_rich, "PavementLayerSummaryRows", []) or [])) >= 1, "Rich corridor pavement report rows missing")
+    rich_segment_rows = [str(row or "") for row in list(getattr(sec_rich, "SectionComponentSegmentRows", []) or [])]
+    _assert(any("scope=typical" in row for row in rich_segment_rows), "Rich section should keep typical component segments")
+    _assert(any("scope=side_slope" in row for row in rich_segment_rows), "Rich section should also include side-slope component segments")
+    parsed_segments = [_parse_row(row) for row in rich_segment_rows]
+    station_values = sorted({float(row.get("station", 0.0) or 0.0) for row in parsed_segments if row.get("kind") == "component_segment"})
+    for station_value in station_values:
+        station_rows = [row for row in parsed_segments if row.get("kind") == "component_segment" and abs(float(row.get("station", 0.0) or 0.0) - station_value) <= 1e-6]
+        left_typical = [row for row in station_rows if str(row.get("scope", "") or "") == "typical" and str(row.get("side", "") or "") in ("left", "center")]
+        right_typical = [row for row in station_rows if str(row.get("scope", "") or "") == "typical" and str(row.get("side", "") or "") in ("right", "center")]
+        left_slope = [row for row in station_rows if str(row.get("scope", "") or "") == "side_slope" and str(row.get("side", "") or "") == "left"]
+        right_slope = [row for row in station_rows if str(row.get("scope", "") or "") == "side_slope" and str(row.get("side", "") or "") == "right"]
+        _assert(left_typical and right_typical and left_slope and right_slope, f"Station {station_value:.3f} should contain both typical and side-slope segments")
+        left_outer = min(float(row.get("x0", 0.0) or 0.0) for row in left_typical)
+        right_outer = max(float(row.get("x1", 0.0) or 0.0) for row in right_typical)
+        left_slope_start = max(float(row.get("x1", 0.0) or 0.0) for row in left_slope)
+        right_slope_start = min(float(row.get("x0", 0.0) or 0.0) for row in right_slope)
+        _assert(abs(left_slope_start - left_outer) <= 1e-6, f"Left side-slope should start at the typical outer edge for station {station_value:.3f}")
+        _assert(abs(right_slope_start - right_outer) <= 1e-6, f"Right side-slope should start at the typical outer edge for station {station_value:.3f}")
 
     App.closeDocument(doc.Name)
     print("[PASS] Typical-section pipeline smoke test completed.")

@@ -22,6 +22,7 @@ Current implementation status:
   - `Export SVG`
   - `Export Sheet SVG`
 - Detailed follow-up layout planning is tracked separately in [CROSS_SECTION_VIEWER_LAYOUT_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_VIEWER_LAYOUT_PLAN.md).
+- Scope separation between `Typical Section Components` and `Side Slope Components` is tracked in [CROSS_SECTION_COMPONENT_SCOPE_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_COMPONENT_SCOPE_PLAN.md).
 - The next layout-focused follow-up is now partially shipped:
   - `vertical component labels`
   - `span-fit font sizing`
