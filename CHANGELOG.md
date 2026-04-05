@@ -12,6 +12,19 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Changed
 - Placeholder for upcoming changes.
 
+## [0.2.3] - 2026-04-05
+
+### Added
+- `Cross Section Viewer` station-review workflow with station-local component segments, scope-aware rendering for `typical`, `side_slope`, and `daylight`, plus PNG/SVG/Sheet SVG export support.
+- `Sections` bench convenience workflow with `Repeat first row to daylight` controls on both left/right bench tables.
+
+### Changed
+- `Cross Section Viewer` annotation and summary behavior was expanded so component guides, labels, dimensions, daylight markers, and grouped review summary blocks better reflect `SectionSet` runtime contracts.
+- `Cross Section Viewer` task-panel layout was reorganized for faster station navigation and section refresh during review.
+- `Edit Structures` task-panel UX was refined, including preset placement, profile-table action layout, and preset-driven station-profile point loading for the sample presets.
+- `Sections` and `Cross Section Viewer` now preserve resolved daylight-bound side-slope/bench component extents per station instead of reusing fixed-width viewer assumptions.
+- Wiki and developer documentation were synchronized with the current `Cross Section Viewer`, `Sections`, and `Edit Structures` behavior.
+
 ## [0.2.2] - 2026-04-01
 
 ### Added
