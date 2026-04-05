@@ -80,6 +80,19 @@ Practical debugging order:
   - `Drop`, `Width`, `Slope`, `Post-Slope`
   - internal runtime should treat `LeftBenchRows` / `RightBenchRows` as the primary bench contract
   - legacy single-bench properties remain as compatibility shadow values only
+- `Cross Section Viewer` should consume station-local `SectionComponentSegmentRows` as the source of truth for component annotations.
+- `Cross Section Viewer` component rows should preserve `scope`:
+  - `typical`
+  - `side_slope`
+  - daylight remains a dedicated marker/label path
+- `Cross Section Viewer` component annotations currently follow this policy:
+  - label and value stay in the same vertical column
+  - value is placed after label using label-height-based clearance
+  - component label/value rows do not use summary fallback
+- `Cross Section Viewer` task-panel layout currently keeps:
+  - `Use Selected Section` and `Refresh Context` on the row directly below `Section Set`
+  - `Station` selector at the bottom of the `Source` group
+  - no user-facing `Show labels` toggle
 
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`

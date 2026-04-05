@@ -144,7 +144,7 @@ def _resolve_side_bench_segments(total_w: float, side_slope_pct: float, use_benc
     return out
 
 
-def _resolve_side_bench_profile(total_w: float, side_slope_pct: float, bench_rows):
+def _resolve_side_bench_profile(total_w: float, side_slope_pct: float, bench_rows, repeat_first_row_to_end: bool = False):
     total = max(0.0, float(total_w))
     side_slope = float(side_slope_pct)
     rows = list(bench_rows or [])
@@ -153,9 +153,8 @@ def _resolve_side_bench_profile(total_w: float, side_slope_pct: float, bench_row
     remaining = total
     current_slope = side_slope
 
-    for row in rows:
-        if remaining <= 1e-9:
-            break
+    def _append_bench_row(row):
+        nonlocal remaining, current_slope
         spec = _resolve_side_bench_segments(
             remaining,
             current_slope,
@@ -166,17 +165,33 @@ def _resolve_side_bench_profile(total_w: float, side_slope_pct: float, bench_row
             float(row.get("post_slope", current_slope) or current_slope),
         )
         if not bool(spec.get("active", False)):
-            continue
+            return False
         pre_w = float(spec.get("pre_width", 0.0) or 0.0)
         if pre_w > 1e-9:
             segments.append({"kind": "slope", "width": pre_w, "slope": float(spec.get("pre_slope", current_slope) or current_slope)})
         bench_w = float(spec.get("bench_width", 0.0) or 0.0)
         if bench_w <= 1e-9:
-            continue
+            return False
         segments.append({"kind": "bench", "width": bench_w, "slope": float(spec.get("bench_slope", 0.0) or 0.0)})
         active_rows.append(dict(row))
-        remaining = max(0.0, float(spec.get("post_width", 0.0) or 0.0))
+        next_remaining = max(0.0, float(spec.get("post_width", 0.0) or 0.0))
         current_slope = float(spec.get("post_slope", current_slope) or current_slope)
+        progressed = abs(float(remaining) - float(next_remaining)) > 1e-9
+        remaining = next_remaining
+        return progressed
+
+    if bool(repeat_first_row_to_end) and rows:
+        template_row = dict(rows[0])
+        guard = 0
+        while remaining > 1e-9 and guard < 512:
+            guard += 1
+            if not _append_bench_row(template_row):
+                break
+    else:
+        for row in rows:
+            if remaining <= 1e-9:
+                break
+            _append_bench_row(row)
 
     if remaining > 1e-9 or not segments or active_rows:
         segments.append({"kind": "slope", "width": max(remaining, total if not segments else 0.0), "slope": current_slope})
@@ -279,6 +294,12 @@ def ensure_assembly_template_properties(obj):
     if not hasattr(obj, "RightBenchRows"):
         obj.addProperty("App::PropertyStringList", "RightBenchRows", "Assembly", "Unified right bench rows (drop,width,slope,post)")
         obj.RightBenchRows = []
+    if not hasattr(obj, "LeftBenchRepeatToDaylight"):
+        obj.addProperty("App::PropertyBool", "LeftBenchRepeatToDaylight", "Assembly", "Repeat the first left bench row until daylight")
+        obj.LeftBenchRepeatToDaylight = False
+    if not hasattr(obj, "RightBenchRepeatToDaylight"):
+        obj.addProperty("App::PropertyBool", "RightBenchRepeatToDaylight", "Assembly", "Repeat the first right bench row until daylight")
+        obj.RightBenchRepeatToDaylight = False
     if not hasattr(obj, "UseDaylightToTerrain"):
         obj.addProperty("App::PropertyBool", "UseDaylightToTerrain", "Assembly", "Use terrain-daylight for side slopes")
         obj.UseDaylightToTerrain = False
@@ -352,7 +373,7 @@ class AssemblyTemplate:
             if not bool(getattr(obj, "ShowTemplateWire", True)):
                 obj.Shape = Part.Shape()
                 obj.PracticalRole = "assembly_core"
-                obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct,UseLeftBench,UseRightBench,LeftBenchDrop,RightBenchDrop,LeftBenchWidth,RightBenchWidth,LeftBenchSlopePct,RightBenchSlopePct,LeftPostBenchSlopePct,RightPostBenchSlopePct,LeftBenchRows,RightBenchRows"
+                obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct,UseLeftBench,UseRightBench,LeftBenchDrop,RightBenchDrop,LeftBenchWidth,RightBenchWidth,LeftBenchSlopePct,RightBenchSlopePct,LeftPostBenchSlopePct,RightPostBenchSlopePct,LeftBenchRows,RightBenchRows,LeftBenchRepeatToDaylight,RightBenchRepeatToDaylight"
                 obj.AnalysisDrivingFieldSummary = "UseSideSlopes,UseDaylightToTerrain,DaylightSearchStep,DaylightMaxSearchWidth,DaylightMaxWidthDelta,DaylightMaxTriangles"
                 obj.ReportOnlyFieldSummary = "-"
                 obj.Status = "Hidden | role=assembly_core"
@@ -385,8 +406,18 @@ class AssemblyTemplate:
                 float(getattr(obj, "RightPostBenchSlopePct", rss) or rss),
                 list(getattr(obj, "RightBenchRows", []) or []),
             )
-            left_bench = _resolve_side_bench_profile(lsw, lss, left_bench_rows)
-            right_bench = _resolve_side_bench_profile(rsw, rss, right_bench_rows)
+            left_bench = _resolve_side_bench_profile(
+                lsw,
+                lss,
+                left_bench_rows,
+                repeat_first_row_to_end=bool(getattr(obj, "LeftBenchRepeatToDaylight", False)),
+            )
+            right_bench = _resolve_side_bench_profile(
+                rsw,
+                rss,
+                right_bench_rows,
+                repeat_first_row_to_end=bool(getattr(obj, "RightBenchRepeatToDaylight", False)),
+            )
 
             dz_l = -lw * ls / 100.0
             dz_r = -rw * rs / 100.0
@@ -429,7 +460,7 @@ class AssemblyTemplate:
                     q_pts.append(App.Vector(tp.x, tp.y - h, tp.z))
                 obj.Shape = Part.makePolygon(list(top_pts) + list(reversed(q_pts)) + [top_pts[0]])
             obj.PracticalRole = "assembly_core"
-            obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct,UseLeftBench,UseRightBench,LeftBenchDrop,RightBenchDrop,LeftBenchWidth,RightBenchWidth,LeftBenchSlopePct,RightBenchSlopePct,LeftPostBenchSlopePct,RightPostBenchSlopePct,LeftBenchRows,RightBenchRows"
+            obj.GeometryDrivingFieldSummary = "LeftWidth,RightWidth,LeftSlopePct,RightSlopePct,HeightLeft,HeightRight,LeftSideWidth,RightSideWidth,LeftSideSlopePct,RightSideSlopePct,UseLeftBench,UseRightBench,LeftBenchDrop,RightBenchDrop,LeftBenchWidth,RightBenchWidth,LeftBenchSlopePct,RightBenchSlopePct,LeftPostBenchSlopePct,RightPostBenchSlopePct,LeftBenchRows,RightBenchRows,LeftBenchRepeatToDaylight,RightBenchRepeatToDaylight"
             obj.AnalysisDrivingFieldSummary = "UseSideSlopes,UseDaylightToTerrain,DaylightSearchStep,DaylightMaxSearchWidth,DaylightMaxWidthDelta,DaylightMaxTriangles"
             obj.ReportOnlyFieldSummary = "-"
             left_count = int(len(list(left_bench_rows or [])))
@@ -471,6 +502,8 @@ class AssemblyTemplate:
             "RightPostBenchSlopePct",
             "LeftBenchRows",
             "RightBenchRows",
+            "LeftBenchRepeatToDaylight",
+            "RightBenchRepeatToDaylight",
             "UseDaylightToTerrain",
             "DaylightSearchStep",
             "DaylightMaxSearchWidth",

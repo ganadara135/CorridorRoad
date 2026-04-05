@@ -119,6 +119,9 @@ class SectionGeneratorTaskPanel:
     def _bench_table(self, side: str):
         return self.tbl_left_bench_rows if str(side or "").strip().lower() == "left" else self.tbl_right_bench_rows
 
+    def _bench_repeat_checkbox(self, side: str):
+        return self.chk_left_bench_to_daylight if str(side or "").strip().lower() == "left" else self.chk_right_bench_to_daylight
+
     def _insert_bench_table_row(self, side: str, row_data=None, row_index=None):
         table = self._bench_table(side)
         row = dict(self._normalize_bench_row(row_data) or self._default_bench_row(side))
@@ -157,6 +160,21 @@ class SectionGeneratorTaskPanel:
         table.setRowCount(0)
         for row in list(rows or []):
             self._insert_bench_table_row(side, row)
+
+    def _trim_bench_rows_to_first(self, side: str):
+        table = self._bench_table(side)
+        if int(table.rowCount()) <= 0:
+            self._insert_bench_table_row(side, self._default_bench_row(side))
+        rows = self._bench_rows_from_table(side)
+        keep = rows[:1] if rows else [self._default_bench_row(side)]
+        self._set_bench_table_rows(side, keep)
+
+    def _on_bench_repeat_to_daylight_toggled(self, side: str, checked: bool):
+        if self._loading:
+            return
+        if bool(checked):
+            self._trim_bench_rows_to_first(side)
+        self._update_side_ui()
 
     def _add_bench_row(self, side: str):
         table = self._bench_table(side)
@@ -203,6 +221,9 @@ class SectionGeneratorTaskPanel:
         parsed_primary = _parse_bench_row(primary, float(primary.get("post", 0.0) or 0.0))
         if parsed_primary is not None:
             rows.append(parsed_primary)
+        repeat_flag = bool(getattr(asm, "LeftBenchRepeatToDaylight", False)) if side_key == "left" else bool(getattr(asm, "RightBenchRepeatToDaylight", False))
+        if repeat_flag and rows:
+            return rows[:1]
         return rows
 
     def __init__(self):
@@ -378,6 +399,8 @@ class SectionGeneratorTaskPanel:
         self.btn_remove_left_bench_row = QtWidgets.QPushButton("Remove Row")
         self.btn_add_right_bench_row = QtWidgets.QPushButton("Add Row")
         self.btn_remove_right_bench_row = QtWidgets.QPushButton("Remove Row")
+        self.chk_left_bench_to_daylight = QtWidgets.QCheckBox("Repeat first row to daylight")
+        self.chk_right_bench_to_daylight = QtWidgets.QCheckBox("Repeat first row to daylight")
         self.chk_daylight = QtWidgets.QCheckBox("Daylight Auto (SectionSet)")
         self.chk_daylight.setChecked(True)
         self.cmb_day_terrain = QtWidgets.QComboBox()
@@ -421,9 +444,11 @@ class SectionGeneratorTaskPanel:
         w_right_bench_btns.setLayout(row_right_bench_btns)
         form_opts.addRow(self.chk_left_bench)
         form_opts.addRow("Left Bench Rows:", self.tbl_left_bench_rows)
+        form_opts.addRow("", self.chk_left_bench_to_daylight)
         form_opts.addRow("", w_left_bench_btns)
         form_opts.addRow(self.chk_right_bench)
         form_opts.addRow("Right Bench Rows:", self.tbl_right_bench_rows)
+        form_opts.addRow("", self.chk_right_bench_to_daylight)
         form_opts.addRow("", w_right_bench_btns)
         form_opts.addRow(self.chk_daylight)
         form_opts.addRow("Daylight Terrain (Mesh):", self.cmb_day_terrain)
@@ -456,6 +481,8 @@ class SectionGeneratorTaskPanel:
         self.chk_side.toggled.connect(self._update_side_ui)
         self.chk_left_bench.toggled.connect(self._update_side_ui)
         self.chk_right_bench.toggled.connect(self._update_side_ui)
+        self.chk_left_bench_to_daylight.toggled.connect(lambda v: self._on_bench_repeat_to_daylight_toggled("left", v))
+        self.chk_right_bench_to_daylight.toggled.connect(lambda v: self._on_bench_repeat_to_daylight_toggled("right", v))
         self.btn_add_left_bench_row.clicked.connect(lambda: self._add_bench_row("left"))
         self.btn_remove_left_bench_row.clicked.connect(lambda: self._remove_bench_row("left"))
         self.btn_add_right_bench_row.clicked.connect(lambda: self._add_bench_row("right"))
@@ -584,12 +611,16 @@ class SectionGeneratorTaskPanel:
         self.spin_side_s_right.setEnabled(on)
         self.chk_left_bench.setEnabled(on)
         self.chk_right_bench.setEnabled(on)
+        self.chk_left_bench_to_daylight.setEnabled(left_bench_on)
+        self.chk_right_bench_to_daylight.setEnabled(right_bench_on)
         self.tbl_left_bench_rows.setEnabled(left_bench_on)
         self.tbl_right_bench_rows.setEnabled(right_bench_on)
-        self.btn_add_left_bench_row.setEnabled(left_bench_on)
-        self.btn_remove_left_bench_row.setEnabled(left_bench_on)
-        self.btn_add_right_bench_row.setEnabled(right_bench_on)
-        self.btn_remove_right_bench_row.setEnabled(right_bench_on)
+        left_repeat = left_bench_on and bool(self.chk_left_bench_to_daylight.isChecked())
+        right_repeat = right_bench_on and bool(self.chk_right_bench_to_daylight.isChecked())
+        self.btn_add_left_bench_row.setEnabled(left_bench_on and (not left_repeat))
+        self.btn_remove_left_bench_row.setEnabled(left_bench_on and (not left_repeat))
+        self.btn_add_right_bench_row.setEnabled(right_bench_on and (not right_repeat))
+        self.btn_remove_right_bench_row.setEnabled(right_bench_on and (not right_repeat))
         self.chk_daylight.setEnabled(on)
         self.cmb_day_terrain.setEnabled(on and bool(self.chk_daylight.isChecked()))
         self.cmb_day_coords.setEnabled(on and bool(self.chk_daylight.isChecked()))
@@ -703,6 +734,10 @@ class SectionGeneratorTaskPanel:
             right_rows = [self._default_bench_row("right")]
         left_rows = [row for row in left_rows if row is not None]
         right_rows = [row for row in right_rows if row is not None]
+        if bool(self.chk_left_bench_to_daylight.isChecked()) and left_rows:
+            left_rows = left_rows[:1]
+        if bool(self.chk_right_bench_to_daylight.isChecked()) and right_rows:
+            right_rows = right_rows[:1]
         if hasattr(asm, "LeftBenchDrop"):
             asm.LeftBenchDrop = float(left_rows[0].get("drop", 0.0) or 0.0) if left_rows else 0.0
         if hasattr(asm, "RightBenchDrop"):
@@ -723,6 +758,10 @@ class SectionGeneratorTaskPanel:
             asm.LeftBenchRows = [str(self._bench_row_to_storage(row)).strip() for row in left_rows if str(self._bench_row_to_storage(row)).strip()]
         if hasattr(asm, "RightBenchRows"):
             asm.RightBenchRows = [str(self._bench_row_to_storage(row)).strip() for row in right_rows if str(self._bench_row_to_storage(row)).strip()]
+        if hasattr(asm, "LeftBenchRepeatToDaylight"):
+            asm.LeftBenchRepeatToDaylight = bool(self.chk_left_bench_to_daylight.isChecked())
+        if hasattr(asm, "RightBenchRepeatToDaylight"):
+            asm.RightBenchRepeatToDaylight = bool(self.chk_right_bench_to_daylight.isChecked())
         if hasattr(asm, "UseDaylightToTerrain"):
             asm.UseDaylightToTerrain = bool(self.chk_daylight.isChecked())
         if hasattr(asm, "DaylightSearchStep"):
@@ -851,8 +890,16 @@ class SectionGeneratorTaskPanel:
                     self.chk_left_bench.setChecked(bool(asm.UseLeftBench))
                 if hasattr(asm, "UseRightBench"):
                     self.chk_right_bench.setChecked(bool(asm.UseRightBench))
+                if hasattr(asm, "LeftBenchRepeatToDaylight"):
+                    self.chk_left_bench_to_daylight.setChecked(bool(asm.LeftBenchRepeatToDaylight))
+                if hasattr(asm, "RightBenchRepeatToDaylight"):
+                    self.chk_right_bench_to_daylight.setChecked(bool(asm.RightBenchRepeatToDaylight))
                 self._set_bench_table_rows("left", self._assembly_bench_rows(asm, "left"))
                 self._set_bench_table_rows("right", self._assembly_bench_rows(asm, "right"))
+                if bool(self.chk_left_bench_to_daylight.isChecked()):
+                    self._trim_bench_rows_to_first("left")
+                if bool(self.chk_right_bench_to_daylight.isChecked()):
+                    self._trim_bench_rows_to_first("right")
                 # Backward-compat fallback: if SectionSet.DaylightAuto is not available,
                 # keep using legacy AssemblyTemplate.UseDaylightToTerrain.
                 if (sec is None or (not hasattr(sec, "DaylightAuto"))) and hasattr(asm, "UseDaylightToTerrain"):

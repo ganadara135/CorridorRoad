@@ -499,7 +499,53 @@ When to override manually:
 5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
 6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.
 
-## 6B. Typical Section
+## 6B. Cross Section Viewer
+
+`Cross Section Viewer` is the first dedicated 2D station-review panel for `SectionSet`.
+
+### Current Scope
+
+1. It reads section geometry directly from `SectionSet`.
+2. It renders one station at a time in a separate 2D viewer instead of asking the user to interpret the section only in 3D.
+3. It can follow `SectionSlice` and `SectionStructureOverlay` selection from the tree or 3D view.
+4. It can optionally draw structure overlay wires on top of the base section linework.
+5. It consumes station-local `SectionComponentSegmentRows`, so `Typical Section` components and resolved `side_slope` components can be reviewed together at one station.
+
+### Main Controls
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Section Set` | Chooses the `SectionSet` to inspect. | Use this when multiple section sets exist in one document. |
+| `Use Selected Section` | Forces the viewer to adopt the currently selected `SectionSet`, `SectionSlice`, or `SectionStructureOverlay`. | Fastest way to jump from 3D context into 2D review. |
+| `Refresh Context` | Reloads available section sets and current station rows. | Use this after regenerating sections. |
+| `Sync with 3D selection` | Follows `SectionSlice` or `SectionStructureOverlay` selection automatically. | Keep this enabled for the recommended hybrid workflow. |
+| `Show structure overlays` | Toggles structure overlay linework in the 2D viewer. | Turn this off when you only want to read the road/earthwork section shape. |
+| `Show dimensions` | Shows section width dimensions for the current station. | Keeps the overall width dimension and any active drawing-rule dimensions in the lower band. |
+| `Show diagnostics` | Expands the lower summary panel with component/bench/structure/daylight report rows and status-derived tokens. | Use this when checking bench/daylight/structure behavior without opening raw object properties. |
+| `Show typical components` | Shows labels and guides for `Typical Section` components such as `lane`, `shoulder`, `ditch`, and `berm`. | Turn this off when you want to isolate slope/daylight interpretation only. |
+| `Show side-slope components` | Shows labels and guides for `side_slope`, `cut_slope`, `fill_slope`, and `bench` rows. | Useful when checking earthwork transitions without the standard-section overlay. |
+| `Show daylight markers` | Shows terrain-connection markers and labels for daylight rows. | Turn this off when the slope-end markers clutter the section drawing. |
+| `Station` | Chooses one generated section station. | This is the main selector for the active cross-section and is placed at the bottom of the `Source` group. |
+| `Previous` / `Next` | Moves to the neighboring station in the active set. | Useful for stepping through a corridor station by station. |
+| `Fit View` | Re-frames the current 2D cross-section drawing. | Use this after panning or zooming. |
+| `Export PNG` | Saves the currently rendered section scene as a PNG image. | Use this for quick review snapshots or issue discussions. |
+| `Export SVG` | Saves the current section as a vector SVG built from the viewer payload. | Use this when you want a lightweight scalable review graphic. |
+| `Export Sheet SVG` | Saves a print-style SVG sheet with the section drawing, title block, and review summary. | Use this when you want a cleaner review sheet for markup or sharing. |
+
+### Practical Notes
+
+1. This first version focuses on `station navigation + clean 2D linework + structure overlay`.
+2. Bench and side-slope breakpoints are shown through the same `SectionSet` wire that downstream grading uses.
+3. The dashed vertical marker is the roadway centerline in section space.
+4. `Show typical components`, `Show side-slope components`, and `Show daylight markers` let you isolate the three main section scopes.
+5. Component annotations are driven from station-local `SectionComponentSegmentRows`; `Typical Section` and `side_slope` components are no longer inferred from simple fallback labels when station-local rows exist.
+6. Component `label` and `value` are drawn in the same vertical column. The `value` is placed after the `label` using label-height-based spacing.
+7. Component `label/value` rows do not move into summary fallback. If a component annotation cannot be placed in the drawing, it is omitted instead of duplicated in the summary block.
+8. `Show diagnostics` expands the lower summary with payload/report rows derived from `SectionSet` result contracts.
+9. `Show dimensions` keeps the lower-band width annotation strategy used by the viewer and SVG exports.
+10. `Export PNG` writes the current scene as rendered, `Export SVG` writes a compact vector export, and `Export Sheet SVG` writes a print-style review sheet with a summary panel.
+
+## 6C. Typical Section
 
 `Typical Section` is the component-based editor for finished-grade top-profile composition.
 

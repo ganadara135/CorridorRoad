@@ -307,6 +307,50 @@ def _report_row(kind: str, **fields) -> str:
     return "|".join(parts)
 
 
+def _parse_report_row(text: str):
+    raw = str(text or "").strip()
+    if not raw:
+        return {}
+    parts = [str(p or "").strip() for p in raw.split("|")]
+    out = {"kind": parts[0] if parts else "row", "raw": raw}
+    for part in parts[1:]:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        out[str(key or "").strip()] = str(value or "").strip()
+    return out
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _typical_edge_anchors(segment_rows):
+    anchors = {}
+    for row_txt in list(segment_rows or []):
+        row = row_txt if isinstance(row_txt, dict) else _parse_report_row(row_txt)
+        if str(row.get("kind", "") or "").strip().lower() != "component_segment":
+            continue
+        if str(row.get("scope", "") or "").strip().lower() != "typical":
+            continue
+        try:
+            station_value = float(row.get("station", 0.0) or 0.0)
+        except Exception:
+            continue
+        side_name = str(row.get("side", "") or "").strip().lower()
+        x0 = _safe_float(row.get("x0", 0.0), 0.0)
+        x1 = _safe_float(row.get("x1", 0.0), 0.0)
+        slot = anchors.setdefault(round(float(station_value), 6), {"left": None, "right": None})
+        if side_name in ("left", "center", "both"):
+            slot["left"] = x0 if slot["left"] is None else min(float(slot["left"]), x0)
+        if side_name in ("right", "center", "both"):
+            slot["right"] = x1 if slot["right"] is None else max(float(slot["right"]), x1)
+    return anchors
+
+
 def _parse_station_text(text: str):
     if not text:
         return []
@@ -782,6 +826,9 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "SectionComponentSummaryRows"):
         obj.addProperty("App::PropertyStringList", "SectionComponentSummaryRows", "Result", "Structured section-component summary rows")
         obj.SectionComponentSummaryRows = []
+    if not hasattr(obj, "SectionComponentSegmentRows"):
+        obj.addProperty("App::PropertyStringList", "SectionComponentSegmentRows", "Result", "Station-specific section-component segment rows")
+        obj.SectionComponentSegmentRows = []
     if not hasattr(obj, "PavementScheduleRows"):
         obj.addProperty("App::PropertyStringList", "PavementScheduleRows", "Result", "Structured pavement schedule rows")
         obj.PavementScheduleRows = []
@@ -1653,6 +1700,56 @@ class SectionSet:
         return sign_user * mag
 
     @staticmethod
+    def _slope_component_type(slope_pct: float):
+        slope_pct = float(slope_pct or 0.0)
+        if slope_pct < -1e-9:
+            return "cut_slope"
+        if slope_pct > 1e-9:
+            return "fill_slope"
+        return "side_slope"
+
+    @staticmethod
+    def _assembly_station_side_slope_types(obj, station: float, prev_n=None, terrain_sampler=None, use_daylight: bool = False):
+        asm = getattr(obj, "AssemblyTemplate", None)
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        if asm is None:
+            return {"left": "side_slope", "right": "side_slope"}, prev_n
+
+        lw = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
+        rw = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
+        ls = float(getattr(asm, "LeftSlopePct", 0.0) or 0.0)
+        rs = float(getattr(asm, "RightSlopePct", 0.0) or 0.0)
+        lsw = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
+        rsw = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        lss = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
+        rss = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
+
+        resolved = {
+            "left": SectionSet._slope_component_type(lss),
+            "right": SectionSet._slope_component_type(rss),
+        }
+        if src is None:
+            return resolved, prev_n
+
+        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
+        frame = Centerline3D.frame_at_station(src, float(station), eps=0.1 * scale, prev_n=prev_n)
+        p = frame["point"]
+        n = frame["N"]
+        z = frame["Z"]
+
+        if bool(use_daylight) and lsw > 1e-9:
+            p_l = p + n * lw + z * (-lw * ls / 100.0)
+            resolved["left"] = SectionSet._slope_component_type(
+                SectionSet._daylight_signed_slope(p_l, lss, terrain_sampler)
+            )
+        if bool(use_daylight) and rsw > 1e-9:
+            p_r = p - n * rw + z * (-rw * rs / 100.0)
+            resolved["right"] = SectionSet._slope_component_type(
+                SectionSet._daylight_signed_slope(p_r, rss, terrain_sampler)
+            )
+        return resolved, n
+
+    @staticmethod
     def _stabilize_daylight_width(target_w: float, prev_w, max_delta: float, min_w: float, max_w: float):
         w = _clamp(float(target_w), float(min_w), float(max_w))
         if prev_w is None:
@@ -1806,6 +1903,7 @@ class SectionSet:
             float(getattr(asm_obj, "LeftPostBenchSlopePct", lss) or lss),
             list(getattr(asm_obj, "LeftBenchRows", []) or []),
         )
+        left_repeat_to_daylight = bool(getattr(asm_obj, "LeftBenchRepeatToDaylight", False))
         right_bench_rows = _collect_side_bench_rows(
             use_right_bench,
             float(getattr(asm_obj, "RightBenchDrop", 0.0) or 0.0),
@@ -1814,11 +1912,24 @@ class SectionSet:
             float(getattr(asm_obj, "RightPostBenchSlopePct", rss) or rss),
             list(getattr(asm_obj, "RightBenchRows", []) or []),
         )
-        left_bench = _resolve_side_bench_profile(lsw, lss, left_bench_rows)
-        right_bench = _resolve_side_bench_profile(rsw, rss, right_bench_rows)
+        right_repeat_to_daylight = bool(getattr(asm_obj, "RightBenchRepeatToDaylight", False))
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
         day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
         day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
+        left_profile_width = max(lsw, day_max_w) if (left_repeat_to_daylight and bool(use_day_left)) else lsw
+        right_profile_width = max(rsw, day_max_w) if (right_repeat_to_daylight and bool(use_day_right)) else rsw
+        left_bench = _resolve_side_bench_profile(
+            left_profile_width,
+            lss,
+            left_bench_rows,
+            repeat_first_row_to_end=left_repeat_to_daylight,
+        )
+        right_bench = _resolve_side_bench_profile(
+            right_profile_width,
+            rss,
+            right_bench_rows,
+            repeat_first_row_to_end=right_repeat_to_daylight,
+        )
         prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
         prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
         prev_left_post_w = None if prev_day_widths is None else prev_day_widths.get("left_post")
@@ -1864,6 +1975,8 @@ class SectionSet:
         bench_right_adjusted = False
         bench_left_skipped = False
         bench_right_skipped = False
+        left_segments_out = []
+        right_segments_out = []
         if use_ss and lsw > 1e-9:
             if bool(left_bench.get("active", False)):
                 spec_l = {"segments": [dict(seg) for seg in _profile_segments(left_bench)], "active": True}
@@ -1913,6 +2026,7 @@ class SectionSet:
                 _left_end, total_left_w = _append_side_segment_points(left_pts, p_l, n, z, spec_l)
                 resolved_left_w = float(total_left_w)
                 left_seg_list = _profile_segments(spec_l)
+                left_segments_out = [dict(seg) for seg in left_seg_list]
                 resolved_left_post_w = float(left_seg_list[-1].get("width", 0.0) or 0.0) if left_seg_list else 0.0
                 pts = list(reversed(left_pts)) + pts
             else:
@@ -1938,6 +2052,7 @@ class SectionSet:
                     w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
                 resolved_left_w = float(w_l)
                 resolved_left_post_w = float(w_l)
+                left_segments_out = [{"kind": "slope", "width": float(w_l), "slope": float(lss_eff)}]
                 p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
                 pts = [p_lt] + pts
         if use_ss and rsw > 1e-9:
@@ -1989,6 +2104,7 @@ class SectionSet:
                 _right_end, total_right_w = _append_side_segment_points(right_pts, p_r, -n, z, spec_r)
                 resolved_right_w = float(total_right_w)
                 right_seg_list = _profile_segments(spec_r)
+                right_segments_out = [dict(seg) for seg in right_seg_list]
                 resolved_right_post_w = float(right_seg_list[-1].get("width", 0.0) or 0.0) if right_seg_list else 0.0
                 pts = pts + right_pts
             else:
@@ -2014,6 +2130,7 @@ class SectionSet:
                     w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
                 resolved_right_w = float(w_r)
                 resolved_right_post_w = float(w_r)
+                right_segments_out = [{"kind": "slope", "width": float(w_r), "slope": float(rss_eff)}]
                 p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
                 pts = pts + [p_rt]
 
@@ -2029,6 +2146,8 @@ class SectionSet:
             "bench_right_adjusted": bool(bench_right_adjusted),
             "bench_left_skipped": bool(bench_left_skipped),
             "bench_right_skipped": bool(bench_right_skipped),
+            "left_segments": list(left_segments_out),
+            "right_segments": list(right_segments_out),
         }
 
     @staticmethod
@@ -2090,6 +2209,7 @@ class SectionSet:
             )
         )
         wires = []
+        station_profiles = []
         prev_n = None
         prev_day_widths = {"left": None, "right": None}
         override_hits = 0
@@ -2152,6 +2272,13 @@ class SectionSet:
             if left_bench_here or right_bench_here:
                 bench_section_hits += 1
             wires.append(w)
+            station_profiles.append(
+                {
+                    "station": float(s),
+                    "left_segments": [dict(seg) for seg in list(prev_day_widths.get("left_segments", []) or [])],
+                    "right_segments": [dict(seg) for seg in list(prev_day_widths.get("right_segments", []) or [])],
+                }
+            )
         try:
             bench_info = {
                 "overrideHits": int(override_hits),
@@ -2162,6 +2289,7 @@ class SectionSet:
                 "benchSkipped": int(bench_skipped_hits),
                 "benchLeftConfigured": int(left_cfg_count),
                 "benchRightConfigured": int(right_cfg_count),
+                "stationProfiles": list(station_profiles),
             }
         except Exception:
             bench_info = {
@@ -2173,8 +2301,905 @@ class SectionSet:
                 "benchSkipped": 0,
                 "benchLeftConfigured": int(left_cfg_count),
                 "benchRightConfigured": int(right_cfg_count),
+                "stationProfiles": list(station_profiles),
             }
         return stations, wires, terrain_found, (terrain_sampler is not None), bench_info
+
+    @staticmethod
+    def _viewer_polyline_from_wire(wire, origin, nvec, zvec):
+        if wire is None:
+            return []
+        verts = list(getattr(wire, "OrderedVertexes", []) or [])
+        if not verts:
+            verts = list(getattr(wire, "Vertexes", []) or [])
+        pts = []
+        for vv in verts:
+            try:
+                p = vv.Point
+            except Exception:
+                continue
+            rel = p - origin
+            # Screen X should match roadway left/right convention:
+            # left side drawn on the left, right side on the right.
+            x = -float(rel.dot(nvec))
+            y = float(rel.dot(zvec))
+            pts.append((x, y))
+        return pts
+
+    @staticmethod
+    def _viewer_polylines_from_shape(shape, origin, nvec, zvec):
+        if shape is None:
+            return []
+        try:
+            if shape.isNull():
+                return []
+        except Exception:
+            pass
+        polylines = []
+        wires = list(getattr(shape, "Wires", []) or [])
+        if not wires:
+            pts = SectionSet._viewer_polyline_from_wire(shape, origin, nvec, zvec)
+            if pts:
+                polylines.append(pts)
+            return polylines
+        for wire in wires:
+            pts = SectionSet._viewer_polyline_from_wire(wire, origin, nvec, zvec)
+            if pts:
+                polylines.append(pts)
+        return polylines
+
+    @staticmethod
+    def _viewer_bounds(polylines):
+        xs = []
+        ys = []
+        for poly in list(polylines or []):
+            for x, y in list(poly or []):
+                xs.append(float(x))
+                ys.append(float(y))
+        if not xs or not ys:
+            return {
+                "xmin": 0.0,
+                "xmax": 0.0,
+                "ymin": 0.0,
+                "ymax": 0.0,
+                "width": 0.0,
+                "height": 0.0,
+            }
+        xmin = min(xs)
+        xmax = max(xs)
+        ymin = min(ys)
+        ymax = max(ys)
+        return {
+            "xmin": float(xmin),
+            "xmax": float(xmax),
+            "ymin": float(ymin),
+            "ymax": float(ymax),
+            "width": float(xmax - xmin),
+            "height": float(ymax - ymin),
+        }
+
+    @staticmethod
+    def _viewer_dimension_rows(payload):
+        sec_bounds = dict(payload.get("section_bounds", {}) or {})
+        xmin = float(sec_bounds.get("xmin", 0.0) or 0.0)
+        xmax = float(sec_bounds.get("xmax", 0.0) or 0.0)
+        ymin = float(sec_bounds.get("ymin", 0.0) or 0.0)
+        ymax = float(sec_bounds.get("ymax", 0.0) or 0.0)
+        width = max(0.0, float(sec_bounds.get("width", 0.0) or 0.0))
+        height = max(1.0, float(sec_bounds.get("height", 0.0) or 0.0))
+        base_y = ymin - (0.28 * height)
+        mid_y = ymin - (0.42 * height)
+        dims = []
+        if width > 1e-9:
+            dims.append(
+                {
+                    "kind": "overall_width",
+                    "label": f"Overall {width:.3f} m",
+                    "x0": float(xmin),
+                    "x1": float(xmax),
+                    "y": float(base_y),
+                    "value": float(width),
+                }
+            )
+        component_rows = [
+            row for row in list(payload.get("component_rows", []) or [])
+            if str(row.get("kind", "") or "") == "component"
+        ]
+
+        def _effective_width(row):
+            typ = str(row.get("type", "") or "").strip().lower()
+            width = max(0.0, float(row.get("width", 0.0) or 0.0))
+            extra = max(0.0, float(row.get("extraWidth", 0.0) or 0.0))
+            if typ in ("curb", "berm"):
+                return width + extra
+            return width
+
+        left_rows = sorted(
+            [row for row in component_rows if str(row.get("side", "") or "").strip().lower() == "left"],
+            key=lambda row: int(float(row.get("order", 0) or 0)),
+        )
+        right_rows = sorted(
+            [row for row in component_rows if str(row.get("side", "") or "").strip().lower() == "right"],
+            key=lambda row: int(float(row.get("order", 0) or 0)),
+        )
+        both_rows = sorted(
+            [row for row in component_rows if str(row.get("side", "") or "").strip().lower() == "both"],
+            key=lambda row: int(float(row.get("order", 0) or 0)),
+        )
+        left_rows.extend(dict(row, side="left") for row in both_rows)
+        right_rows.extend(dict(row, side="right") for row in both_rows)
+
+        comp_y = ymin - (0.62 * height)
+        step_y = 0.14 * height
+
+        cur = 0.0
+        for idx, row in enumerate(left_rows):
+            seg_w = _effective_width(row)
+            if seg_w <= 1e-9:
+                continue
+            x0 = cur - seg_w
+            x1 = cur
+            label = f"{str(row.get('id', '-') or '-')} {seg_w:.3f} m"
+            dims.append(
+                {
+                    "kind": "component_left",
+                    "label": label,
+                    "x0": float(x0),
+                    "x1": float(x1),
+                    "y": float(comp_y - (idx * step_y)),
+                    "value": float(seg_w),
+                    "role": str(row.get("type", "") or "").strip().lower(),
+                }
+            )
+            cur = x0
+
+        cur = 0.0
+        for idx, row in enumerate(right_rows):
+            seg_w = _effective_width(row)
+            if seg_w <= 1e-9:
+                continue
+            x0 = cur
+            x1 = cur + seg_w
+            label = f"{str(row.get('id', '-') or '-')} {seg_w:.3f} m"
+            dims.append(
+                {
+                    "kind": "component_right",
+                    "label": label,
+                    "x0": float(x0),
+                    "x1": float(x1),
+                    "y": float(comp_y - (idx * step_y)),
+                    "value": float(seg_w),
+                    "role": str(row.get("type", "") or "").strip().lower(),
+                }
+            )
+            cur = x1
+        return dims
+
+    @staticmethod
+    def _viewer_label_rows(payload):
+        bounds = dict(payload.get("bounds", {}) or {})
+        xmin = float(bounds.get("xmin", 0.0) or 0.0)
+        xmax = float(bounds.get("xmax", 0.0) or 0.0)
+        ymax = float(bounds.get("ymax", 0.0) or 0.0)
+        dy = max(1.0, float(bounds.get("height", 0.0) or 0.0))
+        labels = []
+
+        tag_summary = str(payload.get("tag_summary", "") or "").strip()
+        if tag_summary:
+            labels.append(
+                {
+                    "text": f"Tags: {tag_summary}",
+                    "x": float(xmin),
+                    "y": float(ymax + (0.18 * dy)),
+                    "role": "station_tags",
+                }
+            )
+
+        left_edge = str(payload.get("left_edge_label", "") or "").strip()
+        right_edge = str(payload.get("right_edge_label", "") or "").strip()
+        if left_edge:
+            labels.append(
+                {
+                    "text": f"L: {left_edge}",
+                    "x": float(xmin),
+                    "y": float(ymax + (0.05 * dy)),
+                    "role": "top_edge_left",
+                }
+            )
+        if right_edge:
+            labels.append(
+                {
+                    "text": f"R: {right_edge}",
+                    "x": float(xmax),
+                    "y": float(ymax + (0.05 * dy)),
+                    "role": "top_edge_right",
+                }
+            )
+
+        structure_summary = str(payload.get("structure_summary", "") or "").strip()
+        if structure_summary:
+            labels.append(
+                {
+                    "text": structure_summary,
+                    "x": 0.0,
+                    "y": float(ymax + (0.11 * dy)),
+                    "role": "structure_summary",
+                }
+            )
+
+        daylight_note = str(payload.get("daylight_note", "") or "").strip()
+        if daylight_note:
+            labels.append(
+                {
+                    "text": daylight_note,
+                    "x": float(xmin),
+                    "y": float(bounds.get("ymin", 0.0) or 0.0) - (0.14 * dy),
+                    "role": "daylight_note",
+                }
+            )
+        return labels
+
+    @staticmethod
+    def _viewer_daylight_rows(payload):
+        payload = dict(payload or {})
+        daylight_note = str(payload.get("daylight_note", "") or "").strip().lower()
+        if not daylight_note.startswith("daylight=terrain:"):
+            return []
+        daylight_mode = daylight_note.split("=", 1)[1] if "=" in daylight_note else daylight_note
+        polylines = list(payload.get("section_polylines", []) or [])
+        if not polylines:
+            return []
+        pts = []
+        for poly in polylines:
+            for pt in list(poly or []):
+                if len(pt) < 2:
+                    continue
+                try:
+                    pts.append((float(pt[0]), float(pt[1])))
+                except Exception:
+                    continue
+        if len(pts) < 2:
+            return []
+        left_pt = min(pts, key=lambda p: p[0])
+        right_pt = max(pts, key=lambda p: p[0])
+        rows = [
+            {
+                "kind": "daylight",
+                "side": "left",
+                "x": float(left_pt[0]),
+                "y": float(left_pt[1]),
+                "label": "daylight L",
+                "scope": "daylight",
+                "source": "terrain",
+                "mode": daylight_mode,
+            }
+        ]
+        if abs(float(right_pt[0]) - float(left_pt[0])) > 1e-6 or abs(float(right_pt[1]) - float(left_pt[1])) > 1e-6:
+            rows.append(
+                {
+                    "kind": "daylight",
+                    "side": "right",
+                    "x": float(right_pt[0]),
+                    "y": float(right_pt[1]),
+                    "label": "daylight R",
+                    "scope": "daylight",
+                    "source": "terrain",
+                    "mode": daylight_mode,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _viewer_fallback_component_rows(obj):
+        asm = getattr(obj, "AssemblyTemplate", None)
+        if asm is None:
+            return []
+
+        rows = []
+
+        def _append(side: str, order: int, typ: str, width: float, extra: float = 0.0, label: str = ""):
+            width = max(0.0, float(width or 0.0))
+            extra = max(0.0, float(extra or 0.0))
+            if (width + extra) <= 1e-9:
+                return
+            rows.append(
+                {
+                    "kind": "component",
+                    "id": f"{side[:1].upper()}{order}",
+                    "type": str(typ or "").strip().lower(),
+                    "side": str(side or "").strip().lower(),
+                    "width": float(width),
+                    "extraWidth": float(extra),
+                    "order": int(order),
+                    "label": str(label or "").strip(),
+                }
+            )
+
+        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
+        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
+        if left_width > 1e-9:
+            _append("left", 1, "carriageway", left_width, label="Left Carriageway")
+        if right_width > 1e-9:
+            _append("right", 1, "carriageway", right_width, label="Right Carriageway")
+
+        use_side_slopes = bool(getattr(asm, "UseSideSlopes", False))
+        if not use_side_slopes:
+            return rows
+
+        left_side_width = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
+        right_side_width = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        left_side_slope = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
+        right_side_slope = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
+
+        left_bench_rows = _collect_side_bench_rows(
+            bool(getattr(asm, "UseLeftBench", False)),
+            float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
+            float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+            float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm, "LeftPostBenchSlopePct", left_side_slope) or left_side_slope),
+            list(getattr(asm, "LeftBenchRows", []) or []),
+        )
+        right_bench_rows = _collect_side_bench_rows(
+            bool(getattr(asm, "UseRightBench", False)),
+            float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
+            float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+            float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
+            list(getattr(asm, "RightBenchRows", []) or []),
+        )
+        left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
+        right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
+
+        def _append_profile(side: str, start_order: int, total_width: float, side_slope: float, bench_rows):
+            repeat_flag = left_repeat_to_daylight if str(side or "").strip().lower() == "left" else right_repeat_to_daylight
+            profile = _resolve_side_bench_profile(total_width, side_slope, bench_rows, repeat_first_row_to_end=repeat_flag)
+            order = int(start_order)
+            for seg in list(profile.get("segments", []) or []):
+                seg_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
+                if seg_w <= 1e-9:
+                    continue
+                seg_kind = str(seg.get("kind", "") or "").strip().lower()
+                typ = "bench" if seg_kind == "bench" else "side_slope"
+                label = f"{'Left' if side == 'left' else 'Right'} Bench" if typ == "bench" else f"{'Left' if side == 'left' else 'Right'} Side Slope"
+                _append(side, order, typ, seg_w, label=label)
+                order += 1
+
+        if left_side_width > 1e-9:
+            _append_profile("left", 10, left_side_width, left_side_slope, left_bench_rows)
+        if right_side_width > 1e-9:
+            _append_profile("right", 10, right_side_width, right_side_slope, right_bench_rows)
+
+        return rows
+
+    @staticmethod
+    def _component_segment_rows_from_summary_rows(component_rows, stations):
+        rows = [
+            dict(row)
+            for row in list(component_rows or [])
+            if str(row.get("kind", "") or "").strip().lower() == "component"
+        ]
+        stations = [float(sta) for sta in list(stations or [])]
+        if not rows or not stations:
+            return []
+
+        def _safe_float_text(value, default=0.0):
+            try:
+                return float(value)
+            except Exception:
+                return float(default)
+
+        def _sorted_side_rows(side_name: str):
+            side_name = str(side_name or "").strip().lower()
+            out = [
+                dict(row)
+                for row in rows
+                if str(row.get("side", "") or "").strip().lower() == side_name
+            ]
+            out.extend(
+                dict(row, side=side_name)
+                for row in rows
+                if str(row.get("side", "") or "").strip().lower() == "both"
+            )
+            out.sort(key=lambda row: int(_safe_float_text(row.get("order", 0), 0)))
+            return out
+
+        left_rows = _sorted_side_rows("left")
+        right_rows = _sorted_side_rows("right")
+        center_rows = _sorted_side_rows("center")
+        out = []
+        for station_value in stations:
+            cur = 0.0
+            for row in left_rows:
+                width = max(0.0, _safe_float_text(row.get("width", 0.0), 0.0))
+                extra = max(0.0, _safe_float_text(row.get("extraWidth", 0.0), 0.0))
+                typ = str(row.get("type", "") or "").strip().lower()
+                seg_w = width + extra if typ in ("curb", "berm") else width
+                if seg_w <= 1e-9:
+                    continue
+                x0 = cur - seg_w
+                x1 = cur
+                out.append(
+                    _report_row(
+                        "component_segment",
+                        station=f"{station_value:.3f}",
+                        side="left",
+                        id=str(row.get("id", "") or "").strip() or "-",
+                        type=typ or "-",
+                        label=str(row.get("label", "") or row.get("type", "") or "").strip(),
+                        scope="typical",
+                        order=int(_safe_float_text(row.get("order", 0), 0)),
+                        x0=f"{x0:.3f}",
+                        x1=f"{x1:.3f}",
+                        width=f"{seg_w:.3f}",
+                        source="typical_summary",
+                    )
+                )
+                cur = x0
+
+            cur = 0.0
+            for row in right_rows:
+                width = max(0.0, _safe_float_text(row.get("width", 0.0), 0.0))
+                extra = max(0.0, _safe_float_text(row.get("extraWidth", 0.0), 0.0))
+                typ = str(row.get("type", "") or "").strip().lower()
+                seg_w = width + extra if typ in ("curb", "berm") else width
+                if seg_w <= 1e-9:
+                    continue
+                x0 = cur
+                x1 = cur + seg_w
+                out.append(
+                    _report_row(
+                        "component_segment",
+                        station=f"{station_value:.3f}",
+                        side="right",
+                        id=str(row.get("id", "") or "").strip() or "-",
+                        type=typ or "-",
+                        label=str(row.get("label", "") or row.get("type", "") or "").strip(),
+                        scope="typical",
+                        order=int(_safe_float_text(row.get("order", 0), 0)),
+                        x0=f"{x0:.3f}",
+                        x1=f"{x1:.3f}",
+                        width=f"{seg_w:.3f}",
+                        source="typical_summary",
+                    )
+                )
+                cur = x1
+
+            for row in center_rows:
+                width = max(0.0, _safe_float_text(row.get("width", 0.0), 0.0))
+                extra = max(0.0, _safe_float_text(row.get("extraWidth", 0.0), 0.0))
+                typ = str(row.get("type", "") or "").strip().lower()
+                seg_w = width + extra if typ in ("curb", "berm") else width
+                if seg_w <= 1e-9:
+                    continue
+                x0 = -0.5 * seg_w
+                x1 = 0.5 * seg_w
+                out.append(
+                    _report_row(
+                        "component_segment",
+                        station=f"{station_value:.3f}",
+                        side="center",
+                        id=str(row.get("id", "") or "").strip() or "-",
+                        type=typ or "-",
+                        label=str(row.get("label", "") or row.get("type", "") or "").strip(),
+                        scope="typical",
+                        order=int(_safe_float_text(row.get("order", 0), 0)),
+                        x0=f"{x0:.3f}",
+                        x1=f"{x1:.3f}",
+                        width=f"{seg_w:.3f}",
+                        source="typical_summary",
+                    )
+                )
+        return out
+
+    @staticmethod
+    def _component_segment_rows_from_assembly(obj, stations):
+        asm = getattr(obj, "AssemblyTemplate", None)
+        if asm is None:
+            return []
+        stations = [float(sta) for sta in list(stations or [])]
+        if not stations:
+            return []
+
+        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
+        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
+        left_side_width = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
+        right_side_width = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        left_side_slope = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
+        right_side_slope = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
+        terrain_sampler = None
+        use_ss = bool(getattr(asm, "UseSideSlopes", False))
+        use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and ((left_side_width > 1e-9) or (right_side_width > 1e-9))
+        if use_day:
+            try:
+                tsrc = SectionSet._resolve_terrain_source(obj)
+                if tsrc is not None:
+                    day_max = int(getattr(asm, "DaylightMaxTriangles", 300000))
+                    terrain_mode = SectionSet._resolved_terrain_coord_mode(obj, terrain_source=tsrc)
+                    terrain_sampler = SectionSet._terrain_sampler(
+                        tsrc,
+                        max_triangles=day_max,
+                        coord_context=obj,
+                        coord_mode=terrain_mode,
+                    )
+            except Exception:
+                terrain_sampler = None
+        left_bench_rows = _collect_side_bench_rows(
+            bool(getattr(asm, "UseLeftBench", False)),
+            float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
+            float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+            float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm, "LeftPostBenchSlopePct", left_side_slope) or left_side_slope),
+            list(getattr(asm, "LeftBenchRows", []) or []),
+        )
+        right_bench_rows = _collect_side_bench_rows(
+            bool(getattr(asm, "UseRightBench", False)),
+            float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
+            float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+            float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
+            float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
+            list(getattr(asm, "RightBenchRows", []) or []),
+        )
+        left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
+        right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
+        day_max_search_width = max(0.0, float(getattr(asm, "DaylightMaxSearchWidth", 0.0) or 0.0))
+        left_profile = _resolve_side_bench_profile(
+            max(left_side_width, day_max_search_width) if (left_repeat_to_daylight and use_day) else left_side_width,
+            left_side_slope,
+            left_bench_rows,
+            repeat_first_row_to_end=left_repeat_to_daylight,
+        )
+        right_profile = _resolve_side_bench_profile(
+            max(right_side_width, day_max_search_width) if (right_repeat_to_daylight and use_day) else right_side_width,
+            right_side_slope,
+            right_bench_rows,
+            repeat_first_row_to_end=right_repeat_to_daylight,
+        )
+
+        def _append_segments(out_rows, station_value: float, side_name: str, start_cursor: float, widths: float, profile: dict, carriageway_width: float, slope_type: str):
+            if carriageway_width > 1e-9:
+                if side_name == "left":
+                    x0 = start_cursor - carriageway_width
+                    x1 = start_cursor
+                else:
+                    x0 = start_cursor
+                    x1 = start_cursor + carriageway_width
+                out_rows.append(
+                    _report_row(
+                        "component_segment",
+                        station=f"{station_value:.3f}",
+                        side=side_name,
+                        id=f"{side_name[:1].upper()}RW",
+                        type="carriageway",
+                        label="carriageway",
+                        scope="typical",
+                        order=1,
+                        x0=f"{x0:.3f}",
+                        x1=f"{x1:.3f}",
+                        width=f"{carriageway_width:.3f}",
+                        source="assembly_template",
+                    )
+                )
+                cursor = x0 if side_name == "left" else x1
+            else:
+                cursor = start_cursor
+
+            order = 10
+            segments = list(dict(profile or {}).get("segments", []) or [])
+            for seg in segments:
+                seg_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
+                if seg_w <= 1e-9:
+                    continue
+                seg_kind = str(seg.get("kind", "") or "").strip().lower()
+                seg_type = "bench" if seg_kind == "bench" else str(slope_type or "side_slope")
+                if side_name == "left":
+                    x0 = cursor - seg_w
+                    x1 = cursor
+                    cursor = x0
+                else:
+                    x0 = cursor
+                    x1 = cursor + seg_w
+                    cursor = x1
+                out_rows.append(
+                    _report_row(
+                        "component_segment",
+                        station=f"{station_value:.3f}",
+                        side=side_name,
+                        id=f"{side_name[:1].upper()}{order}",
+                        type=seg_type,
+                        label=seg_type,
+                        scope="side_slope",
+                        order=order,
+                        x0=f"{x0:.3f}",
+                        x1=f"{x1:.3f}",
+                        width=f"{seg_w:.3f}",
+                        source="assembly_template",
+                    )
+                )
+                order += 1
+
+        out = []
+        prev_n = None
+        for station_value in stations:
+            slope_types, prev_n = SectionSet._assembly_station_side_slope_types(
+                obj,
+                station_value,
+                prev_n=prev_n,
+                terrain_sampler=terrain_sampler,
+                use_daylight=bool(use_day),
+            )
+            _append_segments(
+                out,
+                station_value,
+                "left",
+                0.0,
+                left_side_width,
+                left_profile,
+                left_width,
+                str(slope_types.get("left", "side_slope") or "side_slope"),
+            )
+            _append_segments(
+                out,
+                station_value,
+                "right",
+                0.0,
+                right_side_width,
+                right_profile,
+                right_width,
+                str(slope_types.get("right", "side_slope") or "side_slope"),
+            )
+        return out
+
+    @staticmethod
+    def _side_slope_segment_rows_from_assembly(obj, stations, typical_segment_rows=None, station_profiles=None):
+        rows = SectionSet._component_segment_rows_from_assembly(obj, stations) if not station_profiles else []
+        typical_anchors = _typical_edge_anchors(typical_segment_rows)
+        asm = getattr(obj, "AssemblyTemplate", None)
+        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0)) if asm is not None else 0.0
+        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0)) if asm is not None else 0.0
+        if station_profiles:
+            out = []
+            prev_n = None
+            slope_type_map = {}
+            for station_value in [float(sta) for sta in list(stations or [])]:
+                slope_types, prev_n = SectionSet._assembly_station_side_slope_types(
+                    obj,
+                    station_value,
+                    prev_n=prev_n,
+                    terrain_sampler=None,
+                    use_daylight=bool(getattr(obj, "DaylightAuto", True)),
+                )
+                slope_type_map[round(float(station_value), 6)] = dict(slope_types or {})
+            for info in list(station_profiles or []):
+                station_value = float(info.get("station", 0.0) or 0.0)
+                station_key = round(station_value, 6)
+                anchor_info = typical_anchors.get(station_key, {})
+                slope_types = slope_type_map.get(station_key, {})
+                for side_name, base_edge, segs in (
+                    ("left", anchor_info.get("left", -left_width if left_width > 1e-9 else 0.0), list(info.get("left_segments", []) or [])),
+                    ("right", anchor_info.get("right", right_width if right_width > 1e-9 else 0.0), list(info.get("right_segments", []) or [])),
+                ):
+                    cursor = float(base_edge)
+                    order = 10
+                    slope_type = str(slope_types.get(side_name, "side_slope") or "side_slope")
+                    for seg in segs:
+                        seg_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
+                        if seg_w <= 1e-9:
+                            continue
+                        seg_kind = str(seg.get("kind", "") or "").strip().lower()
+                        seg_type = "bench" if seg_kind == "bench" else slope_type
+                        if side_name == "left":
+                            x0 = cursor - seg_w
+                            x1 = cursor
+                            cursor = x0
+                        else:
+                            x0 = cursor
+                            x1 = cursor + seg_w
+                            cursor = x1
+                        out.append(
+                            _report_row(
+                                "component_segment",
+                                station=f"{station_value:.3f}",
+                                side=side_name,
+                                id=f"{side_name[:1].upper()}{order}",
+                                type=seg_type,
+                                label=seg_type,
+                                scope="side_slope",
+                                order=order,
+                                x0=f"{x0:.3f}",
+                                x1=f"{x1:.3f}",
+                                width=f"{seg_w:.3f}",
+                                source="resolved_section_profile",
+                            )
+                        )
+                        order += 1
+            return out
+        out = []
+        for row_txt in list(rows or []):
+            try:
+                row = _parse_report_row(row_txt)
+            except Exception:
+                row = {}
+            if str(row.get("scope", "") or "").strip().lower() == "side_slope":
+                station_key = round(_safe_float(row.get("station", 0.0), 0.0), 6)
+                side_name = str(row.get("side", "") or "").strip().lower()
+                delta = 0.0
+                anchor_info = typical_anchors.get(station_key, {})
+                if side_name == "left":
+                    target_edge = anchor_info.get("left", None)
+                    source_edge = -left_width if left_width > 1e-9 else 0.0
+                    if target_edge is not None:
+                        delta = float(target_edge) - float(source_edge)
+                elif side_name == "right":
+                    target_edge = anchor_info.get("right", None)
+                    source_edge = right_width if right_width > 1e-9 else 0.0
+                    if target_edge is not None:
+                        delta = float(target_edge) - float(source_edge)
+                if abs(delta) > 1e-9:
+                    row["x0"] = f"{(_safe_float(row.get('x0', 0.0), 0.0) + delta):.3f}"
+                    row["x1"] = f"{(_safe_float(row.get('x1', 0.0), 0.0) + delta):.3f}"
+                    kind = str(row.get("kind", "component_segment") or "component_segment")
+                    fields = {k: v for k, v in row.items() if k not in ("kind", "raw")}
+                    out.append(_report_row(kind, **fields))
+                else:
+                    out.append(str(row_txt))
+        return out
+
+    @staticmethod
+    def resolve_viewer_station_rows(obj):
+        stations = list(getattr(obj, "StationValues", []) or [])
+        if len(stations) < 1:
+            stations = SectionSet.resolve_station_values(obj)
+        tags = SectionSet.resolve_station_tags(obj, stations) if stations else []
+        meta_rows = SectionSet.resolve_structure_metadata(obj, stations) if stations else []
+        rows = []
+        for idx, station in enumerate(stations):
+            tag_list = list(tags[idx] if idx < len(tags) else [] or [])
+            meta = dict(meta_rows[idx] if idx < len(meta_rows) else {} or {})
+            tag_txt = f" [{' / '.join(tag_list)}]" if tag_list else ""
+            struct_count = len(list(meta.get("StructureIds", []) or []))
+            struct_txt = ""
+            if struct_count > 0:
+                struct_txt = f" | structures={struct_count}"
+            rows.append(
+                {
+                    "index": int(idx),
+                    "station": float(station),
+                    "tags": tag_list,
+                    "has_structure": bool(meta.get("HasStructure", False)),
+                    "structure_summary": str(meta.get("StructureSummary", "") or ""),
+                    "label": f"STA {float(station):.3f}{tag_txt}{struct_txt}",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def resolve_viewer_payload(obj, station=None, index=None, include_structure_overlay: bool = True):
+        stations, wires, _terrain_found, _sampler_ok, _bench_info = SectionSet.build_section_wires(obj)
+        if len(stations) < 1 or len(wires) < 1:
+            return {}
+
+        use_index = -1
+        if index is not None:
+            try:
+                idx = int(index)
+                if 0 <= idx < len(stations):
+                    use_index = idx
+            except Exception:
+                use_index = -1
+        if use_index < 0:
+            target = float(station if station is not None else stations[0])
+            best_idx = 0
+            best_delta = None
+            for idx, sta in enumerate(stations):
+                delta = abs(float(sta) - target)
+                if best_delta is None or delta < best_delta:
+                    best_delta = delta
+                    best_idx = idx
+            use_index = int(best_idx)
+
+        station_value = float(stations[use_index])
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        if src is None:
+            raise Exception("SourceCenterlineDisplay is missing.")
+        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+        frame = Centerline3D.frame_at_station(src, station_value, eps=0.1 * scale, prev_n=None)
+        origin = frame["point"]
+        nvec = frame["N"]
+        zvec = frame["Z"]
+
+        tags = SectionSet.resolve_station_tags(obj, stations)
+        meta_rows = SectionSet.resolve_structure_metadata(obj, stations)
+        tag_list = list(tags[use_index] if use_index < len(tags) else [] or [])
+        meta = dict(meta_rows[use_index] if use_index < len(meta_rows) else {} or {})
+        section_polylines = SectionSet._viewer_polylines_from_shape(wires[use_index], origin, nvec, zvec)
+
+        overlay_polylines = []
+        if bool(include_structure_overlay):
+            try:
+                overlay_shape = SectionSet._build_child_structure_overlay(obj, station_value, meta)
+            except Exception:
+                overlay_shape = None
+            overlay_polylines = SectionSet._viewer_polylines_from_shape(overlay_shape, origin, nvec, zvec)
+
+        section_bounds = SectionSet._viewer_bounds(section_polylines)
+        all_polylines = list(section_polylines) + list(overlay_polylines)
+        bounds = SectionSet._viewer_bounds(all_polylines)
+        top_edges = str(getattr(obj, "TopProfileEdgeSummary", "-") or "-")
+        left_edge = ""
+        right_edge = ""
+        if "/" in top_edges:
+            left_edge, right_edge = [str(v or "").strip() for v in top_edges.split("/", 1)]
+        elif top_edges not in ("", "-"):
+            left_edge = top_edges
+            right_edge = top_edges
+        status_text = str(getattr(obj, "Status", "") or "")
+        status_tokens = [str(tok or "").strip() for tok in status_text.split("|") if str(tok or "").strip()]
+        diagnostic_tokens = [
+            tok for tok in status_tokens
+            if tok.startswith("daylight=")
+            or tok.startswith("bench=")
+            or tok.startswith("benchDay")
+            or tok.startswith("structures=")
+            or tok.startswith("topEdges=")
+            or tok.startswith("pavement=")
+            or tok.startswith("pavLayers=")
+        ]
+        structure_rows = [_parse_report_row(row) for row in list(getattr(obj, "StructureInteractionSummaryRows", []) or [])]
+        bench_rows = [_parse_report_row(row) for row in list(getattr(obj, "BenchSummaryRows", []) or [])]
+        segment_rows = [_parse_report_row(row) for row in list(getattr(obj, "SectionComponentSegmentRows", []) or [])]
+        component_rows = []
+        for row in segment_rows:
+            if str(row.get("kind", "") or "").strip().lower() != "component_segment":
+                continue
+            try:
+                row_station = float(row.get("station", 0.0) or 0.0)
+            except Exception:
+                continue
+            if abs(row_station - station_value) > 1e-6:
+                continue
+            component_rows.append(row)
+        pavement_rows = [_parse_report_row(row) for row in list(getattr(obj, "PavementScheduleRows", []) or [])]
+        daylight_note = ""
+        for tok in diagnostic_tokens:
+            if tok.startswith("daylight="):
+                daylight_note = tok
+                break
+        payload = {
+            "index": int(use_index),
+            "station": station_value,
+            "station_label": f"STA {station_value:.3f}",
+            "tags": tag_list,
+            "tag_summary": "/".join(tag_list) if tag_list else "",
+            "section_count": int(len(stations)),
+            "section_polylines": list(section_polylines),
+            "overlay_polylines": list(overlay_polylines),
+            "section_bounds": dict(section_bounds),
+            "bounds": dict(bounds),
+            "has_structure": bool(meta.get("HasStructure", False)),
+            "structure_ids": list(meta.get("StructureIds", []) or []),
+            "structure_types": list(meta.get("StructureTypes", []) or []),
+            "structure_roles": list(meta.get("StructureRoles", []) or []),
+            "structure_summary": str(meta.get("StructureSummary", "") or ""),
+            "bench_summary": str(getattr(obj, "BenchSummary", "-") or "-"),
+            "top_profile_edge_summary": top_edges,
+            "left_edge_label": left_edge,
+            "right_edge_label": right_edge,
+            "status": status_text,
+            "diagnostic_tokens": list(diagnostic_tokens),
+            "structure_rows": list(structure_rows),
+            "bench_rows": list(bench_rows),
+            "component_rows": list(component_rows),
+            "pavement_rows": list(pavement_rows),
+            "pavement_total_thickness": float(getattr(obj, "PavementTotalThickness", 0.0) or 0.0),
+            "pavement_layer_count": int(getattr(obj, "PavementLayerCount", 0) or 0),
+            "enabled_pavement_layer_count": int(getattr(obj, "EnabledPavementLayerCount", 0) or 0),
+            "daylight_note": daylight_note,
+            "daylight_mode": daylight_note.split("=", 1)[1] if "=" in daylight_note else daylight_note,
+        }
+        payload["dimension_rows"] = SectionSet._viewer_dimension_rows(payload)
+        payload["label_rows"] = SectionSet._viewer_label_rows(payload)
+        payload["daylight_rows"] = SectionSet._viewer_daylight_rows(payload)
+        return payload
 
     @staticmethod
     def clear_child_sections(obj):
@@ -2375,6 +3400,7 @@ class SectionSet:
             left_on = float(getattr(asm, "LeftSideWidth", 0.0)) > 1e-9 if asm is not None else False
             right_on = float(getattr(asm, "RightSideWidth", 0.0)) > 1e-9 if asm is not None else False
             use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and getattr(obj, "TypicalSectionTemplate", None) is not None
+            stations = SectionSet.resolve_station_values(obj)
             # Schema contract:
             # - v1: simple 3-point profile (Left->Center->Right)
             # - v2: extended/open profile with additional break points
@@ -2398,6 +3424,16 @@ class SectionSet:
                 obj.RoadsideLibraryRows = list(getattr(typ, "RoadsideLibraryRows", []) or [])
                 obj.RoadsideLibrarySummary = str(getattr(typ, "RoadsideLibrarySummary", "-") or "-")
                 obj.SectionComponentSummaryRows = list(getattr(typ, "SectionComponentSummaryRows", []) or [])
+                typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
+                    [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
+                    stations,
+                )
+                side_slope_segment_rows = SectionSet._side_slope_segment_rows_from_assembly(
+                    obj,
+                    stations,
+                    typical_segment_rows=typical_segment_rows,
+                )
+                obj.SectionComponentSegmentRows = list(typical_segment_rows) + list(side_slope_segment_rows)
                 obj.PavementScheduleRows = list(getattr(typ, "PavementScheduleRows", []) or [])
             else:
                 obj.SubassemblySchemaVersion = 0
@@ -2414,13 +3450,13 @@ class SectionSet:
                 obj.RoadsideLibraryRows = []
                 obj.RoadsideLibrarySummary = "-"
                 obj.SectionComponentSummaryRows = []
+                obj.SectionComponentSegmentRows = SectionSet._component_segment_rows_from_assembly(obj, stations)
                 obj.PavementScheduleRows = []
             obj.BenchAppliedSectionCount = 0
             obj.BenchSummary = "-"
             obj.BenchSummaryRows = []
             obj.BenchDaylightAdjustedSectionCount = 0
             obj.BenchDaylightSkippedSectionCount = 0
-            stations = SectionSet.resolve_station_values(obj)
             obj.StationValues = stations
             obj.SectionCount = len(stations)
             try:
@@ -2480,6 +3516,19 @@ class SectionSet:
             bench_skipped_hits = int((bench_info or {}).get("benchSkipped", 0) or 0)
             bench_left_cfg = int((bench_info or {}).get("benchLeftConfigured", 0) or 0)
             bench_right_cfg = int((bench_info or {}).get("benchRightConfigured", 0) or 0)
+            station_profiles = list((bench_info or {}).get("stationProfiles", []) or [])
+            if use_typ and typ is not None:
+                typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
+                    [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
+                    stations,
+                )
+                side_slope_segment_rows = SectionSet._side_slope_segment_rows_from_assembly(
+                    obj,
+                    stations,
+                    typical_segment_rows=typical_segment_rows,
+                    station_profiles=station_profiles,
+                )
+                obj.SectionComponentSegmentRows = list(typical_segment_rows) + list(side_slope_segment_rows)
             bench_mode = "-"
             if bench_left_hits > 0 and bench_right_hits > 0:
                 bench_mode = "both"
@@ -2523,8 +3572,6 @@ class SectionSet:
                     )
                 )
             obj.BenchSummaryRows = list(bench_rows)
-            if bench_rows:
-                obj.SectionComponentSummaryRows = list(getattr(obj, "SectionComponentSummaryRows", []) or []) + list(bench_rows)
             obj.ExportSummaryRows = [
                 _report_row(
                     "export",
@@ -2671,6 +3718,7 @@ class SectionSet:
             obj.RoadsideLibrarySummary = "-"
             obj.ReportSchemaVersion = 1
             obj.SectionComponentSummaryRows = []
+            obj.SectionComponentSegmentRows = []
             obj.PavementScheduleRows = []
             obj.StructureInteractionSummaryRows = []
             obj.ExportSummaryRows = []

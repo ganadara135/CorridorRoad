@@ -47,6 +47,7 @@ $tests = @(
     "tests/regression/smoke_cutfill_quality_review.py",
     "tests/regression/smoke_profile_fg_tools.py",
     "tests/regression/smoke_pvi_starter_defaults.py"
+    "tests/regression/smoke_cross_section_viewer_payload.py"
 )
 
 foreach ($test in $tests) {

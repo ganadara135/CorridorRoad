@@ -3,7 +3,7 @@
 
 # CorridorRoad
 
-CorridorRoad is a FreeCAD workbench for road corridor design.
+CorridorRoad is a FreeCAD workbench for corridor style road design.
 It covers a practical pipeline from alignment to sections, corridor geometry, design terrain, and cut/fill analysis.
 
 ## What This Project Does
@@ -31,8 +31,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
 
 ## Latest Release
-- Current stable release: `v0.2.0`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
+- Current stable release: `v0.2.3`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.3
 
 ## Main Commands
 - `New Project`
@@ -43,7 +43,10 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `Edit Profiles`
 - `Edit PVI`
 - `Generate Centerline3D`
-- `Generate Sections`
+- `Typical Section`
+- `Edit Structure`
+- `Sections`
+- `Cross Section Viewer`
 - `Generate Corridor Loft`
 - `Generate Design Grading Surface`
 - `Generate Design Terrain`
