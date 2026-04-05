@@ -232,14 +232,19 @@ def run():
     _assert(any(str(row.get("text", "") or "") == "STA 10.000" for row in list(fallback_layout.get("planned_title_rows", []) or [])), "Viewer layout should keep a single station title row")
     _assert(any(str(row.get("role", "") or "") == "component:carriageway" for row in list(fallback_layout.get("planned_component_marker_rows", []) or [])), "Fallback layout should include carriageway component guides")
     _assert(any(str(row.get("role", "") or "") == "component:carriageway" for row in list(fallback_layout.get("planned_label_rows", []) or [])), "Fallback layout should include carriageway component callouts")
+    carriageway_label = next((row for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "") == "component:carriageway"), None)
+    carriageway_value = next((row for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "") == "component_value:carriageway"), None)
+    _assert(carriageway_label is not None, "Fallback layout should keep a carriageway label row")
+    _assert(carriageway_value is not None, "Fallback layout should keep a carriageway value on-screen")
+    if carriageway_value is not None:
+        _assert(abs(float(carriageway_label.get("x", 0.0) or 0.0) - float(carriageway_value.get("x", 0.0) or 0.0)) <= 1e-6, "Component label/value rows should share the same x anchor")
+        _assert(float(carriageway_value.get("y", 0.0) or 0.0) > float(carriageway_label.get("y", 0.0) or 0.0), "Component value rows should be placed after the label along the same annotation block")
     _assert(
-        any(str(row.get("scope", "") or "") == "typical" for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "").startswith("component:"))
-        or any(str(row.get("scope", "") or "") == "typical" for row in list(fallback_layout.get("planned_summary_rows", []) or []) if str(row.get("role", "") or "").startswith("component:")),
+        any(str(row.get("scope", "") or "") == "typical" for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "").startswith("component:")),
         "Fallback layout should keep at least one typical component annotation",
     )
     _assert(
-        any(str(row.get("scope", "") or "") == "side_slope" for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "").startswith("component:"))
-        or any(str(row.get("scope", "") or "") == "side_slope" for row in list(fallback_layout.get("planned_summary_rows", []) or []) if str(row.get("role", "") or "").startswith("component:")),
+        any(str(row.get("scope", "") or "") == "side_slope" for row in list(fallback_layout.get("planned_label_rows", []) or []) if str(row.get("role", "") or "").startswith("component:")),
         "Fallback layout should keep at least one side-slope component annotation",
     )
     _assert(

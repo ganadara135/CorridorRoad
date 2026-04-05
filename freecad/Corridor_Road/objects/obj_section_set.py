@@ -1903,6 +1903,7 @@ class SectionSet:
             float(getattr(asm_obj, "LeftPostBenchSlopePct", lss) or lss),
             list(getattr(asm_obj, "LeftBenchRows", []) or []),
         )
+        left_repeat_to_daylight = bool(getattr(asm_obj, "LeftBenchRepeatToDaylight", False))
         right_bench_rows = _collect_side_bench_rows(
             use_right_bench,
             float(getattr(asm_obj, "RightBenchDrop", 0.0) or 0.0),
@@ -1911,11 +1912,24 @@ class SectionSet:
             float(getattr(asm_obj, "RightPostBenchSlopePct", rss) or rss),
             list(getattr(asm_obj, "RightBenchRows", []) or []),
         )
-        left_bench = _resolve_side_bench_profile(lsw, lss, left_bench_rows)
-        right_bench = _resolve_side_bench_profile(rsw, rss, right_bench_rows)
+        right_repeat_to_daylight = bool(getattr(asm_obj, "RightBenchRepeatToDaylight", False))
         day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
         day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
         day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
+        left_profile_width = max(lsw, day_max_w) if (left_repeat_to_daylight and bool(use_day_left)) else lsw
+        right_profile_width = max(rsw, day_max_w) if (right_repeat_to_daylight and bool(use_day_right)) else rsw
+        left_bench = _resolve_side_bench_profile(
+            left_profile_width,
+            lss,
+            left_bench_rows,
+            repeat_first_row_to_end=left_repeat_to_daylight,
+        )
+        right_bench = _resolve_side_bench_profile(
+            right_profile_width,
+            rss,
+            right_bench_rows,
+            repeat_first_row_to_end=right_repeat_to_daylight,
+        )
         prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
         prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
         prev_left_post_w = None if prev_day_widths is None else prev_day_widths.get("left_post")
@@ -1961,6 +1975,8 @@ class SectionSet:
         bench_right_adjusted = False
         bench_left_skipped = False
         bench_right_skipped = False
+        left_segments_out = []
+        right_segments_out = []
         if use_ss and lsw > 1e-9:
             if bool(left_bench.get("active", False)):
                 spec_l = {"segments": [dict(seg) for seg in _profile_segments(left_bench)], "active": True}
@@ -2010,6 +2026,7 @@ class SectionSet:
                 _left_end, total_left_w = _append_side_segment_points(left_pts, p_l, n, z, spec_l)
                 resolved_left_w = float(total_left_w)
                 left_seg_list = _profile_segments(spec_l)
+                left_segments_out = [dict(seg) for seg in left_seg_list]
                 resolved_left_post_w = float(left_seg_list[-1].get("width", 0.0) or 0.0) if left_seg_list else 0.0
                 pts = list(reversed(left_pts)) + pts
             else:
@@ -2035,6 +2052,7 @@ class SectionSet:
                     w_l = max(0.01 if lsw > 1e-9 else 0.0, min(lsw, w_l))
                 resolved_left_w = float(w_l)
                 resolved_left_post_w = float(w_l)
+                left_segments_out = [{"kind": "slope", "width": float(w_l), "slope": float(lss_eff)}]
                 p_lt = p_l + n * w_l + z * (-w_l * lss_eff / 100.0)
                 pts = [p_lt] + pts
         if use_ss and rsw > 1e-9:
@@ -2086,6 +2104,7 @@ class SectionSet:
                 _right_end, total_right_w = _append_side_segment_points(right_pts, p_r, -n, z, spec_r)
                 resolved_right_w = float(total_right_w)
                 right_seg_list = _profile_segments(spec_r)
+                right_segments_out = [dict(seg) for seg in right_seg_list]
                 resolved_right_post_w = float(right_seg_list[-1].get("width", 0.0) or 0.0) if right_seg_list else 0.0
                 pts = pts + right_pts
             else:
@@ -2111,6 +2130,7 @@ class SectionSet:
                     w_r = max(0.01 if rsw > 1e-9 else 0.0, min(rsw, w_r))
                 resolved_right_w = float(w_r)
                 resolved_right_post_w = float(w_r)
+                right_segments_out = [{"kind": "slope", "width": float(w_r), "slope": float(rss_eff)}]
                 p_rt = p_r - n * w_r + z * (-w_r * rss_eff / 100.0)
                 pts = pts + [p_rt]
 
@@ -2126,6 +2146,8 @@ class SectionSet:
             "bench_right_adjusted": bool(bench_right_adjusted),
             "bench_left_skipped": bool(bench_left_skipped),
             "bench_right_skipped": bool(bench_right_skipped),
+            "left_segments": list(left_segments_out),
+            "right_segments": list(right_segments_out),
         }
 
     @staticmethod
@@ -2187,6 +2209,7 @@ class SectionSet:
             )
         )
         wires = []
+        station_profiles = []
         prev_n = None
         prev_day_widths = {"left": None, "right": None}
         override_hits = 0
@@ -2249,6 +2272,13 @@ class SectionSet:
             if left_bench_here or right_bench_here:
                 bench_section_hits += 1
             wires.append(w)
+            station_profiles.append(
+                {
+                    "station": float(s),
+                    "left_segments": [dict(seg) for seg in list(prev_day_widths.get("left_segments", []) or [])],
+                    "right_segments": [dict(seg) for seg in list(prev_day_widths.get("right_segments", []) or [])],
+                }
+            )
         try:
             bench_info = {
                 "overrideHits": int(override_hits),
@@ -2259,6 +2289,7 @@ class SectionSet:
                 "benchSkipped": int(bench_skipped_hits),
                 "benchLeftConfigured": int(left_cfg_count),
                 "benchRightConfigured": int(right_cfg_count),
+                "stationProfiles": list(station_profiles),
             }
         except Exception:
             bench_info = {
@@ -2270,6 +2301,7 @@ class SectionSet:
                 "benchSkipped": 0,
                 "benchLeftConfigured": int(left_cfg_count),
                 "benchRightConfigured": int(right_cfg_count),
+                "stationProfiles": list(station_profiles),
             }
         return stations, wires, terrain_found, (terrain_sampler is not None), bench_info
 
@@ -2615,9 +2647,12 @@ class SectionSet:
             float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
             list(getattr(asm, "RightBenchRows", []) or []),
         )
+        left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
+        right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
 
         def _append_profile(side: str, start_order: int, total_width: float, side_slope: float, bench_rows):
-            profile = _resolve_side_bench_profile(total_width, side_slope, bench_rows)
+            repeat_flag = left_repeat_to_daylight if str(side or "").strip().lower() == "left" else right_repeat_to_daylight
+            profile = _resolve_side_bench_profile(total_width, side_slope, bench_rows, repeat_first_row_to_end=repeat_flag)
             order = int(start_order)
             for seg in list(profile.get("segments", []) or []):
                 seg_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
@@ -2804,8 +2839,21 @@ class SectionSet:
             float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
             list(getattr(asm, "RightBenchRows", []) or []),
         )
-        left_profile = _resolve_side_bench_profile(left_side_width, left_side_slope, left_bench_rows)
-        right_profile = _resolve_side_bench_profile(right_side_width, right_side_slope, right_bench_rows)
+        left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
+        right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
+        day_max_search_width = max(0.0, float(getattr(asm, "DaylightMaxSearchWidth", 0.0) or 0.0))
+        left_profile = _resolve_side_bench_profile(
+            max(left_side_width, day_max_search_width) if (left_repeat_to_daylight and use_day) else left_side_width,
+            left_side_slope,
+            left_bench_rows,
+            repeat_first_row_to_end=left_repeat_to_daylight,
+        )
+        right_profile = _resolve_side_bench_profile(
+            max(right_side_width, day_max_search_width) if (right_repeat_to_daylight and use_day) else right_side_width,
+            right_side_slope,
+            right_bench_rows,
+            repeat_first_row_to_end=right_repeat_to_daylight,
+        )
 
         def _append_segments(out_rows, station_value: float, side_name: str, start_cursor: float, widths: float, profile: dict, carriageway_width: float, slope_type: str):
             if carriageway_width > 1e-9:
@@ -2902,12 +2950,69 @@ class SectionSet:
         return out
 
     @staticmethod
-    def _side_slope_segment_rows_from_assembly(obj, stations, typical_segment_rows=None):
-        rows = SectionSet._component_segment_rows_from_assembly(obj, stations)
+    def _side_slope_segment_rows_from_assembly(obj, stations, typical_segment_rows=None, station_profiles=None):
+        rows = SectionSet._component_segment_rows_from_assembly(obj, stations) if not station_profiles else []
         typical_anchors = _typical_edge_anchors(typical_segment_rows)
         asm = getattr(obj, "AssemblyTemplate", None)
         left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0)) if asm is not None else 0.0
         right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0)) if asm is not None else 0.0
+        if station_profiles:
+            out = []
+            prev_n = None
+            slope_type_map = {}
+            for station_value in [float(sta) for sta in list(stations or [])]:
+                slope_types, prev_n = SectionSet._assembly_station_side_slope_types(
+                    obj,
+                    station_value,
+                    prev_n=prev_n,
+                    terrain_sampler=None,
+                    use_daylight=bool(getattr(obj, "DaylightAuto", True)),
+                )
+                slope_type_map[round(float(station_value), 6)] = dict(slope_types or {})
+            for info in list(station_profiles or []):
+                station_value = float(info.get("station", 0.0) or 0.0)
+                station_key = round(station_value, 6)
+                anchor_info = typical_anchors.get(station_key, {})
+                slope_types = slope_type_map.get(station_key, {})
+                for side_name, base_edge, segs in (
+                    ("left", anchor_info.get("left", -left_width if left_width > 1e-9 else 0.0), list(info.get("left_segments", []) or [])),
+                    ("right", anchor_info.get("right", right_width if right_width > 1e-9 else 0.0), list(info.get("right_segments", []) or [])),
+                ):
+                    cursor = float(base_edge)
+                    order = 10
+                    slope_type = str(slope_types.get(side_name, "side_slope") or "side_slope")
+                    for seg in segs:
+                        seg_w = max(0.0, float(seg.get("width", 0.0) or 0.0))
+                        if seg_w <= 1e-9:
+                            continue
+                        seg_kind = str(seg.get("kind", "") or "").strip().lower()
+                        seg_type = "bench" if seg_kind == "bench" else slope_type
+                        if side_name == "left":
+                            x0 = cursor - seg_w
+                            x1 = cursor
+                            cursor = x0
+                        else:
+                            x0 = cursor
+                            x1 = cursor + seg_w
+                            cursor = x1
+                        out.append(
+                            _report_row(
+                                "component_segment",
+                                station=f"{station_value:.3f}",
+                                side=side_name,
+                                id=f"{side_name[:1].upper()}{order}",
+                                type=seg_type,
+                                label=seg_type,
+                                scope="side_slope",
+                                order=order,
+                                x0=f"{x0:.3f}",
+                                x1=f"{x1:.3f}",
+                                width=f"{seg_w:.3f}",
+                                source="resolved_section_profile",
+                            )
+                        )
+                        order += 1
+            return out
         out = []
         for row_txt in list(rows or []):
             try:
@@ -3411,6 +3516,19 @@ class SectionSet:
             bench_skipped_hits = int((bench_info or {}).get("benchSkipped", 0) or 0)
             bench_left_cfg = int((bench_info or {}).get("benchLeftConfigured", 0) or 0)
             bench_right_cfg = int((bench_info or {}).get("benchRightConfigured", 0) or 0)
+            station_profiles = list((bench_info or {}).get("stationProfiles", []) or [])
+            if use_typ and typ is not None:
+                typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
+                    [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
+                    stations,
+                )
+                side_slope_segment_rows = SectionSet._side_slope_segment_rows_from_assembly(
+                    obj,
+                    stations,
+                    typical_segment_rows=typical_segment_rows,
+                    station_profiles=station_profiles,
+                )
+                obj.SectionComponentSegmentRows = list(typical_segment_rows) + list(side_slope_segment_rows)
             bench_mode = "-"
             if bench_left_hits > 0 and bench_right_hits > 0:
                 bench_mode = "both"

@@ -215,6 +215,21 @@ def _earthwork_behavior_text(structure_type: str, corridor_mode: str) -> str:
     return mode or "not set"
 
 
+def _default_profile_preset_for_structure_type(structure_type: str) -> str:
+    typ = str(structure_type or "").strip().lower()
+    if typ == "culvert":
+        return "Culvert 1-2-1 Cells"
+    if typ == "crossing":
+        return "Crossing Shallow Mid"
+    if typ == "retaining_wall":
+        return "Wall Step-Up"
+    if typ == "abutment_zone":
+        return "3-Point Mid Bulge"
+    if typ in ("bridge_zone", "other"):
+        return "2-Point Linear"
+    return "2-Point Linear"
+
+
 def _find_structure_sets(doc):
     return find_all(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
 
@@ -436,6 +451,16 @@ class StructureEditorTaskPanel:
         self.lbl_profile_status.setWordWrap(True)
         main.addWidget(self.lbl_profile_status)
 
+        row_structure_preset = QtWidgets.QHBoxLayout()
+        self.cmb_structure_preset = QtWidgets.QComboBox()
+        self.cmb_structure_preset.addItems(list(STRUCTURE_PRESET_NAMES))
+        self.btn_load_structure_preset = QtWidgets.QPushButton("Load Preset")
+        row_structure_preset.addWidget(QtWidgets.QLabel("Preset:"))
+        row_structure_preset.addWidget(self.cmb_structure_preset)
+        row_structure_preset.addWidget(self.btn_load_structure_preset)
+        row_structure_preset.addStretch(1)
+        main.addLayout(row_structure_preset)
+
         row_shape = QtWidgets.QHBoxLayout()
         self.btn_browse_shape = QtWidgets.QPushButton("Browse Shape")
         self.btn_pick_fcstd_object = QtWidgets.QPushButton("Pick FCStd Object")
@@ -475,16 +500,6 @@ class StructureEditorTaskPanel:
         row_quick.addWidget(self.btn_clone_structure)
         row_quick.addStretch(1)
         main.addLayout(row_quick)
-
-        row_structure_preset = QtWidgets.QHBoxLayout()
-        self.cmb_structure_preset = QtWidgets.QComboBox()
-        self.cmb_structure_preset.addItems(list(STRUCTURE_PRESET_NAMES))
-        self.btn_load_structure_preset = QtWidgets.QPushButton("Load Preset")
-        row_structure_preset.addWidget(QtWidgets.QLabel("Preset:"))
-        row_structure_preset.addWidget(self.cmb_structure_preset)
-        row_structure_preset.addWidget(self.btn_load_structure_preset)
-        row_structure_preset.addStretch(1)
-        main.addLayout(row_structure_preset)
 
         self.table = QtWidgets.QTableWidget(0, len(COL_HEADERS))
         self.table.setHorizontalHeaderLabels(COL_HEADERS)
@@ -637,17 +652,18 @@ class StructureEditorTaskPanel:
         row_profile_btn.addWidget(self.btn_remove_profile)
         row_profile_btn.addWidget(self.btn_sort_profile)
         row_profile_btn.addWidget(self.btn_duplicate_profile)
-        row_profile_btn.addWidget(self.btn_add_profile_midpoint)
-        row_profile_btn.addWidget(self.btn_clear_profile)
+        row_profile_btn.addStretch(1)
         main.addLayout(row_profile_btn)
 
-        row_btn = QtWidgets.QHBoxLayout()
+        row_profile_actions = QtWidgets.QHBoxLayout()
+        row_profile_actions.addWidget(self.btn_add_profile_midpoint)
+        row_profile_actions.addWidget(self.btn_clear_profile)
+        row_profile_actions.addStretch(1)
         self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_close = QtWidgets.QPushButton("Close")
-        row_btn.addStretch(1)
-        row_btn.addWidget(self.btn_apply)
-        row_btn.addWidget(self.btn_close)
-        main.addLayout(row_btn)
+        row_profile_actions.addWidget(self.btn_apply)
+        row_profile_actions.addWidget(self.btn_close)
+        main.addLayout(row_profile_actions)
 
         gb_status = QtWidgets.QGroupBox("Validation Guide")
         fg = QtWidgets.QFormLayout(gb_status)
@@ -1080,6 +1096,21 @@ class StructureEditorTaskPanel:
                     "center", 0.0, 6.0, 2.5, geom="external_shape", tpl="", corridor="", notes="Mixed external shape placeholder",
                 ),
             ]
+        covered_ids = {
+            str(row.get("StructureId", "") or "").strip()
+            for row in list(profile_rows or [])
+            if str(row.get("StructureId", "") or "").strip()
+        }
+        for rec in list(rows or []):
+            sid = str(rec.get("Id", "") or "").strip()
+            if not sid or sid in covered_ids:
+                continue
+            preset_name = _default_profile_preset_for_structure_type(rec.get("Type", ""))
+            auto_rows = list(self._make_profile_preset_rows(preset_name, rec) or [])
+            if not auto_rows:
+                continue
+            profile_rows.extend(auto_rows)
+            covered_ids.add(sid)
         return rows, profile_rows
 
     def _make_profile_preset_rows(self, preset_name: str, rec: dict):
