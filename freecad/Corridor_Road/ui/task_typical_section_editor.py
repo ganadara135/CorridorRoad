@@ -12,13 +12,11 @@ from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
     ALLOWED_COMPONENT_TYPES,
     ALLOWED_PAVEMENT_LAYER_TYPES,
-    ROADSIDE_LIBRARY_BUNDLES,
     TypicalSectionPavementDisplay,
     TypicalSectionTemplate,
     ViewProviderTypicalSectionPavementDisplay,
     ViewProviderTypicalSectionTemplate,
     component_rows,
-    expand_roadside_library_bundle,
     ensure_typical_section_template_properties,
     pavement_rows,
 )
@@ -253,32 +251,9 @@ class TypicalSectionEditorTaskPanel:
         fs.addRow("Component CSV:", csv_wrap)
         main.addWidget(gb_target)
 
-        quick_btns = QtWidgets.QHBoxLayout()
-        self.btn_add_lane = QtWidgets.QPushButton("Add Lane")
-        self.btn_add_shoulder = QtWidgets.QPushButton("Add Shoulder")
-        self.btn_add_curb = QtWidgets.QPushButton("Add Curb")
-        self.btn_add_ditch = QtWidgets.QPushButton("Add Ditch")
-        self.btn_add_bench = QtWidgets.QPushButton("Add Berm")
-        quick_btns.addWidget(self.btn_add_lane)
-        quick_btns.addWidget(self.btn_add_shoulder)
-        quick_btns.addWidget(self.btn_add_curb)
-        quick_btns.addWidget(self.btn_add_ditch)
-        quick_btns.addWidget(self.btn_add_bench)
-        main.addLayout(quick_btns)
-
         helper_btns = QtWidgets.QHBoxLayout()
-        self.cmb_helper_side = QtWidgets.QComboBox()
-        self.cmb_helper_side.addItems(["Both", "Left Only", "Right Only", "Center Only"])
-        self.cmb_roadside_bundle = QtWidgets.QComboBox()
-        for name in ("shoulder_edge", "ditch_edge", "urban_edge", "median_core"):
-            self.cmb_roadside_bundle.addItem(name)
-        self.btn_insert_roadside_bundle = QtWidgets.QPushButton("Insert Roadside Bundle")
         self.btn_add_rural_ditch_pair = QtWidgets.QPushButton("Add Rural Ditch Pair")
         self.btn_add_urban_edge_pair = QtWidgets.QPushButton("Add Urban Edge Pair")
-        helper_btns.addWidget(QtWidgets.QLabel("Helper Side:"))
-        helper_btns.addWidget(self.cmb_helper_side)
-        helper_btns.addWidget(self.cmb_roadside_bundle, 1)
-        helper_btns.addWidget(self.btn_insert_roadside_bundle)
         helper_btns.addWidget(self.btn_add_rural_ditch_pair)
         helper_btns.addWidget(self.btn_add_urban_edge_pair)
         helper_btns.addStretch(1)
@@ -299,7 +274,9 @@ class TypicalSectionEditorTaskPanel:
         self.table.setMinimumHeight(320)
         main.addWidget(self.table, 1)
 
-        row_btns = QtWidgets.QHBoxLayout()
+        row_btns_wrap = QtWidgets.QVBoxLayout()
+        row_btns_top = QtWidgets.QHBoxLayout()
+        row_btns_bottom = QtWidgets.QHBoxLayout()
         self.btn_add = QtWidgets.QPushButton("Add Row")
         self.btn_remove = QtWidgets.QPushButton("Remove Row")
         self.btn_move_up = QtWidgets.QPushButton("Move Up")
@@ -307,14 +284,18 @@ class TypicalSectionEditorTaskPanel:
         self.btn_mirror_l2r = QtWidgets.QPushButton("Mirror Left -> Right")
         self.btn_mirror_r2l = QtWidgets.QPushButton("Mirror Right -> Left")
         self.btn_sort = QtWidgets.QPushButton("Sort by Order")
-        row_btns.addWidget(self.btn_add)
-        row_btns.addWidget(self.btn_remove)
-        row_btns.addWidget(self.btn_move_up)
-        row_btns.addWidget(self.btn_move_down)
-        row_btns.addWidget(self.btn_mirror_l2r)
-        row_btns.addWidget(self.btn_mirror_r2l)
-        row_btns.addWidget(self.btn_sort)
-        main.addLayout(row_btns)
+        row_btns_top.addWidget(self.btn_add)
+        row_btns_top.addWidget(self.btn_remove)
+        row_btns_top.addWidget(self.btn_move_up)
+        row_btns_top.addWidget(self.btn_move_down)
+        row_btns_top.addStretch(1)
+        row_btns_bottom.addWidget(self.btn_mirror_l2r)
+        row_btns_bottom.addWidget(self.btn_mirror_r2l)
+        row_btns_bottom.addWidget(self.btn_sort)
+        row_btns_bottom.addStretch(1)
+        row_btns_wrap.addLayout(row_btns_top)
+        row_btns_wrap.addLayout(row_btns_bottom)
+        main.addLayout(row_btns_wrap)
 
         gb_pav = QtWidgets.QGroupBox("Pavement Layers")
         pav_layout = QtWidgets.QVBoxLayout(gb_pav)
@@ -405,12 +386,6 @@ class TypicalSectionEditorTaskPanel:
         self.btn_mirror_l2r.clicked.connect(lambda: self._mirror_selected_row("left", "right"))
         self.btn_mirror_r2l.clicked.connect(lambda: self._mirror_selected_row("right", "left"))
         self.btn_sort.clicked.connect(self._sort_rows)
-        self.btn_add_lane.clicked.connect(lambda: self._add_component_template("lane"))
-        self.btn_add_shoulder.clicked.connect(lambda: self._add_component_template("shoulder"))
-        self.btn_add_curb.clicked.connect(lambda: self._add_component_template("curb"))
-        self.btn_add_ditch.clicked.connect(lambda: self._add_component_template("ditch"))
-        self.btn_add_bench.clicked.connect(lambda: self._add_component_template("berm"))
-        self.btn_insert_roadside_bundle.clicked.connect(self._insert_selected_roadside_bundle)
         self.btn_add_rural_ditch_pair.clicked.connect(lambda: self._add_component_bundle("rural_ditch_pair"))
         self.btn_add_urban_edge_pair.clicked.connect(lambda: self._add_component_bundle("urban_edge_pair"))
         self.btn_browse_csv.clicked.connect(self._browse_csv)
@@ -755,11 +730,12 @@ class TypicalSectionEditorTaskPanel:
     def _ensure_pavement_display(self, src_obj):
         disp = self._find_pavement_display(src_obj)
         if disp is not None:
+            disp.Label = "PavementDisplay"
             return disp
         disp = self.doc.addObject("Part::FeaturePython", "TypicalSectionPavementDisplay")
         TypicalSectionPavementDisplay(disp)
         ViewProviderTypicalSectionPavementDisplay(disp.ViewObject)
-        disp.Label = "Typical Section Pavement"
+        disp.Label = "PavementDisplay"
         disp.SourceTypicalSection = src_obj
         return disp
 
@@ -856,25 +832,6 @@ class TypicalSectionEditorTaskPanel:
             rows.append(row)
         self._write_rows_to_table(rows)
         self.table.selectRow(max(0, len(rows) - len(bundle)))
-
-    def _insert_selected_roadside_bundle(self):
-        bundle_key = str(self.cmb_roadside_bundle.currentText() or "").strip().lower()
-        side_mode = str(self.cmb_helper_side.currentText() or "").strip()
-        bundle = expand_roadside_library_bundle(bundle_key, side_mode)
-        if not bundle:
-            QtWidgets.QMessageBox.information(None, "Typical Section", "The selected roadside bundle is not available for that helper side mode.")
-            return
-        rows = self._read_rows()
-        base_order = min(int(row.get("Order", 0) or 0) for row in bundle)
-        next_order = self._next_component_order()
-        for row in bundle:
-            row["Id"] = self._unique_component_id(row.get("Id", "COMP"), rows=rows)
-            rel_order = int(row.get("Order", 0) or 0) - int(base_order or 0)
-            row["Order"] = int(next_order + rel_order)
-            rows.append(row)
-        self._write_rows_to_table(rows)
-        self.table.selectRow(max(0, len(rows) - len(bundle)))
-        self.lbl_status.setText(f"Inserted roadside bundle: {bundle_key} ({str(side_mode or '').strip() or 'Both'})")
 
     def _mirror_selected_row(self, from_side, to_side):
         idx = int(self.table.currentRow())
