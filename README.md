@@ -319,3 +319,6 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ![CorridorRoad screenshot 09](https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c)
 ![CorridorRoad screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
 ![CorridorRoad screenshot 11](https://github.com/user-attachments/assets/71d0cb7d-50e9-4c66-be81-727b0e0840b6)
+![CorridorRoad screenshot 12](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)
+
+
