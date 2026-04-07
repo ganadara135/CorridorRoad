@@ -52,6 +52,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `Generate Design Terrain`
 - `Generate Cut/Fill Calc`
 
+`Cross Section Viewer` reviews generated `SectionSet` stations in a dedicated 2D panel with component, side-slope, daylight, and export support.
+
 ## Fixed Project Tree Schema
 - `CorridorRoad Project`
 - `01_Inputs/{Terrains,Survey,Structures}`
@@ -140,11 +142,12 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
 - The panel now also supports:
   - `Load Preset`
-  - quick component insert buttons such as `Add Lane`, `Add Shoulder`, `Add Curb`, `Add Ditch`, `Add Berm`
   - roadside helper buttons such as `Add Rural Ditch Pair` and `Add Urban Edge Pair`
   - `Move Up`, `Move Down`
   - `Mirror Left -> Right`, `Mirror Right -> Left`
   - `Save Component CSV`, `Save Pavement CSV`
+  - `Auto Preview` / `Refresh Preview` for 3D live preview updates
+  - `Show Preview Wire` / `Show PavementDisplay` preview visibility toggles
   - a live `Summary` panel for component count, top width, edge types, and pavement total
 - Current CSV columns:
   - `Id`

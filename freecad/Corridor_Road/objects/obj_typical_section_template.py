@@ -214,6 +214,9 @@ def ensure_typical_section_template_properties(obj):
     if not hasattr(obj, "ShowPreviewWire"):
         obj.addProperty("App::PropertyBool", "ShowPreviewWire", "Display", "Show preview wire")
         obj.ShowPreviewWire = True
+    if not hasattr(obj, "PreviewSelectedComponentIndex"):
+        obj.addProperty("App::PropertyInteger", "PreviewSelectedComponentIndex", "Display", "Selected component row index for preview-only wire")
+        obj.PreviewSelectedComponentIndex = -1
 
 
 def _normalized_component_arrays(obj):
@@ -761,6 +764,68 @@ def build_top_profile(obj):
     return cleaned
 
 
+def build_component_preview_profile(obj, selected_index: int):
+    rows = component_rows(obj)
+    left_rows, center_rows, right_rows = _split_rows_by_side(rows)
+    selected_index = int(selected_index)
+
+    x_left = 0.0
+    y_left = 0.0
+    x_right = 0.0
+    y_right = 0.0
+
+    for row in center_rows:
+        half_w = 0.5 * max(0.0, float(row.get("Width", 0.0) or 0.0))
+        slope = float(row.get("CrossSlopePct", 0.0) or 0.0)
+        height = float(row.get("Height", 0.0) or 0.0)
+        start_left = App.Vector(x_left, y_left, 0.0)
+        start_right = App.Vector(x_right, y_right, 0.0)
+        next_left_x, next_left_y = _apply_segment(x_left, y_left, half_w, slope, height, +1.0)
+        next_right_x, next_right_y = _apply_segment(x_right, y_right, half_w, slope, height, -1.0)
+        end_left = App.Vector(next_left_x, next_left_y, 0.0)
+        end_right = App.Vector(next_right_x, next_right_y, 0.0)
+        x_left, y_left = next_left_x, next_left_y
+        x_right, y_right = next_right_x, next_right_y
+        if int(row.get("_Index", -9999)) == selected_index:
+            pts = [end_left, App.Vector(0.0, 0.0, 0.0), end_right]
+            cleaned = []
+            for pt in pts:
+                if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+                    cleaned.append(pt)
+            return cleaned
+
+    for row in left_rows:
+        x_left += float(row.get("Offset", 0.0) or 0.0)
+        start = App.Vector(x_left, y_left, 0.0)
+        seg_pts = _segment_profile_points(x_left, y_left, row, +1.0)
+        if seg_pts:
+            x_left = float(seg_pts[-1].x)
+            y_left = float(seg_pts[-1].y)
+            if int(row.get("_Index", -9999)) == selected_index:
+                pts = [start] + list(seg_pts)
+                cleaned = []
+                for pt in pts:
+                    if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+                        cleaned.append(pt)
+                return cleaned
+
+    for row in right_rows:
+        x_right -= float(row.get("Offset", 0.0) or 0.0)
+        start = App.Vector(x_right, y_right, 0.0)
+        seg_pts = _segment_profile_points(x_right, y_right, row, -1.0)
+        if seg_pts:
+            x_right = float(seg_pts[-1].x)
+            y_right = float(seg_pts[-1].y)
+            if int(row.get("_Index", -9999)) == selected_index:
+                pts = [start] + list(seg_pts)
+                cleaned = []
+                for pt in pts:
+                    if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+                        cleaned.append(pt)
+                return cleaned
+    return []
+
+
 def build_pavement_layer_shapes(obj):
     top_pts = build_top_profile(obj)
     if len(top_pts) < 2:
@@ -870,7 +935,11 @@ class TypicalSectionTemplate:
                 )
                 return
 
-            pts = build_top_profile(obj)
+            selected_preview_index = int(getattr(obj, "PreviewSelectedComponentIndex", -1) or -1)
+            if selected_preview_index >= 0:
+                pts = build_component_preview_profile(obj, selected_preview_index)
+            else:
+                pts = build_top_profile(obj)
             if len(pts) < 2:
                 obj.Shape = Part.Shape()
                 obj.Status = (
@@ -1004,6 +1073,17 @@ def ensure_typical_section_pavement_display_properties(obj):
         obj.Status = "Idle"
 
 
+def ensure_typical_section_selection_display_properties(obj):
+    if not hasattr(obj, "SourceTypicalSection"):
+        obj.addProperty("App::PropertyLink", "SourceTypicalSection", "Display", "Source TypicalSectionTemplate")
+    if not hasattr(obj, "SelectedComponentIndex"):
+        obj.addProperty("App::PropertyInteger", "SelectedComponentIndex", "Display", "Selected component row index")
+        obj.SelectedComponentIndex = -1
+    if not hasattr(obj, "Status"):
+        obj.addProperty("App::PropertyString", "Status", "Result", "Display generation status")
+        obj.Status = "Idle"
+
+
 class TypicalSectionPavementDisplay:
     def __init__(self, obj):
         obj.Proxy = self
@@ -1080,6 +1160,66 @@ class ViewProviderTypicalSectionPavementDisplay:
 
     def getDefaultDisplayMode(self):
         return "Flat Lines"
+
+    def setDisplayMode(self, mode):
+        return mode
+
+
+class TypicalSectionSelectionDisplay:
+    def __init__(self, obj):
+        obj.Proxy = self
+        self.Type = "TypicalSectionSelectionDisplay"
+        ensure_typical_section_selection_display_properties(obj)
+
+    def execute(self, obj):
+        ensure_typical_section_selection_display_properties(obj)
+        try:
+            src = getattr(obj, "SourceTypicalSection", None)
+            selected_index = int(getattr(obj, "SelectedComponentIndex", -1) or -1)
+            if src is None or selected_index < 0:
+                obj.Shape = Part.Shape()
+                obj.Status = "No selected component"
+                return
+            pts = build_component_preview_profile(src, selected_index)
+            if len(pts) < 2:
+                obj.Shape = Part.Shape()
+                obj.Status = "Selected component has no preview segment"
+                return
+            obj.Shape = Part.makePolygon(pts)
+            obj.Status = f"OK: selected component index={selected_index}"
+        except Exception as ex:
+            obj.Shape = Part.Shape()
+            obj.Status = f"ERROR: {ex}"
+
+
+class ViewProviderTypicalSectionSelectionDisplay:
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        try:
+            vobj.Visibility = True
+            vobj.DisplayMode = "Wireframe"
+            vobj.LineWidth = 4
+            vobj.LineColor = (0.20, 0.85, 0.95)
+            vobj.PointColor = (0.20, 0.85, 0.95)
+        except Exception:
+            pass
+
+    def getIcon(self):
+        return ""
+
+    def updateData(self, obj, prop):
+        return
+
+    def onChanged(self, vobj, prop):
+        return
+
+    def getDisplayModes(self, vobj):
+        return ["Wireframe", "Flat Lines"]
+
+    def getDefaultDisplayMode(self):
+        return "Wireframe"
 
     def setDisplayMode(self, mode):
         return mode

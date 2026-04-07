@@ -12,8 +12,10 @@ from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
     ALLOWED_COMPONENT_TYPES,
     ALLOWED_PAVEMENT_LAYER_TYPES,
+    TypicalSectionSelectionDisplay,
     TypicalSectionPavementDisplay,
     TypicalSectionTemplate,
+    ViewProviderTypicalSectionSelectionDisplay,
     ViewProviderTypicalSectionPavementDisplay,
     ViewProviderTypicalSectionTemplate,
     component_rows,
@@ -191,6 +193,8 @@ class TypicalSectionEditorTaskPanel:
         self.doc = App.ActiveDocument
         self._templates = []
         self._loading = False
+        self._active_component_row = 0
+        self._active_pavement_row = 0
         self._component_tint_brushes = {
             "base": None,
             "slope": QtGui.QBrush(QtGui.QColor(52, 68, 92)),
@@ -264,6 +268,9 @@ class TypicalSectionEditorTaskPanel:
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setMouseTracking(False)
+        self.table.viewport().setMouseTracking(False)
+        self.table.setAttribute(QtCore.Qt.WA_Hover, False)
         self.table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
@@ -284,6 +291,7 @@ class TypicalSectionEditorTaskPanel:
         self.btn_mirror_l2r = QtWidgets.QPushButton("Mirror Left -> Right")
         self.btn_mirror_r2l = QtWidgets.QPushButton("Mirror Right -> Left")
         self.btn_sort = QtWidgets.QPushButton("Sort by Order")
+        self.btn_refresh_preview = QtWidgets.QPushButton("Refresh Preview")
         row_btns_top.addWidget(self.btn_add)
         row_btns_top.addWidget(self.btn_remove)
         row_btns_top.addWidget(self.btn_move_up)
@@ -293,6 +301,7 @@ class TypicalSectionEditorTaskPanel:
         row_btns_bottom.addWidget(self.btn_mirror_r2l)
         row_btns_bottom.addWidget(self.btn_sort)
         row_btns_bottom.addStretch(1)
+        row_btns_bottom.addWidget(self.btn_refresh_preview)
         row_btns_wrap.addLayout(row_btns_top)
         row_btns_wrap.addLayout(row_btns_bottom)
         main.addLayout(row_btns_wrap)
@@ -330,6 +339,9 @@ class TypicalSectionEditorTaskPanel:
         self.pav_table.setAlternatingRowColors(True)
         self.pav_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.pav_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.pav_table.setMouseTracking(False)
+        self.pav_table.viewport().setMouseTracking(False)
+        self.pav_table.setAttribute(QtCore.Qt.WA_Hover, False)
         self.pav_table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.pav_table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.pav_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
@@ -367,6 +379,16 @@ class TypicalSectionEditorTaskPanel:
         sr.addRow("Pavement:", self.lbl_summary_pavement)
         main.addWidget(gb_summary)
 
+        preview_row = QtWidgets.QHBoxLayout()
+        self.chk_show_preview_wire = QtWidgets.QCheckBox("Show Preview Wire")
+        self.chk_show_preview_wire.setChecked(True)
+        self.chk_show_pavement_display = QtWidgets.QCheckBox("Show PavementDisplay")
+        self.chk_show_pavement_display.setChecked(True)
+        preview_row.addWidget(self.chk_show_preview_wire)
+        preview_row.addWidget(self.chk_show_pavement_display)
+        preview_row.addStretch(1)
+        main.addLayout(preview_row)
+
         bottom = QtWidgets.QHBoxLayout()
         self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_refresh = QtWidgets.QPushButton("Refresh")
@@ -397,11 +419,22 @@ class TypicalSectionEditorTaskPanel:
         self.btn_load_pavement_preset.clicked.connect(self._load_pavement_preset)
         self.btn_add_pavement.clicked.connect(self._add_pavement_row)
         self.btn_remove_pavement.clicked.connect(self._remove_pavement_row)
+        self.chk_show_preview_wire.toggled.connect(self._on_preview_visibility_changed)
+        self.chk_show_pavement_display.toggled.connect(self._on_preview_visibility_changed)
+        self.btn_refresh_preview.clicked.connect(self._refresh_preview)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_close.clicked.connect(self.reject)
         self.table.itemChanged.connect(self._on_component_table_changed)
         self.pav_table.itemChanged.connect(self._on_pavement_table_changed)
+        self.table.itemDelegate().closeEditor.connect(self._on_component_editor_closed)
+        self.pav_table.itemDelegate().closeEditor.connect(self._on_pavement_editor_closed)
+        self.table.currentCellChanged.connect(self._on_component_current_cell_changed)
+        self.pav_table.currentCellChanged.connect(self._on_pavement_current_cell_changed)
+        self.table.itemSelectionChanged.connect(self._remember_component_selection)
+        self.pav_table.itemSelectionChanged.connect(self._remember_pavement_selection)
+        self.table.itemSelectionChanged.connect(self._lock_component_selection)
+        self.pav_table.itemSelectionChanged.connect(self._lock_pavement_selection)
 
         self._set_rows(4)
         self._set_pavement_rows(4)
@@ -464,6 +497,7 @@ class TypicalSectionEditorTaskPanel:
         finally:
             self._loading = False
         self._on_target_changed()
+        self._sync_preview_controls()
         self._update_summary()
 
     def _on_target_changed(self):
@@ -480,6 +514,7 @@ class TypicalSectionEditorTaskPanel:
                 self.lbl_status.setText("New TypicalSectionTemplate will be created.")
             finally:
                 self._loading = False
+            self._sync_preview_controls()
             self._refresh_component_hints()
             self._update_summary()
             return
@@ -513,6 +548,7 @@ class TypicalSectionEditorTaskPanel:
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
             self._loading = False
+        self._sync_preview_controls()
         self._refresh_component_hints()
         self._update_summary()
 
@@ -538,8 +574,14 @@ class TypicalSectionEditorTaskPanel:
             if cmb is None:
                 cmb = QtWidgets.QComboBox()
                 cmb.addItems(items)
+                cmb.setProperty("table_row", row)
+                cmb.setFocusPolicy(QtCore.Qt.NoFocus)
+                cmb.setMouseTracking(False)
+                cmb.setAttribute(QtCore.Qt.WA_Hover, False)
                 cmb.currentIndexChanged.connect(self._on_component_combo_changed)
                 self.table.setCellWidget(row, col, cmb)
+            else:
+                cmb.setProperty("table_row", row)
 
     def _set_pavement_rows(self, n):
         self._loading = True
@@ -562,8 +604,58 @@ class TypicalSectionEditorTaskPanel:
             if cmb is None:
                 cmb = QtWidgets.QComboBox()
                 cmb.addItems(items)
+                cmb.setProperty("table_row", row)
+                cmb.setFocusPolicy(QtCore.Qt.NoFocus)
+                cmb.setMouseTracking(False)
+                cmb.setAttribute(QtCore.Qt.WA_Hover, False)
                 cmb.currentIndexChanged.connect(self._on_pavement_combo_changed)
                 self.pav_table.setCellWidget(row, col, cmb)
+            else:
+                cmb.setProperty("table_row", row)
+
+    def _remember_component_selection(self):
+        if self._loading:
+            return
+        row = int(self.table.currentRow())
+        if row >= 0:
+            self._active_component_row = row
+
+    def _remember_pavement_selection(self):
+        if self._loading:
+            return
+        row = int(self.pav_table.currentRow())
+        if row >= 0:
+            self._active_pavement_row = row
+
+    def _restore_component_selection(self):
+        if self.table.rowCount() <= 0:
+            return
+        row = max(0, min(int(self._active_component_row or 0), self.table.rowCount() - 1))
+        self.table.setCurrentCell(row, 0)
+        self.table.selectRow(row)
+
+    def _restore_pavement_selection(self):
+        if self.pav_table.rowCount() <= 0:
+            return
+        row = max(0, min(int(self._active_pavement_row or 0), self.pav_table.rowCount() - 1))
+        self.pav_table.setCurrentCell(row, 0)
+        self.pav_table.selectRow(row)
+
+    def _lock_component_selection(self):
+        if self._loading or self.table.rowCount() <= 0:
+            return
+        row = max(0, min(int(self._active_component_row or 0), self.table.rowCount() - 1))
+        if self.table.currentRow() != row:
+            self.table.setCurrentCell(row, 0)
+            self.table.selectRow(row)
+
+    def _lock_pavement_selection(self):
+        if self._loading or self.pav_table.rowCount() <= 0:
+            return
+        row = max(0, min(int(self._active_pavement_row or 0), self.pav_table.rowCount() - 1))
+        if self.pav_table.currentRow() != row:
+            self.pav_table.setCurrentCell(row, 0)
+            self.pav_table.selectRow(row)
 
     @staticmethod
     def _set_combo_value(cmb, value):
@@ -687,6 +779,7 @@ class TypicalSectionEditorTaskPanel:
                 self._set_cell_text(i, 10, "true" if bool(row.get("Enabled", True)) else "false")
         finally:
             self._loading = False
+        self._restore_component_selection()
         self._refresh_component_hints()
         self._update_summary()
 
@@ -702,6 +795,7 @@ class TypicalSectionEditorTaskPanel:
                 self._set_pavement_cell_text(i, 3, "true" if bool(row.get("Enabled", True)) else "false")
         finally:
             self._loading = False
+        self._restore_pavement_selection()
         self._update_summary()
 
     def _ensure_target(self):
@@ -739,10 +833,63 @@ class TypicalSectionEditorTaskPanel:
         disp.SourceTypicalSection = src_obj
         return disp
 
+    def _find_selection_display(self, src_obj):
+        if self.doc is None or src_obj is None:
+            return None
+        for o in list(getattr(self.doc, "Objects", []) or []):
+            try:
+                if getattr(getattr(o, "Proxy", None), "Type", "") == "TypicalSectionSelectionDisplay":
+                    if getattr(o, "SourceTypicalSection", None) == src_obj:
+                        return o
+            except Exception:
+                pass
+        return None
+
+    def _ensure_selection_display(self, src_obj):
+        disp = self._find_selection_display(src_obj)
+        if disp is not None:
+            disp.Label = "SelectedComponentPreview"
+            self._style_selection_display(disp)
+            return disp
+        disp = self.doc.addObject("Part::FeaturePython", "TypicalSectionSelectionDisplay")
+        TypicalSectionSelectionDisplay(disp)
+        ViewProviderTypicalSectionSelectionDisplay(disp.ViewObject)
+        disp.Label = "SelectedComponentPreview"
+        disp.SourceTypicalSection = src_obj
+        self._style_selection_display(disp)
+        return disp
+
+    def _style_selection_display(self, disp):
+        try:
+            vobj = getattr(disp, "ViewObject", None)
+            if vobj is None:
+                return
+            vobj.Visibility = True
+            vobj.DisplayMode = "Wireframe"
+            vobj.LineWidth = 6
+            vobj.LineColor = (0.20, 0.85, 0.95)
+            vobj.PointColor = (0.20, 0.85, 0.95)
+        except Exception:
+            pass
+
+    def _style_typical_preview_display(self, obj):
+        try:
+            vobj = getattr(obj, "ViewObject", None)
+            if vobj is None:
+                return
+            vobj.Visibility = bool(self.chk_show_preview_wire.isChecked())
+            vobj.DisplayMode = "Wireframe"
+            vobj.LineWidth = 2
+            vobj.LineColor = (0.55, 0.58, 0.62)
+            vobj.PointColor = (0.55, 0.58, 0.62)
+        except Exception:
+            pass
+
     def _add_row(self):
         self._set_rows(self.table.rowCount() + 1)
         self._refresh_component_hints()
         self._update_summary()
+        self._schedule_preview()
 
     def _remove_row(self):
         r = self.table.currentRow()
@@ -752,10 +899,12 @@ class TypicalSectionEditorTaskPanel:
             self.table.removeRow(r)
         self._refresh_component_hints()
         self._update_summary()
+        self._schedule_preview()
 
     def _add_pavement_row(self):
         self._set_pavement_rows(self.pav_table.rowCount() + 1)
         self._update_summary()
+        self._schedule_preview()
 
     def _remove_pavement_row(self):
         r = self.pav_table.currentRow()
@@ -764,11 +913,13 @@ class TypicalSectionEditorTaskPanel:
         if r >= 0:
             self.pav_table.removeRow(r)
         self._update_summary()
+        self._schedule_preview()
 
     def _sort_rows(self):
         rows = self._read_rows()
         rows.sort(key=lambda row: (int(row.get("Order", 0) or 0), str(row.get("Side", "")), str(row.get("Id", ""))))
         self._write_rows_to_table(rows)
+        self._schedule_preview()
 
     def _move_row_up(self):
         rows = self._read_rows()
@@ -778,6 +929,7 @@ class TypicalSectionEditorTaskPanel:
         rows[idx - 1], rows[idx] = rows[idx], rows[idx - 1]
         self._write_rows_to_table(rows)
         self.table.selectRow(idx - 1)
+        self._schedule_preview()
 
     def _move_row_down(self):
         rows = self._read_rows()
@@ -787,6 +939,7 @@ class TypicalSectionEditorTaskPanel:
         rows[idx], rows[idx + 1] = rows[idx + 1], rows[idx]
         self._write_rows_to_table(rows)
         self.table.selectRow(idx + 1)
+        self._schedule_preview()
 
     def _next_component_order(self):
         rows = self._read_rows()
@@ -832,6 +985,7 @@ class TypicalSectionEditorTaskPanel:
             rows.append(row)
         self._write_rows_to_table(rows)
         self.table.selectRow(max(0, len(rows) - len(bundle)))
+        self._schedule_preview()
 
     def _mirror_selected_row(self, from_side, to_side):
         idx = int(self.table.currentRow())
@@ -860,6 +1014,7 @@ class TypicalSectionEditorTaskPanel:
         rows.insert(idx + 1, row)
         self._write_rows_to_table(rows)
         self.table.selectRow(idx + 1)
+        self._schedule_preview()
 
     def _browse_csv(self):
         path, _flt = QtWidgets.QFileDialog.getOpenFileName(
@@ -953,6 +1108,7 @@ class TypicalSectionEditorTaskPanel:
         self._write_rows_to_table(copy.deepcopy(list(data.get("components", []) or [])))
         self._write_pavement_rows_to_table(copy.deepcopy(list(data.get("pavement", []) or [])))
         self.lbl_status.setText(f"Loaded preset: {name}")
+        self._schedule_preview()
 
     def _load_pavement_preset(self):
         name = str(self.cmb_pavement_preset.currentText() or "").strip()
@@ -962,6 +1118,7 @@ class TypicalSectionEditorTaskPanel:
             return
         self._write_pavement_rows_to_table(rows)
         self.lbl_status.setText(f"Loaded pavement preset: {name}")
+        self._schedule_preview()
 
     def _load_csv(self):
         path = self.txt_csv.text().strip()
@@ -1008,6 +1165,7 @@ class TypicalSectionEditorTaskPanel:
                     row["Type"] = "berm"
             self._write_rows_to_table(rows)
             self.lbl_status.setText(f"Loaded {len(rows)} component rows from CSV.")
+            self._schedule_preview()
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"CSV load failed: {ex}")
 
@@ -1046,6 +1204,7 @@ class TypicalSectionEditorTaskPanel:
                 return
             self._write_pavement_rows_to_table(rows)
             self.lbl_status.setText(f"Loaded {len(rows)} pavement rows from CSV.")
+            self._schedule_preview()
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Pavement CSV load failed: {ex}")
 
@@ -1144,13 +1303,35 @@ class TypicalSectionEditorTaskPanel:
     def _on_component_combo_changed(self, *_args):
         if self._loading:
             return
+        sender = self.form.sender() if hasattr(self.form, "sender") else None
+        if sender is None:
+            sender = QtWidgets.QApplication.instance().sender()
+        try:
+            row = int(sender.property("table_row"))
+            self._active_component_row = row
+            self.table.setCurrentCell(row, 0)
+            self.table.selectRow(row)
+        except Exception:
+            pass
         self._refresh_component_hints()
         self._update_summary()
+        self._schedule_preview()
 
     def _on_pavement_combo_changed(self, *_args):
         if self._loading:
             return
+        sender = self.form.sender() if hasattr(self.form, "sender") else None
+        if sender is None:
+            sender = QtWidgets.QApplication.instance().sender()
+        try:
+            row = int(sender.property("table_row"))
+            self._active_pavement_row = row
+            self.pav_table.setCurrentCell(row, 0)
+            self.pav_table.selectRow(row)
+        except Exception:
+            pass
         self._update_summary()
+        self._schedule_preview()
 
     def _on_component_table_changed(self, *_args):
         if self._loading:
@@ -1163,33 +1344,134 @@ class TypicalSectionEditorTaskPanel:
             return
         self._update_summary()
 
-    def _apply(self):
-        if self.doc is None:
-            QtWidgets.QMessageBox.warning(None, "Typical Section", "No active document.")
+    def _on_component_editor_closed(self, _editor, hint):
+        if self._loading:
+            return
+        if int(hint) == int(QtWidgets.QAbstractItemDelegate.NoHint):
+            return
+        self._schedule_preview(delay_ms=50)
+
+    def _on_pavement_editor_closed(self, _editor, hint):
+        if self._loading:
+            return
+        if int(hint) == int(QtWidgets.QAbstractItemDelegate.NoHint):
+            return
+        self._schedule_preview(delay_ms=50)
+
+    def _on_component_current_cell_changed(self, current_row, _current_col, _prev_row, _prev_col):
+        if self._loading:
+            return
+        if int(current_row) >= 0:
+            self._active_component_row = int(current_row)
+
+    def _on_pavement_current_cell_changed(self, current_row, _current_col, _prev_row, _prev_col):
+        if self._loading:
+            return
+        if int(current_row) >= 0:
+            self._active_pavement_row = int(current_row)
+
+    def _sync_preview_controls(self):
+        obj = self._current_target()
+        pav_disp = self._find_pavement_display(obj) if obj is not None else None
+        self._loading = True
+        try:
+            preview_checked = bool(getattr(obj, "ShowPreviewWire", True)) if obj is not None else True
+            pavement_checked = bool(getattr(getattr(pav_disp, "ViewObject", None), "Visibility", True)) if pav_disp is not None else True
+            self.chk_show_preview_wire.setChecked(preview_checked)
+            self.chk_show_pavement_display.setChecked(pavement_checked)
+        finally:
+            self._loading = False
+
+    def _on_preview_visibility_changed(self, *_args):
+        if self._loading or self.doc is None:
+            return
+        obj = self._current_target()
+        if obj is not None:
+            try:
+                obj.ShowPreviewWire = bool(self.chk_show_preview_wire.isChecked())
+                if hasattr(obj, "ViewObject") and obj.ViewObject is not None:
+                    obj.ViewObject.Visibility = bool(self.chk_show_preview_wire.isChecked())
+                self._style_typical_preview_display(obj)
+                obj.touch()
+            except Exception:
+                pass
+        pav_disp = self._find_pavement_display(obj) if obj is not None else None
+        sel_disp = self._find_selection_display(obj) if obj is not None else None
+        if pav_disp is not None:
+            try:
+                if hasattr(pav_disp, "ViewObject") and pav_disp.ViewObject is not None:
+                    pav_disp.ViewObject.Visibility = bool(self.chk_show_pavement_display.isChecked())
+                pav_disp.touch()
+            except Exception:
+                pass
+        if sel_disp is not None:
+            try:
+                self._style_selection_display(sel_disp)
+                sel_disp.touch()
+            except Exception:
+                pass
+        if obj is not None:
+            try:
+                self.doc.recompute()
+            except Exception:
+                pass
+
+    def _schedule_preview(self, delay_ms: int = 250):
+        return
+
+    def _sync_panel_to_typical_section(self, obj, pav_disp=None):
+        rows = self._read_rows()
+        pav_rows = self._read_pavement_rows()
+        obj.ShowPreviewWire = bool(self.chk_show_preview_wire.isChecked())
+        obj.ComponentIds = [str(r.get("Id", "") or "") for r in rows]
+        obj.ComponentTypes = [str(r.get("Type", "") or "") for r in rows]
+        obj.ComponentSides = [str(r.get("Side", "") or "") for r in rows]
+        obj.ComponentWidths = [float(r.get("Width", 0.0) or 0.0) for r in rows]
+        obj.ComponentCrossSlopes = [float(r.get("CrossSlopePct", 0.0) or 0.0) for r in rows]
+        obj.ComponentHeights = [float(r.get("Height", 0.0) or 0.0) for r in rows]
+        obj.ComponentExtraWidths = [float(r.get("ExtraWidth", 0.0) or 0.0) for r in rows]
+        obj.ComponentBackSlopes = [float(r.get("BackSlopePct", 0.0) or 0.0) for r in rows]
+        obj.ComponentOffsets = [float(r.get("Offset", 0.0) or 0.0) for r in rows]
+        obj.ComponentOrders = [int(r.get("Order", 0) or 0) for r in rows]
+        obj.ComponentEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in rows]
+        obj.PavementLayerIds = [str(r.get("Id", "") or "") for r in pav_rows]
+        obj.PavementLayerTypes = [str(r.get("Type", "") or "") for r in pav_rows]
+        obj.PavementLayerThicknesses = [float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows]
+        obj.PavementLayerEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in pav_rows]
+        if pav_disp is not None:
+            pav_disp.SourceTypicalSection = obj
+            if hasattr(pav_disp, "ViewObject") and pav_disp.ViewObject is not None:
+                pav_disp.ViewObject.Visibility = bool(self.chk_show_pavement_display.isChecked())
+        if hasattr(obj, "ViewObject") and obj.ViewObject is not None:
+            obj.ViewObject.Visibility = bool(self.chk_show_preview_wire.isChecked())
+        self._style_typical_preview_display(obj)
+        return rows, pav_rows
+
+    def _selected_component_preview_index(self):
+        row = int(self.table.currentRow())
+        if row < 0:
+            row = int(self._active_component_row or -1)
+        return int(row)
+
+    def _refresh_preview(self):
+        if self._loading or self.doc is None:
             return
         try:
+            self._remember_component_selection()
+            self._remember_pavement_selection()
             obj = self._ensure_target()
-            rows = self._read_rows()
-            pav_rows = self._read_pavement_rows()
             pav_disp = self._ensure_pavement_display(obj)
-            obj.ComponentIds = [str(r.get("Id", "") or "") for r in rows]
-            obj.ComponentTypes = [str(r.get("Type", "") or "") for r in rows]
-            obj.ComponentSides = [str(r.get("Side", "") or "") for r in rows]
-            obj.ComponentWidths = [float(r.get("Width", 0.0) or 0.0) for r in rows]
-            obj.ComponentCrossSlopes = [float(r.get("CrossSlopePct", 0.0) or 0.0) for r in rows]
-            obj.ComponentHeights = [float(r.get("Height", 0.0) or 0.0) for r in rows]
-            obj.ComponentExtraWidths = [float(r.get("ExtraWidth", 0.0) or 0.0) for r in rows]
-            obj.ComponentBackSlopes = [float(r.get("BackSlopePct", 0.0) or 0.0) for r in rows]
-            obj.ComponentOffsets = [float(r.get("Offset", 0.0) or 0.0) for r in rows]
-            obj.ComponentOrders = [int(r.get("Order", 0) or 0) for r in rows]
-            obj.ComponentEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in rows]
-            obj.PavementLayerIds = [str(r.get("Id", "") or "") for r in pav_rows]
-            obj.PavementLayerTypes = [str(r.get("Type", "") or "") for r in pav_rows]
-            obj.PavementLayerThicknesses = [float(r.get("Thickness", 0.0) or 0.0) for r in pav_rows]
-            obj.PavementLayerEnabled = [1 if bool(r.get("Enabled", True)) else 0 for r in pav_rows]
+            sel_disp = self._ensure_selection_display(obj)
+            rows, pav_rows = self._sync_panel_to_typical_section(obj, pav_disp=pav_disp)
+            obj.PreviewSelectedComponentIndex = -1
+            if sel_disp is not None:
+                sel_disp.SourceTypicalSection = obj
+                sel_disp.SelectedComponentIndex = self._selected_component_preview_index()
+                self._style_selection_display(sel_disp)
             if pav_disp is not None:
-                pav_disp.SourceTypicalSection = obj
                 pav_disp.touch()
+            if sel_disp is not None:
+                sel_disp.touch()
             obj.touch()
             self.doc.recompute()
             prj = find_project(self.doc)
@@ -1197,6 +1479,45 @@ class TypicalSectionEditorTaskPanel:
                 extras = [obj]
                 if pav_disp is not None:
                     extras.append(pav_disp)
+                if sel_disp is not None:
+                    extras.append(sel_disp)
+                link_project(prj, links={"TypicalSectionTemplate": obj}, adopt_extra=extras)
+            self._templates = _find_typical_section_templates(self.doc)
+            self._fill_targets(selected=obj)
+            self._restore_component_selection()
+            self._restore_pavement_selection()
+            self.lbl_status.setText(
+                f"Preview updated: {len(rows)} components, {len(pav_rows)} pavement layers"
+            )
+            self._update_summary()
+        except Exception as ex:
+            self.lbl_status.setText(f"Preview failed: {ex}")
+
+    def _apply(self):
+        if self.doc is None:
+            QtWidgets.QMessageBox.warning(None, "Typical Section", "No active document.")
+            return
+        try:
+            obj = self._ensure_target()
+            pav_disp = self._ensure_pavement_display(obj)
+            sel_disp = self._find_selection_display(obj)
+            rows, pav_rows = self._sync_panel_to_typical_section(obj, pav_disp=pav_disp)
+            obj.PreviewSelectedComponentIndex = -1
+            if pav_disp is not None:
+                pav_disp.touch()
+            if sel_disp is not None:
+                sel_disp.SelectedComponentIndex = -1
+                self._style_selection_display(sel_disp)
+                sel_disp.touch()
+            obj.touch()
+            self.doc.recompute()
+            prj = find_project(self.doc)
+            if prj is not None:
+                extras = [obj]
+                if pav_disp is not None:
+                    extras.append(pav_disp)
+                if sel_disp is not None:
+                    extras.append(sel_disp)
                 link_project(prj, links={"TypicalSectionTemplate": obj}, adopt_extra=extras)
             self._refresh_context()
             self._fill_targets(selected=obj)
