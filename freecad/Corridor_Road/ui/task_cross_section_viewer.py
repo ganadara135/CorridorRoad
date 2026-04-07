@@ -462,6 +462,18 @@ class CrossSectionViewerTaskPanel:
         return str(mapping.get(role, role.title() if role else "Comp"))
 
     @staticmethod
+    def _component_short_visual_label(seg):
+        typ = str(seg.get("type", "") or "").strip().lower()
+        shape = str(seg.get("shape", "") or "").strip().lower()
+        base = CrossSectionViewerTaskPanel._short_component_name(typ)
+        if typ == "ditch":
+            if shape == "u":
+                return "Ditch-U"
+            if shape == "trapezoid":
+                return "Ditch-Trap"
+        return base
+
+    @staticmethod
     def _component_label_priority(role: str):
         role = str(role or "").strip().lower()
         mapping = {
@@ -602,6 +614,7 @@ class CrossSectionViewerTaskPanel:
                     "order": int(float(row.get("order", 0) or 0)),
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
+                    "shape": str(row.get("shape", "") or "").strip().lower() or "-",
                     "label": str(row.get("label", "") or "").strip(),
                     "scope": str(row.get("scope", "") or "").strip().lower(),
                     "source": str(row.get("source", "") or "").strip(),
@@ -644,6 +657,7 @@ class CrossSectionViewerTaskPanel:
                     "order": int(float(row.get("order", 0) or 0)),
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
+                    "shape": str(row.get("shape", "") or "").strip().lower() or "-",
                     "scope": str(row.get("scope", "") or "").strip().lower(),
                 }
             )
@@ -666,6 +680,7 @@ class CrossSectionViewerTaskPanel:
                     "order": int(float(row.get("order", 0) or 0)),
                     "id": str(row.get("id", "") or "").strip() or "-",
                     "type": str(row.get("type", "") or "").strip().lower() or "-",
+                    "shape": str(row.get("shape", "") or "").strip().lower() or "-",
                     "scope": str(row.get("scope", "") or "").strip().lower(),
                 }
             )
@@ -705,6 +720,7 @@ class CrossSectionViewerTaskPanel:
     def _component_full_label(seg):
         side = str(seg.get("side", "") or "").strip().lower()
         typ = str(seg.get("type", "") or "").strip().lower()
+        shape = str(seg.get("shape", "") or "").strip().lower()
         side_txt = "L" if side == "left" else ("R" if side == "right" else "")
         name = {
             "lane": "Lane",
@@ -722,14 +738,21 @@ class CrossSectionViewerTaskPanel:
             "bike_lane": "Bike Lane",
             "green_strip": "Green Strip",
         }.get(typ, typ.title() if typ else "Component")
+        if typ == "ditch" and shape not in ("", "-", "v"):
+            shape_txt = "U" if shape == "u" else ("Trapezoid" if shape == "trapezoid" else shape.title())
+            name = f"{name} ({shape_txt})"
         return f"{side_txt} {name}".strip()
 
     @staticmethod
     def _component_visual_label(seg):
         explicit = str(seg.get("label", "") or seg.get("name", "") or "").strip()
+        typ = str(seg.get("type", "") or "").strip().lower()
+        shape = str(seg.get("shape", "") or "").strip().lower()
+        if typ == "ditch" and shape not in ("", "-", "v"):
+            base = explicit or "ditch"
+            return f"{base}({shape})"
         if explicit:
             return explicit
-        typ = str(seg.get("type", "") or "").strip().lower()
         if typ:
             return typ
         return "Component"
@@ -1213,7 +1236,7 @@ class CrossSectionViewerTaskPanel:
             if scope == "side_slope":
                 priority = max(24, priority - 18)
             full_name = CrossSectionViewerTaskPanel._component_visual_label(seg)
-            short_name = CrossSectionViewerTaskPanel._short_component_name(typ)
+            short_name = CrossSectionViewerTaskPanel._component_short_visual_label(seg)
             full_text = str(full_name or short_name or typ.title() or "Comp")
             short_text = str(short_name or full_text)
             span = max(0.0, float(seg.get("span", 0.0) or 0.0))

@@ -131,10 +131,10 @@ def run():
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
 
         expected_component_rows = [
-            "component|id=LANE-L|type=lane|side=left|width=3.500|crossSlopePct=2.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=10",
-            "component|id=CURB-L|type=curb|side=left|width=0.180|crossSlopePct=0.000|height=0.150|extraWidth=0.060|backSlopePct=1.000|offset=0.000|order=20",
-            "component|id=LANE-R|type=lane|side=right|width=3.500|crossSlopePct=2.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=10",
-            "component|id=SHL-R|type=shoulder|side=right|width=1.500|crossSlopePct=4.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=20",
+            "component|id=LANE-L|type=lane|shape=-|side=left|width=3.500|crossSlopePct=2.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=10",
+            "component|id=CURB-L|type=curb|shape=-|side=left|width=0.180|crossSlopePct=0.000|height=0.150|extraWidth=0.060|backSlopePct=1.000|offset=0.000|order=20",
+            "component|id=LANE-R|type=lane|shape=-|side=right|width=3.500|crossSlopePct=2.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=10",
+            "component|id=SHL-R|type=shoulder|shape=-|side=right|width=1.500|crossSlopePct=4.000|height=0.000|extraWidth=0.000|backSlopePct=0.000|offset=0.000|order=20",
         ]
         expected_pavement_rows = [
             "pavement|id=SURF|type=surface|thickness=0.050",

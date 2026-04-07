@@ -93,6 +93,12 @@ Practical debugging order:
   - `Use Selected Section` and `Refresh Context` on the row directly below `Section Set`
   - `Station` selector at the bottom of the `Source` group
   - no user-facing `Show labels` toggle
+- `Typical Section` editor currently keeps:
+  - `Shape` active only on `ditch` rows; non-ditch rows keep it blank and disabled
+  - manual 3D preview via `Refresh Preview`; row edits do not auto-preview
+  - full preview wire visible together with `SelectedComponentPreview` for the selected component row
+  - pavement preview/report object label as `PavementDisplay`
+  - click-locked component-row activation; hover should not change the active row
 
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`

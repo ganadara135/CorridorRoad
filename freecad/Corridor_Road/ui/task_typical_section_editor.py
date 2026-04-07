@@ -10,6 +10,7 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
+    ALLOWED_DITCH_SHAPES,
     ALLOWED_COMPONENT_TYPES,
     ALLOWED_PAVEMENT_LAYER_TYPES,
     TypicalSectionSelectionDisplay,
@@ -28,6 +29,7 @@ from freecad.Corridor_Road.objects.project_links import link_project
 COL_HEADERS = [
     "Id",
     "Type",
+    "Shape",
     "Side",
     "Width",
     "CrossSlopePct",
@@ -56,7 +58,7 @@ COMPONENT_TYPE_HINTS = {
     "green_strip": {"row": "Green strip or planted verge. Width and CrossSlopePct define the strip.", "highlight": "slope"},
     "gutter": {"row": "Gutter/drain strip. Width and CrossSlopePct control the shallow drainage break.", "highlight": "slope"},
     "curb": {"row": "Curb step. Height is curb rise; Width is curb top width; ExtraWidth is curb face/gutter run; BackSlopePct is top/back slope.", "highlight": "height"},
-    "ditch": {"row": "Ditch profile. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope.", "highlight": "height"},
+    "ditch": {"row": "Ditch profile. Shape chooses v, u, or trapezoid. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope.", "highlight": "height"},
     "berm": {"row": "Berm/platform. Width is bench width; CrossSlopePct is bench slope; ExtraWidth is outer taper width; BackSlopePct is taper slope.", "highlight": "width"},
 }
 
@@ -94,12 +96,12 @@ TYPICAL_SECTION_PRESETS = {
             {"Id": "LANE-L", "Type": "lane", "Side": "left", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
             {"Id": "SHL-L", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
             {"Id": "GUT-L", "Type": "gutter", "Side": "left", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "Offset": 0.000, "Order": 30, "Enabled": True},
-            {"Id": "DITCH-L", "Type": "ditch", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 40, "Enabled": True},
+            {"Id": "DITCH-L", "Type": "ditch", "Shape": "trapezoid", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 40, "Enabled": True},
             {"Id": "BERM-L", "Type": "berm", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 1.000, "BackSlopePct": 8.0, "Offset": 0.000, "Order": 50, "Enabled": True},
             {"Id": "LANE-R", "Type": "lane", "Side": "right", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
             {"Id": "SHL-R", "Type": "shoulder", "Side": "right", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
             {"Id": "GUT-R", "Type": "gutter", "Side": "right", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "Offset": 0.000, "Order": 30, "Enabled": True},
-            {"Id": "DITCH-R", "Type": "ditch", "Side": "right", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 40, "Enabled": True},
+            {"Id": "DITCH-R", "Type": "ditch", "Shape": "trapezoid", "Side": "right", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 40, "Enabled": True},
             {"Id": "BERM-R", "Type": "berm", "Side": "right", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 1.000, "BackSlopePct": 8.0, "Offset": 0.000, "Order": 50, "Enabled": True},
         ],
         "pavement": [],
@@ -121,11 +123,11 @@ TYPICAL_SECTION_PRESETS = {
         "components": [
             {"Id": "LANE-L", "Type": "lane", "Side": "left", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
             {"Id": "SHL-L", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
-            {"Id": "DITCH-L", "Type": "ditch", "Side": "left", "Width": 3.000, "CrossSlopePct": 2.0, "Height": 1.100, "ExtraWidth": 1.000, "BackSlopePct": -12.0, "Offset": 0.000, "Order": 30, "Enabled": True},
+            {"Id": "DITCH-L", "Type": "ditch", "Shape": "trapezoid", "Side": "left", "Width": 3.000, "CrossSlopePct": 2.0, "Height": 1.100, "ExtraWidth": 1.000, "BackSlopePct": -12.0, "Offset": 0.000, "Order": 30, "Enabled": True},
             {"Id": "BERM-L", "Type": "berm", "Side": "left", "Width": 1.200, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.800, "BackSlopePct": 6.0, "Offset": 0.000, "Order": 40, "Enabled": True},
             {"Id": "LANE-R", "Type": "lane", "Side": "right", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
             {"Id": "SHL-R", "Type": "shoulder", "Side": "right", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
-            {"Id": "DITCH-R", "Type": "ditch", "Side": "right", "Width": 3.000, "CrossSlopePct": 2.0, "Height": 1.100, "ExtraWidth": 1.000, "BackSlopePct": -12.0, "Offset": 0.000, "Order": 30, "Enabled": True},
+            {"Id": "DITCH-R", "Type": "ditch", "Shape": "trapezoid", "Side": "right", "Width": 3.000, "CrossSlopePct": 2.0, "Height": 1.100, "ExtraWidth": 1.000, "BackSlopePct": -12.0, "Offset": 0.000, "Order": 30, "Enabled": True},
             {"Id": "BERM-R", "Type": "berm", "Side": "right", "Width": 1.200, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.800, "BackSlopePct": 6.0, "Offset": 0.000, "Order": 40, "Enabled": True},
         ],
         "pavement": [],
@@ -137,7 +139,7 @@ QUICK_COMPONENT_TEMPLATES = {
     "lane": {"Id": "LANE", "Type": "lane", "Side": "left", "Width": 3.500, "CrossSlopePct": 2.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
     "shoulder": {"Id": "SHL", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 20, "Enabled": True},
     "curb": {"Id": "CURB", "Type": "curb", "Side": "left", "Width": 0.180, "CrossSlopePct": 0.0, "Height": 0.150, "ExtraWidth": 0.050, "BackSlopePct": 1.000, "Offset": 0.000, "Order": 40, "Enabled": True},
-    "ditch": {"Id": "DITCH", "Type": "ditch", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.000, "Offset": 0.000, "Order": 40, "Enabled": True},
+    "ditch": {"Id": "DITCH", "Type": "ditch", "Shape": "trapezoid", "Side": "left", "Width": 2.000, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.700, "BackSlopePct": -10.000, "Offset": 0.000, "Order": 40, "Enabled": True},
     "berm": {"Id": "BERM", "Type": "berm", "Side": "left", "Width": 1.500, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 1.000, "BackSlopePct": 8.000, "Offset": 0.000, "Order": 50, "Enabled": True},
 }
 
@@ -145,10 +147,10 @@ QUICK_COMPONENT_TEMPLATES = {
 QUICK_COMPONENT_BUNDLES = {
     "rural_ditch_pair": [
         {"Id": "GUT-L", "Type": "gutter", "Side": "left", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
-        {"Id": "DITCH-L", "Type": "ditch", "Side": "left", "Width": 2.400, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.800, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 20, "Enabled": True},
+        {"Id": "DITCH-L", "Type": "ditch", "Shape": "trapezoid", "Side": "left", "Width": 2.400, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.800, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 20, "Enabled": True},
         {"Id": "BERM-L", "Type": "berm", "Side": "left", "Width": 1.200, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.800, "BackSlopePct": 6.0, "Offset": 0.000, "Order": 30, "Enabled": True},
         {"Id": "GUT-R", "Type": "gutter", "Side": "right", "Width": 0.800, "CrossSlopePct": 6.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
-        {"Id": "DITCH-R", "Type": "ditch", "Side": "right", "Width": 2.400, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.800, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 20, "Enabled": True},
+        {"Id": "DITCH-R", "Type": "ditch", "Shape": "trapezoid", "Side": "right", "Width": 2.400, "CrossSlopePct": 2.0, "Height": 1.000, "ExtraWidth": 0.800, "BackSlopePct": -10.0, "Offset": 0.000, "Order": 20, "Enabled": True},
         {"Id": "BERM-R", "Type": "berm", "Side": "right", "Width": 1.200, "CrossSlopePct": 0.0, "Height": 0.000, "ExtraWidth": 0.800, "BackSlopePct": 6.0, "Offset": 0.000, "Order": 30, "Enabled": True},
     ],
     "urban_edge_pair": [
@@ -182,6 +184,20 @@ PAVEMENT_PRESETS = {
         {"Id": "SUBGRADE", "Type": "subgrade", "Thickness": 0.150, "Enabled": True},
     ],
 }
+
+
+COMP_COL_ID = 0
+COMP_COL_TYPE = 1
+COMP_COL_SHAPE = 2
+COMP_COL_SIDE = 3
+COMP_COL_WIDTH = 4
+COMP_COL_SLOPE = 5
+COMP_COL_HEIGHT = 6
+COMP_COL_EXTRA = 7
+COMP_COL_BACK_SLOPE = 8
+COMP_COL_OFFSET = 9
+COMP_COL_ORDER = 10
+COMP_COL_ENABLED = 11
 
 
 def _find_typical_section_templates(doc):
@@ -527,17 +543,18 @@ class TypicalSectionEditorTaskPanel:
             self.table.setRowCount(0)
             self._set_rows(max(4, len(rows)))
             for i, row in enumerate(rows):
-                self._set_cell_text(i, 0, row.get("Id", ""))
-                self._set_cell_text(i, 1, row.get("Type", ""))
-                self._set_cell_text(i, 2, row.get("Side", ""))
-                self._set_cell_text(i, 3, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 4, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 5, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 6, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 7, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 8, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 9, f"{int(row.get('Order', 0) or 0)}")
-                self._set_cell_text(i, 10, "true" if bool(row.get("Enabled", True)) else "false")
+                self._set_cell_text(i, COMP_COL_ID, row.get("Id", ""))
+                self._set_cell_text(i, COMP_COL_TYPE, row.get("Type", ""))
+                self._set_cell_text(i, COMP_COL_SHAPE, row.get("Shape", ""))
+                self._set_cell_text(i, COMP_COL_SIDE, row.get("Side", ""))
+                self._set_cell_text(i, COMP_COL_WIDTH, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_SLOPE, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_HEIGHT, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_EXTRA, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_BACK_SLOPE, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_OFFSET, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_ORDER, f"{int(row.get('Order', 0) or 0)}")
+                self._set_cell_text(i, COMP_COL_ENABLED, "true" if bool(row.get("Enabled", True)) else "false")
             self.pav_table.setRowCount(0)
             self._set_pavement_rows(max(4, len(pav_rows)))
             for i, row in enumerate(pav_rows):
@@ -566,9 +583,10 @@ class TypicalSectionEditorTaskPanel:
 
     def _ensure_combo_cells(self, row):
         for col, items in (
-            (1, [""] + list(ALLOWED_COMPONENT_TYPES)),
-            (2, [""] + list(ALLOWED_COMPONENT_SIDES)),
-            (10, ["true", "false"]),
+            (COMP_COL_TYPE, [""] + list(ALLOWED_COMPONENT_TYPES)),
+            (COMP_COL_SHAPE, list(ALLOWED_DITCH_SHAPES)),
+            (COMP_COL_SIDE, [""] + list(ALLOWED_COMPONENT_SIDES)),
+            (COMP_COL_ENABLED, ["true", "false"]),
         ):
             cmb = self.table.cellWidget(row, col)
             if cmb is None:
@@ -582,6 +600,28 @@ class TypicalSectionEditorTaskPanel:
                 self.table.setCellWidget(row, col, cmb)
             else:
                 cmb.setProperty("table_row", row)
+        self._sync_shape_combo_for_row(row)
+
+    def _sync_shape_combo_for_row(self, row):
+        cmb = self.table.cellWidget(row, COMP_COL_SHAPE)
+        if cmb is None:
+            return
+        typ = str(self._get_cell_text(row, COMP_COL_TYPE) or "").strip().lower()
+        is_ditch = typ == "ditch"
+        self._loading = True
+        try:
+            if not is_ditch:
+                self._set_combo_value(cmb, "")
+            cmb.setEnabled(is_ditch)
+            cmb.setFocusPolicy(QtCore.Qt.NoFocus)
+            cmb.setMouseTracking(False)
+            cmb.setAttribute(QtCore.Qt.WA_Hover, False)
+            if is_ditch:
+                cmb.setToolTip("Ditch shape: v, u, or trapezoid.")
+            else:
+                cmb.setToolTip("Shape is only used for ditch rows.")
+        finally:
+            self._loading = False
 
     def _set_pavement_rows(self, n):
         self._loading = True
@@ -670,7 +710,7 @@ class TypicalSectionEditorTaskPanel:
 
     def _set_cell_text(self, r, c, txt):
         cmb = self.table.cellWidget(r, c)
-        if cmb is not None and c in (1, 2, 10):
+        if cmb is not None and c in (COMP_COL_TYPE, COMP_COL_SHAPE, COMP_COL_SIDE, COMP_COL_ENABLED):
             self._set_combo_value(cmb, str(txt or ""))
             return
         it = self.table.item(r, c)
@@ -692,7 +732,7 @@ class TypicalSectionEditorTaskPanel:
 
     def _get_cell_text(self, r, c):
         cmb = self.table.cellWidget(r, c)
-        if cmb is not None and c in (1, 2, 10):
+        if cmb is not None and c in (COMP_COL_TYPE, COMP_COL_SHAPE, COMP_COL_SIDE, COMP_COL_ENABLED):
             return str(cmb.currentText() or "")
         it = self.table.item(r, c)
         return (it.text() if it else "") or ""
@@ -724,22 +764,26 @@ class TypicalSectionEditorTaskPanel:
             row = [self._get_cell_text(r, c).strip() for c in range(len(COL_HEADERS))]
             if not any(row):
                 continue
-            typ = str(row[1] or "").strip().lower()
+            typ = str(row[COMP_COL_TYPE] or "").strip().lower()
             if typ == "bench":
                 typ = "berm"
+            shape = str(row[COMP_COL_SHAPE] or "").strip().lower()
+            if typ != "ditch":
+                shape = ""
             rows.append(
                 {
-                    "Id": row[0] or f"COMP-{r+1:02d}",
+                    "Id": row[COMP_COL_ID] or f"COMP-{r+1:02d}",
                     "Type": typ,
-                    "Side": row[2],
-                    "Width": self._parse_float(row[3]),
-                    "CrossSlopePct": self._parse_float(row[4]),
-                    "Height": self._parse_float(row[5]),
-                    "ExtraWidth": self._parse_float(row[6]),
-                    "BackSlopePct": self._parse_float(row[7]),
-                    "Offset": self._parse_float(row[8]),
-                    "Order": self._parse_int(row[9]),
-                    "Enabled": str(row[10] or "true").strip().lower() not in ("0", "false", "no", "off"),
+                    "Shape": shape,
+                    "Side": row[COMP_COL_SIDE],
+                    "Width": self._parse_float(row[COMP_COL_WIDTH]),
+                    "CrossSlopePct": self._parse_float(row[COMP_COL_SLOPE]),
+                    "Height": self._parse_float(row[COMP_COL_HEIGHT]),
+                    "ExtraWidth": self._parse_float(row[COMP_COL_EXTRA]),
+                    "BackSlopePct": self._parse_float(row[COMP_COL_BACK_SLOPE]),
+                    "Offset": self._parse_float(row[COMP_COL_OFFSET]),
+                    "Order": self._parse_int(row[COMP_COL_ORDER]),
+                    "Enabled": str(row[COMP_COL_ENABLED] or "true").strip().lower() not in ("0", "false", "no", "off"),
                 }
             )
         return rows
@@ -766,17 +810,18 @@ class TypicalSectionEditorTaskPanel:
             self.table.setRowCount(0)
             self._set_rows(max(4, len(rows)))
             for i, row in enumerate(rows):
-                self._set_cell_text(i, 0, row.get("Id", ""))
-                self._set_cell_text(i, 1, row.get("Type", ""))
-                self._set_cell_text(i, 2, row.get("Side", ""))
-                self._set_cell_text(i, 3, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 4, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 5, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 6, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 7, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 8, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, 9, f"{int(row.get('Order', 0) or 0)}")
-                self._set_cell_text(i, 10, "true" if bool(row.get("Enabled", True)) else "false")
+                self._set_cell_text(i, COMP_COL_ID, row.get("Id", ""))
+                self._set_cell_text(i, COMP_COL_TYPE, row.get("Type", ""))
+                self._set_cell_text(i, COMP_COL_SHAPE, row.get("Shape", ""))
+                self._set_cell_text(i, COMP_COL_SIDE, row.get("Side", ""))
+                self._set_cell_text(i, COMP_COL_WIDTH, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_SLOPE, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_HEIGHT, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_EXTRA, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_BACK_SLOPE, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_OFFSET, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_ORDER, f"{int(row.get('Order', 0) or 0)}")
+                self._set_cell_text(i, COMP_COL_ENABLED, "true" if bool(row.get("Enabled", True)) else "false")
         finally:
             self._loading = False
         self._restore_component_selection()
@@ -1045,6 +1090,7 @@ class TypicalSectionEditorTaskPanel:
                         {
                             "Id": row.get("Id", ""),
                             "Type": row.get("Type", ""),
+                            "Shape": row.get("Shape", ""),
                             "Side": row.get("Side", ""),
                             "Width": f"{float(row.get('Width', 0.0) or 0.0):.3f}",
                             "CrossSlopePct": f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}",
@@ -1146,6 +1192,7 @@ class TypicalSectionEditorTaskPanel:
                         {
                             "Id": str(self._find_col(row_dict, ("Id", "ComponentId"), f"COMP-{i:02d}") or f"COMP-{i:02d}").strip(),
                             "Type": str(self._find_col(row_dict, ("Type", "ComponentType"), "lane") or "lane").strip().lower(),
+                            "Shape": str(self._find_col(row_dict, ("Shape", "ShapeMode"), "") or "").strip().lower(),
                             "Side": str(self._find_col(row_dict, ("Side",), "left") or "left").strip().lower(),
                             "Width": self._parse_float(self._find_col(row_dict, ("Width",), 0.0)),
                             "CrossSlopePct": self._parse_float(self._find_col(row_dict, ("CrossSlopePct", "CrossSlope", "SlopePct"), 0.0)),
@@ -1256,26 +1303,35 @@ class TypicalSectionEditorTaskPanel:
         base_brush = self.table.palette().brush(QtGui.QPalette.Base)
         text_brush = self.table.palette().brush(QtGui.QPalette.Text)
         for row in range(self.table.rowCount()):
-            typ = str(self._get_cell_text(row, 1) or "").strip().lower()
+            self._sync_shape_combo_for_row(row)
+            typ = str(self._get_cell_text(row, COMP_COL_TYPE) or "").strip().lower()
             hint = COMPONENT_TYPE_HINTS.get(typ, {})
-            row_tip = hint.get("row", "Set component Type, Side, Width, CrossSlopePct, Height, ExtraWidth, BackSlopePct, Offset, Order, Enabled.")
+            row_tip = hint.get("row", "Set component Type, Shape, Side, Width, CrossSlopePct, Height, ExtraWidth, BackSlopePct, Offset, Order, Enabled.")
             highlight = hint.get("highlight", "base")
             for col in range(len(COL_HEADERS)):
                 it = self.table.item(row, col)
                 if it is not None:
                     it.setToolTip(row_tip)
-            for col in (1, 2, 10):
+            for col in (COMP_COL_TYPE, COMP_COL_SHAPE, COMP_COL_SIDE, COMP_COL_ENABLED):
                 cmb = self.table.cellWidget(row, col)
                 if cmb is not None:
                     cmb.setToolTip(row_tip)
-            for col, mode in ((3, "width"), (4, "slope"), (5, "height"), (6, "width"), (7, "slope"), (8, "base"), (9, "base")):
+            for col, mode in (
+                (COMP_COL_WIDTH, "width"),
+                (COMP_COL_SLOPE, "slope"),
+                (COMP_COL_HEIGHT, "height"),
+                (COMP_COL_EXTRA, "width"),
+                (COMP_COL_BACK_SLOPE, "slope"),
+                (COMP_COL_OFFSET, "base"),
+                (COMP_COL_ORDER, "base"),
+            ):
                 it = self.table.item(row, col)
                 if it is None:
                     continue
                 brush_key = mode
-                if col == 4:
+                if col == COMP_COL_SLOPE:
                     brush_key = "slope" if highlight == "slope" else "base"
-                elif col == 5:
+                elif col == COMP_COL_HEIGHT:
                     brush_key = "height" if highlight == "height" else "base"
                 it.setForeground(text_brush)
                 if brush_key == "base":
@@ -1313,6 +1369,7 @@ class TypicalSectionEditorTaskPanel:
             self.table.selectRow(row)
         except Exception:
             pass
+        self._sync_shape_combo_for_row(int(self._active_component_row or 0))
         self._refresh_component_hints()
         self._update_summary()
         self._schedule_preview()
@@ -1425,6 +1482,7 @@ class TypicalSectionEditorTaskPanel:
         obj.ShowPreviewWire = bool(self.chk_show_preview_wire.isChecked())
         obj.ComponentIds = [str(r.get("Id", "") or "") for r in rows]
         obj.ComponentTypes = [str(r.get("Type", "") or "") for r in rows]
+        obj.ComponentShapes = [str(r.get("Shape", "") or "") for r in rows]
         obj.ComponentSides = [str(r.get("Side", "") or "") for r in rows]
         obj.ComponentWidths = [float(r.get("Width", 0.0) or 0.0) for r in rows]
         obj.ComponentCrossSlopes = [float(r.get("CrossSlopePct", 0.0) or 0.0) for r in rows]

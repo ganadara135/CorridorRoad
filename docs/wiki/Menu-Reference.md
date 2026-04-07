@@ -571,13 +571,15 @@ When to override manually:
 
 | Option | Meaning | How to use it |
 |---|---|---|
-| `Add Lane` / `Add Shoulder` / `Add Curb` / `Add Ditch` / `Add Berm` | Inserts a pre-filled component row with sensible defaults. | Fastest way to build a section without starting from a blank row. |
+| `Add Rural Ditch Pair` | Inserts a left/right roadside starter using gutter + ditch + berm rows. | Best when you want a quick practical ditch edge on both sides. |
+| `Add Urban Edge Pair` | Inserts a left/right roadside starter using curb + sidewalk + green-strip style rows. | Best when you want a quick urban edge starter on both sides. |
 | `Add Row` | Adds a blank component row. | Use for uncommon component combinations or detailed manual input. |
 | `Remove Row` | Removes the selected component row. | If no row is selected, remove the last row. |
 | `Move Up` / `Move Down` | Reorders the selected component row in the table. | Useful when the visual build order should change without retyping `Order`. |
 | `Mirror Left -> Right` | Copies the selected left-side row to the right side. | Best for lane/shoulder/gutter/ditch/berm rows when building symmetric sections. |
 | `Mirror Right -> Left` | Copies the selected right-side row to the left side. | Use for the reverse direction when the right side is already defined. |
 | `Sort by Order` | Sorts rows by `Order`, then side/id. | Use after large edits or imports to restore predictable build order. |
+| `Refresh Preview` | Rebuilds the current 3D preview from the table state. | Use after editing rows when you want the wire preview updated in 3D view. |
 | `Add Layer` / `Remove Layer` | Adds or removes pavement-layer rows. | Use after setting up the top profile when pavement data should also be tracked. |
 
 ### Supported CSV Columns
@@ -586,6 +588,7 @@ When to override manually:
 |---|---|
 | `Id` | Component identifier |
 | `Type` | `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `curb`, `green_strip`, `gutter`, `ditch`, `berm` |
+| `Shape` | Optional shape mode for `ditch` rows only. Current supported values are `v`, `u`, and `trapezoid`. |
 | `Side` | `left`, `right`, `center`, `both` |
 | `Width` | Component width |
 | `CrossSlopePct` | Cross slope (%) |
@@ -599,6 +602,9 @@ When to override manually:
 ### Sample CSV Files
 
 - `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_ditch_trapezoid.csv`
+- `tests/samples/typical_section_ditch_u.csv`
+- `tests/samples/typical_section_ditch_v.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
 - `tests/samples/typical_section_pavement_basic.csv`
@@ -607,13 +613,18 @@ When to override manually:
 
 1. `curb` currently creates a vertical step plus top width.
 2. `curb` also uses `ExtraWidth` and `BackSlopePct` for face/top shaping.
-3. `ditch` now uses `ExtraWidth` for flat-bottom width and `BackSlopePct` for the outer slope.
-4. `berm` now uses `ExtraWidth` and `BackSlopePct` for outer taper behavior.
-5. Mid-slope earthwork benching is now handled in `Generate Sections` side-slope controls, not as a `Typical Section` top-profile component type.
-6. Pavement layers are currently data-only and tracked as total thickness/result metadata.
-7. The panel now includes a `Summary` group that reports current component count, top width, edge types, and pavement total thickness before `Apply`.
-8. Type-aware tooltips and cell tinting are used to show whether `CrossSlopePct` or `Height` is the more important field for each component type.
-7. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
+3. `ditch` now supports `Shape=v`, `Shape=u`, and `Shape=trapezoid`.
+4. If `ditch Shape` is blank, runtime infers `v` when `ExtraWidth <= 0` and `trapezoid` when `ExtraWidth > 0`.
+5. `ditch Shape=u` is currently a stable polyline approximation and ignores `ExtraWidth` / `BackSlopePct`.
+6. `Shape` is only interactive on `ditch` rows; non-ditch rows keep it blank and disabled.
+7. `Sections` and `Cross Section Viewer` preserve ditch `Shape` on station-local component segments, so focused ditch modes stay readable downstream.
+8. `berm` now uses `ExtraWidth` and `BackSlopePct` for outer taper behavior.
+9. Mid-slope earthwork benching is now handled in `Generate Sections` side-slope controls, not as a `Typical Section` top-profile component type.
+10. Pavement layers are tracked separately, and the preview/report object label is `PavementDisplay`.
+11. `Refresh Preview` now updates 3D view manually; row edits do not auto-preview.
+12. `Refresh Preview` keeps the full typical-section wire visible and overlays the selected row as `SelectedComponentPreview`.
+13. Table selection is click-locked; hover should not change the active component row.
+14. To consume the template in actual section generation, use `Generate Sections` with `Use Typical Section Template`.
 
 ## Suggested Reading Order
 1. Start with [Quick Start](Quick-Start).
