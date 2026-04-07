@@ -174,6 +174,9 @@ def run():
         "structure_utm_realistic_hilly_mixed.csv",
         "structure_utm_realistic_hilly_mixed_profile_points.csv",
         "typical_section_basic_rural.csv",
+        "typical_section_ditch_trapezoid.csv",
+        "typical_section_ditch_u.csv",
+        "typical_section_ditch_v.csv",
         "typical_section_urban_complete_street.csv",
         "typical_section_with_ditch.csv",
         "typical_section_pavement_basic.csv",
@@ -182,6 +185,9 @@ def run():
         _assert(os.path.isfile(os.path.join(samples, name)), f"Missing practical sample file: {name}")
 
     urban_rows = _read_csv_rows(os.path.join(samples, "typical_section_urban_complete_street.csv"))
+    ditch_v_rows = _read_csv_rows(os.path.join(samples, "typical_section_ditch_v.csv"))
+    ditch_trap_rows = _read_csv_rows(os.path.join(samples, "typical_section_ditch_trapezoid.csv"))
+    ditch_u_rows = _read_csv_rows(os.path.join(samples, "typical_section_ditch_u.csv"))
     ditch_rows = _read_csv_rows(os.path.join(samples, "typical_section_with_ditch.csv"))
     pavement_rows = _read_csv_rows(os.path.join(samples, "typical_section_pavement_basic.csv"))
     fg_basic_rows = _read_csv_rows(os.path.join(samples, "profile_fg_manual_import_basic.csv"))
@@ -197,6 +203,9 @@ def run():
     _assert({"median", "bike_lane", "curb", "sidewalk", "green_strip"}.issubset(urban_types), "Urban sample is missing expected component types")
     ditch_types = {str(r.get("Type", "") or "").strip().lower() for r in ditch_rows}
     _assert({"ditch", "berm"}.issubset(ditch_types), "Ditch sample is missing ditch/berm components")
+    _assert(any(str(r.get("Type", "") or "").strip().lower() == "ditch" and str(r.get("Shape", "") or "").strip().lower() == "v" for r in ditch_v_rows), "V-ditch sample should contain Shape=v")
+    _assert(any(str(r.get("Type", "") or "").strip().lower() == "ditch" and str(r.get("Shape", "") or "").strip().lower() == "trapezoid" for r in ditch_trap_rows), "Trapezoid-ditch sample should contain Shape=trapezoid")
+    _assert(any(str(r.get("Type", "") or "").strip().lower() == "ditch" and str(r.get("Shape", "") or "").strip().lower() == "u" for r in ditch_u_rows), "U-ditch sample should contain Shape=u")
     _assert(sum(_to_float(r, "Thickness") for r in pavement_rows if _to_bool(r, "Enabled", default=True)) > 0.5, "Pavement sample total thickness is unexpectedly small")
     _assert(len(fg_basic_rows) >= 8, "FG basic import sample should have at least 8 rows")
     _assert("Station" in list((fg_basic_rows[0] or {}).keys()), "FG basic import sample should expose Station header")

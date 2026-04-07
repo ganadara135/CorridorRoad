@@ -1,0 +1,9 @@
+Id,Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
+LANE-L,lane,,left,3.500,2.000,0.000,0.000,0.000,0.000,10,true
+SHL-L,shoulder,,left,1.500,4.000,0.000,0.000,0.000,0.000,20,true
+DITCH-L,ditch,trapezoid,left,3.000,2.000,1.100,1.000,-12.000,0.000,30,true
+BERM-L,berm,,left,1.200,0.000,0.000,0.800,6.000,0.000,40,true
+LANE-R,lane,,right,3.500,2.000,0.000,0.000,0.000,0.000,10,true
+SHL-R,shoulder,,right,1.500,4.000,0.000,0.000,0.000,0.000,20,true
+DITCH-R,ditch,trapezoid,right,3.000,2.000,1.100,1.000,-12.000,0.000,30,true
+BERM-R,berm,,right,1.200,0.000,0.000,0.800,6.000,0.000,40,true

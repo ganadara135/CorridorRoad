@@ -220,6 +220,19 @@ Recommended sample files:
 
 ## 3B. Typical Section CSV
 
+Recommended component header:
+`Id,Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled`
+
+`Shape` is currently used by `ditch` rows:
+- `v`
+- `u`
+- `trapezoid`
+
+Backward compatibility:
+- if a ditch row omits `Shape`, runtime infers `v` when `ExtraWidth <= 0`
+- if a ditch row omits `Shape`, runtime infers `trapezoid` when `ExtraWidth > 0`
+- `Shape=u` currently builds a polyline-approximated rounded ditch and ignores `ExtraWidth` / `BackSlopePct`
+
 `Typical Section` now supports direct CSV import.
 
 Current workflow:
@@ -231,22 +244,25 @@ Current workflow:
 6. `Apply`
 
 Recommended header:
-`Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled`
+`Id,Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled`
 
 Example:
 ```csv
-Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
-LANE-L,lane,left,3.500,2.0,0.000,0.000,0.000,0.000,10,true
-SHL-L,shoulder,left,1.500,4.0,0.000,0.000,0.000,0.000,20,true
-GUT-L,gutter,left,0.800,6.0,0.000,0.000,0.000,0.000,30,true
-DITCH-L,ditch,left,2.000,2.0,1.000,0.700,-10.000,0.000,40,true
-BERM-L,berm,left,1.500,0.0,0.000,1.000,8.000,0.000,50,true
-LANE-R,lane,right,3.500,2.0,0.000,0.000,0.000,0.000,10,true
-SHL-R,shoulder,right,1.500,4.0,0.000,0.000,0.000,0.000,20,true
+Id,Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
+LANE-L,lane,,left,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-L,shoulder,,left,1.500,4.0,0.000,0.000,0.000,0.000,20,true
+GUT-L,gutter,,left,0.800,6.0,0.000,0.000,0.000,0.000,30,true
+DITCH-L,ditch,trapezoid,left,2.000,2.0,1.000,0.700,-10.000,0.000,40,true
+BERM-L,berm,,left,1.500,0.0,0.000,1.000,8.000,0.000,50,true
+LANE-R,lane,,right,3.500,2.0,0.000,0.000,0.000,0.000,10,true
+SHL-R,shoulder,,right,1.500,4.0,0.000,0.000,0.000,0.000,20,true
 ```
 
 Recommended sample files:
 - `tests/samples/typical_section_basic_rural.csv`
+- `tests/samples/typical_section_ditch_trapezoid.csv`
+- `tests/samples/typical_section_ditch_u.csv`
+- `tests/samples/typical_section_ditch_v.csv`
 - `tests/samples/typical_section_urban_complete_street.csv`
 - `tests/samples/typical_section_with_ditch.csv`
 - `tests/samples/typical_section_pavement_basic.csv`

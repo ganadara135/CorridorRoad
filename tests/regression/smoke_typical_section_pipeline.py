@@ -16,6 +16,7 @@ from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DD
 from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 from freecad.Corridor_Road.objects.obj_typical_section_template import TypicalSectionTemplate
+from freecad.Corridor_Road.ui.task_cross_section_viewer import CrossSectionViewerTaskPanel
 
 
 def _assert(cond, msg):
@@ -93,6 +94,7 @@ def _make_typical(doc, richer=False):
     if richer:
         typ.ComponentIds = ["LANE-L", "DITCH-L", "LANE-R", "BERM-R"]
         typ.ComponentTypes = ["lane", "ditch", "lane", "berm"]
+        typ.ComponentShapes = ["", "trapezoid", "", ""]
         typ.ComponentSides = ["left", "left", "right", "right"]
         typ.ComponentWidths = [3.50, 2.00, 3.50, 1.50]
         typ.ComponentCrossSlopes = [2.0, 4.0, 2.0, 0.0]
@@ -184,6 +186,8 @@ def run():
 
     _assert(str(getattr(typ_rich, "LeftEdgeComponentType", "") or "") == "ditch", "Rich template left edge mismatch")
     _assert(str(getattr(typ_rich, "RightEdgeComponentType", "") or "") == "berm", "Rich template right edge mismatch")
+    rich_component_rows = [str(row or "") for row in list(getattr(typ_rich, "SectionComponentSummaryRows", []) or [])]
+    _assert(any("type=ditch" in row and "shape=trapezoid" in row for row in rich_component_rows), "Rich template should report trapezoid ditch shape")
     _assert(int(getattr(typ_rich, "AdvancedComponentCount", 0) or 0) >= 2, "Rich template should report advanced components")
     _assert(len(list(getattr(typ_rich, "PavementLayerSummaryRows", []) or [])) >= 1, "Rich template pavement report rows missing")
     _assert_basic_pipeline(sec_rich, cor_rich)
@@ -198,6 +202,7 @@ def run():
     rich_segment_rows = [str(row or "") for row in list(getattr(sec_rich, "SectionComponentSegmentRows", []) or [])]
     _assert(any("scope=typical" in row for row in rich_segment_rows), "Rich section should keep typical component segments")
     _assert(any("scope=side_slope" in row for row in rich_segment_rows), "Rich section should also include side-slope component segments")
+    _assert(any("type=ditch" in row and "shape=trapezoid" in row for row in rich_segment_rows), "Rich section component segments should preserve ditch shape")
     parsed_segments = [_parse_row(row) for row in rich_segment_rows]
     station_values = sorted({float(row.get("station", 0.0) or 0.0) for row in parsed_segments if row.get("kind") == "component_segment"})
     for station_value in station_values:
@@ -213,6 +218,13 @@ def run():
         right_slope_start = min(float(row.get("x0", 0.0) or 0.0) for row in right_slope)
         _assert(abs(left_slope_start - left_outer) <= 1e-6, f"Left side-slope should start at the typical outer edge for station {station_value:.3f}")
         _assert(abs(right_slope_start - right_outer) <= 1e-6, f"Right side-slope should start at the typical outer edge for station {station_value:.3f}")
+
+    payload_rich = SectionSet.resolve_viewer_payload(sec_rich, station=50.0)
+    payload_component_rows = list(payload_rich.get("component_rows", []) or [])
+    _assert(any(str(row.get("type", "") or "") == "ditch" and str(row.get("shape", "") or "") == "trapezoid" for row in payload_component_rows), "Viewer payload should preserve ditch shape on component segments")
+    layout_rich = CrossSectionViewerTaskPanel.build_layout_plan(payload_rich)
+    ditch_labels = [str(row.get("text", "") or "") for row in list(layout_rich.get("planned_label_rows", []) or []) if str(row.get("role", "") or "") == "component:ditch"]
+    _assert(any("trap" in txt.lower() or "trapezoid" in txt.lower() for txt in ditch_labels), "Viewer layout should expose trapezoid ditch shape in component labels")
 
     App.closeDocument(doc.Name)
     print("[PASS] Typical-section pipeline smoke test completed.")

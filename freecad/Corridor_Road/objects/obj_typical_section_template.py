@@ -24,6 +24,7 @@ ALLOWED_COMPONENT_TYPES = (
     "berm",
 )
 ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
+ALLOWED_DITCH_SHAPES = ("", "v", "u", "trapezoid")
 ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
 ROADSIDE_ADVANCED_TYPES = ("curb", "ditch", "berm")
 ROADSIDE_LIBRARY_BUNDLES = {
@@ -74,6 +75,7 @@ def _default_component_data(scale: float):
     return {
         "ComponentIds": ["LANE-L", "SHL-L", "LANE-R", "SHL-R"],
         "ComponentTypes": ["lane", "shoulder", "lane", "shoulder"],
+        "ComponentShapes": ["", "", "", ""],
         "ComponentSides": ["left", "left", "right", "right"],
         "ComponentWidths": [3.50 * scale, 1.50 * scale, 3.50 * scale, 1.50 * scale],
         "ComponentCrossSlopes": [2.0, 4.0, 2.0, 4.0],
@@ -91,6 +93,7 @@ def _component_array_specs(scale: float):
     return (
         ("ComponentIds", "App::PropertyStringList", defaults["ComponentIds"], "Ordered component identifiers"),
         ("ComponentTypes", "App::PropertyStringList", defaults["ComponentTypes"], "Component types"),
+        ("ComponentShapes", "App::PropertyStringList", defaults["ComponentShapes"], "Optional component shape modes"),
         ("ComponentSides", "App::PropertyStringList", defaults["ComponentSides"], "Component side assignments"),
         ("ComponentWidths", "App::PropertyFloatList", defaults["ComponentWidths"], "Component widths (m)"),
         ("ComponentCrossSlopes", "App::PropertyFloatList", defaults["ComponentCrossSlopes"], "Cross slopes (%)"),
@@ -278,6 +281,7 @@ def component_rows(obj):
         row = {
             "Id": str(data["ComponentIds"][i] or "").strip() or f"COMP-{i+1:02d}",
             "Type": str(data["ComponentTypes"][i] or "").strip().lower() or "lane",
+            "Shape": str(data["ComponentShapes"][i] or "").strip().lower(),
             "Side": str(data["ComponentSides"][i] or "").strip().lower() or "left",
             "Width": max(0.0, _safe_float(data["ComponentWidths"][i], default=0.0)),
             "CrossSlopePct": _safe_float(data["ComponentCrossSlopes"][i], default=0.0),
@@ -291,6 +295,15 @@ def component_rows(obj):
         }
         if row["Type"] == "bench":
             row["Type"] = "berm"
+        if row["Type"] == "ditch":
+            shape = str(row.get("Shape", "") or "").strip().lower()
+            if shape not in ALLOWED_DITCH_SHAPES:
+                shape = ""
+            if not shape:
+                shape = "trapezoid" if float(row.get("ExtraWidth", 0.0) or 0.0) > 1e-9 else "v"
+            row["Shape"] = shape
+        else:
+            row["Shape"] = ""
         rows.append(row)
     return rows
 
@@ -308,6 +321,12 @@ def validate_components(obj):
         typ = str(row["Type"] or "").strip().lower()
         if typ not in ALLOWED_COMPONENT_TYPES:
             issues.append(f"{cid}: unsupported component type '{typ}'")
+        shape = str(row.get("Shape", "") or "").strip().lower()
+        if typ == "ditch":
+            if shape not in ALLOWED_DITCH_SHAPES or not shape:
+                issues.append(f"{cid}: unsupported ditch shape '{shape or '-'}'")
+        elif shape:
+            issues.append(f"{cid}: shape is only supported for ditch rows")
 
         side = str(row["Side"] or "").strip().lower()
         if side not in ALLOWED_COMPONENT_SIDES:
@@ -379,8 +398,9 @@ def _uses_advanced_component_geometry(row) -> bool:
     extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
     slope = _safe_float(row.get("CrossSlopePct", 0.0), default=0.0)
     back_slope = _safe_float(row.get("BackSlopePct", 0.0), default=0.0)
+    shape = str(row.get("Shape", "") or "").strip().lower()
     if typ == "ditch":
-        return bool(extra_width > 1e-9 or abs(back_slope - slope) > 1e-9)
+        return bool(shape == "trapezoid" or extra_width > 1e-9 or abs(back_slope - slope) > 1e-9)
     if typ == "curb":
         return bool(extra_width > 1e-9 or abs(back_slope) > 1e-9)
     if typ == "berm":
@@ -416,8 +436,14 @@ def _component_validation_rows(rows):
             notes.append(f"{cid}: {typ} should use left/right side for deterministic practical-section behavior")
         if typ not in ROADSIDE_ADVANCED_TYPES and (extra_width > 1e-9 or abs(back_slope) > 1e-9):
             notes.append(f"{cid}: ExtraWidth/BackSlopePct are currently ignored for type '{typ}'")
+        if typ != "ditch" and str(row.get("Shape", "") or "").strip():
+            notes.append(f"{cid}: Shape is currently ignored for type '{typ}'")
         if typ == "ditch" and extra_width >= max(width, 1e-9):
             notes.append(f"{cid}: ditch ExtraWidth should stay smaller than Width")
+        if typ == "ditch" and str(row.get("Shape", "") or "").strip().lower() == "v" and extra_width > 1e-9:
+            notes.append(f"{cid}: ditch Shape=v ignores ExtraWidth and uses a V-bottom profile")
+        if typ == "ditch" and str(row.get("Shape", "") or "").strip().lower() == "u" and (extra_width > 1e-9 or abs(back_slope) > 1e-9):
+            notes.append(f"{cid}: ditch Shape=u currently ignores ExtraWidth and BackSlopePct")
         if typ == "curb" and abs(_safe_float(row.get("Height", 0.0), default=0.0)) <= 1e-9:
             notes.append(f"{cid}: curb Height is 0, so the curb behaves like a flat edge")
         if typ == "berm" and extra_width > 1e-9 and abs(back_slope) <= 1e-9:
@@ -461,6 +487,7 @@ def section_component_summary_rows(rows):
                 "component",
                 id=str(row.get("Id", "") or "").strip() or "-",
                 type=str(row.get("Type", "") or "").strip().lower() or "-",
+                shape=str(row.get("Shape", "") or "").strip().lower() or "-",
                 side=str(row.get("Side", "") or "").strip().lower() or "-",
                 width=f"{max(0.0, _safe_float(row.get('Width', 0.0), default=0.0)):.3f}",
                 crossSlopePct=f"{_safe_float(row.get('CrossSlopePct', 0.0), default=0.0):.3f}",
@@ -668,6 +695,7 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
     height = _safe_float(row.get("Height", 0.0), default=0.0)
     extra_width = max(0.0, _safe_float(row.get("ExtraWidth", 0.0), default=0.0))
     back_slope = _safe_float(row.get("BackSlopePct", 0.0), default=slope)
+    shape = str(row.get("Shape", "") or "").strip().lower()
     pts = []
     x = float(x0)
     y = float(y0)
@@ -684,7 +712,21 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
         return pts
 
     if typ == "ditch" and width > 1e-9 and abs(height) > 1e-9:
+        if shape not in ALLOWED_DITCH_SHAPES or not shape:
+            shape = "trapezoid" if extra_width > 1e-9 else "v"
+        if shape == "u":
+            half_w = 0.5 * width
+            u_steps = (0.25, 0.50, 0.75, 1.0)
+            for frac in u_steps:
+                x_seg = x + float(direction) * (width * frac)
+                norm = (2.0 * frac) - 1.0
+                sag = max(0.0, 1.0 - (norm * norm))
+                y_seg = y - abs(height) * sag
+                pts.append(App.Vector(x_seg, y_seg, 0.0))
+            return pts
         bottom_w = min(width - 1e-9, extra_width) if extra_width > 1e-9 else 0.0
+        if shape == "v":
+            bottom_w = 0.0
         if bottom_w <= 1e-9:
             half_w = 0.5 * width
             x_mid = x + float(direction) * half_w
@@ -887,8 +929,8 @@ class TypicalSectionTemplate:
             obj.SubassemblySchemaVersion = 1
             obj.PracticalRole = "top_profile_subassembly"
             obj.PracticalSectionMode = practical_mode
-            obj.GeometryDrivingFieldSummary = "Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled"
-            obj.AnalysisDrivingFieldSummary = "ComponentIds,ComponentTypes,ComponentSides,ComponentWidths,ComponentCrossSlopes,ComponentHeights,ComponentExtraWidths,ComponentBackSlopes"
+            obj.GeometryDrivingFieldSummary = "Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled"
+            obj.AnalysisDrivingFieldSummary = "ComponentIds,ComponentTypes,ComponentShapes,ComponentSides,ComponentWidths,ComponentCrossSlopes,ComponentHeights,ComponentExtraWidths,ComponentBackSlopes"
             obj.ReportOnlyFieldSummary = (
                 "PavementLayerIds,PavementLayerTypes,PavementLayerThicknesses,PavementLayerEnabled,"
                 "PavementLayerSummaryRows,SectionComponentSummaryRows,PavementScheduleRows,ExportSummaryRows"
@@ -935,7 +977,7 @@ class TypicalSectionTemplate:
                 )
                 return
 
-            selected_preview_index = int(getattr(obj, "PreviewSelectedComponentIndex", -1) or -1)
+            selected_preview_index = int(getattr(obj, "PreviewSelectedComponentIndex", -1))
             if selected_preview_index >= 0:
                 pts = build_component_preview_profile(obj, selected_preview_index)
             else:
@@ -993,6 +1035,7 @@ class TypicalSectionTemplate:
         if prop in (
             "ComponentIds",
             "ComponentTypes",
+            "ComponentShapes",
             "ComponentSides",
             "ComponentWidths",
             "ComponentCrossSlopes",
@@ -1175,7 +1218,7 @@ class TypicalSectionSelectionDisplay:
         ensure_typical_section_selection_display_properties(obj)
         try:
             src = getattr(obj, "SourceTypicalSection", None)
-            selected_index = int(getattr(obj, "SelectedComponentIndex", -1) or -1)
+            selected_index = int(getattr(obj, "SelectedComponentIndex", -1))
             if src is None or selected_index < 0:
                 obj.Shape = Part.Shape()
                 obj.Status = "No selected component"
@@ -1185,7 +1228,14 @@ class TypicalSectionSelectionDisplay:
                 obj.Shape = Part.Shape()
                 obj.Status = "Selected component has no preview segment"
                 return
-            obj.Shape = Part.makePolygon(pts)
+            # Lift the selected preview slightly off the base wire to avoid
+            # coplanar z-fighting in the 3D view, and nudge it upward in the
+            # section plane so perfectly overlapping first/last edge segments
+            # remain distinguishable from the full preview wire.
+            z_lift = 0.5
+            y_lift = 0.06
+            lifted = [App.Vector(float(p.x), float(p.y) + y_lift, float(p.z) + z_lift) for p in pts]
+            obj.Shape = Part.makePolygon(lifted)
             obj.Status = f"OK: selected component index={selected_index}"
         except Exception as ex:
             obj.Shape = Part.Shape()

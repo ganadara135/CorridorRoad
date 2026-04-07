@@ -136,7 +136,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 12. Use `typical_section_urban_complete_street.csv` when you want an urban test with `median`, `bike_lane`, `curb`, `sidewalk`, and `green_strip`.
 13. Use `typical_section_with_ditch.csv` when you want to test `gutter`, `ditch`, and `berm` in both `Sections` and `Corridor Loft`.
 14. Use `typical_section_pavement_basic.csv` when you want to test the first-pass pavement layer stack for `Typical Section`.
-15. For the maintained Long-Term practical regression bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
+15. Use `typical_section_ditch_v.csv`, `typical_section_ditch_trapezoid.csv`, and `typical_section_ditch_u.csv` when you want focused ditch-shape samples for `Typical Section`.
+16. For the maintained Long-Term practical regression bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ## Typical Section CSV
 - `Typical Section` now supports direct CSV import through `Browse CSV` -> `Load CSV`.
@@ -146,12 +147,13 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Move Up`, `Move Down`
   - `Mirror Left -> Right`, `Mirror Right -> Left`
   - `Save Component CSV`, `Save Pavement CSV`
-  - `Auto Preview` / `Refresh Preview` for 3D live preview updates
+  - `Refresh Preview` for 3D live preview updates
   - `Show Preview Wire` / `Show PavementDisplay` preview visibility toggles
   - a live `Summary` panel for component count, top width, edge types, and pavement total
 - Current CSV columns:
   - `Id`
   - `Type`
+  - `Shape`
   - `Side`
   - `Width`
   - `CrossSlopePct`
@@ -163,6 +165,9 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Enabled`
 - Current sample files:
   - `tests/samples/typical_section_basic_rural.csv`
+  - `tests/samples/typical_section_ditch_trapezoid.csv`
+  - `tests/samples/typical_section_ditch_u.csv`
+  - `tests/samples/typical_section_ditch_v.csv`
   - `tests/samples/typical_section_urban_complete_street.csv`
   - `tests/samples/typical_section_with_ditch.csv`
   - `tests/samples/typical_section_pavement_basic.csv`
@@ -173,9 +178,14 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - `Thickness`
   - `Enabled`
 - Editing notes:
+  - `Shape` is currently used by `ditch`; leave it blank for other component types
   - `lane`, `shoulder`, `median`, `sidewalk`, `bike_lane`, `green_strip`, and `gutter` emphasize `CrossSlopePct`
   - `curb` uses `Height` for curb rise, `Width` for top width, `ExtraWidth` for face/gutter run, and `BackSlopePct` for the top/back slope
+  - `ditch` uses `Shape=v` for a V-bottom ditch, `Shape=trapezoid` for a flat-bottom/open trapezoid ditch, and `Shape=u` for a rounded U-like ditch
+  - `ditch Shape=u` is currently generated as a stable polyline approximation and ignores `ExtraWidth` / `BackSlopePct`
+  - if `ditch` `Shape` is blank, runtime infers `v` when `ExtraWidth <= 0` and `trapezoid` when `ExtraWidth > 0`
   - `ditch` uses `Width` for total span, `Height` for depth, `ExtraWidth` for flat bottom width, and `BackSlopePct` for the outer-side slope
+  - `Sections`, `Cross Section Viewer`, and report rows now preserve ditch `Shape` on station-local component segments, so focused ditch modes stay readable downstream
   - `berm` uses `Width` for bench width and can extend with `ExtraWidth` + `BackSlopePct` for an outer taper
   - `bench` is reserved for future earthwork mid-slope benching terminology
 - Current runtime intent:
@@ -323,5 +333,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ![CorridorRoad screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
 ![CorridorRoad screenshot 11](https://github.com/user-attachments/assets/71d0cb7d-50e9-4c66-be81-727b0e0840b6)
 ![CorridorRoad screenshot 12](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)
+![CorridorRoad screenshot 13](https://github.com/user-attachments/assets/64e20bd5-941a-4a09-9efa-4d16e808cd84)
+
 
 
