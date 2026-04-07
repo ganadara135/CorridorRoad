@@ -12,6 +12,17 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ### Changed
 - Placeholder for upcoming changes.
 
+## [0.2.4] - 2026-04-07
+
+### Added
+- `Typical Section` now supports explicit ditch `Shape=v`, `Shape=u`, and `Shape=trapezoid` modes, plus focused ditch-shape sample CSVs and regression coverage.
+- `Typical Section` gained manual `Refresh Preview` driven 3D live preview with selected-row highlight overlay and separate `PavementDisplay` / `SelectedComponentPreview` support.
+
+### Changed
+- `Typical Section` task-panel UX was refined: helper buttons were simplified, row action layout was cleaned up, hover-driven row activation was removed, and `Shape` is now active only on `ditch` rows.
+- `Sections`, `Cross Section Viewer`, and report contracts now preserve station-local ditch shape information so downstream review keeps the intended ditch mode visible.
+- README/wiki/developer documentation were synchronized with the current `Typical Section` CSV schema, preview workflow, and ditch-shape behavior.
+
 ## [0.2.3] - 2026-04-05
 
 ### Added
