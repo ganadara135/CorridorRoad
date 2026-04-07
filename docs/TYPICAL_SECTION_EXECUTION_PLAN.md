@@ -162,6 +162,92 @@ Completed:
   - `docs/ARCHITECTURE.md`
 - wiki remote synchronized
 
+### Sprint J: 3D Live Preview UX
+Status: planned
+
+Goal:
+- allow users to edit `Typical Section` while directly seeing the section shape in the FreeCAD 3D view
+- keep the implementation aligned with the existing `TypicalSectionTemplate` and `PavementDisplay` objects instead of introducing a separate preview subsystem
+
+Design review:
+- considered approaches:
+  - `Task panel only` 2D preview:
+    - simple
+    - but does not satisfy the need to work in the 3D view directly
+  - `Separate custom preview widget`:
+    - flexible
+    - but duplicates rendering logic and adds maintenance cost
+  - `Use existing TypicalSectionTemplate + PavementDisplay objects as live preview`:
+    - best fit for current architecture
+    - reuses existing `Shape` generation
+    - preserves tree/project integration
+    - easiest to keep consistent with downstream `Sections`
+- selected approach:
+  - use `TypicalSectionTemplate` as the main preview object in the 3D view
+  - keep `PavementDisplay` as the optional pavement overlay object
+  - enhance the editor so these objects feel like live editing previews rather than apply-only outputs
+
+Planned phases:
+
+1. Preview visibility and naming baseline
+- ensure the current template object is always easy to find in the tree
+- keep preview naming simple and user-facing
+- confirm `PavementDisplay` naming and visibility policy are consistent
+
+2. Manual preview refresh controls
+- add an explicit `Refresh Preview` action in `Edit Typical Section`
+- make preview refresh cheaper than full downstream workflow recompute
+- ensure `TypicalSectionTemplate` and `PavementDisplay` can refresh together
+
+3. Auto preview during editing
+- add an `Auto Preview` toggle in the task panel
+- when enabled:
+  - table edits
+  - pair helper insertion
+  - pavement edits
+  trigger preview recompute for the active typical section
+- use debounced refresh to avoid recompute on every keystroke
+
+4. 3D readability improvements
+- keep the main section preview as wireframe by default
+- add optional preview fill / stronger display tint if needed
+- preserve low visual noise so the section remains readable in the 3D scene
+- keep pavement display independently togglable
+
+5. Row-to-geometry feedback
+- when a component row is selected in the table, visually emphasize the matching part of the preview
+- scope:
+  - first pass may use color emphasis or temporary line-weight emphasis
+  - deeper per-component sub-shape highlighting can come later if the shape contract needs it
+
+6. Safe recompute contract
+- preview updates must not:
+  - force `Sections`
+  - force `Corridor Loft`
+  - force grading/terrain analysis
+- only the local `TypicalSectionTemplate` and linked `PavementDisplay` should recompute during preview work
+
+Planned user-facing options:
+- `Show Preview Wire`
+  - keep as the base visibility control
+- `Auto Preview`
+  - new editor toggle
+- `Refresh Preview`
+  - new editor button
+- optional later follow-up:
+  - `Show Pavement Preview`
+  - `Preview Fill`
+
+Planned key files:
+- `freecad/Corridor_Road/ui/task_typical_section_editor.py`
+- `freecad/Corridor_Road/objects/obj_typical_section_template.py`
+
+Verification targets:
+- editing rows updates the visible typical section preview in 3D
+- pavement edits update `PavementDisplay` consistently
+- preview refresh does not trigger unrelated downstream objects
+- task panel remains responsive while editing
+
 ## Current Overall State
 
 `Typical Section` is now usable as a real finished-grade top-profile source for:
@@ -178,9 +264,12 @@ It currently supports:
 - preview wire
 - separate pavement display/report geometry
 - section/corridor/grading summary + pavement-report propagation
+- planned next UX step:
+  - 3D live preview-oriented editing around `TypicalSectionTemplate` + `PavementDisplay`
 
 ## Open Follow-up Work
 
 1. pavement layers as true corridor solids or section-only faces if a later scope needs them
 2. richer runtime validation on complex mixed workflows
 3. broader sample CSV coverage for advanced roadside parameter combinations
+4. `Typical Section` 3D live preview refresh/highlight workflow
