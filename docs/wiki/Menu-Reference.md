@@ -402,9 +402,68 @@ Current practical workflow:
 > [Screenshot Needed] Edit Structures panel with sample rows loaded.
 > Suggested file: `wiki-menu-reference-edit-structures.png`
 
+## 5A. Manage Region Plan
+
+Use `Manage Region Plan` to define alignment-owned span logic before section generation.
+This panel is now the main place to author corridor span intent, not a low-level runtime rule table.
+
+Important behavior:
+1. The main workflow is grouped into `Base Regions`, `Overrides`, and `Hints`.
+2. `Base Regions` define the main corridor span layout.
+3. `Overrides` define local exceptions such as ditch/berm, urban edge, or corridor split/skip zones.
+4. `Hints` are seeded proposals from project, typical section, structure, or design-standard context and do not become design data until accepted.
+5. `Advanced` is a flat runtime preview/export surface for existing plans; direct flat-row editing is only available while creating a new plan.
+6. The `Station Timeline` summary, `Base Regions`, `Overrides`, and `Hints` tables use palette-aware tinting so both FreeCAD light and dark themes keep readable cell values.
+
+### Main Workflow Areas
+
+| Area | Meaning | How to use it |
+|---|---|---|
+| `Target Region Plan` | Selects an existing alignment-owned `RegionPlan` or creates a new one. | Use `[New] Create new Region Plan` when starting authoring from scratch. |
+| `Workflow` tab | Main grouped editing surface. | Use this tab for nearly all editing work. |
+| `Base Regions` | Main span layout of the corridor. | Split or merge these first so every station falls into the intended base regime. |
+| `Overrides` | Local span exceptions on top of the base plan. | Use structured controls instead of raw policy strings for normal editing. |
+| `Hints` | Managed proposals from project seed logic. | Review, accept, or ignore them explicitly. |
+| `Station Timeline` | Ordered span summary across base/override/hint rows. | Use it to review span order and make direct span edits without switching to raw rows. |
+| `Advanced` tab | Flat runtime preview/export view. | Use it for diagnostics, CSV round-trip, and raw export inspection rather than normal authoring. |
+
+### Main Controls
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Preset Data` | Loads starter grouped region rows. | Useful for quick experiments or template-like seeding. |
+| `Auto-seed [New]` | Seeds a new plan from current project context. | Keep it on when you want project-linked starter hints and base rows for a brand-new plan. |
+| `Seed From Project` | Refreshes managed hints from project, typical-section, structure, and design-standard context. | Use this after changing typical section, structures, or project design-standard metadata. |
+| `Add Base Region` | Creates a new base span row. | Use when the corridor regime changes along station. |
+| `Split Selected` / `Merge Selected` | Splits one base span or merges adjacent compatible base spans. | Use these before editing lower-level overrides. |
+| `Override starters` | Quick starter buttons such as ditch/urban/split/skip. | Use these for common override types instead of building rows from scratch. |
+| `Accept` / `Accept and Edit` / `Ignore` | Hint workflow actions. | `Accept` turns the hint into a real override. `Ignore` keeps it traceable without applying it. |
+| `Import Region Plan CSV` / `Export Region Plan CSV` | Round-trip grouped rows through the current CSV schema. | Useful for diagnostics, review, or template reuse. |
+
+### Practical Notes
+1. `RegionPlan` lives under the owning alignment `Regions` branch, not under generic `Inputs`.
+2. Existing plans should be edited from `Workflow`; do not treat `Advanced` as a second primary editor.
+3. Project-seeded hints may include confidence levels and source/family labels such as `Typical Section / Urban Edge` or `Design Standard / Speed Review`.
+4. If a table row tint looks unreadable after a FreeCAD theme change, reopen the panel so the palette-aware row colors can be applied again.
+
 ## 6. Generate Sections: Structure Options
 
-The `Generate Sections` panel now includes structure-aware options that work with `StructureSet`.
+The `Generate Sections` panel now includes both region-aware and structure-aware options.
+
+### Region Plan Integration Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Use linked Region Plan` | Enables region-driven station merge and optional section-rule consumption. | Turn this on when the alignment uses a `RegionPlan` for span-based control. |
+| `Region Plan Source` | Chooses the source `RegionPlan`. | Normally use the active project or alignment plan. |
+| `Include region boundaries` | Adds region start/end stations to the generated section list. | Keep enabled in most region-driven workflows. |
+| `Include region transitions` | Adds transition stations around region boundaries. | Keep enabled when region changes should be sampled more smoothly. |
+| `Apply region overrides` | Lets accepted region overrides affect section-side or daylight behavior. | Turn this on when the `RegionPlan` should modify actual section output, not just station density. |
+
+Recommended user policy:
+1. Build the base corridor station pattern first with `Region Plan`.
+2. Use region overrides for corridor-side/daylight intent that is not structure-specific.
+3. Keep structure overrides and region overrides conceptually separate: region for corridor design intent, structure for structure-driven behavior.
 
 ### Structure Integration Options
 
@@ -633,4 +692,4 @@ When to override manually:
 4. Use [Troubleshooting](Troubleshooting) when sampled EG/FG or structure-aware output is incomplete or inconsistent.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `314ae19`

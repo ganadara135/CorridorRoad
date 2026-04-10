@@ -13,6 +13,7 @@ from freecad.Corridor_Road.objects.obj_section_set import (
     _earthwork_status_token,
     _external_shape_display_count,
     _external_shape_proxy_count,
+    region_plan_usage_enabled,
     _resolve_structure_source,
     _status_join,
 )
@@ -70,12 +71,24 @@ def _report_row(kind: str, **fields) -> str:
 
 
 def _corridor_rule_status_token(split_count: int, corridor_mode_summary, skipped_station_rows, corridor_warning_rows) -> str:
+    source_hint = ""
+    mode_summary_txt = str(corridor_mode_summary or "-")
+    if mode_summary_txt.startswith("mixed|"):
+        source_hint = "mixed"
+    elif mode_summary_txt.startswith("region|"):
+        source_hint = "region"
+    elif mode_summary_txt.startswith("structure|"):
+        source_hint = "structure"
     if (
         int(split_count or 0) >= 2
-        or str(corridor_mode_summary or "-") != "-"
+        or mode_summary_txt != "-"
         or bool(list(skipped_station_rows or []))
         or bool(list(corridor_warning_rows or []))
     ):
+        if source_hint == "mixed":
+            return "corridorRule=mixed"
+        if source_hint == "region":
+            return "corridorRule=region_aware"
         return "corridorRule=structure_aware"
     return "corridorRule=full"
 
@@ -103,6 +116,29 @@ def _resolve_corridor_record_span(src, rec, station_from: float, station_to: flo
         return list(StructureSetSource.resolve_profile_span(ss, rec, float(station_from), float(station_to)) or [])
     except Exception:
         return []
+
+
+def _corridor_mode_priority(mode: str) -> int:
+    key = str(mode or "").strip().lower()
+    order = {
+        "": 0,
+        "none": 0,
+        "split_only": 1,
+        "skip_zone": 2,
+        "notch": 3,
+        "boolean_cut": 4,
+    }
+    return int(order.get(key, -1))
+
+
+def _effective_corridor_summary(source_tag: str, summary_text: str) -> str:
+    tag = str(source_tag or "").strip().lower()
+    summary = str(summary_text or "-").strip() or "-"
+    if summary == "-":
+        return "-"
+    if tag not in ("structure", "region", "mixed"):
+        return summary
+    return f"{tag}|{summary}"
 
 
 def _mark_recompute_flag(obj, needed: bool):
@@ -199,6 +235,15 @@ def ensure_corridor_loft_properties(obj):
         )
         obj.UseStructureCorridorModes = True
 
+    if not hasattr(obj, "UseRegionCorridorModes"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "UseRegionCorridorModes",
+            "Corridor",
+            "Use region corridor modes such as split_only and skip_zone when Region Plan data is available",
+        )
+        obj.UseRegionCorridorModes = True
+
     if not hasattr(obj, "DefaultStructureCorridorMode"):
         obj.addProperty(
             "App::PropertyEnumeration",
@@ -260,6 +305,30 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "ResolvedStructureCorridorModeSummary"):
         obj.addProperty("App::PropertyString", "ResolvedStructureCorridorModeSummary", "Result", "Resolved structure corridor mode summary")
         obj.ResolvedStructureCorridorModeSummary = "-"
+
+    if not hasattr(obj, "ResolvedRegionCorridorRanges"):
+        obj.addProperty("App::PropertyStringList", "ResolvedRegionCorridorRanges", "Result", "Resolved per-region corridor span diagnostics")
+        obj.ResolvedRegionCorridorRanges = []
+
+    if not hasattr(obj, "ResolvedRegionCorridorWarnings"):
+        obj.addProperty("App::PropertyStringList", "ResolvedRegionCorridorWarnings", "Result", "Warnings detected while resolving region corridor spans")
+        obj.ResolvedRegionCorridorWarnings = []
+
+    if not hasattr(obj, "ResolvedRegionCorridorModeSummary"):
+        obj.addProperty("App::PropertyString", "ResolvedRegionCorridorModeSummary", "Result", "Resolved region corridor mode summary")
+        obj.ResolvedRegionCorridorModeSummary = "-"
+
+    if not hasattr(obj, "ResolvedCombinedCorridorRanges"):
+        obj.addProperty("App::PropertyStringList", "ResolvedCombinedCorridorRanges", "Result", "Resolved effective corridor span diagnostics after structure/region precedence")
+        obj.ResolvedCombinedCorridorRanges = []
+
+    if not hasattr(obj, "ResolvedCombinedCorridorWarnings"):
+        obj.addProperty("App::PropertyStringList", "ResolvedCombinedCorridorWarnings", "Result", "Warnings detected while resolving effective corridor spans")
+        obj.ResolvedCombinedCorridorWarnings = []
+
+    if not hasattr(obj, "ResolvedCombinedCorridorModeSummary"):
+        obj.addProperty("App::PropertyString", "ResolvedCombinedCorridorModeSummary", "Result", "Resolved effective corridor mode summary")
+        obj.ResolvedCombinedCorridorModeSummary = "-"
 
     if not hasattr(obj, "ResolvedSkipBoundaryBehavior"):
         obj.addProperty("App::PropertyString", "ResolvedSkipBoundaryBehavior", "Result", "Resolved skip-zone boundary behavior summary")
@@ -773,6 +842,98 @@ class CorridorLoft:
             return []
 
     @staticmethod
+    def _resolve_region_corridor_records(src):
+        try:
+            if not bool(region_plan_usage_enabled(src)):
+                return []
+            stations = list(getattr(src, "StationValues", []) or [])
+            if not stations:
+                stations = list(SectionSet.resolve_station_values(src) or [])
+            if not stations:
+                return []
+            meta_rows = list(SectionSet.resolve_region_metadata(src, stations) or [])
+        except Exception:
+            return []
+
+        out = []
+        active_run = None
+        unsupported_seen = set()
+
+        def _close_run(run):
+            if not run:
+                return
+            out.append(
+                {
+                    "Id": str(run.get("Id", "") or "REGION"),
+                    "Type": "region",
+                    "ResolvedCorridorMode": str(run.get("Mode", "") or ""),
+                    "ResolvedStartStation": float(run.get("StartStation", 0.0) or 0.0),
+                    "ResolvedEndStation": float(run.get("EndStation", 0.0) or 0.0),
+                    "ResolvedCorridorMargin": 0.0,
+                    "ResolvedStationSource": "section_regions",
+                    "ResolvedCorridorWarnings": list(run.get("Warnings", []) or []),
+                }
+            )
+
+        for station, meta in zip(list(stations or []), list(meta_rows or [])):
+            raw_mode = str(meta.get("ResolvedCorridorPolicy", "") or "").strip().lower()
+            base_region_id = str(meta.get("BaseRegionId", "") or "").strip()
+            overlay_ids = [str(v or "").strip() for v in list(meta.get("OverlayRegionIds", []) or []) if str(v or "").strip()]
+            ids = [str(v or "").strip() for v in list(meta.get("RegionIds", []) or []) if str(v or "").strip()]
+            key_ids = ([base_region_id] if base_region_id else []) + list(overlay_ids or [])
+            if not key_ids:
+                key_ids = ids
+            region_key = ",".join(key_ids) if key_ids else "REGION"
+            station_value = float(station)
+            if raw_mode in ("", "none"):
+                _close_run(active_run)
+                active_run = None
+                continue
+            if raw_mode not in ("split_only", "skip_zone"):
+                issue_key = (region_key, raw_mode)
+                if issue_key not in unsupported_seen:
+                    unsupported_seen.add(issue_key)
+                    out.append(
+                        {
+                            "Id": region_key,
+                            "Type": "region",
+                            "ResolvedCorridorMode": "",
+                            "ResolvedStartStation": station_value,
+                            "ResolvedEndStation": station_value,
+                            "ResolvedCorridorMargin": 0.0,
+                            "ResolvedStationSource": "section_regions",
+                            "ResolvedCorridorWarnings": [f"{region_key}: region corridor mode '{raw_mode}' is unsupported in CorridorLoft Phase 1"],
+                        }
+                    )
+                _close_run(active_run)
+                active_run = None
+                continue
+
+            run_warnings = []
+            if not base_region_id and not overlay_ids:
+                run_warnings.append(f"{region_key}: corridor mode resolved without explicit base/overlay owner")
+
+            if active_run is not None and str(active_run.get("Mode", "")) == raw_mode and str(active_run.get("Id", "")) == region_key:
+                active_run["EndStation"] = station_value
+                existing_warnings = list(active_run.get("Warnings", []) or [])
+                for txt in run_warnings:
+                    if txt not in existing_warnings:
+                        existing_warnings.append(txt)
+                active_run["Warnings"] = existing_warnings
+            else:
+                _close_run(active_run)
+                active_run = {
+                    "Id": region_key,
+                    "Mode": raw_mode,
+                    "StartStation": station_value,
+                    "EndStation": station_value,
+                    "Warnings": list(run_warnings),
+                }
+
+        _close_run(active_run)
+        return out
+
+    @staticmethod
     def _skip_zone_keep_ranges(stations, skip_spans):
         n = len(list(stations or []))
         if n < 2 or not skip_spans:
@@ -889,6 +1050,14 @@ class CorridorLoft:
 
     @staticmethod
     def _describe_structure_corridor_records(corridor_records):
+        return CorridorLoft._describe_corridor_records(corridor_records)
+
+    @staticmethod
+    def _describe_region_corridor_records(corridor_records):
+        return CorridorLoft._describe_corridor_records(corridor_records)
+
+    @staticmethod
+    def _describe_corridor_records(corridor_records):
         detail_rows = []
         warning_rows = []
         spans = []
@@ -928,6 +1097,161 @@ class CorridorLoft:
         for mode, count in sorted(mode_counts.items(), key=lambda it: (mode_order.get(it[0], 99), it[0])):
             summary_parts.append(f"{mode}={int(count)}")
         return detail_rows, warning_rows, (", ".join(summary_parts) if summary_parts else "-"), _merge_station_spans(spans)
+
+    @staticmethod
+    def _corridor_record_at_station(corridor_records, station: float):
+        best = None
+        ss = float(station)
+        for rec in list(corridor_records or []):
+            mode = str(rec.get("ResolvedCorridorMode", "") or "").strip().lower()
+            if mode in ("", "none"):
+                continue
+            s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
+            s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
+            mg = max(0.0, float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0))
+            lo = min(s0, s1) - mg
+            hi = max(s0, s1) + mg
+            if ss < lo - 1e-6 or ss > hi + 1e-6:
+                continue
+            if best is None:
+                best = rec
+                continue
+            cur_pri = _corridor_mode_priority(best.get("ResolvedCorridorMode", ""))
+            inc_pri = _corridor_mode_priority(mode)
+            if inc_pri > cur_pri:
+                best = rec
+                continue
+            if inc_pri < cur_pri:
+                continue
+            best_span = abs(float(best.get("ResolvedEndStation", 0.0) or 0.0) - float(best.get("ResolvedStartStation", 0.0) or 0.0))
+            inc_span = abs(float(s1) - float(s0))
+            if inc_span < best_span - 1e-9:
+                best = rec
+        return dict(best or {})
+
+    @staticmethod
+    def _combine_corridor_records(structure_records, region_records):
+        active_structure = [
+            dict(rec)
+            for rec in list(structure_records or [])
+            if str(rec.get("ResolvedCorridorMode", "") or "").strip().lower() not in ("", "none")
+        ]
+        active_region = [
+            dict(rec)
+            for rec in list(region_records or [])
+            if str(rec.get("ResolvedCorridorMode", "") or "").strip().lower() not in ("", "none")
+        ]
+        if not active_structure and not active_region:
+            return [], [], "-", [], "full", []
+
+        boundaries = set()
+        for rec in list(active_structure) + list(active_region):
+            s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
+            s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
+            mg = max(0.0, float(rec.get("ResolvedCorridorMargin", 0.0) or 0.0))
+            boundaries.add(round(min(s0, s1) - mg, 6))
+            boundaries.add(round(max(s0, s1) + mg, 6))
+        vals = sorted(float(v) for v in boundaries)
+        if len(vals) < 2:
+            return [], [], "-", [], "full", []
+
+        combined_rows = []
+        source_tags = set()
+        warning_rows = []
+        for rec in list(active_structure):
+            for note in list(rec.get("ResolvedCorridorWarnings", []) or []):
+                txt = str(note or "").strip()
+                if txt:
+                    warning_rows.append(txt)
+        for rec in list(active_region):
+            for note in list(rec.get("ResolvedCorridorWarnings", []) or []):
+                txt = str(note or "").strip()
+                if txt:
+                    warning_rows.append(txt)
+
+        current = None
+        for i in range(len(vals) - 1):
+            a = float(vals[i])
+            b = float(vals[i + 1])
+            if b <= a + 1e-6:
+                continue
+            mid = 0.5 * (a + b)
+            srec = CorridorLoft._corridor_record_at_station(active_structure, mid)
+            rrec = CorridorLoft._corridor_record_at_station(active_region, mid)
+            chosen = {}
+            source = ""
+            if srec:
+                chosen = dict(srec)
+                source = "structure"
+            elif rrec:
+                chosen = dict(rrec)
+                source = "region"
+            if not chosen:
+                if current is not None:
+                    combined_rows.append(dict(current))
+                    current = None
+                continue
+            source_tags.add(source)
+            mode = str(chosen.get("ResolvedCorridorMode", "") or "").strip().lower()
+            rec_id = CorridorLoft._corridor_record_ref(chosen)
+            if current is not None and str(current.get("ResolvedCorridorMode", "")) == mode and str(current.get("ResolvedStationSource", "")) == source and str(current.get("Id", "")) == rec_id:
+                current["ResolvedEndStation"] = float(b)
+            else:
+                if current is not None:
+                    combined_rows.append(dict(current))
+                current = {
+                    "Id": rec_id,
+                    "Type": source,
+                    "ResolvedCorridorMode": mode,
+                    "ResolvedStartStation": float(a),
+                    "ResolvedEndStation": float(b),
+                    "ResolvedCorridorMargin": 0.0,
+                    "ResolvedStationSource": source,
+                    "ResolvedCorridorWarnings": [],
+                }
+            if srec and rrec:
+                region_id = CorridorLoft._corridor_record_ref(rrec)
+                structure_id = CorridorLoft._corridor_record_ref(srec)
+                msg = f"{region_id}: overridden by structure corridor mode '{str(srec.get('ResolvedCorridorMode', '') or '')}' from {structure_id}"
+                if msg not in warning_rows:
+                    warning_rows.append(msg)
+        if current is not None:
+            combined_rows.append(dict(current))
+
+        detail_rows, _unused_warning_rows, summary_text, spans = CorridorLoft._describe_corridor_records(combined_rows)
+        source_summary = "full"
+        if source_tags == {"structure"}:
+            source_summary = "structure"
+        elif source_tags == {"region"}:
+            source_summary = "region"
+        elif source_tags:
+            source_summary = "mixed"
+        return detail_rows, warning_rows, summary_text, spans, source_summary, combined_rows
+
+    @staticmethod
+    def _corridor_split_candidates_from_records(stations, corridor_records):
+        vals = [float(v) for v in list(stations or [])]
+        if len(vals) < 2:
+            return [], []
+        candidates = []
+        rows = []
+        prev_mode = str(CorridorLoft._corridor_record_at_station(corridor_records, vals[0]).get("ResolvedCorridorMode", "") or "").strip().lower()
+        for i in range(1, len(vals)):
+            curr_mode = str(CorridorLoft._corridor_record_at_station(corridor_records, vals[i]).get("ResolvedCorridorMode", "") or "").strip().lower()
+            if curr_mode != prev_mode:
+                candidates.append(int(i))
+                rows.append(f"{float(vals[i]):.3f}")
+            prev_mode = curr_mode
+        dedup_idx = []
+        dedup_sta = []
+        seen = set()
+        for idx, sta in zip(candidates, rows):
+            if idx in seen:
+                continue
+            seen.add(idx)
+            dedup_idx.append(int(idx))
+            dedup_sta.append(str(sta))
+        return dedup_idx, dedup_sta
 
     @staticmethod
     def _clear_skip_markers(obj):
@@ -1506,6 +1830,12 @@ class CorridorLoft:
                 obj.ResolvedStructureCorridorRanges = []
                 obj.ResolvedStructureCorridorWarnings = []
                 obj.ResolvedStructureCorridorModeSummary = "-"
+                obj.ResolvedRegionCorridorRanges = []
+                obj.ResolvedRegionCorridorWarnings = []
+                obj.ResolvedRegionCorridorModeSummary = "-"
+                obj.ResolvedCombinedCorridorRanges = []
+                obj.ResolvedCombinedCorridorWarnings = []
+                obj.ResolvedCombinedCorridorModeSummary = "-"
                 obj.ResolvedSkipBoundaryBehavior = "-"
                 obj.ResolvedSkipBoundaryStates = []
                 obj.ResolvedSkipBoundaryCapCount = 0
@@ -1594,10 +1924,19 @@ class CorridorLoft:
             notch_build_mode = "-"
             notch_cutter_count = 0
             fallback_mode = str(getattr(obj, "DefaultStructureCorridorMode", "split_only") or "split_only").strip().lower()
-            corridor_records = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
-            corridor_range_rows, corridor_warning_rows, corridor_mode_summary, structure_spans = CorridorLoft._describe_structure_corridor_records(
-                corridor_records
+            structure_corridor_records = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
+            structure_range_rows, structure_warning_rows, structure_mode_summary, structure_spans = CorridorLoft._describe_structure_corridor_records(
+                structure_corridor_records
             )
+            region_corridor_records = CorridorLoft._resolve_region_corridor_records(src) if bool(getattr(obj, "UseRegionCorridorModes", True)) else []
+            region_range_rows, region_warning_rows, region_mode_summary, _region_spans = CorridorLoft._describe_region_corridor_records(
+                region_corridor_records
+            )
+            corridor_range_rows, corridor_warning_rows, corridor_mode_summary_raw, corridor_spans, corridor_source_summary, combined_corridor_records = CorridorLoft._combine_corridor_records(
+                structure_corridor_records if bool(getattr(obj, "UseStructureCorridorModes", True)) else [],
+                region_corridor_records if bool(getattr(obj, "UseRegionCorridorModes", True)) else [],
+            )
+            corridor_mode_summary = _effective_corridor_summary(corridor_source_summary, corridor_mode_summary_raw)
             notch_station_count = 0
             notch_failures = []
             loft_retry_count = 0
@@ -1628,6 +1967,10 @@ class CorridorLoft:
             use_segmented_ranges = False
             if bool(getattr(obj, "SplitAtStructureZones", True)):
                 split_idx, split_station_rows = CorridorLoft._structure_split_candidates(src, stations)
+                if bool(getattr(obj, "UseRegionCorridorModes", True)):
+                    region_split_idx, region_split_rows = CorridorLoft._corridor_split_candidates_from_records(stations, combined_corridor_records)
+                    split_idx = list(split_idx or []) + list(region_split_idx or [])
+                    split_station_rows = list(split_station_rows or []) + list(region_split_rows or [])
                 if closed_profile_schema > 1 and notch_spec_rows:
                     notch_split_idx, notch_split_rows = CorridorLoft._notch_split_candidates(notch_spec_rows)
                     split_idx = list(split_idx or []) + list(notch_split_idx or [])
@@ -1644,8 +1987,8 @@ class CorridorLoft:
                 structure_ranges = CorridorLoft._segment_ranges(len(stations), split_idx)
                 split_count = len(structure_ranges) if structure_ranges else 0
                 use_segmented_ranges = bool(structure_ranges and len(structure_ranges) >= 2)
-            if bool(getattr(obj, "UseStructureCorridorModes", True)):
-                skip_ranges, skipped_station_rows, skip_runs = CorridorLoft._skip_zone_keep_ranges(stations, structure_spans)
+            if bool(getattr(obj, "UseStructureCorridorModes", True)) or bool(getattr(obj, "UseRegionCorridorModes", True)):
+                skip_ranges, skipped_station_rows, skip_runs = CorridorLoft._skip_zone_keep_ranges(stations, corridor_spans)
                 skip_boundary_behavior, skip_boundary_rows, skip_boundary_cap_count = CorridorLoft._skip_zone_boundary_summary(stations, skip_runs)
                 if skip_ranges:
                     structure_ranges = list(skip_ranges)
@@ -1684,6 +2027,10 @@ class CorridorLoft:
                     tokens.append(f"structureSegs={int(split_count)}")
                 if str(corridor_mode_summary or "-") != "-":
                     tokens.append(f"corridorModes={corridor_mode_summary}")
+                if str(region_mode_summary or "-") != "-":
+                    tokens.append(f"regionCorridorModes={region_mode_summary}")
+                if str(structure_mode_summary or "-") != "-":
+                    tokens.append(f"structCorridorModes={structure_mode_summary}")
                 if skipped_station_rows:
                     tokens.append(f"skipZones={len(skipped_station_rows)}")
                 if skip_marker_count > 0:
@@ -1826,9 +2173,15 @@ class CorridorLoft:
             obj.StructureSegmentCount = int(split_count)
             obj.StructureSplitStations = list(split_station_rows)
             obj.SkippedStationRanges = list(skipped_station_rows)
-            obj.ResolvedStructureCorridorRanges = list(corridor_range_rows)
-            obj.ResolvedStructureCorridorWarnings = list(corridor_warning_rows)
-            obj.ResolvedStructureCorridorModeSummary = str(corridor_mode_summary or "-")
+            obj.ResolvedStructureCorridorRanges = list(structure_range_rows)
+            obj.ResolvedStructureCorridorWarnings = list(structure_warning_rows)
+            obj.ResolvedStructureCorridorModeSummary = str(structure_mode_summary or "-")
+            obj.ResolvedRegionCorridorRanges = list(region_range_rows)
+            obj.ResolvedRegionCorridorWarnings = list(region_warning_rows)
+            obj.ResolvedRegionCorridorModeSummary = str(region_mode_summary or "-")
+            obj.ResolvedCombinedCorridorRanges = list(corridor_range_rows)
+            obj.ResolvedCombinedCorridorWarnings = list(corridor_warning_rows)
+            obj.ResolvedCombinedCorridorModeSummary = str(corridor_mode_summary or "-")
             obj.ResolvedSkipBoundaryBehavior = str(skip_boundary_behavior or "-")
             obj.ResolvedSkipBoundaryStates = list(skip_boundary_rows)
             obj.ResolvedSkipBoundaryCapCount = int(skip_boundary_cap_count)
@@ -1857,6 +2210,7 @@ class CorridorLoft:
                     splitSegments=int(split_count or 0),
                     skipped=int(len(skipped_station_rows)),
                     notchCount=int(notch_count or 0),
+                    corridorModes=str(corridor_mode_summary or "-"),
                     ruled=str(ruled_mode or "off"),
                     roadside=str(getattr(obj, "RoadsideLibrarySummary", "-") or "-"),
                 )
@@ -1881,6 +2235,12 @@ class CorridorLoft:
             obj.ResolvedStructureCorridorRanges = []
             obj.ResolvedStructureCorridorWarnings = []
             obj.ResolvedStructureCorridorModeSummary = "-"
+            obj.ResolvedRegionCorridorRanges = []
+            obj.ResolvedRegionCorridorWarnings = []
+            obj.ResolvedRegionCorridorModeSummary = "-"
+            obj.ResolvedCombinedCorridorRanges = []
+            obj.ResolvedCombinedCorridorWarnings = []
+            obj.ResolvedCombinedCorridorModeSummary = "-"
             obj.ResolvedSkipBoundaryBehavior = "-"
             obj.ResolvedSkipBoundaryStates = []
             obj.ResolvedSkipBoundaryCapCount = 0
@@ -1928,6 +2288,7 @@ class CorridorLoft:
             "AutoFixSectionOrientation",
             "SplitAtStructureZones",
             "UseStructureCorridorModes",
+            "UseRegionCorridorModes",
             "DefaultStructureCorridorMode",
             "NotchTransitionScale",
             "AutoUpdate",

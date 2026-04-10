@@ -24,12 +24,13 @@ This page is the quick technical map for contributors.
 - `Stationing`: station list generation
 - `ProfileBundle` / `VerticalAlignment`: EG/FG data and vertical geometry
 - `Centerline3DDisplay`: sampled centerline rendering
+- `RegionPlan`: alignment-owned region authoring model with grouped `Base Regions`, `Overrides`, and `Hints`
 - `SectionSet`: station resolve + section generation + daylight
 - `CorridorLoft`: corridor solid generation from sections
 - `DesignTerrain` / `CutFillCalc`: grid sampling based terrain/analysis
 
 Object link chain (typical):
-`HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
+`HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> RegionPlan -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
 
 ## Corridor Loft Stability Notes
 - `SectionSet` keeps section frame continuity using previous normal direction.
@@ -99,6 +100,13 @@ Practical debugging order:
   - full preview wire visible together with `SelectedComponentPreview` for the selected component row
   - pavement preview/report object label as `PavementDisplay`
   - click-locked component-row activation; hover should not change the active row
+- `Manage Region Plan` currently keeps:
+  - `Workflow` as the main editing surface with grouped `Base Regions`, `Overrides`, and `Hints`
+  - `Advanced` as a flat runtime preview/export surface for existing plans
+  - direct flat-row editing available only while creating a new `RegionPlan`
+  - `Seed From Project` creating managed hints first; hints do not silently become confirmed design rows
+  - `Station Timeline`, `Base Regions`, `Overrides`, and `Hints` row tinting palette-aware so FreeCAD light and dark themes keep readable foreground/background contrast
+  - region runtime compatibility expressed through `RegionPlan` export only; the old `RegionSet` path is retired
 
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`
@@ -117,6 +125,7 @@ Practical debugging order:
 3. Add `Last verified with commit` to changed wiki pages.
 4. Keep `docs/PRACTICAL_SAMPLE_SET.md` synchronized with any sample-file additions or removals.
 5. Keep `run_practical_scope_smokes.ps1` synchronized with the practical-engineering scope.
+6. When task-panel color or tint behavior changes, verify readability in both FreeCAD light and dark themes and update the related wiki page if user-visible contrast rules changed.
 
 ## Recommended Contribution Flow
 1. Reproduce issue using sample files.
@@ -138,4 +147,4 @@ Practical debugging order:
 4. Attach minimal CSV reproducer when possible.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `314ae19`

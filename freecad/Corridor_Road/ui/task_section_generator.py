@@ -16,8 +16,16 @@ from freecad.Corridor_Road.objects.obj_assembly_template import (
 from freecad.Corridor_Road.objects.obj_typical_section_template import TypicalSectionTemplate, ViewProviderTypicalSectionTemplate
 from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
-from freecad.Corridor_Road.objects.obj_section_set import SectionSet, ViewProviderSectionSet, ensure_section_set_properties
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.obj_section_set import (
+    SectionSet,
+    ViewProviderSectionSet,
+    ensure_section_set_properties,
+    region_plan_usage_enabled,
+    resolve_region_plan_source,
+    set_region_plan_source,
+)
+from freecad.Corridor_Road.objects.obj_project import assign_project_region_plan, find_region_plan_objects, get_length_scale
+from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan as RegionPlanSource
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
@@ -68,6 +76,10 @@ def _find_source_centerline_display(doc):
 
 def _find_structure_sets(doc):
     return find_all(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
+
+
+def _find_region_sets(doc):
+    return find_region_plan_objects(doc)
 
 
 def _find_typical_section_templates(doc):
@@ -230,6 +242,7 @@ class SectionGeneratorTaskPanel:
         self.doc = App.ActiveDocument
         self._terrains = []
         self._structures = []
+        self._regions = []
         self._typicals = []
         self._project = None
         self._coord_mode_initialized = False
@@ -339,6 +352,31 @@ class SectionGeneratorTaskPanel:
         form_struct.addRow(self.chk_struct_apply_overrides)
         form_struct.addRow(self.lbl_struct_note)
         main.addWidget(gb_struct)
+
+        gb_region = QtWidgets.QGroupBox("Region Plan Integration")
+        form_region = QtWidgets.QFormLayout(gb_region)
+        self.chk_use_region_plan = QtWidgets.QCheckBox("Use linked Region Plan")
+        self.chk_use_region_plan.setChecked(False)
+        self.cmb_region_source = QtWidgets.QComboBox()
+        self.chk_region_boundaries = QtWidgets.QCheckBox("Include region boundaries")
+        self.chk_region_boundaries.setChecked(True)
+        self.chk_region_transitions = QtWidgets.QCheckBox("Include region transitions")
+        self.chk_region_transitions.setChecked(True)
+        self.chk_region_apply_overrides = QtWidgets.QCheckBox("Apply region section rules")
+        self.chk_region_apply_overrides.setChecked(False)
+        self.lbl_region_note = QtWidgets.QLabel(
+            "When enabled, the linked Region Plan start/end stations are merged into section generation.\n"
+            "TransitionIn/TransitionOut can add extra stations before and after region spans.\n"
+            "Optional region section rules currently apply side-policy and daylight-policy overrides."
+        )
+        self.lbl_region_note.setWordWrap(True)
+        form_region.addRow(self.chk_use_region_plan)
+        form_region.addRow("Region Plan Source:", self.cmb_region_source)
+        form_region.addRow(self.chk_region_boundaries)
+        form_region.addRow(self.chk_region_transitions)
+        form_region.addRow(self.chk_region_apply_overrides)
+        form_region.addRow(self.lbl_region_note)
+        main.addWidget(gb_region)
 
         gb_typ = QtWidgets.QGroupBox("Typical Section Integration")
         form_typ = QtWidgets.QFormLayout(gb_typ)
@@ -475,6 +513,7 @@ class SectionGeneratorTaskPanel:
 
         self.cmb_mode.currentTextChanged.connect(self._update_mode_ui)
         self.chk_use_structure_set.toggled.connect(self._update_structure_ui)
+        self.chk_use_region_plan.toggled.connect(self._update_region_ui)
         self.chk_use_typical.toggled.connect(self._update_typical_ui)
         self.chk_struct_transition.toggled.connect(self._update_structure_ui)
         self.chk_struct_transition_auto.toggled.connect(self._update_structure_ui)
@@ -498,6 +537,7 @@ class SectionGeneratorTaskPanel:
 
         self._update_mode_ui()
         self._update_structure_ui()
+        self._update_region_ui()
         self._update_typical_ui()
         self._update_side_ui()
         return w
@@ -585,6 +625,12 @@ class SectionGeneratorTaskPanel:
         self.chk_struct_tagged_children.setEnabled(on)
         self.chk_struct_apply_overrides.setEnabled(on)
 
+    def _update_region_ui(self):
+        on = bool(self.chk_use_region_plan.isChecked())
+        self.cmb_region_source.setEnabled(on and len(self._regions) > 0)
+        self.chk_region_boundaries.setEnabled(on)
+        self.chk_region_transitions.setEnabled(on)
+
     def _update_typical_ui(self):
         on = bool(self.chk_use_typical.isChecked())
         self.cmb_typical_source.setEnabled(on and len(self._typicals) > 0)
@@ -635,6 +681,9 @@ class SectionGeneratorTaskPanel:
     def _format_structure_obj(self, obj):
         return f"[StructureSet] {obj.Label} ({obj.Name})"
 
+    def _format_region_obj(self, obj):
+        return f"[Region Plan] {obj.Label} ({obj.Name})"
+
     def _format_typical_obj(self, obj):
         return f"[TypicalSectionTemplate] {obj.Label} ({obj.Name})"
 
@@ -658,6 +707,8 @@ class SectionGeneratorTaskPanel:
         for o in objects:
             if kind == "typical":
                 combo.addItem(self._format_typical_obj(o))
+            elif kind == "region":
+                combo.addItem(self._format_region_obj(o))
             else:
                 combo.addItem(self._format_structure_obj(o))
         idx = 0
@@ -679,6 +730,12 @@ class SectionGeneratorTaskPanel:
         if i < 0 or i >= len(self._structures):
             return None
         return self._structures[i]
+
+    def _current_region_source(self):
+        i = int(self.cmb_region_source.currentIndex()) - 1
+        if i < 0 or i >= len(self._regions):
+            return None
+        return self._regions[i]
 
     def _current_typical_source(self):
         i = int(self.cmb_typical_source.currentIndex()) - 1
@@ -793,6 +850,7 @@ class SectionGeneratorTaskPanel:
         aln = _find_alignment(self.doc)
         prj = _find_project(self.doc)
         self._structures = _find_structure_sets(self.doc)
+        self._regions = _find_region_sets(self.doc)
         self._typicals = _find_typical_section_templates(self.doc)
         self._project = prj
         self._apply_default_coord_mode()
@@ -818,6 +876,13 @@ class SectionGeneratorTaskPanel:
         if pref_structure is None and prj is not None and hasattr(prj, "StructureSet"):
             pref_structure = getattr(prj, "StructureSet", None)
         self._fill_structure_combo(self.cmb_structure_source, self._structures, pref_structure)
+
+        pref_region = None
+        if sec is not None:
+            pref_region = resolve_region_plan_source(sec)
+        if pref_region is None and prj is not None:
+            pref_region = getattr(prj, "RegionPlan", None) if hasattr(prj, "RegionPlan") else None
+        self._fill_structure_combo(self.cmb_region_source, self._regions, pref_region, kind="region")
 
         pref_typical = None
         if sec is not None and hasattr(sec, "TypicalSectionTemplate"):
@@ -854,6 +919,9 @@ class SectionGeneratorTaskPanel:
                     self.chk_include_sccs_keys.setChecked(bool(sec.IncludeAlignmentSCCSStations))
                 if hasattr(sec, "UseStructureSet"):
                     self.chk_use_structure_set.setChecked(bool(sec.UseStructureSet))
+                self.chk_use_region_plan.setChecked(bool(region_plan_usage_enabled(sec)))
+                if hasattr(sec, "ApplyRegionOverrides"):
+                    self.chk_region_apply_overrides.setChecked(bool(sec.ApplyRegionOverrides))
                 if hasattr(sec, "UseTypicalSectionTemplate"):
                     self.chk_use_typical.setChecked(bool(sec.UseTypicalSectionTemplate))
                 if hasattr(sec, "IncludeStructureStartEnd"):
@@ -870,6 +938,10 @@ class SectionGeneratorTaskPanel:
                     self.chk_struct_tagged_children.setChecked(bool(sec.CreateStructureTaggedChildren))
                 if hasattr(sec, "ApplyStructureOverrides"):
                     self.chk_struct_apply_overrides.setChecked(bool(sec.ApplyStructureOverrides))
+                if hasattr(sec, "IncludeRegionBoundaries"):
+                    self.chk_region_boundaries.setChecked(bool(sec.IncludeRegionBoundaries))
+                if hasattr(sec, "IncludeRegionTransitions"):
+                    self.chk_region_transitions.setChecked(bool(sec.IncludeRegionTransitions))
             except Exception:
                 pass
 
@@ -931,12 +1003,15 @@ class SectionGeneratorTaskPanel:
         msg.append(f"Assembly Template: {'FOUND' if asm else 'NOT FOUND'}")
         msg.append(f"Section Set: {'FOUND' if sec else 'NOT FOUND'}")
         msg.append(f"StructureSet sources: {len(self._structures)} found")
+        msg.append(f"Region plan sources: {len(self._regions)} found")
         msg.append(f"Typical section templates: {len(self._typicals)} found")
         msg.append(f"Terrain candidates: {len(self._terrains)} found (Mesh only)")
         if pref_terrain is not None:
             msg.append(f"Daylight terrain: {pref_terrain.Label} ({pref_terrain.Name})")
         if pref_structure is not None:
             msg.append(f"Structure source: {pref_structure.Label} ({pref_structure.Name})")
+        if pref_region is not None:
+            msg.append(f"Region plan source: {pref_region.Label} ({pref_region.Name})")
         if pref_typical is not None:
             msg.append(f"Typical section source: {pref_typical.Label} ({pref_typical.Name})")
         msg.append(f"Daylight terrain coords: {self.cmb_day_coords.currentText()}")
@@ -946,6 +1021,7 @@ class SectionGeneratorTaskPanel:
         msg.append("2) Generate to create/update SectionSet")
         msg.append("   - Range mode can include PI and TS/SC/CS/ST key stations automatically")
         msg.append("   - StructureSet integration can merge start/end/center and optional transition stations")
+        msg.append("   - Region Plan integration can merge region boundaries and optional transition stations")
         msg.append("   - Typical Section Template can replace the simple top-profile width model")
         msg.append("3) Side slopes are optional (AssemblyTemplate.UseSideSlopes)")
         msg.append("   - Height Left/Right and other template geometry values are edited in the Assembly Template property editor")
@@ -956,6 +1032,7 @@ class SectionGeneratorTaskPanel:
         self._update_side_ui()
         self._update_mode_ui()
         self._update_structure_ui()
+        self._update_region_ui()
         self._update_typical_ui()
 
     def _create_assembly_template(self):
@@ -1077,7 +1154,7 @@ class SectionGeneratorTaskPanel:
             return
         SectionSet.rebuild_child_sections(sec_obj)
 
-    def _preflight_warnings(self, src, asm, struct_src, typ_src):
+    def _preflight_warnings(self, src, asm, struct_src, reg_src, typ_src):
         warnings = []
         if src is None or asm is None:
             return warnings
@@ -1107,6 +1184,14 @@ class SectionGeneratorTaskPanel:
         if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
             warnings.append("Typical Section replaces the simple top-profile source, while Assembly Template still controls corridor depth and daylight defaults.")
 
+        if bool(self.chk_use_region_plan.isChecked()) and reg_src is not None:
+            try:
+                reg_issues = list(RegionPlanSource.validate(reg_src) or [])
+            except Exception:
+                reg_issues = []
+            if reg_issues:
+                warnings.append(f"Region Plan reports {len(reg_issues)} validation warning(s). Review region overlaps, gaps, or zero-length spans if the station list looks unexpected.")
+
         return warnings
 
     def _generate(self):
@@ -1117,6 +1202,7 @@ class SectionGeneratorTaskPanel:
         asm = self._resolve_assembly()
         sec = self._create_or_get_section_set()
         struct_src = self._current_structure_source()
+        reg_src = self._current_region_source()
         typ_src = self._resolve_typical_section() if bool(self.chk_use_typical.isChecked()) else self._current_typical_source()
 
         if bool(self.chk_use_structure_set.isChecked()) and struct_src is None:
@@ -1124,6 +1210,13 @@ class SectionGeneratorTaskPanel:
                 None,
                 "Generate Sections",
                 "Use StructureSet is enabled, but no StructureSet source is selected.",
+            )
+            return
+        if bool(self.chk_use_region_plan.isChecked()) and reg_src is None:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Generate Sections",
+                "Use Region Plan is enabled, but no Region Plan source is selected.",
             )
             return
         if bool(self.chk_use_typical.isChecked()) and typ_src is None:
@@ -1134,7 +1227,7 @@ class SectionGeneratorTaskPanel:
             )
             return
 
-        preflight = self._preflight_warnings(src, asm, struct_src, typ_src)
+        preflight = self._preflight_warnings(src, asm, struct_src, reg_src, typ_src)
         if preflight:
             reply = QtWidgets.QMessageBox.question(
                 None,
@@ -1185,6 +1278,13 @@ class SectionGeneratorTaskPanel:
                 sec.CreateStructureTaggedChildren = bool(self.chk_struct_tagged_children.isChecked())
             if hasattr(sec, "ApplyStructureOverrides"):
                 sec.ApplyStructureOverrides = bool(self.chk_struct_apply_overrides.isChecked())
+            set_region_plan_source(sec, reg_src, enabled=bool(self.chk_use_region_plan.isChecked()))
+            if hasattr(sec, "ApplyRegionOverrides"):
+                sec.ApplyRegionOverrides = bool(self.chk_region_apply_overrides.isChecked())
+            if hasattr(sec, "IncludeRegionBoundaries"):
+                sec.IncludeRegionBoundaries = bool(self.chk_region_boundaries.isChecked())
+            if hasattr(sec, "IncludeRegionTransitions"):
+                sec.IncludeRegionTransitions = bool(self.chk_region_transitions.isChecked())
             sec.CreateChildSections = bool(self.chk_children.isChecked())
             if hasattr(sec, "DaylightAuto"):
                 sec.DaylightAuto = bool(self.chk_daylight.isChecked())
@@ -1214,19 +1314,22 @@ class SectionGeneratorTaskPanel:
 
         prj = _find_project(self.doc)
         if prj is not None:
+            assign_project_region_plan(prj, reg_src)
             link_project(
                 prj,
                 links={
                     "Centerline3DDisplay": src,
                     "AssemblyTemplate": asm,
                     "TypicalSectionTemplate": typ_src,
+                    "RegionPlan": reg_src,
                     "SectionSet": sec,
                 },
-                adopt_extra=[src, asm, typ_src, sec],
+                adopt_extra=[src, asm, typ_src, reg_src, sec],
             )
 
         n = len(list(getattr(sec, "StationValues", []) or []))
         struct_count = int(getattr(sec, "ResolvedStructureCount", 0) or 0)
+        region_count = int(getattr(sec, "ResolvedRegionCount", 0) or 0)
         msg = [
             "Section generation completed.",
             f"Resolved stations: {n}",
@@ -1236,7 +1339,13 @@ class SectionGeneratorTaskPanel:
                 msg.append(f"Structure source: {struct_src.Label} ({struct_src.Name})")
             msg.append(f"Merged structure stations: {struct_count}")
             if bool(self.chk_struct_apply_overrides.isChecked()):
-                msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, '_StructureOverrideHitCount', 0) or 0))}")
+                msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, 'StructureOverrideHitCount', 0) or 0))}")
+        if bool(self.chk_use_region_plan.isChecked()):
+            if reg_src is not None:
+                msg.append(f"Region plan source: {reg_src.Label} ({reg_src.Name})")
+            msg.append(f"Merged region stations: {region_count}")
+            if bool(self.chk_region_apply_overrides.isChecked()):
+                msg.append(f"Region override-enabled stations: {max(0, int(getattr(sec, 'RegionOverrideHitCount', 0) or 0))}")
         if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
             msg.append(f"Typical section source: {typ_src.Label} ({typ_src.Name})")
         QtWidgets.QMessageBox.information(

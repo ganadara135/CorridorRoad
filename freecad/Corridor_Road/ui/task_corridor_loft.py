@@ -7,6 +7,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft, ensure_corridor_loft_properties
+from freecad.Corridor_Road.objects.obj_section_set import region_plan_usage_enabled
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
 
@@ -76,6 +77,8 @@ class CorridorLoftTaskPanel:
         self.chk_structure_split.setChecked(True)
         self.chk_structure_modes = QtWidgets.QCheckBox("Use structure corridor modes")
         self.chk_structure_modes.setChecked(True)
+        self.chk_region_modes = QtWidgets.QCheckBox("Use region corridor modes")
+        self.chk_region_modes.setChecked(True)
         self.cmb_default_structure_mode = QtWidgets.QComboBox()
         self.cmb_default_structure_mode.addItems(["none", "split_only", "skip_zone"])
         self.cmb_default_structure_mode.setCurrentText("split_only")
@@ -92,6 +95,7 @@ class CorridorLoftTaskPanel:
         form_opts.addRow(self.chk_fix_orientation)
         form_opts.addRow(self.chk_structure_split)
         form_opts.addRow(self.chk_structure_modes)
+        form_opts.addRow(self.chk_region_modes)
         form_opts.addRow("Default structure corridor mode:", self.cmb_default_structure_mode)
         form_opts.addRow("Notch transition scale:", self.spin_notch_transition_scale)
         form_opts.addRow(self.chk_auto)
@@ -240,6 +244,7 @@ class CorridorLoftTaskPanel:
             self.chk_fix_orientation.setChecked(True)
             self.chk_structure_split.setChecked(True)
             self.chk_structure_modes.setChecked(True)
+            self.chk_region_modes.setChecked(True)
             self.cmb_default_structure_mode.setCurrentText("split_only")
             self.spin_notch_transition_scale.setValue(1.0)
             self.chk_auto.setChecked(True)
@@ -259,6 +264,7 @@ class CorridorLoftTaskPanel:
         self.chk_fix_orientation.setChecked(bool(getattr(cor, "AutoFixSectionOrientation", True)))
         self.chk_structure_split.setChecked(bool(getattr(cor, "SplitAtStructureZones", True)))
         self.chk_structure_modes.setChecked(bool(getattr(cor, "UseStructureCorridorModes", True)))
+        self.chk_region_modes.setChecked(bool(getattr(cor, "UseRegionCorridorModes", True)))
         self.cmb_default_structure_mode.setCurrentText(str(getattr(cor, "DefaultStructureCorridorMode", "split_only") or "split_only"))
         self.spin_notch_transition_scale.setValue(float(getattr(cor, "NotchTransitionScale", 1.0) or 1.0))
         self.chk_auto.setChecked(bool(getattr(cor, "AutoUpdate", True)))
@@ -314,6 +320,22 @@ class CorridorLoftTaskPanel:
                     warnings.append(f"Resolved structure corridor modes: {mode_summary}")
         except Exception:
             pass
+        try:
+            if bool(self.chk_region_modes.isChecked()) and bool(region_plan_usage_enabled(sec)):
+                rows = CorridorLoft._resolve_region_corridor_records(sec)
+                _detail_rows, region_warning_rows, mode_summary, spans = CorridorLoft._describe_region_corridor_records(rows)
+                if any(str(mode or "").strip().lower() == "skip_zone" for _s0, _s1, mode in list(spans or [])):
+                    warnings.append(
+                        "Region skip_zone omits corridor body across active spans and uses the same deferred skip-boundary behavior as structure skip zones."
+                    )
+                if region_warning_rows:
+                    warnings.append(
+                        f"Region corridor span resolution reported {len(list(region_warning_rows or []))} warning(s). Review Region Plan corridor policies if the result looks unexpected."
+                    )
+                if str(mode_summary or "-") not in ("", "-"):
+                    warnings.append(f"Resolved region corridor modes: {mode_summary}")
+        except Exception:
+            pass
         return warnings
 
     def _build(self):
@@ -352,6 +374,7 @@ class CorridorLoftTaskPanel:
             cor.AutoFixSectionOrientation = bool(self.chk_fix_orientation.isChecked())
             cor.SplitAtStructureZones = bool(self.chk_structure_split.isChecked())
             cor.UseStructureCorridorModes = bool(self.chk_structure_modes.isChecked())
+            cor.UseRegionCorridorModes = bool(self.chk_region_modes.isChecked())
             cor.DefaultStructureCorridorMode = str(self.cmb_default_structure_mode.currentText() or "split_only")
             cor.NotchTransitionScale = float(self.spin_notch_transition_scale.value())
             cor.AutoUpdate = bool(self.chk_auto.isChecked())
@@ -403,7 +426,11 @@ class CorridorLoftTaskPanel:
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
             corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
+            region_corridor_mode_summary = str(getattr(cor, "ResolvedRegionCorridorModeSummary", "-") or "-")
+            combined_corridor_mode_summary = str(getattr(cor, "ResolvedCombinedCorridorModeSummary", "-") or "-")
             corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
+            region_corridor_warning_count = len(list(getattr(cor, "ResolvedRegionCorridorWarnings", []) or []))
+            combined_corridor_warning_count = len(list(getattr(cor, "ResolvedCombinedCorridorWarnings", []) or []))
             skip_boundary_behavior = str(getattr(cor, "ResolvedSkipBoundaryBehavior", "-") or "-")
             skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
@@ -417,7 +444,7 @@ class CorridorLoftTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nOutput mode: surface\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nLoft profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nOutput mode: surface\nRuled mode: {ruled_mode}\nCorridor-aware segments: {structure_seg_count}\nEffective corridor modes: {combined_corridor_mode_summary}\nEffective corridor warnings: {combined_corridor_warning_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nRegion corridor modes: {region_corridor_mode_summary}\nRegion corridor warnings: {region_corridor_warning_count}\nSkipped corridor ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nLoft profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

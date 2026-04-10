@@ -201,6 +201,49 @@ Interpretation:
 1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
 2. `bridge_zone` and `abutment_zone` use longer transition distances by design.
 
+## Region Plan rows are hard to read in dark theme
+Symptoms:
+- `Manage Region Plan` shows pale or tinted rows but the cell text is hard to read.
+- `Station Timeline`, `Base Regions`, `Overrides`, or `Hints` look washed out after switching FreeCAD theme.
+
+Checks:
+1. Confirm the panel was opened after the current FreeCAD theme was already active.
+2. Confirm the problem is in the grouped workflow tables, not a screenshot viewer or external image viewer.
+3. Confirm the issue persists after closing and reopening `Manage Region Plan`.
+
+Actions:
+1. Reopen `Manage Region Plan` so row tinting is rebuilt from the current Qt palette.
+2. Keep FreeCAD on a normal dark or light application palette rather than a partially mixed custom palette if possible.
+3. If the issue still persists, report which table is affected:
+   - `Station Timeline`
+   - `Base Regions`
+   - `Overrides`
+   - `Hints`
+
+Interpretation:
+1. Current row tinting is palette-aware and should keep readable text in both light and dark themes.
+2. If text is still unreadable, the issue is likely a theme-specific palette/style conflict rather than missing row data.
+
+## Region Plan changes do not affect generated sections
+Symptoms:
+- `Manage Region Plan` looks correct, but `Generate Sections` output does not reflect region boundaries or overrides.
+
+Checks:
+1. Confirm `Use linked Region Plan` is enabled in `Generate Sections`.
+2. Confirm the intended `Region Plan Source` is selected.
+3. Confirm the relevant rows are accepted/enabled:
+   - base rows enabled
+   - override rows enabled
+   - hints accepted if they are meant to become design data
+4. Confirm `Include region boundaries` and `Include region transitions` are enabled when extra sampling stations are expected.
+5. Confirm `Apply region overrides` is enabled when section behavior, not just station density, should change.
+
+Actions:
+1. Re-run `Generate Sections` with the correct region source selected.
+2. Accept pending hints before expecting them to affect section output.
+3. Check `SectionSet.Status` for region-related warnings or missing-source messages.
+4. Verify the expected stations appear in the generated child section list.
+
 ## Corridor Loft is twisted or locally flipped
 Symptoms:
 - Corridor solid twists between nearby stations.
@@ -286,4 +329,4 @@ Actions:
 - https://forum.freecad.org/viewtopic.php?t=103783
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `314ae19`

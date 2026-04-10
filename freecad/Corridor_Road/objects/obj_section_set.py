@@ -10,6 +10,8 @@ import Part
 
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
+from freecad.Corridor_Road.objects.obj_project import ensure_region_plan_object, resolve_project_region_plan
+from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan as RegionPlanSource
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.objects.obj_typical_section_template import build_top_profile as _build_typical_top_profile
 from freecad.Corridor_Road.objects.obj_assembly_template import _collect_side_bench_rows, _resolve_side_bench_profile
@@ -377,6 +379,60 @@ def _resolve_structure_source(obj):
     return None
 
 
+def _resolve_region_source(obj):
+    rp = getattr(obj, "RegionPlan", None) if hasattr(obj, "RegionPlan") else None
+    if rp is not None:
+        return ensure_region_plan_object(rp)
+    return resolve_project_region_plan(getattr(obj, "Document", None))
+
+
+def _region_usage_enabled(obj) -> bool:
+    try:
+        return bool(getattr(obj, "UseRegionPlan", False))
+    except Exception:
+        return False
+
+
+def resolve_region_plan_source(obj):
+    return ensure_region_plan_object(_resolve_region_source(obj))
+
+
+def region_plan_usage_enabled(obj) -> bool:
+    return _region_usage_enabled(obj)
+
+
+def set_region_plan_usage(obj, enabled: bool):
+    if obj is None:
+        return bool(enabled)
+    use_flag = bool(enabled)
+    try:
+        if hasattr(obj, "UseRegionPlan"):
+            obj.UseRegionPlan = use_flag
+    except Exception:
+        pass
+    return use_flag
+
+
+def set_region_plan_source(obj, region_obj, enabled=None):
+    region_obj = ensure_region_plan_object(region_obj)
+    if obj is None:
+        return region_obj
+    try:
+        if hasattr(obj, "RegionPlan"):
+            obj.RegionPlan = region_obj
+    except Exception:
+        pass
+    if enabled is not None:
+        set_region_plan_usage(obj, bool(enabled))
+    return region_obj
+
+
+def synchronize_region_plan_state(obj, preferred_region=None, enabled=None):
+    region_obj = ensure_region_plan_object(preferred_region) if preferred_region is not None else resolve_region_plan_source(obj)
+    use_flag = region_plan_usage_enabled(obj) if enabled is None else bool(enabled)
+    return set_region_plan_source(obj, region_obj, enabled=use_flag)
+
+
 def _status_join(head: str, *tokens):
     parts = []
     for tok in list(tokens or []):
@@ -622,6 +678,163 @@ def _merge_side_override_spec(current, incoming):
     return current
 
 
+def _empty_runtime_override_context():
+    return {
+        "HasStructure": False,
+        "HasRegion": False,
+        "ActiveRecords": [],
+        "OverlayRecords": [],
+        "SuppressSideSlopes": False,
+        "SuppressDaylight": False,
+        "LeftAction": "keep",
+        "RightAction": "keep",
+        "LeftDisableDaylight": False,
+        "RightDisableDaylight": False,
+        "BoundaryRoles": [],
+        "IsBoundaryStation": False,
+        "LeftOverrideSpec": None,
+        "RightOverrideSpec": None,
+        "BaseRegionId": "",
+        "OverlayRegionIds": [],
+        "ResolvedTemplate": "",
+        "ResolvedAssembly": "",
+        "ResolvedRuleSet": "",
+        "ResolvedSidePolicy": "",
+        "ResolvedDaylightPolicy": "",
+        "ResolvedCorridorPolicy": "",
+        "ResolvedWarnings": [],
+    }
+
+
+def _runtime_context_has_section_overrides(ctx) -> bool:
+    if not isinstance(ctx, dict):
+        return False
+    if bool(ctx.get("SuppressSideSlopes", False)) or bool(ctx.get("SuppressDaylight", False)):
+        return True
+    if bool(ctx.get("LeftDisableDaylight", False)) or bool(ctx.get("RightDisableDaylight", False)):
+        return True
+    if ctx.get("LeftOverrideSpec") is not None or ctx.get("RightOverrideSpec") is not None:
+        return True
+    left_action = str(ctx.get("LeftAction", "keep") or "keep").strip().lower()
+    right_action = str(ctx.get("RightAction", "keep") or "keep").strip().lower()
+    return left_action != "keep" or right_action != "keep"
+
+
+def _normalize_region_side_action(token: str):
+    txt = str(token or "").strip().lower()
+    if txt in ("", "keep", "same", "inherit", "default", "on", "enabled", "none"):
+        return "keep"
+    if txt in ("off", "disable", "disabled", "suppress", "stub", "flat_stub"):
+        return "stub"
+    if txt in ("bench", "berm"):
+        return "berm"
+    if txt in ("trim", "wall"):
+        return txt
+    return ""
+
+
+def _parse_region_side_policy(policy_text: str):
+    out = {
+        "LeftAction": "keep",
+        "RightAction": "keep",
+        "Warnings": [],
+    }
+    txt = str(policy_text or "").strip()
+    if not txt:
+        return out
+
+    tokens = [tok.strip() for tok in re.split(r"[;,]+", txt) if str(tok or "").strip()]
+    if not tokens:
+        tokens = [txt]
+
+    def _apply(side_key: str, action_token: str, raw_token: str):
+        action = _normalize_region_side_action(action_token)
+        if not action:
+            out["Warnings"].append(f"unknown side policy '{raw_token}'")
+            return
+        if side_key in ("", "both", "all"):
+            out["LeftAction"] = action
+            out["RightAction"] = action
+        elif side_key == "left":
+            out["LeftAction"] = action
+        elif side_key == "right":
+            out["RightAction"] = action
+        else:
+            out["Warnings"].append(f"unknown side selector '{side_key}' in '{raw_token}'")
+
+    for raw_token in tokens:
+        token = str(raw_token or "").strip()
+        if not token:
+            continue
+        if ":" in token:
+            side_key, action_token = token.split(":", 1)
+            _apply(str(side_key or "").strip().lower(), str(action_token or "").strip(), token)
+            continue
+        if "=" in token:
+            side_key, action_token = token.split("=", 1)
+            _apply(str(side_key or "").strip().lower(), str(action_token or "").strip(), token)
+            continue
+        _apply("", token, token)
+
+    return out
+
+
+def _normalize_region_daylight_mode(token: str):
+    txt = str(token or "").strip().lower()
+    if txt in ("", "keep", "same", "inherit", "default", "on", "enabled", "none"):
+        return "keep"
+    if txt in ("off", "disable", "disabled", "suppress", "no_daylight", "disable_daylight"):
+        return "off"
+    return ""
+
+
+def _parse_region_daylight_policy(policy_text: str):
+    out = {
+        "LeftDisableDaylight": False,
+        "RightDisableDaylight": False,
+        "Warnings": [],
+    }
+    txt = str(policy_text or "").strip()
+    if not txt:
+        return out
+
+    tokens = [tok.strip() for tok in re.split(r"[;,]+", txt) if str(tok or "").strip()]
+    if not tokens:
+        tokens = [txt]
+
+    def _apply(side_key: str, mode_token: str, raw_token: str):
+        mode = _normalize_region_daylight_mode(mode_token)
+        if not mode:
+            out["Warnings"].append(f"unknown daylight policy '{raw_token}'")
+            return
+        flag = bool(mode == "off")
+        if side_key in ("", "both", "all"):
+            out["LeftDisableDaylight"] = flag
+            out["RightDisableDaylight"] = flag
+        elif side_key == "left":
+            out["LeftDisableDaylight"] = flag
+        elif side_key == "right":
+            out["RightDisableDaylight"] = flag
+        else:
+            out["Warnings"].append(f"unknown daylight selector '{side_key}' in '{raw_token}'")
+
+    for raw_token in tokens:
+        token = str(raw_token or "").strip()
+        if not token:
+            continue
+        if ":" in token:
+            side_key, mode_token = token.split(":", 1)
+            _apply(str(side_key or "").strip().lower(), str(mode_token or "").strip(), token)
+            continue
+        if "=" in token:
+            side_key, mode_token = token.split("=", 1)
+            _apply(str(side_key or "").strip().lower(), str(mode_token or "").strip(), token)
+            continue
+        _apply("", token, token)
+
+    return out
+
+
 def _alignment_ip_key_stations(aln):
     if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
         return []
@@ -769,15 +982,51 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "ApplyStructureOverrides"):
         obj.addProperty("App::PropertyBool", "ApplyStructureOverrides", "Structures", "Reserved flag for future structure-based section overrides")
         obj.ApplyStructureOverrides = False
+    if not hasattr(obj, "RegionPlan"):
+        obj.addProperty("App::PropertyLink", "RegionPlan", "Regions", "Linked Region Plan source")
+    if not hasattr(obj, "UseRegionPlan"):
+        obj.addProperty("App::PropertyBool", "UseRegionPlan", "Regions", "Use linked Region Plan for region-driven station merge")
+        obj.UseRegionPlan = False
+    if not hasattr(obj, "ApplyRegionOverrides"):
+        obj.addProperty("App::PropertyBool", "ApplyRegionOverrides", "Regions", "Apply region-owned section rules during section generation")
+        obj.ApplyRegionOverrides = False
+    if not hasattr(obj, "IncludeRegionBoundaries"):
+        obj.addProperty("App::PropertyBool", "IncludeRegionBoundaries", "Regions", "Include region start/end boundary stations from Region Plan")
+        obj.IncludeRegionBoundaries = True
+    if not hasattr(obj, "IncludeRegionTransitions"):
+        obj.addProperty("App::PropertyBool", "IncludeRegionTransitions", "Regions", "Include transition stations before and after region spans")
+        obj.IncludeRegionTransitions = True
+    try:
+        set_region_plan_source(obj, resolve_region_plan_source(obj), enabled=region_plan_usage_enabled(obj))
+    except Exception:
+        pass
 
     if not hasattr(obj, "StationValues"):
         obj.addProperty("App::PropertyFloatList", "StationValues", "Result", "Resolved stations for sections (m)")
     if not hasattr(obj, "ResolvedStructureCount"):
         obj.addProperty("App::PropertyInteger", "ResolvedStructureCount", "Result", "Count of merged structure-driven stations")
         obj.ResolvedStructureCount = 0
+    if not hasattr(obj, "StructureOverrideHitCount"):
+        obj.addProperty("App::PropertyInteger", "StructureOverrideHitCount", "Result", "Count of stations with active structure-owned section overrides")
+        obj.StructureOverrideHitCount = 0
     if not hasattr(obj, "ResolvedStructureTags"):
         obj.addProperty("App::PropertyStringList", "ResolvedStructureTags", "Result", "Resolved structure station summary")
         obj.ResolvedStructureTags = []
+    if not hasattr(obj, "ResolvedRegionCount"):
+        obj.addProperty("App::PropertyInteger", "ResolvedRegionCount", "Result", "Count of merged region-driven stations")
+        obj.ResolvedRegionCount = 0
+    if not hasattr(obj, "RegionOverrideHitCount"):
+        obj.addProperty("App::PropertyInteger", "RegionOverrideHitCount", "Result", "Count of stations with active region-owned section overrides")
+        obj.RegionOverrideHitCount = 0
+    if not hasattr(obj, "ResolvedRegionTags"):
+        obj.addProperty("App::PropertyStringList", "ResolvedRegionTags", "Result", "Resolved region station summary")
+        obj.ResolvedRegionTags = []
+    if not hasattr(obj, "ResolvedRegionSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ResolvedRegionSummaryRows", "Result", "Structured region summary rows")
+        obj.ResolvedRegionSummaryRows = []
+    if not hasattr(obj, "RegionInteractionSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "RegionInteractionSummaryRows", "Result", "Structured region rule-consumption summary rows")
+        obj.RegionInteractionSummaryRows = []
     if not hasattr(obj, "SectionSchemaVersion"):
         obj.addProperty("App::PropertyInteger", "SectionSchemaVersion", "Result", "Section schema version")
         obj.SectionSchemaVersion = 1
@@ -921,6 +1170,36 @@ class SectionSet:
         return out, source_kind, source_obj
 
     @staticmethod
+    def _resolve_region_station_items(obj, total: float, mode: str = "", s0: float = None, s1: float = None):
+        items = []
+        source_kind = ""
+        source_obj = None
+
+        if _region_usage_enabled(obj):
+            rs = _resolve_region_source(obj)
+            if rs is not None:
+                source_obj = rs
+                source_kind = "region_set"
+                items = RegionPlanSource.region_key_station_items(
+                    rs,
+                    include_boundaries=bool(getattr(obj, "IncludeRegionBoundaries", True)),
+                    include_transitions=bool(getattr(obj, "IncludeRegionTransitions", True)),
+                )
+
+        out = []
+        lo = None if s0 is None else float(min(s0, s1))
+        hi = None if s1 is None else float(max(s0, s1))
+        for it in items:
+            st = _clamp(float(it.get("station", 0.0) or 0.0), 0.0, float(total))
+            if str(mode or "") == "Range" and lo is not None and hi is not None:
+                if st < lo - 1e-9 or st > hi + 1e-9:
+                    continue
+            rec = dict(it)
+            rec["station"] = st
+            out.append(rec)
+        return out, source_kind, source_obj
+
+    @staticmethod
     def _resolved_structure_summary(items):
         if not items:
             return 0, []
@@ -943,22 +1222,134 @@ class SectionSet:
         return int(count), rows
 
     @staticmethod
+    def _resolved_region_summary(items):
+        if not items:
+            return 0, []
+        rows = []
+        uniq = set()
+        for it in sorted(items, key=lambda x: float(x.get("station", 0.0))):
+            sta = float(it.get("station", 0.0))
+            tag = str(it.get("tag", "") or "")
+            ids = ",".join([str(v) for v in list(it.get("ids", []) or []) if str(v)])
+            layers = ",".join([str(v) for v in list(it.get("layers", []) or []) if str(v)])
+            txt = f"{sta:.3f}:{tag or 'REG'}"
+            if ids:
+                txt += f" [{ids}]"
+            if layers:
+                txt += f" <{layers}>"
+            if txt not in uniq:
+                rows.append(txt)
+                uniq.add(txt)
+        count = len(_unique_sorted([float(it.get("station", 0.0)) for it in items]))
+        return int(count), rows
+
+    @staticmethod
+    def _region_context_at_station(obj, station: float):
+        ctx = _empty_runtime_override_context()
+        if not _region_usage_enabled(obj):
+            return ctx
+        rs = _resolve_region_source(obj)
+        if rs is None:
+            return ctx
+
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        aln = getattr(src, "Alignment", None) if src is not None else None
+        total = float(getattr(getattr(aln, "Shape", None), "Length", 0.0) or 0.0)
+        tol = max(1e-4, 1e-6 * max(total, 1.0))
+
+        try:
+            station_ctx = RegionPlanSource.resolve_station_context(rs, float(station), tol=tol)
+        except Exception:
+            station_ctx = {}
+        try:
+            effective = RegionPlanSource.resolve_effective_rules_at_station(rs, float(station), tol=tol)
+        except Exception:
+            effective = {}
+
+        ctx["HasRegion"] = bool(station_ctx.get("HasRegion", False))
+        ctx["ActiveRecords"] = list(station_ctx.get("ActiveRecords", []) or [])
+        ctx["OverlayRecords"] = list(station_ctx.get("OverlayRegions", []) or [])
+        ctx["BoundaryRoles"] = list(station_ctx.get("BoundaryRoles", []) or [])
+        ctx["IsBoundaryStation"] = bool(ctx["BoundaryRoles"])
+        ctx["BaseRegionId"] = str(station_ctx.get("BaseRegionId", "") or "")
+        ctx["OverlayRegionIds"] = list(station_ctx.get("OverlayRegionIds", []) or [])
+        ctx["ResolvedTemplate"] = str(effective.get("ResolvedTemplate", "") or "")
+        ctx["ResolvedAssembly"] = str(effective.get("ResolvedAssembly", "") or "")
+        ctx["ResolvedRuleSet"] = str(effective.get("ResolvedRuleSet", "") or "")
+        ctx["ResolvedSidePolicy"] = str(effective.get("ResolvedSidePolicy", "") or "")
+        ctx["ResolvedDaylightPolicy"] = str(effective.get("ResolvedDaylightPolicy", "") or "")
+        ctx["ResolvedCorridorPolicy"] = str(effective.get("ResolvedCorridorPolicy", "") or "")
+        ctx["ResolvedWarnings"] = list(effective.get("ResolvedWarnings", []) or [])
+
+        side_policy = _parse_region_side_policy(ctx["ResolvedSidePolicy"])
+        daylight_policy = _parse_region_daylight_policy(ctx["ResolvedDaylightPolicy"])
+        ctx["LeftAction"] = str(side_policy.get("LeftAction", "keep") or "keep").strip().lower()
+        ctx["RightAction"] = str(side_policy.get("RightAction", "keep") or "keep").strip().lower()
+        ctx["LeftDisableDaylight"] = bool(daylight_policy.get("LeftDisableDaylight", False))
+        ctx["RightDisableDaylight"] = bool(daylight_policy.get("RightDisableDaylight", False))
+        ctx["ResolvedWarnings"] += list(side_policy.get("Warnings", []) or [])
+        ctx["ResolvedWarnings"] += list(daylight_policy.get("Warnings", []) or [])
+        ctx["SuppressSideSlopes"] = ctx["LeftAction"] == "stub" and ctx["RightAction"] == "stub"
+        ctx["SuppressDaylight"] = bool(ctx["LeftDisableDaylight"] and ctx["RightDisableDaylight"])
+        return ctx
+
+    @staticmethod
+    def _merge_runtime_override_contexts(region_context=None, structure_context=None):
+        merged = _empty_runtime_override_context()
+        reg = dict(region_context or {})
+        struct = dict(structure_context or {})
+
+        merged["HasRegion"] = bool(reg.get("HasRegion", False))
+        merged["HasStructure"] = bool(struct.get("HasStructure", False))
+        merged["BaseRegionId"] = str(reg.get("BaseRegionId", "") or "")
+        merged["OverlayRegionIds"] = list(reg.get("OverlayRegionIds", []) or [])
+        merged["ResolvedTemplate"] = str(reg.get("ResolvedTemplate", "") or "")
+        merged["ResolvedAssembly"] = str(reg.get("ResolvedAssembly", "") or "")
+        merged["ResolvedRuleSet"] = str(reg.get("ResolvedRuleSet", "") or "")
+        merged["ResolvedSidePolicy"] = str(reg.get("ResolvedSidePolicy", "") or "")
+        merged["ResolvedDaylightPolicy"] = str(reg.get("ResolvedDaylightPolicy", "") or "")
+        merged["ResolvedCorridorPolicy"] = str(reg.get("ResolvedCorridorPolicy", "") or "")
+        merged["ResolvedWarnings"] = list(reg.get("ResolvedWarnings", []) or [])
+        merged["ActiveRecords"] = list(reg.get("ActiveRecords", []) or []) + list(struct.get("ActiveRecords", []) or [])
+        merged["OverlayRecords"] = list(reg.get("OverlayRecords", []) or []) + list(struct.get("OverlayRecords", []) or [])
+
+        boundary_roles = []
+        for role in list(reg.get("BoundaryRoles", []) or []) + list(struct.get("BoundaryRoles", []) or []):
+            role_txt = str(role or "").strip()
+            if role_txt and role_txt not in boundary_roles:
+                boundary_roles.append(role_txt)
+        merged["BoundaryRoles"] = boundary_roles
+        merged["IsBoundaryStation"] = bool(reg.get("IsBoundaryStation", False) or struct.get("IsBoundaryStation", False))
+
+        merged["LeftAction"] = str(reg.get("LeftAction", "keep") or "keep").strip().lower()
+        merged["RightAction"] = str(reg.get("RightAction", "keep") or "keep").strip().lower()
+        merged["LeftOverrideSpec"] = reg.get("LeftOverrideSpec")
+        merged["RightOverrideSpec"] = reg.get("RightOverrideSpec")
+        merged["LeftDisableDaylight"] = bool(reg.get("LeftDisableDaylight", False))
+        merged["RightDisableDaylight"] = bool(reg.get("RightDisableDaylight", False))
+
+        struct_left_action = str(struct.get("LeftAction", "keep") or "keep").strip().lower()
+        struct_right_action = str(struct.get("RightAction", "keep") or "keep").strip().lower()
+        if struct.get("LeftOverrideSpec") is not None or struct_left_action != "keep":
+            merged["LeftAction"] = struct_left_action
+            merged["LeftOverrideSpec"] = struct.get("LeftOverrideSpec")
+        if struct.get("RightOverrideSpec") is not None or struct_right_action != "keep":
+            merged["RightAction"] = struct_right_action
+            merged["RightOverrideSpec"] = struct.get("RightOverrideSpec")
+        merged["LeftDisableDaylight"] = bool(merged["LeftDisableDaylight"] or struct.get("LeftDisableDaylight", False))
+        merged["RightDisableDaylight"] = bool(merged["RightDisableDaylight"] or struct.get("RightDisableDaylight", False))
+        merged["SuppressSideSlopes"] = bool(
+            merged["LeftAction"] == "stub"
+            and merged["RightAction"] == "stub"
+            and merged.get("LeftOverrideSpec") is None
+            and merged.get("RightOverrideSpec") is None
+        )
+        merged["SuppressDaylight"] = bool(merged["LeftDisableDaylight"] and merged["RightDisableDaylight"])
+        return merged
+
+    @staticmethod
     def _structure_context_at_station(obj, station: float):
-        ctx = {
-            "HasStructure": False,
-            "ActiveRecords": [],
-            "SuppressSideSlopes": False,
-            "SuppressDaylight": False,
-            "OverlayRecords": [],
-            "LeftAction": "keep",
-            "RightAction": "keep",
-            "LeftDisableDaylight": False,
-            "RightDisableDaylight": False,
-            "BoundaryRoles": [],
-            "IsBoundaryStation": False,
-            "LeftOverrideSpec": None,
-            "RightOverrideSpec": None,
-        }
+        ctx = _empty_runtime_override_context()
         if not bool(getattr(obj, "UseStructureSet", False)):
             return ctx
         ss = _resolve_structure_source(obj)
@@ -1108,6 +1499,17 @@ class SectionSet:
             vals.extend([float(it.get("station", 0.0)) for it in struct_items])
         except Exception:
             pass
+        try:
+            region_items, _rkind, _robj = SectionSet._resolve_region_station_items(
+                obj,
+                total,
+                mode=mode,
+                s0=s0,
+                s1=s1,
+            )
+            vals.extend([float(it.get("station", 0.0)) for it in region_items])
+        except Exception:
+            pass
         return _unique_sorted(vals)
 
     @staticmethod
@@ -1144,6 +1546,9 @@ class SectionSet:
         struct_items = []
         struct_kind = ""
         struct_obj = None
+        region_items = []
+        region_kind = ""
+        region_obj = None
         try:
             struct_items, struct_kind, struct_obj = SectionSet._resolve_structure_station_items(
                 obj,
@@ -1154,6 +1559,16 @@ class SectionSet:
             )
         except Exception:
             struct_items = []
+        try:
+            region_items, region_kind, region_obj = SectionSet._resolve_region_station_items(
+                obj,
+                float(aln.Shape.Length),
+                mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
+                s1=float(getattr(obj, "EndStation", float(aln.Shape.Length)) or float(aln.Shape.Length)),
+            )
+        except Exception:
+            region_items = []
         if struct_items and bool(getattr(obj, "CreateStructureTaggedChildren", True)):
             by_tag = {}
             for it in struct_items:
@@ -1162,6 +1577,15 @@ class SectionSet:
                     continue
                 by_tag.setdefault(tag, []).append(float(it.get("station", 0.0)))
             for tag, keys in by_tag.items():
+                key_sets.append((tag, _unique_sorted(keys)))
+        if region_items:
+            by_region_tag = {}
+            for it in region_items:
+                tag = str(it.get("tag", "") or "")
+                if not tag:
+                    continue
+                by_region_tag.setdefault(tag, []).append(float(it.get("station", 0.0)))
+            for tag, keys in by_region_tag.items():
                 key_sets.append((tag, _unique_sorted(keys)))
 
         if not key_sets:
@@ -1178,6 +1602,13 @@ class SectionSet:
                     active = StructureSetSource.active_records_at_station(struct_obj, ss, tol=tol)
                     if active:
                         tags.append("STR")
+                except Exception:
+                    pass
+            if region_kind == "region_set" and region_obj is not None:
+                try:
+                    active_regions = RegionPlanSource.active_records_at_station(region_obj, ss, tol=tol)
+                    if active_regions:
+                        tags.append("REG")
                 except Exception:
                     pass
             if tags:
@@ -1262,6 +1693,141 @@ class SectionSet:
                     "StructureRoles": roles,
                     "StructureRole": role_summary,
                     "StructureSummary": f"{id_summary} | {type_summary} | {role_summary}".strip(" |"),
+                }
+            )
+        return out
+
+    @staticmethod
+    def resolve_region_metadata(obj, stations):
+        out = []
+        if not stations:
+            return out
+
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        aln = getattr(src, "Alignment", None) if src is not None else None
+        total = float(getattr(getattr(aln, "Shape", None), "Length", 0.0) or 0.0)
+        tol = max(1e-4, 1e-6 * max(total, 1.0))
+
+        region_items = []
+        region_kind = ""
+        region_obj = None
+        try:
+            region_items, region_kind, region_obj = SectionSet._resolve_region_station_items(
+                obj,
+                total,
+                mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
+                s1=float(getattr(obj, "EndStation", total) or total),
+            )
+        except Exception:
+            region_items = []
+
+        for s in stations:
+            ss = float(s)
+            ids = []
+            types = []
+            layers = []
+            roles = []
+            base_region_id = ""
+            overlay_ids = []
+            resolved_template = ""
+            resolved_assembly = ""
+            resolved_rule_set = ""
+            resolved_side_policy = ""
+            resolved_daylight_policy = ""
+            resolved_corridor_policy = ""
+            resolved_warnings = []
+
+            if region_kind == "region_set" and region_obj is not None:
+                try:
+                    ctx = RegionPlanSource.resolve_station_context(region_obj, ss, tol=tol)
+                except Exception:
+                    ctx = {}
+                try:
+                    effective = RegionPlanSource.resolve_effective_rules_at_station(region_obj, ss, tol=tol)
+                except Exception:
+                    effective = {}
+                base_region_id = str(ctx.get("BaseRegionId", "") or "")
+                for rid in list(ctx.get("OverlayRegionIds", []) or []):
+                    rid_txt = str(rid or "").strip()
+                    if rid_txt and rid_txt not in overlay_ids:
+                        overlay_ids.append(rid_txt)
+                resolved_template = str(effective.get("ResolvedTemplate", "") or "")
+                resolved_assembly = str(effective.get("ResolvedAssembly", "") or "")
+                resolved_rule_set = str(effective.get("ResolvedRuleSet", "") or "")
+                resolved_side_policy = str(effective.get("ResolvedSidePolicy", "") or "")
+                resolved_daylight_policy = str(effective.get("ResolvedDaylightPolicy", "") or "")
+                resolved_corridor_policy = str(effective.get("ResolvedCorridorPolicy", "") or "")
+                resolved_warnings = [str(v or "").strip() for v in list(effective.get("ResolvedWarnings", []) or []) if str(v or "").strip()]
+                base_rec = dict(ctx.get("BaseRegion") or {})
+                if base_region_id and base_region_id not in ids:
+                    ids.append(base_region_id)
+                base_type = str(base_rec.get("RegionType", "") or "").strip()
+                if base_type and base_type not in types:
+                    types.append(base_type)
+                base_layer = str(base_rec.get("Layer", "") or "").strip()
+                if base_layer and base_layer not in layers:
+                    layers.append(base_layer)
+                for rec in list(ctx.get("OverlayRegions", []) or []):
+                    rid_txt = str(rec.get("Id", "") or "").strip()
+                    typ_txt = str(rec.get("RegionType", "") or "").strip()
+                    layer_txt = str(rec.get("Layer", "") or "").strip()
+                    if rid_txt and rid_txt not in ids:
+                        ids.append(rid_txt)
+                    if typ_txt and typ_txt not in types:
+                        types.append(typ_txt)
+                    if layer_txt and layer_txt not in layers:
+                        layers.append(layer_txt)
+                for role in list(ctx.get("BoundaryRoles", []) or []):
+                    role_txt = str(role or "").strip()
+                    if role_txt and role_txt not in roles:
+                        roles.append(role_txt)
+                if ids:
+                    if "active" not in roles:
+                        roles.insert(0, "active")
+
+            for it in region_items:
+                if abs(ss - float(it.get("station", 0.0) or 0.0)) > tol:
+                    continue
+                role = str(it.get("role", "") or "").strip()
+                if role and role not in roles:
+                    roles.append(role)
+                for rid in list(it.get("ids", []) or []):
+                    rid_txt = str(rid or "").strip()
+                    if rid_txt and rid_txt not in ids:
+                        ids.append(rid_txt)
+                for typ in list(it.get("types", []) or []):
+                    typ_txt = str(typ or "").strip()
+                    if typ_txt and typ_txt not in types:
+                        types.append(typ_txt)
+                for layer in list(it.get("layers", []) or []):
+                    layer_txt = str(layer or "").strip()
+                    if layer_txt and layer_txt not in layers:
+                        layers.append(layer_txt)
+
+            has_region = bool(ids or roles or types or layers)
+            role_summary = ",".join(roles)
+            type_summary = ",".join(types)
+            layer_summary = ",".join(layers)
+            id_summary = ",".join(ids)
+            out.append(
+                {
+                    "HasRegion": has_region,
+                    "RegionIds": ids,
+                    "RegionTypes": types,
+                    "RegionLayers": layers,
+                    "RegionRoles": roles,
+                    "RegionRole": role_summary,
+                    "BaseRegionId": base_region_id,
+                    "OverlayRegionIds": list(overlay_ids),
+                    "ResolvedTemplate": resolved_template,
+                    "ResolvedAssembly": resolved_assembly,
+                    "ResolvedRuleSet": resolved_rule_set,
+                    "ResolvedSidePolicy": resolved_side_policy,
+                    "ResolvedDaylightPolicy": resolved_daylight_policy,
+                    "ResolvedCorridorPolicy": resolved_corridor_policy,
+                    "RegionWarnings": list(resolved_warnings),
+                    "RegionSummary": f"{id_summary} | {type_summary} | {layer_summary} | {role_summary}".strip(" |"),
                 }
             )
         return out
@@ -2212,24 +2778,38 @@ class SectionSet:
         station_profiles = []
         prev_n = None
         prev_day_widths = {"left": None, "right": None}
-        override_hits = 0
+        structure_override_hits = 0
+        region_override_hits = 0
+        region_side_hits = 0
+        region_daylight_hits = 0
         bench_left_hits = 0
         bench_right_hits = 0
         bench_section_hits = 0
         bench_adjusted_hits = 0
         bench_skipped_hits = 0
         use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and typ is not None
+        apply_structure_overrides = bool(getattr(obj, "ApplyStructureOverrides", False))
+        apply_region_overrides = bool(getattr(obj, "ApplyRegionOverrides", False))
         for s in stations:
             structure_context = None
-            if bool(getattr(obj, "ApplyStructureOverrides", False)):
+            region_context = None
+            if apply_structure_overrides:
                 structure_context = SectionSet._structure_context_at_station(obj, float(s))
-                if bool(
-                    structure_context.get("SuppressSideSlopes", False)
-                    or structure_context.get("SuppressDaylight", False)
-                    or str(structure_context.get("LeftAction", "keep") or "keep").strip().lower() != "keep"
-                    or str(structure_context.get("RightAction", "keep") or "keep").strip().lower() != "keep"
-                ):
-                    override_hits += 1
+                if _runtime_context_has_section_overrides(structure_context):
+                    structure_override_hits += 1
+            if apply_region_overrides:
+                region_context = SectionSet._region_context_at_station(obj, float(s))
+                if _runtime_context_has_section_overrides(region_context):
+                    region_override_hits += 1
+                if str(region_context.get("LeftAction", "keep") or "keep").strip().lower() != "keep" or str(region_context.get("RightAction", "keep") or "keep").strip().lower() != "keep":
+                    region_side_hits += 1
+                if bool(region_context.get("LeftDisableDaylight", False)) or bool(region_context.get("RightDisableDaylight", False)):
+                    region_daylight_hits += 1
+            runtime_context = SectionSet._merge_runtime_override_contexts(
+                region_context=region_context,
+                structure_context=structure_context,
+            )
+            apply_runtime_overrides = bool(apply_structure_overrides or apply_region_overrides)
             try:
                 w, prev_n, prev_day_widths = SectionSet.build_section_wire(
                     src,
@@ -2239,8 +2819,8 @@ class SectionSet:
                     prev_day_widths=prev_day_widths,
                     terrain_sampler=terrain_sampler,
                     use_daylight=use_day,
-                    structure_context=structure_context,
-                    apply_structure_overrides=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                    structure_context=runtime_context,
+                    apply_structure_overrides=apply_runtime_overrides,
                     typical_section_obj=typ,
                     use_typical_section=use_typ,
                 )
@@ -2254,8 +2834,8 @@ class SectionSet:
                     prev_day_widths=prev_day_widths,
                     terrain_sampler=None,
                     use_daylight=False,
-                    structure_context=structure_context,
-                    apply_structure_overrides=bool(getattr(obj, "ApplyStructureOverrides", False)),
+                    structure_context=runtime_context,
+                    apply_structure_overrides=apply_runtime_overrides,
                     typical_section_obj=typ,
                     use_typical_section=use_typ,
                 )
@@ -2281,7 +2861,11 @@ class SectionSet:
             )
         try:
             bench_info = {
-                "overrideHits": int(override_hits),
+                "overrideHits": int(structure_override_hits),
+                "structureOverrideHits": int(structure_override_hits),
+                "regionOverrideHits": int(region_override_hits),
+                "regionSideHits": int(region_side_hits),
+                "regionDaylightHits": int(region_daylight_hits),
                 "benchLeft": int(bench_left_hits),
                 "benchRight": int(bench_right_hits),
                 "benchSections": int(bench_section_hits),
@@ -2293,7 +2877,11 @@ class SectionSet:
             }
         except Exception:
             bench_info = {
-                "overrideHits": int(override_hits),
+                "overrideHits": int(structure_override_hits),
+                "structureOverrideHits": int(structure_override_hits),
+                "regionOverrideHits": int(region_override_hits),
+                "regionSideHits": int(region_side_hits),
+                "regionDaylightHits": int(region_daylight_hits),
                 "benchLeft": 0,
                 "benchRight": 0,
                 "benchSections": 0,
@@ -3056,23 +3644,31 @@ class SectionSet:
             stations = SectionSet.resolve_station_values(obj)
         tags = SectionSet.resolve_station_tags(obj, stations) if stations else []
         meta_rows = SectionSet.resolve_structure_metadata(obj, stations) if stations else []
+        region_rows = SectionSet.resolve_region_metadata(obj, stations) if stations else []
         rows = []
         for idx, station in enumerate(stations):
             tag_list = list(tags[idx] if idx < len(tags) else [] or [])
             meta = dict(meta_rows[idx] if idx < len(meta_rows) else {} or {})
+            region_meta = dict(region_rows[idx] if idx < len(region_rows) else {} or {})
             tag_txt = f" [{' / '.join(tag_list)}]" if tag_list else ""
             struct_count = len(list(meta.get("StructureIds", []) or []))
+            region_count = len(list(region_meta.get("RegionIds", []) or []))
             struct_txt = ""
             if struct_count > 0:
                 struct_txt = f" | structures={struct_count}"
+            region_txt = ""
+            if region_count > 0:
+                region_txt = f" | regions={region_count}"
             rows.append(
                 {
                     "index": int(idx),
                     "station": float(station),
                     "tags": tag_list,
                     "has_structure": bool(meta.get("HasStructure", False)),
+                    "has_region": bool(region_meta.get("HasRegion", False)),
                     "structure_summary": str(meta.get("StructureSummary", "") or ""),
-                    "label": f"STA {float(station):.3f}{tag_txt}{struct_txt}",
+                    "region_summary": str(region_meta.get("RegionSummary", "") or ""),
+                    "label": f"STA {float(station):.3f}{tag_txt}{struct_txt}{region_txt}",
                 }
             )
         return rows
@@ -3114,8 +3710,10 @@ class SectionSet:
 
         tags = SectionSet.resolve_station_tags(obj, stations)
         meta_rows = SectionSet.resolve_structure_metadata(obj, stations)
+        region_rows = SectionSet.resolve_region_metadata(obj, stations)
         tag_list = list(tags[use_index] if use_index < len(tags) else [] or [])
         meta = dict(meta_rows[use_index] if use_index < len(meta_rows) else {} or {})
+        region_meta = dict(region_rows[use_index] if use_index < len(region_rows) else {} or {})
         section_polylines = SectionSet._viewer_polylines_from_shape(wires[use_index], origin, nvec, zvec)
 
         overlay_polylines = []
@@ -3145,6 +3743,7 @@ class SectionSet:
             or tok.startswith("bench=")
             or tok.startswith("benchDay")
             or tok.startswith("structures=")
+            or tok.startswith("regions=")
             or tok.startswith("topEdges=")
             or tok.startswith("pavement=")
             or tok.startswith("pavLayers=")
@@ -3185,6 +3784,21 @@ class SectionSet:
             "structure_types": list(meta.get("StructureTypes", []) or []),
             "structure_roles": list(meta.get("StructureRoles", []) or []),
             "structure_summary": str(meta.get("StructureSummary", "") or ""),
+            "has_region": bool(region_meta.get("HasRegion", False)),
+            "region_ids": list(region_meta.get("RegionIds", []) or []),
+            "region_types": list(region_meta.get("RegionTypes", []) or []),
+            "region_layers": list(region_meta.get("RegionLayers", []) or []),
+            "region_roles": list(region_meta.get("RegionRoles", []) or []),
+            "base_region_id": str(region_meta.get("BaseRegionId", "") or ""),
+            "overlay_region_ids": list(region_meta.get("OverlayRegionIds", []) or []),
+            "resolved_region_template": str(region_meta.get("ResolvedTemplate", "") or ""),
+            "resolved_region_assembly": str(region_meta.get("ResolvedAssembly", "") or ""),
+            "resolved_region_rule_set": str(region_meta.get("ResolvedRuleSet", "") or ""),
+            "resolved_side_policy": str(region_meta.get("ResolvedSidePolicy", "") or ""),
+            "resolved_daylight_policy": str(region_meta.get("ResolvedDaylightPolicy", "") or ""),
+            "resolved_corridor_policy": str(region_meta.get("ResolvedCorridorPolicy", "") or ""),
+            "region_warnings": list(region_meta.get("RegionWarnings", []) or []),
+            "region_summary": str(region_meta.get("RegionSummary", "") or ""),
             "bench_summary": str(getattr(obj, "BenchSummary", "-") or "-"),
             "top_profile_edge_summary": top_edges,
             "left_edge_label": left_edge,
@@ -3235,6 +3849,7 @@ class SectionSet:
             station_tags = SectionSet.resolve_station_tags(obj, stations)
         if structure_meta is None or len(structure_meta) != len(stations):
             structure_meta = SectionSet.resolve_structure_metadata(obj, stations)
+        region_meta = SectionSet.resolve_region_metadata(obj, stations)
 
         SectionSet.clear_child_sections(obj)
         children = []
@@ -3242,6 +3857,7 @@ class SectionSet:
             ch = doc.addObject("Part::Feature", "SectionSlice")
             tags = station_tags[i] if i < len(station_tags) else []
             meta = structure_meta[i] if i < len(structure_meta) else {}
+            reg_meta = region_meta[i] if i < len(region_meta) else {}
             tag_txt = f" [{'/'.join(tags)}]" if tags else ""
             ch.Label = f"STA {float(s):.3f}{tag_txt}"
             try:
@@ -3290,6 +3906,66 @@ class SectionSet:
                 if not hasattr(ch, "StructureSummary"):
                     ch.addProperty("App::PropertyString", "StructureSummary", "Structure", "Structure summary text")
                 ch.StructureSummary = str(meta.get("StructureSummary", "") or "")
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "HasRegion"):
+                    ch.addProperty("App::PropertyBool", "HasRegion", "Region", "Whether this section is region-aware")
+                ch.HasRegion = bool(reg_meta.get("HasRegion", False))
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "RegionIds"):
+                    ch.addProperty("App::PropertyStringList", "RegionIds", "Region", "Resolved region IDs at this section")
+                ch.RegionIds = list(reg_meta.get("RegionIds", []) or [])
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "RegionTypes"):
+                    ch.addProperty("App::PropertyStringList", "RegionTypes", "Region", "Resolved region types at this section")
+                ch.RegionTypes = list(reg_meta.get("RegionTypes", []) or [])
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "RegionLayers"):
+                    ch.addProperty("App::PropertyStringList", "RegionLayers", "Region", "Resolved region layers at this section")
+                ch.RegionLayers = list(reg_meta.get("RegionLayers", []) or [])
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "RegionRoles"):
+                    ch.addProperty("App::PropertyStringList", "RegionRoles", "Region", "Resolved region roles at this section")
+                ch.RegionRoles = list(reg_meta.get("RegionRoles", []) or [])
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "BaseRegionId"):
+                    ch.addProperty("App::PropertyString", "BaseRegionId", "Region", "Resolved base region ID at this section")
+                ch.BaseRegionId = str(reg_meta.get("BaseRegionId", "") or "")
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "RegionSummary"):
+                    ch.addProperty("App::PropertyString", "RegionSummary", "Region", "Region summary text")
+                ch.RegionSummary = str(reg_meta.get("RegionSummary", "") or "")
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "ResolvedSidePolicy"):
+                    ch.addProperty("App::PropertyString", "ResolvedSidePolicy", "Region", "Resolved region side policy")
+                ch.ResolvedSidePolicy = str(reg_meta.get("ResolvedSidePolicy", "") or "")
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "ResolvedDaylightPolicy"):
+                    ch.addProperty("App::PropertyString", "ResolvedDaylightPolicy", "Region", "Resolved region daylight policy")
+                ch.ResolvedDaylightPolicy = str(reg_meta.get("ResolvedDaylightPolicy", "") or "")
+            except Exception:
+                pass
+            try:
+                if not hasattr(ch, "ResolvedCorridorPolicy"):
+                    ch.addProperty("App::PropertyString", "ResolvedCorridorPolicy", "Region", "Resolved region corridor policy")
+                ch.ResolvedCorridorPolicy = str(reg_meta.get("ResolvedCorridorPolicy", "") or "")
             except Exception:
                 pass
             overlay_shape = SectionSet._build_child_structure_overlay(obj, float(s), meta)
@@ -3365,6 +4041,60 @@ class SectionSet:
                         if not hasattr(ov, "StructureSummary"):
                             ov.addProperty("App::PropertyString", "StructureSummary", "Structure", "Structure summary text")
                         ov.StructureSummary = str(meta.get("StructureSummary", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "HasRegion"):
+                            ov.addProperty("App::PropertyBool", "HasRegion", "Region", "Whether this overlay is region-aware")
+                        ov.HasRegion = bool(reg_meta.get("HasRegion", False))
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "RegionIds"):
+                            ov.addProperty("App::PropertyStringList", "RegionIds", "Region", "Resolved region IDs at this section")
+                        ov.RegionIds = list(reg_meta.get("RegionIds", []) or [])
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "RegionTypes"):
+                            ov.addProperty("App::PropertyStringList", "RegionTypes", "Region", "Resolved region types at this section")
+                        ov.RegionTypes = list(reg_meta.get("RegionTypes", []) or [])
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "RegionRoles"):
+                            ov.addProperty("App::PropertyStringList", "RegionRoles", "Region", "Resolved region roles at this section")
+                        ov.RegionRoles = list(reg_meta.get("RegionRoles", []) or [])
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "BaseRegionId"):
+                            ov.addProperty("App::PropertyString", "BaseRegionId", "Region", "Resolved base region ID at this section")
+                        ov.BaseRegionId = str(reg_meta.get("BaseRegionId", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "RegionSummary"):
+                            ov.addProperty("App::PropertyString", "RegionSummary", "Region", "Region summary text")
+                        ov.RegionSummary = str(reg_meta.get("RegionSummary", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "ResolvedSidePolicy"):
+                            ov.addProperty("App::PropertyString", "ResolvedSidePolicy", "Region", "Resolved region side policy")
+                        ov.ResolvedSidePolicy = str(reg_meta.get("ResolvedSidePolicy", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "ResolvedDaylightPolicy"):
+                            ov.addProperty("App::PropertyString", "ResolvedDaylightPolicy", "Region", "Resolved region daylight policy")
+                        ov.ResolvedDaylightPolicy = str(reg_meta.get("ResolvedDaylightPolicy", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        if not hasattr(ov, "ResolvedCorridorPolicy"):
+                            ov.addProperty("App::PropertyString", "ResolvedCorridorPolicy", "Region", "Resolved region corridor policy")
+                        ov.ResolvedCorridorPolicy = str(reg_meta.get("ResolvedCorridorPolicy", "") or "")
                     except Exception:
                         pass
                     ov.Shape = overlay_shape
@@ -3462,12 +4192,15 @@ class SectionSet:
             obj.BenchSummaryRows = []
             obj.BenchDaylightAdjustedSectionCount = 0
             obj.BenchDaylightSkippedSectionCount = 0
+            obj.RegionInteractionSummaryRows = []
+            obj.StructureOverrideHitCount = 0
+            obj.RegionOverrideHitCount = 0
             obj.StationValues = stations
             obj.SectionCount = len(stations)
+            src0 = getattr(obj, "SourceCenterlineDisplay", None)
+            aln0 = getattr(src0, "Alignment", None) if src0 is not None else None
+            total0 = float(getattr(getattr(aln0, "Shape", None), "Length", 0.0) or 0.0)
             try:
-                src0 = getattr(obj, "SourceCenterlineDisplay", None)
-                aln0 = getattr(src0, "Alignment", None) if src0 is not None else None
-                total0 = float(getattr(getattr(aln0, "Shape", None), "Length", 0.0) or 0.0)
                 st_items, st_kind, st_obj = SectionSet._resolve_structure_station_items(
                     obj,
                     total0,
@@ -3483,6 +4216,22 @@ class SectionSet:
                 obj.ResolvedStructureTags = []
                 st_kind = ""
                 st_obj = None
+            try:
+                rg_items, rg_kind, rg_obj = SectionSet._resolve_region_station_items(
+                    obj,
+                    total0,
+                    mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                    s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
+                    s1=float(getattr(obj, "EndStation", total0) or total0),
+                )
+                rg_count, rg_rows = SectionSet._resolved_region_summary(rg_items)
+                obj.ResolvedRegionCount = int(rg_count)
+                obj.ResolvedRegionTags = list(rg_rows)
+            except Exception:
+                obj.ResolvedRegionCount = 0
+                obj.ResolvedRegionTags = []
+                rg_kind = ""
+                rg_obj = None
             structure_rows = []
             if bool(getattr(obj, "UseStructureSet", False)):
                 if st_obj is None:
@@ -3497,6 +4246,20 @@ class SectionSet:
                         )
                     )
             obj.StructureInteractionSummaryRows = list(structure_rows)
+            region_rows = []
+            if _region_usage_enabled(obj):
+                if rg_obj is None:
+                    region_rows.append(_report_row("region", source="missing", stations=0, tags=0))
+                elif int(getattr(obj, "ResolvedRegionCount", 0) or 0) > 0:
+                    region_rows.append(
+                        _report_row(
+                            "region",
+                            source=str(rg_kind or "region_set"),
+                            stations=int(getattr(obj, "ResolvedRegionCount", 0) or 0),
+                            tags=len(list(getattr(obj, "ResolvedRegionTags", []) or [])),
+                        )
+                    )
+            obj.ResolvedRegionSummaryRows = list(region_rows)
 
             if not bool(getattr(obj, "ShowSectionWires", True)):
                 obj.Shape = Part.Shape()
@@ -3521,7 +4284,13 @@ class SectionSet:
             bench_skipped_hits = int((bench_info or {}).get("benchSkipped", 0) or 0)
             bench_left_cfg = int((bench_info or {}).get("benchLeftConfigured", 0) or 0)
             bench_right_cfg = int((bench_info or {}).get("benchRightConfigured", 0) or 0)
+            structure_override_hits = int((bench_info or {}).get("structureOverrideHits", (bench_info or {}).get("overrideHits", 0)) or 0)
+            region_override_hits = int((bench_info or {}).get("regionOverrideHits", 0) or 0)
+            region_side_hits = int((bench_info or {}).get("regionSideHits", 0) or 0)
+            region_daylight_hits = int((bench_info or {}).get("regionDaylightHits", 0) or 0)
             station_profiles = list((bench_info or {}).get("stationProfiles", []) or [])
+            obj.StructureOverrideHitCount = int(structure_override_hits)
+            obj.RegionOverrideHitCount = int(region_override_hits)
             if use_typ and typ is not None:
                 typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
                     [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
@@ -3534,6 +4303,20 @@ class SectionSet:
                     station_profiles=station_profiles,
                 )
                 obj.SectionComponentSegmentRows = list(typical_segment_rows) + list(side_slope_segment_rows)
+            else:
+                assembly_segment_rows = list(SectionSet._component_segment_rows_from_assembly(obj, stations) or [])
+                static_rows = []
+                for row_txt in assembly_segment_rows:
+                    row = _parse_report_row(row_txt)
+                    if str(row.get("scope", "") or "").strip().lower() == "side_slope":
+                        continue
+                    static_rows.append(str(row_txt))
+                side_slope_segment_rows = SectionSet._side_slope_segment_rows_from_assembly(
+                    obj,
+                    stations,
+                    station_profiles=station_profiles,
+                )
+                obj.SectionComponentSegmentRows = list(static_rows) + list(side_slope_segment_rows)
             bench_mode = "-"
             if bench_left_hits > 0 and bench_right_hits > 0:
                 bench_mode = "both"
@@ -3577,6 +4360,21 @@ class SectionSet:
                     )
                 )
             obj.BenchSummaryRows = list(bench_rows)
+            region_interaction_rows = []
+            if _region_usage_enabled(obj) and bool(getattr(obj, "ApplyRegionOverrides", False)):
+                if rg_obj is None:
+                    region_interaction_rows.append(_report_row("region_rules", source="missing", stations=0, side=0, daylight=0))
+                elif int(region_override_hits) > 0 or int(region_side_hits) > 0 or int(region_daylight_hits) > 0:
+                    region_interaction_rows.append(
+                        _report_row(
+                            "region_rules",
+                            source=str(rg_kind or "region_set"),
+                            stations=int(region_override_hits),
+                            side=int(region_side_hits),
+                            daylight=int(region_daylight_hits),
+                        )
+                    )
+            obj.RegionInteractionSummaryRows = list(region_interaction_rows)
             obj.ExportSummaryRows = [
                 _report_row(
                     "export",
@@ -3631,7 +4429,9 @@ class SectionSet:
             use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and (left_on or right_on)
             terrain_mode = SectionSet._resolved_terrain_coord_mode(obj) if use_day else ""
             struct_src = _resolve_structure_source(obj) if bool(getattr(obj, "UseStructureSet", False)) else None
+            region_src = _resolve_region_source(obj) if _region_usage_enabled(obj) else None
             resolved_structure_count = int(getattr(obj, "ResolvedStructureCount", 0) or 0)
+            resolved_region_count = int(getattr(obj, "ResolvedRegionCount", 0) or 0)
             ext_count = _external_shape_display_count(struct_src)
             ext_proxy_count = _external_shape_proxy_count(struct_src)
             if use_day and (not terrain_found):
@@ -3687,14 +4487,23 @@ class SectionSet:
                 status_tokens.append("StructureSet missing")
             elif resolved_structure_count > 0:
                 status_tokens.append(f"structures={resolved_structure_count}")
+            if _region_usage_enabled(obj) and region_src is None:
+                status_tokens.append("Region Plan missing")
+            elif resolved_region_count > 0:
+                status_tokens.append(f"regions={resolved_region_count}")
             if ext_count > 0:
                 status_tokens.append(_display_only_status_token(ext_count))
                 status_tokens.append(f"externalShapeDisplayOnly={int(ext_count)}")
             if ext_proxy_count > 0:
                 status_tokens.append(f"externalShapeProxy={int(ext_proxy_count)}")
             if bool(getattr(obj, "ApplyStructureOverrides", False)):
-                ovh = int((bench_info or {}).get("overrideHits", 0) or 0)
-                status_tokens.append(f"overrides={ovh}")
+                status_tokens.append(f"overrides={int(structure_override_hits)}")
+            if bool(getattr(obj, "ApplyRegionOverrides", False)):
+                status_tokens.append(f"regionOverrides={int(region_override_hits)}")
+                if int(region_side_hits) > 0:
+                    status_tokens.append(f"regionSide={int(region_side_hits)}")
+                if int(region_daylight_hits) > 0:
+                    status_tokens.append(f"regionDaylight={int(region_daylight_hits)}")
             obj.Status = _status_join(head, *status_tokens)
 
             # Push parametric updates to linked corridor objects.
@@ -3726,12 +4535,18 @@ class SectionSet:
             obj.SectionComponentSegmentRows = []
             obj.PavementScheduleRows = []
             obj.StructureInteractionSummaryRows = []
+            obj.ResolvedRegionCount = 0
+            obj.ResolvedRegionTags = []
+            obj.ResolvedRegionSummaryRows = []
+            obj.RegionInteractionSummaryRows = []
             obj.ExportSummaryRows = []
             obj.BenchAppliedSectionCount = 0
             obj.BenchSummary = "-"
             obj.BenchSummaryRows = []
             obj.BenchDaylightAdjustedSectionCount = 0
             obj.BenchDaylightSkippedSectionCount = 0
+            obj.StructureOverrideHitCount = 0
+            obj.RegionOverrideHitCount = 0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -3765,12 +4580,24 @@ class SectionSet:
             "StructureBufferAfter",
             "CreateStructureTaggedChildren",
             "ApplyStructureOverrides",
+            "RegionPlan",
+            "UseRegionPlan",
+            "ApplyRegionOverrides",
+            "IncludeRegionBoundaries",
+            "IncludeRegionTransitions",
             "CreateChildSections",
             "AutoRebuildChildren",
             "RebuildNow",
             "ShowSectionWires",
         ):
             try:
+                if prop in ("RegionPlan", "UseRegionPlan"):
+                    self._suspend_recompute = True
+                    try:
+                        preferred = getattr(obj, prop, None) if prop == "RegionPlan" else None
+                        synchronize_region_plan_state(obj, preferred_region=preferred)
+                    finally:
+                        self._suspend_recompute = False
                 obj.touch()
                 if prop == "RebuildNow" and bool(getattr(obj, "RebuildNow", False)):
                     if obj.Document is not None:

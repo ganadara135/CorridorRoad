@@ -182,14 +182,34 @@ Validation:
 [3D centerline wire and completion popup](images/wiki-workflow-05-centerline3d.png)
 
 
+## 5A. Region Plan
+1. Run `Manage Region Plan`.
+2. Create or select the alignment-owned `RegionPlan`.
+3. Define `Base Regions` first so the main corridor span layout is clear.
+4. Add `Overrides` for local ditch/urban/corridor behaviors only where needed.
+5. Use `Seed From Project` to refresh managed `Hints` from project, typical-section, structure, or design-standard context.
+6. Review `Hints` and use `Accept`, `Accept and Edit`, or `Ignore`.
+7. Use `Station Timeline` to confirm span order and final station ranges before section generation.
+
+Output:
+- `RegionPlan` under `02_Alignments/<Alignment>/Regions`
+- grouped base / override / hint authoring data
+
+Validation:
+- Base spans cover the intended corridor regime without accidental overlap.
+- Accepted hints become deterministic overrides; ignored hints remain traceable.
+- `Station Timeline` reflects the intended station order before `Generate Sections`.
+- In dark theme, grouped tables and timeline rows should remain readable with tinted rows and visible cell text.
+
 ## 6. Sections
 1. Run `Generate Sections`.
 2. Choose mode (`Range` or `Manual`).
-3. If structures should drive extra stations, enable `Use linked StructureSet`.
-4. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
-5. Configure daylight options if needed.
-6. If cut/fill terraces are needed, turn on `Use Left Bench` / `Use Right Bench` and edit the `Bench Rows` tables directly.
-7. Click `Generate Sections Now`.
+3. If region spans should drive extra stations or section overrides, enable `Use linked Region Plan`.
+4. If structures should drive extra stations, enable `Use linked StructureSet`.
+5. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
+6. Configure daylight options if needed.
+7. If cut/fill terraces are needed, turn on `Use Left Bench` / `Use Right Bench` and edit the `Bench Rows` tables directly.
+8. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
@@ -197,6 +217,7 @@ Output:
 
 Validation:
 - Resolved station count matches mode/configuration.
+- `Region Plan` boundary/transition stations are present when region integration is enabled.
 - Daylight terrain is assigned when Daylight Auto is enabled.
 - `Merged structure stations` is non-zero when structure records are inside range.
 - `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
@@ -358,10 +379,11 @@ Auto transition distance intent:
 
 ## 8. Quality Check
 - Verify station coverage and EG values.
+- Verify accepted `RegionPlan` overrides and boundary stations are reflected in generated sections.
 - Verify daylight intersections where required.
 - Check status fields for warnings/errors on generated objects.
 - Re-run failed stages after fixing source links or coordinate mode.
 - For the maintained Long-Term practical bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ---
-Last verified with commit: `e619bd8` (`v0.2.0`)
+Last verified with commit: `314ae19`
