@@ -246,16 +246,23 @@ Actions:
 
 ## Corridor Loft is twisted or locally flipped
 Symptoms:
-- Corridor solid twists between nearby stations.
+- Corridor surface twists between nearby stations.
 - Some corridor ranges look inverted or folded.
 - Full loft fails, or only segmented fallback succeeds.
+- `Design Grading Surface` looks section-faithful, but `Corridor Loft` looks more distorted or span-driven.
 
 Checks:
 1. Confirm `SectionSet` child sections look consistent from one station to the next.
-2. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, or daylight transition.
-3. Check `Corridor Loft` status for `adaptive fallback used` and `autoFixed=<count>`.
-4. Confirm `Auto-fix flipped sections` is enabled.
-5. Confirm `Min Section Spacing` is not too small.
+2. Compare against `Design Grading Surface` first. If grading looks correct, the problem is likely in `Corridor Loft` range/shape handling rather than the raw section contract.
+3. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, daylight transition, or structure-aware corridor spans.
+4. Check `Corridor Loft` status for `adaptive fallback used` and `autoFixed=<count>`.
+5. Confirm `Auto-fix flipped sections` is enabled.
+6. Confirm `Min Section Spacing` is not too small.
+
+Interpretation:
+1. `Design Grading Surface` is the reference for raw section connectivity because it connects neighboring section points directly.
+2. `Corridor Loft` should still follow that same ordered section-point contract.
+3. If `Corridor Loft` looks more span-driven, folded, or differently mapped while grading looks correct, suspect corridor packaging or connectivity drift inside `Corridor Loft`, not a different intended design result.
 
 Actions:
 1. Increase section interval in `Generate Sections`.
@@ -329,4 +336,4 @@ Actions:
 - https://forum.freecad.org/viewtopic.php?t=103783
 
 ---
-Last verified with commit: `314ae19`
+Last verified with commit: `e46a556`

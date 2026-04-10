@@ -499,6 +499,105 @@ class CorridorLoft:
         return Part.makePolygon(points)
 
     @staticmethod
+    def _make_tri_face(p0, p1, p2):
+        if ((p1 - p0).Length <= 1e-9) or ((p2 - p1).Length <= 1e-9) or ((p2 - p0).Length <= 1e-9):
+            return None
+        try:
+            wire = Part.makePolygon([p0, p1, p2, p0])
+            face = Part.Face(wire)
+            if face is None or face.isNull():
+                return None
+            return face
+        except Exception:
+            return None
+
+    @staticmethod
+    def _resample_wire_points(wire, count: int):
+        target = max(2, int(count or 0))
+        try:
+            pts = list(wire.discretize(Number=target) or [])
+            if len(pts) == target:
+                return [App.Vector(float(p.x), float(p.y), float(p.z)) for p in pts]
+        except Exception:
+            pass
+        pts = CorridorLoft._wire_points(wire)
+        if len(pts) == target:
+            return list(pts)
+        return list(pts)
+
+    @staticmethod
+    def _harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint: int = 0):
+        a = list(pts0 or [])
+        b = list(pts1 or [])
+        if len(a) >= 2 and len(a) == len(b):
+            return a, b
+        target = int(point_count_hint or 0)
+        if target < 2:
+            target = max(len(a), len(b), 2)
+        a2 = CorridorLoft._resample_wire_points(wire0, target)
+        b2 = CorridorLoft._resample_wire_points(wire1, target)
+        if len(a2) >= 2 and len(a2) == len(b2):
+            return a2, b2
+        raise Exception(f"Section pair point-count mismatch ({len(a)} vs {len(b)})")
+
+    @staticmethod
+    def _section_pair_surface(wire0, wire1, pts0=None, pts1=None, point_count_hint: int = 0):
+        pts0 = list(pts0 or CorridorLoft._wire_points(wire0))
+        pts1 = list(pts1 or CorridorLoft._wire_points(wire1))
+        if len(pts0) < 2 or len(pts1) < 2:
+            raise Exception("Section pair has insufficient points.")
+        pts0, pts1 = CorridorLoft._harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint=point_count_hint)
+
+        faces = []
+        for j in range(len(pts0) - 1):
+            p00 = pts0[j]
+            p01 = pts0[j + 1]
+            p10 = pts1[j]
+            p11 = pts1[j + 1]
+            for tri in ((p00, p01, p11), (p00, p11, p10)):
+                face = CorridorLoft._make_tri_face(*tri)
+                if face is not None:
+                    faces.append(face)
+
+        if faces:
+            # Keep the strip as an explicit face compound instead of sewing it
+            # into a shell. This preserves the per-section triangle topology in
+            # the 3D view so the CorridorLoft surface stays visually consistent
+            # with DesignGradingSurface's strip-based result.
+            return Part.Compound(faces)
+
+        # Fallback for edge cases where the strip triangulation collapses on a
+        # specific pair even though the source section wires are valid.
+        try:
+            return Part.makeLoft([wire0, wire1], False, True, False)
+        except Exception as ex:
+            raise Exception(f"Section pair surface failed: {ex}")
+
+    @staticmethod
+    def _section_strip_surface(wires, point_lists=None, point_count_hint: int = 0):
+        pair_shapes = []
+        wires = list(wires or [])
+        if len(wires) < 2:
+            raise Exception("Need at least 2 sections for strip surface.")
+        point_lists = list(point_lists or [])
+        use_point_lists = len(point_lists) == len(wires)
+        for i in range(len(wires) - 1):
+            pts0 = point_lists[i] if use_point_lists else None
+            pts1 = point_lists[i + 1] if use_point_lists else None
+            pair_shapes.append(
+                CorridorLoft._section_pair_surface(
+                    wires[i],
+                    wires[i + 1],
+                    pts0=pts0,
+                    pts1=pts1,
+                    point_count_hint=point_count_hint,
+                )
+            )
+        if not pair_shapes:
+            raise Exception("Section strip surface produced no faces.")
+        return pair_shapes[0] if len(pair_shapes) == 1 else Part.Compound(pair_shapes)
+
+    @staticmethod
     def _lerp_point(a, b, t: float):
         tt = max(0.0, min(1.0, float(t)))
         return App.Vector(
@@ -566,20 +665,28 @@ class CorridorLoft:
                 f"SchemaVersion=1 requires 3 points (Left->Center->Right), but got {ref_n}."
             )
 
+        # SectionSet.build_section_wires already stabilizes point order for
+        # schema>=2 profiles (typical sections, bench-expanded side slopes,
+        # daylight-adjusted bench contracts). Re-flipping here can mis-detect
+        # heading rotation as a left/right inversion and break strip linkage.
+        allow_auto_flip = bool(auto_fix_orientation) and int(schema_version) <= 1
+
         out_wires = []
+        out_points = []
         prev_pts = None
         fixed_count = 0
         for i, pts in enumerate(pt_lists):
-            if bool(auto_fix_orientation) and CorridorLoft._should_flip_points(prev_pts, pts):
+            if allow_auto_flip and CorridorLoft._should_flip_points(prev_pts, pts):
                 pts = list(reversed(pts))
                 fixed_count += 1
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"Section[{i}] left/right axis is degenerate.")
             out_wires.append(CorridorLoft._make_wire(pts))
+            out_points.append(list(pts))
             prev_pts = pts
 
-        return out_wires, ref_n, fixed_count
+        return out_wires, out_points, ref_n, fixed_count
 
     @staticmethod
     def _filter_close_sections(stations, wires, min_spacing: float):
@@ -714,38 +821,76 @@ class CorridorLoft:
         return str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") == "typical_section"
 
     @staticmethod
-    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True):
+    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True, point_lists=None, point_count_hint: int = 0):
         retry_used = False
         if ranges:
             try:
-                shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=ruled, solid=solid)
+                shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                    wires,
+                    stations,
+                    ranges,
+                    ruled=ruled,
+                    solid=solid,
+                    point_lists=point_lists,
+                    point_count_hint=point_count_hint,
+                )
                 return shape, failed_ranges, retry_used
             except Exception:
                 if CorridorLoft._should_retry_with_ruled(src, ruled):
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(wires, stations, ranges, ruled=True, solid=solid)
+                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                        wires,
+                        stations,
+                        ranges,
+                        ruled=True,
+                        solid=solid,
+                        point_lists=point_lists,
+                        point_count_hint=point_count_hint,
+                    )
                     return shape, failed_ranges, True
                 raise
         try:
-            shape = CorridorLoft._loft(wires, ruled=ruled, solid=solid)
+            shape = CorridorLoft._loft(
+                wires,
+                ruled=ruled,
+                solid=solid,
+                point_lists=point_lists,
+                point_count_hint=point_count_hint,
+            )
             return shape, [], retry_used
         except Exception:
             if CorridorLoft._should_retry_with_ruled(src, ruled):
-                shape = CorridorLoft._loft(wires, ruled=True, solid=solid)
+                shape = CorridorLoft._loft(
+                    wires,
+                    ruled=True,
+                    solid=solid,
+                    point_lists=point_lists,
+                    point_count_hint=point_count_hint,
+                )
                 return shape, [], True
             raise
 
     @staticmethod
-    def _loft(wires, ruled: bool, solid: bool = True):
+    def _loft(wires, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
+        if not bool(solid):
+            return CorridorLoft._section_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
         return Part.makeLoft(wires, bool(solid), bool(ruled), False)
 
     @staticmethod
-    def _loft_adaptive(wires, stations, ruled: bool, solid: bool = True):
+    def _loft_adaptive(wires, stations, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
         parts = []
         failed = []
+        point_lists = list(point_lists or [])
+        use_point_lists = len(point_lists) == len(wires)
 
         def _run(i0: int, i1: int):
             try:
-                seg = CorridorLoft._loft(wires[i0 : i1 + 1], ruled=ruled, solid=solid)
+                seg = CorridorLoft._loft(
+                    wires[i0 : i1 + 1],
+                    ruled=ruled,
+                    solid=solid,
+                    point_lists=(point_lists[i0 : i1 + 1] if use_point_lists else None),
+                    point_count_hint=point_count_hint,
+                )
                 parts.append((i0, seg))
             except Exception as ex:
                 if (i1 - i0) <= 1:
@@ -761,6 +906,11 @@ class CorridorLoft:
         _run(0, len(wires) - 1)
 
         if not parts:
+            if failed:
+                sample = "; ".join([str(v) for v in list(failed[:4])])
+                if len(failed) > 4:
+                    sample += f"; ... ({len(failed)} failed ranges)"
+                raise Exception(f"Adaptive segmented loft failed for all ranges. {sample}")
             raise Exception("Adaptive segmented loft failed for all ranges.")
 
         parts.sort(key=lambda it: int(it[0]))
@@ -1789,19 +1939,29 @@ class CorridorLoft:
         return [(i0, i1) for (i0, i1) in ranges if (i1 - i0 + 1) >= 2]
 
     @staticmethod
-    def _loft_by_ranges(wires, stations, ranges, ruled: bool, solid: bool = True):
+    def _loft_by_ranges(wires, stations, ranges, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
         if not ranges:
-            return CorridorLoft._loft(wires, ruled=ruled, solid=solid), []
+            return CorridorLoft._loft(wires, ruled=ruled, solid=solid, point_lists=point_lists, point_count_hint=point_count_hint), []
 
         shapes = []
         failed_ranges = []
+        point_lists = list(point_lists or [])
+        use_point_lists = len(point_lists) == len(wires)
         for i0, i1 in ranges:
             seg_wires = list(wires[i0 : i1 + 1])
             seg_sta = list(stations[i0 : i1 + 1])
+            seg_pts = list(point_lists[i0 : i1 + 1]) if use_point_lists else None
             try:
-                shp = CorridorLoft._loft(seg_wires, ruled=ruled, solid=solid)
+                shp = CorridorLoft._loft(seg_wires, ruled=ruled, solid=solid, point_lists=seg_pts, point_count_hint=point_count_hint)
             except Exception as ex:
-                shp, failed = CorridorLoft._loft_adaptive(seg_wires, seg_sta, ruled=ruled, solid=solid)
+                shp, failed = CorridorLoft._loft_adaptive(
+                    seg_wires,
+                    seg_sta,
+                    ruled=ruled,
+                    solid=solid,
+                    point_lists=seg_pts,
+                    point_count_hint=point_count_hint,
+                )
                 if failed:
                     failed_ranges.extend(list(failed))
                 else:
@@ -1879,7 +2039,7 @@ class CorridorLoft:
             schema = int(getattr(src, "SectionSchemaVersion", 1))
 
             auto_fix_orientation = bool(getattr(obj, "AutoFixSectionOrientation", True))
-            norm_wires, pt_count, fixed_count = CorridorLoft._validate_and_normalize(
+            norm_wires, norm_points, pt_count, fixed_count = CorridorLoft._validate_and_normalize(
                 stations,
                 wires,
                 schema,
@@ -1889,6 +2049,7 @@ class CorridorLoft:
             h_right = 0.0
             height_source = "surface_only"
             loft_wires = list(norm_wires)
+            loft_point_lists = list(norm_points)
             ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
             obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
             obj.SubassemblySchemaVersion = int(getattr(src, "SubassemblySchemaVersion", 0) or 0)
@@ -1957,6 +2118,7 @@ class CorridorLoft:
                     notch_failures.extend(list(notch_notes))
                 if notch_wires:
                     loft_wires = list(notch_wires)
+                    loft_point_lists = None
                     closed_profile_schema = 2
                     if notch_station_count > 0:
                         notch_count = max(1, len(notch_structure_ids), int(notch_count))
@@ -2109,6 +2271,8 @@ class CorridorLoft:
                     ruled=ruled,
                     src=src,
                     solid=False,
+                    point_lists=loft_point_lists,
+                    point_count_hint=pt_count,
                 )
                 if retry_used and str(ruled_mode or "off") == "off":
                     ruled_mode = "retry:typical_section"
@@ -2136,6 +2300,8 @@ class CorridorLoft:
                         ruled=ruled,
                         src=src,
                         solid=False,
+                        point_lists=loft_point_lists,
+                        point_count_hint=pt_count,
                     )
                 else:
                     shape, failed_ranges = CorridorLoft._loft_adaptive(
@@ -2143,6 +2309,8 @@ class CorridorLoft:
                         stations,
                         ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
                         solid=False,
+                        point_lists=loft_point_lists,
+                        point_count_hint=pt_count,
                     )
                     retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
                 if retry_used and str(ruled_mode or "off") == "off":

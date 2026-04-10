@@ -235,7 +235,7 @@ Validation:
 4. Run `Generate Cut/Fill Calc`.
 
 Output:
-- Corridor solid
+- Corridor surface
 - Design terrain mesh
 - Cut/fill summary
 
@@ -244,6 +244,20 @@ Validation:
 - Completion dialog shows `Source section schema`, `Top profile source`, and `Points per section`.
 - When pavement layers are loaded, completion dialog also shows `Pavement total thickness`.
 - Design terrain/cut-fill status fields show no blocking error.
+
+Object intent:
+- `Design Grading Surface` is the section-faithful reference surface. Use it when you want to verify that generated section lines are being connected exactly as expected.
+- `Corridor Loft` is the corridor result object. It must keep corridor span meaning such as skipped ranges, split structure zones, and notch-aware ranges, so it is the downstream `Part Shape` rather than a pure display mesh.
+- These two objects should follow the same section contract, but they are not interchangeable in project role.
+
+Quick comparison:
+- `Corridor Loft`: best when the project needs a range-aware corridor result object.
+- `Design Grading Surface`: best when the project needs the clearest section-to-section reference surface.
+
+Connectivity note:
+- `Design Grading Surface` is the reference for raw section-to-section connectivity.
+- `Corridor Loft` should follow the same ordered section-point contract, then add corridor span packaging such as split, skip, and notch-aware ranges.
+- If the two outputs disagree, treat that as a bug or packaging drift, not as two equally valid interpretations of the same sections.
 
 ## 7A. How To Reduce Corridor Loft Twisting
 
@@ -386,4 +400,4 @@ Auto transition distance intent:
 - For the maintained Long-Term practical bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ---
-Last verified with commit: `314ae19`
+Last verified with commit: `e46a556`

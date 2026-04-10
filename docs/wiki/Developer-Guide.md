@@ -26,7 +26,7 @@ This page is the quick technical map for contributors.
 - `Centerline3DDisplay`: sampled centerline rendering
 - `RegionPlan`: alignment-owned region authoring model with grouped `Base Regions`, `Overrides`, and `Hints`
 - `SectionSet`: station resolve + section generation + daylight
-- `CorridorLoft`: corridor solid generation from sections
+- `CorridorLoft`: corridor surface generation from sections
 - `DesignTerrain` / `CutFillCalc`: grid sampling based terrain/analysis
 
 Object link chain (typical):
@@ -38,6 +38,20 @@ Object link chain (typical):
 - `CorridorLoft.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
 - `CorridorLoft.AutoFixedSectionCount` reports how many sections were auto-corrected during build.
 - If full loft still fails, adaptive segmented fallback is used and failed ranges are recorded in status.
+
+Role split:
+- `DesignGradingSurface` is the section-faithful reference mesh. It connects neighboring section points directly and is the easiest object to compare against generated section lines.
+- `CorridorLoft` is the range-aware `Part` result. It should still follow the same section contract, but it also has to preserve corridor span meaning such as `split_only`, `skip_zone`, and notch-aware structure handling.
+- If the two outputs disagree visually, first confirm whether the issue is true section-contract drift or a corridor-span/range behavior difference.
+
+Quick comparison:
+- `CorridorLoft`: keep corridor span meaning and downstream `Part` shape identity.
+- `DesignGradingSurface`: show the most section-faithful strip-style reference surface.
+
+Connectivity strategy:
+- legacy `loft` behavior means handing section wires to a loft engine and letting it infer point correspondence
+- preferred section-strip behavior means consuming the ordered points from `SectionSet` and connecting adjacent stations point-to-point
+- `CorridorLoft` should add corridor span packaging on top of that section contract, not replace it with a different connectivity rule
 
 Practical debugging order:
 1. Inspect section wires before inspecting loft output.
@@ -147,4 +161,4 @@ Practical debugging order:
 4. Attach minimal CSV reproducer when possible.
 
 ---
-Last verified with commit: `314ae19`
+Last verified with commit: `e46a556`
