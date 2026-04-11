@@ -54,7 +54,7 @@ def skip_zone_keep_ranges(stations, skip_spans):
     vals = [float(v) for v in list(stations or [])]
     if len(vals) < 2:
         return [], [], []
-    covered = [False] * len(vals)
+    skipped_pairs = [False] * max(0, len(vals) - 1)
     skipped_rows = []
     for lo, hi, mode in list(skip_spans or []):
         if str(mode or "").strip().lower() != "skip_zone":
@@ -62,34 +62,38 @@ def skip_zone_keep_ranges(stations, skip_spans):
         slo = float(min(lo, hi))
         shi = float(max(lo, hi))
         skipped_rows.append(f"{slo:.3f}-{shi:.3f}")
-        for i, sta in enumerate(vals):
-            if slo - 1e-6 <= sta <= shi + 1e-6:
-                covered[i] = True
-    if not any(covered):
+        for i in range(len(vals) - 1):
+            sta0 = float(vals[i])
+            sta1 = float(vals[i + 1])
+            mid = 0.5 * (sta0 + sta1)
+            # Preserve the boundary section lines themselves and only skip
+            # strip pairs whose midpoint falls inside the skip-zone interior.
+            if (slo + 1e-6) < mid < (shi - 1e-6):
+                skipped_pairs[i] = True
+    if not any(skipped_pairs):
         return [(0, len(vals) - 1)], [], []
     keep = []
     skip_runs = []
     i = 0
-    while i < len(vals):
-        while i < len(vals) and covered[i]:
+    while i < len(skipped_pairs):
+        while i < len(skipped_pairs) and skipped_pairs[i]:
             i += 1
-        if i >= len(vals):
+        if i >= len(skipped_pairs):
             break
         j = i
-        while j + 1 < len(vals) and not covered[j + 1]:
+        while j + 1 < len(skipped_pairs) and not skipped_pairs[j + 1]:
             j += 1
-        if j - i >= 1:
-            keep.append((int(i), int(j)))
+        keep.append((int(i), int(j + 1)))
         i = j + 1
     i = 0
-    while i < len(vals):
-        if not covered[i]:
+    while i < len(skipped_pairs):
+        if not skipped_pairs[i]:
             i += 1
             continue
         j = i
-        while j + 1 < len(vals) and covered[j + 1]:
+        while j + 1 < len(skipped_pairs) and skipped_pairs[j + 1]:
             j += 1
-        skip_runs.append((int(i), int(j)))
+        skip_runs.append((int(i), int(j + 1)))
         i = j + 1
     dedup = dedupe_text_rows(skipped_rows)
     return keep, dedup, skip_runs
@@ -101,13 +105,21 @@ def skip_zone_boundary_summary(stations, skip_runs):
         return "-", [], 0
     rows = []
     cap_count = 0
+    last_idx = len(vals) - 1
     for i0, i1 in list(skip_runs or []):
-        if 0 <= int(i0) < len(vals):
-            rows.append(f"SKIP_START:{vals[int(i0)]:.3f}")
-            cap_count += 1
-        if 0 <= int(i1) < len(vals):
-            rows.append(f"SKIP_END:{vals[int(i1)]:.3f}")
-            cap_count += 1
+        if not (0 <= int(i0) < len(vals) and 0 <= int(i1) < len(vals)):
+            continue
+        lo = float(vals[int(min(i0, i1))])
+        hi = float(vals[int(max(i0, i1))])
+        span = f"{lo:.3f}-{hi:.3f}" if abs(hi - lo) > 1e-9 else f"{lo:.3f}"
+        if int(i0) <= 0 and int(i1) >= last_idx:
+            rows.append(f"open_both:{span}")
+        elif int(i0) <= 0:
+            rows.append(f"open_start:{span}")
+        elif int(i1) >= last_idx:
+            rows.append(f"open_end:{span}")
+        else:
+            rows.append(f"internal_gap:{span}")
     if skip_runs:
         return "caps_deferred", dedupe_text_rows(rows), int(cap_count)
     return "-", [], 0
@@ -267,30 +279,41 @@ def attach_package_profile_contract(package_rows, profile_contract_source: str):
         if display_label:
             merged["displayLabel"] = f"{display_label}[{source}]"
         if display_summary:
-            merged["displaySummary"] = f"{display_summary}|contract={source}"
+            merged["displaySummary"] = display_summary
+            merged["summaryContract"] = source
         out.append(report_row(kind, **merged))
     return out
 
 
-def resolve_segment_driver(record_rows, station_mid: float):
+def resolve_segment_driver(record_rows, station_start: float, station_end: float):
     best = None
-    ss = float(station_mid or 0.0)
+    pkg_lo = float(min(station_start, station_end))
+    pkg_hi = float(max(station_start, station_end))
+    best_overlap = 0.0
     for rec in list(record_rows or []):
         try:
             s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
             s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
         except Exception:
             continue
-        lo = min(s0, s1) - 1e-6
-        hi = max(s0, s1) + 1e-6
-        if ss < lo or ss > hi:
+        lo = float(min(s0, s1))
+        hi = float(max(s0, s1))
+        overlap = min(pkg_hi, hi) - max(pkg_lo, lo)
+        if overlap <= 1e-6:
             continue
+        span = abs(float(s1) - float(s0))
         if best is None:
             best = dict(rec)
+            best_overlap = float(overlap)
             continue
-        best_span = abs(float(best.get("ResolvedEndStation", 0.0) or 0.0) - float(best.get("ResolvedStartStation", 0.0) or 0.0))
-        cur_span = abs(float(s1) - float(s0))
-        if cur_span < best_span - 1e-9:
+        best_span = abs(
+            float(best.get("ResolvedEndStation", 0.0) or 0.0)
+            - float(best.get("ResolvedStartStation", 0.0) or 0.0)
+        )
+        if overlap > (best_overlap + 1e-9):
+            best = dict(rec)
+            best_overlap = float(overlap)
+        elif abs(overlap - best_overlap) <= 1e-9 and span < best_span - 1e-9:
             best = dict(rec)
     return dict(best or {})
 
@@ -308,8 +331,7 @@ def attach_segment_drivers(package_rows, driver_records):
         except Exception:
             out.append(str(row_text or ""))
             continue
-        mid = 0.5 * (s0 + s1)
-        driver = resolve_segment_driver(driver_records, mid)
+        driver = resolve_segment_driver(driver_records, s0, s1)
         if driver:
             fields["driverId"] = str(driver.get("Id", "") or "-")
             fields["driverMode"] = str(driver.get("ResolvedCorridorMode", "") or "-")
@@ -390,6 +412,9 @@ def summarize_segment_display(rows, limit: int = 3):
         if kind != "corridor_package":
             continue
         label = str(fields.get("displaySummary", fields.get("displayLabel", "")) or "").strip()
+        contract = str(fields.get("summaryContract", "") or "").strip()
+        if label and contract and "|contract=" not in label:
+            label = f"{label}|contract={contract}"
         if label and label not in labels:
             labels.append(label)
     if not labels:
@@ -419,7 +444,7 @@ def resolve_segment_plan(
 
     skip_ranges, skipped_station_rows, skip_runs = skip_zone_keep_ranges(stations, corridor_spans)
     skip_boundary_behavior, skip_boundary_rows, skip_boundary_cap_count = skip_zone_boundary_summary(stations, skip_runs)
-    if skip_ranges:
+    if skipped_station_rows:
         ranges = list(skip_ranges)
         split_count = len(ranges) if ranges else 0
         use_segmented_ranges = bool(

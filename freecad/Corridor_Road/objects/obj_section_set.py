@@ -875,19 +875,9 @@ def _mark_corridor_needs_recompute(obj_corridor):
     except Exception:
         pass
 
-    try:
-        st = str(getattr(obj_corridor, "Status", "") or "")
-        if "NEEDS_RECOMPUTE" not in st:
-            obj_corridor.Status = "NEEDS_RECOMPUTE: Source SectionSet changed."
-    except Exception:
-        pass
-
-    try:
-        label = str(getattr(obj_corridor, "Label", "") or "")
-        if _RECOMP_LABEL_SUFFIX not in label:
-            obj_corridor.Label = f"{label}{_RECOMP_LABEL_SUFFIX}"
-    except Exception:
-        pass
+    # Keep corridor stale-state internal. The task-panel build flow can
+    # auto-refresh the corridor immediately, so avoid overwriting the
+    # user-facing status/label with a transient NEEDS_RECOMPUTE message.
 
 
 def ensure_section_set_properties(obj):

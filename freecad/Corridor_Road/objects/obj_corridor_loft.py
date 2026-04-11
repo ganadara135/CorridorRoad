@@ -86,8 +86,8 @@ def _merge_station_spans(spans, tol: float = 1e-6):
     return [(float(a), float(b), str(m)) for a, b, m in out]
 
 
-def _report_row(kind: str, **fields) -> str:
-    parts = [str(kind or "").strip() or "row"]
+def _report_row(row_type: str, **fields) -> str:
+    parts = [str(row_type or "").strip() or "row"]
     for key, value in fields.items():
         parts.append(f"{str(key)}={value}")
     return "|".join(parts)
@@ -962,6 +962,37 @@ class CorridorLoft:
         return str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") == "typical_section"
 
     @staticmethod
+    def _needs_refresh(obj) -> bool:
+        try:
+            if bool(getattr(obj, "NeedsRecompute", False)):
+                return True
+        except Exception:
+            pass
+        try:
+            status = str(getattr(obj, "Status", "") or "")
+            return "NEEDS_RECOMPUTE" in status
+        except Exception:
+            return False
+
+    @staticmethod
+    def refresh_if_needed(obj, max_passes: int = 2) -> bool:
+        try:
+            doc = getattr(obj, "Document", None)
+            if doc is None:
+                return not CorridorLoft._needs_refresh(obj)
+            passes = 0
+            while passes < max(0, int(max_passes or 0)) and CorridorLoft._needs_refresh(obj):
+                try:
+                    obj.touch()
+                except Exception:
+                    pass
+                doc.recompute()
+                passes += 1
+            return not CorridorLoft._needs_refresh(obj)
+        except Exception:
+            return False
+
+    @staticmethod
     def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True, point_lists=None, point_count_hint: int = 0):
         retry_used = False
         if ranges:
@@ -1594,7 +1625,11 @@ class CorridorLoft:
                 seg.ProfileContractSource = str(fields.get("profileContract", "-") or "-")
                 if not hasattr(seg, "SegmentSummary"):
                     seg.addProperty("App::PropertyString", "SegmentSummary", "Corridor", "Readable segment summary")
-                seg.SegmentSummary = str(fields.get("displaySummary", fields.get("displayLabel", "-")) or "-")
+                seg_summary = str(fields.get("displaySummary", fields.get("displayLabel", "-")) or "-")
+                summary_contract = str(fields.get("summaryContract", "") or "").strip()
+                if summary_contract and "|contract=" not in seg_summary:
+                    seg_summary = f"{seg_summary}|contract={summary_contract}"
+                seg.SegmentSummary = seg_summary
                 if not hasattr(seg, "ExpectedFaceCount"):
                     seg.addProperty("App::PropertyInteger", "ExpectedFaceCount", "Corridor", "Expected strip face count")
                 seg.ExpectedFaceCount = int(fields.get("expectedFaces", "0") or 0)
@@ -1840,9 +1875,18 @@ class CorridorLoft:
         ramp = max(0.0, min(1.0, float(row.get("Ramp", 0.0) or 0.0)))
         min_width = max(0.002 * scale, 1e-4)
         min_depth = max(0.005 * scale, 1e-4)
+        try:
+            cover = abs(float(rec.get("Cover", 0.0) or 0.0))
+        except Exception:
+            cover = 0.0
         if mode != "notch":
             eff_width = 0.0
             eff_depth = 0.0
+        elif cover > 1e-6:
+            # Buried culverts/crossings should stay covered by the section
+            # surface. In surface mode we keep the original section wire and
+            # let the structure remain below grade by its cover amount.
+            return open_wire
         else:
             eff_width = min(
                 axis_len * 0.88,
@@ -2306,6 +2350,7 @@ class CorridorLoft:
             notch_station_count = 0
             notch_failures = []
             loft_retry_count = 0
+            status_head = "OK (Surface)"
             if bool(getattr(obj, "UseStructureCorridorModes", True)):
                 notch_wires, notch_station_count, notch_notes, notch_meta = CorridorLoft._make_profiles_with_notch_schema(
                     norm_wires,
@@ -2537,11 +2582,11 @@ class CorridorLoft:
                 if failed_ranges:
                     if str(notch_build_mode or "-") == "schema_profiles":
                         notch_build_mode = "schema_profiles+adaptive_corridor"
-                    status = _build_status(
+                    status_head = (
                         f"WARN (Surface): structure-aware segmented fallback used ({len(failed_ranges)} failed ranges)"
                     )
                 else:
-                    status = _build_status("OK (Surface)")
+                    status_head = "OK (Surface)"
             except Exception as ex:
                 if use_segmented_ranges:
                     shape, failed_ranges, retry_used, segment_package_shapes = CorridorLoft._loft_with_retry(
@@ -2576,11 +2621,11 @@ class CorridorLoft:
                     notch_failures.append(f"skipMarkers: {marker_ex}")
                 loft_retry_count = 1
                 if use_segmented_ranges and not failed_ranges:
-                    status = _build_status(f"OK (Surface): recovered after corridor retry ({ex})")
+                    status_head = f"OK (Surface): recovered after corridor retry ({ex})"
                 else:
                     if str(notch_build_mode or "-") == "schema_profiles":
                         notch_build_mode = "schema_profiles+adaptive_corridor"
-                    status = _build_status(
+                    status_head = (
                         f"WARN (Surface): full corridor build failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
                     )
 
@@ -2588,6 +2633,8 @@ class CorridorLoft:
                 segment_object_count = CorridorLoft._create_segment_objects(obj, segment_package_rows, segment_package_shapes)
             except Exception as seg_ex:
                 notch_failures.append(f"segmentObjects: {seg_ex}")
+
+            status = _build_status(status_head)
 
             source_diag_summary = "section_set"
             source_diag_detail = f"sectionSet={str(getattr(src, 'Name', '') or '')}"

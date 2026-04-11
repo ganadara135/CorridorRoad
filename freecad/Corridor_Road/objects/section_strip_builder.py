@@ -83,11 +83,77 @@ def resample_wire_points(wire, count: int):
     return list(pts)
 
 
+def _polyline_params(points):
+    pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in list(points or [])]
+    if len(pts) < 2:
+        return []
+    lengths = [0.0]
+    total = 0.0
+    for idx in range(1, len(pts)):
+        total += float((pts[idx] - pts[idx - 1]).Length)
+        lengths.append(total)
+    if total <= 1e-12:
+        denom = max(1, len(pts) - 1)
+        return [float(idx) / float(denom) for idx in range(len(pts))]
+    return [float(val) / float(total) for val in lengths]
+
+
+def _resample_polyline_at_params(points, params):
+    pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in list(points or [])]
+    if len(pts) < 2:
+        return list(pts)
+    base_params = _polyline_params(pts)
+    if len(base_params) != len(pts):
+        return list(pts)
+
+    out = []
+    seg = 0
+    last_seg = max(0, len(pts) - 2)
+    for raw_t in list(params or []):
+        t = max(0.0, min(1.0, float(raw_t)))
+        while seg < last_seg and t > base_params[seg + 1] + 1e-12:
+            seg += 1
+        t0 = float(base_params[seg])
+        t1 = float(base_params[seg + 1])
+        p0 = pts[seg]
+        p1 = pts[seg + 1]
+        if t1 <= t0 + 1e-12:
+            out.append(App.Vector(float(p0.x), float(p0.y), float(p0.z)))
+            continue
+        alpha = (t - t0) / (t1 - t0)
+        out.append(
+            App.Vector(
+                float(p0.x) + ((float(p1.x) - float(p0.x)) * alpha),
+                float(p0.y) + ((float(p1.y) - float(p0.y)) * alpha),
+                float(p0.z) + ((float(p1.z) - float(p0.z)) * alpha),
+            )
+        )
+    return dedupe_consecutive_points(out)
+
+
+def _merge_polyline_params(points_a, points_b):
+    params = [0.0, 1.0]
+    params.extend(_polyline_params(points_a))
+    params.extend(_polyline_params(points_b))
+    merged = []
+    for raw in sorted(float(v) for v in list(params or [])):
+        val = max(0.0, min(1.0, raw))
+        if not merged or abs(val - merged[-1]) > 1e-9:
+            merged.append(val)
+    return merged
+
+
 def harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint: int = 0):
     a = list(pts0 or [])
     b = list(pts1 or [])
     if len(a) >= 2 and len(a) == len(b):
         return a, b
+    merged_params = _merge_polyline_params(a, b)
+    if len(merged_params) >= 2:
+        a2 = _resample_polyline_at_params(a, merged_params)
+        b2 = _resample_polyline_at_params(b, merged_params)
+        if len(a2) >= 2 and len(a2) == len(b2):
+            return a2, b2
     target = int(point_count_hint or 0)
     if target < 2:
         target = max(len(a), len(b), 2)

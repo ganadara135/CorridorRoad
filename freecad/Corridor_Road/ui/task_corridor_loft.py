@@ -425,6 +425,7 @@ class CorridorLoftTaskPanel:
                 )
 
             self.doc.recompute()
+            CorridorLoft.refresh_if_needed(cor, max_passes=2)
             marker_objs = []
             segment_objs = []
             try:

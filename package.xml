@@ -87,7 +87,7 @@
 
     <content>
         <workbench>
-            <subdirectory>.</subdirectory>
+            <subdirectory>freecad/Corridor_Road</subdirectory>
             <classname>CorridorRoadWorkbench</classname>
         </workbench>
     </content>
