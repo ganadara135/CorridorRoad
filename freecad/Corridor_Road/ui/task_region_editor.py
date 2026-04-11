@@ -151,6 +151,7 @@ class RegionEditorTaskPanel:
         self._regions = []
         self._loading = False
         self._workflow_syncing = False
+        self._timeline_real_row_count = 0
         self._workflow_action_buttons = {}
         self._workflow_group_boxes = {}
         self.form = self._build_ui()
@@ -225,6 +226,43 @@ class RegionEditorTaskPanel:
         raw = re.sub(r"[^A-Z0-9_]+", "_", raw)
         raw = re.sub(r"_+", "_", raw).strip("_")
         return raw or str(default_text)
+
+    @staticmethod
+    def _control_width_hint(widget, text: str, *, padding: int = 36, minimum: int = 80, maximum: int = 320) -> int:
+        try:
+            fm = widget.fontMetrics()
+            width = int(fm.horizontalAdvance(str(text or ""))) + int(padding)
+            return max(int(minimum), min(int(maximum), width))
+        except Exception:
+            return int(max(minimum, min(maximum, 160)))
+
+    def _set_compact_button(self, button, *, padding: int = 34, minimum: int = 92, maximum: int = 220):
+        if button is None:
+            return
+        width = self._control_width_hint(button, button.text(), padding=padding, minimum=minimum, maximum=maximum)
+        button.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Fixed)
+        button.setMaximumWidth(width)
+
+    def _set_compact_combo(self, combo, *, sample_texts=None, minimum: int = 150, maximum: int = 320):
+        if combo is None:
+            return
+        texts = [str(v or "") for v in list(sample_texts or []) if str(v or "")]
+        if not texts:
+            try:
+                texts = [str(combo.itemText(i) or "") for i in range(combo.count()) if str(combo.itemText(i) or "")]
+            except Exception:
+                texts = []
+        longest = max(texts, key=len) if texts else ""
+        width = self._control_width_hint(combo, longest, padding=56, minimum=minimum, maximum=maximum)
+        combo.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Fixed)
+        combo.setMaximumWidth(width)
+
+    def _set_compact_line_edit(self, edit, *, sample_text: str = "1000.000", minimum: int = 110, maximum: int = 180):
+        if edit is None:
+            return
+        width = self._control_width_hint(edit, sample_text, padding=28, minimum=minimum, maximum=maximum)
+        edit.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Fixed)
+        edit.setMaximumWidth(width)
 
     @classmethod
     def _auto_region_id(cls, layer: str, region_type: str, existing_ids, exclude_id: str = "") -> str:
@@ -884,6 +922,7 @@ class RegionEditorTaskPanel:
 
         form_target = QtWidgets.QFormLayout()
         self.cmb_target = QtWidgets.QComboBox()
+        self._set_compact_combo(self.cmb_target, sample_texts=["[New] Create new Region Plan"], minimum=240, maximum=440)
         form_target.addRow("Target Region Plan:", self.cmb_target)
         self.chk_auto_seed_project = QtWidgets.QCheckBox("Auto-seed [New]")
         self.chk_auto_seed_project.setChecked(True)
@@ -892,17 +931,26 @@ class RegionEditorTaskPanel:
         self.cmb_preset = QtWidgets.QComboBox()
         self.cmb_preset.addItem("")
         self.cmb_preset.addItems(list(REGION_PRESET_NAMES))
+        self.cmb_preset.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self._set_compact_combo(self.cmb_preset, sample_texts=REGION_PRESET_NAMES, minimum=150, maximum=230)
+        self.cmb_preset.setMinimumWidth(190)
+        self.cmb_preset.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         self.btn_load_preset = QtWidgets.QPushButton("Load Preset Data")
         self.btn_seed_project = QtWidgets.QPushButton("Seed From Project")
-        preset_row.addWidget(self.cmb_preset, 1)
+        self._set_compact_button(self.btn_load_preset, minimum=120, maximum=180)
+        self._set_compact_button(self.btn_seed_project, minimum=120, maximum=175)
+        preset_row.addWidget(self.cmb_preset, 0)
         preset_row.addWidget(self.btn_load_preset)
         preset_row.addWidget(self.btn_seed_project)
+        preset_row.addStretch(1)
         preset_wrap = QtWidgets.QWidget()
         preset_wrap.setLayout(preset_row)
         form_target.addRow("Preset Data:", preset_wrap)
         csv_row = QtWidgets.QHBoxLayout()
         self.btn_import_csv = QtWidgets.QPushButton("Import CSV")
         self.btn_export_csv = QtWidgets.QPushButton("Export CSV")
+        self._set_compact_button(self.btn_import_csv, minimum=105, maximum=135)
+        self._set_compact_button(self.btn_export_csv, minimum=105, maximum=135)
         csv_row.addWidget(self.btn_import_csv)
         csv_row.addWidget(self.btn_export_csv)
         csv_row.addStretch(1)
@@ -1028,6 +1076,8 @@ class RegionEditorTaskPanel:
         self.btn_sort = QtWidgets.QPushButton("Sort by Start")
         self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_close = QtWidgets.QPushButton("Close")
+        for _btn in (self.btn_add, self.btn_remove, self.btn_sort, self.btn_apply, self.btn_close):
+            self._set_compact_button(_btn)
         btn_row.addWidget(self.btn_add)
         btn_row.addWidget(self.btn_remove)
         btn_row.addWidget(self.btn_sort)
@@ -1071,6 +1121,8 @@ class RegionEditorTaskPanel:
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.horizontalHeader().setStretchLastSection(True)
         table.setAlternatingRowColors(True)
+        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         table.setMinimumHeight(110)
         return table
 
@@ -1084,13 +1136,21 @@ class RegionEditorTaskPanel:
             lbl.setWordWrap(True)
             layout.addWidget(lbl)
         row = QtWidgets.QHBoxLayout()
-        row.addStretch(1)
         btn_map = {}
-        for label, handler in list(buttons or []):
+        btn_wrap = QtWidgets.QWidget()
+        btn_grid = QtWidgets.QGridLayout(btn_wrap)
+        btn_grid.setContentsMargins(0, 0, 0, 0)
+        btn_grid.setHorizontalSpacing(6)
+        btn_grid.setVerticalSpacing(4)
+        cols = 3 if len(list(buttons or [])) > 3 else max(1, len(list(buttons or [])))
+        for idx, (label, handler) in enumerate(list(buttons or [])):
             btn = QtWidgets.QPushButton(str(label or ""))
             btn.clicked.connect(handler)
-            row.addWidget(btn)
+            self._set_compact_button(btn, minimum=108, maximum=180)
+            btn_grid.addWidget(btn, idx // cols, idx % cols)
             btn_map[str(label or "")] = btn
+        row.addWidget(btn_wrap, 0, QtCore.Qt.AlignLeft)
+        row.addStretch(1)
         layout.addLayout(row)
         layout.addWidget(table)
         if extra_widget is not None:
@@ -1128,14 +1188,20 @@ class RegionEditorTaskPanel:
         self.lbl_timeline_editor.setWordWrap(True)
         self.txt_timeline_start = QtWidgets.QLineEdit()
         self.txt_timeline_end = QtWidgets.QLineEdit()
+        self._set_compact_line_edit(self.txt_timeline_start)
+        self._set_compact_line_edit(self.txt_timeline_end)
         self.btn_apply_timeline_span = QtWidgets.QPushButton("Apply Span Edit")
         self.btn_split_timeline_base = QtWidgets.QPushButton("Split Selected Base")
         self.btn_open_timeline_selection = QtWidgets.QPushButton("Focus Workflow Selection")
+        self._set_compact_button(self.btn_apply_timeline_span, minimum=120, maximum=165)
+        self._set_compact_button(self.btn_split_timeline_base, minimum=135, maximum=185)
+        self._set_compact_button(self.btn_open_timeline_selection, minimum=145, maximum=195)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.btn_apply_timeline_span)
         action_row.addWidget(self.btn_split_timeline_base)
         action_row.addWidget(self.btn_open_timeline_selection)
+        action_row.addStretch(1)
         action_wrap = QtWidgets.QWidget()
         action_wrap.setLayout(action_row)
 
@@ -1163,14 +1229,22 @@ class RegionEditorTaskPanel:
         self.cmb_override_action.addItems(list(OVERRIDE_ACTION_ITEMS))
         self.txt_override_start = QtWidgets.QLineEdit()
         self.txt_override_end = QtWidgets.QLineEdit()
+        self._set_compact_combo(self.cmb_override_kind, sample_texts=OVERRIDE_KIND_ITEMS, minimum=150, maximum=210)
+        self._set_compact_combo(self.cmb_override_scope, sample_texts=OVERRIDE_SCOPE_ITEMS, minimum=110, maximum=150)
+        self._set_compact_combo(self.cmb_override_action, sample_texts=OVERRIDE_ACTION_ITEMS, minimum=120, maximum=170)
+        self._set_compact_line_edit(self.txt_override_start)
+        self._set_compact_line_edit(self.txt_override_end)
         self.lbl_override_editor = QtWidgets.QLabel("Select an override row to edit it here.")
         self.lbl_override_editor.setWordWrap(True)
         self.btn_apply_override_editor = QtWidgets.QPushButton("Apply Override Edit")
         self.btn_open_override_advanced = QtWidgets.QPushButton("Open In Advanced")
+        self._set_compact_button(self.btn_apply_override_editor, minimum=135, maximum=185)
+        self._set_compact_button(self.btn_open_override_advanced, minimum=120, maximum=165)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.btn_apply_override_editor)
         action_row.addWidget(self.btn_open_override_advanced)
+        action_row.addStretch(1)
         action_wrap = QtWidgets.QWidget()
         action_wrap.setLayout(action_row)
 
@@ -1391,6 +1465,12 @@ class RegionEditorTaskPanel:
         self.cmb_target.addItem("[New] Create new Region Plan")
         for obj in self._regions:
             self.cmb_target.addItem(self._fmt_obj("Region Plan", obj))
+        self._set_compact_combo(
+            self.cmb_target,
+            sample_texts=[self.cmb_target.itemText(i) for i in range(self.cmb_target.count())],
+            minimum=240,
+            maximum=440,
+        )
         idx = 0
         if selected is not None:
             for i, obj in enumerate(self._regions):
@@ -2610,15 +2690,37 @@ class RegionEditorTaskPanel:
     @classmethod
     def _palette_color_hex(cls, role, fallback: str) -> str:
         app = QtWidgets.QApplication.instance()
-        if app is None:
-            return cls._qcolor_name(fallback, fallback)
+        palettes = []
         try:
-            palette = app.palette()
-            color = palette.color(role)
-            if color.isValid():
-                return cls._qcolor_name(color, fallback)
+            main_window = Gui.getMainWindow()
+            if main_window is not None:
+                palettes.append(main_window.palette())
         except Exception:
             pass
+        if app is not None:
+            try:
+                active_window = app.activeWindow()
+                if active_window is not None:
+                    palettes.append(active_window.palette())
+            except Exception:
+                pass
+            try:
+                focus_widget = app.focusWidget()
+                if focus_widget is not None:
+                    palettes.append(focus_widget.palette())
+            except Exception:
+                pass
+            try:
+                palettes.append(app.palette())
+            except Exception:
+                pass
+        for palette in palettes:
+            try:
+                color = palette.color(role)
+                if color.isValid():
+                    return cls._qcolor_name(color, fallback)
+            except Exception:
+                continue
         return cls._qcolor_name(fallback, fallback)
 
     @classmethod
@@ -2647,8 +2749,16 @@ class RegionEditorTaskPanel:
     @classmethod
     def _is_dark_theme(cls) -> bool:
         window_hex = cls._palette_color_hex(QtGui.QPalette.Window, "#2f343f")
+        base_hex = cls._palette_color_hex(QtGui.QPalette.Base, "#2f343f")
         text_hex = cls._palette_color_hex(QtGui.QPalette.WindowText, "#f2f4f8")
-        return cls._qcolor_lightness(window_hex) < cls._qcolor_lightness(text_hex)
+        window_l = cls._qcolor_lightness(window_hex)
+        base_l = cls._qcolor_lightness(base_hex)
+        text_l = cls._qcolor_lightness(text_hex)
+        if window_l <= 140.0:
+            return True
+        if base_l <= 140.0:
+            return True
+        return ((window_l + base_l) * 0.5) < (text_l - 12.0)
 
     @classmethod
     def _table_palette_for_kind(cls, kind: str):
@@ -2718,23 +2828,53 @@ class RegionEditorTaskPanel:
         grid_hex = str(colors.get("grid", "#808080"))
         try:
             pal = QtGui.QPalette(table.palette())
-            pal.setColor(QtGui.QPalette.Base, QtGui.QColor(base_hex))
-            pal.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(alt_bg_hex))
-            pal.setColor(QtGui.QPalette.Text, QtGui.QColor(text_hex))
-            pal.setColor(QtGui.QPalette.Window, QtGui.QColor(base_hex))
-            pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor(text_hex))
-            pal.setColor(QtGui.QPalette.Highlight, QtGui.QColor(sel_hex))
-            pal.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(sel_fg_hex))
+            for group in (
+                QtGui.QPalette.Active,
+                QtGui.QPalette.Inactive,
+                QtGui.QPalette.Disabled,
+            ):
+                pal.setColor(group, QtGui.QPalette.Base, QtGui.QColor(base_hex))
+                pal.setColor(group, QtGui.QPalette.AlternateBase, QtGui.QColor(alt_bg_hex))
+                pal.setColor(group, QtGui.QPalette.Text, QtGui.QColor(text_hex))
+                pal.setColor(group, QtGui.QPalette.Window, QtGui.QColor(base_hex))
+                pal.setColor(group, QtGui.QPalette.WindowText, QtGui.QColor(text_hex))
+                pal.setColor(group, QtGui.QPalette.Button, QtGui.QColor(base_hex))
+                pal.setColor(group, QtGui.QPalette.ButtonText, QtGui.QColor(text_hex))
+                pal.setColor(group, QtGui.QPalette.Highlight, QtGui.QColor(sel_hex))
+                pal.setColor(group, QtGui.QPalette.HighlightedText, QtGui.QColor(sel_fg_hex))
             table.setPalette(pal)
             viewport = table.viewport()
             if viewport is not None:
                 viewport.setPalette(pal)
                 viewport.setAutoFillBackground(True)
+                viewport.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+                viewport.setStyleSheet(f"background-color: {base_hex}; color: {text_hex};")
             table.setAutoFillBackground(True)
+            table.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         except Exception:
             pass
         table.setStyleSheet(
-            "QTableWidget {"
+            "QAbstractItemView {"
+            f" background-color: {base_hex};"
+            f" alternate-background-color: {alt_bg_hex};"
+            f" color: {text_hex};"
+            f" gridline-color: {grid_hex};"
+            "}"
+            "QAbstractScrollArea {"
+            f" background-color: {base_hex};"
+            f" color: {text_hex};"
+            "}"
+            "QAbstractScrollArea > QWidget {"
+            f" background-color: {base_hex};"
+            f" color: {text_hex};"
+            "}"
+            "QTableWidget, QTableView {"
+            f" background-color: {base_hex};"
+            f" alternate-background-color: {alt_bg_hex};"
+            f" color: {text_hex};"
+            f" gridline-color: {grid_hex};"
+            "}"
+            "QTableWidget::viewport, QTableView::viewport {"
             f" background-color: {base_hex};"
             f" alternate-background-color: {alt_bg_hex};"
             f" color: {text_hex};"
@@ -2821,6 +2961,7 @@ class RegionEditorTaskPanel:
 
     def _fill_timeline_table(self, rows):
         self.tbl_timeline.setRowCount(0)
+        self._timeline_real_row_count = len(list(rows or []))
         for row_idx, rec in enumerate(list(rows or [])):
             self.tbl_timeline.insertRow(row_idx)
             values = self._timeline_values_for_row(rec)
@@ -2832,6 +2973,71 @@ class RegionEditorTaskPanel:
                 item.setData(QtCore.Qt.UserRole, int(rec.get("_table_row", row_idx)))
                 self._apply_table_row_visuals(item, kind=timeline_kind)
                 self.tbl_timeline.setItem(row_idx, col_idx, item)
+        self._fill_timeline_empty_area()
+
+    def _timeline_fill_colors(self):
+        colors = self._table_palette_for_kind("neutral")
+        base_hex = str(colors.get("base", "#2b3038"))
+        text_hex = str(colors.get("text", "#eef2f7"))
+        try:
+            summary = getattr(self, "txt_timeline_summary", None)
+            if summary is not None:
+                summary_base = summary.palette().color(QtGui.QPalette.Base)
+                summary_text = summary.palette().color(QtGui.QPalette.Text)
+                if summary_base.isValid() and self._qcolor_lightness(summary_base) < 220.0:
+                    base_hex = str(summary_base.name())
+                if summary_text.isValid():
+                    text_hex = str(summary_text.name())
+        except Exception:
+            pass
+        return base_hex, text_hex
+
+    def _fill_timeline_empty_area(self):
+        table = getattr(self, "tbl_timeline", None)
+        if table is None:
+            return
+        real_count = max(0, int(getattr(self, "_timeline_real_row_count", 0) or 0))
+        while table.rowCount() > real_count:
+            table.removeRow(table.rowCount() - 1)
+        try:
+            header_h = max(0, int(table.horizontalHeader().height()))
+        except Exception:
+            header_h = 24
+        try:
+            viewport_h = max(int(table.viewport().height()), int(table.minimumHeight()) - header_h - 4)
+        except Exception:
+            viewport_h = max(0, int(table.minimumHeight()) - header_h - 4)
+        try:
+            row_h = max(18, int(table.verticalHeader().defaultSectionSize()))
+        except Exception:
+            row_h = 24
+        used_h = 0
+        for row in range(real_count):
+            try:
+                used_h += max(1, int(table.rowHeight(row)))
+            except Exception:
+                used_h += row_h
+        remaining_h = max(0, viewport_h - used_h)
+        filler_rows = min(64, int((remaining_h + row_h - 1) // row_h) + 1) if remaining_h > 0 else 0
+        if filler_rows <= 0:
+            return
+        base_hex, text_hex = self._timeline_fill_colors()
+        for _idx in range(filler_rows):
+            row = table.rowCount()
+            table.insertRow(row)
+            table.setRowHeight(row, row_h)
+            for col in range(table.columnCount()):
+                item = QtWidgets.QTableWidgetItem("")
+                item.setFlags(QtCore.Qt.NoItemFlags)
+                item.setData(QtCore.Qt.UserRole, -1)
+                try:
+                    item.setBackground(QtGui.QBrush(QtGui.QColor(base_hex)))
+                    item.setForeground(QtGui.QBrush(QtGui.QColor(text_hex)))
+                    item.setData(QtCore.Qt.BackgroundRole, QtGui.QColor(base_hex))
+                    item.setData(QtCore.Qt.ForegroundRole, QtGui.QColor(text_hex))
+                except Exception:
+                    pass
+                table.setItem(row, col, item)
 
     def _selected_timeline_table_row(self) -> int:
         row = int(self.tbl_timeline.currentRow())
@@ -2841,7 +3047,8 @@ class RegionEditorTaskPanel:
         if item is None:
             return -1
         try:
-            return int(item.data(QtCore.Qt.UserRole))
+            target_row = int(item.data(QtCore.Qt.UserRole))
+            return target_row if target_row >= 0 else -1
         except Exception:
             return -1
 
