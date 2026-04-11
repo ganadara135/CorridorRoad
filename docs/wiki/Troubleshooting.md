@@ -94,7 +94,7 @@ Actions:
 
 Notes:
 1. Structure overlays are shown in a separate `Structure Sections` folder on purpose.
-2. They are not embedded inside the base section wire because that would break Corridor Loft point consistency.
+2. They are not embedded inside the base section wire because that would break Corridor point consistency.
 
 > [Screenshot Needed] Alignment tree showing populated `Structure Sections`.
 > Suggested file: `wiki-troubleshooting-structure-sections-tree.png`
@@ -195,7 +195,7 @@ Actions:
 2. If one specific structure still changes too abruptly, either:
    - increase its representative `Width`/`Height` if the current values are too small, or
    - turn off auto mode and use a larger manual `Transition Distance`.
-3. Regenerate sections and rebuild corridor loft after changing the transition policy.
+3. Regenerate sections and rebuild the corridor after changing the transition policy.
 
 Interpretation:
 1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
@@ -244,37 +244,37 @@ Actions:
 3. Check `SectionSet.Status` for region-related warnings or missing-source messages.
 4. Verify the expected stations appear in the generated child section list.
 
-## Corridor Loft is twisted or locally flipped
+## Corridor is twisted or locally flipped
 Symptoms:
 - Corridor surface twists between nearby stations.
 - Some corridor ranges look inverted or folded.
-- Full loft fails, or only segmented fallback succeeds.
-- `Design Grading Surface` looks section-faithful, but `Corridor Loft` looks more distorted or span-driven.
+- Full corridor build fails, or only segmented fallback succeeds.
+- `Design Grading Surface` looks section-faithful, but `Corridor` looks more distorted or span-driven.
 
 Checks:
 1. Confirm `SectionSet` child sections look consistent from one station to the next.
-2. Compare against `Design Grading Surface` first. If grading looks correct, the problem is likely in `Corridor Loft` range/shape handling rather than the raw section contract.
+2. Compare against `Design Grading Surface` first. If grading looks correct, the problem is likely in `Corridor` range/shape handling rather than the raw section contract.
 3. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, daylight transition, or structure-aware corridor spans.
-4. Check `Corridor Loft` status for `adaptive fallback used` and `autoFixed=<count>`.
+4. Check `Corridor` status for `adaptive fallback used` and `autoFixed=<count>`.
 5. Confirm `Auto-fix flipped sections` is enabled.
 6. Confirm `Min Section Spacing` is not too small.
 
 Interpretation:
 1. `Design Grading Surface` is the reference for raw section connectivity because it connects neighboring section points directly.
-2. `Corridor Loft` should still follow that same ordered section-point contract.
-3. If `Corridor Loft` looks more span-driven, folded, or differently mapped while grading looks correct, suspect corridor packaging or connectivity drift inside `Corridor Loft`, not a different intended design result.
+2. `Corridor` should still follow that same ordered section-point contract.
+3. If `Corridor` looks more span-driven, folded, or differently mapped while grading looks correct, suspect corridor packaging or connectivity drift inside `Corridor`, not a different intended design result.
 
 Actions:
 1. Increase section interval in `Generate Sections`.
-2. Increase `Corridor Loft > Min Section Spacing`.
-3. Enable `Use ruled loft`.
+2. Increase `Corridor > Min Section Spacing`.
+3. Enable `Use ruled surface`.
 4. Keep `Auto-fix flipped sections` enabled.
 5. Reduce abrupt daylight changes with `Daylight Max Width Delta`.
 6. Check profile data for long zero runs, missing EG, or sudden grade spikes.
 7. If needed, temporarily disable daylight and confirm whether the base corridor is stable first.
 
 Interpretation guide:
-1. If `autoFixed=0` and loft still twists, the issue is usually abrupt section shape change rather than simple orientation reversal.
+1. If `autoFixed=0` and the corridor still twists, the issue is usually abrupt section shape change rather than simple orientation reversal.
 2. If `autoFixed` is high, inspect the related section range because left/right orientation may be unstable there.
 3. If only daylight-enabled runs fail, focus on terrain coverage, terrain noise, and daylight width smoothing.
 
@@ -318,7 +318,7 @@ Checks:
 1. Confirm prerequisite object exists:
    - Stations requires Alignment
    - Sections requires Centerline3DDisplay and Assembly
-   - Corridor Loft requires SectionSet
+   - Corridor requires SectionSet
 2. Check object `Status` property for warnings/errors.
 
 Actions:
@@ -336,4 +336,4 @@ Actions:
 - https://forum.freecad.org/viewtopic.php?t=103783
 
 ---
-Last verified with commit: `e46a556`
+Last verified with commit: `61ba6d5`

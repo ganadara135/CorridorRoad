@@ -1078,6 +1078,12 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "SectionComponentSegmentRows"):
         obj.addProperty("App::PropertyStringList", "SectionComponentSegmentRows", "Result", "Station-specific section-component segment rows")
         obj.SectionComponentSegmentRows = []
+    if not hasattr(obj, "SectionProfileCount"):
+        obj.addProperty("App::PropertyInteger", "SectionProfileCount", "Result", "Count of exported normalized section profiles")
+        obj.SectionProfileCount = 0
+    if not hasattr(obj, "SectionProfileRows"):
+        obj.addProperty("App::PropertyStringList", "SectionProfileRows", "Result", "Structured normalized section-profile rows")
+        obj.SectionProfileRows = []
     if not hasattr(obj, "PavementScheduleRows"):
         obj.addProperty("App::PropertyStringList", "PavementScheduleRows", "Result", "Structured pavement schedule rows")
         obj.PavementScheduleRows = []
@@ -2894,6 +2900,131 @@ class SectionSet:
         return stations, wires, terrain_found, (terrain_sampler is not None), bench_info
 
     @staticmethod
+    def _wire_points(wire):
+        edges = list(getattr(wire, "Edges", []) or [])
+        if not edges:
+            return []
+        pts = [edges[0].valueAt(edges[0].FirstParameter)]
+        for edge in edges:
+            pts.append(edge.valueAt(edge.LastParameter))
+        out = []
+        for point in pts:
+            if not out or (point - out[-1]).Length > 1e-9:
+                out.append(point)
+        return out
+
+    @staticmethod
+    def _encode_section_profile_points(points):
+        chunks = []
+        for point in list(points or []):
+            try:
+                chunks.append(f"{float(point.x):.6f},{float(point.y):.6f},{float(point.z):.6f}")
+            except Exception:
+                continue
+        return ";".join(chunks)
+
+    @staticmethod
+    def _decode_section_profile_points(text):
+        out = []
+        for chunk in [str(v or "").strip() for v in str(text or "").split(";")]:
+            if not chunk:
+                continue
+            parts = [str(v or "").strip() for v in chunk.split(",")]
+            if len(parts) != 3:
+                continue
+            try:
+                out.append(App.Vector(float(parts[0]), float(parts[1]), float(parts[2])))
+            except Exception:
+                continue
+        return out
+
+    @staticmethod
+    def _section_profile_rows_from_wires(obj, stations, wires, station_tags=None, structure_meta=None, region_meta=None):
+        schema = int(getattr(obj, "SectionSchemaVersion", 1) or 1)
+        rows = []
+        for idx, (station, wire) in enumerate(zip(list(stations or []), list(wires or []))):
+            points = SectionSet._wire_points(wire)
+            tag_list = list(station_tags[idx] if station_tags and idx < len(station_tags) else [] or [])
+            struct_row = dict(structure_meta[idx] if structure_meta and idx < len(structure_meta) else {} or {})
+            region_row = dict(region_meta[idx] if region_meta and idx < len(region_meta) else {} or {})
+            rows.append(
+                _report_row(
+                    "section_profile",
+                    order=int(idx),
+                    station=f"{float(station):.3f}",
+                    schema=int(schema),
+                    pointCount=int(len(points)),
+                    tags="/".join(tag_list),
+                    hasStructure=int(bool(struct_row.get("HasStructure", False))),
+                    structureCount=len(list(struct_row.get("StructureIds", []) or [])),
+                    hasRegion=int(bool(region_row.get("HasRegion", False))),
+                    regionCount=len(list(region_row.get("RegionIds", []) or [])),
+                    baseRegionId=str(region_row.get("BaseRegionId", "") or ""),
+                    points=SectionSet._encode_section_profile_points(points),
+                    source="ordered_section_wire",
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _section_profiles_from_rows(rows):
+        profiles = []
+        point_count = 0
+        for row_txt in list(rows or []):
+            row = _parse_report_row(row_txt)
+            if str(row.get("kind", "") or "").strip().lower() != "section_profile":
+                continue
+            points = SectionSet._decode_section_profile_points(row.get("points", ""))
+            if len(points) < 2:
+                continue
+            profile = {
+                "station": float(row.get("station", 0.0) or 0.0),
+                "order": int(row.get("order", len(profiles)) or len(profiles)),
+                "schema_version": int(row.get("schema", 1) or 1),
+                "point_count": int(row.get("pointCount", len(points)) or len(points)),
+                "points": list(points),
+                "tags": [v for v in str(row.get("tags", "") or "").split("/") if v],
+                "has_structure": bool(int(row.get("hasStructure", 0) or 0)),
+                "structure_count": int(row.get("structureCount", 0) or 0),
+                "has_region": bool(int(row.get("hasRegion", 0) or 0)),
+                "region_count": int(row.get("regionCount", 0) or 0),
+                "base_region_id": str(row.get("baseRegionId", "") or ""),
+                "source": str(row.get("source", "ordered_section_wire") or "ordered_section_wire"),
+            }
+            profiles.append(profile)
+            if point_count <= 0:
+                point_count = int(profile["point_count"])
+        return profiles, int(point_count)
+
+    @staticmethod
+    def resolve_section_profiles(obj, stations=None, wires=None, station_tags=None, structure_meta=None, region_meta=None):
+        if stations is None and wires is None:
+            stored_rows = list(getattr(obj, "SectionProfileRows", []) or [])
+            profiles, point_count = SectionSet._section_profiles_from_rows(stored_rows)
+            if profiles:
+                return profiles, stored_rows, int(point_count)
+
+        if stations is None or wires is None:
+            stations, wires, _terrain_found, _sampler_ok, _bench_info = SectionSet.build_section_wires(obj)
+        if station_tags is None or len(station_tags) != len(stations):
+            station_tags = SectionSet.resolve_station_tags(obj, stations)
+        if structure_meta is None or len(structure_meta) != len(stations):
+            structure_meta = SectionSet.resolve_structure_metadata(obj, stations)
+        if region_meta is None or len(region_meta) != len(stations):
+            region_meta = SectionSet.resolve_region_metadata(obj, stations)
+
+        rows = SectionSet._section_profile_rows_from_wires(
+            obj,
+            stations,
+            wires,
+            station_tags=station_tags,
+            structure_meta=structure_meta,
+            region_meta=region_meta,
+        )
+        profiles, point_count = SectionSet._section_profiles_from_rows(rows)
+        return profiles, rows, int(point_count)
+
+    @staticmethod
     def _viewer_polyline_from_wire(wire, origin, nvec, zvec):
         if wire is None:
             return []
@@ -4263,19 +4394,39 @@ class SectionSet:
 
             if not bool(getattr(obj, "ShowSectionWires", True)):
                 obj.Shape = Part.Shape()
+                obj.SectionProfileCount = 0
+                obj.SectionProfileRows = []
                 obj.Status = "Hidden"
                 return
 
             if len(stations) < 1:
                 obj.Shape = Part.Shape()
+                obj.SectionProfileCount = 0
+                obj.SectionProfileRows = []
                 obj.Status = "No stations"
                 return
 
             _stations, wires, terrain_found, sampler_ok, bench_info = SectionSet.build_section_wires(obj)
             if len(wires) < 1:
                 obj.Shape = Part.Shape()
+                obj.SectionProfileCount = 0
+                obj.SectionProfileRows = []
                 obj.Status = "No section wires"
                 return
+
+            station_tags = SectionSet.resolve_station_tags(obj, stations)
+            structure_meta = SectionSet.resolve_structure_metadata(obj, stations)
+            region_meta = SectionSet.resolve_region_metadata(obj, stations)
+            _section_profiles, section_profile_rows, _section_profile_point_count = SectionSet.resolve_section_profiles(
+                obj,
+                stations=stations,
+                wires=wires,
+                station_tags=station_tags,
+                structure_meta=structure_meta,
+                region_meta=region_meta,
+            )
+            obj.SectionProfileCount = int(len(section_profile_rows))
+            obj.SectionProfileRows = list(section_profile_rows)
 
             bench_left_hits = int((bench_info or {}).get("benchLeft", 0) or 0)
             bench_right_hits = int((bench_info or {}).get("benchRight", 0) or 0)
@@ -4533,6 +4684,8 @@ class SectionSet:
             obj.ReportSchemaVersion = 1
             obj.SectionComponentSummaryRows = []
             obj.SectionComponentSegmentRows = []
+            obj.SectionProfileCount = 0
+            obj.SectionProfileRows = []
             obj.PavementScheduleRows = []
             obj.StructureInteractionSummaryRows = []
             obj.ResolvedRegionCount = 0

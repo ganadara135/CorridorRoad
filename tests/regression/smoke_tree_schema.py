@@ -180,8 +180,12 @@ def run():
     if not hasattr(cor, "SourceSectionSet"):
         cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
     cor.SourceSectionSet = sec
+    cor_seg = doc.addObject("Part::Feature", "CorridorSegment")
+    if not hasattr(cor_seg, "ParentCorridorLoft"):
+        cor_seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Smoke", "Corridor link")
+    cor_seg.ParentCorridorLoft = cor
     assign_project_region_plan(prj, reg)
-    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, disp])
+    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp])
 
     # Late-binding alignment context should not leave an empty ALN_Unassigned root behind.
     sec_late = doc.addObject("Part::FeaturePython", "SectionSetLateBind")
@@ -260,6 +264,7 @@ def run():
         reg: ALIGNMENT_REGIONS,
         sec: ALIGNMENT_SECTIONS,
         cor: ALIGNMENT_CORRIDOR,
+        cor_seg: ALIGNMENT_CORRIDOR,
         terr: TREE_INPUTS_TERRAINS,
         dgs: TREE_SURFACES,
         dtm: TREE_SURFACES,

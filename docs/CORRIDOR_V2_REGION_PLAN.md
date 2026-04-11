@@ -317,6 +317,12 @@ For compatibility and code stability, the following may stay internal for one mi
 3. object proxy type `CorridorLoft`
 4. project hidden link property `CorridorLoft`
 
+Current decision:
+
+1. keep all four items above for the current cycle
+2. move callers to helper-based access instead of direct property-name coupling
+3. revisit broad internal rename only after corridor geometry/runtime work is fully stable
+
 ### Internal rename policy
 
 Use a staged rename:

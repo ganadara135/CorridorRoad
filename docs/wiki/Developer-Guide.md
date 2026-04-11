@@ -32,7 +32,7 @@ This page is the quick technical map for contributors.
 Object link chain (typical):
 `HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> RegionPlan -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
 
-## Corridor Loft Stability Notes
+## Corridor Stability Notes
 - `SectionSet` keeps section frame continuity using previous normal direction.
 - Daylight side-width changes are smoothed by `AssemblyTemplate.DaylightMaxWidthDelta`.
 - `CorridorLoft.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
@@ -55,9 +55,9 @@ Connectivity strategy:
 
 Practical debugging order:
 1. Inspect section wires before inspecting loft output.
-2. Reduce section density before changing loft algorithm.
+2. Reduce section density before changing corridor connectivity strategy.
 3. Separate base corridor issues from daylight-induced issues.
-4. Use ruled loft during diagnosis, then relax settings if stable.
+4. Use ruled surface during diagnosis, then relax settings if stable.
 
 ## UI Entry Points
 - `cmd_new_project.py`
@@ -68,8 +68,14 @@ Practical debugging order:
 - `cmd_generate_corridor_loft.py`
 - `cmd_import_pointcloud_dem.py`
 
+Command-id note:
+- Preferred command id is `CorridorRoad_GenerateCorridor`.
+- Legacy alias `CorridorRoad_GenerateCorridorLoft` is intentionally retained for compatibility with older toolbars and macros.
+- Project hidden link property is still named `CorridorLoft` for file compatibility; new code should prefer corridor helper functions instead of reading that property name directly.
+- Proxy/module names such as `CorridorLoft` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
+
 ## Completion Message Policy
-- Stations, 3D Centerline, Sections, and Corridor Loft commands should show completion dialogs on successful run.
+- Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.
 - Keep error behavior separate: warnings/errors should not show success dialogs.
 - Include simple runtime summary in dialog where possible (count/status).
 
@@ -161,4 +167,4 @@ Practical debugging order:
 4. Attach minimal CSV reproducer when possible.
 
 ---
-Last verified with commit: `e46a556`
+Last verified with commit: `61ba6d5`

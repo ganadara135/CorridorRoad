@@ -2,6 +2,12 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 # CorridorRoad/objects/obj_corridor_loft.py
+#
+# Internal compatibility note:
+# - user-facing wording has moved to "Corridor"
+# - the proxy/module name remains `CorridorLoft` for this migration cycle
+# - keep new code focused on section-strip/segment runtime behavior
+#   rather than broad symbol renames
 import math
 
 import FreeCAD as App
@@ -26,6 +32,23 @@ from freecad.Corridor_Road.objects.obj_structure_set import (
     _side_offsets as _structure_side_offsets,
 )
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.section_strip_builder import (
+    build_part_pair_surface as _shared_build_part_pair_surface,
+    build_part_strip_surface as _shared_build_part_strip_surface,
+    harmonize_pair_points as _shared_harmonize_pair_points,
+    make_tri_face as _shared_make_tri_face,
+    resample_wire_points as _shared_resample_wire_points,
+    wire_points as _shared_wire_points,
+)
+from freecad.Corridor_Road.objects.corridor_segment_builder import (
+    attach_package_profile_contract as _attach_package_profile_contract,
+    summarize_segment_packages as _summarize_segment_packages,
+    summarize_segment_rows as _summarize_segment_rows,
+    resolve_segment_plan as _resolve_segment_plan,
+    segment_ranges as _shared_segment_ranges,
+    skip_zone_boundary_summary as _shared_skip_zone_boundary_summary,
+    skip_zone_keep_ranges as _shared_skip_zone_keep_ranges,
+)
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
@@ -160,6 +183,66 @@ def _mark_recompute_flag(obj, needed: bool):
         pass
 
 
+def _diag_state_rank(state: str) -> int:
+    key = str(state or "").strip().lower()
+    order = {"ok": 0, "info": 1, "warn": 2, "error": 3}
+    return int(order.get(key, 0))
+
+
+def _diag_row(kind: str, state: str, summary: str, detail: str = "") -> str:
+    return _report_row(
+        "corridor_diag",
+        kind=str(kind or "").strip() or "general",
+        state=str(state or "").strip() or "ok",
+        summary=str(summary or "").strip() or "-",
+        detail=str(detail or "").strip(),
+    )
+
+
+def _parse_diag_row(row: str):
+    data = {}
+    try:
+        parts = [str(v or "") for v in str(row or "").split("|")]
+        data["rowType"] = parts[0] if parts else "corridor_diag"
+        for part in parts[1:]:
+            if "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            data[str(key).strip()] = str(value).strip()
+    except Exception:
+        pass
+    return data
+
+
+def _summarize_diag_rows(rows):
+    by_kind = {}
+    for row in list(rows or []):
+        parsed = _parse_diag_row(row)
+        kind = str(parsed.get("kind", "") or "").strip() or "general"
+        state = str(parsed.get("state", "") or "").strip().lower() or "ok"
+        summary = str(parsed.get("summary", "") or "").strip() or "-"
+        prev = by_kind.get(kind)
+        if prev is None or _diag_state_rank(state) >= _diag_state_rank(prev.get("state", "ok")):
+            by_kind[kind] = {"state": state, "summary": summary}
+    ordered = ["source", "connectivity", "packaging", "policy"]
+    top_state = "ok"
+    summary_parts = []
+    class_parts = []
+    for kind in ordered:
+        info = by_kind.get(kind, {"state": "ok", "summary": "-"})
+        state = str(info.get("state", "ok") or "ok")
+        summary_parts.append(f"{kind}={state}")
+        class_parts.append(f"{kind}:{state}")
+        if _diag_state_rank(state) > _diag_state_rank(top_state):
+            top_state = state
+    return {
+        "top_state": top_state,
+        "summary": ", ".join(summary_parts) if summary_parts else "-",
+        "class_summary": ", ".join(class_parts) if class_parts else "-",
+        "by_kind": by_kind,
+    }
+
+
 def ensure_corridor_loft_properties(obj):
     scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
 
@@ -192,7 +275,7 @@ def ensure_corridor_loft_properties(obj):
         obj.HeightRight = 0.30
 
     if not hasattr(obj, "UseRuled"):
-        obj.addProperty("App::PropertyBool", "UseRuled", "Corridor", "Use ruled loft")
+        obj.addProperty("App::PropertyBool", "UseRuled", "Corridor", "Use ruled surface")
         obj.UseRuled = False
 
     if not hasattr(obj, "AutoUseRuledForTypicalSection"):
@@ -200,12 +283,12 @@ def ensure_corridor_loft_properties(obj):
             "App::PropertyBool",
             "AutoUseRuledForTypicalSection",
             "Corridor",
-            "Automatically prefer ruled loft when Typical Section profiles include richer edge breaks",
+            "Automatically prefer ruled surface when Typical Section profiles include richer edge breaks",
         )
         obj.AutoUseRuledForTypicalSection = True
 
     if not hasattr(obj, "MinSectionSpacing"):
-        obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for loft input (m)")
+        obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for corridor input (m)")
         obj.MinSectionSpacing = 0.50 * scale
 
     if not hasattr(obj, "AutoFixSectionOrientation"):
@@ -222,7 +305,7 @@ def ensure_corridor_loft_properties(obj):
             "App::PropertyBool",
             "SplitAtStructureZones",
             "Corridor",
-            "Split loft into segments at structure-zone boundaries when StructureSet-driven sections are used",
+            "Split corridor into segments at structure-zone boundaries when StructureSet-driven sections are used",
         )
         obj.SplitAtStructureZones = True
 
@@ -277,18 +360,96 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "SchemaVersion"):
         obj.addProperty("App::PropertyInteger", "SchemaVersion", "Result", "Section schema version used")
         obj.SchemaVersion = 0
+    if not hasattr(obj, "ProfileContractSource"):
+        obj.addProperty("App::PropertyString", "ProfileContractSource", "Result", "Profile contract source used for corridor generation")
+        obj.ProfileContractSource = "-"
 
     if not hasattr(obj, "FailedRanges"):
         obj.addProperty("App::PropertyStringList", "FailedRanges", "Result", "Failed ranges during segmented fallback")
         obj.FailedRanges = []
 
     if not hasattr(obj, "StructureSegmentCount"):
-        obj.addProperty("App::PropertyInteger", "StructureSegmentCount", "Result", "Number of structure-aware loft segments used")
+        obj.addProperty("App::PropertyInteger", "StructureSegmentCount", "Result", "Number of structure-aware corridor segments used")
         obj.StructureSegmentCount = 0
 
     if not hasattr(obj, "StructureSplitStations"):
         obj.addProperty("App::PropertyStringList", "StructureSplitStations", "Result", "Stations used as structure-aware split boundaries")
         obj.StructureSplitStations = []
+    if not hasattr(obj, "SegmentSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "SegmentSummaryRows", "Result", "Structured corridor segment summary rows")
+        obj.SegmentSummaryRows = []
+    if not hasattr(obj, "SegmentPackageRows"):
+        obj.addProperty("App::PropertyStringList", "SegmentPackageRows", "Result", "Structured corridor segment package rows")
+        obj.SegmentPackageRows = []
+    if not hasattr(obj, "SegmentPackageCount"):
+        obj.addProperty("App::PropertyInteger", "SegmentPackageCount", "Result", "Number of kept corridor segment packages")
+        obj.SegmentPackageCount = 0
+    if not hasattr(obj, "SegmentObjectCount"):
+        obj.addProperty("App::PropertyInteger", "SegmentObjectCount", "Result", "Number of child corridor segment objects")
+        obj.SegmentObjectCount = 0
+    if not hasattr(obj, "CorridorSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "CorridorSegmentCount", "Result", "Number of kept corridor segment rows")
+        obj.CorridorSegmentCount = 0
+    if not hasattr(obj, "SkippedSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "SkippedSegmentCount", "Result", "Number of skipped corridor span rows")
+        obj.SkippedSegmentCount = 0
+    if not hasattr(obj, "RegionSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "RegionSegmentCount", "Result", "Number of region-driven kept corridor segments")
+        obj.RegionSegmentCount = 0
+    if not hasattr(obj, "StructureDrivenSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "StructureDrivenSegmentCount", "Result", "Number of structure-driven kept corridor segments")
+        obj.StructureDrivenSegmentCount = 0
+    if not hasattr(obj, "NotchDrivenSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "NotchDrivenSegmentCount", "Result", "Number of notch-driven kept corridor segments")
+        obj.NotchDrivenSegmentCount = 0
+    if not hasattr(obj, "MixedSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "MixedSegmentCount", "Result", "Number of mixed-source kept corridor segments")
+        obj.MixedSegmentCount = 0
+    if not hasattr(obj, "FullSegmentCount"):
+        obj.addProperty("App::PropertyInteger", "FullSegmentCount", "Result", "Number of full/default kept corridor segments")
+        obj.FullSegmentCount = 0
+    if not hasattr(obj, "SegmentKindSummary"):
+        obj.addProperty("App::PropertyString", "SegmentKindSummary", "Result", "Segment row kind summary")
+        obj.SegmentKindSummary = "-"
+    if not hasattr(obj, "SegmentSourceSummary"):
+        obj.addProperty("App::PropertyString", "SegmentSourceSummary", "Result", "Segment source summary")
+        obj.SegmentSourceSummary = "-"
+    if not hasattr(obj, "SegmentDriverSourceSummary"):
+        obj.addProperty("App::PropertyString", "SegmentDriverSourceSummary", "Result", "Segment driver source summary")
+        obj.SegmentDriverSourceSummary = "-"
+    if not hasattr(obj, "SegmentDriverModeSummary"):
+        obj.addProperty("App::PropertyString", "SegmentDriverModeSummary", "Result", "Segment driver mode summary")
+        obj.SegmentDriverModeSummary = "-"
+    if not hasattr(obj, "SegmentProfileContractSummary"):
+        obj.addProperty("App::PropertyString", "SegmentProfileContractSummary", "Result", "Segment package profile contract summary")
+        obj.SegmentProfileContractSummary = "-"
+    if not hasattr(obj, "SegmentPackageSummary"):
+        obj.addProperty("App::PropertyString", "SegmentPackageSummary", "Result", "Combined segment package summary")
+        obj.SegmentPackageSummary = "-"
+    if not hasattr(obj, "SegmentDisplaySummary"):
+        obj.addProperty("App::PropertyString", "SegmentDisplaySummary", "Result", "Readable segment display summary")
+        obj.SegmentDisplaySummary = "-"
+    if not hasattr(obj, "DiagnosticRows"):
+        obj.addProperty("App::PropertyStringList", "DiagnosticRows", "Result", "Structured corridor diagnostic rows")
+        obj.DiagnosticRows = []
+    if not hasattr(obj, "DiagnosticSummary"):
+        obj.addProperty("App::PropertyString", "DiagnosticSummary", "Result", "Corridor diagnostic summary by category")
+        obj.DiagnosticSummary = "-"
+    if not hasattr(obj, "DiagnosticClassSummary"):
+        obj.addProperty("App::PropertyString", "DiagnosticClassSummary", "Result", "Corridor diagnostic class summary")
+        obj.DiagnosticClassSummary = "-"
+    if not hasattr(obj, "SourceDiagnostic"):
+        obj.addProperty("App::PropertyString", "SourceDiagnostic", "Result", "Source diagnostic state and summary")
+        obj.SourceDiagnostic = "-"
+    if not hasattr(obj, "ConnectivityDiagnostic"):
+        obj.addProperty("App::PropertyString", "ConnectivityDiagnostic", "Result", "Connectivity diagnostic state and summary")
+        obj.ConnectivityDiagnostic = "-"
+    if not hasattr(obj, "PackagingDiagnostic"):
+        obj.addProperty("App::PropertyString", "PackagingDiagnostic", "Result", "Packaging diagnostic state and summary")
+        obj.PackagingDiagnostic = "-"
+    if not hasattr(obj, "PolicyDiagnostic"):
+        obj.addProperty("App::PropertyString", "PolicyDiagnostic", "Result", "Policy diagnostic state and summary")
+        obj.PolicyDiagnostic = "-"
 
     if not hasattr(obj, "SkippedStationRanges"):
         obj.addProperty("App::PropertyStringList", "SkippedStationRanges", "Result", "Station spans skipped by structure corridor modes")
@@ -375,7 +536,7 @@ def ensure_corridor_loft_properties(obj):
         obj.ResolvedNotchCutterCount = 0
 
     if not hasattr(obj, "ClosedProfileSchemaVersion"):
-        obj.addProperty("App::PropertyInteger", "ClosedProfileSchemaVersion", "Result", "Legacy loft-profile schema version used for corridor generation")
+        obj.addProperty("App::PropertyInteger", "ClosedProfileSchemaVersion", "Result", "Legacy profile schema version used for corridor generation")
         obj.ClosedProfileSchemaVersion = 0
 
     if not hasattr(obj, "SkipMarkerCount"):
@@ -408,7 +569,7 @@ def ensure_corridor_loft_properties(obj):
         obj.ResolvedHeightRight = 0.0
 
     if not hasattr(obj, "ResolvedRuledMode"):
-        obj.addProperty("App::PropertyString", "ResolvedRuledMode", "Result", "Resolved ruled-loft mode")
+        obj.addProperty("App::PropertyString", "ResolvedRuledMode", "Result", "Resolved ruled-surface mode")
         obj.ResolvedRuledMode = "off"
 
     if not hasattr(obj, "TopProfileEdgeSummary"):
@@ -486,13 +647,7 @@ class CorridorLoft:
 
     @staticmethod
     def _wire_points(wire):
-        edges = list(getattr(wire, "Edges", []) or [])
-        if not edges:
-            return []
-        pts = [edges[0].valueAt(edges[0].FirstParameter)]
-        for e in edges:
-            pts.append(e.valueAt(e.LastParameter))
-        return _dedupe_consecutive_points(pts)
+        return _shared_wire_points(wire)
 
     @staticmethod
     def _make_wire(points):
@@ -500,102 +655,29 @@ class CorridorLoft:
 
     @staticmethod
     def _make_tri_face(p0, p1, p2):
-        if ((p1 - p0).Length <= 1e-9) or ((p2 - p1).Length <= 1e-9) or ((p2 - p0).Length <= 1e-9):
-            return None
-        try:
-            wire = Part.makePolygon([p0, p1, p2, p0])
-            face = Part.Face(wire)
-            if face is None or face.isNull():
-                return None
-            return face
-        except Exception:
-            return None
+        return _shared_make_tri_face(p0, p1, p2)
 
     @staticmethod
     def _resample_wire_points(wire, count: int):
-        target = max(2, int(count or 0))
-        try:
-            pts = list(wire.discretize(Number=target) or [])
-            if len(pts) == target:
-                return [App.Vector(float(p.x), float(p.y), float(p.z)) for p in pts]
-        except Exception:
-            pass
-        pts = CorridorLoft._wire_points(wire)
-        if len(pts) == target:
-            return list(pts)
-        return list(pts)
+        return _shared_resample_wire_points(wire, count)
 
     @staticmethod
     def _harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint: int = 0):
-        a = list(pts0 or [])
-        b = list(pts1 or [])
-        if len(a) >= 2 and len(a) == len(b):
-            return a, b
-        target = int(point_count_hint or 0)
-        if target < 2:
-            target = max(len(a), len(b), 2)
-        a2 = CorridorLoft._resample_wire_points(wire0, target)
-        b2 = CorridorLoft._resample_wire_points(wire1, target)
-        if len(a2) >= 2 and len(a2) == len(b2):
-            return a2, b2
-        raise Exception(f"Section pair point-count mismatch ({len(a)} vs {len(b)})")
+        return _shared_harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint=point_count_hint)
 
     @staticmethod
     def _section_pair_surface(wire0, wire1, pts0=None, pts1=None, point_count_hint: int = 0):
-        pts0 = list(pts0 or CorridorLoft._wire_points(wire0))
-        pts1 = list(pts1 or CorridorLoft._wire_points(wire1))
-        if len(pts0) < 2 or len(pts1) < 2:
-            raise Exception("Section pair has insufficient points.")
-        pts0, pts1 = CorridorLoft._harmonize_pair_points(wire0, wire1, pts0, pts1, point_count_hint=point_count_hint)
-
-        faces = []
-        for j in range(len(pts0) - 1):
-            p00 = pts0[j]
-            p01 = pts0[j + 1]
-            p10 = pts1[j]
-            p11 = pts1[j + 1]
-            for tri in ((p00, p01, p11), (p00, p11, p10)):
-                face = CorridorLoft._make_tri_face(*tri)
-                if face is not None:
-                    faces.append(face)
-
-        if faces:
-            # Keep the strip as an explicit face compound instead of sewing it
-            # into a shell. This preserves the per-section triangle topology in
-            # the 3D view so the CorridorLoft surface stays visually consistent
-            # with DesignGradingSurface's strip-based result.
-            return Part.Compound(faces)
-
-        # Fallback for edge cases where the strip triangulation collapses on a
-        # specific pair even though the source section wires are valid.
-        try:
-            return Part.makeLoft([wire0, wire1], False, True, False)
-        except Exception as ex:
-            raise Exception(f"Section pair surface failed: {ex}")
+        return _shared_build_part_pair_surface(
+            wire0,
+            wire1,
+            pts0=pts0,
+            pts1=pts1,
+            point_count_hint=point_count_hint,
+        )
 
     @staticmethod
     def _section_strip_surface(wires, point_lists=None, point_count_hint: int = 0):
-        pair_shapes = []
-        wires = list(wires or [])
-        if len(wires) < 2:
-            raise Exception("Need at least 2 sections for strip surface.")
-        point_lists = list(point_lists or [])
-        use_point_lists = len(point_lists) == len(wires)
-        for i in range(len(wires) - 1):
-            pts0 = point_lists[i] if use_point_lists else None
-            pts1 = point_lists[i + 1] if use_point_lists else None
-            pair_shapes.append(
-                CorridorLoft._section_pair_surface(
-                    wires[i],
-                    wires[i + 1],
-                    pts0=pts0,
-                    pts1=pts1,
-                    point_count_hint=point_count_hint,
-                )
-            )
-        if not pair_shapes:
-            raise Exception("Section strip surface produced no faces.")
-        return pair_shapes[0] if len(pair_shapes) == 1 else Part.Compound(pair_shapes)
+        return _shared_build_part_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
 
     @staticmethod
     def _lerp_point(a, b, t: float):
@@ -687,6 +769,65 @@ class CorridorLoft:
             prev_pts = pts
 
         return out_wires, out_points, ref_n, fixed_count
+
+    @staticmethod
+    def _validate_profiles_and_normalize(profiles, schema_version: int, auto_fix_orientation: bool):
+        rows = list(profiles or [])
+        if len(rows) < 2:
+            raise Exception("Need at least 2 section profiles for corridor.")
+
+        stations = []
+        point_lists = []
+        for i, profile in enumerate(rows):
+            station = float(profile.get("station", 0.0) or 0.0)
+            if not _is_finite(station):
+                raise Exception(f"SectionProfile[{i}] station is not finite.")
+            if stations and station <= stations[-1] + 1e-9:
+                raise Exception("SectionProfile stations must be strictly increasing.")
+
+            pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in list(profile.get("points", []) or [])]
+            if len(pts) < 2:
+                raise Exception(f"SectionProfile[{i}] has insufficient points.")
+            for j, p in enumerate(pts):
+                if not (_is_finite(p.x) and _is_finite(p.y) and _is_finite(p.z)):
+                    raise Exception(f"SectionProfile[{i}] point[{j}] is not finite.")
+            for j in range(len(pts) - 1):
+                if (pts[j + 1] - pts[j]).Length <= 1e-12:
+                    raise Exception(f"SectionProfile[{i}] has duplicate critical points.")
+            stations.append(float(station))
+            point_lists.append(pts)
+
+        ref_n = len(point_lists[0])
+        for i, pts in enumerate(point_lists):
+            if len(pts) != ref_n:
+                raise Exception(
+                    f"SectionProfile point count mismatch at index {i}: {len(pts)} != {ref_n}. "
+                    "Corridor stopped by section contract."
+                )
+
+        if int(schema_version) == 1 and ref_n != 3:
+            raise Exception(
+                f"SchemaVersion=1 requires 3 points (Left->Center->Right), but got {ref_n}."
+            )
+
+        allow_auto_flip = bool(auto_fix_orientation) and int(schema_version) <= 1
+
+        out_wires = []
+        out_points = []
+        prev_pts = None
+        fixed_count = 0
+        for i, pts in enumerate(point_lists):
+            if allow_auto_flip and CorridorLoft._should_flip_points(prev_pts, pts):
+                pts = list(reversed(pts))
+                fixed_count += 1
+            axis = pts[0] - pts[-1]
+            if axis.Length <= 1e-12:
+                raise Exception(f"SectionProfile[{i}] left/right axis is degenerate.")
+            out_wires.append(CorridorLoft._make_wire(pts))
+            out_points.append(list(pts))
+            prev_pts = pts
+
+        return stations, out_wires, out_points, ref_n, fixed_count
 
     @staticmethod
     def _filter_close_sections(stations, wires, min_spacing: float):
@@ -825,7 +966,7 @@ class CorridorLoft:
         retry_used = False
         if ranges:
             try:
-                shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                shape, failed_ranges, package_shapes = CorridorLoft._loft_by_ranges(
                     wires,
                     stations,
                     ranges,
@@ -834,10 +975,10 @@ class CorridorLoft:
                     point_lists=point_lists,
                     point_count_hint=point_count_hint,
                 )
-                return shape, failed_ranges, retry_used
+                return shape, failed_ranges, retry_used, package_shapes
             except Exception:
                 if CorridorLoft._should_retry_with_ruled(src, ruled):
-                    shape, failed_ranges = CorridorLoft._loft_by_ranges(
+                    shape, failed_ranges, package_shapes = CorridorLoft._loft_by_ranges(
                         wires,
                         stations,
                         ranges,
@@ -846,7 +987,7 @@ class CorridorLoft:
                         point_lists=point_lists,
                         point_count_hint=point_count_hint,
                     )
-                    return shape, failed_ranges, True
+                    return shape, failed_ranges, True, package_shapes
                 raise
         try:
             shape = CorridorLoft._loft(
@@ -856,7 +997,7 @@ class CorridorLoft:
                 point_lists=point_lists,
                 point_count_hint=point_count_hint,
             )
-            return shape, [], retry_used
+            return shape, [], retry_used, []
         except Exception:
             if CorridorLoft._should_retry_with_ruled(src, ruled):
                 shape = CorridorLoft._loft(
@@ -866,7 +1007,7 @@ class CorridorLoft:
                     point_lists=point_lists,
                     point_count_hint=point_count_hint,
                 )
-                return shape, [], True
+                return shape, [], True, []
             raise
 
     @staticmethod
@@ -910,8 +1051,8 @@ class CorridorLoft:
                 sample = "; ".join([str(v) for v in list(failed[:4])])
                 if len(failed) > 4:
                     sample += f"; ... ({len(failed)} failed ranges)"
-                raise Exception(f"Adaptive segmented loft failed for all ranges. {sample}")
-            raise Exception("Adaptive segmented loft failed for all ranges.")
+                raise Exception(f"Adaptive segmented corridor build failed for all ranges. {sample}")
+            raise Exception("Adaptive segmented corridor build failed for all ranges.")
 
         parts.sort(key=lambda it: int(it[0]))
         shapes = [it[1] for it in parts]
@@ -1052,7 +1193,7 @@ class CorridorLoft:
                             "ResolvedEndStation": station_value,
                             "ResolvedCorridorMargin": 0.0,
                             "ResolvedStationSource": "section_regions",
-                            "ResolvedCorridorWarnings": [f"{region_key}: region corridor mode '{raw_mode}' is unsupported in CorridorLoft Phase 1"],
+                            "ResolvedCorridorWarnings": [f"{region_key}: region corridor mode '{raw_mode}' is unsupported in Corridor Phase 1"],
                         }
                     )
                 _close_run(active_run)
@@ -1085,99 +1226,11 @@ class CorridorLoft:
 
     @staticmethod
     def _skip_zone_keep_ranges(stations, skip_spans):
-        n = len(list(stations or []))
-        if n < 2 or not skip_spans:
-            return [], [], []
-
-        skip_mask = [False] * n
-        skip_runs = []
-        tol = 1e-6
-        for s0, s1, mode in list(skip_spans or []):
-            if str(mode or "").strip().lower() != "skip_zone":
-                continue
-            lo = float(min(s0, s1))
-            hi = float(max(s0, s1))
-            for i, s in enumerate(stations):
-                ss = float(s)
-                if ss >= lo - tol and ss <= hi + tol:
-                    skip_mask[i] = True
-
-        if not any(skip_mask):
-            return [], [], []
-
-        keep_ranges = []
-        skipped_rows = []
-        i = 0
-        while i < n:
-            if skip_mask[i]:
-                j = i
-                while j + 1 < n and skip_mask[j + 1]:
-                    j += 1
-                skipped_rows.append(f"{float(stations[i]):.3f}-{float(stations[j]):.3f}")
-                skip_runs.append((int(i), int(j)))
-                i = j + 1
-            else:
-                i += 1
-
-        # Build keep ranges from non-skipped runs, including boundary stations shared at gaps.
-        keep_ranges = []
-        start = 0
-        while start < n:
-            while start < n and skip_mask[start]:
-                start += 1
-            if start >= n:
-                break
-            end = start
-            while end + 1 < n and not skip_mask[end + 1]:
-                end += 1
-            if start > 0:
-                start = start - 1
-            if end < (n - 1):
-                end = end + 1
-            if (end - start + 1) >= 2:
-                if not keep_ranges or keep_ranges[-1] != (start, end):
-                    keep_ranges.append((start, end))
-            start = end + 1
-
-        dedup = []
-        seen = set()
-        for i0, i1 in keep_ranges:
-            key = (int(i0), int(i1))
-            if key in seen:
-                continue
-            seen.add(key)
-            dedup.append(key)
-
-        dedup = [(int(a), int(b)) for a, b in dedup if (int(b) - int(a) + 1) >= 2]
-        return dedup, skipped_rows, skip_runs
+        return _shared_skip_zone_keep_ranges(stations, skip_spans)
 
     @staticmethod
     def _skip_zone_boundary_summary(stations, skip_runs):
-        vals = list(stations or [])
-        n = len(vals)
-        if n < 1:
-            return "-", [], 0
-
-        rows = []
-        labels = []
-        for i0, i1 in list(skip_runs or []):
-            lo = float(vals[max(0, min(n - 1, int(i0)))])
-            hi = float(vals[max(0, min(n - 1, int(i1)))])
-            span_txt = CorridorLoft._format_station_span(lo, hi)
-            if int(i0) <= 0:
-                rows.append(f"open_start:{span_txt}")
-                if "open_start" not in labels:
-                    labels.append("open_start")
-            if int(i1) >= (n - 1):
-                rows.append(f"open_end:{span_txt}")
-                if "open_end" not in labels:
-                    labels.append("open_end")
-
-        if rows:
-            return "caps_deferred", rows, 0
-        if skip_runs:
-            return "internal_only", [], 0
-        return "-", [], 0
+        return _shared_skip_zone_boundary_summary(stations, skip_runs)
 
     @staticmethod
     def _corridor_record_ref(rec) -> str:
@@ -1419,6 +1472,21 @@ class CorridorLoft:
                 pass
 
     @staticmethod
+    def _clear_segment_objects(obj):
+        doc = getattr(obj, "Document", None)
+        if doc is None:
+            return
+        for ch in list(getattr(doc, "Objects", []) or []):
+            try:
+                if not str(getattr(ch, "Name", "") or "").startswith("CorridorSegment"):
+                    continue
+                if getattr(ch, "ParentCorridorLoft", None) != obj:
+                    continue
+                doc.removeObject(ch.Name)
+            except Exception:
+                pass
+
+    @staticmethod
     def _make_skip_marker_face(profile_wire):
         try:
             if profile_wire is None or profile_wire.isNull():
@@ -1468,6 +1536,77 @@ class CorridorLoft:
                     count += 1
                 except Exception:
                     pass
+        return int(count)
+
+    @staticmethod
+    def _create_segment_objects(obj, package_rows, segment_shapes):
+        doc = getattr(obj, "Document", None)
+        if doc is None:
+            return 0
+        CorridorLoft._clear_segment_objects(obj)
+        rows = list(package_rows or [])
+        shapes = list(segment_shapes or [])
+        count = 0
+        for idx, row_text in enumerate(rows):
+            if idx >= len(shapes):
+                break
+            shp = shapes[idx]
+            if shp is None or shp.isNull():
+                continue
+            fields = {}
+            for part in [str(p or "").strip() for p in str(row_text or "").split("|") if str(p or "").strip()]:
+                if "=" not in part:
+                    continue
+                key, value = part.split("=", 1)
+                fields[str(key or "").strip()] = str(value or "").strip()
+            try:
+                seg = doc.addObject("Part::Feature", "CorridorSegment")
+                seg.Label = str(fields.get("displayLabel", fields.get("segmentId", f"Segment {idx + 1}")) or f"Segment {idx + 1}")
+                if not hasattr(seg, "ParentCorridorLoft"):
+                    seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Corridor", "Owning CorridorLoft")
+                seg.ParentCorridorLoft = obj
+                if not hasattr(seg, "SegmentId"):
+                    seg.addProperty("App::PropertyString", "SegmentId", "Corridor", "Segment identifier")
+                seg.SegmentId = str(fields.get("segmentId", "") or "")
+                if not hasattr(seg, "SegmentOrder"):
+                    seg.addProperty("App::PropertyInteger", "SegmentOrder", "Corridor", "Segment order")
+                seg.SegmentOrder = int(fields.get("order", str(idx + 1)) or (idx + 1))
+                if not hasattr(seg, "StationStart"):
+                    seg.addProperty("App::PropertyFloat", "StationStart", "Corridor", "Segment start station")
+                if not hasattr(seg, "StationEnd"):
+                    seg.addProperty("App::PropertyFloat", "StationEnd", "Corridor", "Segment end station")
+                seg.StationStart = float(fields.get("start", "0") or 0.0)
+                seg.StationEnd = float(fields.get("end", "0") or 0.0)
+                if not hasattr(seg, "SegmentSource"):
+                    seg.addProperty("App::PropertyString", "SegmentSource", "Corridor", "Segment source summary")
+                seg.SegmentSource = str(fields.get("source", "full") or "full")
+                if not hasattr(seg, "DriverId"):
+                    seg.addProperty("App::PropertyString", "DriverId", "Corridor", "Effective driver identifier")
+                seg.DriverId = str(fields.get("driverId", "-") or "-")
+                if not hasattr(seg, "DriverMode"):
+                    seg.addProperty("App::PropertyString", "DriverMode", "Corridor", "Effective driver corridor mode")
+                seg.DriverMode = str(fields.get("driverMode", "-") or "-")
+                if not hasattr(seg, "DriverSource"):
+                    seg.addProperty("App::PropertyString", "DriverSource", "Corridor", "Effective driver source")
+                seg.DriverSource = str(fields.get("driverSource", "full") or "full")
+                if not hasattr(seg, "ProfileContractSource"):
+                    seg.addProperty("App::PropertyString", "ProfileContractSource", "Corridor", "Profile contract source used for this segment package")
+                seg.ProfileContractSource = str(fields.get("profileContract", "-") or "-")
+                if not hasattr(seg, "SegmentSummary"):
+                    seg.addProperty("App::PropertyString", "SegmentSummary", "Corridor", "Readable segment summary")
+                seg.SegmentSummary = str(fields.get("displaySummary", fields.get("displayLabel", "-")) or "-")
+                if not hasattr(seg, "ExpectedFaceCount"):
+                    seg.addProperty("App::PropertyInteger", "ExpectedFaceCount", "Corridor", "Expected strip face count")
+                seg.ExpectedFaceCount = int(fields.get("expectedFaces", "0") or 0)
+                seg.Shape = shp
+                vobj = getattr(seg, "ViewObject", None)
+                if vobj is not None:
+                    vobj.DisplayMode = "Flat Lines"
+                    vobj.Transparency = 72
+                    vobj.LineWidth = 1
+                count += 1
+            except Exception:
+                pass
         return int(count)
 
     @staticmethod
@@ -1922,26 +2061,13 @@ class CorridorLoft:
 
     @staticmethod
     def _segment_ranges(count: int, boundaries):
-        if count < 2:
-            return []
-        ranges = []
-        start = 0
-        for b in sorted({int(v) for v in list(boundaries or []) if int(v) > 0 and int(v) < count}):
-            # Keep the split station shared by both neighboring segments so the
-            # corridor skin remains continuous across the structure boundary.
-            if (b - start + 1) < 2:
-                continue
-            if (count - b) < 2:
-                continue
-            ranges.append((start, b))
-            start = b
-        ranges.append((start, count - 1))
-        return [(i0, i1) for (i0, i1) in ranges if (i1 - i0 + 1) >= 2]
+        return _shared_segment_ranges(count, boundaries)
 
     @staticmethod
     def _loft_by_ranges(wires, stations, ranges, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
         if not ranges:
-            return CorridorLoft._loft(wires, ruled=ruled, solid=solid, point_lists=point_lists, point_count_hint=point_count_hint), []
+            shp = CorridorLoft._loft(wires, ruled=ruled, solid=solid, point_lists=point_lists, point_count_hint=point_count_hint)
+            return shp, [], [shp]
 
         shapes = []
         failed_ranges = []
@@ -1969,8 +2095,8 @@ class CorridorLoft:
             shapes.append(shp)
 
         if not shapes:
-            raise Exception("Structure-aware segmented loft failed for all ranges.")
-        return (shapes[0] if len(shapes) == 1 else Part.Compound(shapes)), failed_ranges
+            raise Exception("Structure-aware segmented corridor build failed for all ranges.")
+        return (shapes[0] if len(shapes) == 1 else Part.Compound(shapes)), failed_ranges, list(shapes)
 
     def execute(self, obj):
         ensure_corridor_loft_properties(obj)
@@ -1978,14 +2104,48 @@ class CorridorLoft:
             src = getattr(obj, "SourceSectionSet", None)
             if src is None:
                 CorridorLoft._clear_skip_markers(obj)
+                CorridorLoft._clear_segment_objects(obj)
                 obj.Shape = Part.Shape()
                 obj.SectionCount = 0
                 obj.PointCountPerSection = 0
                 obj.AutoFixedSectionCount = 0
                 obj.SchemaVersion = 0
+                obj.ProfileContractSource = "-"
                 obj.FailedRanges = []
                 obj.StructureSegmentCount = 0
                 obj.StructureSplitStations = []
+                obj.SegmentSummaryRows = []
+                obj.SegmentPackageRows = []
+                obj.SegmentPackageCount = 0
+                obj.SegmentObjectCount = 0
+                obj.CorridorSegmentCount = 0
+                obj.SkippedSegmentCount = 0
+                obj.RegionSegmentCount = 0
+                obj.StructureDrivenSegmentCount = 0
+                obj.NotchDrivenSegmentCount = 0
+                obj.MixedSegmentCount = 0
+                obj.FullSegmentCount = 0
+                obj.SegmentKindSummary = "-"
+                obj.SegmentSourceSummary = "-"
+                obj.SegmentDriverSourceSummary = "-"
+                obj.SegmentDriverModeSummary = "-"
+                obj.SegmentProfileContractSummary = "-"
+                obj.SegmentPackageSummary = "-"
+                obj.SegmentDisplaySummary = "-"
+                obj.DiagnosticRows = [
+                    _diag_row("source", "error", "missing_section_set", "SourceSectionSet is not assigned"),
+                    _diag_row("connectivity", "error", "not_built", "Corridor build stopped before section connectivity"),
+                    _diag_row("packaging", "ok", "not_started", ""),
+                    _diag_row("policy", "ok", "not_started", ""),
+                ]
+                _diag_meta = _summarize_diag_rows(obj.DiagnosticRows)
+                _diag_by_kind = dict(_diag_meta.get("by_kind", {}) or {})
+                obj.DiagnosticSummary = str(_diag_meta.get("summary", "-") or "-")
+                obj.DiagnosticClassSummary = str(_diag_meta.get("class_summary", "-") or "-")
+                obj.SourceDiagnostic = "error|missing_section_set"
+                obj.ConnectivityDiagnostic = "error|not_built"
+                obj.PackagingDiagnostic = "ok|not_started"
+                obj.PolicyDiagnostic = "ok|not_started"
                 obj.SkippedStationRanges = []
                 obj.ResolvedStructureCorridorRanges = []
                 obj.ResolvedStructureCorridorWarnings = []
@@ -2028,8 +2188,44 @@ class CorridorLoft:
                 obj.SectionComponentSummaryRows = []
                 obj.PavementScheduleRows = []
                 obj.StructureInteractionSummaryRows = []
-                obj.ExportSummaryRows = []
-                obj.Status = "Missing SourceSectionSet"
+                obj.ExportSummaryRows = [
+                    _report_row(
+                        "export",
+                        target="corridor_loft",
+                        reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
+                        output="surface",
+                        sections=0,
+                        splitSegments=0,
+                        segmentRows=0,
+                        segmentPackages=0,
+                        segmentObjects=0,
+                        segmentKinds="-",
+                        segmentDrivers="-",
+                        segmentDriverSources="-",
+                        segmentDriverModes="-",
+                        segmentDisplay="-",
+                        diagSummary=str(_diag_meta.get("summary", "-") or "-"),
+                        diagClasses=str(_diag_meta.get("class_summary", "-") or "-"),
+                        diagSource=str(_diag_by_kind.get("source", {}).get("state", "ok") or "ok"),
+                        diagConnectivity=str(_diag_by_kind.get("connectivity", {}).get("state", "ok") or "ok"),
+                        diagPackaging=str(_diag_by_kind.get("packaging", {}).get("state", "ok") or "ok"),
+                        diagPolicy=str(_diag_by_kind.get("policy", {}).get("state", "ok") or "ok"),
+                        skipped=0,
+                        notchCount=0,
+                        corridorModes="-",
+                        ruled="off",
+                        roadside="-",
+                    )
+                ]
+                obj.Status = _status_join(
+                    "Missing SourceSectionSet",
+                    f"diagSummary={str(_diag_meta.get('summary', '-') or '-')}",
+                    f"diagClasses={str(_diag_meta.get('class_summary', '-') or '-')}",
+                    f"diagSource={str(_diag_by_kind.get('source', {}).get('state', 'ok') or 'ok')}",
+                    f"diagConnectivity={str(_diag_by_kind.get('connectivity', {}).get('state', 'ok') or 'ok')}",
+                    f"diagPackaging={str(_diag_by_kind.get('packaging', {}).get('state', 'ok') or 'ok')}",
+                    f"diagPolicy={str(_diag_by_kind.get('policy', {}).get('state', 'ok') or 'ok')}",
+                )
                 _mark_recompute_flag(obj, False)
                 return
 
@@ -2037,11 +2233,16 @@ class CorridorLoft:
             min_spacing = max(0.0, float(getattr(obj, "MinSectionSpacing", 0.0)))
             stations, wires, dropped = CorridorLoft._filter_close_sections(stations, wires, min_spacing)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
+            profile_contract_source = "section_profiles"
 
             auto_fix_orientation = bool(getattr(obj, "AutoFixSectionOrientation", True))
-            norm_wires, norm_points, pt_count, fixed_count = CorridorLoft._validate_and_normalize(
-                stations,
-                wires,
+            section_profiles, _profile_rows, _profile_point_count = SectionSet.resolve_section_profiles(
+                src,
+                stations=stations,
+                wires=wires,
+            )
+            stations, norm_wires, norm_points, pt_count, fixed_count = CorridorLoft._validate_profiles_and_normalize(
+                section_profiles,
                 schema,
                 auto_fix_orientation,
             )
@@ -2071,6 +2272,10 @@ class CorridorLoft:
             split_count = 0
             split_station_rows = []
             structure_ranges = []
+            segment_summary_rows = []
+            segment_package_rows = []
+            segment_package_shapes = []
+            segment_object_count = 0
             skipped_station_rows = []
             skip_runs = []
             skip_boundary_behavior = "-"
@@ -2120,6 +2325,7 @@ class CorridorLoft:
                     loft_wires = list(notch_wires)
                     loft_point_lists = None
                     closed_profile_schema = 2
+                    profile_contract_source = "notch_schema_profiles"
                     if notch_station_count > 0:
                         notch_count = max(1, len(notch_structure_ids), int(notch_count))
                         notch_build_mode = "schema_profiles"
@@ -2127,46 +2333,68 @@ class CorridorLoft:
                 ruled = True
                 ruled_mode = "auto:notch_schema"
             use_segmented_ranges = False
+            split_idx = []
+            split_station_rows = []
+            region_split_idx = []
+            region_split_rows = []
+            notch_split_idx = []
+            notch_split_rows = []
             if bool(getattr(obj, "SplitAtStructureZones", True)):
                 split_idx, split_station_rows = CorridorLoft._structure_split_candidates(src, stations)
-                if bool(getattr(obj, "UseRegionCorridorModes", True)):
-                    region_split_idx, region_split_rows = CorridorLoft._corridor_split_candidates_from_records(stations, combined_corridor_records)
-                    split_idx = list(split_idx or []) + list(region_split_idx or [])
-                    split_station_rows = list(split_station_rows or []) + list(region_split_rows or [])
-                if closed_profile_schema > 1 and notch_spec_rows:
-                    notch_split_idx, notch_split_rows = CorridorLoft._notch_split_candidates(notch_spec_rows)
-                    split_idx = list(split_idx or []) + list(notch_split_idx or [])
-                    split_station_rows = list(split_station_rows or []) + list(notch_split_rows or [])
-                dedup_split_rows = []
-                seen_split_rows = set()
-                for row in list(split_station_rows or []):
-                    txt = str(row or "").strip()
-                    if not txt or txt in seen_split_rows:
-                        continue
-                    seen_split_rows.add(txt)
-                    dedup_split_rows.append(txt)
-                split_station_rows = dedup_split_rows
-                structure_ranges = CorridorLoft._segment_ranges(len(stations), split_idx)
-                split_count = len(structure_ranges) if structure_ranges else 0
-                use_segmented_ranges = bool(structure_ranges and len(structure_ranges) >= 2)
-            if bool(getattr(obj, "UseStructureCorridorModes", True)) or bool(getattr(obj, "UseRegionCorridorModes", True)):
-                skip_ranges, skipped_station_rows, skip_runs = CorridorLoft._skip_zone_keep_ranges(stations, corridor_spans)
-                skip_boundary_behavior, skip_boundary_rows, skip_boundary_cap_count = CorridorLoft._skip_zone_boundary_summary(stations, skip_runs)
-                if skip_ranges:
-                    structure_ranges = list(skip_ranges)
-                    split_count = len(structure_ranges) if structure_ranges else 0
-                    use_segmented_ranges = bool(
-                        structure_ranges
-                        and not (len(structure_ranges) == 1 and structure_ranges[0] == (0, len(stations) - 1))
-                    )
-                elif skipped_station_rows:
+            if bool(getattr(obj, "UseRegionCorridorModes", True)):
+                region_split_idx, region_split_rows = CorridorLoft._corridor_split_candidates_from_records(stations, combined_corridor_records)
+            if closed_profile_schema > 1 and notch_spec_rows:
+                notch_split_idx, notch_split_rows = CorridorLoft._notch_split_candidates(notch_spec_rows)
+            if (
+                bool(getattr(obj, "SplitAtStructureZones", True))
+                or bool(getattr(obj, "UseStructureCorridorModes", True))
+                or bool(getattr(obj, "UseRegionCorridorModes", True))
+                or bool(notch_split_idx)
+            ):
+                segment_plan = _resolve_segment_plan(
+                    stations,
+                    structure_split_idx=split_idx,
+                    structure_split_rows=split_station_rows,
+                    region_split_idx=region_split_idx,
+                    region_split_rows=region_split_rows,
+                    notch_split_idx=notch_split_idx,
+                    notch_split_rows=notch_split_rows,
+                    corridor_spans=corridor_spans if (bool(getattr(obj, "UseStructureCorridorModes", True)) or bool(getattr(obj, "UseRegionCorridorModes", True))) else [],
+                    driver_records=combined_corridor_records,
+                )
+                split_station_rows = list(segment_plan.get("split_rows", []) or [])
+                structure_ranges = list(segment_plan.get("ranges", []) or [])
+                split_count = int(segment_plan.get("split_count", 0) or 0)
+                use_segmented_ranges = bool(segment_plan.get("use_segmented_ranges", False))
+                segment_summary_rows = list(segment_plan.get("summary_rows", []) or [])
+                segment_package_rows = list(segment_plan.get("package_rows", []) or [])
+                skipped_station_rows = list(segment_plan.get("skipped_station_rows", []) or [])
+                skip_runs = list(segment_plan.get("skip_runs", []) or [])
+                skip_boundary_behavior = str(segment_plan.get("skip_boundary_behavior", "-") or "-")
+                skip_boundary_rows = list(segment_plan.get("skip_boundary_rows", []) or [])
+                skip_boundary_cap_count = int(segment_plan.get("skip_boundary_cap_count", 0) or 0)
+                if skipped_station_rows and not structure_ranges:
                     raise Exception("All corridor sections fall inside skip_zone structure spans.")
+
+            segment_package_rows = _attach_package_profile_contract(segment_package_rows, profile_contract_source)
 
             failed_ranges = []
             skip_marker_count = 0
             struct_src = _resolve_structure_source(src) if bool(getattr(src, "UseStructureSet", False)) else None
             ext_count = _external_shape_display_count(struct_src)
             ext_proxy_count = _external_shape_proxy_count(struct_src)
+            segment_sources = []
+            segment_summary_meta = _summarize_segment_rows(segment_summary_rows)
+            segment_sources = list(segment_summary_meta.get("source_tokens", []) or [])
+            segment_counts = dict(segment_summary_meta.get("counts", {}) or {})
+            segment_kind_summary = str(segment_summary_meta.get("kind_summary", "-") or "-")
+            segment_source_summary = str(segment_summary_meta.get("source_summary", "-") or "-")
+            package_meta = _summarize_segment_packages(segment_package_rows)
+            segment_driver_source_summary = str(package_meta.get("driver_source_summary", "-") or "-")
+            segment_driver_mode_summary = str(package_meta.get("driver_mode_summary", "-") or "-")
+            segment_profile_contract_summary = str(package_meta.get("profile_contract_summary", "-") or "-")
+            segment_package_summary = str(package_meta.get("package_summary", "-") or "-")
+            segment_display_summary = str(package_meta.get("display_summary", "-") or "-")
 
             def _build_status(head: str):
                 tokens = [
@@ -2187,6 +2415,28 @@ class CorridorLoft:
                 ]
                 if split_count >= 2:
                     tokens.append(f"structureSegs={int(split_count)}")
+                if segment_summary_rows:
+                    tokens.append(f"segmentRows={len(list(segment_summary_rows or []))}")
+                if segment_package_rows:
+                    tokens.append(f"segmentPackages={len(list(segment_package_rows or []))}")
+                if int(segment_object_count or 0) > 0:
+                    tokens.append(f"segmentObjects={int(segment_object_count)}")
+                if segment_sources:
+                    tokens.append(f"segmentSources={'+'.join(segment_sources)}")
+                if segment_kind_summary != "-":
+                    tokens.append(f"segmentKinds={segment_kind_summary}")
+                if segment_source_summary != "-":
+                    tokens.append(f"segmentDrivers={segment_source_summary}")
+                if segment_driver_source_summary != "-":
+                    tokens.append(f"segmentDriverSources={segment_driver_source_summary}")
+                if segment_driver_mode_summary != "-":
+                    tokens.append(f"segmentDriverModes={segment_driver_mode_summary}")
+                if segment_profile_contract_summary != "-":
+                    tokens.append(f"segmentProfileContracts={segment_profile_contract_summary}")
+                if segment_package_summary != "-":
+                    tokens.append(f"segmentPackageSummary={segment_package_summary}")
+                if segment_display_summary != "-":
+                    tokens.append(f"segmentDisplay={segment_display_summary}")
                 if str(corridor_mode_summary or "-") != "-":
                     tokens.append(f"corridorModes={corridor_mode_summary}")
                 if str(region_mode_summary or "-") != "-":
@@ -2223,8 +2473,9 @@ class CorridorLoft:
                 if int(notch_cutter_count or 0) > 0:
                     tokens.append(f"notchCutters={int(notch_cutter_count)}")
                 if int(loft_retry_count or 0) > 0:
-                    tokens.append(f"loftRetry={int(loft_retry_count)}")
+                    tokens.append(f"corridorRetry={int(loft_retry_count)}")
                 tokens.append(f"srcSchema={int(schema)}")
+                tokens.append(f"profileContract={str(profile_contract_source or '-')}")
                 tokens.append(f"topProfile={str(getattr(src, 'TopProfileSource', 'assembly_simple') or 'assembly_simple')}")
                 tokens.append(f"topEdges={str(getattr(src, 'TopProfileEdgeSummary', '-') or '-')}")
                 if int(getattr(src, "SubassemblySchemaVersion", 0) or 0) > 0:
@@ -2264,7 +2515,7 @@ class CorridorLoft:
                 return _status_join(head, *tokens)
 
             try:
-                shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                shape, failed_ranges, retry_used, segment_package_shapes = CorridorLoft._loft_with_retry(
                     loft_wires,
                     stations,
                     structure_ranges if use_segmented_ranges else [],
@@ -2285,7 +2536,7 @@ class CorridorLoft:
                     notch_failures.append(f"skipMarkers: {marker_ex}")
                 if failed_ranges:
                     if str(notch_build_mode or "-") == "schema_profiles":
-                        notch_build_mode = "schema_profiles+adaptive_loft"
+                        notch_build_mode = "schema_profiles+adaptive_corridor"
                     status = _build_status(
                         f"WARN (Surface): structure-aware segmented fallback used ({len(failed_ranges)} failed ranges)"
                     )
@@ -2293,7 +2544,7 @@ class CorridorLoft:
                     status = _build_status("OK (Surface)")
             except Exception as ex:
                 if use_segmented_ranges:
-                    shape, failed_ranges, retry_used = CorridorLoft._loft_with_retry(
+                    shape, failed_ranges, retry_used, segment_package_shapes = CorridorLoft._loft_with_retry(
                         loft_wires,
                         stations,
                         structure_ranges,
@@ -2313,6 +2564,7 @@ class CorridorLoft:
                         point_count_hint=pt_count,
                     )
                     retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
+                    segment_package_shapes = []
                 if retry_used and str(ruled_mode or "off") == "off":
                     ruled_mode = "retry:typical_section"
                 elif retry_used:
@@ -2324,22 +2576,132 @@ class CorridorLoft:
                     notch_failures.append(f"skipMarkers: {marker_ex}")
                 loft_retry_count = 1
                 if use_segmented_ranges and not failed_ranges:
-                    status = _build_status(f"OK (Surface): recovered after loft retry ({ex})")
+                    status = _build_status(f"OK (Surface): recovered after corridor retry ({ex})")
                 else:
                     if str(notch_build_mode or "-") == "schema_profiles":
-                        notch_build_mode = "schema_profiles+adaptive_loft"
+                        notch_build_mode = "schema_profiles+adaptive_corridor"
                     status = _build_status(
-                        f"WARN (Surface): full loft failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
+                        f"WARN (Surface): full corridor build failed, adaptive fallback used ({len(failed_ranges)} failed ranges): {ex}"
                     )
+
+            try:
+                segment_object_count = CorridorLoft._create_segment_objects(obj, segment_package_rows, segment_package_shapes)
+            except Exception as seg_ex:
+                notch_failures.append(f"segmentObjects: {seg_ex}")
+
+            source_diag_summary = "section_set"
+            source_diag_detail = f"sectionSet={str(getattr(src, 'Name', '') or '')}"
+            diag_rows = [_diag_row("source", "ok", source_diag_summary, source_diag_detail)]
+
+            connectivity_state = "ok"
+            connectivity_summary = "clean"
+            if list(failed_ranges or []):
+                connectivity_state = "warn"
+                connectivity_summary = "partial_recovery"
+            elif int(loft_retry_count or 0) > 0 or int(fixed_count or 0) > 0 or int(dropped or 0) > 0:
+                connectivity_state = "info"
+                connectivity_summary = "adjusted"
+            connectivity_detail = (
+                f"sections={len(stations)}, points={int(pt_count)}, "
+                f"autoFixed={int(fixed_count)}, dropped={int(dropped)}, retries={int(loft_retry_count)}, failed={len(list(failed_ranges or []))}"
+            )
+            failed_range_detail = "; ".join([str(v) for v in list(failed_ranges or [])[:4]])
+            if failed_range_detail:
+                connectivity_detail = f"{connectivity_detail}; failedRanges={failed_range_detail}"
+            diag_rows.append(_diag_row("connectivity", connectivity_state, connectivity_summary, connectivity_detail))
+
+            packaging_state = "ok"
+            packaging_summary = "full"
+            if (
+                bool(use_segmented_ranges)
+                or int(split_count or 0) > 0
+                or bool(list(segment_package_rows or []))
+                or bool(list(skipped_station_rows or []))
+                or int(segment_object_count or 0) > 0
+                or bool(list(skip_boundary_rows or []))
+                or int(skip_marker_count or 0) > 0
+            ):
+                packaging_state = "info"
+                packaging_summary = "segmented"
+            if list(segment_package_rows or []) and int(segment_object_count or 0) != len(list(segment_package_rows or [])):
+                packaging_state = "warn"
+                packaging_summary = "package_mismatch"
+            packaging_detail = (
+                f"splitSegments={int(split_count or 0)}, keptSegments={int(segment_counts.get('segment_rows', 0) or 0)}, "
+                f"packages={len(list(segment_package_rows or []))}, objects={int(segment_object_count or 0)}, skips={len(list(skipped_station_rows or []))}"
+            )
+            packaging_detail = (
+                f"{packaging_detail}; skipBoundary={str(skip_boundary_behavior or '-')}, "
+                f"skipMarkers={int(skip_marker_count or 0)}"
+            )
+            diag_rows.append(_diag_row("packaging", packaging_state, packaging_summary, packaging_detail))
+
+            policy_state = "ok"
+            if (
+                str(corridor_mode_summary or "-") != "-"
+                or str(region_mode_summary or "-") != "-"
+                or str(structure_mode_summary or "-") != "-"
+                or int(notch_count or 0) > 0
+            ):
+                policy_state = "info"
+            if list(corridor_warning_rows or []) or list(structure_warning_rows or []) or list(region_warning_rows or []) or list(notch_failures or []):
+                policy_state = "warn"
+            policy_summary = _corridor_rule_status_token(
+                split_count, corridor_mode_summary, skipped_station_rows, corridor_warning_rows
+            ).split("=", 1)[-1]
+            policy_detail = (
+                f"effective={str(corridor_mode_summary or '-')}; notches={int(notch_count or 0)}; "
+                f"structure={str(structure_mode_summary or '-')}; region={str(region_mode_summary or '-')}; "
+                f"warnings={len(list(corridor_warning_rows or [])) + len(list(structure_warning_rows or [])) + len(list(region_warning_rows or [])) + len(list(notch_failures or []))}"
+            )
+            diag_rows.append(_diag_row("policy", policy_state, policy_summary, policy_detail))
+
+            diag_meta = _summarize_diag_rows(diag_rows)
+            diag_by_kind = dict(diag_meta.get("by_kind", {}) or {})
+            status = _status_join(
+                status,
+                f"diagSummary={str(diag_meta.get('summary', '-') or '-')}",
+                f"diagClasses={str(diag_meta.get('class_summary', '-') or '-')}",
+                f"diagSource={str(diag_by_kind.get('source', {}).get('state', 'ok') or 'ok')}",
+                f"diagConnectivity={str(diag_by_kind.get('connectivity', {}).get('state', 'ok') or 'ok')}",
+                f"diagPackaging={str(diag_by_kind.get('packaging', {}).get('state', 'ok') or 'ok')}",
+                f"diagPolicy={str(diag_by_kind.get('policy', {}).get('state', 'ok') or 'ok')}",
+            )
 
             obj.Shape = shape
             obj.SectionCount = len(stations)
             obj.PointCountPerSection = int(pt_count)
             obj.AutoFixedSectionCount = int(fixed_count)
             obj.SchemaVersion = int(schema)
+            obj.ProfileContractSource = str(profile_contract_source or "-")
             obj.FailedRanges = list(failed_ranges)
             obj.StructureSegmentCount = int(split_count)
             obj.StructureSplitStations = list(split_station_rows)
+            obj.SegmentSummaryRows = list(segment_summary_rows)
+            obj.SegmentPackageRows = list(segment_package_rows)
+            obj.SegmentPackageCount = int(len(list(segment_package_rows or [])))
+            obj.SegmentObjectCount = int(segment_object_count)
+            obj.CorridorSegmentCount = int(segment_counts.get("segment_rows", 0) or 0)
+            obj.SkippedSegmentCount = int(segment_counts.get("skip_rows", 0) or 0)
+            obj.RegionSegmentCount = int(segment_counts.get("region_segments", 0) or 0)
+            obj.StructureDrivenSegmentCount = int(segment_counts.get("structure_segments", 0) or 0)
+            obj.NotchDrivenSegmentCount = int(segment_counts.get("notch_segments", 0) or 0)
+            obj.MixedSegmentCount = int(segment_counts.get("mixed_segments", 0) or 0)
+            obj.FullSegmentCount = int(segment_counts.get("full_segments", 0) or 0)
+            obj.SegmentKindSummary = str(segment_kind_summary or "-")
+            obj.SegmentSourceSummary = str(segment_source_summary or "-")
+            obj.SegmentDriverSourceSummary = str(segment_driver_source_summary or "-")
+            obj.SegmentDriverModeSummary = str(segment_driver_mode_summary or "-")
+            obj.SegmentProfileContractSummary = str(segment_profile_contract_summary or "-")
+            obj.SegmentPackageSummary = str(segment_package_summary or "-")
+            obj.SegmentDisplaySummary = str(segment_display_summary or "-")
+            obj.DiagnosticRows = list(diag_rows)
+            obj.DiagnosticSummary = str(diag_meta.get("summary", "-") or "-")
+            obj.DiagnosticClassSummary = str(diag_meta.get("class_summary", "-") or "-")
+            obj.SourceDiagnostic = f"{str(diag_by_kind.get('source', {}).get('state', 'ok') or 'ok')}|{str(diag_by_kind.get('source', {}).get('summary', '-') or '-')}"
+            obj.ConnectivityDiagnostic = f"{str(diag_by_kind.get('connectivity', {}).get('state', 'ok') or 'ok')}|{str(diag_by_kind.get('connectivity', {}).get('summary', '-') or '-')}"
+            obj.PackagingDiagnostic = f"{str(diag_by_kind.get('packaging', {}).get('state', 'ok') or 'ok')}|{str(diag_by_kind.get('packaging', {}).get('summary', '-') or '-')}"
+            obj.PolicyDiagnostic = f"{str(diag_by_kind.get('policy', {}).get('state', 'ok') or 'ok')}|{str(diag_by_kind.get('policy', {}).get('summary', '-') or '-')}"
             obj.SkippedStationRanges = list(skipped_station_rows)
             obj.ResolvedStructureCorridorRanges = list(structure_range_rows)
             obj.ResolvedStructureCorridorWarnings = list(structure_warning_rows)
@@ -2373,9 +2735,26 @@ class CorridorLoft:
                     reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
                     output="surface",
                     sectionSchema=int(schema or 0),
+                    profileContract=str(profile_contract_source or "-"),
                     practical=str(getattr(obj, "PracticalSectionMode", "simple") or "simple"),
                     sections=int(len(stations)),
                     splitSegments=int(split_count or 0),
+                    segmentRows=int(len(list(segment_summary_rows or []))),
+                    segmentPackages=int(len(list(segment_package_rows or []))),
+                    segmentObjects=int(segment_object_count or 0),
+                    segmentKinds=str(segment_kind_summary or "-"),
+                    segmentDrivers=str(segment_source_summary or "-"),
+                    segmentDriverSources=str(segment_driver_source_summary or "-"),
+                    segmentDriverModes=str(segment_driver_mode_summary or "-"),
+                    segmentProfileContracts=str(segment_profile_contract_summary or "-"),
+                    segmentPackageSummary=str(segment_package_summary or "-"),
+                    segmentDisplay=str(segment_display_summary or "-"),
+                    diagSummary=str(diag_meta.get("summary", "-") or "-"),
+                    diagClasses=str(diag_meta.get("class_summary", "-") or "-"),
+                    diagSource=str(diag_by_kind.get("source", {}).get("state", "ok") or "ok"),
+                    diagConnectivity=str(diag_by_kind.get("connectivity", {}).get("state", "ok") or "ok"),
+                    diagPackaging=str(diag_by_kind.get("packaging", {}).get("state", "ok") or "ok"),
+                    diagPolicy=str(diag_by_kind.get("policy", {}).get("state", "ok") or "ok"),
                     skipped=int(len(skipped_station_rows)),
                     notchCount=int(notch_count or 0),
                     corridorModes=str(corridor_mode_summary or "-"),
@@ -2391,14 +2770,33 @@ class CorridorLoft:
 
         except Exception as ex:
             CorridorLoft._clear_skip_markers(obj)
+            CorridorLoft._clear_segment_objects(obj)
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
             obj.PointCountPerSection = 0
             obj.AutoFixedSectionCount = 0
             obj.SchemaVersion = 0
+            obj.ProfileContractSource = "-"
             obj.FailedRanges = []
             obj.StructureSegmentCount = 0
             obj.StructureSplitStations = []
+            obj.SegmentPackageRows = []
+            obj.SegmentPackageCount = 0
+            obj.SegmentObjectCount = 0
+            obj.CorridorSegmentCount = 0
+            obj.SkippedSegmentCount = 0
+            obj.RegionSegmentCount = 0
+            obj.StructureDrivenSegmentCount = 0
+            obj.NotchDrivenSegmentCount = 0
+            obj.MixedSegmentCount = 0
+            obj.FullSegmentCount = 0
+            obj.SegmentKindSummary = "-"
+            obj.SegmentSourceSummary = "-"
+            obj.SegmentDriverSourceSummary = "-"
+            obj.SegmentDriverModeSummary = "-"
+            obj.SegmentProfileContractSummary = "-"
+            obj.SegmentPackageSummary = "-"
+            obj.SegmentDisplaySummary = "-"
             obj.SkippedStationRanges = []
             obj.ResolvedStructureCorridorRanges = []
             obj.ResolvedStructureCorridorWarnings = []
@@ -2441,8 +2839,76 @@ class CorridorLoft:
             obj.SectionComponentSummaryRows = []
             obj.PavementScheduleRows = []
             obj.StructureInteractionSummaryRows = []
-            obj.ExportSummaryRows = []
-            obj.Status = f"ERROR: {ex}"
+            obj.SegmentSummaryRows = []
+            obj.SegmentPackageRows = []
+            obj.SegmentPackageCount = 0
+            obj.SegmentObjectCount = 0
+            obj.CorridorSegmentCount = 0
+            obj.SkippedSegmentCount = 0
+            obj.RegionSegmentCount = 0
+            obj.StructureDrivenSegmentCount = 0
+            obj.NotchDrivenSegmentCount = 0
+            obj.MixedSegmentCount = 0
+            obj.FullSegmentCount = 0
+            obj.SegmentKindSummary = "-"
+            obj.SegmentSourceSummary = "-"
+            obj.SegmentDriverSourceSummary = "-"
+            obj.SegmentDriverModeSummary = "-"
+            obj.SegmentProfileContractSummary = "-"
+            obj.SegmentPackageSummary = "-"
+            obj.SegmentDisplaySummary = "-"
+            obj.DiagnosticRows = [
+                _diag_row("source", "ok", "section_set", "SourceSectionSet resolved before execution error"),
+                _diag_row("connectivity", "error", "execution_failed", str(ex)),
+                _diag_row("packaging", "ok", "not_started", ""),
+                _diag_row("policy", "ok", "not_started", ""),
+            ]
+            _diag_meta = _summarize_diag_rows(obj.DiagnosticRows)
+            _diag_by_kind = dict(_diag_meta.get("by_kind", {}) or {})
+            obj.DiagnosticSummary = str(_diag_meta.get("summary", "-") or "-")
+            obj.DiagnosticClassSummary = str(_diag_meta.get("class_summary", "-") or "-")
+            obj.SourceDiagnostic = "ok|section_set"
+            obj.ConnectivityDiagnostic = f"error|execution_failed|{ex}"
+            obj.PackagingDiagnostic = "ok|not_started"
+            obj.PolicyDiagnostic = "ok|not_started"
+            obj.ExportSummaryRows = [
+                _report_row(
+                    "export",
+                    target="corridor_loft",
+                    reportSchema=int(getattr(obj, "ReportSchemaVersion", 1) or 1),
+                    output="surface",
+                    sections=0,
+                    splitSegments=0,
+                    segmentRows=0,
+                    segmentPackages=0,
+                    segmentObjects=0,
+                    segmentKinds="-",
+                    segmentDrivers="-",
+                    segmentDriverSources="-",
+                    segmentDriverModes="-",
+                    segmentDisplay="-",
+                    diagSummary=str(_diag_meta.get("summary", "-") or "-"),
+                    diagClasses=str(_diag_meta.get("class_summary", "-") or "-"),
+                    diagSource=str(_diag_by_kind.get("source", {}).get("state", "ok") or "ok"),
+                    diagConnectivity=str(_diag_by_kind.get("connectivity", {}).get("state", "ok") or "ok"),
+                    diagPackaging=str(_diag_by_kind.get("packaging", {}).get("state", "ok") or "ok"),
+                    diagPolicy=str(_diag_by_kind.get("policy", {}).get("state", "ok") or "ok"),
+                    skipped=0,
+                    notchCount=0,
+                    corridorModes="-",
+                    ruled="off",
+                    roadside="-",
+                )
+            ]
+            obj.Status = _status_join(
+                f"ERROR: {ex}",
+                f"diagSummary={str(_diag_meta.get('summary', '-') or '-')}",
+                f"diagClasses={str(_diag_meta.get('class_summary', '-') or '-')}",
+                f"diagSource={str(_diag_by_kind.get('source', {}).get('state', 'ok') or 'ok')}",
+                f"diagConnectivity={str(_diag_by_kind.get('connectivity', {}).get('state', 'ok') or 'ok')}",
+                f"diagPackaging={str(_diag_by_kind.get('packaging', {}).get('state', 'ok') or 'ok')}",
+                f"diagPolicy={str(_diag_by_kind.get('policy', {}).get('state', 'ok') or 'ok')}",
+            )
             _mark_recompute_flag(obj, False)
 
     def onChanged(self, obj, prop):

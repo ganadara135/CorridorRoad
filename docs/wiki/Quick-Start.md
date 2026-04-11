@@ -63,16 +63,16 @@ For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](.
    - Confirm completion message appears and section set is created.
    - [Screenshot Needed] Sections completion dialog.
    - Suggested file: `wiki-quickstart-step8-sections-complete.png`
-9. Run `Generate Corridor Loft` and click `Build Corridor Loft`.
+9. Run `Corridor` and click `Build Corridor`.
    - Confirm completion message appears and corridor object is visible.
-   - [Screenshot Needed] Corridor Loft completion dialog + result.
+   - [Screenshot Needed] Corridor completion dialog + result.
    - Suggested file: `wiki-quickstart-step9-corridor-complete.png`
 
 ## Expected Result
 - Terrain mesh appears.
 - Alignment and station ticks are visible.
 - 3D centerline wire is created.
-- Section set and corridor loft are generated.
+- Section set and corridor are generated.
 - Completion dialogs appear after Stations/Centerline/Sections/Corridor commands.
 
 ![Final end-to-end result screen](images/wiki-workflow-07-corridor-surfaces-analysis_3.png)
@@ -83,4 +83,4 @@ For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](.
 - If a complex imported structure looks right in 3D but earthwork does not match it, see [Troubleshooting](Troubleshooting#external-shape-is-visible-but-earthwork-does-not-match-it).
 
 ---
-Last verified with commit: `e619bd8` (`v0.2.0`)
+Last verified with commit: `61ba6d5`

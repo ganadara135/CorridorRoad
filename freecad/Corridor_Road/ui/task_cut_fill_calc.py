@@ -8,7 +8,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects import coord_transform as _ct
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.obj_project import get_length_scale, resolve_project_corridor
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
@@ -385,7 +385,7 @@ class CutFillCalcTaskPanel:
         preferred_corridor = None
         preferred_surface = None
         if prj is not None:
-            preferred_corridor = getattr(prj, "CorridorLoft", None)
+            preferred_corridor = resolve_project_corridor(prj)
             preferred_surface = getattr(prj, "Terrain", None)
 
         if cmp_obj is not None:
@@ -455,7 +455,7 @@ class CutFillCalcTaskPanel:
         self._update_bounds_ui()
 
         msg = []
-        msg.append(f"CorridorLoft: {len(self._corridors)} found")
+        msg.append(f"Corridor: {len(self._corridors)} found")
         msg.append(f"Mesh sources: {len(self._surfaces)} found")
         msg.append(f"Existing mesh coords: {'World' if self._use_world_surface_mode() else 'Local'}")
         msg.append(f"Manual X/Y domain coords: {self.cmb_domain_coords.currentText()}")
@@ -530,7 +530,7 @@ class CutFillCalcTaskPanel:
             QtWidgets.QMessageBox.warning(
                 None,
                 "Cut-Fill Calc",
-                "No CorridorLoft selected. Run Generate Corridor Loft first.",
+                "No Corridor selected. Run Build Corridor first.",
             )
             return
 

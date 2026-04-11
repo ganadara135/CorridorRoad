@@ -5,7 +5,12 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import (
+    CorridorRoadProject,
+    ensure_project_properties,
+    ensure_project_tree,
+    resolve_project_corridor,
+)
 from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
 
 
@@ -51,8 +56,9 @@ class CmdNewProject:
             CorridorRoadProject.adopt(obj, obj.AssemblyTemplate)
         if hasattr(obj, "SectionSet") and obj.SectionSet is not None:
             CorridorRoadProject.adopt(obj, obj.SectionSet)
-        if hasattr(obj, "CorridorLoft") and obj.CorridorLoft is not None:
-            CorridorRoadProject.adopt(obj, obj.CorridorLoft)
+        corridor_obj = resolve_project_corridor(obj)
+        if corridor_obj is not None:
+            CorridorRoadProject.adopt(obj, corridor_obj)
         if hasattr(obj, "DesignGradingSurface") and obj.DesignGradingSurface is not None:
             CorridorRoadProject.adopt(obj, obj.DesignGradingSurface)
         if hasattr(obj, "DesignTerrain") and obj.DesignTerrain is not None:

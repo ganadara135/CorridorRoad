@@ -228,6 +228,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### 2.9 CorridorLoft (`freecad/Corridor_Road/objects/obj_corridor_loft.py`)
 - Purpose: corridor loft generation from `SectionSet`.
+- Naming policy:
+  - user-facing UI says `Corridor`
+  - internal proxy/module name remains `CorridorLoft` for compatibility in the current migration cycle
 - Inputs:
   - `SourceSectionSet`
 - Controls:

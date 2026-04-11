@@ -8,12 +8,12 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.ui.task_corridor_loft import CorridorLoftTaskPanel
 
 
-class CmdGenerateCorridorLoft:
+class CmdGenerateCorridor:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Corridor Loft",
-            "ToolTip": "Create/update corridor loft from SectionSet",
+            "MenuText": "Corridor",
+            "ToolTip": "Create/update corridor from SectionSet",
         }
 
     def IsActive(self):
@@ -24,4 +24,9 @@ class CmdGenerateCorridorLoft:
         Gui.Control.showDialog(panel)
 
 
-Gui.addCommand("CorridorRoad_GenerateCorridorLoft", CmdGenerateCorridorLoft())
+_CMD = CmdGenerateCorridor()
+
+# Preferred user-facing command id.
+Gui.addCommand("CorridorRoad_GenerateCorridor", _CMD)
+# Compatibility alias kept for older workbench layouts/macros.
+Gui.addCommand("CorridorRoad_GenerateCorridorLoft", _CMD)

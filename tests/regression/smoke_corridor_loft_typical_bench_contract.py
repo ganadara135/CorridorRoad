@@ -122,10 +122,27 @@ def run():
     _assert(str(getattr(sec, "TopProfileSource", "") or "") == "typical_section", "Top profile should be typical_section")
     _assert(str(getattr(sec, "TopProfileEdgeSummary", "") or "") == "berm/berm", "Top edge summary should stay berm/berm")
     _assert(int(getattr(cor, "AutoFixedSectionCount", 0) or 0) == 0, "Typical+bench corridor should keep SectionSet point order")
+    _assert(str(getattr(cor, "ProfileContractSource", "-") or "-") == "section_profiles", "Typical+bench corridor should report section_profiles contract source")
+    _assert(str(getattr(cor, "SegmentProfileContractSummary", "-") or "-") == "section_profiles=1", "Typical+bench corridor should summarize section_profiles package contract")
 
     cor_faces = len(list(getattr(getattr(cor, "Shape", None), "Faces", []) or []))
     dgs_faces = int(getattr(dgs, "FaceCount", 0) or 0)
     _assert(cor_faces == dgs_faces, f"CorridorLoft faces should match grading strip faces: {cor_faces} != {dgs_faces}")
+
+    package_rows = list(getattr(cor, "SegmentPackageRows", []) or [])
+    _assert(len(package_rows) >= 1, "Typical+bench corridor should expose at least one segment package row")
+    _assert(all("profileContract=section_profiles" in row for row in package_rows), "Typical+bench segment packages should carry the section_profiles contract source")
+
+    segment_objs = [
+        o
+        for o in list(getattr(doc, "Objects", []) or [])
+        if str(getattr(o, "Name", "") or "").startswith("CorridorSegment")
+        and getattr(o, "ParentCorridorLoft", None) == cor
+    ]
+    _assert(len(segment_objs) >= 1, "Typical+bench corridor should create at least one CorridorSegment child")
+    _assert(all(str(getattr(o, "ProfileContractSource", "-") or "-") == "section_profiles" for o in segment_objs), "Typical+bench CorridorSegment children should carry the section_profiles contract source")
+    _assert(all("[section_profiles]" in str(getattr(o, "Label", "") or "") for o in segment_objs), "Typical+bench CorridorSegment labels should expose the contract source")
+    _assert(all("|contract=section_profiles" in str(getattr(o, "SegmentSummary", "") or "") for o in segment_objs), "Typical+bench CorridorSegment summaries should expose the contract source")
 
     App.closeDocument(doc.Name)
     print("[PASS] CorridorLoft typical-section + bench strip contract smoke test completed.")

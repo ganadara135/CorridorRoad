@@ -825,6 +825,13 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSegment",)):
+        cor = getattr(child, "ParentCorridorLoft", None)
+        sec = getattr(cor, "SourceSectionSet", None) if cor is not None else None
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
         doc = getattr(prj, "Document", None)
         if doc is not None:
@@ -919,6 +926,7 @@ def _is_alignment_related(child):
             "SectionStructureOverlay",
             "CorridorLoft",
             "CorridorSkipMarker",
+            "CorridorSegment",
         ),
         name_prefixes=(
             "HorizontalAlignment",
@@ -937,6 +945,7 @@ def _is_alignment_related(child):
             "SectionStructureOverlay",
             "CorridorLoft",
             "CorridorSkipMarker",
+            "CorridorSegment",
         ),
     )
 
@@ -1009,6 +1018,8 @@ def _target_folder_for_alignment_child(prj, child):
     if _is_type(child, proxy_types=("SectionStructureOverlay",), name_prefixes=("SectionStructureOverlay",)):
         return aln_tree.get(ALIGNMENT_STRUCTURE_SECTIONS, None)
     if _is_type(child, proxy_types=(), name_prefixes=("CorridorSkipMarker",)):
+        return aln_tree.get(ALIGNMENT_CORRIDOR, None)
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSegment",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
@@ -1367,7 +1378,10 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
     _ensure_hidden_link_property(obj, "RegionPlan", "CorridorRoad", "Link to region plan object")
     _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
-    _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
+    # Keep hidden property name `CorridorLoft` for compatibility with older files.
+    # New code should prefer resolve/assign corridor helpers instead of using the
+    # raw property name directly.
+    _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor object (compatibility name)")
     _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
     _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
     _ensure_hidden_link_property(obj, "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
@@ -1402,6 +1416,64 @@ def assign_project_region_plan(project_obj, region_obj):
     except Exception:
         pass
     return region_obj
+
+
+def ensure_corridor_object(corridor_obj):
+    """Return the corridor object or None when the input is not a CorridorLoft result."""
+    if corridor_obj is None:
+        return None
+    try:
+        proxy_type = str(getattr(getattr(corridor_obj, "Proxy", None), "Type", "") or "")
+    except Exception:
+        proxy_type = ""
+    try:
+        name = str(getattr(corridor_obj, "Name", "") or "")
+    except Exception:
+        name = ""
+    if proxy_type == "CorridorLoft" or name.startswith("CorridorLoft"):
+        return corridor_obj
+    return None
+
+
+def assign_project_corridor(project_obj, corridor_obj):
+    prj = project_obj
+    if prj is None:
+        return None
+    corridor_obj = ensure_corridor_object(corridor_obj)
+    try:
+        if hasattr(prj, "CorridorLoft"):
+            prj.CorridorLoft = corridor_obj
+    except Exception:
+        pass
+    return corridor_obj
+
+
+def _project_corridor_candidate(project_obj):
+    try:
+        corridor_obj = getattr(project_obj, "CorridorLoft", None) if hasattr(project_obj, "CorridorLoft") else None
+    except Exception:
+        corridor_obj = None
+    return ensure_corridor_object(corridor_obj)
+
+
+def resolve_project_corridor(project_obj_or_doc):
+    """
+    Resolve the preferred corridor object for a project/document and keep the
+    hidden compatibility link synchronized when possible.
+    """
+    prj = _resolve_project(project_obj_or_doc)
+    if prj is None:
+        return None
+    corridor_obj = _project_corridor_candidate(prj)
+    if corridor_obj is None:
+        doc = getattr(prj, "Document", None)
+        for o in list(getattr(doc, "Objects", []) or []):
+            corridor_obj = ensure_corridor_object(o)
+            if corridor_obj is not None:
+                break
+    if corridor_obj is not None:
+        assign_project_corridor(prj, corridor_obj)
+    return corridor_obj
 
 
 def _project_region_plan_candidate(project_obj):
@@ -1745,16 +1817,7 @@ class CorridorRoadProject:
                 obj_project.SectionSet = s
 
         if hasattr(obj_project, "CorridorLoft") and obj_project.CorridorLoft is None:
-            c = None
-            for o in doc.Objects:
-                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CorridorLoft":
-                    c = o
-                    break
-                if o.Name.startswith("CorridorLoft"):
-                    c = o
-                    break
-            if c is not None:
-                obj_project.CorridorLoft = c
+            resolve_project_corridor(obj_project)
 
         if hasattr(obj_project, "DesignGradingSurface") and obj_project.DesignGradingSurface is None:
             g = None

@@ -339,7 +339,7 @@ Important behavior:
 | `FootingThickness` | Retaining-wall footing thickness. | Mainly used by the `retaining_wall` template. |
 | `CapHeight` | Optional top cap height. | Used by both templates when a raised top cap is needed. |
 | `CellCount` | Number of culvert cells. | Used by the `box_culvert` template. Minimum practical value is `1`. |
-| `CorridorMode` | Controls how the structure should be consumed by `Corridor Loft`. | `none` ignores corridor-level changes, `split_only` only splits loft spans, `skip_zone` omits the corridor body across the active structure span, and `notch` uses a notch-aware loft profile. In the current implementation, `notch` is mainly intended for `culvert` and `crossing`. |
+| `CorridorMode` | Controls how the structure should be consumed by `Corridor`. | `none` ignores corridor-level changes, `split_only` only splits corridor spans, `skip_zone` omits the corridor body across the active structure span, and `notch` uses a notch-aware corridor profile. In the current implementation, `notch` is mainly intended for `culvert` and `crossing`. |
 | `CorridorMargin` | Expands the corridor skip envelope beyond start/end station. | Use a small positive margin only when the skipped corridor zone should be slightly wider than the structure station range. |
 | `Notes` | Free-form notes. | Use for documentation and later review. |
 
@@ -363,7 +363,7 @@ Important behavior:
 2. A `culvert` or `crossing` usually makes more sense with `center` or `both`.
 3. If `BottomElevation` is empty, the display system falls back to centerline Z and `Cover`.
 4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
-5. `CorridorMode` is now the main way to tell `Corridor Loft` whether a structure should only stabilize segmentation or actually omit a corridor span.
+5. `CorridorMode` is now the main way to tell `Corridor` whether a structure should only stabilize segmentation or actually omit a corridor span.
 6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
@@ -479,7 +479,7 @@ Recommended user policy:
 | `Add structure tags to child sections` | Adds tags and metadata to child sections at structure-related stations. | Keep enabled if you want labels and tree identification. |
 | `Apply structure overrides` | Enables structure-type override logic during section build. | Turn this on when structure zones should constrain daylight/side-slope behavior. |
 
-### Corridor Loft Structure Options
+### Corridor Structure Options
 
 | Option | Meaning | How to use it |
 |---|---|---|
@@ -529,7 +529,7 @@ When to override manually:
 1. Standard section children continue to appear under `Sections`.
 2. Structure overlay objects appear under `Structure Sections`.
 3. `SectionSet.Status` reports merged structure count and override hit count.
-4. `CorridorLoft` can report `Notch-aware stations` and `Closed profile schema` when a notch-aware loft profile is used.
+4. `Corridor` can report `Notch-aware stations` and `Closed profile schema` when a notch-aware profile is used.
 
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`
@@ -556,7 +556,7 @@ When to override manually:
 3. Bench input is now one unified row list per side. Users no longer need to think in terms of “primary bench” versus “extra bench”.
 4. With `Daylight Auto`, terrain is checked along the whole bench path. If terrain is reached before a later bench starts, that section can shorten the terrace stack or skip the remaining benches.
 5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
-6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.
+6. Bench output is part of the open section wire contract, so downstream `Corridor` and grading surfaces consume the expanded profile automatically.
 
 ## 6B. Cross Section Viewer
 
@@ -692,4 +692,4 @@ When to override manually:
 4. Use [Troubleshooting](Troubleshooting) when sampled EG/FG or structure-aware output is incomplete or inconsistent.
 
 ---
-Last verified with commit: `314ae19`
+Last verified with commit: `61ba6d5`
