@@ -97,23 +97,26 @@ def _safe_vec(v, fallback):
 
 
 def _mark_dependency_needs_recompute(obj_dep, status_text: str):
+    proxy_type = str(getattr(getattr(obj_dep, "Proxy", None), "Type", "") or "")
+    hide_user_stale_state = proxy_type == "CorridorLoft"
     try:
         if hasattr(obj_dep, "NeedsRecompute"):
             obj_dep.NeedsRecompute = True
     except Exception:
         pass
-    try:
-        st = str(getattr(obj_dep, "Status", "") or "")
-        if "NEEDS_RECOMPUTE" not in st:
-            obj_dep.Status = str(status_text or "NEEDS_RECOMPUTE")
-    except Exception:
-        pass
-    try:
-        label = str(getattr(obj_dep, "Label", "") or "")
-        if _RECOMP_LABEL_SUFFIX not in label:
-            obj_dep.Label = f"{label}{_RECOMP_LABEL_SUFFIX}"
-    except Exception:
-        pass
+    if not hide_user_stale_state:
+        try:
+            st = str(getattr(obj_dep, "Status", "") or "")
+            if "NEEDS_RECOMPUTE" not in st:
+                obj_dep.Status = str(status_text or "NEEDS_RECOMPUTE")
+        except Exception:
+            pass
+        try:
+            label = str(getattr(obj_dep, "Label", "") or "")
+            if _RECOMP_LABEL_SUFFIX not in label:
+                obj_dep.Label = f"{label}{_RECOMP_LABEL_SUFFIX}"
+        except Exception:
+            pass
     try:
         obj_dep.touch()
     except Exception:

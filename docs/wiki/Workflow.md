@@ -182,14 +182,34 @@ Validation:
 [3D centerline wire and completion popup](images/wiki-workflow-05-centerline3d.png)
 
 
+## 5A. Region Plan
+1. Run `Manage Region Plan`.
+2. Create or select the alignment-owned `RegionPlan`.
+3. Define `Base Regions` first so the main corridor span layout is clear.
+4. Add `Overrides` for local ditch/urban/corridor behaviors only where needed.
+5. Use `Seed From Project` to refresh managed `Hints` from project, typical-section, structure, or design-standard context.
+6. Review `Hints` and use `Accept`, `Accept and Edit`, or `Ignore`.
+7. Use `Station Timeline` to confirm span order and final station ranges before section generation.
+
+Output:
+- `RegionPlan` under `02_Alignments/<Alignment>/Regions`
+- grouped base / override / hint authoring data
+
+Validation:
+- Base spans cover the intended corridor regime without accidental overlap.
+- Accepted hints become deterministic overrides; ignored hints remain traceable.
+- `Station Timeline` reflects the intended station order before `Generate Sections`.
+- In dark theme, grouped tables and timeline rows should remain readable with tinted rows and visible cell text.
+
 ## 6. Sections
 1. Run `Generate Sections`.
 2. Choose mode (`Range` or `Manual`).
-3. If structures should drive extra stations, enable `Use linked StructureSet`.
-4. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
-5. Configure daylight options if needed.
-6. If cut/fill terraces are needed, turn on `Use Left Bench` / `Use Right Bench` and edit the `Bench Rows` tables directly.
-7. Click `Generate Sections Now`.
+3. If region spans should drive extra stations or section overrides, enable `Use linked Region Plan`.
+4. If structures should drive extra stations, enable `Use linked StructureSet`.
+5. If the finished-grade top profile should come from `Typical Section`, enable `Use Typical Section Template` and choose the source.
+6. Configure daylight options if needed.
+7. If cut/fill terraces are needed, turn on `Use Left Bench` / `Use Right Bench` and edit the `Bench Rows` tables directly.
+8. Click `Generate Sections Now`.
 
 Output:
 - SectionSet with resolved station list and optional child sections
@@ -197,9 +217,10 @@ Output:
 
 Validation:
 - Resolved station count matches mode/configuration.
+- `Region Plan` boundary/transition stations are present when region integration is enabled.
 - Daylight terrain is assigned when Daylight Auto is enabled.
 - `Merged structure stations` is non-zero when structure records are inside range.
-- `Structure Sections` objects appear only at relevant stations and do not break Corridor Loft.
+- `Structure Sections` objects appear only at relevant stations and do not break Corridor.
 - When station-profile data exists, overlay size can change from one structure section station to the next.
 - When a typical section is active, `SectionSet` should report `schema=2` and `topProfile=typical_section`.
 - When pavement layers are loaded, `SectionSet` should also report a non-zero `PavementTotalThickness`.
@@ -208,32 +229,46 @@ Validation:
 ![Sections task panel and generated section set](images/wiki-workflow-06-sections_2.png)
 
 ## 7. Corridor and Surfaces
-1. Run `Generate Corridor Loft`.
+1. Run `Corridor`.
 2. Optionally run `Generate Design Grading Surface`.
 3. Optionally run `Generate Design Terrain`.
 4. Run `Generate Cut/Fill Calc`.
 
 Output:
-- Corridor solid
+- Corridor surface
 - Design terrain mesh
 - Cut/fill summary
 
 Validation:
-- Corridor loft status is OK.
+- Corridor status is OK.
 - Completion dialog shows `Source section schema`, `Top profile source`, and `Points per section`.
 - When pavement layers are loaded, completion dialog also shows `Pavement total thickness`.
 - Design terrain/cut-fill status fields show no blocking error.
 
-## 7A. How To Reduce Corridor Loft Twisting
+Object intent:
+- `Design Grading Surface` is the section-faithful reference surface. Use it when you want to verify that generated section lines are being connected exactly as expected.
+- `Corridor` is the corridor result object. It must keep corridor span meaning such as skipped ranges, split structure zones, and notch-aware ranges, so it is the downstream `Part Shape` rather than a pure display mesh.
+- These two objects should follow the same section contract, but they are not interchangeable in project role.
 
-Corridor loft twisting usually happens when neighboring sections change too abruptly or when section left/right orientation becomes inconsistent between stations.
+Quick comparison:
+- `Corridor`: best when the project needs a range-aware corridor result object.
+- `Design Grading Surface`: best when the project needs the clearest section-to-section reference surface.
+
+Connectivity note:
+- `Design Grading Surface` is the reference for raw section-to-section connectivity.
+- `Corridor` should follow the same ordered section-point contract, then add corridor span packaging such as split, skip, and notch-aware ranges.
+- If the two outputs disagree, treat that as a bug or packaging drift, not as two equally valid interpretations of the same sections.
+
+## 7A. How To Reduce Corridor Twisting
+
+Corridor twisting usually happens when neighboring sections change too abruptly or when section left/right orientation becomes inconsistent between stations.
 
 Recommended settings and workflow:
 1. Keep section spacing practical.
 2. Avoid very small section interval unless the geometry truly needs it.
-3. Increase `Corridor Loft > Min Section Spacing` if many sections are nearly overlapping.
-4. Turn on `Use ruled loft` first when testing unstable geometry.
-5. Keep `Auto-fix flipped sections` enabled in Corridor Loft.
+3. Increase `Corridor > Min Section Spacing` if many sections are nearly overlapping.
+4. Turn on `Use ruled surface` first when testing unstable geometry.
+5. Keep `Auto-fix flipped sections` enabled in Corridor.
 6. If structures are present, keep `Split at structure zones` enabled.
 
 Daylight-related guidance:
@@ -249,16 +284,16 @@ Profile and section quality guidance:
 Practical order of stabilization:
 1. Increase section interval slightly.
 2. Increase `Min Section Spacing`.
-3. Enable `Use ruled loft`.
+3. Enable `Use ruled surface`.
 4. Keep `Auto-fix flipped sections` enabled.
 5. Reduce daylight aggressiveness with `Daylight Max Width Delta`.
 
 What the current code already does:
 1. Stabilizes section normal continuity across stations.
 2. Smooths daylight width changes using `Daylight Max Width Delta`.
-3. Auto-fixes likely flipped section orientation in Corridor Loft when enabled.
-4. Falls back to adaptive segmented loft if full loft fails.
-5. Can split the loft into structure-aware segments at structure boundaries.
+3. Auto-fixes likely flipped section orientation in Corridor when enabled.
+4. Falls back to adaptive segmented corridor building if the full corridor build fails.
+5. Can split the corridor into structure-aware segments at structure boundaries.
 
 ## 7B. Structure-Aware Section Behavior
 
@@ -266,8 +301,8 @@ When `Use linked StructureSet` is enabled, structure records participate in sect
 1. Structure start/end/center stations can be merged into the section station list.
 2. Transition stations can be added automatically before and after structure boundaries.
 3. Child sections receive structure metadata such as IDs, types, and roles.
-4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the loft input wire.
-5. `Corridor Loft` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or built with a notch-aware closed-profile schema.
+4. Separate overlay objects are created under `Structure Sections` so structure envelopes stay visible without changing the corridor input wire.
+5. `Corridor` can now read per-structure `CorridorMode` values so selected structure spans can be omitted with `skip_zone` or built with a notch-aware closed-profile schema.
 6. When station-profile control points exist, structure width/height-related values can vary by station and feed 3D structure display, `Structure Sections`, section override behavior, and corridor `notch` handling.
 
 Structure placement diagnostics:
@@ -279,7 +314,7 @@ Current override policy by structure type:
 1. `culvert`, `crossing`
    - Affect both sides of the section.
    - Daylight is disabled through the structure zone.
-   - Both sides are converted to short flat berm-like segments so the section still reads as a constrained crossing zone without breaking loft stability.
+   - Both sides are converted to short flat berm-like segments so the section still reads as a constrained crossing zone without breaking corridor stability.
 2. `retaining_wall`
    - Affects the declared side only (`left` or `right`).
    - The wall side is converted to a short steep wall-like segment.
@@ -287,7 +322,7 @@ Current override policy by structure type:
 3. `bridge_zone`, `abutment_zone`
    - Affect both sides of the section conservatively.
    - Daylight is disabled through the active zone.
-   - Both sides are trimmed back rather than flattened completely, so the section shape changes less abruptly but still remains loft-safe.
+   - Both sides are trimmed back rather than flattened completely, so the section shape changes less abruptly but still remains corridor-safe.
 4. `tag_only`
    - Adds structure station context and overlay labeling only.
    - Does not change the built section wire.
@@ -315,7 +350,7 @@ Template structure display:
 
 External-shape earthwork note:
 1. `GeometryMode=external_shape` is currently a display/reference plus proxy-earthwork workflow.
-2. `Sections`, `Design Grading Surface`, and `Corridor Loft` still use type-based rules for earthwork.
+2. `Sections`, `Design Grading Surface`, and `Corridor` still use type-based rules for earthwork.
 3. Current status wording may report `earthwork=external_shape_proxy` when the loaded external shape contributes width/height proxy values.
 4. Use `external_shape` when you need realistic structure appearance and placement, but do not expect the imported STEP/BREP/FCStd solid to define the actual earthwork cut shape yet.
 5. Current type-driven earthwork intent is:
@@ -324,7 +359,7 @@ External-shape earthwork note:
    - `bridge_zone`, `abutment_zone` -> trim / split / skip zone rules
 
 Current notch policy:
-1. `culvert` and `crossing` can switch the corridor loft to a notch-aware closed-profile schema.
+1. `culvert` and `crossing` can switch the corridor to a notch-aware closed-profile schema.
 2. notch depth and width are reduced automatically near `transition_before` and `transition_after`, then reach full effect inside the active span.
 3. result reporting now exposes both `Notch-aware stations` and `Closed profile schema`.
 4. `bridge_zone`, `abutment_zone`, and `retaining_wall` are still better handled with `skip_zone` or `split_only`.
@@ -341,27 +376,28 @@ Auto transition distance intent:
 > [Screenshot Needed] Alignment tree showing both `Sections` and `Structure Sections`.
 > Suggested file: `wiki-workflow-07d-structure-sections-tree.png`
 
-> [Screenshot Needed] Corridor Loft options showing `Min Section Spacing`, `Use ruled loft`, and `Auto-fix flipped sections`.
+> [Screenshot Needed] Corridor options showing `Min Section Spacing`, `Use ruled surface`, and `Auto-fix flipped sections`.
 > Suggested file: `wiki-workflow-07a-corridor-loft-stability-options.png`
 
-> [Screenshot Needed] Corridor Loft options showing `Split at structure zones` and status with `structureSegs`.
+> [Screenshot Needed] Corridor options showing `Split at structure zones` and status with `structureSegs`.
 > Suggested file: `wiki-workflow-07e-corridor-loft-structure-split.png`
 
 > [Screenshot Needed] Sections options showing `Daylight Max Width Delta`.
 > Suggested file: `wiki-workflow-07b-daylight-max-width-delta.png`
 
-![Corridor loft, failed case](images/wiki-workflow-07-corridor-surfaces-analysis.png)
+![Corridor, failed case](images/wiki-workflow-07-corridor-surfaces-analysis.png)
 - this is a failed case. check your profile data. there would be many zero data.
-![Corridor loft](images/wiki-workflow-07-corridor-surfaces-analysis_2.png)
+![Corridor](images/wiki-workflow-07-corridor-surfaces-analysis_2.png)
 ![Cut and Fill Analisys](images/wiki-workflow-07-corridor-surfaces-analysis_3.png)
 
 
 ## 8. Quality Check
 - Verify station coverage and EG values.
+- Verify accepted `RegionPlan` overrides and boundary stations are reflected in generated sections.
 - Verify daylight intersections where required.
 - Check status fields for warnings/errors on generated objects.
 - Re-run failed stages after fixing source links or coordinate mode.
 - For the maintained Long-Term practical bundle, run `tests/regression/run_practical_scope_smokes.ps1`.
 
 ---
-Last verified with commit: `e619bd8` (`v0.2.0`)
+Last verified with commit: `61ba6d5`

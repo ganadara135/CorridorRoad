@@ -7,6 +7,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft, ensure_corridor_loft_properties
+from freecad.Corridor_Road.objects.obj_section_set import region_plan_usage_enabled
 from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
 
@@ -40,7 +41,7 @@ class CorridorLoftTaskPanel:
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
-        w.setWindowTitle("CorridorRoad - Corridor Loft")
+        w.setWindowTitle("CorridorRoad - Corridor")
 
         main = QtWidgets.QVBoxLayout(w)
         main.setContentsMargins(10, 10, 10, 10)
@@ -56,7 +57,7 @@ class CorridorLoftTaskPanel:
         self.cmb_target = QtWidgets.QComboBox()
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Section Set:", self.cmb_section)
-        fs.addRow("Target Corridor Loft:", self.cmb_target)
+        fs.addRow("Target Corridor:", self.cmb_target)
         fs.addRow(self.btn_refresh)
         main.addWidget(gb_src)
 
@@ -66,9 +67,9 @@ class CorridorLoftTaskPanel:
         self.spin_min_spacing.setRange(0.0, 10000.0 * self._scale)
         self.spin_min_spacing.setDecimals(3)
         self.spin_min_spacing.setValue(0.50 * self._scale)
-        self.chk_ruled = QtWidgets.QCheckBox("Use ruled loft")
+        self.chk_ruled = QtWidgets.QCheckBox("Use ruled surface")
         self.chk_ruled.setChecked(False)
-        self.chk_auto_ruled_typical = QtWidgets.QCheckBox("Auto-use ruled loft for Typical Section")
+        self.chk_auto_ruled_typical = QtWidgets.QCheckBox("Auto-use ruled surface for Typical Section")
         self.chk_auto_ruled_typical.setChecked(True)
         self.chk_fix_orientation = QtWidgets.QCheckBox("Auto-fix flipped sections")
         self.chk_fix_orientation.setChecked(True)
@@ -76,6 +77,8 @@ class CorridorLoftTaskPanel:
         self.chk_structure_split.setChecked(True)
         self.chk_structure_modes = QtWidgets.QCheckBox("Use structure corridor modes")
         self.chk_structure_modes.setChecked(True)
+        self.chk_region_modes = QtWidgets.QCheckBox("Use region corridor modes")
+        self.chk_region_modes.setChecked(True)
         self.cmb_default_structure_mode = QtWidgets.QComboBox()
         self.cmb_default_structure_mode.addItems(["none", "split_only", "skip_zone"])
         self.cmb_default_structure_mode.setCurrentText("split_only")
@@ -92,13 +95,14 @@ class CorridorLoftTaskPanel:
         form_opts.addRow(self.chk_fix_orientation)
         form_opts.addRow(self.chk_structure_split)
         form_opts.addRow(self.chk_structure_modes)
+        form_opts.addRow(self.chk_region_modes)
         form_opts.addRow("Default structure corridor mode:", self.cmb_default_structure_mode)
         form_opts.addRow("Notch transition scale:", self.spin_notch_transition_scale)
         form_opts.addRow(self.chk_auto)
         main.addWidget(gb_opt)
 
         row_btn = QtWidgets.QHBoxLayout()
-        self.btn_build = QtWidgets.QPushButton("Build Corridor Loft")
+        self.btn_build = QtWidgets.QPushButton("Build Corridor")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_build)
         row_btn.addWidget(self.btn_close)
@@ -121,6 +125,39 @@ class CorridorLoftTaskPanel:
     def _fmt_obj(prefix: str, obj):
         return f"[{prefix}] {obj.Label} ({obj.Name})"
 
+    @staticmethod
+    def _status_text(cor):
+        if cor is None:
+            return "Ready"
+        base_status = str(getattr(cor, "Status", "Ready") or "Ready")
+        diag_summary = str(getattr(cor, "DiagnosticSummary", "-") or "-")
+        diag_classes = str(getattr(cor, "DiagnosticClassSummary", "-") or "-")
+        profile_contract = str(getattr(cor, "ProfileContractSource", "-") or "-")
+        segment_profile_contracts = str(getattr(cor, "SegmentProfileContractSummary", "-") or "-")
+        segment_package_summary = str(getattr(cor, "SegmentPackageSummary", "-") or "-")
+        kept_segments = int(getattr(cor, "CorridorSegmentCount", 0) or 0)
+        package_count = int(getattr(cor, "SegmentPackageCount", 0) or 0)
+        object_count = int(getattr(cor, "SegmentObjectCount", 0) or 0)
+        skipped_segments = int(getattr(cor, "SkippedSegmentCount", 0) or 0)
+        mode_summary = str(getattr(cor, "ResolvedCombinedCorridorModeSummary", "-") or "-")
+        lines = [base_status]
+        if diag_summary != "-":
+            lines.append(f"Diagnostics: {diag_summary}")
+        if diag_classes != "-":
+            lines.append(f"Classes: {diag_classes}")
+        if profile_contract != "-" or segment_profile_contracts != "-":
+            lines.append(
+                f"Profile contract: result={profile_contract}, packages={segment_profile_contracts}"
+            )
+        if segment_package_summary != "-":
+            lines.append(f"Package summary: {segment_package_summary}")
+        lines.append(
+            f"Segments: kept={kept_segments}, packages={package_count}, objects={object_count}, skipped={skipped_segments}"
+        )
+        if mode_summary != "-":
+            lines.append(f"Modes: {mode_summary}")
+        return "\n".join(lines)
+
     def _fill_sections(self, selected=None):
         self.cmb_section.clear()
         for o in self._sections:
@@ -137,9 +174,9 @@ class CorridorLoftTaskPanel:
 
     def _fill_targets(self, selected=None):
         self.cmb_target.clear()
-        self.cmb_target.addItem("[New] Create new Corridor Loft")
+        self.cmb_target.addItem("[New] Create new Corridor")
         for o in self._corridors:
-            self.cmb_target.addItem(self._fmt_obj("CorridorLoft", o))
+            self.cmb_target.addItem(self._fmt_obj("Corridor", o))
         idx = 0
         if selected is not None:
             for i, o in enumerate(self._corridors):
@@ -223,7 +260,7 @@ class CorridorLoftTaskPanel:
             self._fill_targets(selected=selected_cor)
 
             self.lbl_info.setText(
-                f"SectionSet: {len(self._sections)} found, CorridorLoft: {len(self._corridors)} found."
+                f"SectionSet: {len(self._sections)} found, Corridor: {len(self._corridors)} found."
             )
         finally:
             self._loading = False
@@ -240,6 +277,7 @@ class CorridorLoftTaskPanel:
             self.chk_fix_orientation.setChecked(True)
             self.chk_structure_split.setChecked(True)
             self.chk_structure_modes.setChecked(True)
+            self.chk_region_modes.setChecked(True)
             self.cmb_default_structure_mode.setCurrentText("split_only")
             self.spin_notch_transition_scale.setValue(1.0)
             self.chk_auto.setChecked(True)
@@ -259,10 +297,11 @@ class CorridorLoftTaskPanel:
         self.chk_fix_orientation.setChecked(bool(getattr(cor, "AutoFixSectionOrientation", True)))
         self.chk_structure_split.setChecked(bool(getattr(cor, "SplitAtStructureZones", True)))
         self.chk_structure_modes.setChecked(bool(getattr(cor, "UseStructureCorridorModes", True)))
+        self.chk_region_modes.setChecked(bool(getattr(cor, "UseRegionCorridorModes", True)))
         self.cmb_default_structure_mode.setCurrentText(str(getattr(cor, "DefaultStructureCorridorMode", "split_only") or "split_only"))
         self.spin_notch_transition_scale.setValue(float(getattr(cor, "NotchTransitionScale", 1.0) or 1.0))
         self.chk_auto.setChecked(bool(getattr(cor, "AutoUpdate", True)))
-        self.lbl_status.setText(str(getattr(cor, "Status", "Ready")))
+        self.lbl_status.setText(self._status_text(cor))
 
     def _ensure_target_corridor(self):
         cor = self._current_target()
@@ -289,7 +328,7 @@ class CorridorLoftTaskPanel:
         cor = self.doc.addObject("Part::FeaturePython", "CorridorLoft")
         CorridorLoft(cor)
         ViewProviderCorridorLoft(cor.ViewObject)
-        cor.Label = "Corridor Loft"
+        cor.Label = "Corridor"
         return cor
 
     def _preflight_warnings(self, sec):
@@ -314,18 +353,34 @@ class CorridorLoftTaskPanel:
                     warnings.append(f"Resolved structure corridor modes: {mode_summary}")
         except Exception:
             pass
+        try:
+            if bool(self.chk_region_modes.isChecked()) and bool(region_plan_usage_enabled(sec)):
+                rows = CorridorLoft._resolve_region_corridor_records(sec)
+                _detail_rows, region_warning_rows, mode_summary, spans = CorridorLoft._describe_region_corridor_records(rows)
+                if any(str(mode or "").strip().lower() == "skip_zone" for _s0, _s1, mode in list(spans or [])):
+                    warnings.append(
+                        "Region skip_zone omits corridor body across active spans and uses the same deferred skip-boundary behavior as structure skip zones."
+                    )
+                if region_warning_rows:
+                    warnings.append(
+                        f"Region corridor span resolution reported {len(list(region_warning_rows or []))} warning(s). Review Region Plan corridor policies if the result looks unexpected."
+                    )
+                if str(mode_summary or "-") not in ("", "-"):
+                    warnings.append(f"Resolved region corridor modes: {mode_summary}")
+        except Exception:
+            pass
         return warnings
 
     def _build(self):
         if self.doc is None:
-            QtWidgets.QMessageBox.warning(None, "Corridor Loft", "No active document.")
+            QtWidgets.QMessageBox.warning(None, "Corridor", "No active document.")
             return
 
         sec = self._current_section()
         if sec is None:
             QtWidgets.QMessageBox.warning(
                 None,
-                "Corridor Loft",
+                "Corridor",
                 "No SectionSet found. Run Generate Sections first.",
             )
             return
@@ -334,8 +389,8 @@ class CorridorLoftTaskPanel:
         if preflight:
             reply = QtWidgets.QMessageBox.question(
                 None,
-                "Corridor Loft",
-                "Build with warnings?\n\n" + "\n".join([f"- {line}" for line in preflight]),
+                "Corridor",
+                "Build corridor with warnings?\n\n" + "\n".join([f"- {line}" for line in preflight]),
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
@@ -352,6 +407,7 @@ class CorridorLoftTaskPanel:
             cor.AutoFixSectionOrientation = bool(self.chk_fix_orientation.isChecked())
             cor.SplitAtStructureZones = bool(self.chk_structure_split.isChecked())
             cor.UseStructureCorridorModes = bool(self.chk_structure_modes.isChecked())
+            cor.UseRegionCorridorModes = bool(self.chk_region_modes.isChecked())
             cor.DefaultStructureCorridorMode = str(self.cmb_default_structure_mode.currentText() or "split_only")
             cor.NotchTransitionScale = float(self.spin_notch_transition_scale.value())
             cor.AutoUpdate = bool(self.chk_auto.isChecked())
@@ -369,7 +425,9 @@ class CorridorLoftTaskPanel:
                 )
 
             self.doc.recompute()
+            CorridorLoft.refresh_if_needed(cor, max_passes=2)
             marker_objs = []
+            segment_objs = []
             try:
                 marker_objs = [
                     o
@@ -379,17 +437,26 @@ class CorridorLoftTaskPanel:
                 ]
             except Exception:
                 marker_objs = []
+            try:
+                segment_objs = [
+                    o
+                    for o in list(getattr(self.doc, "Objects", []) or [])
+                    if str(getattr(o, "Name", "") or "").startswith("CorridorSegment")
+                    and getattr(o, "ParentCorridorLoft", None) == cor
+                ]
+            except Exception:
+                segment_objs = []
             if prj is not None:
                 try:
                     link_project(
                         prj,
                         links={"CorridorLoft": cor},
                         links_if_empty={"SectionSet": sec},
-                        adopt_extra=[cor, sec] + list(marker_objs),
+                        adopt_extra=[cor, sec] + list(marker_objs) + list(segment_objs),
                     )
                 except Exception:
                     pass
-            self.lbl_status.setText(str(getattr(cor, "Status", "OK")))
+            self.lbl_status.setText(self._status_text(cor))
             n = len(list(getattr(sec, "StationValues", []) or []))
             src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
             top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
@@ -401,11 +468,34 @@ class CorridorLoftTaskPanel:
             pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
             ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
             structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
+            corridor_segment_count = int(getattr(cor, "CorridorSegmentCount", 0) or 0)
+            segment_package_count = int(getattr(cor, "SegmentPackageCount", 0) or 0)
+            segment_object_count = int(getattr(cor, "SegmentObjectCount", 0) or 0)
+            skipped_segment_count = int(getattr(cor, "SkippedSegmentCount", 0) or 0)
+            segment_kind_summary = str(getattr(cor, "SegmentKindSummary", "-") or "-")
+            segment_source_summary = str(getattr(cor, "SegmentSourceSummary", "-") or "-")
+            segment_driver_source_summary = str(getattr(cor, "SegmentDriverSourceSummary", "-") or "-")
+            segment_driver_mode_summary = str(getattr(cor, "SegmentDriverModeSummary", "-") or "-")
+            segment_profile_contract_summary = str(getattr(cor, "SegmentProfileContractSummary", "-") or "-")
+            segment_package_summary = str(getattr(cor, "SegmentPackageSummary", "-") or "-")
+            segment_display_summary = str(getattr(cor, "SegmentDisplaySummary", "-") or "-")
+            profile_contract_source = str(getattr(cor, "ProfileContractSource", "-") or "-")
+            diag_summary = str(getattr(cor, "DiagnosticSummary", "-") or "-")
+            diag_classes = str(getattr(cor, "DiagnosticClassSummary", "-") or "-")
+            diag_source = str(getattr(cor, "SourceDiagnostic", "-") or "-")
+            diag_connectivity = str(getattr(cor, "ConnectivityDiagnostic", "-") or "-")
+            diag_packaging = str(getattr(cor, "PackagingDiagnostic", "-") or "-")
+            diag_policy = str(getattr(cor, "PolicyDiagnostic", "-") or "-")
             skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
             corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
+            region_corridor_mode_summary = str(getattr(cor, "ResolvedRegionCorridorModeSummary", "-") or "-")
+            combined_corridor_mode_summary = str(getattr(cor, "ResolvedCombinedCorridorModeSummary", "-") or "-")
             corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
+            region_corridor_warning_count = len(list(getattr(cor, "ResolvedRegionCorridorWarnings", []) or []))
+            combined_corridor_warning_count = len(list(getattr(cor, "ResolvedCombinedCorridorWarnings", []) or []))
             skip_boundary_behavior = str(getattr(cor, "ResolvedSkipBoundaryBehavior", "-") or "-")
             skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
+            segment_summary_rows = list(getattr(cor, "SegmentSummaryRows", []) or [])
             notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
             notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
             notch_schema_name = str(getattr(cor, "ResolvedNotchSchemaName", "-") or "-")
@@ -416,8 +506,8 @@ class CorridorLoftTaskPanel:
             skip_marker_count = int(getattr(cor, "SkipMarkerCount", 0) or 0)
             QtWidgets.QMessageBox.information(
                 None,
-                "Corridor Loft",
-                f"Corridor loft build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nOutput mode: surface\nRuled mode: {ruled_mode}\nStructure-aware segments: {structure_seg_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nSkipped structure ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nLoft profile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                "Corridor",
+                f"Corridor build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nOutput mode: surface\nRuled mode: {ruled_mode}\nCorridor-aware segments: {structure_seg_count}\nSegment packages: {segment_package_count}\nSegment objects: {segment_object_count}\nKept corridor segments: {corridor_segment_count}\nSkipped segment rows: {skipped_segment_count}\nSegment summary rows: {len(segment_summary_rows)}\nSegment kinds: {segment_kind_summary}\nSegment drivers: {segment_source_summary}\nSegment driver sources: {segment_driver_source_summary}\nSegment driver modes: {segment_driver_mode_summary}\nSegment profile contracts: {segment_profile_contract_summary}\nSegment package summary: {segment_package_summary}\nSegment display: {segment_display_summary}\nProfile contract source: {profile_contract_source}\nDiagnostic summary: {diag_summary}\nDiagnostic classes: {diag_classes}\nSource diagnostic: {diag_source}\nConnectivity diagnostic: {diag_connectivity}\nPackaging diagnostic: {diag_packaging}\nPolicy diagnostic: {diag_policy}\nEffective corridor modes: {combined_corridor_mode_summary}\nEffective corridor warnings: {combined_corridor_warning_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nRegion corridor modes: {region_corridor_mode_summary}\nRegion corridor warnings: {region_corridor_warning_count}\nSkipped corridor ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nProfile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
             )
             self._refresh_context()
             try:

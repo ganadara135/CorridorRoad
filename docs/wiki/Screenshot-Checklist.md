@@ -46,7 +46,7 @@ Follow this order so one project session can produce most screenshots without re
 7. `Edit PVI`
 8. `3D Centerline`
 9. `Generate Sections`
-10. `Generate Corridor Loft`
+10. `Corridor`
 11. Troubleshooting examples if needed
 
 ## Checklist By Page
@@ -76,7 +76,7 @@ Follow this order so one project session can produce most screenshots without re
 - [ ] `images/wiki-quickstart-step8-sections-complete.png`
   - Show section generation completion popup.
 - [ ] `images/wiki-quickstart-step9-corridor-complete.png`
-  - Show corridor loft completion popup and resulting corridor.
+  - Show corridor completion popup and resulting corridor.
 
 ### Workflow
 - [ ] `images/wiki-workflow-01-project-init.png`
@@ -102,13 +102,13 @@ Follow this order so one project session can produce most screenshots without re
 - [ ] `images/wiki-workflow-06-sections_2.png`
   - Show generated section set or child section result.
 - [ ] `images/wiki-workflow-07-corridor-surfaces-analysis.png`
-  - Show a failed corridor loft example with the problem visible.
+  - Show a failed corridor example with the problem visible.
 - [ ] `images/wiki-workflow-07-corridor-surfaces-analysis_2.png`
   - Show a stable corridor result.
 - [ ] `images/wiki-workflow-07-corridor-surfaces-analysis_3.png`
   - Show cut/fill or final end-to-end result.
 - [ ] `images/wiki-workflow-07a-corridor-loft-stability-options.png`
-  - Show `Generate Corridor Loft` options including `Min Section Spacing`, `Use ruled loft`, and `Auto-fix flipped sections`.
+  - Show `Corridor` options including `Min Section Spacing`, `Use ruled surface`, and `Auto-fix flipped sections`.
 - [ ] `images/wiki-workflow-07b-daylight-max-width-delta.png`
   - Show `Generate Sections` options with `Daylight Max Width Delta` visible.
 
@@ -154,7 +154,7 @@ Use this minimal sequence to gather most images in one run.
 5. Generate stations and capture completion dialog.
 6. Open `Edit Profiles`, fill EG, and capture profile images.
 7. Open `Edit PVI`, generate FG, and capture PVI/FG images.
-8. Generate 3D centerline, sections, and corridor loft.
+8. Generate 3D centerline, sections, and corridor.
 9. Capture final result and any troubleshooting examples.
 
 ## After Capture
@@ -171,4 +171,4 @@ Use this minimal sequence to gather most images in one run.
 - [ ] Menu option screenshots match the current task panel wording
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `61ba6d5`

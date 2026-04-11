@@ -33,6 +33,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_generate_centerline3d  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_typical_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_structures  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_edit_regions  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_sections  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_corridor_loft  # noqa: F401
@@ -53,9 +54,10 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_GenerateCenterline3D",
                 "CorridorRoad_EditTypicalSection",
                 "CorridorRoad_EditStructures",
+                "CorridorRoad_EditRegions",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_ViewCrossSection",
-                "CorridorRoad_GenerateCorridorLoft",
+                "CorridorRoad_GenerateCorridor",
                 "CorridorRoad_GenerateDesignGradingSurface",
                 "CorridorRoad_GenerateDesignTerrain",
                 "CorridorRoad_GenerateCutFillCalc",
@@ -75,9 +77,10 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_GenerateCenterline3D",
                 "CorridorRoad_EditTypicalSection",
                 "CorridorRoad_EditStructures",
+                "CorridorRoad_EditRegions",
                 "CorridorRoad_GenerateSections",
                 "CorridorRoad_ViewCrossSection",
-                "CorridorRoad_GenerateCorridorLoft",
+                "CorridorRoad_GenerateCorridor",
                 "CorridorRoad_GenerateDesignGradingSurface",
                 "CorridorRoad_GenerateDesignTerrain",
                 "CorridorRoad_GenerateCutFillCalc",

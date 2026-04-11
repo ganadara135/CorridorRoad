@@ -17,6 +17,7 @@ TREE_INPUTS = "root_inputs"
 TREE_INPUTS_TERRAINS = "inputs_terrains"
 TREE_INPUTS_SURVEY = "inputs_survey"
 TREE_INPUTS_STRUCTURES = "inputs_structures"
+TREE_INPUTS_REGIONS = "inputs_regions"
 TREE_ALIGNMENTS = "root_alignments"
 TREE_SURFACES = "root_surfaces"
 TREE_ANALYSIS = "root_analysis"
@@ -27,6 +28,7 @@ ALIGNMENT_HORIZONTAL = "alignment_horizontal"
 ALIGNMENT_STATIONING = "alignment_stationing"
 ALIGNMENT_VERTICAL = "alignment_vertical_profiles"
 ALIGNMENT_ASSEMBLY = "alignment_assembly"
+ALIGNMENT_REGIONS = "alignment_regions"
 ALIGNMENT_SECTIONS = "alignment_sections"
 ALIGNMENT_STRUCTURE_SECTIONS = "alignment_structure_sections"
 ALIGNMENT_CORRIDOR = "alignment_corridor"
@@ -47,6 +49,7 @@ ALIGNMENT_SUBTREE_DEFS = (
     (ALIGNMENT_STATIONING, "Stationing", "CR_ALN_Stationing"),
     (ALIGNMENT_VERTICAL, "VerticalProfiles", "CR_ALN_VerticalProfiles"),
     (ALIGNMENT_ASSEMBLY, "Assembly", "CR_ALN_Assembly"),
+    (ALIGNMENT_REGIONS, "Regions", "CR_ALN_Regions"),
     (ALIGNMENT_SECTIONS, "Sections", "CR_ALN_Sections"),
     (ALIGNMENT_STRUCTURE_SECTIONS, "Structure Sections", "CR_ALN_StructureSections"),
     (ALIGNMENT_CORRIDOR, "Corridor", "CR_ALN_Corridor"),
@@ -345,6 +348,7 @@ def _prune_root_nonfolders(prj):
     keep = [ch for ch in cur if _is_tree_folder(ch)]
     if len(keep) != len(cur):
         _group_set(prj, keep)
+    _prune_empty_unassigned_alignment_roots(prj)
 
 
 def _proxy_type(obj) -> str:
@@ -821,6 +825,13 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSegment",)):
+        cor = getattr(child, "ParentCorridorLoft", None)
+        sec = getattr(cor, "SourceSectionSet", None) if cor is not None else None
+        aln = _alignment_from_section_set(sec)
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("AssemblyTemplate",), name_prefixes=("AssemblyTemplate",)):
         doc = getattr(prj, "Document", None)
         if doc is not None:
@@ -855,6 +866,11 @@ def _resolve_alignment_for_object(prj, child):
                             aln = _alignment_from_section_set(o)
                             if aln is not None:
                                 return aln
+        aln = _alignment_from_project_links(prj)
+        if aln is not None:
+            return aln
+
+    if _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",)):
         aln = _alignment_from_project_links(prj)
         if aln is not None:
             return aln
@@ -904,11 +920,13 @@ def _is_alignment_related(child):
             "AssemblyTemplate",
             "TypicalSectionTemplate",
             "TypicalSectionPavementDisplay",
+            "RegionPlan",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
             "CorridorLoft",
             "CorridorSkipMarker",
+            "CorridorSegment",
         ),
         name_prefixes=(
             "HorizontalAlignment",
@@ -921,11 +939,13 @@ def _is_alignment_related(child):
             "AssemblyTemplate",
             "TypicalSectionTemplate",
             "TypicalSectionPavementDisplay",
+            "RegionPlan",
             "SectionSet",
             "SectionSlice",
             "SectionStructureOverlay",
             "CorridorLoft",
             "CorridorSkipMarker",
+            "CorridorSegment",
         ),
     )
 
@@ -944,6 +964,10 @@ def _is_analysis(child):
 
 def _is_structure_input(child):
     return _is_type(child, proxy_types=("StructureSet",), name_prefixes=("StructureSet",))
+
+
+def _is_region_input(child):
+    return _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",))
 
 
 def _is_probable_terrain_input(prj, child):
@@ -987,11 +1011,15 @@ def _target_folder_for_alignment_child(prj, child):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
     if _is_type(child, proxy_types=("TypicalSectionPavementDisplay",), name_prefixes=("TypicalSectionPavementDisplay",)):
         return aln_tree.get(ALIGNMENT_ASSEMBLY, None)
+    if _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",)):
+        return aln_tree.get(ALIGNMENT_REGIONS, None)
     if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
         return aln_tree.get(ALIGNMENT_SECTIONS, None)
     if _is_type(child, proxy_types=("SectionStructureOverlay",), name_prefixes=("SectionStructureOverlay",)):
         return aln_tree.get(ALIGNMENT_STRUCTURE_SECTIONS, None)
     if _is_type(child, proxy_types=(), name_prefixes=("CorridorSkipMarker",)):
+        return aln_tree.get(ALIGNMENT_CORRIDOR, None)
+    if _is_type(child, proxy_types=(), name_prefixes=("CorridorSegment",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
@@ -1019,6 +1047,9 @@ def _resolve_target_container(prj, child, allow_references: bool = True):
 
     if _is_structure_input(child):
         return tree.get(TREE_INPUTS_STRUCTURES, None)
+
+    if _is_region_input(child):
+        return tree.get(TREE_INPUTS_REGIONS, None)
 
     if _is_probable_terrain_input(prj, child):
         return tree.get(TREE_INPUTS_TERRAINS, None)
@@ -1076,7 +1107,7 @@ def _adopt_document_candidates(prj):
     for ch in list(getattr(doc, "Objects", []) or []):
         if ch is None or ch == prj or _is_tree_folder(ch):
             continue
-        if _is_alignment_related(ch) or _is_surface(ch) or _is_analysis(ch) or _is_probable_terrain_input(prj, ch):
+        if _is_alignment_related(ch) or _is_surface(ch) or _is_analysis(ch) or _is_probable_terrain_input(prj, ch) or _is_region_input(ch) or _is_structure_input(ch):
             CorridorRoadProject.adopt(prj, ch)
 
 
@@ -1345,12 +1376,301 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "AssemblyTemplate", "CorridorRoad", "Link to assembly template object")
     _ensure_hidden_link_property(obj, "TypicalSectionTemplate", "CorridorRoad", "Link to typical section template object")
     _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
+    _ensure_hidden_link_property(obj, "RegionPlan", "CorridorRoad", "Link to region plan object")
     _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
-    _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor loft object")
+    # Keep hidden property name `CorridorLoft` for compatibility with older files.
+    # New code should prefer resolve/assign corridor helpers instead of using the
+    # raw property name directly.
+    _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor object (compatibility name)")
     _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
     _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
     _ensure_hidden_link_property(obj, "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
     _hide_project_link_properties(obj)
+
+
+def ensure_region_plan_object(region_obj):
+    """Return the RegionPlan object or None when the input is not a RegionPlan."""
+    if region_obj is None:
+        return None
+    try:
+        proxy_type = str(getattr(getattr(region_obj, "Proxy", None), "Type", "") or "")
+    except Exception:
+        proxy_type = ""
+    try:
+        name = str(getattr(region_obj, "Name", "") or "")
+    except Exception:
+        name = ""
+    if proxy_type == "RegionPlan" or name.startswith("RegionPlan"):
+        return region_obj
+    return None
+
+
+def assign_project_region_plan(project_obj, region_obj):
+    prj = project_obj
+    if prj is None:
+        return None
+    region_obj = ensure_region_plan_object(region_obj)
+    try:
+        if hasattr(prj, "RegionPlan"):
+            prj.RegionPlan = region_obj
+    except Exception:
+        pass
+    return region_obj
+
+
+def ensure_corridor_object(corridor_obj):
+    """Return the corridor object or None when the input is not a CorridorLoft result."""
+    if corridor_obj is None:
+        return None
+    try:
+        proxy_type = str(getattr(getattr(corridor_obj, "Proxy", None), "Type", "") or "")
+    except Exception:
+        proxy_type = ""
+    try:
+        name = str(getattr(corridor_obj, "Name", "") or "")
+    except Exception:
+        name = ""
+    if proxy_type == "CorridorLoft" or name.startswith("CorridorLoft"):
+        return corridor_obj
+    return None
+
+
+def assign_project_corridor(project_obj, corridor_obj):
+    prj = project_obj
+    if prj is None:
+        return None
+    corridor_obj = ensure_corridor_object(corridor_obj)
+    try:
+        if hasattr(prj, "CorridorLoft"):
+            prj.CorridorLoft = corridor_obj
+    except Exception:
+        pass
+    return corridor_obj
+
+
+def _project_corridor_candidate(project_obj):
+    try:
+        corridor_obj = getattr(project_obj, "CorridorLoft", None) if hasattr(project_obj, "CorridorLoft") else None
+    except Exception:
+        corridor_obj = None
+    return ensure_corridor_object(corridor_obj)
+
+
+def resolve_project_corridor(project_obj_or_doc):
+    """
+    Resolve the preferred corridor object for a project/document and keep the
+    hidden compatibility link synchronized when possible.
+    """
+    prj = _resolve_project(project_obj_or_doc)
+    if prj is None:
+        return None
+    corridor_obj = _project_corridor_candidate(prj)
+    if corridor_obj is None:
+        doc = getattr(prj, "Document", None)
+        for o in list(getattr(doc, "Objects", []) or []):
+            corridor_obj = ensure_corridor_object(o)
+            if corridor_obj is not None:
+                break
+    if corridor_obj is not None:
+        assign_project_corridor(prj, corridor_obj)
+    return corridor_obj
+
+
+def _project_region_plan_candidate(project_obj):
+    try:
+        region_obj = getattr(project_obj, "RegionPlan", None) if hasattr(project_obj, "RegionPlan") else None
+    except Exception:
+        region_obj = None
+    return ensure_region_plan_object(region_obj)
+
+
+def resolve_project_region_plan(project_obj_or_doc):
+    """
+    Resolve the preferred RegionPlan for a project/document and keep project
+    compatibility links synchronized when possible.
+    """
+    prj = _resolve_project(project_obj_or_doc)
+    if prj is None:
+        return None
+    region_obj = _project_region_plan_candidate(prj)
+    if region_obj is None:
+        doc = getattr(prj, "Document", None)
+        candidates = find_region_plan_objects(doc)
+        region_obj = candidates[0] if candidates else None
+    if region_obj is not None:
+        assign_project_region_plan(prj, region_obj)
+    return region_obj
+
+
+def find_region_plan_objects(doc):
+    """Return unique RegionPlan objects visible in the document."""
+    out = []
+    seen = set()
+    if doc is None:
+        return out
+    for o in list(getattr(doc, "Objects", []) or []):
+        try:
+            proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
+        except Exception:
+            proxy_type = ""
+        try:
+            name = str(getattr(o, "Name", "") or "")
+        except Exception:
+            name = ""
+        if proxy_type != "RegionPlan" and not name.startswith("RegionPlan"):
+            continue
+        upgraded = ensure_region_plan_object(o)
+        if upgraded is None:
+            continue
+        key = str(getattr(upgraded, "Name", "") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(upgraded)
+    return out
+
+
+def _is_unassigned_alignment_root(aln_root) -> bool:
+    if aln_root is None:
+        return False
+    try:
+        if str(getattr(aln_root, ALN_NAME_PROP, "") or "").strip() == "Unassigned":
+            return True
+    except Exception:
+        pass
+    try:
+        if str(getattr(aln_root, "Label", "") or "").strip().startswith("ALN_Unassigned"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _folder_tree_has_payload(folder) -> bool:
+    if folder is None:
+        return False
+    for ch in _group_get(folder):
+        if _is_tree_folder(ch):
+            if _folder_tree_has_payload(ch):
+                return True
+            continue
+        return True
+    return False
+
+
+def _delete_folder_tree(doc, folder):
+    if doc is None or folder is None:
+        return
+    children = [ch for ch in _group_get(folder) if _is_tree_folder(ch)]
+    for ch in children:
+        _delete_folder_tree(doc, ch)
+    try:
+        doc.removeObject(_name(folder))
+    except Exception:
+        pass
+
+
+def _prune_empty_unassigned_alignment_roots(prj):
+    if prj is None:
+        return
+    tree = ensure_project_tree(prj, include_references=False)
+    root_alignments = tree.get(TREE_ALIGNMENTS, None)
+    doc = getattr(prj, "Document", None)
+    if root_alignments is None or doc is None:
+        return
+    for aln_root in list(_iter_alignment_roots(root_alignments)):
+        if not _is_unassigned_alignment_root(aln_root):
+            continue
+        if _folder_tree_has_payload(aln_root):
+            continue
+        try:
+            _group_remove(root_alignments, aln_root)
+        except Exception:
+            pass
+        _delete_folder_tree(doc, aln_root)
+
+
+def _migrate_region_plan_links(obj_project):
+    if obj_project is None:
+        return
+    doc = getattr(obj_project, "Document", None)
+    if doc is None:
+        return
+    try:
+        from freecad.Corridor_Road.objects.obj_section_set import (
+            region_plan_usage_enabled as _section_region_plan_usage_enabled,
+            resolve_region_plan_source as _section_resolve_region_plan_source,
+            synchronize_region_plan_state as _section_synchronize_region_plan_state,
+        )
+    except Exception:
+        _section_region_plan_usage_enabled = None
+        _section_resolve_region_plan_source = None
+        _section_synchronize_region_plan_state = None
+
+    def _section_candidate(section_obj):
+        try:
+            target = _section_resolve_region_plan_source(section_obj) if _section_resolve_region_plan_source is not None else None
+        except Exception:
+            target = None
+        if target is not None:
+            return ensure_region_plan_object(target)
+        try:
+            sec_region_plan = getattr(section_obj, "RegionPlan", None) if hasattr(section_obj, "RegionPlan") else None
+        except Exception:
+            sec_region_plan = None
+        target = ensure_region_plan_object(sec_region_plan)
+        if target is not None:
+            return target
+        return ensure_region_plan_object(project_region_plan)
+
+    def _section_enabled(section_obj):
+        try:
+            if _section_region_plan_usage_enabled is not None:
+                return bool(_section_region_plan_usage_enabled(section_obj))
+        except Exception:
+            pass
+        try:
+            return bool(getattr(section_obj, "UseRegionPlan", False))
+        except Exception:
+            return False
+
+    preferred = None
+    for o in list(getattr(doc, "Objects", []) or []):
+        try:
+            proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
+        except Exception:
+            proxy_type = ""
+        if proxy_type != "RegionPlan":
+            continue
+        upgraded = ensure_region_plan_object(o)
+        if preferred is None and upgraded is not None:
+            preferred = upgraded
+
+    project_region_plan = _project_region_plan_candidate(obj_project)
+    if project_region_plan is None:
+        project_region_plan = preferred
+
+    assign_project_region_plan(obj_project, project_region_plan)
+
+    for o in list(getattr(doc, "Objects", []) or []):
+        try:
+            proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
+        except Exception:
+            proxy_type = ""
+        if proxy_type != "SectionSet":
+            continue
+        target = _section_candidate(o)
+        enabled = _section_enabled(o)
+        try:
+            if _section_synchronize_region_plan_state is not None:
+                _section_synchronize_region_plan_state(o, preferred_region=target, enabled=enabled)
+            else:
+                if hasattr(o, "RegionPlan") and target is not None:
+                    o.RegionPlan = target
+                if hasattr(o, "UseRegionPlan"):
+                    o.UseRegionPlan = enabled
+        except Exception:
+            pass
 
 
 class CorridorRoadProject:
@@ -1369,6 +1689,7 @@ class CorridorRoadProject:
     def execute(self, obj):
         ensure_project_properties(obj)
         ensure_project_viewprovider(obj)
+        _migrate_region_plan_links(obj)
         ensure_project_tree(obj, include_references=False)
         _adopt_project_linked_objects(obj)
         _adopt_document_candidates(obj)
@@ -1402,6 +1723,7 @@ class CorridorRoadProject:
         """Try to auto-detect first alignment/stationing/profile and link them."""
         if doc is None:
             return
+        _migrate_region_plan_links(obj_project)
 
         if obj_project.Alignment is None:
             # Keep Alignment link empty when property is visible (avoid tree duplication).
@@ -1479,6 +1801,9 @@ class CorridorRoadProject:
             if s is not None:
                 obj_project.StructureSet = s
 
+        if hasattr(obj_project, "RegionPlan") and obj_project.RegionPlan is None:
+            resolve_project_region_plan(obj_project)
+
         if hasattr(obj_project, "SectionSet") and obj_project.SectionSet is None:
             s = None
             for o in doc.Objects:
@@ -1492,16 +1817,7 @@ class CorridorRoadProject:
                 obj_project.SectionSet = s
 
         if hasattr(obj_project, "CorridorLoft") and obj_project.CorridorLoft is None:
-            c = None
-            for o in doc.Objects:
-                if getattr(o, "Proxy", None) and getattr(o.Proxy, "Type", "") == "CorridorLoft":
-                    c = o
-                    break
-                if o.Name.startswith("CorridorLoft"):
-                    c = o
-                    break
-            if c is not None:
-                obj_project.CorridorLoft = c
+            resolve_project_corridor(obj_project)
 
         if hasattr(obj_project, "DesignGradingSurface") and obj_project.DesignGradingSurface is None:
             g = None

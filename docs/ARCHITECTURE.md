@@ -88,7 +88,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Key params:
   - `LeftWidth`, `RightWidth`
   - `LeftSlopePct`, `RightSlopePct`
-  - `HeightLeft`, `HeightRight` (used by corridor solid output)
+  - `HeightLeft`, `HeightRight` (legacy solid-output remnants; hidden in current surface-only runtime)
   - side slope options:
     - `UseSideSlopes`
     - `LeftSideWidth`, `RightSideWidth`
@@ -228,6 +228,9 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### 2.9 CorridorLoft (`freecad/Corridor_Road/objects/obj_corridor_loft.py`)
 - Purpose: corridor loft generation from `SectionSet`.
+- Naming policy:
+  - user-facing UI says `Corridor`
+  - internal proxy/module name remains `CorridorLoft` for compatibility in the current migration cycle
 - Inputs:
   - `SourceSectionSet`
 - Controls:
@@ -250,8 +253,13 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `NeedsRecompute`
   - `FailedRanges`, `Status`
   - structured report contract copied from `SectionSet` plus corridor-specific `ExportSummaryRows`
+- Runtime role:
+  - `CorridorLoft` is the range-aware `Part Shape` result for corridor output
+  - it must preserve span-level corridor meaning such as `split_only`, `skip_zone`, and notch-aware structure spans
+  - it is not just a display mesh and should remain suitable for downstream `Part`-based inspection/export
 - Output mode:
-  - `Surface`: loft from open section wires
+  - `Surface`: surface shape built from open section wires
+  - section connectivity should still respect the same station-to-station section contract used by `SectionSet`
   - notch-aware structure handling reshapes the loft profile instead of cutting corridor solids
 - Structure-aware corridor behavior:
   - `split_only` keeps corridor continuity while splitting loft at structure boundaries
@@ -291,11 +299,48 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `NeedsRecompute`, `Status`
   - structured report contract copied from `SectionSet` plus grading-surface `ExportSummaryRows`
 - Output mode:
-  - ruled-surface base is tessellated to output mesh facets
-  - intended for 3D visualization of cut/fill side slopes and mesh-based analysis
+  - uses the `SectionSet` point contract directly and connects adjacent sections point-to-point as strip facets
+  - intended as the section-faithful reference mesh for visual grading, cut/fill-style surface inspection, and mesh-based analysis
+  - unlike `CorridorLoft`, it does not need to preserve corridor span semantics as `Part` shape segments
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
+
+### 2.10A CorridorLoft vs DesignGradingSurface
+
+| Topic | CorridorLoft | DesignGradingSurface |
+|---|---|---|
+| Primary role | range-aware `Part Shape` corridor result | section-faithful reference mesh |
+| Main output | `Part` surface shape | `Mesh` facets |
+| Core connection strategy | should follow the same section contract, but must still preserve range/segment meaning | direct point-to-point strip facets between adjacent section profiles |
+| Span semantics | preserves `split_only`, `skip_zone`, notch-aware structure spans, and downstream corridor diagnostics | does not preserve corridor span semantics as separate shape segments |
+| Best use | corridor result object for downstream shape-oriented workflow, inspection, and export | visual verification that generated sections are being connected exactly as intended |
+| Failure interpretation | may fail because of section-contract drift or because corridor span/range logic changes the result | if this output is correct, raw section generation is usually correct and corridor-specific handling becomes the next suspect |
+
+### 2.10B Legacy loft vs section-strip assembly
+
+Current direction:
+
+- `SectionSet` owns the ordered section-point contract.
+- `DesignGradingSurface` consumes that contract directly as strip facets.
+- `CorridorLoft` should consume the same contract, then add corridor span packaging on top of it.
+
+| Topic | Legacy loft-centric approach | Section-strip assembly approach |
+|---|---|---|
+| Primary builder idea | pass section wires into a loft engine and let it infer correspondence | connect adjacent section profiles point-to-point explicitly |
+| Main primitive | `Part.makeLoft(...)` / ruled loft fallback | pairwise strip triangulation with `Part.Face` and `Part.Compound` |
+| Input priority | wire shape and loft heuristics | ordered section points from `SectionSet` |
+| Point correspondence | inferred by the loft engine | fixed by profile index order |
+| Predictability | lower | higher |
+| Section fidelity | can drift from visible section lines | should stay aligned with the section contract |
+| Debugging | distortion often appears as a whole-loft failure | problems can be localized to a station pair or corridor segment |
+| Corridor span support | span handling must be layered on top of the loft result | split/skip/notch packaging fits naturally around strip assembly |
+
+Practical rule:
+
+- `DesignGradingSurface` remains the easiest object for checking raw section connectivity.
+- `CorridorLoft` should use the same section-to-section contract and then preserve range-aware corridor meaning.
+- If the two outputs disagree, first decide whether the problem is raw section drift or corridor span packaging drift.
 
 ### 2.11 CutFillCalc (`freecad/Corridor_Road/objects/obj_cut_fill_calc.py`)
 - Purpose: Existing/Design surface comparison and cut/fill summary.
@@ -577,7 +622,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor_loft.py`)
 - Creates/updates `CorridorLoft`.
 - Links current `SectionSet`.
-- Forces `OutputType` to `Solid`.
+- Opens the dedicated task panel and keeps `CorridorLoft` on the current surface-only policy.
 
 ### 3.7 Design Grading Surface Command (`freecad/Corridor_Road/commands/cmd_generate_design_grading_surface.py`)
 - Creates/updates `DesignGradingSurface`.

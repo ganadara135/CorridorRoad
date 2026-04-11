@@ -94,7 +94,7 @@ Actions:
 
 Notes:
 1. Structure overlays are shown in a separate `Structure Sections` folder on purpose.
-2. They are not embedded inside the base section wire because that would break Corridor Loft point consistency.
+2. They are not embedded inside the base section wire because that would break Corridor point consistency.
 
 > [Screenshot Needed] Alignment tree showing populated `Structure Sections`.
 > Suggested file: `wiki-troubleshooting-structure-sections-tree.png`
@@ -195,36 +195,86 @@ Actions:
 2. If one specific structure still changes too abruptly, either:
    - increase its representative `Width`/`Height` if the current values are too small, or
    - turn off auto mode and use a larger manual `Transition Distance`.
-3. Regenerate sections and rebuild corridor loft after changing the transition policy.
+3. Regenerate sections and rebuild the corridor after changing the transition policy.
 
 Interpretation:
 1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
 2. `bridge_zone` and `abutment_zone` use longer transition distances by design.
 
-## Corridor Loft is twisted or locally flipped
+## Region Plan rows are hard to read in dark theme
 Symptoms:
-- Corridor solid twists between nearby stations.
+- `Manage Region Plan` shows pale or tinted rows but the cell text is hard to read.
+- `Station Timeline`, `Base Regions`, `Overrides`, or `Hints` look washed out after switching FreeCAD theme.
+
+Checks:
+1. Confirm the panel was opened after the current FreeCAD theme was already active.
+2. Confirm the problem is in the grouped workflow tables, not a screenshot viewer or external image viewer.
+3. Confirm the issue persists after closing and reopening `Manage Region Plan`.
+
+Actions:
+1. Reopen `Manage Region Plan` so row tinting is rebuilt from the current Qt palette.
+2. Keep FreeCAD on a normal dark or light application palette rather than a partially mixed custom palette if possible.
+3. If the issue still persists, report which table is affected:
+   - `Station Timeline`
+   - `Base Regions`
+   - `Overrides`
+   - `Hints`
+
+Interpretation:
+1. Current row tinting is palette-aware and should keep readable text in both light and dark themes.
+2. If text is still unreadable, the issue is likely a theme-specific palette/style conflict rather than missing row data.
+
+## Region Plan changes do not affect generated sections
+Symptoms:
+- `Manage Region Plan` looks correct, but `Generate Sections` output does not reflect region boundaries or overrides.
+
+Checks:
+1. Confirm `Use linked Region Plan` is enabled in `Generate Sections`.
+2. Confirm the intended `Region Plan Source` is selected.
+3. Confirm the relevant rows are accepted/enabled:
+   - base rows enabled
+   - override rows enabled
+   - hints accepted if they are meant to become design data
+4. Confirm `Include region boundaries` and `Include region transitions` are enabled when extra sampling stations are expected.
+5. Confirm `Apply region overrides` is enabled when section behavior, not just station density, should change.
+
+Actions:
+1. Re-run `Generate Sections` with the correct region source selected.
+2. Accept pending hints before expecting them to affect section output.
+3. Check `SectionSet.Status` for region-related warnings or missing-source messages.
+4. Verify the expected stations appear in the generated child section list.
+
+## Corridor is twisted or locally flipped
+Symptoms:
+- Corridor surface twists between nearby stations.
 - Some corridor ranges look inverted or folded.
-- Full loft fails, or only segmented fallback succeeds.
+- Full corridor build fails, or only segmented fallback succeeds.
+- `Design Grading Surface` looks section-faithful, but `Corridor` looks more distorted or span-driven.
 
 Checks:
 1. Confirm `SectionSet` child sections look consistent from one station to the next.
-2. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, or daylight transition.
-3. Check `Corridor Loft` status for `adaptive fallback used` and `autoFixed=<count>`.
-4. Confirm `Auto-fix flipped sections` is enabled.
-5. Confirm `Min Section Spacing` is not too small.
+2. Compare against `Design Grading Surface` first. If grading looks correct, the problem is likely in `Corridor` range/shape handling rather than the raw section contract.
+3. Check whether the first failed area is near sharp horizontal geometry, sudden FG change, daylight transition, or structure-aware corridor spans.
+4. Check `Corridor` status for `adaptive fallback used` and `autoFixed=<count>`.
+5. Confirm `Auto-fix flipped sections` is enabled.
+6. Confirm `Min Section Spacing` is not too small.
+
+Interpretation:
+1. `Design Grading Surface` is the reference for raw section connectivity because it connects neighboring section points directly.
+2. `Corridor` should still follow that same ordered section-point contract.
+3. If `Corridor` looks more span-driven, folded, or differently mapped while grading looks correct, suspect corridor packaging or connectivity drift inside `Corridor`, not a different intended design result.
 
 Actions:
 1. Increase section interval in `Generate Sections`.
-2. Increase `Corridor Loft > Min Section Spacing`.
-3. Enable `Use ruled loft`.
+2. Increase `Corridor > Min Section Spacing`.
+3. Enable `Use ruled surface`.
 4. Keep `Auto-fix flipped sections` enabled.
 5. Reduce abrupt daylight changes with `Daylight Max Width Delta`.
 6. Check profile data for long zero runs, missing EG, or sudden grade spikes.
 7. If needed, temporarily disable daylight and confirm whether the base corridor is stable first.
 
 Interpretation guide:
-1. If `autoFixed=0` and loft still twists, the issue is usually abrupt section shape change rather than simple orientation reversal.
+1. If `autoFixed=0` and the corridor still twists, the issue is usually abrupt section shape change rather than simple orientation reversal.
 2. If `autoFixed` is high, inspect the related section range because left/right orientation may be unstable there.
 3. If only daylight-enabled runs fail, focus on terrain coverage, terrain noise, and daylight width smoothing.
 
@@ -268,7 +318,7 @@ Checks:
 1. Confirm prerequisite object exists:
    - Stations requires Alignment
    - Sections requires Centerline3DDisplay and Assembly
-   - Corridor Loft requires SectionSet
+   - Corridor requires SectionSet
 2. Check object `Status` property for warnings/errors.
 
 Actions:
@@ -286,4 +336,4 @@ Actions:
 - https://forum.freecad.org/viewtopic.php?t=103783
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `61ba6d5`

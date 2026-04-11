@@ -275,7 +275,7 @@ Current notes:
 5. `ExtraWidth` and `BackSlopePct` are now part of the maintained component CSV contract.
 6. Type-aware tooltips and cell tinting help distinguish slope-driven rows (`lane`, `shoulder`, `gutter`) from height-driven rows (`curb`, `ditch`).
 7. When `Sections` uses a typical section, runtime should report `SectionSchemaVersion=2` and `TopProfileSource=typical_section`.
-8. `Corridor Loft` completion/status now reports source schema, top profile source, and points per section.
+8. `Corridor` completion/status now reports source schema, top profile source, and points per section.
 
 ### 3C. Typical Section Pavement CSV
 
@@ -308,7 +308,7 @@ Current notes:
 1. Pavement layers are stored as data on `TypicalSectionTemplate`.
 2. Current supported layer types are `surface`, `binder`, `base`, `subbase`, `subgrade`.
 3. Current result fields include `PavementLayerCount`, `EnabledPavementLayerCount`, and `PavementTotalThickness`.
-4. These values currently propagate to `SectionSet`, `Corridor Loft`, and `Design Grading Surface`.
+4. These values currently propagate to `SectionSet`, `Corridor`, and `Design Grading Surface`.
 5. Pavement preview offset wires were removed; pavement data remains available through the stored layer rows and total thickness summary.
 
 ## 4. Import Validation Checklist

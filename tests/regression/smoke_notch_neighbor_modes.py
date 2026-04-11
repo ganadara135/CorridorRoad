@@ -120,7 +120,7 @@ def run():
     _assert(status.startswith("OK (Surface)"), "Mixed-mode corridor should report successful surface build")
     _assert("output=surface" in status, "Status missing surface-output token")
     _assert("structureSegs=2" in status, "Status missing structure segmentation token")
-    _assert("corridorModes=split_only=1, skip_zone=1, notch=1" in status, "Status missing mixed corridor mode summary")
+    _assert("corridorModes=structure|split_only=1, skip_zone=1, notch=1" in status, "Status missing mixed corridor mode summary")
     _assert("skipMarkers=2" in status, "Status missing skip-marker token")
     _assert("notchBuild=schema_profiles" in status, "Status missing notch build token")
     _assert("skipZones=" in status, "Status missing skip-zone token")

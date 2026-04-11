@@ -18,6 +18,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     ALIGNMENT_ASSEMBLY,
     ALIGNMENT_CORRIDOR,
     ALIGNMENT_HORIZONTAL,
+    ALIGNMENT_REGIONS,
     ALIGNMENT_ROOT,
     ALIGNMENT_SECTIONS,
     ALIGNMENT_STATIONING,
@@ -31,8 +32,10 @@ from freecad.Corridor_Road.objects.obj_project import (
     TREE_REFERENCES,
     TREE_SURFACES,
     CorridorRoadProject,
+    assign_project_region_plan,
     ensure_project_tree,
 )
+from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan
 from freecad.Corridor_Road.objects.project_links import link_project
 
 
@@ -157,6 +160,8 @@ def run():
         fg.addProperty("App::PropertyLink", "SourceVA", "Smoke", "VA link")
     fg.SourceVA = va
     asm = doc.addObject("Part::FeaturePython", "AssemblyTemplate")
+    reg = doc.addObject("Part::FeaturePython", "RegionPlan")
+    RegionPlan(reg)
     sec = doc.addObject("Part::FeaturePython", "SectionSet")
     if not hasattr(sec, "SourceCenterlineDisplay"):
         sec.addProperty("App::PropertyLink", "SourceCenterlineDisplay", "Smoke", "Display link")
@@ -175,10 +180,30 @@ def run():
     if not hasattr(cor, "SourceSectionSet"):
         cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
     cor.SourceSectionSet = sec
-    link_project(prj, adopt_extra=[va, pb, fg, asm, sec, cor, disp])
+    cor_seg = doc.addObject("Part::Feature", "CorridorSegment")
+    if not hasattr(cor_seg, "ParentCorridorLoft"):
+        cor_seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Smoke", "Corridor link")
+    cor_seg.ParentCorridorLoft = cor
+    assign_project_region_plan(prj, reg)
+    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp])
+
+    # Late-binding alignment context should not leave an empty ALN_Unassigned root behind.
+    sec_late = doc.addObject("Part::FeaturePython", "SectionSetLateBind")
+    if not hasattr(sec_late, "SourceCenterlineDisplay"):
+        sec_late.addProperty("App::PropertyLink", "SourceCenterlineDisplay", "Smoke", "Display link")
+    link_project(prj, adopt_extra=[sec_late])
+    disp_late = doc.addObject("Part::FeaturePython", "Centerline3DDisplayLateBind")
+    if not hasattr(disp_late, "Alignment"):
+        disp_late.addProperty("App::PropertyLink", "Alignment", "Smoke", "Alignment link")
+    if not hasattr(disp_late, "VerticalAlignment"):
+        disp_late.addProperty("App::PropertyLink", "VerticalAlignment", "Smoke", "VA link")
+    disp_late.Alignment = aln
+    disp_late.VerticalAlignment = va
+    sec_late.SourceCenterlineDisplay = disp_late
+    link_project(prj, adopt_extra=[disp_late, sec_late])
 
     _assert(_find_folder(prj, ALIGNMENT_ROOT) is not None, "Missing alignment root")
-    for k in (ALIGNMENT_HORIZONTAL, ALIGNMENT_STATIONING, ALIGNMENT_VERTICAL, ALIGNMENT_ASSEMBLY, ALIGNMENT_SECTIONS, ALIGNMENT_CORRIDOR):
+    for k in (ALIGNMENT_HORIZONTAL, ALIGNMENT_STATIONING, ALIGNMENT_VERTICAL, ALIGNMENT_ASSEMBLY, ALIGNMENT_REGIONS, ALIGNMENT_SECTIONS, ALIGNMENT_CORRIDOR):
         _assert(_find_folder(prj, k) is not None, f"Missing alignment subfolder: {k}")
     roots = [f for f in _iter_tree_folders(prj) if _key(f) == ALIGNMENT_ROOT]
     _assert(len(roots) >= 2, "Expected at least two alignment roots")
@@ -195,6 +220,13 @@ def run():
     _assert(str(getattr(aln_root_1, "Label", "")) != str(getattr(aln_root_2, "Label", "")), "Duplicate alignment root labels")
     _assert(getattr(aln_root_1, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
     _assert(getattr(aln_root_2, ALN_REF_PROP, None) is None, "Alignment root should not keep legacy direct link")
+    late_owner = _owner_key(prj, sec_late)
+    _assert(late_owner == ALIGNMENT_SECTIONS, f"Late-bound section set should land in alignment sections, got {late_owner}")
+    empty_unassigned = [
+        f for f in _iter_tree_folders(prj)
+        if _key(f) == ALIGNMENT_ROOT and str(getattr(f, "Label", "") or "").startswith("ALN_Unassigned")
+    ]
+    _assert(not empty_unassigned, "Empty ALN_Unassigned root should be pruned after linked section generation")
 
     # Surface / analysis / input / optional references.
     terr = doc.addObject("App::FeaturePython", "ExistingTerrain")
@@ -229,8 +261,10 @@ def run():
         pb: ALIGNMENT_VERTICAL,
         fg: ALIGNMENT_VERTICAL,
         asm: ALIGNMENT_ASSEMBLY,
+        reg: ALIGNMENT_REGIONS,
         sec: ALIGNMENT_SECTIONS,
         cor: ALIGNMENT_CORRIDOR,
+        cor_seg: ALIGNMENT_CORRIDOR,
         terr: TREE_INPUTS_TERRAINS,
         dgs: TREE_SURFACES,
         dtm: TREE_SURFACES,

@@ -339,7 +339,7 @@ Important behavior:
 | `FootingThickness` | Retaining-wall footing thickness. | Mainly used by the `retaining_wall` template. |
 | `CapHeight` | Optional top cap height. | Used by both templates when a raised top cap is needed. |
 | `CellCount` | Number of culvert cells. | Used by the `box_culvert` template. Minimum practical value is `1`. |
-| `CorridorMode` | Controls how the structure should be consumed by `Corridor Loft`. | `none` ignores corridor-level changes, `split_only` only splits loft spans, `skip_zone` omits the corridor body across the active structure span, and `notch` uses a notch-aware loft profile. In the current implementation, `notch` is mainly intended for `culvert` and `crossing`. |
+| `CorridorMode` | Controls how the structure should be consumed by `Corridor`. | `none` ignores corridor-level changes, `split_only` only splits corridor spans, `skip_zone` omits the corridor body across the active structure span, and `notch` uses a notch-aware corridor profile. In the current implementation, `notch` is mainly intended for `culvert` and `crossing`. |
 | `CorridorMargin` | Expands the corridor skip envelope beyond start/end station. | Use a small positive margin only when the skipped corridor zone should be slightly wider than the structure station range. |
 | `Notes` | Free-form notes. | Use for documentation and later review. |
 
@@ -363,7 +363,7 @@ Important behavior:
 2. A `culvert` or `crossing` usually makes more sense with `center` or `both`.
 3. If `BottomElevation` is empty, the display system falls back to centerline Z and `Cover`.
 4. The 3D solids created here are reference geometry, not final corridor boolean geometry.
-5. `CorridorMode` is now the main way to tell `Corridor Loft` whether a structure should only stabilize segmentation or actually omit a corridor span.
+5. `CorridorMode` is now the main way to tell `Corridor` whether a structure should only stabilize segmentation or actually omit a corridor span.
 6. `GeometryMode=template` currently improves 3D display and `Structure Sections` overlay quality first; it does not yet imply full corridor boolean consumption.
 7. `GeometryMode=external_shape` currently supports first-pass placement of local `STEP`/`BREP` files and `FCStd#ObjectName` links, and falls back to safe `box` geometry if the source cannot be loaded.
 8. `ShapeSourcePath` cell color is part of the workflow: green means the source file exists, red means the path or FCStd object reference still needs attention.
@@ -402,9 +402,68 @@ Current practical workflow:
 > [Screenshot Needed] Edit Structures panel with sample rows loaded.
 > Suggested file: `wiki-menu-reference-edit-structures.png`
 
+## 5A. Manage Region Plan
+
+Use `Manage Region Plan` to define alignment-owned span logic before section generation.
+This panel is now the main place to author corridor span intent, not a low-level runtime rule table.
+
+Important behavior:
+1. The main workflow is grouped into `Base Regions`, `Overrides`, and `Hints`.
+2. `Base Regions` define the main corridor span layout.
+3. `Overrides` define local exceptions such as ditch/berm, urban edge, or corridor split/skip zones.
+4. `Hints` are seeded proposals from project, typical section, structure, or design-standard context and do not become design data until accepted.
+5. `Advanced` is a flat runtime preview/export surface for existing plans; direct flat-row editing is only available while creating a new plan.
+6. The `Station Timeline` summary, `Base Regions`, `Overrides`, and `Hints` tables use palette-aware tinting so both FreeCAD light and dark themes keep readable cell values.
+
+### Main Workflow Areas
+
+| Area | Meaning | How to use it |
+|---|---|---|
+| `Target Region Plan` | Selects an existing alignment-owned `RegionPlan` or creates a new one. | Use `[New] Create new Region Plan` when starting authoring from scratch. |
+| `Workflow` tab | Main grouped editing surface. | Use this tab for nearly all editing work. |
+| `Base Regions` | Main span layout of the corridor. | Split or merge these first so every station falls into the intended base regime. |
+| `Overrides` | Local span exceptions on top of the base plan. | Use structured controls instead of raw policy strings for normal editing. |
+| `Hints` | Managed proposals from project seed logic. | Review, accept, or ignore them explicitly. |
+| `Station Timeline` | Ordered span summary across base/override/hint rows. | Use it to review span order and make direct span edits without switching to raw rows. |
+| `Advanced` tab | Flat runtime preview/export view. | Use it for diagnostics, CSV round-trip, and raw export inspection rather than normal authoring. |
+
+### Main Controls
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Preset Data` | Loads starter grouped region rows. | Useful for quick experiments or template-like seeding. |
+| `Auto-seed [New]` | Seeds a new plan from current project context. | Keep it on when you want project-linked starter hints and base rows for a brand-new plan. |
+| `Seed From Project` | Refreshes managed hints from project, typical-section, structure, and design-standard context. | Use this after changing typical section, structures, or project design-standard metadata. |
+| `Add Base Region` | Creates a new base span row. | Use when the corridor regime changes along station. |
+| `Split Selected` / `Merge Selected` | Splits one base span or merges adjacent compatible base spans. | Use these before editing lower-level overrides. |
+| `Override starters` | Quick starter buttons such as ditch/urban/split/skip. | Use these for common override types instead of building rows from scratch. |
+| `Accept` / `Accept and Edit` / `Ignore` | Hint workflow actions. | `Accept` turns the hint into a real override. `Ignore` keeps it traceable without applying it. |
+| `Import Region Plan CSV` / `Export Region Plan CSV` | Round-trip grouped rows through the current CSV schema. | Useful for diagnostics, review, or template reuse. |
+
+### Practical Notes
+1. `RegionPlan` lives under the owning alignment `Regions` branch, not under generic `Inputs`.
+2. Existing plans should be edited from `Workflow`; do not treat `Advanced` as a second primary editor.
+3. Project-seeded hints may include confidence levels and source/family labels such as `Typical Section / Urban Edge` or `Design Standard / Speed Review`.
+4. If a table row tint looks unreadable after a FreeCAD theme change, reopen the panel so the palette-aware row colors can be applied again.
+
 ## 6. Generate Sections: Structure Options
 
-The `Generate Sections` panel now includes structure-aware options that work with `StructureSet`.
+The `Generate Sections` panel now includes both region-aware and structure-aware options.
+
+### Region Plan Integration Options
+
+| Option | Meaning | How to use it |
+|---|---|---|
+| `Use linked Region Plan` | Enables region-driven station merge and optional section-rule consumption. | Turn this on when the alignment uses a `RegionPlan` for span-based control. |
+| `Region Plan Source` | Chooses the source `RegionPlan`. | Normally use the active project or alignment plan. |
+| `Include region boundaries` | Adds region start/end stations to the generated section list. | Keep enabled in most region-driven workflows. |
+| `Include region transitions` | Adds transition stations around region boundaries. | Keep enabled when region changes should be sampled more smoothly. |
+| `Apply region overrides` | Lets accepted region overrides affect section-side or daylight behavior. | Turn this on when the `RegionPlan` should modify actual section output, not just station density. |
+
+Recommended user policy:
+1. Build the base corridor station pattern first with `Region Plan`.
+2. Use region overrides for corridor-side/daylight intent that is not structure-specific.
+3. Keep structure overrides and region overrides conceptually separate: region for corridor design intent, structure for structure-driven behavior.
 
 ### Structure Integration Options
 
@@ -420,7 +479,7 @@ The `Generate Sections` panel now includes structure-aware options that work wit
 | `Add structure tags to child sections` | Adds tags and metadata to child sections at structure-related stations. | Keep enabled if you want labels and tree identification. |
 | `Apply structure overrides` | Enables structure-type override logic during section build. | Turn this on when structure zones should constrain daylight/side-slope behavior. |
 
-### Corridor Loft Structure Options
+### Corridor Structure Options
 
 | Option | Meaning | How to use it |
 |---|---|---|
@@ -470,7 +529,7 @@ When to override manually:
 1. Standard section children continue to appear under `Sections`.
 2. Structure overlay objects appear under `Structure Sections`.
 3. `SectionSet.Status` reports merged structure count and override hit count.
-4. `CorridorLoft` can report `Notch-aware stations` and `Closed profile schema` when a notch-aware loft profile is used.
+4. `Corridor` can report `Notch-aware stations` and `Closed profile schema` when a notch-aware profile is used.
 
 > [Screenshot Needed] Generate Sections panel with StructureSet options expanded.
 > Suggested file: `wiki-menu-reference-generate-sections-structures.png`
@@ -497,7 +556,7 @@ When to override manually:
 3. Bench input is now one unified row list per side. Users no longer need to think in terms of “primary bench” versus “extra bench”.
 4. With `Daylight Auto`, terrain is checked along the whole bench path. If terrain is reached before a later bench starts, that section can shorten the terrace stack or skip the remaining benches.
 5. `SectionSet.Status` reports `bench=left/right/both`, `benchSections=N`, and daylight-specific counters such as `benchDayAdj=N` and `benchDaySkip=N`. `BenchSummaryRows` also report whether the configured side is `single` or `multi`.
-6. Bench output is part of the open section wire contract, so downstream `CorridorLoft` and grading surfaces consume the expanded profile automatically.
+6. Bench output is part of the open section wire contract, so downstream `Corridor` and grading surfaces consume the expanded profile automatically.
 
 ## 6B. Cross Section Viewer
 
@@ -633,4 +692,4 @@ When to override manually:
 4. Use [Troubleshooting](Troubleshooting) when sampled EG/FG or structure-aware output is incomplete or inconsistent.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `61ba6d5`

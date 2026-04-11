@@ -24,25 +24,40 @@ This page is the quick technical map for contributors.
 - `Stationing`: station list generation
 - `ProfileBundle` / `VerticalAlignment`: EG/FG data and vertical geometry
 - `Centerline3DDisplay`: sampled centerline rendering
+- `RegionPlan`: alignment-owned region authoring model with grouped `Base Regions`, `Overrides`, and `Hints`
 - `SectionSet`: station resolve + section generation + daylight
-- `CorridorLoft`: corridor solid generation from sections
+- `CorridorLoft`: corridor surface generation from sections
 - `DesignTerrain` / `CutFillCalc`: grid sampling based terrain/analysis
 
 Object link chain (typical):
-`HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
+`HorizontalAlignment -> Stationing -> ProfileBundle/VerticalAlignment -> Centerline3DDisplay -> RegionPlan -> SectionSet -> CorridorLoft -> DesignTerrain/CutFillCalc`
 
-## Corridor Loft Stability Notes
+## Corridor Stability Notes
 - `SectionSet` keeps section frame continuity using previous normal direction.
 - Daylight side-width changes are smoothed by `AssemblyTemplate.DaylightMaxWidthDelta`.
 - `CorridorLoft.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
 - `CorridorLoft.AutoFixedSectionCount` reports how many sections were auto-corrected during build.
 - If full loft still fails, adaptive segmented fallback is used and failed ranges are recorded in status.
 
+Role split:
+- `DesignGradingSurface` is the section-faithful reference mesh. It connects neighboring section points directly and is the easiest object to compare against generated section lines.
+- `CorridorLoft` is the range-aware `Part` result. It should still follow the same section contract, but it also has to preserve corridor span meaning such as `split_only`, `skip_zone`, and notch-aware structure handling.
+- If the two outputs disagree visually, first confirm whether the issue is true section-contract drift or a corridor-span/range behavior difference.
+
+Quick comparison:
+- `CorridorLoft`: keep corridor span meaning and downstream `Part` shape identity.
+- `DesignGradingSurface`: show the most section-faithful strip-style reference surface.
+
+Connectivity strategy:
+- legacy `loft` behavior means handing section wires to a loft engine and letting it infer point correspondence
+- preferred section-strip behavior means consuming the ordered points from `SectionSet` and connecting adjacent stations point-to-point
+- `CorridorLoft` should add corridor span packaging on top of that section contract, not replace it with a different connectivity rule
+
 Practical debugging order:
 1. Inspect section wires before inspecting loft output.
-2. Reduce section density before changing loft algorithm.
+2. Reduce section density before changing corridor connectivity strategy.
 3. Separate base corridor issues from daylight-induced issues.
-4. Use ruled loft during diagnosis, then relax settings if stable.
+4. Use ruled surface during diagnosis, then relax settings if stable.
 
 ## UI Entry Points
 - `cmd_new_project.py`
@@ -53,8 +68,14 @@ Practical debugging order:
 - `cmd_generate_corridor_loft.py`
 - `cmd_import_pointcloud_dem.py`
 
+Command-id note:
+- Preferred command id is `CorridorRoad_GenerateCorridor`.
+- Legacy alias `CorridorRoad_GenerateCorridorLoft` is intentionally retained for compatibility with older toolbars and macros.
+- Project hidden link property is still named `CorridorLoft` for file compatibility; new code should prefer corridor helper functions instead of reading that property name directly.
+- Proxy/module names such as `CorridorLoft` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
+
 ## Completion Message Policy
-- Stations, 3D Centerline, Sections, and Corridor Loft commands should show completion dialogs on successful run.
+- Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.
 - Keep error behavior separate: warnings/errors should not show success dialogs.
 - Include simple runtime summary in dialog where possible (count/status).
 
@@ -99,6 +120,13 @@ Practical debugging order:
   - full preview wire visible together with `SelectedComponentPreview` for the selected component row
   - pavement preview/report object label as `PavementDisplay`
   - click-locked component-row activation; hover should not change the active row
+- `Manage Region Plan` currently keeps:
+  - `Workflow` as the main editing surface with grouped `Base Regions`, `Overrides`, and `Hints`
+  - `Advanced` as a flat runtime preview/export surface for existing plans
+  - direct flat-row editing available only while creating a new `RegionPlan`
+  - `Seed From Project` creating managed hints first; hints do not silently become confirmed design rows
+  - `Station Timeline`, `Base Regions`, `Overrides`, and `Hints` row tinting palette-aware so FreeCAD light and dark themes keep readable foreground/background contrast
+  - region runtime compatibility expressed through `RegionPlan` export only; the old `RegionSet` path is retired
 
 ## Test Samples
 - Point cloud: `tests/samples/pointcloud_utm_realistic_hilly.csv`
@@ -117,6 +145,7 @@ Practical debugging order:
 3. Add `Last verified with commit` to changed wiki pages.
 4. Keep `docs/PRACTICAL_SAMPLE_SET.md` synchronized with any sample-file additions or removals.
 5. Keep `run_practical_scope_smokes.ps1` synchronized with the practical-engineering scope.
+6. When task-panel color or tint behavior changes, verify readability in both FreeCAD light and dark themes and update the related wiki page if user-visible contrast rules changed.
 
 ## Recommended Contribution Flow
 1. Reproduce issue using sample files.
@@ -138,4 +167,4 @@ Practical debugging order:
 4. Attach minimal CSV reproducer when possible.
 
 ---
-Last verified with commit: `<fill-after-release>`
+Last verified with commit: `61ba6d5`

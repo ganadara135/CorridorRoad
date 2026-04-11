@@ -124,6 +124,9 @@ def run():
     _assert(str(getattr(cor, "ResolvedNotchBuildMode", "") or "") == "schema_profiles", "Unexpected notch build mode")
     _assert(int(getattr(cor, "ResolvedNotchCutterCount", 0) or 0) == 0, "Notch schema path should not rely on cutters")
     _assert(str(getattr(cor, "ResolvedRuledMode", "") or "") == "auto:notch_schema", "Expected auto notch-schema ruled mode")
+    _assert(str(getattr(cor, "ProfileContractSource", "-") or "-") == "notch_schema_profiles", "Notch workflow should report notch_schema_profiles contract source")
+    _assert("notch_schema_profiles" in str(getattr(cor, "SegmentProfileContractSummary", "-") or "-"), "Notch workflow should summarize notch_schema_profiles package contract")
+    _assert("contract[notch_schema_profiles=" in str(getattr(cor, "SegmentPackageSummary", "-") or "-"), "Notch workflow should include notch_schema_profiles in segment package summary")
 
     notch_summary = str(getattr(cor, "ResolvedNotchProfileSummary", "") or "")
     _assert("schema=notch_v1_8pt" in notch_summary, "Notch summary missing schema name")
@@ -142,6 +145,23 @@ def run():
     split_stations = list(getattr(cor, "StructureSplitStations", []) or [])
     _assert(split_stations == ["45.000", "50.000", "75.000", "80.000"], "Unexpected structure split-station diagnostics")
 
+    package_rows = list(getattr(cor, "SegmentPackageRows", []) or [])
+    _assert(len(package_rows) >= 1, "Notch workflow should expose segment package rows")
+    _assert(all("profileContract=notch_schema_profiles" in row for row in package_rows), "Notch package rows should carry the notch_schema_profiles contract source")
+    _assert(any("driverSource=structure" in row and "driverMode=notch" in row for row in package_rows), "Notch package rows should expose effective structure/notch driver details")
+
+    segment_objs = [
+        o
+        for o in list(getattr(doc, "Objects", []) or [])
+        if str(getattr(o, "Name", "") or "").startswith("CorridorSegment")
+        and getattr(o, "ParentCorridorLoft", None) == cor
+    ]
+    _assert(len(segment_objs) >= 1, "Notch workflow should create CorridorSegment children")
+    _assert(all(str(getattr(o, "ProfileContractSource", "-") or "-") == "notch_schema_profiles" for o in segment_objs), "Notch CorridorSegment children should carry notch_schema_profiles contract source")
+    _assert(any(str(getattr(o, "DriverSource", "") or "") == "structure" and str(getattr(o, "DriverMode", "") or "") == "notch" for o in segment_objs), "Notch CorridorSegment child should expose effective structure/notch driver details")
+    _assert(any("[notch_schema_profiles]" in str(getattr(o, "Label", "") or "") for o in segment_objs), "Notch CorridorSegment labels should expose contract source")
+    _assert(any("|contract=notch_schema_profiles" in str(getattr(o, "SegmentSummary", "") or "") for o in segment_objs), "Notch CorridorSegment summaries should expose contract source")
+
     cor_status = str(getattr(cor, "Status", "") or "")
     _assert(cor_status.startswith("OK (Surface)"), "Corridor status should report successful surface build")
     _assert("output=surface" in cor_status, "Corridor status should report surface output")
@@ -150,6 +170,9 @@ def run():
     _assert("notchBuild=schema_profiles" in cor_status, "Corridor status missing notch build-mode token")
     _assert("structureSegs=4" in cor_status, "Corridor status missing structure-segmentation token")
     _assert("corridorRule=structure_aware" in cor_status, "Corridor status missing structure-aware token")
+    _assert("profileContract=notch_schema_profiles" in cor_status, "Corridor status should expose notch_schema_profiles contract source")
+    _assert("segmentProfileContracts=" in cor_status and "notch_schema_profiles" in cor_status, "Corridor status should expose package-level notch contract summary")
+    _assert("segmentPackageSummary=" in cor_status and "contract[notch_schema_profiles=" in cor_status, "Corridor status should expose segmentPackageSummary for notch workflow")
 
     ss_invalid = doc.addObject("Part::FeaturePython", "StructureSetInvalid")
     StructureSet(ss_invalid)

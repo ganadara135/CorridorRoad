@@ -10,6 +10,7 @@ from freecad.Corridor_Road.objects.obj_section_set import (
     _external_shape_proxy_count,
     _status_join,
 )
+from freecad.Corridor_Road.objects.section_strip_builder import build_mesh_from_point_lists
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
 
 
@@ -208,78 +209,37 @@ class DesignGradingSurface:
         return _dedupe_consecutive_points(pts)
 
     @staticmethod
-    def _validate_and_points(stations, wires):
-        if len(stations) < 2 or len(wires) < 2:
-            raise Exception("Need at least 2 sections to build design surface.")
-        if len(stations) != len(wires):
-            raise Exception("Stations/wires size mismatch.")
+    def _validate_profiles(profiles):
+        if len(list(profiles or [])) < 2:
+            raise Exception("Need at least 2 section profiles to build design surface.")
 
-        st = [float(s) for s in stations]
-        for i, s in enumerate(st):
-            if not _is_finite(s):
-                raise Exception(f"Station[{i}] is not finite.")
-            if i >= 1 and s <= st[i - 1] + 1e-9:
-                raise Exception("Station values must be strictly increasing.")
-
-        pt_lists = []
+        stations = []
+        point_lists = []
         ref_n = None
-        for i, w in enumerate(wires):
-            pts = DesignGradingSurface._wire_points(w)
-            if len(pts) < 2:
-                raise Exception(f"Section[{i}] has insufficient points.")
+        for idx, profile in enumerate(list(profiles or [])):
+            station = float(profile.get("station", 0.0) or 0.0)
+            if not _is_finite(station):
+                raise Exception(f"SectionProfile[{idx}] station is not finite.")
+            if stations and station <= stations[-1] + 1e-9:
+                raise Exception("SectionProfile stations must be strictly increasing.")
+
+            points = list(profile.get("points", []) or [])
+            if len(points) < 2:
+                raise Exception(f"SectionProfile[{idx}] has insufficient points.")
             if ref_n is None:
-                ref_n = len(pts)
-            elif len(pts) != ref_n:
+                ref_n = len(points)
+            elif len(points) != ref_n:
                 raise Exception(
-                    f"Section point count mismatch at index {i}: {len(pts)} != {ref_n}. "
+                    f"SectionProfile point count mismatch at index {idx}: {len(points)} != {ref_n}. "
                     "Design surface stopped by section contract."
                 )
-            pt_lists.append(pts)
-
-        # SectionSet.build_section_wires already stabilizes N-direction with prev_n.
-        # Keep source point order as-is; additional auto-flip can mis-detect
-        # heading rotation as a true left/right inversion.
-        out = []
-        for i, pts in enumerate(pt_lists):
-            axis = pts[0] - pts[-1]
+            axis = points[0] - points[-1]
             if axis.Length <= 1e-12:
-                raise Exception(f"Section[{i}] left/right axis is degenerate.")
-            out.append(pts)
+                raise Exception(f"SectionProfile[{idx}] left/right axis is degenerate.")
+            stations.append(float(station))
+            point_lists.append(list(points))
 
-        return out, int(ref_n or 0)
-
-    @staticmethod
-    def _add_triangle(mesh_out, p0, p1, p2, area_tol: float = 1e-12):
-        try:
-            if (p1 - p0).Length <= area_tol or (p2 - p0).Length <= area_tol:
-                return 0
-            n = (p1 - p0).cross(p2 - p0)
-            if n.Length <= area_tol:
-                return 0
-            mesh_out.addFacet(p0, p1, p2)
-            return 1
-        except Exception:
-            return 0
-
-    @staticmethod
-    def _build_mesh_from_sections(pt_lists):
-        import Mesh
-
-        m = Mesh.Mesh()
-        quad_count = 0
-        tri_count = 0
-        for i in range(len(pt_lists) - 1):
-            a = pt_lists[i]
-            b = pt_lists[i + 1]
-            for j in range(len(a) - 1):
-                p00 = a[j]
-                p01 = a[j + 1]
-                p10 = b[j]
-                p11 = b[j + 1]
-                tri_count += DesignGradingSurface._add_triangle(m, p00, p01, p11)
-                tri_count += DesignGradingSurface._add_triangle(m, p00, p11, p10)
-                quad_count += 1
-        return m, int(quad_count), int(tri_count)
+        return stations, point_lists, int(ref_n or 0)
 
     def execute(self, obj):
         ensure_design_grading_surface_properties(obj)
@@ -316,9 +276,9 @@ class DesignGradingSurface:
                 _mark_recompute_flag(obj, False)
                 return
 
-            stations, wires, _tf, _so, _bench_info = SectionSet.build_section_wires(src)
-            pts, pt_count = DesignGradingSurface._validate_and_points(stations, wires)
-            mesh_out, quad_count, tri_count = DesignGradingSurface._build_mesh_from_sections(pts)
+            profiles, _profile_rows, pt_count = SectionSet.resolve_section_profiles(src)
+            stations, pts, pt_count = DesignGradingSurface._validate_profiles(profiles)
+            mesh_out, quad_count, tri_count = build_mesh_from_point_lists(pts)
             if tri_count <= 0:
                 raise Exception("No valid grading mesh triangles were generated.")
 

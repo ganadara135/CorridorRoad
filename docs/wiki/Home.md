@@ -62,7 +62,7 @@ Practical validation note:
 - GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
 
 ## Core Pipeline
-`Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill`
+`Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor -> Design Terrain -> Cut/Fill`
 
 ![Project tree and pipeline result objects in one view](images/wiki-home-project-tree-pipeline.png)
 
@@ -81,9 +81,9 @@ Practical validation note:
 - Daylight terrain source in section workflow is mesh based.
 - Runtime terrain/cut-fill sampling follows DEM-style regular XY grid.
 - For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
-- Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays loft-safe.
+- Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays corridor-safe.
 - `GeometryMode=external_shape` currently improves realistic structure display/reference placement, but earthwork still follows structure `Type`-based rules.
 - The maintained practical sample inventory lives in `docs/PRACTICAL_SAMPLE_SET.md`.
 
 ---
-Last verified with commit: `e619bd8` (`v0.2.0`)
+Last verified with commit: `61ba6d5`
