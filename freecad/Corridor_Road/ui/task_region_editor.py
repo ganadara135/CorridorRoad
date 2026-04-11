@@ -927,6 +927,7 @@ class RegionEditorTaskPanel:
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setMinimumHeight(260)
+        self._apply_table_stylesheet(self.table, kind="neutral")
         advanced_layout.addWidget(self.table)
 
         hint = QtWidgets.QLabel(
@@ -1030,7 +1031,7 @@ class RegionEditorTaskPanel:
         layout.setSpacing(6)
         self.tbl_timeline = self._build_summary_table(["Type", "Id", "Span", "State"])
         self.tbl_timeline.setMinimumHeight(140)
-        self._apply_table_stylesheet(self.tbl_timeline, kind="override")
+        self._apply_table_stylesheet(self.tbl_timeline, kind="neutral")
         layout.addWidget(self.tbl_timeline)
         self.txt_timeline_summary = QtWidgets.QPlainTextEdit()
         self.txt_timeline_summary.setReadOnly(True)
@@ -2502,61 +2503,107 @@ class RegionEditorTaskPanel:
         except Exception:
             return 255.0
 
+    @staticmethod
+    def _qcolor_name(color, fallback: str) -> str:
+        try:
+            qcolor = QtGui.QColor(color)
+            if qcolor.isValid():
+                return str(qcolor.name())
+        except Exception:
+            pass
+        return str(fallback or "#000000")
+
+    @classmethod
+    def _palette_color_hex(cls, role, fallback: str) -> str:
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return cls._qcolor_name(fallback, fallback)
+        try:
+            palette = app.palette()
+            color = palette.color(role)
+            if color.isValid():
+                return cls._qcolor_name(color, fallback)
+        except Exception:
+            pass
+        return cls._qcolor_name(fallback, fallback)
+
+    @classmethod
+    def _mix_color_hex(cls, color_a, color_b, ratio: float) -> str:
+        try:
+            qa = QtGui.QColor(color_a)
+            qb = QtGui.QColor(color_b)
+            if not qa.isValid():
+                qa = QtGui.QColor("#000000")
+            if not qb.isValid():
+                qb = QtGui.QColor("#000000")
+            t = max(0.0, min(1.0, float(ratio)))
+            mix = QtGui.QColor(
+                int(round(qa.red() * (1.0 - t) + qb.red() * t)),
+                int(round(qa.green() * (1.0 - t) + qb.green() * t)),
+                int(round(qa.blue() * (1.0 - t) + qb.blue() * t)),
+            )
+            return str(mix.name())
+        except Exception:
+            return cls._qcolor_name(color_a, "#000000")
+
     @classmethod
     def _contrast_text_hex(cls, bg_hex: str) -> str:
         return "#111111" if cls._qcolor_lightness(bg_hex) >= 140.0 else "#f4f7fb"
 
-    @staticmethod
-    def _is_dark_theme() -> bool:
-        app = QtWidgets.QApplication.instance()
-        if app is None:
-            return False
-        try:
-            palette = app.palette()
-            window = palette.color(QtGui.QPalette.Window)
-            text = palette.color(QtGui.QPalette.WindowText)
-            return window.lightness() < 128 or text.lightness() > window.lightness()
-        except Exception:
-            return False
+    @classmethod
+    def _is_dark_theme(cls) -> bool:
+        window_hex = cls._palette_color_hex(QtGui.QPalette.Window, "#2f343f")
+        text_hex = cls._palette_color_hex(QtGui.QPalette.WindowText, "#f2f4f8")
+        return cls._qcolor_lightness(window_hex) < cls._qcolor_lightness(text_hex)
 
     @classmethod
     def _table_palette_for_kind(cls, kind: str):
         token = str(kind or "").strip().lower()
+        accent_map = {
+            "base": "#4d9c69",
+            "override": "#5f97c7",
+            "hint": "#c2942d",
+            "neutral": "#7a7f87",
+        }
+        accent_hex = accent_map.get(token, accent_map["neutral"])
         if cls._is_dark_theme():
-            if token == "base":
-                bg_hex = "#24412d"
-                sel_hex = "#32593d"
-            elif token == "override":
-                bg_hex = "#20384d"
-                sel_hex = "#2d4d68"
-            elif token == "hint":
-                bg_hex = "#5a4313"
-                sel_hex = "#73571a"
-            else:
-                bg_hex = "#35373c"
-                sel_hex = "#4a4d53"
-            fg_hex = cls._contrast_text_hex(bg_hex)
-            sel_fg_hex = cls._contrast_text_hex(sel_hex)
-            return (bg_hex, fg_hex, sel_hex, sel_fg_hex)
-        if token == "base":
-            bg_hex = "#edf7ee"
-            sel_hex = "#cfe9d2"
-        elif token == "override":
-            bg_hex = "#edf4fb"
-            sel_hex = "#d3e4f6"
-        elif token == "hint":
-            bg_hex = "#fff5dd"
-            sel_hex = "#f1dfaa"
+            window_hex = cls._palette_color_hex(QtGui.QPalette.Window, "#2f343f")
+            base_hex = cls._mix_color_hex(window_hex, "#11161c", 0.35)
+            alt_base_hex = cls._mix_color_hex(base_hex, accent_hex, 0.08)
+            text_hex = cls._palette_color_hex(QtGui.QPalette.Text, "#eef2f7")
+            highlight_hex = cls._palette_color_hex(QtGui.QPalette.Highlight, "#4a90d9")
+            bg_hex = cls._mix_color_hex(base_hex, accent_hex, 0.22)
+            alt_bg_hex = cls._mix_color_hex(alt_base_hex, accent_hex, 0.16)
+            sel_hex = cls._mix_color_hex(highlight_hex, accent_hex, 0.18)
+            grid_hex = cls._mix_color_hex(text_hex, base_hex, 0.82)
         else:
-            bg_hex = "#f3f3f3"
-            sel_hex = "#dddddd"
+            base_hex = cls._palette_color_hex(QtGui.QPalette.Base, "#ffffff")
+            alt_base_hex = cls._palette_color_hex(QtGui.QPalette.AlternateBase, base_hex)
+            text_hex = cls._palette_color_hex(QtGui.QPalette.Text, "#111111")
+            highlight_hex = cls._palette_color_hex(QtGui.QPalette.Highlight, "#4a90d9")
+            bg_hex = cls._mix_color_hex(base_hex, accent_hex, 0.18)
+            alt_bg_hex = cls._mix_color_hex(alt_base_hex, accent_hex, 0.12)
+            sel_hex = cls._mix_color_hex(highlight_hex, accent_hex, 0.15)
+            grid_hex = cls._mix_color_hex(text_hex, base_hex, 0.72)
         fg_hex = cls._contrast_text_hex(bg_hex)
         sel_fg_hex = cls._contrast_text_hex(sel_hex)
-        return (bg_hex, fg_hex, sel_hex, sel_fg_hex)
+        return {
+            "bg": bg_hex,
+            "alt_bg": alt_bg_hex,
+            "fg": fg_hex,
+            "sel_bg": sel_hex,
+            "sel_fg": sel_fg_hex,
+            "grid": grid_hex,
+            "base": base_hex,
+            "text": text_hex,
+        }
 
     @classmethod
     def _apply_table_row_visuals(cls, item, *, kind: str):
-        bg_hex, fg_hex, sel_hex, _sel_fg_hex = cls._table_palette_for_kind(kind)
+        colors = cls._table_palette_for_kind(kind)
+        bg_hex = str(colors.get("bg", "#ffffff"))
+        fg_hex = str(colors.get("fg", "#111111"))
+        sel_hex = str(colors.get("sel_bg", "#4a90d9"))
         try:
             item.setBackground(QtGui.QBrush(QtGui.QColor(bg_hex)))
             item.setForeground(QtGui.QBrush(QtGui.QColor(fg_hex)))
@@ -2568,8 +2615,44 @@ class RegionEditorTaskPanel:
 
     @classmethod
     def _apply_table_stylesheet(cls, table, *, kind: str):
-        _bg_hex, _fg_hex, sel_hex, sel_fg_hex = cls._table_palette_for_kind(kind)
+        colors = cls._table_palette_for_kind(kind)
+        base_hex = str(colors.get("base", "#ffffff"))
+        alt_bg_hex = str(colors.get("alt_bg", base_hex))
+        text_hex = str(colors.get("text", "#111111"))
+        sel_hex = str(colors.get("sel_bg", "#4a90d9"))
+        sel_fg_hex = str(colors.get("sel_fg", "#ffffff"))
+        grid_hex = str(colors.get("grid", "#808080"))
+        try:
+            pal = QtGui.QPalette(table.palette())
+            pal.setColor(QtGui.QPalette.Base, QtGui.QColor(base_hex))
+            pal.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(alt_bg_hex))
+            pal.setColor(QtGui.QPalette.Text, QtGui.QColor(text_hex))
+            pal.setColor(QtGui.QPalette.Window, QtGui.QColor(base_hex))
+            pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor(text_hex))
+            pal.setColor(QtGui.QPalette.Highlight, QtGui.QColor(sel_hex))
+            pal.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(sel_fg_hex))
+            table.setPalette(pal)
+            viewport = table.viewport()
+            if viewport is not None:
+                viewport.setPalette(pal)
+                viewport.setAutoFillBackground(True)
+            table.setAutoFillBackground(True)
+        except Exception:
+            pass
         table.setStyleSheet(
+            "QTableWidget {"
+            f" background-color: {base_hex};"
+            f" alternate-background-color: {alt_bg_hex};"
+            f" color: {text_hex};"
+            f" gridline-color: {grid_hex};"
+            "}"
+            "QTableWidget > QWidget {"
+            f" background-color: {base_hex};"
+            f" color: {text_hex};"
+            "}"
+            "QTableWidget::item {"
+            f" color: {text_hex};"
+            "}"
             "QTableWidget::item:selected {"
             f" background-color: {sel_hex};"
             f" color: {sel_fg_hex};"
