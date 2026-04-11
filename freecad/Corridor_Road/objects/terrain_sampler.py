@@ -3,7 +3,7 @@
 
 import math
 
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
 
 
@@ -19,8 +19,7 @@ def _surface_triangles(src_obj):
     if is_mesh_object(src_obj):
         return _ssc.mesh_triangles(src_obj)
     if is_shape_object(src_obj):
-        scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
-        return _ssc.shape_triangles(src_obj, deflection=1.0 * scale)
+        return _ssc.shape_triangles(src_obj, deflection=_units.model_length_from_meters(getattr(src_obj, "Document", None), 1.0))
     return []
 
 
@@ -40,16 +39,19 @@ class TerrainSampler:
         mt = int(max(1000, int(max_triangles)))
         tris = _ssc.decimate_triangles(tris, mt)
 
-        scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
-        bucket = 2.0 * scale
+        bucket = _units.model_length_from_meters(getattr(src_obj, "Document", None), 2.0)
         try:
             if is_mesh_object(src_obj):
                 bb = src_obj.Mesh.BoundBox
             else:
                 bb = src_obj.Shape.BoundBox
             n = max(1, len(tris))
-            area = max((1.0 * scale) ** 2, float(bb.XLength) * float(bb.YLength))
-            bucket = max(0.5 * scale, min(20.0 * scale, math.sqrt(area / float(n)) * 2.0))
+            one_meter = _units.model_length_from_meters(getattr(src_obj, "Document", None), 1.0)
+            area = max((one_meter) ** 2, float(bb.XLength) * float(bb.YLength))
+            bucket = max(
+                _units.model_length_from_meters(getattr(src_obj, "Document", None), 0.5),
+                min(_units.model_length_from_meters(getattr(src_obj, "Document", None), 20.0), math.sqrt(area / float(n)) * 2.0),
+            )
         except Exception:
             pass
 

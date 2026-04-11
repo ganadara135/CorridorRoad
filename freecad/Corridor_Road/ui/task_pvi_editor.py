@@ -7,10 +7,10 @@ import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment, ViewProviderVerticalAlignment
 from freecad.Corridor_Road.objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.profile_fg_helpers import (
     PROFILE_BUNDLE_LABEL,
@@ -28,7 +28,6 @@ class PviEditorTaskPanel:
 
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
         self._loading = False
         self._starter_source_name = ""
         self.form = self._build_ui()
@@ -123,7 +122,6 @@ class PviEditorTaskPanel:
         self.spin_min_tan.setRange(0.0, 100000.0)
         self.spin_min_tan.setDecimals(3)
         self.spin_min_tan.setValue(0.0)
-        self.spin_min_tan.setSuffix(" m")
 
         gr.addRow(self.chk_clamp)
         gr.addRow("Min Tangent:", self.spin_min_tan)
@@ -181,9 +179,59 @@ class PviEditorTaskPanel:
 
         # Start with 3 blank rows for convenience
         self._set_rows(3)
+        self._apply_display_unit_ui()
         self._refresh_pvi_summary()
 
         return w
+
+    def _display_unit(self) -> str:
+        return _units.get_linear_display_unit(self.doc)
+
+    def _apply_display_unit_ui(self):
+        unit = self._display_unit()
+        self.table.setHorizontalHeaderLabels(
+            [
+                f"Grade Break Station ({unit})",
+                f"FG Elev at PVI ({unit})",
+                f"Vertical Curve L ({unit})",
+            ]
+        )
+        self.spin_min_tan.setSuffix(f" {unit}")
+
+    def _display_from_internal(self, value: float) -> float:
+        return _units.display_length_from_internal(self.doc, value, use_default="display")
+
+    def _internal_from_display(self, value: float) -> float:
+        return _units.internal_length_from_display(self.doc, value, use_default="display")
+
+    def _display_from_meters(self, value: float) -> float:
+        return _units.user_length_from_meters(self.doc, value, use_default="display")
+
+    def _meters_from_display(self, value: float) -> float:
+        return _units.meters_from_user_length(self.doc, value, use_default="display")
+
+    def _format_display_value(self, value: float, digits: int = 3) -> str:
+        return f"{float(value):.{int(digits)}f}"
+
+    def _format_display_with_unit(self, value: float, digits: int = 3) -> str:
+        return f"{self._format_display_value(value, digits=digits)} {self._display_unit()}"
+
+    def _starter_load_summary_text(self, rows_count: int, source_name: str) -> str:
+        return (
+            "Starter PVI loaded.\n"
+            f"Rows: {int(rows_count)}\n"
+            f"Display unit: {self._display_unit()}\n"
+            f"Seed source: {str(source_name or '-')}"
+        )
+
+    def _fg_generation_summary_text(self, station_count: int) -> str:
+        return (
+            "FG generation completed.\n"
+            f"Stations updated: {int(station_count)}\n"
+            f"Display unit: {self._display_unit()}\n"
+            "VerticalAlignment updated.\n"
+            "Profiles FG refreshed."
+        )
 
     # ---- Table helpers ----
     def _set_rows(self, n):
@@ -292,50 +340,55 @@ class PviEditorTaskPanel:
     def _station_key(value):
         return round(float(value), 6)
 
-    def _resolve_starter_seed_values(self, stations):
+    def _resolve_starter_seed_values(self, station_source, stations_m):
         bundle = _find_profile_bundle(self.doc) if self.doc is not None else None
         if bundle is not None:
             bundle_stations = [float(s) for s in list(getattr(bundle, "Stations", []) or [])]
             if len(bundle_stations) >= 2:
                 fg_vals = list(getattr(bundle, "ElevFG", []) or [])
                 eg_vals = list(getattr(bundle, "ElevEG", []) or [])
+                stations_conv = [_units.meters_from_internal_length(self.doc, float(s)) for s in bundle_stations]
                 if len(fg_vals) == len(bundle_stations) and any(abs(float(v)) > 1e-9 for v in fg_vals):
                     return "ProfileBundle FG", {
-                        self._station_key(s): float(fg_vals[i]) for i, s in enumerate(bundle_stations)
+                        self._station_key(stations_conv[i]): _units.meters_from_internal_length(self.doc, float(fg_vals[i]))
+                        for i in range(len(bundle_stations))
                     }
                 if len(eg_vals) == len(bundle_stations) and any(abs(float(v)) > 1e-9 for v in eg_vals):
                     return "ProfileBundle EG", {
-                        self._station_key(s): float(eg_vals[i]) for i, s in enumerate(bundle_stations)
+                        self._station_key(stations_conv[i]): _units.meters_from_internal_length(self.doc, float(eg_vals[i]))
+                        for i in range(len(bundle_stations))
                     }
-        return "Flat 0.000", {self._station_key(s): 0.0 for s in stations}
+        tag = "Stationing" if station_source == "stationing" else f"Flat {self._format_display_with_unit(0.0)}"
+        return tag, {self._station_key(s): 0.0 for s in stations_m}
 
     def _build_starter_pvi_rows(self):
-        stations = sorted({float(s) for s in self._resolve_station_list()})
-        if len(stations) < 2:
+        station_source, station_values = self._resolve_station_list()
+        stations_m = sorted({float(s) for s in station_values})
+        if len(stations_m) < 2:
             return [], ""
 
-        chosen = [stations[0]]
-        if len(stations) >= 3 and abs(stations[-1] - stations[0]) > 1e-9:
-            interior = [float(s) for s in stations[1:-1]]
+        chosen_m = [stations_m[0]]
+        if len(stations_m) >= 3 and abs(stations_m[-1] - stations_m[0]) > 1e-9:
+            interior = [float(s) for s in stations_m[1:-1]]
             if interior:
-                target_mid = 0.5 * (stations[0] + stations[-1])
+                target_mid = 0.5 * (stations_m[0] + stations_m[-1])
                 mid = min(interior, key=lambda s: abs(float(s) - target_mid))
-                if abs(mid - chosen[0]) > 1e-9 and abs(stations[-1] - mid) > 1e-9:
-                    chosen.append(mid)
-        chosen.append(stations[-1])
+                if abs(mid - chosen_m[0]) > 1e-9 and abs(stations_m[-1] - mid) > 1e-9:
+                    chosen_m.append(mid)
+        chosen_m.append(stations_m[-1])
 
-        source_name, value_map = self._resolve_starter_seed_values(stations)
+        source_name, value_map = self._resolve_starter_seed_values(station_source, station_values)
         rows = []
-        for station in chosen:
-            elev = value_map.get(self._station_key(station), 0.0)
-            rows.append([float(station), float(elev), 0.0])
+        for station_m in chosen_m:
+            elev = value_map.get(self._station_key(station_m), 0.0)
+            rows.append([float(station_m), float(elev), 0.0])
 
         if len(rows) >= 3:
-            total_range = max(0.0, rows[-1][0] - rows[0][0])
+            total_range = max(0.0, chosen_m[-1] - chosen_m[0])
             base_length = min(40.0, max(20.0, total_range * 0.10))
             for i in range(1, len(rows) - 1):
-                left = max(0.0, rows[i][0] - rows[i - 1][0])
-                right = max(0.0, rows[i + 1][0] - rows[i][0])
+                left = max(0.0, chosen_m[i] - chosen_m[i - 1])
+                right = max(0.0, chosen_m[i + 1] - chosen_m[i])
                 limit = max(0.0, 1.6 * min(left, right))
                 rows[i][2] = min(base_length, limit) if limit > 1e-9 else 0.0
 
@@ -370,8 +423,14 @@ class PviEditorTaskPanel:
                 )
             return False
 
-        sc = max(1e-12, float(self._scale))
-        display_rows = [(float(s) / sc, float(z) / sc, float(L) / sc) for s, z, L in rows]
+        display_rows = [
+            (
+                self._display_from_meters(float(s)),
+                self._display_from_meters(float(z)),
+                self._display_from_meters(float(L)),
+            )
+            for s, z, L in rows
+        ]
         self._starter_source_name = source_name
         self._apply_pvi_rows(display_rows)
         self._refresh_status_summary()
@@ -380,7 +439,7 @@ class PviEditorTaskPanel:
             QtWidgets.QMessageBox.information(
                 None,
                 "Edit PVI",
-                f"Starter PVI loaded.\nRows: {len(display_rows)}\nSeed source: {source_name}",
+                self._starter_load_summary_text(len(display_rows), source_name),
             )
         return True
 
@@ -416,7 +475,7 @@ class PviEditorTaskPanel:
             s0, z0, _l0 = rows[i]
             s1, z1, _l1 = rows[i + 1]
             lines.append(
-                f"- Grade {i + 1}: {s0:.3f} -> {s1:.3f} = {self._format_grade_pct(z0, z1, s0, s1)}"
+                f"- Grade {i + 1}: {self._format_display_value(s0)} -> {self._format_display_value(s1)} {self._display_unit()} = {self._format_grade_pct(z0, z1, s0, s1)}"
             )
 
         curve_lines = []
@@ -424,10 +483,13 @@ class PviEditorTaskPanel:
             si, _zi, Li = rows[i]
             Li = max(0.0, float(Li))
             if Li <= 0.0:
-                curve_lines.append(f"- PVI @{si:.3f}: no vertical curve (L=0)")
+                curve_lines.append(f"- PVI @{self._format_display_value(si)} {self._display_unit()}: no vertical curve (L=0 {self._display_unit()})")
             else:
                 curve_lines.append(
-                    f"- PVI @{si:.3f}: L={Li:.3f} -> BVC {si - 0.5 * Li:.3f}, EVC {si + 0.5 * Li:.3f}"
+                    f"- PVI @{self._format_display_value(si)} {self._display_unit()}: "
+                    f"L={self._format_display_with_unit(Li)} -> "
+                    f"BVC {self._format_display_value(si - 0.5 * Li)}, "
+                    f"EVC {self._format_display_value(si + 0.5 * Li)} {self._display_unit()}"
                 )
 
         if curve_lines:
@@ -455,6 +517,7 @@ class PviEditorTaskPanel:
                 [
                     f"Target ProfileBundle: {target}",
                     f"Linked Profiles: {linked}",
+                    f"Display unit: {self._display_unit()}",
                     f"Starter PVI seed: {self._starter_source_name or '-'}",
                     "PVI = grade-break point for FG vertical alignment.",
                     "Generate FG Now will update the profile FG values from the current vertical alignment.",
@@ -476,7 +539,7 @@ class PviEditorTaskPanel:
             self._refresh_status_summary()
             return
 
-        self._scale = get_length_scale(self.doc, default=1.0)
+        self._apply_display_unit_ui()
         va = _find_vertical_alignment(self.doc)
         if va is None:
             self._refresh_status_summary()
@@ -497,9 +560,15 @@ class PviEditorTaskPanel:
         else:
             Ls = Ls[:n]
 
-        sc = max(1e-12, float(self._scale))
         rows = sorted(
-            [(float(st[i]) / sc, float(el[i]) / sc, float(Ls[i]) / sc) for i in range(n)],
+            [
+                (
+                    self._display_from_meters(float(st[i])),
+                    self._display_from_meters(float(el[i])),
+                    self._display_from_meters(float(Ls[i])),
+                )
+                for i in range(n)
+            ],
             key=lambda x: x[0],
         )
 
@@ -516,7 +585,7 @@ class PviEditorTaskPanel:
 
         try:
             self.chk_clamp.setChecked(bool(getattr(va, "ClampOverlaps", True)))
-            self.spin_min_tan.setValue(float(getattr(va, "MinTangent", 0.0)) / sc)
+            self.spin_min_tan.setValue(self._display_from_meters(float(getattr(va, "MinTangent", 0.0))))
         except Exception:
             pass
         self._refresh_status_summary()
@@ -527,8 +596,6 @@ class PviEditorTaskPanel:
         if self.doc is None:
             return
 
-        self._scale = get_length_scale(self.doc, default=1.0)
-        sc = max(1e-12, float(self._scale))
         rows = self._read_pvi()
         if len(rows) < 2:
             raise Exception("Need at least 2 valid PVI rows (Station & Elev).")
@@ -543,10 +610,10 @@ class PviEditorTaskPanel:
         _ensure_fg_display(self.doc, va)
 
         va.ClampOverlaps = bool(self.chk_clamp.isChecked())
-        va.MinTangent = float(self.spin_min_tan.value()) * sc
-        va.PVIStations = [float(p[0]) * sc for p in rows]
-        va.PVIElevations = [float(p[1]) * sc for p in rows]
-        va.CurveLengths = [float(p[2]) * sc for p in rows]
+        va.MinTangent = self._meters_from_display(float(self.spin_min_tan.value()))
+        va.PVIStations = [self._meters_from_display(float(p[0])) for p in rows]
+        va.PVIElevations = [self._meters_from_display(float(p[1])) for p in rows]
+        va.CurveLengths = [self._meters_from_display(float(p[2])) for p in rows]
         try:
             va.ShowPVIWire = True
             if hasattr(va, "ViewObject") and va.ViewObject is not None:
@@ -570,21 +637,21 @@ class PviEditorTaskPanel:
     # ---- Generate FG ----
     def _resolve_station_list(self):
         if self.doc is None:
-            return []
+            return "", []
 
         b = _find_profile_bundle(self.doc)
         if b is not None and getattr(b, "Stations", None):
             st = list(b.Stations or [])
             if len(st) >= 2:
-                return st
+                return "bundle", [_units.meters_from_internal_length(self.doc, float(s)) for s in st]
 
         st_obj = _find_stationing(self.doc)
         if st_obj is not None and getattr(st_obj, "StationValues", None):
             st = list(st_obj.StationValues or [])
             if len(st) >= 2:
-                return st
+                return "stationing", [float(s) for s in st]
 
-        return []
+        return "", []
 
     def _preview_fg(self):
         if self.doc is None:
@@ -596,14 +663,18 @@ class PviEditorTaskPanel:
         if va is None:
             raise Exception("Failed to create/update VerticalAlignment from current PVI table.")
 
-        stations = self._resolve_station_list()
+        _station_source, stations = self._resolve_station_list()
         if len(stations) < 2:
             raise Exception("No station list found. Create Stationing or ProfileBundle first.")
 
         # print first 10 to console
         for s in stations[:10]:
             z = VerticalAlignment.elevation_at_station(va, float(s))
-            App.Console.PrintMessage(f"[FG Preview] s={float(s):.3f} -> z={float(z):.3f}\n")
+            s_disp = self._display_from_meters(float(s))
+            z_disp = self._display_from_meters(float(z))
+            App.Console.PrintMessage(
+                f"[FG Preview] s={self._format_display_value(s_disp)} {self._display_unit()} -> z={self._format_display_value(z_disp)} {self._display_unit()}\n"
+            )
 
     def _generate_fg_to_profilebundle(self):
         if self.doc is None:
@@ -615,7 +686,7 @@ class PviEditorTaskPanel:
         if va is None:
             raise Exception("Failed to create/update VerticalAlignment from current PVI table.")
 
-        stations = self._resolve_station_list()
+        station_source, stations = self._resolve_station_list()
         if len(stations) < 2:
             raise Exception("No station list found. Create Stationing or ProfileBundle first.")
 
@@ -631,7 +702,7 @@ class PviEditorTaskPanel:
             b.Label = PROFILE_BUNDLE_LABEL
 
             # If we created from Stationing, set Stations now
-            b.Stations = [float(s) for s in stations]
+            b.Stations = [_units.internal_length_from_meters(self.doc, float(s)) for s in stations]
 
             # Create empty EG list (or zeros). We will not overwrite if keep_eg is checked later.
             b.ElevEG = [0.0 for _ in stations]
@@ -640,10 +711,10 @@ class PviEditorTaskPanel:
 
         else:
             # If bundle exists but station list differs, we will regenerate based on bundle stations
-            stations = list(b.Stations or stations)
+            stations = [_units.meters_from_internal_length(self.doc, float(s)) for s in list(b.Stations or [])] or list(stations)
 
         # Compute FG using VerticalAlignment engine
-        fg = [float(VerticalAlignment.elevation_at_station(va, float(s))) for s in stations]
+        fg_m = [float(VerticalAlignment.elevation_at_station(va, float(s))) for s in stations]
 
         # fg.Label = "Finished Grade (FG)"
 
@@ -659,8 +730,8 @@ class PviEditorTaskPanel:
                 b.ElevEG = [0.0 for _ in stations]
 
         # Save to bundle (data)
-        b.Stations = [float(s) for s in stations]
-        b.ElevFG = fg
+        b.Stations = [_units.internal_length_from_meters(self.doc, float(s)) for s in stations]
+        b.ElevFG = [_units.internal_length_from_meters(self.doc, float(z)) for z in fg_m]
         try:
             st_obj = _find_stationing(self.doc)
             if st_obj is not None:
@@ -695,7 +766,7 @@ class PviEditorTaskPanel:
         QtWidgets.QMessageBox.information(
             None,
             "Edit PVI",
-            f"FG generation completed.\nStations updated: {len(stations)}\nVerticalAlignment updated.\nProfiles FG refreshed.",
+            self._fg_generation_summary_text(len(stations)),
         )
         self._refresh_status_summary()
 

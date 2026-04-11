@@ -5,12 +5,15 @@
 import FreeCAD as App
 import Part
 
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 try:
     import FreeCADGui as Gui
 except Exception:
     Gui = None
+
+
+_ASSEMBLY_LENGTH_SCHEMA_TARGET = 1
 
 
 def _parse_bench_row(row, default_post_slope: float):
@@ -60,6 +63,26 @@ def _serialize_bench_row(row) -> str:
     if parsed is None:
         return ""
     return "drop={drop:.6f}|width={width:.6f}|slope={slope:.6f}|post={post_slope:.6f}".format(**parsed)
+
+
+def _convert_bench_rows(doc_or_obj, bench_rows, converter):
+    out = []
+    for row in list(bench_rows or []):
+        parsed = _parse_bench_row(row, 0.0)
+        if parsed is None:
+            continue
+        parsed["drop"] = float(converter(doc_or_obj, float(parsed.get("drop", 0.0) or 0.0)))
+        parsed["width"] = float(converter(doc_or_obj, float(parsed.get("width", 0.0) or 0.0)))
+        out.append(_serialize_bench_row(parsed))
+    return out
+
+
+def _bench_rows_meters_from_internal(doc_or_obj, bench_rows):
+    return _convert_bench_rows(doc_or_obj, bench_rows, _units.meters_from_internal_length)
+
+
+def _bench_rows_model_from_meters(doc_or_obj, bench_rows):
+    return _convert_bench_rows(doc_or_obj, bench_rows, _units.model_length_from_meters)
 
 
 def _collect_side_bench_rows(use_bench: bool, bench_drop: float, bench_width: float, bench_slope_pct: float, post_bench_slope_pct: float, bench_rows):
@@ -218,6 +241,10 @@ def _append_preview_side_points(points, edge_pt, sign_x: float, profile):
     points.extend(seg_pts)
 
 
+def _model_length(doc_or_obj, meters: float) -> float:
+    return _units.model_length_from_meters(doc_or_obj, meters)
+
+
 def ensure_assembly_template_properties(obj):
     # Hard-remove legacy thickness properties.
     for legacy_prop in ("PavementThickness", "SolidThickness"):
@@ -227,14 +254,31 @@ def ensure_assembly_template_properties(obj):
         except Exception:
             pass
 
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    had_length_props = any(
+        hasattr(obj, prop)
+        for prop in (
+            "LeftWidth",
+            "RightWidth",
+            "LeftSideWidth",
+            "RightSideWidth",
+            "LeftBenchDrop",
+            "RightBenchDrop",
+            "LeftBenchWidth",
+            "RightBenchWidth",
+            "DaylightSearchStep",
+            "DaylightMaxSearchWidth",
+            "DaylightMaxWidthDelta",
+            "HeightLeft",
+            "HeightRight",
+        )
+    )
 
     if not hasattr(obj, "LeftWidth"):
         obj.addProperty("App::PropertyFloat", "LeftWidth", "Assembly", "Width to left side from centerline (m)")
-        obj.LeftWidth = 4.0 * scale
+        obj.LeftWidth = 4.0
     if not hasattr(obj, "RightWidth"):
         obj.addProperty("App::PropertyFloat", "RightWidth", "Assembly", "Width to right side from centerline (m)")
-        obj.RightWidth = 4.0 * scale
+        obj.RightWidth = 4.0
 
     if not hasattr(obj, "LeftSlopePct"):
         obj.addProperty("App::PropertyFloat", "LeftSlopePct", "Assembly", "Cross slope (%) on left side (downward)")
@@ -266,16 +310,16 @@ def ensure_assembly_template_properties(obj):
         obj.UseRightBench = False
     if not hasattr(obj, "LeftBenchDrop"):
         obj.addProperty("App::PropertyFloat", "LeftBenchDrop", "Assembly", "Vertical drop before the left bench starts (m)")
-        obj.LeftBenchDrop = 1.0 * scale
+        obj.LeftBenchDrop = 1.0
     if not hasattr(obj, "RightBenchDrop"):
         obj.addProperty("App::PropertyFloat", "RightBenchDrop", "Assembly", "Vertical drop before the right bench starts (m)")
-        obj.RightBenchDrop = 1.0 * scale
+        obj.RightBenchDrop = 1.0
     if not hasattr(obj, "LeftBenchWidth"):
         obj.addProperty("App::PropertyFloat", "LeftBenchWidth", "Assembly", "Left bench width (m)")
-        obj.LeftBenchWidth = 1.5 * scale
+        obj.LeftBenchWidth = 1.5
     if not hasattr(obj, "RightBenchWidth"):
         obj.addProperty("App::PropertyFloat", "RightBenchWidth", "Assembly", "Right bench width (m)")
-        obj.RightBenchWidth = 1.5 * scale
+        obj.RightBenchWidth = 1.5
     if not hasattr(obj, "LeftBenchSlopePct"):
         obj.addProperty("App::PropertyFloat", "LeftBenchSlopePct", "Assembly", "Left bench slope (%)")
         obj.LeftBenchSlopePct = 0.0
@@ -305,10 +349,10 @@ def ensure_assembly_template_properties(obj):
         obj.UseDaylightToTerrain = False
     if not hasattr(obj, "DaylightSearchStep"):
         obj.addProperty("App::PropertyFloat", "DaylightSearchStep", "Assembly", "Search step for terrain-daylight (m)")
-        obj.DaylightSearchStep = 1.0 * scale
+        obj.DaylightSearchStep = 1.0
     if not hasattr(obj, "DaylightMaxSearchWidth"):
         obj.addProperty("App::PropertyFloat", "DaylightMaxSearchWidth", "Assembly", "Max search width for terrain-daylight (m)")
-        obj.DaylightMaxSearchWidth = 200.0 * scale
+        obj.DaylightMaxSearchWidth = 200.0
     if not hasattr(obj, "DaylightMaxWidthDelta"):
         obj.addProperty(
             "App::PropertyFloat",
@@ -316,18 +360,22 @@ def ensure_assembly_template_properties(obj):
             "Assembly",
             "Max daylight-width change allowed between neighboring sections (m, 0=off)",
         )
-        obj.DaylightMaxWidthDelta = 6.0 * scale
+        obj.DaylightMaxWidthDelta = 6.0
     if not hasattr(obj, "DaylightMaxTriangles"):
         obj.addProperty("App::PropertyInteger", "DaylightMaxTriangles", "Assembly", "Max triangles used for daylight sampler")
         obj.DaylightMaxTriangles = 300000
 
     if not hasattr(obj, "HeightLeft"):
         obj.addProperty("App::PropertyFloat", "HeightLeft", "Assembly", "Left depth for corridor solid (m, downward)")
-        obj.HeightLeft = 0.30 * scale
+        obj.HeightLeft = 0.30
 
     if not hasattr(obj, "HeightRight"):
         obj.addProperty("App::PropertyFloat", "HeightRight", "Assembly", "Right depth for corridor solid (m, downward)")
-        obj.HeightRight = 0.30 * scale
+        obj.HeightRight = 0.30
+
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Result", "Length storage schema version")
+        obj.LengthSchemaVersion = 0
 
     try:
         obj.setGroupOfProperty("HeightLeft", "Assembly")
@@ -342,6 +390,16 @@ def ensure_assembly_template_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema < _ASSEMBLY_LENGTH_SCHEMA_TARGET:
+        try:
+            obj.LengthSchemaVersion = _ASSEMBLY_LENGTH_SCHEMA_TARGET
+        except Exception:
+            pass
     if not hasattr(obj, "PracticalRole"):
         obj.addProperty("App::PropertyString", "PracticalRole", "Result", "Practical engineering role summary")
         obj.PracticalRole = "assembly_core"
@@ -379,32 +437,32 @@ class AssemblyTemplate:
                 obj.Status = "Hidden | role=assembly_core"
                 return
 
-            lw = max(0.0, float(getattr(obj, "LeftWidth", 0.0)))
-            rw = max(0.0, float(getattr(obj, "RightWidth", 0.0)))
+            lw = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "LeftWidth", 0.0) or 0.0)))
+            rw = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "RightWidth", 0.0) or 0.0)))
             ls = float(getattr(obj, "LeftSlopePct", 0.0))
             rs = float(getattr(obj, "RightSlopePct", 0.0))
-            hl = max(0.0, float(getattr(obj, "HeightLeft", 0.0)))
-            hr = max(0.0, float(getattr(obj, "HeightRight", 0.0)))
+            hl = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "HeightLeft", 0.0) or 0.0)))
+            hr = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "HeightRight", 0.0) or 0.0)))
             use_ss = bool(getattr(obj, "UseSideSlopes", False))
-            lsw = max(0.0, float(getattr(obj, "LeftSideWidth", 0.0)))
-            rsw = max(0.0, float(getattr(obj, "RightSideWidth", 0.0)))
+            lsw = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "LeftSideWidth", 0.0) or 0.0)))
+            rsw = max(0.0, _model_length(getattr(obj, "Document", None), float(getattr(obj, "RightSideWidth", 0.0) or 0.0)))
             lss = float(getattr(obj, "LeftSideSlopePct", 0.0))
             rss = float(getattr(obj, "RightSideSlopePct", 0.0))
             left_bench_rows = _collect_side_bench_rows(
                 bool(getattr(obj, "UseLeftBench", False)),
-                float(getattr(obj, "LeftBenchDrop", 0.0) or 0.0),
-                float(getattr(obj, "LeftBenchWidth", 0.0) or 0.0),
+                _model_length(getattr(obj, "Document", None), float(getattr(obj, "LeftBenchDrop", 0.0) or 0.0)),
+                _model_length(getattr(obj, "Document", None), float(getattr(obj, "LeftBenchWidth", 0.0) or 0.0)),
                 float(getattr(obj, "LeftBenchSlopePct", 0.0) or 0.0),
                 float(getattr(obj, "LeftPostBenchSlopePct", lss) or lss),
-                list(getattr(obj, "LeftBenchRows", []) or []),
+                _bench_rows_model_from_meters(getattr(obj, "Document", None), list(getattr(obj, "LeftBenchRows", []) or [])),
             )
             right_bench_rows = _collect_side_bench_rows(
                 bool(getattr(obj, "UseRightBench", False)),
-                float(getattr(obj, "RightBenchDrop", 0.0) or 0.0),
-                float(getattr(obj, "RightBenchWidth", 0.0) or 0.0),
+                _model_length(getattr(obj, "Document", None), float(getattr(obj, "RightBenchDrop", 0.0) or 0.0)),
+                _model_length(getattr(obj, "Document", None), float(getattr(obj, "RightBenchWidth", 0.0) or 0.0)),
                 float(getattr(obj, "RightBenchSlopePct", 0.0) or 0.0),
                 float(getattr(obj, "RightPostBenchSlopePct", rss) or rss),
-                list(getattr(obj, "RightBenchRows", []) or []),
+                _bench_rows_model_from_meters(getattr(obj, "Document", None), list(getattr(obj, "RightBenchRows", []) or [])),
             )
             left_bench = _resolve_side_bench_profile(
                 lsw,
@@ -519,24 +577,28 @@ class AssemblyTemplate:
                     # when user enables side slopes with zero widths.
                     lsw = max(0.0, float(getattr(obj, "LeftSideWidth", 0.0)))
                     rsw = max(0.0, float(getattr(obj, "RightSideWidth", 0.0)))
-                    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
                     if lsw <= 1e-9:
-                        obj.LeftSideWidth = max(2.0 * scale, 0.5 * max(0.0, float(getattr(obj, "LeftWidth", 0.0))))
+                        obj.LeftSideWidth = max(
+                            2.0,
+                            0.5 * max(0.0, float(getattr(obj, "LeftWidth", 0.0))),
+                        )
                     if rsw <= 1e-9:
-                        obj.RightSideWidth = max(2.0 * scale, 0.5 * max(0.0, float(getattr(obj, "RightWidth", 0.0))))
-                scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+                        obj.RightSideWidth = max(
+                            2.0,
+                            0.5 * max(0.0, float(getattr(obj, "RightWidth", 0.0))),
+                        )
                 if prop == "UseLeftBench" and bool(getattr(obj, "UseLeftBench", False)):
                     if float(getattr(obj, "LeftBenchWidth", 0.0) or 0.0) <= 1e-9:
-                        obj.LeftBenchWidth = 1.5 * scale
+                        obj.LeftBenchWidth = 1.5
                     if float(getattr(obj, "LeftBenchDrop", 0.0) or 0.0) <= 1e-9:
-                        obj.LeftBenchDrop = 1.0 * scale
+                        obj.LeftBenchDrop = 1.0
                     if abs(float(getattr(obj, "LeftPostBenchSlopePct", 0.0) or 0.0)) <= 1e-9:
                         obj.LeftPostBenchSlopePct = float(getattr(obj, "LeftSideSlopePct", 50.0) or 50.0)
                 if prop == "UseRightBench" and bool(getattr(obj, "UseRightBench", False)):
                     if float(getattr(obj, "RightBenchWidth", 0.0) or 0.0) <= 1e-9:
-                        obj.RightBenchWidth = 1.5 * scale
+                        obj.RightBenchWidth = 1.5
                     if float(getattr(obj, "RightBenchDrop", 0.0) or 0.0) <= 1e-9:
-                        obj.RightBenchDrop = 1.0 * scale
+                        obj.RightBenchDrop = 1.0
                     if abs(float(getattr(obj, "RightPostBenchSlopePct", 0.0) or 0.0)) <= 1e-9:
                         obj.RightPostBenchSlopePct = float(getattr(obj, "RightSideSlopePct", 50.0) or 50.0)
                 obj.touch()

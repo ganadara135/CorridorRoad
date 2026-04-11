@@ -6,9 +6,9 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects import coord_transform as _ct
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects.obj_design_terrain import DesignTerrain, ViewProviderDesignTerrain, ensure_design_terrain_properties
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 from freecad.Corridor_Road.ui.common.perf_quality import (
@@ -105,9 +105,9 @@ def _source_bounds(src_obj):
 class DesignTerrainTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
+        self._project = None
         self._quality_presets = build_quality_presets(
-            self._scale,
+            self._display_scale(),
             {
                 "Fast": 150000,
                 "Balanced": 250000,
@@ -116,7 +116,6 @@ class DesignTerrainTaskPanel:
         )
         self._surfaces = []
         self._terrains = []
-        self._project = None
         self._coord_mode_initialized = False
         self._loading = False
         self._running = False
@@ -169,13 +168,16 @@ class DesignTerrainTaskPanel:
 
         gb_opt = QtWidgets.QGroupBox("Options")
         form_opts = QtWidgets.QFormLayout(gb_opt)
+        unit = self._display_unit()
+        display_scale = self._display_scale()
         self.cmb_quality = QtWidgets.QComboBox()
         self.cmb_quality.addItems(list(QUALITY_PRESETS))
         self.cmb_quality.setCurrentText("Balanced")
         self.spin_cell = QtWidgets.QDoubleSpinBox()
-        self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
+        self.spin_cell.setRange(0.2 * display_scale, 10000.0 * display_scale)
         self.spin_cell.setDecimals(3)
-        self.spin_cell.setValue(1.0 * self._scale)
+        self.spin_cell.setSuffix(f" {unit}")
+        self.spin_cell.setValue(self._meters_to_display(1.0))
         self.spin_max_samples = QtWidgets.QSpinBox()
         self.spin_max_samples.setRange(1000, 2000000000)
         self.spin_max_samples.setValue(250000)
@@ -190,8 +192,9 @@ class DesignTerrainTaskPanel:
         self.spin_max_checks.setSingleStep(10000000)
         self.spin_max_checks.setValue(250000000)
         self.spin_margin = QtWidgets.QDoubleSpinBox()
-        self.spin_margin.setRange(0.0, 1000000.0 * self._scale)
+        self.spin_margin.setRange(0.0, 1000000.0 * display_scale)
         self.spin_margin.setDecimals(3)
+        self.spin_margin.setSuffix(f" {unit}")
         self.spin_margin.setValue(0.0)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
@@ -199,12 +202,12 @@ class DesignTerrainTaskPanel:
         self.lbl_est.setWordWrap(True)
         self.lbl_est.setTextInteractionFlags(self.lbl_est.textInteractionFlags())
         form_opts.addRow("Quality Preset:", self.cmb_quality)
-        form_opts.addRow("Cell Size (scaled):", self.spin_cell)
+        form_opts.addRow(f"Cell Size ({unit}):", self.spin_cell)
         form_opts.addRow("Max Samples:", self.spin_max_samples)
         form_opts.addRow("Max Triangles/Source:", self.spin_max_tri_src)
         form_opts.addRow("Max Candidate Triangles:", self.spin_max_cand)
         form_opts.addRow("Max Triangle Checks:", self.spin_max_checks)
-        form_opts.addRow("Domain Margin (scaled):", self.spin_margin)
+        form_opts.addRow(f"Domain Margin ({unit}):", self.spin_margin)
         form_opts.addRow(self.chk_auto)
         form_opts.addRow("Estimate:", self.lbl_est)
         main.addWidget(gb_opt)
@@ -250,6 +253,18 @@ class DesignTerrainTaskPanel:
         if self._project is not None:
             return self._project
         return self.doc
+
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self._project or self.doc)
+
+    def _display_scale(self):
+        return max(1.0e-9, _units.user_length_from_meters(self._project or self.doc, 1.0))
+
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self._project or self.doc, meters)
+
+    def _display_to_meters(self, value):
+        return _units.meters_from_user_length(self._project or self.doc, value, use_default="display")
 
     def _use_world_existing_mode(self):
         return str(self.cmb_eg_coords.currentText() or "Local") == "World"
@@ -335,7 +350,7 @@ class DesignTerrainTaskPanel:
             self._loading = True
             try:
                 if hasattr(dtm, "CellSize"):
-                    self.spin_cell.setValue(float(dtm.CellSize))
+                    self.spin_cell.setValue(self._meters_to_display(float(dtm.CellSize)))
                 if hasattr(dtm, "MaxSamples"):
                     self.spin_max_samples.setValue(int(dtm.MaxSamples))
                 if hasattr(dtm, "MaxTrianglesPerSource"):
@@ -345,7 +360,7 @@ class DesignTerrainTaskPanel:
                 if hasattr(dtm, "MaxTriangleChecks"):
                     self.spin_max_checks.setValue(int(dtm.MaxTriangleChecks))
                 if hasattr(dtm, "DomainMargin"):
-                    self.spin_margin.setValue(float(dtm.DomainMargin))
+                    self.spin_margin.setValue(self._meters_to_display(float(dtm.DomainMargin)))
                 if hasattr(dtm, "AutoUpdate"):
                     self.chk_auto.setChecked(bool(dtm.AutoUpdate))
                 if hasattr(dtm, "ExistingTerrainCoords"):
@@ -405,10 +420,10 @@ class DesignTerrainTaskPanel:
 
     def _estimate_samples(self, eg_obj):
         try:
-            cell = float(self.spin_cell.value())
+            cell = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_cell.value())))
             if cell <= 1e-9:
                 return None
-            margin = float(self.spin_margin.value())
+            margin = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_margin.value())))
             xmin, xmax, ymin, ymax = self._existing_bounds_local(eg_obj)
             xmin = float(xmin - margin)
             xmax = float(xmax + margin)
@@ -456,7 +471,7 @@ class DesignTerrainTaskPanel:
             max_tri=int(self.spin_max_tri_src.value()),
             max_cand=int(self.spin_max_cand.value()),
             max_checks=int(self.spin_max_checks.value()),
-            scale=float(self._scale),
+            scale=float(self._display_scale()),
         )
 
     def _estimate_triangle_checks(self, dsg_obj, eg_obj, est_samples=None):
@@ -467,8 +482,8 @@ class DesignTerrainTaskPanel:
                 est_samples = self._estimate_samples(eg_obj)
             if est_samples is None:
                 return None
-            cell = float(self.spin_cell.value())
-            margin = float(self.spin_margin.value())
+            cell = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_cell.value())))
+            margin = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_margin.value())))
             xmin, xmax, ymin, ymax = self._existing_bounds_local(eg_obj)
             xmin = float(xmin - margin)
             xmax = float(xmax + margin)
@@ -612,7 +627,7 @@ class DesignTerrainTaskPanel:
             dtm.ExistingTerrain = eg
             if hasattr(dtm, "ExistingTerrainCoords"):
                 dtm.ExistingTerrainCoords = "World" if self._use_world_existing_mode() else "Local"
-            dtm.CellSize = float(self.spin_cell.value())
+            dtm.CellSize = self._display_to_meters(float(self.spin_cell.value()))
             dtm.MaxSamples = int(self.spin_max_samples.value())
             if hasattr(dtm, "MaxTrianglesPerSource"):
                 dtm.MaxTrianglesPerSource = int(self.spin_max_tri_src.value())
@@ -620,7 +635,7 @@ class DesignTerrainTaskPanel:
                 dtm.MaxCandidateTriangles = int(self.spin_max_cand.value())
             if hasattr(dtm, "MaxTriangleChecks"):
                 dtm.MaxTriangleChecks = int(self.spin_max_checks.value())
-            dtm.DomainMargin = float(self.spin_margin.value())
+            dtm.DomainMargin = self._display_to_meters(float(self.spin_margin.value()))
             dtm.AutoUpdate = bool(self.chk_auto.isChecked())
             dtm.RebuildNow = True
         finally:
@@ -673,8 +688,8 @@ class DesignTerrainTaskPanel:
             f"ExistingTerrain: {eg.Label} ({eg.Name})",
             f"ExistingTerrainCoords: {str(getattr(dtm, 'ExistingTerrainCoords', 'Local'))}",
             f"Samples(valid/total): {int(getattr(dtm, 'ValidCount', 0))} / {int(getattr(dtm, 'SampleCount', 0))}",
-            f"NoDataArea: {float(getattr(dtm, 'NoDataArea', 0.0)):.3f} (scaled^2)",
-            f"CellSize: {float(getattr(dtm, 'CellSize', 0.0)):.3f} (scaled)",
+            f"NoDataArea: {_units.format_internal_area(self._project or self.doc, float(getattr(dtm, 'NoDataArea', 0.0) or 0.0))}",
+            f"CellSize: {_units.format_length(self._project or self.doc, float(getattr(dtm, 'CellSize', 0.0) or 0.0))}",
             f"MaxTriangles/Source: {int(getattr(dtm, 'MaxTrianglesPerSource', 0))}",
             f"MaxCandidateTriangles: {int(getattr(dtm, 'MaxCandidateTriangles', 0))}",
             f"MaxTriangleChecks: {int(getattr(dtm, 'MaxTriangleChecks', 0))}",

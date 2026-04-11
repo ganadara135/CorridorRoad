@@ -31,7 +31,7 @@ from freecad.Corridor_Road.objects.obj_structure_set import (
     _resolve_station_point as _resolve_structure_station_point,
     _side_offsets as _structure_side_offsets,
 )
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.section_strip_builder import (
     build_part_pair_surface as _shared_build_part_pair_surface,
     build_part_strip_surface as _shared_build_part_strip_surface,
@@ -40,6 +40,8 @@ from freecad.Corridor_Road.objects.section_strip_builder import (
     resample_wire_points as _shared_resample_wire_points,
     wire_points as _shared_wire_points,
 )
+
+_CORRIDOR_LENGTH_SCHEMA_TARGET = 1
 from freecad.Corridor_Road.objects.corridor_segment_builder import (
     attach_package_profile_contract as _attach_package_profile_contract,
     summarize_segment_packages as _summarize_segment_packages,
@@ -244,8 +246,6 @@ def _summarize_diag_rows(rows):
 
 
 def ensure_corridor_loft_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     # Hard-remove legacy thickness properties.
     for legacy_prop in ("PavementThickness", "SolidThickness", "ResolvedPavementThickness"):
         try:
@@ -289,7 +289,10 @@ def ensure_corridor_loft_properties(obj):
 
     if not hasattr(obj, "MinSectionSpacing"):
         obj.addProperty("App::PropertyFloat", "MinSectionSpacing", "Corridor", "Minimum station spacing for corridor input (m)")
-        obj.MinSectionSpacing = 0.50 * scale
+        obj.MinSectionSpacing = 0.50
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Corridor", "Length-storage schema version")
+        obj.LengthSchemaVersion = 0
 
     if not hasattr(obj, "AutoFixSectionOrientation"):
         obj.addProperty(
@@ -555,6 +558,14 @@ def ensure_corridor_loft_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+
+    try:
+        if int(getattr(obj, "LengthSchemaVersion", 0) or 0) < _CORRIDOR_LENGTH_SCHEMA_TARGET:
+            if hasattr(obj, "MinSectionSpacing"):
+                obj.MinSectionSpacing = _units.meters_from_internal_length(getattr(obj, "Document", None), float(getattr(obj, "MinSectionSpacing", 0.50) or 0.0))
+            obj.LengthSchemaVersion = int(_CORRIDOR_LENGTH_SCHEMA_TARGET)
+    except Exception:
+        pass
 
     if not hasattr(obj, "NeedsRecompute"):
         obj.addProperty("App::PropertyBool", "NeedsRecompute", "Result", "Marked when source updates require recompute")
@@ -895,18 +906,26 @@ class CorridorLoft:
         asm = getattr(src, "AssemblyTemplate", None) if src is not None else None
         if asm is not None:
             try:
-                hl = float(getattr(asm, "HeightLeft"))
-                hr = float(getattr(asm, "HeightRight"))
-                if CorridorLoft._valid_heights(hl, hr):
-                    return hl, hr, "AssemblyTemplate.HeightLeft/HeightRight"
+                hl_m = float(getattr(asm, "HeightLeft"))
+                hr_m = float(getattr(asm, "HeightRight"))
+                if CorridorLoft._valid_heights(hl_m, hr_m):
+                    return (
+                        _units.model_length_from_meters(getattr(asm, "Document", None), hl_m),
+                        _units.model_length_from_meters(getattr(asm, "Document", None), hr_m),
+                        "AssemblyTemplate.HeightLeft/HeightRight",
+                    )
             except Exception:
                 pass
 
         try:
-            hl = float(getattr(obj, "HeightLeft"))
-            hr = float(getattr(obj, "HeightRight"))
-            if CorridorLoft._valid_heights(hl, hr):
-                return hl, hr, "CorridorLoft.HeightLeft/HeightRight"
+            hl_m = float(getattr(obj, "HeightLeft"))
+            hr_m = float(getattr(obj, "HeightRight"))
+            if CorridorLoft._valid_heights(hl_m, hr_m):
+                return (
+                    _units.model_length_from_meters(getattr(obj, "Document", None), hl_m),
+                    _units.model_length_from_meters(getattr(obj, "Document", None), hr_m),
+                    "CorridorLoft.HeightLeft/HeightRight",
+                )
         except Exception:
             pass
 
@@ -1533,7 +1552,6 @@ class CorridorLoft:
             return 0
         CorridorLoft._clear_skip_markers(obj)
         count = 0
-        scale = get_length_scale(doc, default=1.0)
         for run_idx, (i0, i1) in enumerate(list(skip_runs or []), start=1):
             for role, idx in (("SKIP_START", int(i0)), ("SKIP_END", int(i1))):
                 if idx < 0 or idx >= len(loft_wires):
@@ -1563,7 +1581,7 @@ class CorridorLoft:
                         vobj.ShapeColor = (0.96, 0.42, 0.14) if role == "SKIP_START" else (0.90, 0.18, 0.18)
                         vobj.LineColor = (0.85, 0.32, 0.10) if role == "SKIP_START" else (0.72, 0.12, 0.12)
                         vobj.Transparency = 55
-                        vobj.LineWidth = max(2, int(round(2.0 * scale)))
+                        vobj.LineWidth = 2
                     count += 1
                 except Exception:
                     pass
@@ -1645,12 +1663,13 @@ class CorridorLoft:
         return int(count)
 
     @staticmethod
-    def _structure_notch_spec(rec, scale: float):
+    def _structure_notch_spec(rec, doc_or_obj=None):
         typ = str(rec.get("Type", "") or "").strip().lower()
-        width = max(0.50 * scale, abs(float(rec.get("Width", 0.0) or 0.0)))
-        height = max(0.50 * scale, abs(float(rec.get("Height", 0.0) or 0.0)))
-        bottom = float(rec.get("BottomElevation", 0.0) or 0.0)
-        cover = abs(float(rec.get("Cover", 0.0) or 0.0))
+        half_meter = _units.model_length_from_meters(doc_or_obj, 0.50)
+        width = max(half_meter, abs(_units.model_length_from_meters(doc_or_obj, float(rec.get("Width", 0.0) or 0.0))))
+        height = max(half_meter, abs(_units.model_length_from_meters(doc_or_obj, float(rec.get("Height", 0.0) or 0.0))))
+        bottom = _units.model_length_from_meters(doc_or_obj, float(rec.get("BottomElevation", 0.0) or 0.0))
+        cover = abs(_units.model_length_from_meters(doc_or_obj, float(rec.get("Cover", 0.0) or 0.0)))
         profile_mode = str(rec.get("ResolvedProfileMode", "base_row") or "base_row")
 
         if typ == "culvert":
@@ -1659,7 +1678,7 @@ class CorridorLoft:
                 "TypeLabel": "culvert",
                 "Width": width * 1.35,
                 "Height": height * 1.40,
-                "LongPad": max(0.75 * scale, 0.20 * width),
+                "LongPad": max(_units.model_length_from_meters(doc_or_obj, 0.75), 0.20 * width),
                 "BottomExtra": 0.15 * height,
                 "BottomMode": ("bottom_elevation" if abs(bottom) > 1e-9 else ("cover_offset" if cover > 1e-9 else "relative_depth")),
                 "ProfileMode": profile_mode,
@@ -1670,7 +1689,7 @@ class CorridorLoft:
                 "TypeLabel": "crossing",
                 "Width": width * 1.20,
                 "Height": height * 1.25,
-                "LongPad": max(0.50 * scale, 0.15 * width),
+                "LongPad": max(_units.model_length_from_meters(doc_or_obj, 0.50), 0.15 * width),
                 "BottomExtra": 0.10 * height,
                 "BottomMode": ("bottom_elevation" if abs(bottom) > 1e-9 else ("cover_offset" if cover > 1e-9 else "relative_depth")),
                 "ProfileMode": profile_mode,
@@ -1696,7 +1715,6 @@ class CorridorLoft:
         if not recs:
             return [], []
 
-        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
         eligible = []
         notes = []
         for rec in list(recs or []):
@@ -1709,7 +1727,7 @@ class CorridorLoft:
                 + float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
             )
             resolved_mid = _resolve_corridor_record_at_station(src, rec, midpoint_station)
-            spec = CorridorLoft._structure_notch_spec(resolved_mid, scale)
+            spec = CorridorLoft._structure_notch_spec(resolved_mid, getattr(src, "Document", None))
             if not bool(spec.get("Enabled", False)):
                 notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                 continue
@@ -1776,7 +1794,7 @@ class CorridorLoft:
                 resolved_best["ResolvedCorridorMode"] = str(best.get("ResolvedCorridorMode", "") or "")
                 resolved_best["ResolvedCorridorMargin"] = float(best.get("ResolvedCorridorMargin", 0.0) or 0.0)
                 resolved_best["_transition"] = float(best.get("_transition", 0.0) or 0.0)
-                resolved_best["_notch_spec"] = CorridorLoft._structure_notch_spec(resolved_best, scale)
+                resolved_best["_notch_spec"] = CorridorLoft._structure_notch_spec(resolved_best, getattr(src, "Document", None))
                 roles = []
                 start_sta = float(best.get("ResolvedStartStation", best.get("StartStation", 0.0)) or 0.0)
                 end_sta = float(best.get("ResolvedEndStation", best.get("EndStation", 0.0)) or 0.0)
@@ -1852,7 +1870,7 @@ class CorridorLoft:
         return " ".join(parts), diag_rows, ids
 
     @staticmethod
-    def _make_notch_profile_for_surface(open_wire, row, scale: float):
+    def _make_notch_profile_for_surface(open_wire, row, doc_or_obj=None):
         pts = CorridorLoft._wire_points(open_wire)
         if len(pts) < 2:
             raise Exception("Section has insufficient points for notch-aware surface profile.")
@@ -1873,33 +1891,35 @@ class CorridorLoft:
         spec = dict(rec.get("_notch_spec", {}) or {})
         mode = str(row.get("Mode", "default") or "default").strip().lower()
         ramp = max(0.0, min(1.0, float(row.get("Ramp", 0.0) or 0.0)))
-        min_width = max(0.002 * scale, 1e-4)
-        min_depth = max(0.005 * scale, 1e-4)
+        min_width = max(_units.model_length_from_meters(doc_or_obj, 0.002), 1e-4)
+        min_depth = max(_units.model_length_from_meters(doc_or_obj, 0.005), 1e-4)
         try:
-            cover = abs(float(rec.get("Cover", 0.0) or 0.0))
+            cover = abs(_units.model_length_from_meters(doc_or_obj, float(rec.get("Cover", 0.0) or 0.0)))
         except Exception:
             cover = 0.0
         if mode != "notch":
-            eff_width = 0.0
-            eff_depth = 0.0
-        elif cover > 1e-6:
+            # Outside active/transition notch spans the corridor must follow
+            # the original section contract exactly. Collapsing the profile to
+            # carriage-only anchors causes start/end sections such as STA 0 to
+            # lose their visible section shape in the corridor surface.
+            return open_wire
+        if cover > 1e-6:
             # Buried culverts/crossings should stay covered by the section
             # surface. In surface mode we keep the original section wire and
             # let the structure remain below grade by its cover amount.
             return open_wire
-        else:
-            eff_width = min(
-                axis_len * 0.88,
-                max(min_width, float(spec.get("Width", 0.20 * scale) or (0.20 * scale)) * ramp),
-            )
-            eff_depth = min(
-                max(0.20 * scale, 0.45 * axis_len),
-                max(min_depth, float(spec.get("Height", 0.10 * scale) or (0.10 * scale)) * 0.70 * (ramp ** 0.85)),
-            )
+        eff_width = min(
+            axis_len * 0.88,
+            max(min_width, float(spec.get("Width", _units.model_length_from_meters(doc_or_obj, 0.20)) or _units.model_length_from_meters(doc_or_obj, 0.20)) * ramp),
+        )
+        eff_depth = min(
+            max(_units.model_length_from_meters(doc_or_obj, 0.20), 0.45 * axis_len),
+            max(min_depth, float(spec.get("Height", _units.model_length_from_meters(doc_or_obj, 0.10)) or _units.model_length_from_meters(doc_or_obj, 0.10)) * 0.70 * (ramp ** 0.85)),
+        )
 
         center_shift = 0.0
         try:
-            center_shift = float(rec.get("Offset", 0.0) or 0.0)
+            center_shift = _units.model_length_from_meters(doc_or_obj, float(rec.get("Offset", 0.0) or 0.0))
         except Exception:
             center_shift = 0.0
         center_t = 0.5 + (center_shift / max(axis_len, 1e-9))
@@ -1953,13 +1973,12 @@ class CorridorLoft:
         if not rows or len(rows) != len(open_wires):
             return None, 0, notes, {"schema_name": "-", "summary": "-", "rows": [], "ids": [], "spec_rows": []}
 
-        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
         out = []
         notch_station_count = 0
         for w, row in zip(list(open_wires or []), list(rows or [])):
             if str(row.get("Mode", "default") or "default") == "notch":
                 notch_station_count += 1
-            out.append(CorridorLoft._make_notch_profile_for_surface(w, row, scale))
+            out.append(CorridorLoft._make_notch_profile_for_surface(w, row, getattr(src, "Document", None)))
         summary, diag_rows, ids = CorridorLoft._describe_notch_profile_rows(rows)
         schema_name = _notch_schema_name() if int(notch_station_count) > 0 else "-"
         return out, int(notch_station_count), notes, {"schema_name": schema_name, "summary": summary, "rows": diag_rows, "ids": ids, "spec_rows": rows}
@@ -2010,7 +2029,6 @@ class CorridorLoft:
         if aln is None or getattr(aln, "Shape", None) is None:
             return [], []
         total = float(getattr(aln.Shape, "Length", 0.0) or 0.0)
-        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
         cutters = []
         notes = []
         for rec in list(corridor_records or []):
@@ -2019,7 +2037,7 @@ class CorridorLoft:
                 continue
             try:
                 local = dict(rec)
-                spec = CorridorLoft._structure_notch_spec(local, scale)
+                spec = CorridorLoft._structure_notch_spec(local, getattr(src, "Document", None))
                 rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
                 if not bool(spec.get("Enabled", False)):
                     notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
@@ -2045,7 +2063,7 @@ class CorridorLoft:
                         continue
                     sm = 0.5 * (ss0 + ss1)
                     local_seg = _resolve_corridor_record_at_station(src, rec, sm)
-                    seg_spec = CorridorLoft._structure_notch_spec(local_seg, scale)
+                    seg_spec = CorridorLoft._structure_notch_spec(local_seg, getattr(src, "Document", None))
                     if not bool(seg_spec.get("Enabled", False)):
                         continue
                     long_pad = max(0.0, float(seg_spec.get("LongPad", 0.0) or 0.0))
@@ -2072,8 +2090,8 @@ class CorridorLoft:
                     except Exception:
                         t = App.Vector(1, 0, 0)
                         n = App.Vector(0, 1, 0)
-                    for off in _structure_side_offsets(local_seg):
-                        solid = _structure_record_solid(p + (n * float(off)), t, n, local_seg)
+                    for off in _structure_side_offsets(local_seg, src):
+                        solid = _structure_record_solid(p + (n * float(off)), t, n, local_seg, doc_or_obj=src)
                         if solid is not None and not solid.isNull():
                             cutters.append(solid)
                             built += 1

@@ -60,7 +60,8 @@ def ensure_fg_display(doc, va):
     from freecad.Corridor_Road.objects.obj_fg_display import FGDisplay, ViewProviderFGDisplay
 
     FGDisplay(fg)
-    ViewProviderFGDisplay(fg.ViewObject)
+    if getattr(fg, "ViewObject", None) is not None:
+        ViewProviderFGDisplay(fg.ViewObject)
     fg.Label = "Finished Grade (FG)"
 
     try:

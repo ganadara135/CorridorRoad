@@ -4,8 +4,8 @@
 # CorridorRoad/objects/obj_stationing.py
 import Part
 
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 
 
 class Stationing:
@@ -16,22 +16,36 @@ class Stationing:
     def __init__(self, obj):
         obj.Proxy = self
         self.Type = "Stationing"
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
 
         obj.addProperty("App::PropertyLink", "Alignment", "Stations", "Link to HorizontalAlignment")
         obj.addProperty("App::PropertyFloat", "Interval", "Stations", "Station interval (m)")
-        obj.Interval = 20.0 * scale
+        obj.Interval = 20.0
 
         obj.addProperty("App::PropertyFloat", "TickLength", "Stations", "Tick length (m)")
-        obj.TickLength = 2.0 * scale
+        obj.TickLength = 2.0
 
         obj.addProperty("App::PropertyBool", "ShowTicks", "Stations", "Show tick marks as shape")
         obj.ShowTicks = True
 
         obj.addProperty("App::PropertyFloatList", "StationValues", "Stations", "Computed stations (m)")
         obj.addProperty("App::PropertyVectorList", "StationPoints", "Stations", "Computed points (XYZ)")
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Stations", "Stationing scalar length storage schema")
+        obj.LengthSchemaVersion = 2
+
+    @staticmethod
+    def _migrate_length_schema(obj):
+        if obj is None or not hasattr(obj, "LengthSchemaVersion"):
+            return
+        try:
+            schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+        except Exception:
+            schema = 0
+        if schema >= 2:
+            return
+        obj.LengthSchemaVersion = 2
 
     def execute(self, obj):
+        self._migrate_length_schema(obj)
         aln = obj.Alignment
         if aln is None or aln.Shape is None or aln.Shape.isNull():
             obj.Shape = Part.Shape()
@@ -42,10 +56,12 @@ class Stationing:
 
         interval = float(obj.Interval)
         if interval <= 0:
-            interval = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
+            interval = 20.0
             obj.Interval = interval
 
-        total = float(aln.Shape.Length)
+        total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+        if total <= 1.0e-9:
+            total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
 
         stations = []
         points = []
@@ -69,11 +85,11 @@ class Stationing:
 
         tick_len = float(obj.TickLength)
         if tick_len <= 0:
-            tick_len = 2.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
+            tick_len = 2.0
             obj.TickLength = tick_len
 
         tick_edges = []
-        half = tick_len * 0.5
+        half = _units.model_length_from_meters(getattr(obj, "Document", None), tick_len * 0.5)
 
         for s_val, p in zip(stations, points):
             n = HorizontalAlignment.normal_at_station(aln, s_val)

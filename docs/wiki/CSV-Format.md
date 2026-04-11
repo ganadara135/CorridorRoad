@@ -32,6 +32,9 @@ Rules:
 - Recommended regular XY sampling for stable DEM mesh generation
 - UTM coordinates are supported
 - Keep enough density for mesh continuity in design area
+- Leading comment lines that start with `#` are ignored
+- Point cloud `easting`, `northing`, and `elevation` values are imported as coordinate/elevation data and are **not** rescaled by project `LinearUnitImportDefault`
+- Project unit settings affect `CellSize` display and editing in the task panel, not the raw point coordinates in the CSV
 
 Recommended sample file:
 - `tests/samples/pointcloud_utm_realistic_hilly.csv`
@@ -58,6 +61,11 @@ Rules:
 - `TransitionLs`: float (`0` allowed)
 - At least 2 valid rows are required
 - Keep alignment extents inside terrain extents for EG sampling stability
+- `Radius`, `TransitionLs`, and optional `STA/Station` values can declare units with a comment row such as:
+  - `# CorridorRoadUnits,linear=mm`
+  - `# CorridorRoadUnits,linear=m`
+- When unit metadata is omitted, Alignment CSV import uses the project `LinearUnitImportDefault`
+- `E/N` coordinate columns are still interpreted by the panel coordinate mode and are not affected by the engineering-length unit metadata
 
 Recommended sample file:
 - `tests/samples/alignment_utm_realistic_hilly.csv`
@@ -100,6 +108,8 @@ Rules:
 - matching stations update existing profile rows
 - stations not yet in the table are appended, then the table is re-sorted
 - manual FG import works best after `Fill Stations from Stationing`, but it can also create rows in an empty table
+- `Station` and `FG` can declare units with a comment row such as `# CorridorRoadUnits,linear=mm`
+- when unit metadata is omitted, FG CSV import uses the project `LinearUnitImportDefault`
 
 Recommended sample files:
 - `tests/samples/profile_fg_manual_import_basic.csv`
@@ -123,6 +133,95 @@ RW-T01,retaining_wall,265.000,340.000,302.500,right,8.000,0.600,4.000,101.800,0.
 EXT-CULV-01,culvert,120.000,150.000,135.000,center,0.000,6.000,2.500,103.200,0.000,0.000,section_overlay,external_shape,,0.000,0.000,0.000,0.000,1,notch,0.000,Replace with your local STEP file,C:/replace-with-your-models/culvert_box.step,1.000,center_on_station,true
 EXT-ABUT-01,abutment_zone,470.000,515.000,492.500,both,0.000,14.000,5.000,103.800,0.000,0.000,assembly_override,external_shape,,0.000,0.000,0.000,0.000,1,skip_zone,0.000,Replace with your local FCStd object path,C:/replace-with-your-models/bridge_parts.FCStd#AbutmentBlock,1.000,center_on_station,true
 ```
+
+Optional unit metadata example:
+```csv
+# CorridorRoadUnits,linear=mm
+Id,Type,StartStation,EndStation,CenterStation,Side,Offset,Width,Height,Cover,CorridorMode
+CULV-01,culvert,20000,26000,23000,center,0,6000,2500,1000,notch
+```
+
+Rules:
+- `StartStation`, `EndStation`, `CenterStation`, `Offset`, `Width`, `Height`, `BottomElevation`, `Cover`, `WallThickness`, `FootingWidth`, `FootingThickness`, `CapHeight`, and `CorridorMargin` follow the CSV linear unit
+- Structure CSV import accepts optional `# CorridorRoadUnits,linear=...` metadata
+- When metadata is omitted, Structure CSV import uses the project `LinearUnitImportDefault`
+- Non-length fields such as `RotationDeg`, `CellCount`, `ScaleFactor`, and enum/text columns are not unit-converted
+
+## 3A. Structure Station-Profile CSV
+
+Recommended header:
+`StructureId,Station,Offset,Width,Height,BottomElevation,Cover,WallThickness,FootingWidth,FootingThickness,CapHeight,CellCount`
+
+Example:
+```csv
+# CorridorRoadUnits,linear=m
+StructureId,Station,Width,Height
+CULV-01,20.000,5.000,2.200
+CULV-01,26.000,7.000,2.800
+```
+
+Rules:
+- `Station`, `Offset`, `Width`, `Height`, `BottomElevation`, `Cover`, `WallThickness`, `FootingWidth`, `FootingThickness`, and `CapHeight` follow the CSV linear unit
+- Profile CSV import accepts optional `# CorridorRoadUnits,linear=...` metadata
+- When metadata is omitted, profile CSV import uses the project `LinearUnitImportDefault`
+
+## 4. Typical Section Component CSV
+
+Recommended header:
+`Id,Type,Shape,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled`
+
+Example:
+```csv
+# CorridorRoadUnits,linear=mm
+Id,Type,Side,Width,CrossSlopePct,Height,ExtraWidth,BackSlopePct,Offset,Order,Enabled
+LANE-L,lane,left,3500,2,0,0,0,0,10,true
+CURB-L,curb,left,180,0,150,50,1,0,20,true
+```
+
+Rules:
+- `Width`, `Height`, `ExtraWidth`, and `Offset` follow the CSV linear unit
+- `CrossSlopePct`, `BackSlopePct`, and `Order` are not unit-converted
+- Typical-section component CSV import/export accepts optional `# CorridorRoadUnits,linear=...` metadata
+- When metadata is omitted on import, the project `LinearUnitImportDefault` is used
+- Component CSV export uses the project `LinearUnitExportDefault`
+
+## 4A. Pavement Layer CSV
+
+Recommended header:
+`Id,Type,Thickness,Enabled`
+
+Example:
+```csv
+# CorridorRoadUnits,linear=m
+Id,Type,Thickness,Enabled
+SURF,surface,0.050,true
+BASE,base,0.200,true
+```
+
+Rules:
+- `Thickness` follows the CSV linear unit
+- Pavement CSV import/export accepts optional `# CorridorRoadUnits,linear=...` metadata
+- When metadata is omitted on import, the project `LinearUnitImportDefault` is used
+- Pavement CSV export uses the project `LinearUnitExportDefault`
+
+## 5. Region Plan CSV
+
+Recommended header:
+`Id,RegionType,Layer,StartStation,EndStation,Priority,TransitionIn,TransitionOut,TemplateName,AssemblyName,RuleSet,SidePolicy,DaylightPolicy,CorridorPolicy,Enabled,Notes,HintSource,HintStatus,HintReason,HintConfidence`
+
+Example:
+```csv
+# CorridorRoadUnits,linear=mm
+Id,RegionType,Layer,StartStation,EndStation,Priority,TransitionIn,TransitionOut,TemplateName,AssemblyName,RuleSet,SidePolicy,DaylightPolicy,CorridorPolicy,Enabled,Notes,HintSource,HintStatus,HintReason,HintConfidence
+BASE_01,roadway,base,20000,60000,0,5000,8000,roadway_default,,,,,true,Base zone,,,,0
+```
+
+Rules:
+- `StartStation`, `EndStation`, `TransitionIn`, and `TransitionOut` follow the CSV linear unit
+- `Priority` and `HintConfidence` are not unit-converted
+- Region Plan CSV import/export accepts optional `# CorridorRoadUnits,linear=...` metadata
+- When metadata is omitted on import, the project `LinearUnitImportDefault` is used
+- Region Plan CSV export uses the project `LinearUnitExportDefault`
 
 Rules:
 - `Id`: recommended string identifier

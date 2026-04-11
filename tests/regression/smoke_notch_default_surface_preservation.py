@@ -2,10 +2,10 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 """
-Buried-notch surface preservation smoke test.
+Default (non-notch) surface preservation smoke test.
 
 Run in FreeCAD Python environment:
-    python tests/regression/smoke_notch_buried_cover_surface.py
+    python tests/regression/smoke_notch_default_surface_preservation.py
 """
 
 import FreeCAD as App
@@ -32,20 +32,23 @@ def _points_equal(a, b, tol=1e-9):
 
 def run():
     pts = [
-        App.Vector(-8.0, 0.0, 0.0),
-        App.Vector(-5.0, 0.0, 0.0),
-        App.Vector(5.0, 0.0, 0.0),
-        App.Vector(8.0, 0.0, 0.0),
+        App.Vector(-12.0, -4.0, 0.0),
+        App.Vector(-10.0, -2.0, 0.0),
+        App.Vector(-6.0, -1.0, 0.0),
+        App.Vector(0.0, 0.0, 0.0),
+        App.Vector(6.0, -1.5, 0.0),
+        App.Vector(11.0, -3.0, 0.0),
+        App.Vector(14.0, -5.0, 0.0),
     ]
     open_wire = Part.makePolygon(pts)
     row = {
-        "Mode": "notch",
-        "Ramp": 1.0,
+        "Mode": "default",
+        "Ramp": 0.0,
         "Record": {
             "Type": "culvert",
             "Width": 6.0,
             "Height": 2.5,
-            "Cover": 1.0,
+            "Cover": 0.0,
             "Offset": 0.0,
             "_notch_spec": {
                 "Enabled": True,
@@ -60,8 +63,8 @@ def run():
     in_pts = CorridorLoft._wire_points(open_wire)
     out_pts = CorridorLoft._wire_points(out_wire)
 
-    _assert(_points_equal(in_pts, out_pts), "Covered culvert notch should preserve the original surface wire")
-    print("[PASS] Buried-notch surface preservation smoke test completed.")
+    _assert(_points_equal(in_pts, out_pts), "Non-notch stations should preserve the original section wire")
+    print("[PASS] Default-notch surface preservation smoke test completed.")
 
 
 if __name__ == "__main__":

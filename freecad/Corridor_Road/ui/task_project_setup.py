@@ -6,6 +6,7 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects import design_standards as _ds
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 
 
@@ -68,16 +69,28 @@ class ProjectSetupTaskPanel:
         gb_src = QtWidgets.QGroupBox("Project")
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_project = QtWidgets.QComboBox()
-        self.sp_scale = QtWidgets.QDoubleSpinBox()
-        self.sp_scale.setRange(1e-6, 1.0e9)
-        self.sp_scale.setDecimals(6)
-        self.sp_scale.setValue(1.0)
         self.cmb_design_standard = QtWidgets.QComboBox()
         self.cmb_design_standard.addItems(list(_ds.SUPPORTED_STANDARDS))
+        self.cmb_linear_display = QtWidgets.QComboBox()
+        self.cmb_linear_display.addItems(list(_units.DISPLAY_LINEAR_UNITS))
+        self.cmb_linear_import = QtWidgets.QComboBox()
+        self.cmb_linear_import.addItems(list(_units.LINEAR_UNITS))
+        self.cmb_linear_export = QtWidgets.QComboBox()
+        self.cmb_linear_export.addItems(list(_units.LINEAR_UNITS))
+        self.sp_custom_linear_scale = QtWidgets.QDoubleSpinBox()
+        self.sp_custom_linear_scale.setRange(1e-9, 1.0e9)
+        self.sp_custom_linear_scale.setDecimals(9)
+        self.sp_custom_linear_scale.setValue(1.0)
+        self.lbl_unit_policy_info = QtWidgets.QLabel("")
+        self.lbl_unit_policy_info.setWordWrap(True)
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         fs.addRow("Target Project:", self.cmb_project)
-        fs.addRow("Length Scale:", self.sp_scale)
         fs.addRow("Design Standard:", self.cmb_design_standard)
+        fs.addRow("Display Unit:", self.cmb_linear_display)
+        fs.addRow("Default Import Unit:", self.cmb_linear_import)
+        fs.addRow("Default Export Unit:", self.cmb_linear_export)
+        fs.addRow("Custom Unit Scale:", self.sp_custom_linear_scale)
+        fs.addRow("", self.lbl_unit_policy_info)
         fs.addRow(self.btn_refresh)
         root.addWidget(gb_src)
 
@@ -164,12 +177,57 @@ class ProjectSetupTaskPanel:
 
         self.btn_refresh.clicked.connect(self._on_refresh)
         self.cmb_project.currentIndexChanged.connect(self._on_project_changed)
+        self.cmb_linear_display.currentIndexChanged.connect(self._on_linear_unit_changed)
+        self.cmb_linear_import.currentIndexChanged.connect(self._on_linear_unit_changed)
+        self.cmb_linear_export.currentIndexChanged.connect(self._on_linear_unit_changed)
+        self.sp_custom_linear_scale.valueChanged.connect(self._on_linear_unit_changed)
         self.cmb_epsg.currentIndexChanged.connect(self._on_epsg_combo_changed)
         self.cmb_epsg.editTextChanged.connect(self._on_epsg_edit_changed)
         self.cmb_coord_workflow.currentIndexChanged.connect(self._on_coord_workflow_changed)
         self.btn_apply.clicked.connect(self._apply)
         self.btn_close.clicked.connect(self.reject)
         return w
+
+    def _current_linear_display_unit(self) -> str:
+        return str(self.cmb_linear_display.currentText() or _units.DEFAULT_LINEAR_UNIT).strip().lower() or _units.DEFAULT_LINEAR_UNIT
+
+    def _current_linear_import_unit(self) -> str:
+        return str(self.cmb_linear_import.currentText() or _units.DEFAULT_LINEAR_UNIT).strip().lower() or _units.DEFAULT_LINEAR_UNIT
+
+    def _current_linear_export_unit(self) -> str:
+        return str(self.cmb_linear_export.currentText() or _units.DEFAULT_LINEAR_UNIT).strip().lower() or _units.DEFAULT_LINEAR_UNIT
+
+    def _set_combo_text(self, combo, value: str, default_text: str):
+        text = str(value or "").strip()
+        idx = combo.findText(text)
+        if idx < 0:
+            idx = combo.findText(str(default_text or "").strip())
+        if idx < 0:
+            idx = 0
+        combo.setCurrentIndex(idx)
+
+    def _update_unit_policy_info(self):
+        display_unit = self._current_linear_display_unit()
+        import_unit = self._current_linear_import_unit()
+        export_unit = self._current_linear_export_unit()
+        custom_scale = float(self.sp_custom_linear_scale.value())
+        uses_custom = import_unit == "custom" or export_unit == "custom"
+        self.sp_custom_linear_scale.setEnabled(uses_custom)
+        if uses_custom:
+            self.sp_custom_linear_scale.setSuffix(" meter(s) / custom-unit")
+        else:
+            self.sp_custom_linear_scale.setSuffix("")
+
+        info = (
+            "Stored geometry stays in meters. Display Unit controls task-panel/report formatting. "
+            "Default Import Unit is used when incoming files or pasted values do not declare a unit. "
+            "Default Export Unit controls CSV/report output formatting."
+        )
+        if uses_custom:
+            info += f" Custom conversion uses {custom_scale:.9f} meter(s) per custom unit."
+        else:
+            info += " Standard project units use built-in meter/millimeter conversions."
+        self.lbl_unit_policy_info.setText(info)
 
     def _recommended_workflow_from_epsg(self, epsg_value: str) -> str:
         return "World-first" if str(epsg_value or "").strip() else "Local-first"
@@ -252,6 +310,11 @@ class ProjectSetupTaskPanel:
             return
         self._update_coord_workflow_info()
 
+    def _on_linear_unit_changed(self, *_args):
+        if self._loading:
+            return
+        self._update_unit_policy_info()
+
     @staticmethod
     def _fmt_project(o):
         return f"{o.Label} ({o.Name})"
@@ -294,7 +357,10 @@ class ProjectSetupTaskPanel:
             self.lbl_result.setText("No project.")
             return
 
-        self.lbl_info.setText(f"CorridorRoadProject: {len(self._projects)} found.")
+        self.lbl_info.setText(
+            f"CorridorRoadProject: {len(self._projects)} found.\n"
+            "Coordinates and linear units are configured separately. Stored geometry stays meter-native."
+        )
         self._load_project()
 
     def _load_project(self):
@@ -306,8 +372,12 @@ class ProjectSetupTaskPanel:
         self._loading = True
         try:
             self._set_epsg_value(str(getattr(prj, "CRSEPSG", "") or ""))
-            self.sp_scale.setValue(float(getattr(prj, "LengthScale", 1.0)))
             self.cmb_design_standard.setCurrentText(_ds.normalize_standard(getattr(prj, "DesignStandard", _ds.DEFAULT_STANDARD)))
+            unit_settings = _units.resolve_project_unit_settings(prj)
+            self._set_combo_text(self.cmb_linear_display, str(unit_settings.get("display", "m")), "m")
+            self._set_combo_text(self.cmb_linear_import, str(unit_settings.get("import", "m")), "m")
+            self._set_combo_text(self.cmb_linear_export, str(unit_settings.get("export", "m")), "m")
+            self.sp_custom_linear_scale.setValue(float(unit_settings.get("custom_scale", 1.0)))
             workflow = str(getattr(prj, "CoordinateWorkflow", "") or "").strip()
             if workflow not in _COORD_WORKFLOW_VALUES:
                 workflow = self._recommended_workflow_from_epsg(str(getattr(prj, "CRSEPSG", "") or ""))
@@ -329,6 +399,7 @@ class ProjectSetupTaskPanel:
 
         self._update_epsg_info()
         self._update_coord_workflow_info()
+        self._update_unit_policy_info()
         self.lbl_result.setText("Loaded.")
 
     def _on_project_changed(self):
@@ -394,8 +465,11 @@ class ProjectSetupTaskPanel:
 
         try:
             prj.CRSEPSG = str(self._current_epsg_value() or "").strip()
-            prj.LengthScale = float(self.sp_scale.value())
             prj.DesignStandard = _ds.normalize_standard(self.cmb_design_standard.currentText(), default=_ds.DEFAULT_STANDARD)
+            prj.LinearUnitDisplay = self._current_linear_display_unit()
+            prj.LinearUnitImportDefault = self._current_linear_import_unit()
+            prj.LinearUnitExportDefault = self._current_linear_export_unit()
+            prj.CustomLinearUnitScale = float(self.sp_custom_linear_scale.value())
             workflow = str(self.cmb_coord_workflow.currentText() or "").strip()
             if workflow not in _COORD_WORKFLOW_VALUES:
                 workflow = self._recommended_workflow_from_epsg(prj.CRSEPSG)
@@ -417,15 +491,17 @@ class ProjectSetupTaskPanel:
             prj.touch()
             if self.doc is not None:
                 self.doc.recompute()
+            self._update_unit_policy_info()
 
             self.lbl_result.setText(
-                f"Applied: Scale={float(prj.LengthScale):.6f}, Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
+                f"Applied: Display='{prj.LinearUnitDisplay}', Import='{prj.LinearUnitImportDefault}', Export='{prj.LinearUnitExportDefault}', "
+                f"CustomScale={float(prj.CustomLinearUnitScale):.9f}, Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
                 f"Workflow='{prj.CoordinateWorkflow}', NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
             )
             QtWidgets.QMessageBox.information(
                 None,
                 "Project Setup",
-                "Project coordinate setup has been applied.",
+                "Project coordinate and unit setup has been applied.",
             )
         except Exception as ex:
             self.lbl_result.setText(f"ERROR: {ex}")

@@ -9,9 +9,9 @@ Run in FreeCAD Python environment:
 """
 
 import os
-import tempfile
 
 import FreeCAD as App
+from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.ui.task_profile_editor import ProfileEditorTaskPanel
@@ -38,6 +38,11 @@ def run():
     csv_path = None
 
     try:
+        prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+        ensure_project_properties(prj)
+        prj.LinearUnitDisplay = "mm"
+        prj.LinearUnitImportDefault = "m"
+
         panel = ProfileEditorTaskPanel()
         panel.chk_fg_from_va.setChecked(False)
         panel.table.setRowCount(0)
@@ -73,14 +78,14 @@ def run():
         _assert(abs(float(vals[1][2]) - 205.0) < 1e-6, "Station 10 FG mismatch after absolute interpolation")
         _assert(abs(float(vals[2][2]) - 210.0) < 1e-6, "Station 20 FG mismatch after absolute interpolation")
 
-        fd, csv_path = tempfile.mkstemp(prefix="cr_fg_import_", suffix=".csv")
-        os.close(fd)
+        csv_path = os.path.join(os.getcwd(), f"_tmp_fg_import_{os.getpid()}.csv")
         with open(csv_path, "w", encoding="utf-8", newline="") as fh:
             fh.write("Station,FG\n")
             fh.write("10,150.0\n")
             fh.write("30,175.5\n")
-        imported = panel._parse_fg_import_file(csv_path)
+        imported, linear_unit = panel._parse_fg_import_file(csv_path, doc_or_project=panel._unit_context())
         _assert(imported == [(10.0, 150.0), (30.0, 175.5)], "FG import parser returned unexpected rows")
+        _assert(linear_unit == "m", "FG import parser should default to meter units without project override")
         updated, appended = panel._apply_imported_fg_rows(imported)
         _assert(updated == 1, "FG import should update one existing station")
         _assert(appended == 1, "FG import should append one new station")
@@ -88,6 +93,14 @@ def run():
         vals = _fg_values(panel)
         _assert(any(abs(sta - 10.0) < 1e-6 and abs(float(fg or 0.0) - 150.0) < 1e-6 for sta, _eg, fg in vals), "Imported FG should overwrite station 10")
         _assert(any(abs(sta - 30.0) < 1e-6 and abs(float(fg or 0.0) - 175.5) < 1e-6 for sta, _eg, fg in vals), "Imported FG should append station 30")
+
+        import_summary = panel._fg_import_summary_text(csv_path, len(imported), updated, appended, linear_unit)
+        _assert("Display unit: mm" in import_summary, "FG import summary should report active display unit")
+        _assert("CSV linear values: m" in import_summary, "FG import summary should report CSV linear unit")
+
+        wizard_summary = panel._fg_wizard_summary_text(3, 1)
+        _assert("Display unit: mm" in wizard_summary, "FG wizard summary should report active display unit")
+        _assert("Skipped rows missing EG: 1" in wizard_summary, "FG wizard summary should report skipped EG rows")
 
         panel._save_to_document()
         bundle = panel.bundle

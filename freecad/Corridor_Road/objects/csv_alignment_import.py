@@ -3,6 +3,8 @@
 
 import csv
 
+from freecad.Corridor_Road.objects import unit_policy as _units
+
 
 def _norm_key(s: str) -> str:
     t = str(s or "").strip().lower()
@@ -56,6 +58,17 @@ _ALIASES_STA = {
     "chain",
 }
 
+_COMMENT_PREFIX = "#"
+_CSV_UNIT_KEYS = (
+    "linear",
+    "linearunit",
+    "linear_unit",
+    "lengthunit",
+    "length_unit",
+    "unit",
+    "units",
+)
+
 
 def _parse_float(token):
     txt = str(token or "").strip()
@@ -85,6 +98,78 @@ def _read_text_with_option(path: str, encoding_opt: str):
             return f.read(), enc
     except Exception as ex:
         raise ValueError(f"Failed to read CSV with encoding '{enc}': {ex}")
+
+
+def _normalize_linear_unit_token(token: str) -> str:
+    value = str(token or "").strip().lower()
+    if value in ("m", "meter", "meters", "metre", "metres"):
+        return "m"
+    if value in ("mm", "millimeter", "millimeters", "millimetre", "millimetres"):
+        return "mm"
+    if value == "custom":
+        return "custom"
+    return ""
+
+
+def _parse_metadata_from_comment_line(line: str):
+    txt = str(line or "").strip()
+    if not txt.startswith(_COMMENT_PREFIX):
+        return {}
+    body = txt[1:].strip()
+    if body == "":
+        return {}
+    parts = body.replace(";", ",").split(",")
+    meta = {}
+    for part in parts:
+        seg = str(part or "").strip()
+        if "=" not in seg:
+            continue
+        key, value = seg.split("=", 1)
+        norm_key = _norm_key(key)
+        if norm_key in _CSV_UNIT_KEYS:
+            token = _normalize_linear_unit_token(value)
+            if token:
+                meta["linear_unit"] = token
+    return meta
+
+
+def _extract_csv_metadata(text: str):
+    meta = {}
+    for raw_line in str(text or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line.startswith(_COMMENT_PREFIX):
+            continue
+        parsed = _parse_metadata_from_comment_line(line)
+        if parsed:
+            meta.update(parsed)
+    return meta
+
+
+def _resolve_linear_unit(doc_or_project, metadata=None, unit: str = "", *, use_default: str = "import") -> str:
+    token = _normalize_linear_unit_token(unit)
+    if token:
+        return token
+    token = _normalize_linear_unit_token((metadata or {}).get("linear_unit", ""))
+    if token:
+        return token
+    if str(use_default or "").strip().lower() == "export":
+        return str(_units.get_linear_export_unit(doc_or_project) or "m")
+    return str(_units.get_linear_import_unit(doc_or_project) or "m")
+
+
+def _csv_rows_and_metadata(text: str, delimiter: str):
+    metadata = _extract_csv_metadata(text)
+    rows_raw = []
+    for row in csv.reader(text.splitlines(), delimiter=delimiter):
+        cells = [str(c or "").strip() for c in row]
+        if not cells:
+            continue
+        if len(cells) == 1 and cells[0] == "":
+            continue
+        if str(cells[0]).startswith(_COMMENT_PREFIX):
+            continue
+        rows_raw.append(cells)
+    return rows_raw, metadata
 
 
 def _detect_delimiter(sample_text: str) -> str:
@@ -213,7 +298,7 @@ def _parse_mapping(mapping, cols_count: int):
     return out
 
 
-def inspect_alignment_csv(path: str, encoding: str = "auto", delimiter: str = "auto"):
+def inspect_alignment_csv(path: str, encoding: str = "auto", delimiter: str = "auto", doc_or_project=None):
     if str(path or "").strip() == "":
         raise ValueError("CSV file path is empty.")
 
@@ -221,16 +306,7 @@ def inspect_alignment_csv(path: str, encoding: str = "auto", delimiter: str = "a
     delim_opt = _normalize_delimiter_option(delimiter)
     used_delim = _detect_delimiter(text[:4096]) if delim_opt == "auto" else delim_opt
 
-    rows_raw = []
-    for row in csv.reader(text.splitlines(), delimiter=used_delim):
-        cells = [str(c or "").strip() for c in row]
-        if not cells:
-            continue
-        if len(cells) == 1 and cells[0] == "":
-            continue
-        if str(cells[0]).startswith("#"):
-            continue
-        rows_raw.append(cells)
+    rows_raw, metadata = _csv_rows_and_metadata(text, used_delim)
 
     if not rows_raw:
         raise ValueError("CSV has no data rows.")
@@ -260,6 +336,8 @@ def inspect_alignment_csv(path: str, encoding: str = "auto", delimiter: str = "a
         "header_guess": guessed_header,
         "guess_mapping": guess,
         "row_count": len(rows_raw),
+        "linear_unit": _resolve_linear_unit(doc_or_project, metadata, use_default="import"),
+        "metadata": metadata,
     }
 
 
@@ -273,6 +351,8 @@ def read_alignment_csv(
     drop_consecutive_duplicates: bool = False,
     clamp_negative: bool = False,
     enforce_endpoints: bool = False,
+    doc_or_project=None,
+    linear_unit: str = "",
 ):
     if str(path or "").strip() == "":
         raise ValueError("CSV file path is empty.")
@@ -280,16 +360,7 @@ def read_alignment_csv(
     text, used_encoding = _read_text_with_option(path, encoding_opt=encoding)
     delim_opt = _normalize_delimiter_option(delimiter)
     delim = _detect_delimiter(text[:4096]) if delim_opt == "auto" else delim_opt
-    rows_raw = []
-    for row in csv.reader(text.splitlines(), delimiter=delim):
-        cells = [str(c or "").strip() for c in row]
-        if not cells:
-            continue
-        if len(cells) == 1 and cells[0] == "":
-            continue
-        if str(cells[0]).startswith("#"):
-            continue
-        rows_raw.append(cells)
+    rows_raw, metadata = _csv_rows_and_metadata(text, delim)
 
     if not rows_raw:
         raise ValueError("CSV has no data rows.")
@@ -312,6 +383,7 @@ def read_alignment_csv(
         ncols = max(len(r) for r in rows_raw)
         cmap = _parse_mapping(mapping, cols_count=ncols) if mapping is not None else {"x": 0, "y": 1, "r": 2, "ls": 3, "sta": -1}
 
+    resolved_linear_unit = _resolve_linear_unit(doc_or_project, metadata, unit=linear_unit, use_default="import")
     out = []
     skipped = 0
     skip_reasons = []
@@ -340,7 +412,12 @@ def read_alignment_csv(
             if li >= 0 and li < len(row):
                 try:
                     rv = _parse_float(row[li])
-                    rr = float(rv) if rv is not None else 0.0
+                    rr = _units.meters_from_user_length(
+                        doc_or_project,
+                        float(rv) if rv is not None else 0.0,
+                        unit=resolved_linear_unit,
+                        use_default="import",
+                    )
                 except Exception:
                     rr = 0.0
 
@@ -349,7 +426,12 @@ def read_alignment_csv(
             if ti >= 0 and ti < len(row):
                 try:
                     lv = _parse_float(row[ti])
-                    ls = float(lv) if lv is not None else 0.0
+                    ls = _units.meters_from_user_length(
+                        doc_or_project,
+                        float(lv) if lv is not None else 0.0,
+                        unit=resolved_linear_unit,
+                        use_default="import",
+                    )
                 except Exception:
                     ls = 0.0
 
@@ -358,7 +440,16 @@ def read_alignment_csv(
             if si >= 0 and si < len(row):
                 try:
                     sv = _parse_float(row[si])
-                    sta = float(sv) if sv is not None else None
+                    sta = (
+                        _units.meters_from_user_length(
+                            doc_or_project,
+                            float(sv),
+                            unit=resolved_linear_unit,
+                            use_default="import",
+                        )
+                        if sv is not None
+                        else None
+                    )
                 except Exception:
                     sta = None
 
@@ -415,6 +506,8 @@ def read_alignment_csv(
         "encoding": used_encoding,
         "header": header is not None,
         "mapping": cmap,
+        "linear_unit": resolved_linear_unit,
+        "metadata": metadata,
     }
 
 
@@ -426,6 +519,9 @@ def write_alignment_csv(
     delimiter: str = ",",
     encoding: str = "utf-8-sig",
     include_header: bool = True,
+    doc_or_project=None,
+    linear_unit: str = "",
+    include_unit_metadata: bool = True,
 ):
     if str(path or "").strip() == "":
         raise ValueError("CSV file path is empty.")
@@ -438,9 +534,12 @@ def write_alignment_csv(
     if enc in ("", "auto"):
         enc = "utf-8-sig"
 
+    resolved_linear_unit = _resolve_linear_unit(doc_or_project, {}, unit=linear_unit, use_default="export")
     written = 0
     with open(path, "w", encoding=enc, newline="") as f:
         w = csv.writer(f, delimiter=delim)
+        if include_unit_metadata:
+            w.writerow([f"# CorridorRoadUnits,linear={resolved_linear_unit}"])
         if include_header:
             w.writerow([str(x_header), str(y_header), "Radius", "TransitionLs"])
         for row in list(rows or []):
@@ -451,8 +550,18 @@ def write_alignment_csv(
                 continue
             x = float(vals[0])
             y = float(vals[1])
-            r = float(vals[2]) if len(vals) >= 3 else 0.0
-            ls = float(vals[3]) if len(vals) >= 4 else 0.0
+            r = _units.user_length_from_meters(
+                doc_or_project,
+                float(vals[2]) if len(vals) >= 3 else 0.0,
+                unit=resolved_linear_unit,
+                use_default="export",
+            )
+            ls = _units.user_length_from_meters(
+                doc_or_project,
+                float(vals[3]) if len(vals) >= 4 else 0.0,
+                unit=resolved_linear_unit,
+                use_default="export",
+            )
             w.writerow([x, y, r, ls])
             written += 1
 
@@ -462,4 +571,6 @@ def write_alignment_csv(
         "delimiter": str(delim),
         "encoding": str(enc),
         "header": bool(include_header),
+        "linear_unit": resolved_linear_unit,
+        "unit_metadata": bool(include_unit_metadata),
     }

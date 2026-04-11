@@ -9,7 +9,7 @@ The goal is to clarify what each option means, when to change it, and how it aff
 ## 1. Project Setup
 
 Use `Project Setup` immediately after `New Project`, before importing alignment or terrain data.
-This panel defines project-wide scale, coordinate conversion, and design-standard metadata.
+This panel defines project-wide unit policy, coordinate conversion, and design-standard metadata.
 
 Important behavior:
 1. `Project Setup` does not move or transform existing geometry automatically.
@@ -21,8 +21,11 @@ Important behavior:
 | Option | Meaning | How to use it |
 |---|---|---|
 | `Target Project` | Selects which `CorridorRoadProject` object will be updated. | Normally leave this on the active project created by `New Project`. |
-| `Length Scale` | Internal units per meter. `1.0` means meter-native. Larger values such as `1000.0` mean the model uses millimeter-like internal units. | Set this once at the start of the project. Other tools such as DEM import and PVI scaling follow this value. Changing it after data already exists can create inconsistencies. |
 | `Design Standard` | Stores the selected road design standard on the project. | Use the standard that should control alignment/design checks. Even if the current stage is mostly geometric, keep this consistent for later validation work. |
+| `Display Unit` | Preferred unit for showing engineering lengths in task panels and reports. | Choose the unit that should be easiest to read during design review. This does not rewrite stored geometry. |
+| `Default Import Unit` | Default unit used when panels or CSV imports read plain numeric length values without explicit unit metadata. | Set this to match the data source you expect most often. This affects parsing only; it does not rescale stored geometry. |
+| `Default Export Unit` | Default unit used when formatting exported/report values. | Use the unit required by your downstream spreadsheets, reports, or review sheets. |
+| `Custom Unit Scale` | Meters per user-unit when `Default Import Unit` or `Default Export Unit` is `custom`. | Use only when the project must read or write a nonstandard linear unit. Leave it alone for normal meter/millimeter workflows. |
 | `CRS / EPSG` | Coordinate system identifier, for example `EPSG:5186`. The panel now exposes this through an editable preset-style combo box. | Use the built-in CRS/EPSG presets for common coordinate systems, or type a custom EPSG code directly when the project uses a different CRS. |
 | `Coordinate Workflow` | Recommended coordinate-input policy for downstream task panels. | `World-first` is recommended when `CRS / EPSG` is set. `Local-first` is recommended when the project stays in local engineering coordinates. `Custom` keeps the project metadata but stops pushing one policy as the main recommendation. |
 | `Auto-apply recommended modes in task panels` | Controls whether task panels should use the workflow recommendation as their initial coordinate mode. | Keep this enabled for a consistent project-wide policy. Turn it off only when each task panel should decide its own coordinate mode manually. |
@@ -38,23 +41,24 @@ Important behavior:
 | `Lock coordinate setup` | Prevents accidental edits to the stored coordinate setup. | After coordinate values are verified, turn this on to protect the project. To edit locked values later, uncheck the lock and apply again. |
 | `Setup Status` | Project workflow status such as `Uninitialized`, `Initialized`, or `Validated`. | Use this as a human-readable project state marker. It is not a full validator by itself. |
 | `Refresh Context` | Reloads the currently selected project values into the panel. | Use this if you changed properties elsewhere and want the panel to reflect the current state. |
-| `Apply Setup` | Writes the current values back to the project object and recomputes the document. | Use after confirming scale and coordinate values. |
+| `Apply Setup` | Writes the current values back to the project object and recomputes the document. | Use after confirming unit, coordinate, and design-standard values. |
 
 ### Recommended Usage
-1. Set `Length Scale` first.
+1. Set `Display Unit`, `Default Import Unit`, and `Default Export Unit` first.
 2. Enter `CRS / EPSG` and origin values if the workflow uses real-world coordinates.
 3. Confirm `Coordinate Workflow`.
 4. In most survey/UTM jobs, use `World-first`.
 5. In simple local test files, use `Local-first`.
 6. Leave local origins at zero unless you deliberately want an offset local model.
 7. Apply once and confirm imports behave correctly.
-8. Lock the setup after the coordinate policy is confirmed.
+8. Lock the coordinate setup after the coordinate policy is confirmed.
 
 ### Practical Notes
 1. If point cloud CSV is in UTM, `Project Setup` should usually be completed before `Import PointCloud DEM`.
 2. If alignment and terrain appear shifted, check `Project Origin`, `Local Origin`, and `North Rotation` before changing other tools.
 3. If `Auto-apply recommended modes in task panels` is enabled, `Import PointCloud DEM`, `Alignment`, `Edit Profiles`, `Generate Sections`, `Design Terrain`, and `Cut/Fill Calc` will start from the workflow recommendation.
 4. `Setup Status` is useful for team workflow, but it does not prevent generation commands by itself.
+5. Unit settings do not retroactively rescale existing geometry. They control input parsing and display/export formatting only.
 
 > [Screenshot Needed] Project Setup panel with coordinate fields filled.
 > Suggested file: `wiki-menu-reference-project-setup.png`

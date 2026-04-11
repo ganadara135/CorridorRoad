@@ -6,7 +6,8 @@ import Part
 import math
 
 from freecad.Corridor_Road.objects import design_standards as _ds
-from freecad.Corridor_Road.objects.obj_project import get_design_standard, get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
+from freecad.Corridor_Road.objects.obj_project import get_design_standard
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -98,9 +99,70 @@ def _polyline_edges(points, tol: float = 1e-7):
     return edges
 
 
-def ensure_alignment_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+def _model_length_from_meters(obj, meters: float) -> float:
+    return _units.model_length_from_meters(getattr(obj, "Document", None), meters)
 
+
+def _meters_from_model_length(obj, value: float) -> float:
+    return _units.meters_from_model_length(getattr(obj, "Document", None), value)
+
+
+def _alignment_total_length_m(obj) -> float:
+    try:
+        total = float(getattr(obj, "TotalLength", 0.0) or 0.0)
+        if total > 1e-9:
+            return total
+    except Exception:
+        pass
+    try:
+        shape = getattr(obj, "Shape", None)
+        if shape is not None and not shape.isNull():
+            return _meters_from_model_length(obj, float(shape.Length))
+    except Exception:
+        pass
+    return 0.0
+
+
+_ALIGNMENT_LENGTH_SCHEMA_TARGET = 2
+_ALIGNMENT_METER_FLOAT_PROPS = (
+    "MinRadius",
+    "MinTangentLength",
+    "MinTransitionLength",
+    "TotalLength",
+)
+_ALIGNMENT_METER_FLOATLIST_PROPS = (
+    "CurveRadii",
+    "TransitionLengths",
+)
+
+
+def _migrate_alignment_length_schema(obj, had_existing_props: bool):
+    if obj is None or (not hasattr(obj, "LengthSchemaVersion")):
+        return
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema >= _ALIGNMENT_LENGTH_SCHEMA_TARGET:
+        return
+    if not had_existing_props:
+        try:
+            obj.LengthSchemaVersion = _ALIGNMENT_LENGTH_SCHEMA_TARGET
+        except Exception:
+            pass
+        return
+
+    try:
+        obj.LengthSchemaVersion = _ALIGNMENT_LENGTH_SCHEMA_TARGET
+    except Exception:
+        pass
+
+
+def ensure_alignment_properties(obj):
+    had_existing_props = any(
+        hasattr(obj, prop)
+        for prop in (_ALIGNMENT_METER_FLOAT_PROPS + _ALIGNMENT_METER_FLOATLIST_PROPS)
+    )
     if not hasattr(obj, "IPPoints"):
         obj.addProperty("App::PropertyVectorList", "IPPoints", "Alignment", "Intersection points (IP)")
     if not hasattr(obj, "CurveRadii"):
@@ -131,10 +193,10 @@ def ensure_alignment_properties(obj):
         obj.MinRadius = 0.0
     if not hasattr(obj, "MinTangentLength"):
         obj.addProperty("App::PropertyFloat", "MinTangentLength", "Criteria", "Minimum tangent length between curves (m)")
-        obj.MinTangentLength = 20.0 * scale
+        obj.MinTangentLength = 20.0
     if not hasattr(obj, "MinTransitionLength"):
         obj.addProperty("App::PropertyFloat", "MinTransitionLength", "Criteria", "Minimum transition length (m)")
-        obj.MinTransitionLength = 20.0 * scale
+        obj.MinTransitionLength = 20.0
     if not hasattr(obj, "CriteriaMessages"):
         obj.addProperty("App::PropertyStringList", "CriteriaMessages", "Criteria", "Criteria check messages")
         obj.CriteriaMessages = []
@@ -158,6 +220,11 @@ def ensure_alignment_properties(obj):
         obj.addProperty("App::PropertyFloatList", "CSKeyStations", "Result", "Approx station at transition CS points")
     if not hasattr(obj, "STKeyStations"):
         obj.addProperty("App::PropertyFloatList", "STKeyStations", "Result", "Approx station at transition ST points")
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Alignment", "Alignment scalar length storage schema")
+        obj.LengthSchemaVersion = _ALIGNMENT_LENGTH_SCHEMA_TARGET
+
+    _migrate_alignment_length_schema(obj, had_existing_props=had_existing_props)
 
 
 class HorizontalAlignment:
@@ -179,7 +246,7 @@ class HorizontalAlignment:
         try:
             shape, total_len, messages = self._build_shape_and_checks(obj)
             obj.Shape = shape
-            obj.TotalLength = float(total_len)
+            obj.TotalLength = _meters_from_model_length(obj, float(total_len))
             obj.CriteriaMessages = messages
             obj.CriteriaStatus = "OK" if not messages else f"WARN ({len(messages)})"
         except Exception as ex:
@@ -214,28 +281,29 @@ class HorizontalAlignment:
                 if edges0 and total0 > 1e-9:
                     vals = []
                     for p in pts:
-                        vals.append(
-                            HorizontalAlignment._station_at_xy_on_edges(
-                                edges0, total0, float(p.x), float(p.y), samples_per_edge=48
-                            )
+                        station_model = HorizontalAlignment._station_at_xy_on_edges(
+                            edges0, total0, float(p.x), float(p.y), samples_per_edge=48
                         )
+                        vals.append(_meters_from_model_length(obj, station_model))
                     obj.IPKeyStations = _unique_sorted_floats(vals)
             except Exception:
                 pass
             return wire, float(wire.Length), []
 
         n = len(pts)
-        radii = list(getattr(obj, "CurveRadii", []) or [])
-        if len(radii) < n:
-            radii = radii + [0.0] * (n - len(radii))
+        radii_m = list(getattr(obj, "CurveRadii", []) or [])
+        if len(radii_m) < n:
+            radii_m = radii_m + [0.0] * (n - len(radii_m))
         else:
-            radii = radii[:n]
+            radii_m = radii_m[:n]
+        radii = [_model_length_from_meters(obj, float(v or 0.0)) for v in radii_m]
 
-        trans = list(getattr(obj, "TransitionLengths", []) or [])
-        if len(trans) < n:
-            trans = trans + [0.0] * (n - len(trans))
+        trans_m = list(getattr(obj, "TransitionLengths", []) or [])
+        if len(trans_m) < n:
+            trans_m = trans_m + [0.0] * (n - len(trans_m))
         else:
-            trans = trans[:n]
+            trans_m = trans_m[:n]
+        trans = [_model_length_from_meters(obj, float(v or 0.0)) for v in trans_m]
 
         use_transitions = bool(getattr(obj, "UseTransitionCurves", True))
         spiral_segments = max(4, int(getattr(obj, "SpiralSegments", 16)))
@@ -307,11 +375,10 @@ class HorizontalAlignment:
                 cs_vals = []
                 st_vals = []
                 for p in pts:
-                    ip_vals.append(
-                        HorizontalAlignment._station_at_xy_on_edges(
-                            edges1, total1, float(p.x), float(p.y), samples_per_edge=48
-                        )
+                    station_model = HorizontalAlignment._station_at_xy_on_edges(
+                        edges1, total1, float(p.x), float(p.y), samples_per_edge=48
                     )
+                    ip_vals.append(_meters_from_model_length(obj, station_model))
                 for c in corners:
                     if c is None:
                         continue
@@ -320,29 +387,25 @@ class HorizontalAlignment:
                     p_cs = c.get("cs", None)
                     p_st = c.get("st", None)
                     if p_ts is not None:
-                        ts_vals.append(
-                            HorizontalAlignment._station_at_xy_on_edges(
-                                edges1, total1, float(p_ts.x), float(p_ts.y), samples_per_edge=64
-                            )
+                        station_model = HorizontalAlignment._station_at_xy_on_edges(
+                            edges1, total1, float(p_ts.x), float(p_ts.y), samples_per_edge=64
                         )
+                        ts_vals.append(_meters_from_model_length(obj, station_model))
                     if p_sc is not None:
-                        sc_vals.append(
-                            HorizontalAlignment._station_at_xy_on_edges(
-                                edges1, total1, float(p_sc.x), float(p_sc.y), samples_per_edge=64
-                            )
+                        station_model = HorizontalAlignment._station_at_xy_on_edges(
+                            edges1, total1, float(p_sc.x), float(p_sc.y), samples_per_edge=64
                         )
+                        sc_vals.append(_meters_from_model_length(obj, station_model))
                     if p_cs is not None:
-                        cs_vals.append(
-                            HorizontalAlignment._station_at_xy_on_edges(
-                                edges1, total1, float(p_cs.x), float(p_cs.y), samples_per_edge=64
-                            )
+                        station_model = HorizontalAlignment._station_at_xy_on_edges(
+                            edges1, total1, float(p_cs.x), float(p_cs.y), samples_per_edge=64
                         )
+                        cs_vals.append(_meters_from_model_length(obj, station_model))
                     if p_st is not None:
-                        st_vals.append(
-                            HorizontalAlignment._station_at_xy_on_edges(
-                                edges1, total1, float(p_st.x), float(p_st.y), samples_per_edge=64
-                            )
+                        station_model = HorizontalAlignment._station_at_xy_on_edges(
+                            edges1, total1, float(p_st.x), float(p_st.y), samples_per_edge=64
                         )
+                        st_vals.append(_meters_from_model_length(obj, station_model))
                 obj.IPKeyStations = _unique_sorted_floats(ip_vals)
                 obj.TSKeyStations = _unique_sorted_floats(ts_vals)
                 obj.SCKeyStations = _unique_sorted_floats(sc_vals)
@@ -529,10 +592,9 @@ class HorizontalAlignment:
     def _run_criteria(self, obj, pts, seg_len, corners):
         msgs = []
 
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
         v = max(0.0, float(getattr(obj, "DesignSpeedKph", 60.0)))
         std = get_design_standard(obj, default=_ds.DEFAULT_STANDARD)
-        std_spec = _ds.criteria_defaults(std, v, scale=scale)
+        std_spec = _ds.criteria_defaults(std, v, scale=1.0)
         obj.CriteriaStandard = std
         std_tag = f"[{std}]"
 
@@ -552,32 +614,41 @@ class HorizontalAlignment:
         min_transition = max(min_transition_user, float(std_spec.get("min_transition", 0.0)))
         reverse_min_tangent = max(min_tangent, float(std_spec.get("reverse_min_tangent", 0.0)))
         reverse_min_transition = max(min_transition, float(std_spec.get("reverse_min_transition", 0.0)))
+        seg_len_m = [_meters_from_model_length(obj, float(length or 0.0)) for length in list(seg_len or [])]
 
         for i in range(1, len(pts) - 1):
             c = corners[i]
             if c is None:
                 continue
-            if c["radius_eff"] < min_radius - 1e-6:
+            radius_eff = _meters_from_model_length(obj, float(c.get("radius_eff", 0.0) or 0.0))
+            radius_req = _meters_from_model_length(obj, float(c.get("radius_req", 0.0) or 0.0))
+            ls_eff = _meters_from_model_length(obj, float(c.get("ls_eff", 0.0) or 0.0))
+            ls_req = _meters_from_model_length(obj, float(c.get("ls_req", 0.0) or 0.0))
+            if radius_eff < min_radius - 1e-6:
                 msgs.append(
-                    f"{std_tag} [RADIUS] IP#{i} R={c['radius_eff']:.2f}m < min {min_radius:.2f}m (V={v:.1f}km/h)"
+                    f"{std_tag} [RADIUS] IP#{i} R={radius_eff:.2f}m < min {min_radius:.2f}m (V={v:.1f}km/h)"
                 )
-            if c["ls_eff"] > 1e-6 and c["ls_eff"] < min_transition - 1e-6:
+            if ls_eff > 1e-6 and ls_eff < min_transition - 1e-6:
                 msgs.append(
-                    f"{std_tag} [TRANSITION] IP#{i} Ls={c['ls_eff']:.2f}m < min {min_transition:.2f}m"
+                    f"{std_tag} [TRANSITION] IP#{i} Ls={ls_eff:.2f}m < min {min_transition:.2f}m"
                 )
-            if c["radius_eff"] < c["radius_req"] - 1e-6:
+            if radius_eff < radius_req - 1e-6:
                 msgs.append(
-                    f"{std_tag} [CLAMP] IP#{i} R reduced {c['radius_req']:.2f} -> {c['radius_eff']:.2f}m by geometric limits"
+                    f"{std_tag} [CLAMP] IP#{i} R reduced {radius_req:.2f} -> {radius_eff:.2f}m by geometric limits"
                 )
-            if c["ls_eff"] < c["ls_req"] - 1e-6:
+            if ls_eff < ls_req - 1e-6:
                 msgs.append(
-                    f"{std_tag} [CLAMP] IP#{i} Ls reduced {c['ls_req']:.2f} -> {c['ls_eff']:.2f}m by geometric limits"
+                    f"{std_tag} [CLAMP] IP#{i} Ls reduced {ls_req:.2f} -> {ls_eff:.2f}m by geometric limits"
                 )
 
-        for i in range(len(seg_len)):
-            left_trim = corners[i]["trim"] if (i >= 1 and corners[i] is not None) else 0.0
-            right_trim = corners[i + 1]["trim"] if ((i + 1) <= (len(seg_len) - 1) and corners[i + 1] is not None) else 0.0
-            residual = float(seg_len[i]) - left_trim - right_trim
+        for i in range(len(seg_len_m)):
+            left_trim = _meters_from_model_length(obj, float(corners[i]["trim"])) if (i >= 1 and corners[i] is not None) else 0.0
+            right_trim = (
+                _meters_from_model_length(obj, float(corners[i + 1]["trim"]))
+                if ((i + 1) <= (len(seg_len_m) - 1) and corners[i + 1] is not None)
+                else 0.0
+            )
+            residual = float(seg_len_m[i]) - left_trim - right_trim
             if residual < min_tangent - 1e-6:
                 msgs.append(
                     f"{std_tag} [TANGENT] Segment {i}-{i+1} residual tangent {residual:.2f}m < min {min_tangent:.2f}m"
@@ -589,25 +660,27 @@ class HorizontalAlignment:
                 right_req = right_trim
 
                 if i >= 1 and corners[i] is not None and min_radius > 1e-9:
-                    ls_for_left = max(corners[i]["ls_eff"], min_transition) if corners[i]["ls_eff"] > 1e-9 else 0.0
+                    ls_for_left_raw = _meters_from_model_length(obj, float(corners[i]["ls_eff"]))
+                    ls_for_left = max(ls_for_left_raw, min_transition) if ls_for_left_raw > 1e-9 else 0.0
                     left_req = max(
                         left_req,
                         _tangent_needed(min_radius, ls_for_left, float(corners[i]["theta"]))
                     )
 
-                if (i + 1) <= (len(seg_len) - 1) and corners[i + 1] is not None and min_radius > 1e-9:
-                    ls_for_right = max(corners[i + 1]["ls_eff"], min_transition) if corners[i + 1]["ls_eff"] > 1e-9 else 0.0
+                if (i + 1) <= (len(seg_len_m) - 1) and corners[i + 1] is not None and min_radius > 1e-9:
+                    ls_for_right_raw = _meters_from_model_length(obj, float(corners[i + 1]["ls_eff"]))
+                    ls_for_right = max(ls_for_right_raw, min_transition) if ls_for_right_raw > 1e-9 else 0.0
                     right_req = max(
                         right_req,
                         _tangent_needed(min_radius, ls_for_right, float(corners[i + 1]["theta"]))
                     )
 
                 required_len = left_req + right_req + min_tangent
-                add_len = required_len - float(seg_len[i])
+                add_len = required_len - float(seg_len_m[i])
                 if add_len > 1e-6:
                     msgs.append(
                         f"{std_tag} [ACTION] Segment {i}-{i+1}: current IP layout cannot satisfy the criteria together. "
-                        f"Required L >= {required_len:.2f}m, current L={float(seg_len[i]):.2f}m -> extend by about {add_len:.2f}m "
+                        f"Required L >= {required_len:.2f}m, current L={float(seg_len_m[i]):.2f}m -> extend by about {add_len:.2f}m "
                         f"(or relax speed/radius/transition criteria)."
                     )
 
@@ -617,16 +690,18 @@ class HorizontalAlignment:
             c1 = corners[i + 1]
             if c0 is None or c1 is None:
                 continue
-            if float(c0.get("radius_eff", 0.0)) <= 1e-9 or float(c1.get("radius_eff", 0.0)) <= 1e-9:
+            if _meters_from_model_length(obj, float(c0.get("radius_eff", 0.0) or 0.0)) <= 1e-9:
+                continue
+            if _meters_from_model_length(obj, float(c1.get("radius_eff", 0.0) or 0.0)) <= 1e-9:
                 continue
             s0 = float(c0.get("turn_sign", 0.0))
             s1 = float(c1.get("turn_sign", 0.0))
             if s0 * s1 >= 0.0:
                 continue
 
-            left_trim = float(c0.get("trim", 0.0))
-            right_trim = float(c1.get("trim", 0.0))
-            residual = float(seg_len[i]) - left_trim - right_trim
+            left_trim = _meters_from_model_length(obj, float(c0.get("trim", 0.0) or 0.0))
+            right_trim = _meters_from_model_length(obj, float(c1.get("trim", 0.0) or 0.0))
+            residual = float(seg_len_m[i]) - left_trim - right_trim
             if residual <= 1e-6:
                 msgs.append(
                     f"{std_tag} [REVERSE] IP#{i}->IP#{i+1}: reverse curve detected with no tangent between curves."
@@ -641,8 +716,8 @@ class HorizontalAlignment:
                     f"required {reverse_min_tangent:.2f}m."
                 )
 
-            ls0 = float(c0.get("ls_eff", 0.0))
-            ls1 = float(c1.get("ls_eff", 0.0))
+            ls0 = _meters_from_model_length(obj, float(c0.get("ls_eff", 0.0) or 0.0))
+            ls1 = _meters_from_model_length(obj, float(c1.get("ls_eff", 0.0) or 0.0))
             if ls0 < reverse_min_transition - 1e-6:
                 msgs.append(
                     f"{std_tag} [REVERSE-TRANSITION] IP#{i}: Ls={ls0:.2f}m < required {reverse_min_transition:.2f}m."
@@ -669,18 +744,22 @@ class HorizontalAlignment:
     def _station_to_edge(alignment_obj, s: float):
         edges = HorizontalAlignment._resolve_edges(alignment_obj)
         lengths = [float(e.Length) for e in edges]
-        total = float(sum(lengths))
-        if total <= 1e-12:
+        total_model = float(sum(lengths))
+        if total_model <= 1e-12:
             raise ValueError("Alignment length is zero")
+        total = _alignment_total_length_m(alignment_obj)
+        if total <= 1e-12:
+            total = _meters_from_model_length(alignment_obj, total_model)
 
         ss = _clamp(float(s), 0.0, total)
+        ss_model = _model_length_from_meters(alignment_obj, ss)
         acc = 0.0
         last_i = len(edges) - 1
         for i, e in enumerate(edges):
             L = lengths[i]
             next_acc = acc + L
-            if i == last_i or ss <= next_acc + 1e-9:
-                local = _clamp(ss - acc, 0.0, L)
+            if i == last_i or ss_model <= next_acc + 1e-9:
+                local = _clamp(ss_model - acc, 0.0, L)
                 return {
                     "edge": e,
                     "edge_len": L,
@@ -832,8 +911,9 @@ class HorizontalAlignment:
         Approximate inverse map XY->station by polyline projection over each edge.
         """
         edges = HorizontalAlignment._resolve_edges(alignment_obj)
-        total = float(getattr(alignment_obj.Shape, "Length", 0.0))
-        return HorizontalAlignment._station_at_xy_on_edges(edges, total, float(x), float(y), samples_per_edge=samples_per_edge)
+        total_model = float(getattr(alignment_obj.Shape, "Length", 0.0))
+        station_model = HorizontalAlignment._station_at_xy_on_edges(edges, total_model, float(x), float(y), samples_per_edge=samples_per_edge)
+        return _meters_from_model_length(alignment_obj, station_model)
 
 
 class ViewProviderHorizontalAlignment:

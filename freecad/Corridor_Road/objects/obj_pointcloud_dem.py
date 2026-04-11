@@ -8,9 +8,11 @@ from collections import defaultdict
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_project import get_length_scale, local_to_world, world_to_local
+from freecad.Corridor_Road.objects.obj_project import local_to_world, world_to_local
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
+_POINTCLOUD_DEM_LENGTH_SCHEMA_TARGET = 1
 
 
 class _CanceledError(Exception):
@@ -46,8 +48,6 @@ def _mark_recompute_flag(obj, needed: bool):
 
 
 def ensure_pointcloud_dem_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     if not hasattr(obj, "CsvPath"):
         obj.addProperty("App::PropertyString", "CsvPath", "Source", "CSV file path (UTM E/N/Z)")
         obj.CsvPath = ""
@@ -69,7 +69,7 @@ def ensure_pointcloud_dem_properties(obj):
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "DEM", "DEM cell size (m)")
-        obj.CellSize = 4.0 * scale
+        obj.CellSize = 4.0
     if not hasattr(obj, "Aggregation"):
         obj.addProperty("App::PropertyEnumeration", "Aggregation", "DEM", "Cell Z aggregation method")
         obj.Aggregation = ["Mean", "Median", "Min", "Max"]
@@ -115,6 +115,17 @@ def ensure_pointcloud_dem_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "DEM", "Length-storage schema version")
+        obj.LengthSchemaVersion = 0
+
+    try:
+        if int(getattr(obj, "LengthSchemaVersion", 0) or 0) < _POINTCLOUD_DEM_LENGTH_SCHEMA_TARGET:
+            if hasattr(obj, "CellSize"):
+                obj.CellSize = _units.meters_from_internal_length(getattr(obj, "Document", None), float(getattr(obj, "CellSize", 4.0) or 0.0))
+            obj.LengthSchemaVersion = int(_POINTCLOUD_DEM_LENGTH_SCHEMA_TARGET)
+    except Exception:
+        pass
 
 
 class PointCloudDEM:
@@ -149,6 +160,11 @@ class PointCloudDEM:
         return None
 
     @staticmethod
+    def _is_skippable_csv_line(line: str) -> bool:
+        txt = str(line or "")
+        return (not txt.strip()) or txt.lstrip().startswith("#")
+
+    @staticmethod
     def _norm_col(name: str) -> str:
         return "".join(ch for ch in str(name or "").strip().lower() if ch.isalnum())
 
@@ -176,14 +192,25 @@ class PointCloudDEM:
     def _count_lines(path: str) -> int:
         n = 0
         with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
-            for _ in f:
+            for line in f:
+                if PointCloudDEM._is_skippable_csv_line(line):
+                    continue
                 n += 1
         return int(n)
 
     @staticmethod
     def _sniff_delimiter(path: str):
+        parts = []
+        total = 0
         with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
-            sample = f.read(4096)
+            for line in f:
+                if PointCloudDEM._is_skippable_csv_line(line):
+                    continue
+                parts.append(line)
+                total += len(line)
+                if total >= 4096:
+                    break
+        sample = "".join(parts)
         if not sample:
             return ","
         try:
@@ -207,8 +234,9 @@ class PointCloudDEM:
         skipped = 0
 
         with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
+            data_lines = (line for line in f if not self._is_skippable_csv_line(line))
             if has_header:
-                rdr = csv.DictReader(f, delimiter=delim)
+                rdr = csv.DictReader(data_lines, delimiter=delim)
                 mapping = self._resolve_columns(rdr.fieldnames)
                 ck_e = mapping.get("e", None)
                 ck_n = mapping.get("n", None)
@@ -241,7 +269,7 @@ class PointCloudDEM:
                         if self._report_progress(pct, f"Reading CSV rows: {i}/{total_rows}"):
                             raise _CanceledError("Canceled by user.")
             else:
-                rdr = csv.reader(f, delimiter=delim)
+                rdr = csv.reader(data_lines, delimiter=delim)
                 for i, row in enumerate(rdr, start=1):
                     raw += 1
                     try:
@@ -295,12 +323,12 @@ class PointCloudDEM:
             if not os.path.isfile(path):
                 raise Exception(f"CSV file not found: {path}")
 
-            scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-            cell = float(getattr(obj, "CellSize", 4.0 * scale))
-            min_cell = 0.2 * scale
+            cell_m = float(getattr(obj, "CellSize", 4.0) or 4.0)
+            cell = _units.model_length_from_meters(getattr(obj, "Document", None), cell_m)
+            min_cell = _units.model_length_from_meters(getattr(obj, "Document", None), 0.2)
             if (not math.isfinite(cell)) or cell < min_cell:
                 cell = float(min_cell)
-                obj.CellSize = float(min_cell)
+                obj.CellSize = 0.2
 
             max_cells = int(getattr(obj, "MaxCells", 2000000))
             if max_cells <= 0:

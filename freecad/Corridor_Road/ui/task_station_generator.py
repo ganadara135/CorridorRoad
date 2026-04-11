@@ -6,7 +6,7 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_stationing import Stationing, ViewProviderStationing
 from freecad.Corridor_Road.objects.project_links import link_project
 
@@ -22,7 +22,6 @@ def _find_stationings(doc):
 class StationGeneratorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
         self._alignments = []
         self._stationings = []
         self._loading = False
@@ -63,13 +62,11 @@ class StationGeneratorTaskPanel:
         gb_opt = QtWidgets.QGroupBox("Options")
         form_opts = QtWidgets.QFormLayout(gb_opt)
         self.spin_interval = QtWidgets.QDoubleSpinBox()
-        self.spin_interval.setRange(0.001 * self._scale, 1000000.0 * self._scale)
+        self.spin_interval.setRange(0.001, 1000000000.0)
         self.spin_interval.setDecimals(3)
-        self.spin_interval.setValue(20.0 * self._scale)
         self.spin_tick = QtWidgets.QDoubleSpinBox()
-        self.spin_tick.setRange(0.001 * self._scale, 100000.0 * self._scale)
+        self.spin_tick.setRange(0.001, 100000000.0)
         self.spin_tick.setDecimals(3)
-        self.spin_tick.setValue(2.0 * self._scale)
         self.chk_show_ticks = QtWidgets.QCheckBox("Show ticks")
         self.chk_show_ticks.setChecked(True)
         form_opts.addRow("Interval:", self.spin_interval)
@@ -95,7 +92,33 @@ class StationGeneratorTaskPanel:
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
         self.btn_generate.clicked.connect(self._generate)
         self.btn_close.clicked.connect(self.reject)
+        self._apply_display_unit_ui()
         return w
+
+    def _display_unit(self) -> str:
+        return _units.get_linear_display_unit(self.doc)
+
+    def _apply_display_unit_ui(self):
+        unit = self._display_unit()
+        suffix = f" {unit}"
+        self.spin_interval.setSuffix(suffix)
+        self.spin_tick.setSuffix(suffix)
+
+    def _display_from_meters(self, value: float) -> float:
+        return _units.user_length_from_meters(self.doc, value, use_default="display")
+
+    def _meters_from_display(self, value: float) -> float:
+        return _units.meters_from_user_length(self.doc, value, use_default="display")
+
+    def _format_display_value(self, value: float, digits: int = 3) -> str:
+        return f"{float(value):.{int(digits)}f} {self._display_unit()}"
+
+    def _status_summary_text(self, prefix: str) -> str:
+        return (
+            f"{prefix} | Display unit: {self._display_unit()} | "
+            f"Interval={self._format_display_value(self.spin_interval.value())}, "
+            f"tick={self._format_display_value(self.spin_tick.value())}"
+        )
 
     @staticmethod
     def _fmt_obj(prefix: str, obj):
@@ -147,6 +170,7 @@ class StationGeneratorTaskPanel:
         if self.doc is None:
             self.lbl_info.setText("No active document.")
             return
+        self._apply_display_unit_ui()
 
         self._loading = True
         try:
@@ -160,7 +184,8 @@ class StationGeneratorTaskPanel:
             self._fill_alignments(selected=sel_aln)
             self._fill_targets(selected=sel_st)
             self.lbl_info.setText(
-                f"Alignment: {len(self._alignments)} found, Stationing: {len(self._stationings)} found."
+                f"Alignment: {len(self._alignments)} found, Stationing: {len(self._stationings)} found.\n"
+                f"Display unit: {self._display_unit()} | Interval/Tick inputs use the active display unit and save back to meter-native storage."
             )
         finally:
             self._loading = False
@@ -171,22 +196,22 @@ class StationGeneratorTaskPanel:
             return
         st = self._current_target()
         if st is None:
-            self.spin_interval.setValue(20.0 * self._scale)
-            self.spin_tick.setValue(2.0 * self._scale)
+            self.spin_interval.setValue(_units.user_length_from_meters(self.doc, 20.0))
+            self.spin_tick.setValue(_units.user_length_from_meters(self.doc, 2.0))
             self.chk_show_ticks.setChecked(True)
-            self.lbl_status.setText("New stationing will be created.")
+            self.lbl_status.setText(self._status_summary_text("New stationing will be created"))
             return
 
         try:
-            self.spin_interval.setValue(float(getattr(st, "Interval", 20.0 * self._scale)))
+            self.spin_interval.setValue(self._display_from_meters(float(getattr(st, "Interval", 20.0))))
         except Exception:
-            self.spin_interval.setValue(20.0 * self._scale)
+            self.spin_interval.setValue(_units.user_length_from_meters(self.doc, 20.0))
         try:
-            self.spin_tick.setValue(float(getattr(st, "TickLength", 2.0 * self._scale)))
+            self.spin_tick.setValue(self._display_from_meters(float(getattr(st, "TickLength", 2.0))))
         except Exception:
-            self.spin_tick.setValue(2.0 * self._scale)
+            self.spin_tick.setValue(_units.user_length_from_meters(self.doc, 2.0))
         self.chk_show_ticks.setChecked(bool(getattr(st, "ShowTicks", True)))
-        self.lbl_status.setText("Ready")
+        self.lbl_status.setText(self._status_summary_text("Ready"))
 
     def _ensure_target_stationing(self):
         st = self._current_target()
@@ -194,7 +219,8 @@ class StationGeneratorTaskPanel:
             return st
         st = self.doc.addObject("Part::FeaturePython", "Stationing")
         Stationing(st)
-        ViewProviderStationing(st.ViewObject)
+        if getattr(st, "ViewObject", None) is not None:
+            ViewProviderStationing(st.ViewObject)
         st.Label = "Stations"
         return st
 
@@ -215,8 +241,8 @@ class StationGeneratorTaskPanel:
         try:
             st = self._ensure_target_stationing()
             st.Alignment = aln
-            st.Interval = float(self.spin_interval.value())
-            st.TickLength = float(self.spin_tick.value())
+            st.Interval = float(self._meters_from_display(self.spin_interval.value()))
+            st.TickLength = float(self._meters_from_display(self.spin_tick.value()))
             st.ShowTicks = bool(self.chk_show_ticks.isChecked())
             st.touch()
 
@@ -231,11 +257,15 @@ class StationGeneratorTaskPanel:
 
             self.doc.recompute()
             n = len(list(getattr(st, "StationValues", []) or []))
-            self.lbl_status.setText(f"OK: {n} stations")
+            self.lbl_status.setText(self._status_summary_text(f"OK: {n} stations"))
             QtWidgets.QMessageBox.information(
                 None,
                 "Stations",
-                f"Station generation completed.\nGenerated stations: {n}",
+                "Station generation completed.\n"
+                f"Generated stations: {n}\n"
+                f"Display unit: {self._display_unit()}\n"
+                f"Interval: {self._format_display_value(self.spin_interval.value())}\n"
+                f"Tick: {self._format_display_value(self.spin_tick.value())}",
             )
             self._refresh_context()
             try:

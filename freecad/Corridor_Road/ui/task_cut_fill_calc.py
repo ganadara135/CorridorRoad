@@ -8,7 +8,8 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects import coord_transform as _ct
-from freecad.Corridor_Road.objects.obj_project import get_length_scale, resolve_project_corridor
+from freecad.Corridor_Road.objects import unit_policy as _units
+from freecad.Corridor_Road.objects.obj_project import resolve_project_corridor
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
@@ -85,9 +86,9 @@ def _selected_surface():
 class CutFillCalcTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
+        self._project = None
         self._quality_presets = build_quality_presets(
-            self._scale,
+            self._display_scale(),
             {
                 "Fast": 120000,
                 "Balanced": 200000,
@@ -96,7 +97,6 @@ class CutFillCalcTaskPanel:
         )
         self._corridors = []
         self._surfaces = []
-        self._project = None
         self._coord_mode_initialized = False
         self._loading = False
         self.form = self._build_ui()
@@ -147,13 +147,16 @@ class CutFillCalcTaskPanel:
 
         gb_opt = QtWidgets.QGroupBox("Comparison")
         form_opts = QtWidgets.QFormLayout(gb_opt)
+        unit = self._display_unit()
+        display_scale = self._display_scale()
         self.cmb_quality = QtWidgets.QComboBox()
         self.cmb_quality.addItems(list(QUALITY_PRESETS))
         self.cmb_quality.setCurrentText("Balanced")
         self.spin_cell = QtWidgets.QDoubleSpinBox()
-        self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
+        self.spin_cell.setRange(0.2 * display_scale, 10000.0 * display_scale)
         self.spin_cell.setDecimals(3)
-        self.spin_cell.setValue(1.0 * self._scale)
+        self.spin_cell.setSuffix(f" {unit}")
+        self.spin_cell.setValue(self._meters_to_display(1.0))
         self.spin_max_samples = QtWidgets.QSpinBox()
         self.spin_max_samples.setRange(1000, 2000000000)
         self.spin_max_samples.setValue(200000)
@@ -176,9 +179,10 @@ class CutFillCalcTaskPanel:
         self.cmb_domain_coords.addItems(["Local", "World"])
         self.cmb_domain_coords.setCurrentText("Local")
         self.spin_margin = QtWidgets.QDoubleSpinBox()
-        self.spin_margin.setRange(0.0, 1000000.0 * self._scale)
+        self.spin_margin.setRange(0.0, 1000000.0 * display_scale)
         self.spin_margin.setDecimals(3)
-        self.spin_margin.setValue(5.0 * self._scale)
+        self.spin_margin.setSuffix(f" {unit}")
+        self.spin_margin.setValue(self._meters_to_display(5.0))
         self.spin_nodata_warn = QtWidgets.QDoubleSpinBox()
         self.spin_nodata_warn.setRange(0.0, 100.0)
         self.spin_nodata_warn.setDecimals(1)
@@ -191,6 +195,7 @@ class CutFillCalcTaskPanel:
         for s in (self.spin_xmin, self.spin_xmax, self.spin_ymin, self.spin_ymax):
             s.setRange(-1.0e9, 1.0e9)
             s.setDecimals(3)
+            s.setSuffix(f" {unit}")
             s.setValue(0.0)
 
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
@@ -200,7 +205,7 @@ class CutFillCalcTaskPanel:
         self.lbl_est.setWordWrap(True)
 
         form_opts.addRow("Quality Preset:", self.cmb_quality)
-        form_opts.addRow("Cell Size (scaled):", self.spin_cell)
+        form_opts.addRow(f"Cell Size ({unit}):", self.spin_cell)
         form_opts.addRow("Max Samples:", self.spin_max_samples)
         form_opts.addRow("Max Triangles/Source:", self.spin_max_tri_src)
         form_opts.addRow("Max Candidate Triangles:", self.spin_max_cand)
@@ -208,7 +213,7 @@ class CutFillCalcTaskPanel:
         form_opts.addRow("Min Mesh Facets:", self.spin_min_facets)
         form_opts.addRow(self.chk_use_bounds)
         form_opts.addRow("Manual Domain Coords:", self.cmb_domain_coords)
-        form_opts.addRow("Domain Margin (scaled):", self.spin_margin)
+        form_opts.addRow(f"Domain Margin ({unit}):", self.spin_margin)
         form_opts.addRow("NoData Warn:", self.spin_nodata_warn)
         form_opts.addRow("X Min:", self.spin_xmin)
         form_opts.addRow("X Max:", self.spin_xmax)
@@ -224,26 +229,29 @@ class CutFillCalcTaskPanel:
         self.chk_show_map = QtWidgets.QCheckBox("Show Cut/Fill Map in 3D")
         self.chk_show_map.setChecked(True)
         self.spin_deadband = QtWidgets.QDoubleSpinBox()
-        self.spin_deadband.setRange(0.0, 100.0 * self._scale)
+        self.spin_deadband.setRange(0.0, 100.0 * display_scale)
         self.spin_deadband.setDecimals(3)
-        self.spin_deadband.setValue(0.02 * self._scale)
+        self.spin_deadband.setSuffix(f" {unit}")
+        self.spin_deadband.setValue(self._meters_to_display(0.02))
         self.spin_clamp = QtWidgets.QDoubleSpinBox()
-        self.spin_clamp.setRange(0.001 * self._scale, 10000.0 * self._scale)
+        self.spin_clamp.setRange(0.001 * display_scale, 10000.0 * display_scale)
         self.spin_clamp.setDecimals(3)
-        self.spin_clamp.setValue(2.0 * self._scale)
+        self.spin_clamp.setSuffix(f" {unit}")
+        self.spin_clamp.setValue(self._meters_to_display(2.0))
         self.spin_zoff = QtWidgets.QDoubleSpinBox()
-        self.spin_zoff.setRange(-1000.0 * self._scale, 1000.0 * self._scale)
+        self.spin_zoff.setRange(-1000.0 * display_scale, 1000.0 * display_scale)
         self.spin_zoff.setDecimals(3)
-        self.spin_zoff.setValue(0.05 * self._scale)
+        self.spin_zoff.setSuffix(f" {unit}")
+        self.spin_zoff.setValue(self._meters_to_display(0.05))
         self.spin_max_vis = QtWidgets.QSpinBox()
         self.spin_max_vis.setRange(1000, 2000000000)
         self.spin_max_vis.setValue(40000)
         self.lbl_palette = QtWidgets.QLabel("Palette: Cut=Red, Fill=Blue, Neutral=Light Gray, NoData=Gray")
         self.lbl_palette.setWordWrap(True)
         fv.addRow(self.chk_show_map)
-        fv.addRow("Deadband |delta| (scaled):", self.spin_deadband)
-        fv.addRow("Clamp |delta| (scaled):", self.spin_clamp)
-        fv.addRow("Visual Z Offset (scaled):", self.spin_zoff)
+        fv.addRow(f"Deadband |delta| ({unit}):", self.spin_deadband)
+        fv.addRow(f"Clamp |delta| ({unit}):", self.spin_clamp)
+        fv.addRow(f"Visual Z Offset ({unit}):", self.spin_zoff)
         fv.addRow("Max Visual Cells:", self.spin_max_vis)
         fv.addRow(self.lbl_palette)
         main.addWidget(gb_vis)
@@ -301,6 +309,45 @@ class CutFillCalcTaskPanel:
         if self._project is not None:
             return self._project
         return self.doc
+
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self._project or self.doc)
+
+    def _display_scale(self):
+        return max(1.0e-9, _units.user_length_from_meters(self._project or self.doc, 1.0))
+
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self._project or self.doc, meters)
+
+    def _display_to_meters(self, value):
+        return _units.meters_from_user_length(self._project or self.doc, value, use_default="display")
+
+    def _build_completion_message(self, cmp_obj):
+        return "\n".join(
+            [
+                str(getattr(cmp_obj, "Status", "Done") or "Done"),
+                f"Display unit: {self._display_unit()}",
+                f"CutVolume: {_units.format_internal_volume(self._project or self.doc, float(getattr(cmp_obj, 'CutVolume', 0.0) or 0.0))}",
+                f"FillVolume: {_units.format_internal_volume(self._project or self.doc, float(getattr(cmp_obj, 'FillVolume', 0.0) or 0.0))}",
+                f"Delta(min/max/mean): "
+                f"{_units.format_internal_length(self._project or self.doc, float(getattr(cmp_obj, 'DeltaMin', 0.0) or 0.0))} / "
+                f"{_units.format_internal_length(self._project or self.doc, float(getattr(cmp_obj, 'DeltaMax', 0.0) or 0.0))} / "
+                f"{_units.format_internal_length(self._project or self.doc, float(getattr(cmp_obj, 'DeltaMean', 0.0) or 0.0))}",
+                f"Samples(valid/total): {int(getattr(cmp_obj, 'ValidCount', 0))} / {int(getattr(cmp_obj, 'SampleCount', 0))}",
+                f"NoData(area/ratio): {_units.format_internal_area(self._project or self.doc, float(getattr(cmp_obj, 'NoDataArea', 0.0) or 0.0))} / "
+                f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
+                f"CellSize: {_units.format_length(self._project or self.doc, float(getattr(cmp_obj, 'CellSize', 0.0) or 0.0))}",
+                f"DomainCoords: {str(getattr(cmp_obj, 'DomainCoords', 'Local'))}",
+                f"ExistingSurfaceCoords: {str(getattr(cmp_obj, 'ExistingSurfaceCoords', 'Local'))}",
+                f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
+                f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
+                f"MaxTriangleChecks: {int(getattr(cmp_obj, 'MaxTriangleChecks', 0))}",
+                f"Sign: {str(getattr(cmp_obj, 'SignConvention', 'delta=Design-Existing, +Fill/-Cut'))}",
+                f"Display: show_map={bool(getattr(cmp_obj, 'ShowDeltaMap', True))}, "
+                f"deadband={_units.format_length(self._project or self.doc, float(getattr(cmp_obj, 'DeltaDeadband', 0.0) or 0.0))}, "
+                f"clamp={_units.format_length(self._project or self.doc, float(getattr(cmp_obj, 'DeltaClamp', 0.0) or 0.0))}",
+            ]
+        )
 
     def _use_world_surface_mode(self):
         return str(self.cmb_surface_coords.currentText() or "Local") == "World"
@@ -400,7 +447,7 @@ class CutFillCalcTaskPanel:
             self._loading = True
             try:
                 if hasattr(cmp_obj, "CellSize"):
-                    self.spin_cell.setValue(float(cmp_obj.CellSize))
+                    self.spin_cell.setValue(self._meters_to_display(float(cmp_obj.CellSize)))
                 if hasattr(cmp_obj, "MaxSamples"):
                     self.spin_max_samples.setValue(int(cmp_obj.MaxSamples))
                 if hasattr(cmp_obj, "MaxTrianglesPerSource"):
@@ -417,27 +464,27 @@ class CutFillCalcTaskPanel:
                     dmode = str(getattr(cmp_obj, "DomainCoords", "Local") or "Local")
                     self.cmb_domain_coords.setCurrentText("World" if dmode == "World" else "Local")
                 if hasattr(cmp_obj, "DomainMargin"):
-                    self.spin_margin.setValue(float(cmp_obj.DomainMargin))
+                    self.spin_margin.setValue(self._meters_to_display(float(cmp_obj.DomainMargin)))
                 if hasattr(cmp_obj, "NoDataWarnRatio"):
                     self.spin_nodata_warn.setValue(100.0 * float(cmp_obj.NoDataWarnRatio))
                 if hasattr(cmp_obj, "ShowDeltaMap"):
                     self.chk_show_map.setChecked(bool(cmp_obj.ShowDeltaMap))
                 if hasattr(cmp_obj, "DeltaDeadband"):
-                    self.spin_deadband.setValue(float(cmp_obj.DeltaDeadband))
+                    self.spin_deadband.setValue(self._meters_to_display(float(cmp_obj.DeltaDeadband)))
                 if hasattr(cmp_obj, "DeltaClamp"):
-                    self.spin_clamp.setValue(float(cmp_obj.DeltaClamp))
+                    self.spin_clamp.setValue(self._meters_to_display(float(cmp_obj.DeltaClamp)))
                 if hasattr(cmp_obj, "VisualZOffset"):
-                    self.spin_zoff.setValue(float(cmp_obj.VisualZOffset))
+                    self.spin_zoff.setValue(self._meters_to_display(float(cmp_obj.VisualZOffset)))
                 if hasattr(cmp_obj, "MaxVisualCells"):
                     self.spin_max_vis.setValue(int(cmp_obj.MaxVisualCells))
                 if hasattr(cmp_obj, "XMin"):
-                    self.spin_xmin.setValue(float(cmp_obj.XMin))
+                    self.spin_xmin.setValue(self._meters_to_display(float(cmp_obj.XMin)))
                 if hasattr(cmp_obj, "XMax"):
-                    self.spin_xmax.setValue(float(cmp_obj.XMax))
+                    self.spin_xmax.setValue(self._meters_to_display(float(cmp_obj.XMax)))
                 if hasattr(cmp_obj, "YMin"):
-                    self.spin_ymin.setValue(float(cmp_obj.YMin))
+                    self.spin_ymin.setValue(self._meters_to_display(float(cmp_obj.YMin)))
                 if hasattr(cmp_obj, "YMax"):
-                    self.spin_ymax.setValue(float(cmp_obj.YMax))
+                    self.spin_ymax.setValue(self._meters_to_display(float(cmp_obj.YMax)))
                 if hasattr(cmp_obj, "AutoUpdate"):
                     self.chk_auto.setChecked(bool(cmp_obj.AutoUpdate))
                 if hasattr(cmp_obj, "ExistingSurfaceCoords"):
@@ -608,7 +655,7 @@ class CutFillCalcTaskPanel:
                 cmp_obj.ExistingSurface = mesh
                 if hasattr(cmp_obj, "ExistingSurfaceCoords"):
                     cmp_obj.ExistingSurfaceCoords = "World" if self._use_world_surface_mode() else "Local"
-                cmp_obj.CellSize = float(self.spin_cell.value())
+                cmp_obj.CellSize = self._display_to_meters(float(self.spin_cell.value()))
                 cmp_obj.MaxSamples = int(self.spin_max_samples.value())
                 if hasattr(cmp_obj, "MaxTrianglesPerSource"):
                     cmp_obj.MaxTrianglesPerSource = int(self.spin_max_tri_src.value())
@@ -620,17 +667,17 @@ class CutFillCalcTaskPanel:
                 cmp_obj.UseCorridorBounds = bool(self.chk_use_bounds.isChecked())
                 if hasattr(cmp_obj, "DomainCoords"):
                     cmp_obj.DomainCoords = str(self.cmb_domain_coords.currentText() or "Local")
-                cmp_obj.DomainMargin = float(self.spin_margin.value())
+                cmp_obj.DomainMargin = self._display_to_meters(float(self.spin_margin.value()))
                 cmp_obj.NoDataWarnRatio = float(self.spin_nodata_warn.value()) / 100.0
                 cmp_obj.ShowDeltaMap = bool(self.chk_show_map.isChecked())
-                cmp_obj.DeltaDeadband = float(self.spin_deadband.value())
-                cmp_obj.DeltaClamp = float(self.spin_clamp.value())
-                cmp_obj.VisualZOffset = float(self.spin_zoff.value())
+                cmp_obj.DeltaDeadband = self._display_to_meters(float(self.spin_deadband.value()))
+                cmp_obj.DeltaClamp = self._display_to_meters(float(self.spin_clamp.value()))
+                cmp_obj.VisualZOffset = self._display_to_meters(float(self.spin_zoff.value()))
                 cmp_obj.MaxVisualCells = int(self.spin_max_vis.value())
-                cmp_obj.XMin = float(self.spin_xmin.value())
-                cmp_obj.XMax = float(self.spin_xmax.value())
-                cmp_obj.YMin = float(self.spin_ymin.value())
-                cmp_obj.YMax = float(self.spin_ymax.value())
+                cmp_obj.XMin = self._display_to_meters(float(self.spin_xmin.value()))
+                cmp_obj.XMax = self._display_to_meters(float(self.spin_xmax.value()))
+                cmp_obj.YMin = self._display_to_meters(float(self.spin_ymin.value()))
+                cmp_obj.YMax = self._display_to_meters(float(self.spin_ymax.value()))
                 cmp_obj.AutoUpdate = bool(self.chk_auto.isChecked())
                 # Set force trigger while bulk flag is active to prevent early onChanged recompute.
                 cmp_obj.RebuildNow = True
@@ -685,29 +732,7 @@ class CutFillCalcTaskPanel:
             self.lbl_run.setText("Completed")
             self.pbar.setValue(100)
 
-        msg = [
-            status,
-            f"CutVolume: {float(getattr(cmp_obj, 'CutVolume', 0.0)):.3f} (scaled^3)",
-            f"FillVolume: {float(getattr(cmp_obj, 'FillVolume', 0.0)):.3f} (scaled^3)",
-            f"Delta(min/max/mean): "
-            f"{float(getattr(cmp_obj, 'DeltaMin', 0.0)):.3f} / "
-            f"{float(getattr(cmp_obj, 'DeltaMax', 0.0)):.3f} / "
-            f"{float(getattr(cmp_obj, 'DeltaMean', 0.0)):.3f}",
-            f"Samples(valid/total): {int(getattr(cmp_obj, 'ValidCount', 0))} / {int(getattr(cmp_obj, 'SampleCount', 0))}",
-            f"NoData(area/ratio): {float(getattr(cmp_obj, 'NoDataArea', 0.0)):.3f} (scaled^2) / "
-            f"{100.0 * float(getattr(cmp_obj, 'NoDataRatio', 0.0)):.2f}%",
-            f"CellSize: {float(getattr(cmp_obj, 'CellSize', 0.0)):.3f} (scaled)",
-            f"DomainCoords: {str(getattr(cmp_obj, 'DomainCoords', 'Local'))}",
-            f"ExistingSurfaceCoords: {str(getattr(cmp_obj, 'ExistingSurfaceCoords', 'Local'))}",
-            f"MaxTriangles/Source: {int(getattr(cmp_obj, 'MaxTrianglesPerSource', 0))}",
-            f"MaxCandidateTriangles: {int(getattr(cmp_obj, 'MaxCandidateTriangles', 0))}",
-            f"MaxTriangleChecks: {int(getattr(cmp_obj, 'MaxTriangleChecks', 0))}",
-            f"Sign: {str(getattr(cmp_obj, 'SignConvention', 'delta=Design-Existing, +Fill/-Cut'))}",
-            f"Display: show_map={bool(getattr(cmp_obj, 'ShowDeltaMap', True))}, "
-            f"deadband={float(getattr(cmp_obj, 'DeltaDeadband', 0.0)):.3f} (scaled), "
-            f"clamp={float(getattr(cmp_obj, 'DeltaClamp', 0.0)):.3f} (scaled)",
-        ]
-        QtWidgets.QMessageBox.information(None, "Cut-Fill Calc", "\n".join(msg))
+        QtWidgets.QMessageBox.information(None, "Cut-Fill Calc", self._build_completion_message(cmp_obj))
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
@@ -730,29 +755,34 @@ class CutFillCalcTaskPanel:
             return False
 
     def _manual_domain_local_bbox(self):
-        x0 = float(self.spin_xmin.value())
-        x1 = float(self.spin_xmax.value())
-        y0 = float(self.spin_ymin.value())
-        y1 = float(self.spin_ymax.value())
+        x0 = self._display_to_meters(float(self.spin_xmin.value()))
+        x1 = self._display_to_meters(float(self.spin_xmax.value()))
+        y0 = self._display_to_meters(float(self.spin_ymin.value()))
+        y1 = self._display_to_meters(float(self.spin_ymax.value()))
         if x1 < x0:
             x0, x1 = x1, x0
         if y1 < y0:
             y0, y1 = y1, y0
 
         if str(self.cmb_domain_coords.currentText() or "Local") != "World":
-            return x0, x1, y0, y1
+            return (
+                _units.model_length_from_meters(self._project or self.doc, x0),
+                _units.model_length_from_meters(self._project or self.doc, x1),
+                _units.model_length_from_meters(self._project or self.doc, y0),
+                _units.model_length_from_meters(self._project or self.doc, y1),
+            )
 
         return _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=self._coord_context_obj())
 
     def _estimate_samples(self, corridor):
         try:
-            cell = float(self.spin_cell.value())
+            cell = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_cell.value())))
             if cell <= 1e-9:
                 return None
 
             if bool(self.chk_use_bounds.isChecked()):
                 bb = corridor.Shape.BoundBox
-                margin = float(self.spin_margin.value())
+                margin = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_margin.value())))
                 xmin = float(bb.XMin - margin)
                 xmax = float(bb.XMax + margin)
                 ymin = float(bb.YMin - margin)
@@ -801,7 +831,7 @@ class CutFillCalcTaskPanel:
             max_tri=int(self.spin_max_tri_src.value()),
             max_cand=int(self.spin_max_cand.value()),
             max_checks=int(self.spin_max_checks.value()),
-            scale=float(self._scale),
+            scale=float(self._display_scale()),
         )
 
     def _estimate_triangle_checks(self, corridor, mesh, est_samples=None):
@@ -812,10 +842,10 @@ class CutFillCalcTaskPanel:
                 est_samples = self._estimate_samples(corridor)
             if est_samples is None:
                 return None
-            cell = float(self.spin_cell.value())
+            cell = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_cell.value())))
             if bool(self.chk_use_bounds.isChecked()):
                 bb = corridor.Shape.BoundBox
-                margin = float(self.spin_margin.value())
+                margin = _units.model_length_from_meters(self._project or self.doc, self._display_to_meters(float(self.spin_margin.value())))
                 xmin = float(bb.XMin - margin)
                 xmax = float(bb.XMax + margin)
                 ymin = float(bb.YMin - margin)

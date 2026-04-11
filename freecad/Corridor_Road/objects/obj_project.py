@@ -6,6 +6,7 @@ import FreeCAD as App
 import math
 import re
 from freecad.Corridor_Road.objects import design_standards as _ds
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 
 TREE_KEY_PROP = "CRTreeKey"
@@ -83,23 +84,6 @@ def _safe_scale(v, default: float = 1.0) -> float:
     return float(x)
 
 
-def get_length_scale(doc_or_project, default: float = 1.0) -> float:
-    """
-    Length scale = internal units per meter.
-    1.0 means meter-native; 1000.0 means millimeter-like internal units.
-    """
-    if doc_or_project is None:
-        return float(default)
-
-    if hasattr(doc_or_project, "Document") and hasattr(doc_or_project, "LengthScale"):
-        return _safe_scale(getattr(doc_or_project, "LengthScale", default), default=default)
-
-    prj = find_project(doc_or_project) if hasattr(doc_or_project, "Objects") else None
-    if prj is None:
-        return float(default)
-    return _safe_scale(getattr(prj, "LengthScale", default), default=default)
-
-
 def get_design_standard(doc_or_project, default: str = _ds.DEFAULT_STANDARD) -> str:
     prj = _resolve_project(doc_or_project)
     if prj is None:
@@ -112,10 +96,6 @@ def get_design_standard(doc_or_project, default: str = _ds.DEFAULT_STANDARD) -> 
     except Exception:
         pass
     return std
-
-
-def meters_to_internal(doc_or_project, meters: float, default_scale: float = 1.0) -> float:
-    return float(meters) * get_length_scale(doc_or_project, default=default_scale)
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -1302,9 +1282,35 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "Version"):
         obj.addProperty("App::PropertyString", "Version", "CorridorRoad", "Project schema version")
         obj.Version = "0.5"
-    if not hasattr(obj, "LengthScale"):
-        obj.addProperty("App::PropertyFloat", "LengthScale", "CorridorRoad", "Length scale (internal units per meter)")
-        obj.LengthScale = 1.0
+    if not hasattr(obj, "LinearUnitDisplay"):
+        obj.addProperty("App::PropertyString", "LinearUnitDisplay", "Units", "Preferred display unit for linear values")
+        obj.LinearUnitDisplay = "m"
+    if not hasattr(obj, "LinearUnitImportDefault"):
+        obj.addProperty("App::PropertyString", "LinearUnitImportDefault", "Units", "Default import/input unit for linear values")
+        obj.LinearUnitImportDefault = "m"
+    if not hasattr(obj, "LinearUnitExportDefault"):
+        obj.addProperty("App::PropertyString", "LinearUnitExportDefault", "Units", "Default export/report unit for linear values")
+        obj.LinearUnitExportDefault = "m"
+    if not hasattr(obj, "CustomLinearUnitScale"):
+        obj.addProperty("App::PropertyFloat", "CustomLinearUnitScale", "Units", "Meters per user-unit when import/export unit is custom")
+        obj.CustomLinearUnitScale = 1.0
+    resolved_unit_settings = _units.resolve_project_unit_settings(obj)
+    try:
+        obj.LinearUnitDisplay = str(resolved_unit_settings.get("display", "m"))
+    except Exception:
+        pass
+    try:
+        obj.LinearUnitImportDefault = str(resolved_unit_settings.get("import", "m"))
+    except Exception:
+        pass
+    try:
+        obj.LinearUnitExportDefault = str(resolved_unit_settings.get("export", "m"))
+    except Exception:
+        pass
+    try:
+        obj.CustomLinearUnitScale = float(resolved_unit_settings.get("custom_scale", 1.0))
+    except Exception:
+        pass
     if not hasattr(obj, "DesignStandard"):
         legacy = ""
         try:

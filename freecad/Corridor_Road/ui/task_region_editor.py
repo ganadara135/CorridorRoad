@@ -11,6 +11,7 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects import design_standards as _ds
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_project import assign_project_region_plan, find_region_plan_objects, get_design_standard, resolve_project_region_plan
 from freecad.Corridor_Road.objects.obj_region_plan import (
     ALLOWED_CORRIDOR_POLICIES,
@@ -77,6 +78,16 @@ HINT_NOTE_PREFIXES = {
     HINT_STATUS_ACCEPTED: "[Accepted Hint]",
     HINT_STATUS_IGNORED: "[Ignored Hint]",
 }
+CSV_COMMENT_PREFIX = "#"
+CSV_LINEAR_UNIT_KEYS = {
+    "linear",
+    "linearunit",
+    "linear_unit",
+    "lengthunit",
+    "length_unit",
+    "unit",
+    "units",
+}
 OVERRIDE_KIND_ITEMS = [
     "Ditch / Berm",
     "Urban Edge",
@@ -101,6 +112,39 @@ def _find_region_sets(doc):
     return find_region_plan_objects(doc)
 
 
+def _normalize_csv_linear_unit(value):
+    token = str(value or "").strip().lower()
+    if token in ("m", "meter", "meters", "metre", "metres"):
+        return "m"
+    if token in ("mm", "millimeter", "millimeters", "millimetre", "millimetres"):
+        return "mm"
+    if token == "custom":
+        return "custom"
+    return ""
+
+
+def _parse_csv_unit_metadata(lines):
+    meta = {}
+    for raw_line in list(lines or []):
+        line = str(raw_line or "").strip()
+        if not line.startswith(CSV_COMMENT_PREFIX):
+            continue
+        body = line[1:].strip()
+        if not body:
+            continue
+        for part in body.replace(";", ",").split(","):
+            seg = str(part or "").strip()
+            if "=" not in seg:
+                continue
+            key, value = seg.split("=", 1)
+            norm_key = "".join(ch for ch in str(key or "").strip().lower() if ch.isalnum() or ch == "_")
+            if norm_key in CSV_LINEAR_UNIT_KEYS:
+                token = _normalize_csv_linear_unit(value)
+                if token:
+                    meta["linear_unit"] = token
+    return meta
+
+
 class RegionEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
@@ -120,6 +164,36 @@ class RegionEditorTaskPanel:
 
     def reject(self):
         Gui.Control.closeDialog()
+
+    def _unit_context(self):
+        prj = find_project(self.doc)
+        return prj if prj is not None else self.doc
+
+    def _meters_from_csv(self, value, linear_unit: str = "") -> float:
+        return _units.meters_from_user_length(self._unit_context(), self._safe_float(value, default=0.0), unit=linear_unit, use_default="import")
+
+    def _csv_from_meters(self, meters, linear_unit: str = "") -> float:
+        return _units.user_length_from_meters(self._unit_context(), self._safe_float(meters, default=0.0), unit=linear_unit, use_default="export")
+
+    def _display_unit_label(self) -> str:
+        return str(_units.get_linear_display_unit(self._unit_context()) or "m")
+
+    def _display_from_meters(self, meters) -> float:
+        return _units.user_length_from_meters(
+            self._unit_context(),
+            self._safe_float(meters, default=0.0),
+            use_default="display",
+        )
+
+    def _meters_from_display(self, value) -> float:
+        return _units.meters_from_user_length(
+            self._unit_context(),
+            self._safe_float(value, default=0.0),
+            use_default="display",
+        )
+
+    def _format_display_length(self, meters, digits: int = 3) -> str:
+        return f"{self._display_from_meters(meters):.{int(digits)}f}"
 
     @staticmethod
     def _fmt_obj(prefix, obj):
@@ -527,9 +601,11 @@ class RegionEditorTaskPanel:
         min_tangent = self._safe_float(criteria.get("min_tangent", 0.0), default=0.0)
         std_tag = str(standard or "").strip().upper() or _ds.DEFAULT_STANDARD
         speed_tag = int(round(float(speed_kph)))
+        unit_label = self._display_unit_label()
         reason = (
             f"{std_tag} at {float(speed_kph):.0f} km/h suggests reviewing localized transition lengths "
-            f"(>= {min_transition:.1f} m) and tangent buffers (>= {min_tangent:.1f} m) around bridge or work-zone overrides."
+            f"(>= {self._format_display_length(min_transition, digits=1)} {unit_label}) and "
+            f"tangent buffers (>= {self._format_display_length(min_tangent, digits=1)} {unit_label}) around bridge or work-zone overrides."
         )
         return [
             self._region_record(
@@ -1450,11 +1526,11 @@ class RegionEditorTaskPanel:
                     "Id": vals[0],
                     "RegionType": vals[1],
                     "Layer": vals[2],
-                    "StartStation": vals[3],
-                    "EndStation": vals[4],
+                    "StartStation": self._meters_from_display(vals[3]),
+                    "EndStation": self._meters_from_display(vals[4]),
                     "Priority": vals[5],
-                    "TransitionIn": vals[6],
-                    "TransitionOut": vals[7],
+                    "TransitionIn": self._meters_from_display(vals[6]),
+                    "TransitionOut": self._meters_from_display(vals[7]),
                     "TemplateName": vals[8],
                     "AssemblyName": vals[9],
                     "RuleSet": vals[10],
@@ -1533,11 +1609,11 @@ class RegionEditorTaskPanel:
                 self._set_cell_text(r, 0, str(rec.get("Id", "") or ""))
                 self._set_cell_text(r, 1, str(rec.get("RegionType", "") or ""))
                 self._set_cell_text(r, 2, str(rec.get("Layer", "") or "base"))
-                self._set_cell_text(r, 3, f"{float(rec.get('StartStation', 0.0) or 0.0):.3f}")
-                self._set_cell_text(r, 4, f"{float(rec.get('EndStation', 0.0) or 0.0):.3f}")
+                self._set_cell_text(r, 3, self._format_display_length(rec.get("StartStation", 0.0)))
+                self._set_cell_text(r, 4, self._format_display_length(rec.get("EndStation", 0.0)))
                 self._set_cell_text(r, 5, f"{int(rec.get('Priority', 0) or 0)}")
-                self._set_cell_text(r, 6, f"{float(rec.get('TransitionIn', 0.0) or 0.0):.3f}")
-                self._set_cell_text(r, 7, f"{float(rec.get('TransitionOut', 0.0) or 0.0):.3f}")
+                self._set_cell_text(r, 6, self._format_display_length(rec.get("TransitionIn", 0.0)))
+                self._set_cell_text(r, 7, self._format_display_length(rec.get("TransitionOut", 0.0)))
                 self._set_cell_text(r, 8, str(rec.get("TemplateName", "") or ""))
                 self._set_cell_text(r, 9, str(rec.get("AssemblyName", "") or ""))
                 self._set_cell_text(r, 10, str(rec.get("RuleSet", "") or ""))
@@ -1574,6 +1650,7 @@ class RegionEditorTaskPanel:
             self._loading = False
         msg = [
             f"Region plan objects: {len(self._regions)} found",
+            f"Display unit: {self._display_unit_label()}",
             "",
             "Workflow:",
             "1) Define base regions and local overrides for the active alignment",
@@ -2030,21 +2107,22 @@ class RegionEditorTaskPanel:
         end = self._safe_float(rec.get("EndStation", 0.0), default=0.0)
         if end < start:
             start, end = end, start
+        span = f"{self._format_display_length(start):>8} -> {self._format_display_length(end):>8}"
         if not self._is_enabled_row(rec):
             source = self._hint_source_for_row(rec)
             status = self._hint_status_label_for_row(rec)
             confidence = self._hint_confidence_label_for_row(rec)
             suggestion = self._title_case_token(str(rec.get("RegionType", "") or "")) or "Hint"
-            return f"HINT {start:8.3f} -> {end:8.3f} | {rid} | {source} | {confidence} | {status} | {suggestion}"
+            return f"HINT {span} | {rid} | {source} | {confidence} | {status} | {suggestion}"
         layer = str(rec.get("Layer", "") or "").strip().lower()
         if layer == "base":
             purpose = self._title_case_token(str(rec.get("RegionType", "") or "")) or "Base"
             template = str(rec.get("TemplateName", "") or "").strip() or "-"
-            return f"BASE {start:8.3f} -> {end:8.3f} | {rid} | {purpose} | tpl={template}"
+            return f"BASE {span} | {rid} | {purpose} | tpl={template}"
         kind = self._override_kind_for_row(rec)
         scope = self._override_scope_for_row(rec)
         action = self._override_action_for_row(rec)
-        return f"OVR  {start:8.3f} -> {end:8.3f} | {rid} | {kind} | {scope} | {action}"
+        return f"OVR  {span} | {rid} | {kind} | {scope} | {action}"
 
     def _refresh_timeline_summary(self, rows=None):
         data_rows = [dict(row) for row in list(rows if rows is not None else self._read_rows())]
@@ -2096,8 +2174,8 @@ class RegionEditorTaskPanel:
         self._set_combo_value(self.cmb_override_kind, self._override_kind_for_row(rec))
         self._set_combo_value(self.cmb_override_scope, self._override_scope_for_row(rec))
         self._set_combo_value(self.cmb_override_action, self._override_action_for_row(rec))
-        self.txt_override_start.setText(f"{self._safe_float(rec.get('StartStation', 0.0), default=0.0):.3f}")
-        self.txt_override_end.setText(f"{self._safe_float(rec.get('EndStation', 0.0), default=0.0):.3f}")
+        self.txt_override_start.setText(self._format_display_length(rec.get("StartStation", 0.0)))
+        self.txt_override_end.setText(self._format_display_length(rec.get("EndStation", 0.0)))
         self.lbl_override_editor.setText(f"Editing {str(rec.get('Id', '') or 'selected override')}")
         self.btn_apply_override_editor.setEnabled(True)
         self.btn_open_override_advanced.setEnabled(True)
@@ -2118,8 +2196,14 @@ class RegionEditorTaskPanel:
         if row < 0:
             self.lbl_status.setText("Selected override could not be resolved.")
             return
-        start_val = self._safe_float(self.txt_override_start.text(), default=self._safe_float(rec.get("StartStation", 0.0), default=0.0))
-        end_val = self._safe_float(self.txt_override_end.text(), default=self._safe_float(rec.get("EndStation", 0.0), default=0.0))
+        start_default = self._safe_float(rec.get("StartStation", 0.0), default=0.0)
+        end_default = self._safe_float(rec.get("EndStation", 0.0), default=0.0)
+        start_val = self._meters_from_display(
+            self._safe_float(self.txt_override_start.text(), default=self._display_from_meters(start_default))
+        )
+        end_val = self._meters_from_display(
+            self._safe_float(self.txt_override_end.text(), default=self._display_from_meters(end_default))
+        )
         if end_val < start_val:
             start_val, end_val = end_val, start_val
         kind = str(self.cmb_override_kind.currentText() or "").strip()
@@ -2152,8 +2236,8 @@ class RegionEditorTaskPanel:
         self._loading = True
         try:
             self._set_cell_text(row, 1, region_type)
-            self._set_cell_text(row, 3, f"{float(start_val):.3f}")
-            self._set_cell_text(row, 4, f"{float(end_val):.3f}")
+            self._set_cell_text(row, 3, self._format_display_length(start_val))
+            self._set_cell_text(row, 4, self._format_display_length(end_val))
             self._set_cell_text(row, 11, side_policy)
             self._set_cell_text(row, 12, daylight_policy)
             self._set_cell_text(row, 13, corridor_policy)
@@ -2163,7 +2247,7 @@ class RegionEditorTaskPanel:
         self._refresh_workflow_tables()
         self._refresh_validation_status()
         self.lbl_status.setText(
-            f"Override updated: {str(rec.get('Id', '') or 'selected')} | {kind} | {action} | {float(start_val):.3f}-{float(end_val):.3f}"
+            f"Override updated: {str(rec.get('Id', '') or 'selected')} | {kind} | {action} | {self._format_display_length(start_val)}-{self._format_display_length(end_val)} {self._display_unit_label()}"
         )
 
     def _set_advanced_row_enabled(self, row: int, enabled: bool):
@@ -2289,16 +2373,16 @@ class RegionEditorTaskPanel:
     def _csv_bool(value) -> bool:
         return str(value or "true").strip().lower() not in ("false", "0", "no", "off", "disabled")
 
-    def _normalized_csv_record(self, rec):
+    def _normalized_csv_record(self, rec, linear_unit: str = ""):
         return self._region_record(
             str(rec.get("Id", "") or ""),
             str(rec.get("RegionType", "") or ""),
             str(rec.get("Layer", "") or "base"),
-            self._safe_float(rec.get("StartStation", 0.0), default=0.0),
-            self._safe_float(rec.get("EndStation", 0.0), default=0.0),
+            self._meters_from_csv(rec.get("StartStation", 0.0), linear_unit),
+            self._meters_from_csv(rec.get("EndStation", 0.0), linear_unit),
             priority=self._safe_int(rec.get("Priority", 0), default=0),
-            transition_in=self._safe_float(rec.get("TransitionIn", 0.0), default=0.0),
-            transition_out=self._safe_float(rec.get("TransitionOut", 0.0), default=0.0),
+            transition_in=self._meters_from_csv(rec.get("TransitionIn", 0.0), linear_unit),
+            transition_out=self._meters_from_csv(rec.get("TransitionOut", 0.0), linear_unit),
             template_name=str(rec.get("TemplateName", "") or ""),
             assembly_name=str(rec.get("AssemblyName", "") or ""),
             rule_set=str(rec.get("RuleSet", "") or ""),
@@ -2315,6 +2399,8 @@ class RegionEditorTaskPanel:
 
     def _rows_to_csv_text(self, rows):
         buf = io.StringIO()
+        linear_unit = str(_units.get_linear_export_unit(self._unit_context()) or "m")
+        buf.write(f"# CorridorRoadUnits,linear={linear_unit}\n")
         writer = csv.DictWriter(buf, fieldnames=list(COL_HEADERS), extrasaction="ignore")
         writer.writeheader()
         for row in list(rows or []):
@@ -2323,13 +2409,19 @@ class RegionEditorTaskPanel:
                 val = row.get(key, "")
                 if key == "Enabled":
                     clean[key] = "true" if self._csv_bool(val) else "false"
+                elif key in ("StartStation", "EndStation", "TransitionIn", "TransitionOut"):
+                    clean[key] = f"{self._csv_from_meters(val, linear_unit):.3f}"
                 else:
                     clean[key] = "" if val is None else str(val)
             writer.writerow(clean)
         return buf.getvalue()
 
     def _rows_from_csv_text(self, text: str):
-        buf = io.StringIO(str(text or ""))
+        lines = str(text or "").splitlines()
+        metadata = _parse_csv_unit_metadata(lines)
+        linear_unit = str((metadata or {}).get("linear_unit", "") or "")
+        data_lines = [line for line in lines if not str(line or "").lstrip().startswith(CSV_COMMENT_PREFIX)]
+        buf = io.StringIO("\n".join(data_lines))
         reader = csv.DictReader(buf)
         if not reader.fieldnames:
             return []
@@ -2338,7 +2430,7 @@ class RegionEditorTaskPanel:
             clean = {key: str((raw or {}).get(key, "") or "").strip() for key in COL_HEADERS}
             if not any(clean.values()):
                 continue
-            rows.append(self._normalized_csv_record(clean))
+            rows.append(self._normalized_csv_record(clean, linear_unit=linear_unit))
         return rows
 
     def _import_csv(self):
@@ -2352,7 +2444,9 @@ class RegionEditorTaskPanel:
             return
         try:
             with open(path, "r", encoding="utf-8-sig", newline="") as fp:
-                rows = self._rows_from_csv_text(fp.read())
+                text = fp.read()
+            rows = self._rows_from_csv_text(text)
+            linear_unit = str(_parse_csv_unit_metadata(str(text or "").splitlines()).get("linear_unit", "") or _units.get_linear_import_unit(self._unit_context()))
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Manage Region Plan", f"CSV import failed: {ex}")
             return
@@ -2371,7 +2465,7 @@ class RegionEditorTaskPanel:
             if reply != QtWidgets.QMessageBox.Yes:
                 return
         self._populate_table(rows)
-        self.lbl_status.setText(f"Imported CSV rows: {len(rows)}")
+        self.lbl_status.setText(f"Imported CSV rows: {len(rows)} | linear={linear_unit}")
 
     def _export_csv(self):
         grouped = self._group_rows()
@@ -2393,7 +2487,7 @@ class RegionEditorTaskPanel:
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Manage Region Plan", f"CSV export failed: {ex}")
             return
-        self.lbl_status.setText(f"Exported CSV rows: {len(rows)}")
+        self.lbl_status.setText(f"Exported CSV rows: {len(rows)} | linear={_units.get_linear_export_unit(self._unit_context())}")
 
     def _refresh_validation_status(self):
         self._materialize_row_ids(force_if_generated=False)
@@ -2664,7 +2758,7 @@ class RegionEditorTaskPanel:
         region_type = str(rec.get("RegionType", "") or "")
         start = self._safe_float(rec.get("StartStation", 0.0), default=0.0)
         end = self._safe_float(rec.get("EndStation", 0.0), default=0.0)
-        span = f"{start:.3f} - {end:.3f}"
+        span = f"{self._format_display_length(start)} - {self._format_display_length(end)}"
         if kind == "base":
             return [
                 rid,
@@ -2702,7 +2796,7 @@ class RegionEditorTaskPanel:
         end = self._safe_float(rec.get("EndStation", 0.0), default=0.0)
         if end < start:
             start, end = end, start
-        span = f"{start:.3f} - {end:.3f}"
+        span = f"{self._format_display_length(start)} - {self._format_display_length(end)}"
         rid = str(rec.get("Id", "") or "")
         if not self._is_enabled_row(rec):
             return [
@@ -2791,8 +2885,8 @@ class RegionEditorTaskPanel:
         if self._is_enabled_row(rec):
             row_kind = "Base" if str(rec.get("Layer", "") or "").strip().lower() == "base" else "Override"
         self.lbl_timeline_editor.setText(f"{row_kind}: {str(rec.get('Id', '') or '-')}")
-        self.txt_timeline_start.setText(f"{start:.3f}")
-        self.txt_timeline_end.setText(f"{end:.3f}")
+        self.txt_timeline_start.setText(self._format_display_length(start))
+        self.txt_timeline_end.setText(self._format_display_length(end))
         self.btn_apply_timeline_span.setEnabled(True)
         self.btn_split_timeline_base.setEnabled(row_kind == "Base")
         self.btn_open_timeline_selection.setEnabled(True)
@@ -2863,21 +2957,27 @@ class RegionEditorTaskPanel:
         if rec is None:
             self.lbl_status.setText("Selected timeline row could not be resolved.")
             return
-        start_val = self._safe_float(self.txt_timeline_start.text(), default=self._safe_float(rec.get("StartStation", 0.0), default=0.0))
-        end_val = self._safe_float(self.txt_timeline_end.text(), default=self._safe_float(rec.get("EndStation", 0.0), default=0.0))
+        start_default = self._safe_float(rec.get("StartStation", 0.0), default=0.0)
+        end_default = self._safe_float(rec.get("EndStation", 0.0), default=0.0)
+        start_val = self._meters_from_display(
+            self._safe_float(self.txt_timeline_start.text(), default=self._display_from_meters(start_default))
+        )
+        end_val = self._meters_from_display(
+            self._safe_float(self.txt_timeline_end.text(), default=self._display_from_meters(end_default))
+        )
         if end_val < start_val:
             start_val, end_val = end_val, start_val
         self._loading = True
         try:
-            self._set_cell_text(target_row, 3, f"{float(start_val):.3f}")
-            self._set_cell_text(target_row, 4, f"{float(end_val):.3f}")
+            self._set_cell_text(target_row, 3, self._format_display_length(start_val))
+            self._set_cell_text(target_row, 4, self._format_display_length(end_val))
         finally:
             self._loading = False
         self._refresh_workflow_tables()
         self._refresh_validation_status()
         self._select_timeline_row_by_table_row(target_row)
         self.lbl_status.setText(
-            f"Timeline span updated: {str(rec.get('Id', '') or '-')} | {float(start_val):.3f}-{float(end_val):.3f}"
+            f"Timeline span updated: {str(rec.get('Id', '') or '-')} | {self._format_display_length(start_val)}-{self._format_display_length(end_val)} {self._display_unit_label()}"
         )
 
     def _split_selected_timeline_base(self):

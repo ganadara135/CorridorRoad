@@ -24,8 +24,8 @@ def coord_hint_text(doc_or_obj):
     return (
         f"CRS: {epsg if epsg else 'N/A'} / Status: {status} / "
         f"Workflow: {workflow} / "
-        f"Rot: {rot:.3f} deg / W0(E/N): {e0:.3f}, {n0:.3f} / "
-        f"L0(X/Y): {x0:.3f}, {y0:.3f}"
+        f"North rot: {rot:.3f} deg / World origin (E/N): {e0:.3f}, {n0:.3f} / "
+        f"Local origin (X/Y): {x0:.3f}, {y0:.3f}"
     )
 
 

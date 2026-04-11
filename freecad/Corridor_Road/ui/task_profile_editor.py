@@ -12,6 +12,7 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_profile_bundle import ProfileBundle, ViewProviderProfileBundle
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
@@ -79,6 +80,51 @@ def _normalize_fg_header(text: str) -> str:
         if ch.isalnum():
             keep.append(ch)
     return "".join(keep)
+
+
+CSV_COMMENT_PREFIX = "#"
+CSV_LINEAR_UNIT_KEYS = {
+    "linear",
+    "linearunit",
+    "linear_unit",
+    "lengthunit",
+    "length_unit",
+    "unit",
+    "units",
+}
+
+
+def _normalize_csv_linear_unit(value):
+    token = str(value or "").strip().lower()
+    if token in ("m", "meter", "meters", "metre", "metres"):
+        return "m"
+    if token in ("mm", "millimeter", "millimeters", "millimetre", "millimetres"):
+        return "mm"
+    if token == "custom":
+        return "custom"
+    return ""
+
+
+def _parse_csv_unit_metadata(lines):
+    meta = {}
+    for raw_line in list(lines or []):
+        line = str(raw_line or "").strip()
+        if not line.startswith(CSV_COMMENT_PREFIX):
+            continue
+        body = line[1:].strip()
+        if not body:
+            continue
+        for part in body.replace(";", ",").split(","):
+            seg = str(part or "").strip()
+            if "=" not in seg:
+                continue
+            key, value = seg.split("=", 1)
+            norm_key = "".join(ch for ch in str(key or "").strip().lower() if ch.isalnum() or ch == "_")
+            if norm_key in CSV_LINEAR_UNIT_KEYS:
+                token = _normalize_csv_linear_unit(value)
+                if token:
+                    meta["linear_unit"] = token
+    return meta
 
 
 class ProfileEditorTaskPanel:
@@ -300,6 +346,64 @@ class ProfileEditorTaskPanel:
             return self.project
         return self.doc
 
+    def _unit_context(self):
+        return self.project if self.project is not None else self.doc
+
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self._unit_context())
+
+    def _display_unit_label(self):
+        return self._display_unit()
+
+    def _display_from_meters(self, value):
+        return _units.user_length_from_meters(self._unit_context(), float(value or 0.0))
+
+    def _meters_from_display(self, value):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), use_default="display")
+
+    def _format_display_length(self, value, digits=3):
+        return f"{self._display_from_meters(value):.{int(digits)}f}"
+
+    def _fg_import_summary_text(self, path, rows_read, updated, appended, linear_unit):
+        return (
+            "FG import completed.\n"
+            f"File: {os.path.basename(str(path or ''))}\n"
+            f"Display unit: {self._display_unit_label()}\n"
+            f"CSV linear values: {str(linear_unit or _units.get_linear_import_unit(self._unit_context()) or 'm')}\n"
+            f"Rows read: {int(rows_read)}\n"
+            f"Updated existing stations: {int(updated)}\n"
+            f"Appended new stations: {int(appended)}"
+        )
+
+    def _fg_wizard_summary_text(self, updated, skipped_missing_eg=0):
+        lines = [
+            "FG wizard applied.",
+            f"Display unit: {self._display_unit_label()}",
+            f"Updated rows: {int(updated)}",
+        ]
+        if int(skipped_missing_eg or 0) > 0:
+            lines.append(f"Skipped rows missing EG: {int(skipped_missing_eg)}")
+        return "\n".join(lines)
+
+    def _apply_display_unit_widgets(self):
+        unit = self._display_unit_label()
+        try:
+            self.spin_eg_zoff.setSuffix(f" {unit}")
+            self.spin_fg_zoff.setSuffix(f" {unit}")
+        except Exception:
+            pass
+        try:
+            self.table.setHorizontalHeaderLabels(
+                [
+                    f"Station ({unit})",
+                    f"EG ({unit})",
+                    f"FG ({unit})",
+                    f"Delta (FG-EG) ({unit})",
+                ]
+            )
+        except Exception:
+            pass
+
     def _update_coord_hint(self):
         self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
 
@@ -474,13 +578,16 @@ class ProfileEditorTaskPanel:
         return min(vals), max(vals)
 
     @staticmethod
-    def _parse_fg_import_file(path: str):
+    def _parse_fg_import_file(path: str, doc_or_project=None):
         if not path or not os.path.isfile(path):
             raise Exception("FG import file was not found.")
 
         with open(path, "r", encoding="utf-8-sig", newline="") as fh:
-            sample = fh.read(2048)
-            fh.seek(0)
+            lines = list(fh.readlines())
+            metadata = _parse_csv_unit_metadata(lines)
+            linear_unit = str(metadata.get("linear_unit", "") or "")
+            data_lines = [line for line in lines if not str(line or "").lstrip().startswith(CSV_COMMENT_PREFIX)]
+            sample = "".join(data_lines[:20])
             try:
                 dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
             except Exception:
@@ -493,13 +600,11 @@ class ProfileEditorTaskPanel:
                     quoting = csv.QUOTE_MINIMAL
 
                 dialect = _SimpleDialect
-            reader = csv.reader(fh, dialect)
+            reader = csv.reader(data_lines, dialect)
             raw_rows = []
             for row in reader:
                 vals = [str(v).strip() for v in list(row or [])]
                 if not vals or all(v == "" for v in vals):
-                    continue
-                if str(vals[0]).strip().startswith("#"):
                     continue
                 raw_rows.append(vals)
 
@@ -565,13 +670,15 @@ class ProfileEditorTaskPanel:
             fg = _try_float(row[fg_idx])
             if sta is None or fg is None:
                 continue
-            key = round(float(sta), 6)
-            seen[key] = (float(sta), float(fg))
+            sta_m = _units.meters_from_user_length(doc_or_project, float(sta), unit=linear_unit, use_default="import")
+            fg_m = _units.meters_from_user_length(doc_or_project, float(fg), unit=linear_unit, use_default="import")
+            key = round(float(sta_m), 6)
+            seen[key] = (float(sta_m), float(fg_m))
 
         parsed = [seen[k] for k in sorted(seen)]
         if not parsed:
             raise Exception("FG import file did not yield any valid Station/FG rows.")
-        return parsed
+        return parsed, (linear_unit or str(_units.get_linear_import_unit(doc_or_project) or "m"))
 
     def _apply_imported_fg_rows(self, imported_rows):
         rows = list(imported_rows or [])
@@ -636,13 +743,13 @@ class ProfileEditorTaskPanel:
         if not path:
             return
         try:
-            rows = self._parse_fg_import_file(path)
+            rows, linear_unit = self._parse_fg_import_file(path, doc_or_project=self._unit_context())
             updated, appended = self._apply_imported_fg_rows(rows)
             self._refresh_status_summary()
             QtWidgets.QMessageBox.information(
                 None,
                 "Edit Profiles",
-                f"FG import completed.\nFile: {os.path.basename(path)}\nRows read: {len(rows)}\nUpdated existing stations: {updated}\nAppended new stations: {appended}",
+                self._fg_import_summary_text(path, len(rows), updated, appended, linear_unit),
             )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"FG import failed: {ex}")
@@ -709,18 +816,22 @@ class ProfileEditorTaskPanel:
         spin_s0 = QtWidgets.QDoubleSpinBox()
         spin_s0.setRange(-1e9, 1e9)
         spin_s0.setDecimals(3)
-        spin_s0.setValue(float(smin))
+        spin_s0.setSuffix(f" {self._display_unit_label()}")
+        spin_s0.setValue(self._display_from_meters(float(smin)))
         spin_s1 = QtWidgets.QDoubleSpinBox()
         spin_s1.setRange(-1e9, 1e9)
         spin_s1.setDecimals(3)
-        spin_s1.setValue(float(smax))
+        spin_s1.setSuffix(f" {self._display_unit_label()}")
+        spin_s1.setValue(self._display_from_meters(float(smax)))
         spin_v0 = QtWidgets.QDoubleSpinBox()
         spin_v0.setRange(-1e9, 1e9)
         spin_v0.setDecimals(3)
+        spin_v0.setSuffix(f" {self._display_unit_label()}")
         spin_v0.setValue(0.0)
         spin_v1 = QtWidgets.QDoubleSpinBox()
         spin_v1.setRange(-1e9, 1e9)
         spin_v1.setDecimals(3)
+        spin_v1.setSuffix(f" {self._display_unit_label()}")
         spin_v1.setValue(0.0)
 
         lbl_v0 = QtWidgets.QLabel("Offset:")
@@ -768,16 +879,17 @@ class ProfileEditorTaskPanel:
         try:
             updated, skipped_missing_eg = self._apply_fg_wizard_values(
                 str(cmb_mode.currentData() or "eg_offset"),
-                float(spin_s0.value()),
-                float(spin_s1.value()),
-                float(spin_v0.value()),
-                float(spin_v1.value()),
+                self._meters_from_display(float(spin_s0.value())),
+                self._meters_from_display(float(spin_s1.value())),
+                self._meters_from_display(float(spin_v0.value())),
+                self._meters_from_display(float(spin_v1.value())),
             )
             self._refresh_status_summary()
-            msg = f"FG wizard applied.\nUpdated rows: {updated}"
-            if skipped_missing_eg > 0:
-                msg += f"\nSkipped rows missing EG: {skipped_missing_eg}"
-            QtWidgets.QMessageBox.information(None, "Edit Profiles", msg)
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit Profiles",
+                self._fg_wizard_summary_text(updated, skipped_missing_eg),
+            )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"FG wizard failed: {ex}")
 
@@ -814,6 +926,7 @@ class ProfileEditorTaskPanel:
             self.fgdisp = _ensure_fg_display(self.doc, self.va)
         else:
             self.fgdisp = _find_fg_display(self.doc)
+        self._apply_display_unit_widgets()
 
         msg = []
         msg.append(f"ProfileBundle: {'FOUND' if self.bundle else 'NOT FOUND'}")
@@ -822,6 +935,8 @@ class ProfileEditorTaskPanel:
         msg.append(f"VerticalAlignment: {'FOUND' if self.va else 'NOT FOUND'}")
         msg.append(f"Terrain sources: {len(self._terrains)} found (Mesh/Shape)")
         msg.append(f"EG terrain coord mode: {'World (E/N)' if self._use_world_terrain_mode() else 'Local (X/Y)'}")
+        msg.append(f"Display unit: {self._display_unit_label()}")
+        msg.append("Table values and FG wizard inputs follow the active display unit.")
         msg.append("")
         msg.append("Policy:")
         msg.append("- EG wire is drawn by ProfileBundle.")
@@ -885,12 +1000,12 @@ class ProfileEditorTaskPanel:
         if txt == "":
             return None
         try:
-            return float(txt)
+            return self._meters_from_display(float(txt))
         except Exception:
             return None
 
     def _set_cell_float(self, r, c, v):
-        self._set_cell_text(r, c, f"{float(v):.3f}")
+        self._set_cell_text(r, c, self._format_display_length(v))
 
     def _apply_fg_lock(self):
         lock = bool(self.chk_fg_from_va.isChecked())
@@ -1263,7 +1378,7 @@ class ProfileEditorTaskPanel:
             except Exception:
                 pass
             try:
-                self.spin_eg_zoff.setValue(float(getattr(self.bundle, "WireZOffset", 0.0)))
+                self.spin_eg_zoff.setValue(self._display_from_meters(float(getattr(self.bundle, "WireZOffset", 0.0) or 0.0)))
             except Exception:
                 pass
 
@@ -1283,7 +1398,7 @@ class ProfileEditorTaskPanel:
             except Exception:
                 pass
             try:
-                self.spin_fg_zoff.setValue(float(getattr(self.fgdisp, "ZOffset", 0.0)))
+                self.spin_fg_zoff.setValue(self._display_from_meters(float(getattr(self.fgdisp, "ZOffset", 0.0) or 0.0)))
             except Exception:
                 pass
         else:
@@ -1480,7 +1595,7 @@ class ProfileEditorTaskPanel:
             pass
 
         try:
-            b.WireZOffset = float(self.spin_eg_zoff.value())
+            b.WireZOffset = self._meters_from_display(float(self.spin_eg_zoff.value()))
         except Exception:
             pass
 
@@ -1490,7 +1605,7 @@ class ProfileEditorTaskPanel:
             except Exception:
                 pass
             try:
-                self.fgdisp.ZOffset = float(self.spin_fg_zoff.value())
+                self.fgdisp.ZOffset = self._meters_from_display(float(self.spin_fg_zoff.value()))
             except Exception:
                 pass
 

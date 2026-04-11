@@ -22,6 +22,7 @@ from freecad.Corridor_Road.objects.obj_structure_set import (
     ViewProviderStructureSet,
     ensure_structure_set_properties,
 )
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.project_links import link_project
 
 
@@ -122,6 +123,18 @@ COMBO_COLUMN_ITEMS = {
     26: ["", "true", "false"],
 }
 STATION_COMBO_COLUMNS = (2, 3, 4)
+STRUCTURE_LINEAR_COLUMNS = {2, 3, 4, 6, 7, 8, 9, 10, 15, 16, 17, 18, 21}
+PROFILE_LINEAR_COLUMNS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+CSV_COMMENT_PREFIX = "#"
+CSV_LINEAR_UNIT_KEYS = {
+    "linear",
+    "linearunit",
+    "linear_unit",
+    "lengthunit",
+    "length_unit",
+    "unit",
+    "units",
+}
 
 
 class _RowAwareComboBox(QtWidgets.QComboBox):
@@ -149,6 +162,62 @@ class _RowAwareComboBox(QtWidgets.QComboBox):
     def showPopup(self):
         self._notify_interact()
         super().showPopup()
+
+
+def _normalize_csv_linear_unit(value):
+    token = str(value or "").strip().lower()
+    if token in ("m", "meter", "meters", "metre", "metres"):
+        return "m"
+    if token in ("mm", "millimeter", "millimeters", "millimetre", "millimetres"):
+        return "mm"
+    if token == "custom":
+        return "custom"
+    return ""
+
+
+def _parse_csv_unit_metadata(lines):
+    meta = {}
+    for raw_line in list(lines or []):
+        line = str(raw_line or "").strip()
+        if not line.startswith(CSV_COMMENT_PREFIX):
+            continue
+        body = line[1:].strip()
+        if not body:
+            continue
+        for part in body.replace(";", ",").split(","):
+            seg = str(part or "").strip()
+            if "=" not in seg:
+                continue
+            key, value = seg.split("=", 1)
+            norm_key = "".join(ch for ch in str(key or "").strip().lower() if ch.isalnum() or ch == "_")
+            if norm_key in CSV_LINEAR_UNIT_KEYS:
+                token = _normalize_csv_linear_unit(value)
+                if token:
+                    meta["linear_unit"] = token
+    return meta
+
+
+def _read_csv_dict_rows(path: str):
+    with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
+        lines = list(f.readlines())
+    metadata = _parse_csv_unit_metadata(lines)
+    data_lines = [line for line in lines if not str(line or "").lstrip().startswith(CSV_COMMENT_PREFIX)]
+    if not data_lines:
+        return {"rows": [], "fieldnames": [], "metadata": metadata, "delimiter": ","}
+    sample = "".join(data_lines[:20])
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        delim = str(getattr(dialect, "delimiter", ",") or ",")
+    except Exception:
+        dialect = csv.excel
+        delim = ","
+    reader = csv.DictReader(data_lines, dialect=dialect)
+    return {
+        "rows": [dict(row) for row in reader],
+        "fieldnames": list(reader.fieldnames or []),
+        "metadata": metadata,
+        "delimiter": delim,
+    }
 
 
 def _split_shape_source_path(path: str):
@@ -344,6 +413,27 @@ class StructureEditorTaskPanel:
             "err_base": self._brush("#5a2323"),
             "good_base": self._brush("#1f4d36"),
         }
+
+    def _unit_context(self):
+        return self.doc
+
+    def _display_unit_label(self):
+        return _units.get_linear_display_unit(self._unit_context())
+
+    def _display_from_meters(self, value):
+        return _units.user_length_from_meters(self._unit_context(), float(value or 0.0), use_default="display")
+
+    def _meters_from_display(self, value):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), use_default="display")
+
+    def _meters_from_import(self, value):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), use_default="import")
+
+    def _meters_from_csv(self, value, linear_unit: str = ""):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), unit=linear_unit, use_default="import")
+
+    def _format_display_length(self, meters: float, digits: int = 3):
+        return f"{self._display_from_meters(float(meters or 0.0)):.{max(0, int(digits))}f}"
 
     @staticmethod
     def _apply_table_theme(table):
@@ -880,19 +970,19 @@ class StructureEditorTaskPanel:
         return {
             "Id": self._get_cell_text(row, 0).strip(),
             "Type": self._get_cell_text(row, 1).strip().lower(),
-            "StartStation": self._get_cell_float(row, 2),
-            "EndStation": self._get_cell_float(row, 3),
-            "CenterStation": self._get_cell_float(row, 4),
+            "StartStation": self._meters_from_display(self._get_cell_float(row, 2)),
+            "EndStation": self._meters_from_display(self._get_cell_float(row, 3)),
+            "CenterStation": self._meters_from_display(self._get_cell_float(row, 4)),
             "Side": self._get_cell_text(row, 5).strip(),
-            "Offset": self._get_cell_float(row, 6),
-            "Width": self._get_cell_float(row, 7),
-            "Height": self._get_cell_float(row, 8),
-            "BottomElevation": self._get_cell_float(row, 9),
-            "Cover": self._get_cell_float(row, 10),
-            "WallThickness": self._get_cell_float(row, 15),
-            "FootingWidth": self._get_cell_float(row, 16),
-            "FootingThickness": self._get_cell_float(row, 17),
-            "CapHeight": self._get_cell_float(row, 18),
+            "Offset": self._meters_from_display(self._get_cell_float(row, 6)),
+            "Width": self._meters_from_display(self._get_cell_float(row, 7)),
+            "Height": self._meters_from_display(self._get_cell_float(row, 8)),
+            "BottomElevation": self._meters_from_display(self._get_cell_float(row, 9)),
+            "Cover": self._meters_from_display(self._get_cell_float(row, 10)),
+            "WallThickness": self._meters_from_display(self._get_cell_float(row, 15)),
+            "FootingWidth": self._meters_from_display(self._get_cell_float(row, 16)),
+            "FootingThickness": self._meters_from_display(self._get_cell_float(row, 17)),
+            "CapHeight": self._meters_from_display(self._get_cell_float(row, 18)),
             "CellCount": max(1.0, self._get_cell_float(row, 19) or 1.0),
         }
 
@@ -1516,16 +1606,16 @@ class StructureEditorTaskPanel:
             for i, rec in enumerate(rows):
                 vals = [
                     sid or str(rec.get("StructureId", "") or ""),
-                    f"{float(rec.get('Station', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('Offset', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('Width', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('Height', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('BottomElevation', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('Cover', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('WallThickness', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('FootingWidth', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('FootingThickness', 0.0) or 0.0):.3f}",
-                    f"{float(rec.get('CapHeight', 0.0) or 0.0):.3f}",
+                    self._format_display_length(float(rec.get("Station", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("Offset", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("Width", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("Height", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("BottomElevation", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("Cover", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("WallThickness", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("FootingWidth", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("FootingThickness", 0.0) or 0.0), digits=3),
+                    self._format_display_length(float(rec.get("CapHeight", 0.0) or 0.0), digits=3),
                     f"{int(round(float(rec.get('CellCount', 0.0) or 0.0))):d}",
                 ]
                 for c, val in enumerate(vals):
@@ -1541,7 +1631,7 @@ class StructureEditorTaskPanel:
                 stas = [float(rec.get("Station", 0.0) or 0.0) for rec in rows]
                 self.lbl_profile_table.setText(
                     f"Station profiles for selected structure: {sid if sid else 'no selection'} | "
-                    f"points={len(rows)} | range={min(stas):.3f} ~ {max(stas):.3f}"
+                    f"points={len(rows)} | range={self._format_display_length(min(stas), digits=3)} ~ {self._format_display_length(max(stas), digits=3)}"
                 )
             else:
                 self.lbl_profile_table.setText(
@@ -1565,16 +1655,16 @@ class StructureEditorTaskPanel:
             kept.append(
                 {
                     "StructureId": sid,
-                    "Station": self._parse_float(station_txt),
-                    "Offset": self._parse_float(self.profile_table.item(r, 2).text() if self.profile_table.item(r, 2) else ""),
-                    "Width": self._parse_float(self.profile_table.item(r, 3).text() if self.profile_table.item(r, 3) else ""),
-                    "Height": self._parse_float(self.profile_table.item(r, 4).text() if self.profile_table.item(r, 4) else ""),
-                    "BottomElevation": self._parse_float(self.profile_table.item(r, 5).text() if self.profile_table.item(r, 5) else ""),
-                    "Cover": self._parse_float(self.profile_table.item(r, 6).text() if self.profile_table.item(r, 6) else ""),
-                    "WallThickness": self._parse_float(self.profile_table.item(r, 7).text() if self.profile_table.item(r, 7) else ""),
-                    "FootingWidth": self._parse_float(self.profile_table.item(r, 8).text() if self.profile_table.item(r, 8) else ""),
-                    "FootingThickness": self._parse_float(self.profile_table.item(r, 9).text() if self.profile_table.item(r, 9) else ""),
-                    "CapHeight": self._parse_float(self.profile_table.item(r, 10).text() if self.profile_table.item(r, 10) else ""),
+                    "Station": self._meters_from_display(self._parse_float(station_txt)),
+                    "Offset": self._meters_from_display(self._parse_float(self.profile_table.item(r, 2).text() if self.profile_table.item(r, 2) else "")),
+                    "Width": self._meters_from_display(self._parse_float(self.profile_table.item(r, 3).text() if self.profile_table.item(r, 3) else "")),
+                    "Height": self._meters_from_display(self._parse_float(self.profile_table.item(r, 4).text() if self.profile_table.item(r, 4) else "")),
+                    "BottomElevation": self._meters_from_display(self._parse_float(self.profile_table.item(r, 5).text() if self.profile_table.item(r, 5) else "")),
+                    "Cover": self._meters_from_display(self._parse_float(self.profile_table.item(r, 6).text() if self.profile_table.item(r, 6) else "")),
+                    "WallThickness": self._meters_from_display(self._parse_float(self.profile_table.item(r, 7).text() if self.profile_table.item(r, 7) else "")),
+                    "FootingWidth": self._meters_from_display(self._parse_float(self.profile_table.item(r, 8).text() if self.profile_table.item(r, 8) else "")),
+                    "FootingThickness": self._meters_from_display(self._parse_float(self.profile_table.item(r, 9).text() if self.profile_table.item(r, 9) else "")),
+                    "CapHeight": self._meters_from_display(self._parse_float(self.profile_table.item(r, 10).text() if self.profile_table.item(r, 10) else "")),
                     "CellCount": int(round(self._parse_float(self.profile_table.item(r, 11).text() if self.profile_table.item(r, 11) else ""))),
                 }
             )
@@ -1614,7 +1704,8 @@ class StructureEditorTaskPanel:
             self.lbl_info.setText(
                 f"StructureSet: {len(self._structures)} found.\n"
                 f"Stationing: {'FOUND' if st is not None else 'NOT FOUND'}\n"
-                f"Station count: {len(self._station_values)}"
+                f"Station count: {len(self._station_values)}\n"
+                f"Display unit: {self._display_unit_label()}"
             )
             if st is None:
                 self.lbl_station_note.setText(
@@ -1689,7 +1780,7 @@ class StructureEditorTaskPanel:
         items = [""]
         for s in list(self._station_values or []):
             try:
-                items.append(f"{float(s):.3f}")
+                items.append(self._format_display_length(float(s), digits=3))
             except Exception:
                 pass
         return items
@@ -1862,26 +1953,26 @@ class StructureEditorTaskPanel:
                 {
                     "Id": row[0],
                     "Type": row[1],
-                    "StartStation": self._get_cell_float(r, 2),
-                    "EndStation": self._get_cell_float(r, 3),
-                    "CenterStation": self._get_cell_float(r, 4),
+                    "StartStation": self._meters_from_display(self._get_cell_float(r, 2)),
+                    "EndStation": self._meters_from_display(self._get_cell_float(r, 3)),
+                    "CenterStation": self._meters_from_display(self._get_cell_float(r, 4)),
                     "Side": row[5],
-                    "Offset": self._get_cell_float(r, 6),
-                    "Width": self._get_cell_float(r, 7),
-                    "Height": self._get_cell_float(r, 8),
-                    "BottomElevation": self._get_cell_float(r, 9),
-                    "Cover": self._get_cell_float(r, 10),
+                    "Offset": self._meters_from_display(self._get_cell_float(r, 6)),
+                    "Width": self._meters_from_display(self._get_cell_float(r, 7)),
+                    "Height": self._meters_from_display(self._get_cell_float(r, 8)),
+                    "BottomElevation": self._meters_from_display(self._get_cell_float(r, 9)),
+                    "Cover": self._meters_from_display(self._get_cell_float(r, 10)),
                     "RotationDeg": self._get_cell_float(r, 11),
                     "BehaviorMode": row[12],
                     "GeometryMode": row[13],
                     "TemplateName": row[14],
-                    "WallThickness": self._get_cell_float(r, 15),
-                    "FootingWidth": self._get_cell_float(r, 16),
-                    "FootingThickness": self._get_cell_float(r, 17),
-                    "CapHeight": self._get_cell_float(r, 18),
+                    "WallThickness": self._meters_from_display(self._get_cell_float(r, 15)),
+                    "FootingWidth": self._meters_from_display(self._get_cell_float(r, 16)),
+                    "FootingThickness": self._meters_from_display(self._get_cell_float(r, 17)),
+                    "CapHeight": self._meters_from_display(self._get_cell_float(r, 18)),
                     "CellCount": self._get_cell_float(r, 19),
                     "CorridorMode": row[20],
-                    "CorridorMargin": self._get_cell_float(r, 21),
+                    "CorridorMargin": self._meters_from_display(self._get_cell_float(r, 21)),
                     "Notes": row[22],
                     "ShapeSourcePath": row[23],
                     "ScaleFactor": self._get_cell_float(r, 24) or 1.0,
@@ -1899,26 +1990,26 @@ class StructureEditorTaskPanel:
             for i, rec in enumerate(rows):
                 self._set_cell_text(i, 0, rec.get("Id", ""))
                 self._set_cell_text(i, 1, rec.get("Type", ""))
-                self._set_cell_text(i, 2, f"{float(rec.get('StartStation', 0.0)):.3f}")
-                self._set_cell_text(i, 3, f"{float(rec.get('EndStation', 0.0)):.3f}")
-                self._set_cell_text(i, 4, f"{float(rec.get('CenterStation', 0.0)):.3f}")
+                self._set_cell_text(i, 2, self._format_display_length(float(rec.get("StartStation", 0.0)), digits=3))
+                self._set_cell_text(i, 3, self._format_display_length(float(rec.get("EndStation", 0.0)), digits=3))
+                self._set_cell_text(i, 4, self._format_display_length(float(rec.get("CenterStation", 0.0)), digits=3))
                 self._set_cell_text(i, 5, rec.get("Side", ""))
-                self._set_cell_text(i, 6, f"{float(rec.get('Offset', 0.0)):.3f}")
-                self._set_cell_text(i, 7, f"{float(rec.get('Width', 0.0)):.3f}")
-                self._set_cell_text(i, 8, f"{float(rec.get('Height', 0.0)):.3f}")
-                self._set_cell_text(i, 9, f"{float(rec.get('BottomElevation', 0.0)):.3f}")
-                self._set_cell_text(i, 10, f"{float(rec.get('Cover', 0.0)):.3f}")
+                self._set_cell_text(i, 6, self._format_display_length(float(rec.get("Offset", 0.0)), digits=3))
+                self._set_cell_text(i, 7, self._format_display_length(float(rec.get("Width", 0.0)), digits=3))
+                self._set_cell_text(i, 8, self._format_display_length(float(rec.get("Height", 0.0)), digits=3))
+                self._set_cell_text(i, 9, self._format_display_length(float(rec.get("BottomElevation", 0.0)), digits=3))
+                self._set_cell_text(i, 10, self._format_display_length(float(rec.get("Cover", 0.0)), digits=3))
                 self._set_cell_text(i, 11, f"{float(rec.get('RotationDeg', 0.0)):.3f}")
                 self._set_cell_text(i, 12, rec.get("BehaviorMode", ""))
                 self._set_cell_text(i, 13, rec.get("GeometryMode", ""))
                 self._set_cell_text(i, 14, rec.get("TemplateName", ""))
-                self._set_cell_text(i, 15, f"{float(rec.get('WallThickness', 0.0)):.3f}")
-                self._set_cell_text(i, 16, f"{float(rec.get('FootingWidth', 0.0)):.3f}")
-                self._set_cell_text(i, 17, f"{float(rec.get('FootingThickness', 0.0)):.3f}")
-                self._set_cell_text(i, 18, f"{float(rec.get('CapHeight', 0.0)):.3f}")
+                self._set_cell_text(i, 15, self._format_display_length(float(rec.get("WallThickness", 0.0)), digits=3))
+                self._set_cell_text(i, 16, self._format_display_length(float(rec.get("FootingWidth", 0.0)), digits=3))
+                self._set_cell_text(i, 17, self._format_display_length(float(rec.get("FootingThickness", 0.0)), digits=3))
+                self._set_cell_text(i, 18, self._format_display_length(float(rec.get("CapHeight", 0.0)), digits=3))
                 self._set_cell_text(i, 19, f"{float(rec.get('CellCount', 0.0)):.0f}")
                 self._set_cell_text(i, 20, rec.get("CorridorMode", ""))
-                self._set_cell_text(i, 21, f"{float(rec.get('CorridorMargin', 0.0)):.3f}")
+                self._set_cell_text(i, 21, self._format_display_length(float(rec.get("CorridorMargin", 0.0)), digits=3))
                 self._set_cell_text(i, 22, rec.get("Notes", ""))
                 self._set_cell_text(i, 23, rec.get("ShapeSourcePath", ""))
                 self._set_cell_text(i, 24, f"{float(rec.get('ScaleFactor', 1.0) or 1.0):.3f}")
@@ -2460,51 +2551,51 @@ class StructureEditorTaskPanel:
             return
 
         try:
-            with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
-                rdr = csv.DictReader(f)
-                mapping = _structure_csv_mapping(rdr.fieldnames)
-                if not mapping.get("Type") or not mapping.get("StartStation") or not mapping.get("EndStation"):
-                    raise Exception("CSV requires at least Type, StartStation, EndStation columns.")
-                rows = []
-                for row in rdr:
-                    rows.append(
-                        {
-                            "Id": str(row.get(mapping.get("Id"), "") or "").strip(),
-                            "Type": str(row.get(mapping.get("Type"), "") or "").strip(),
-                            "StartStation": self._parse_float(row.get(mapping.get("StartStation"), "")),
-                            "EndStation": self._parse_float(row.get(mapping.get("EndStation"), "")),
-                            "CenterStation": self._parse_float(row.get(mapping.get("CenterStation"), "")),
-                            "Side": str(row.get(mapping.get("Side"), "") or "").strip(),
-                            "Offset": self._parse_float(row.get(mapping.get("Offset"), "")),
-                            "Width": self._parse_float(row.get(mapping.get("Width"), "")),
-                            "Height": self._parse_float(row.get(mapping.get("Height"), "")),
-                            "BottomElevation": self._parse_float(row.get(mapping.get("BottomElevation"), "")),
-                            "Cover": self._parse_float(row.get(mapping.get("Cover"), "")),
-                            "RotationDeg": self._parse_float(row.get(mapping.get("RotationDeg"), "")),
-                            "BehaviorMode": str(row.get(mapping.get("BehaviorMode"), "") or "").strip(),
-                            "GeometryMode": str(row.get(mapping.get("GeometryMode"), "") or "").strip(),
-                            "TemplateName": str(row.get(mapping.get("TemplateName"), "") or "").strip(),
-                            "WallThickness": self._parse_float(row.get(mapping.get("WallThickness"), "")),
-                            "FootingWidth": self._parse_float(row.get(mapping.get("FootingWidth"), "")),
-                            "FootingThickness": self._parse_float(row.get(mapping.get("FootingThickness"), "")),
-                            "CapHeight": self._parse_float(row.get(mapping.get("CapHeight"), "")),
-                            "CellCount": self._parse_float(row.get(mapping.get("CellCount"), "")),
-                            "CorridorMode": str(row.get(mapping.get("CorridorMode"), "") or "").strip(),
-                            "CorridorMargin": self._parse_float(row.get(mapping.get("CorridorMargin"), "")),
-                            "Notes": str(row.get(mapping.get("Notes"), "") or "").strip(),
-                            "ShapeSourcePath": str(row.get(mapping.get("ShapeSourcePath"), "") or "").strip(),
-                            "ScaleFactor": self._parse_float(row.get(mapping.get("ScaleFactor"), "")) or 1.0,
-                            "PlacementMode": str(row.get(mapping.get("PlacementMode"), "") or "").strip(),
-                            "UseSourceBaseAsBottom": str(row.get(mapping.get("UseSourceBaseAsBottom"), "") or "").strip(),
-                        }
-                    )
+            payload = _read_csv_dict_rows(path)
+            linear_unit = str((payload.get("metadata", {}) or {}).get("linear_unit", "") or "")
+            mapping = _structure_csv_mapping(payload.get("fieldnames", []))
+            if not mapping.get("Type") or not mapping.get("StartStation") or not mapping.get("EndStation"):
+                raise Exception("CSV requires at least Type, StartStation, EndStation columns.")
+            rows = []
+            for row in list(payload.get("rows", []) or []):
+                rows.append(
+                    {
+                        "Id": str(row.get(mapping.get("Id"), "") or "").strip(),
+                        "Type": str(row.get(mapping.get("Type"), "") or "").strip(),
+                        "StartStation": self._meters_from_csv(self._parse_float(row.get(mapping.get("StartStation"), "")), linear_unit),
+                        "EndStation": self._meters_from_csv(self._parse_float(row.get(mapping.get("EndStation"), "")), linear_unit),
+                        "CenterStation": self._meters_from_csv(self._parse_float(row.get(mapping.get("CenterStation"), "")), linear_unit),
+                        "Side": str(row.get(mapping.get("Side"), "") or "").strip(),
+                        "Offset": self._meters_from_csv(self._parse_float(row.get(mapping.get("Offset"), "")), linear_unit),
+                        "Width": self._meters_from_csv(self._parse_float(row.get(mapping.get("Width"), "")), linear_unit),
+                        "Height": self._meters_from_csv(self._parse_float(row.get(mapping.get("Height"), "")), linear_unit),
+                        "BottomElevation": self._meters_from_csv(self._parse_float(row.get(mapping.get("BottomElevation"), "")), linear_unit),
+                        "Cover": self._meters_from_csv(self._parse_float(row.get(mapping.get("Cover"), "")), linear_unit),
+                        "RotationDeg": self._parse_float(row.get(mapping.get("RotationDeg"), "")),
+                        "BehaviorMode": str(row.get(mapping.get("BehaviorMode"), "") or "").strip(),
+                        "GeometryMode": str(row.get(mapping.get("GeometryMode"), "") or "").strip(),
+                        "TemplateName": str(row.get(mapping.get("TemplateName"), "") or "").strip(),
+                        "WallThickness": self._meters_from_csv(self._parse_float(row.get(mapping.get("WallThickness"), "")), linear_unit),
+                        "FootingWidth": self._meters_from_csv(self._parse_float(row.get(mapping.get("FootingWidth"), "")), linear_unit),
+                        "FootingThickness": self._meters_from_csv(self._parse_float(row.get(mapping.get("FootingThickness"), "")), linear_unit),
+                        "CapHeight": self._meters_from_csv(self._parse_float(row.get(mapping.get("CapHeight"), "")), linear_unit),
+                        "CellCount": self._parse_float(row.get(mapping.get("CellCount"), "")),
+                        "CorridorMode": str(row.get(mapping.get("CorridorMode"), "") or "").strip(),
+                        "CorridorMargin": self._meters_from_csv(self._parse_float(row.get(mapping.get("CorridorMargin"), "")), linear_unit),
+                        "Notes": str(row.get(mapping.get("Notes"), "") or "").strip(),
+                        "ShapeSourcePath": str(row.get(mapping.get("ShapeSourcePath"), "") or "").strip(),
+                        "ScaleFactor": self._parse_float(row.get(mapping.get("ScaleFactor"), "")) or 1.0,
+                        "PlacementMode": str(row.get(mapping.get("PlacementMode"), "") or "").strip(),
+                        "UseSourceBaseAsBottom": str(row.get(mapping.get("UseSourceBaseAsBottom"), "") or "").strip(),
+                    }
+                )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", f"CSV load failed: {ex}")
             return
 
         self._populate_structure_table(rows)
         self._refresh_profile_table()
-        self.lbl_status.setText(f"Loaded CSV rows: {len(rows)}")
+        self.lbl_status.setText(f"Loaded CSV rows: {len(rows)} | linear={linear_unit or _units.get_linear_import_unit(self._unit_context())}")
         self._refresh_validation_visuals()
 
     def _on_load_profile_csv(self):
@@ -2517,38 +2608,38 @@ class StructureEditorTaskPanel:
             return
 
         try:
-            with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
-                rdr = csv.DictReader(f)
-                mapping = _structure_profile_csv_mapping(rdr.fieldnames)
-                if not mapping.get("StructureId") or not mapping.get("Station"):
-                    raise Exception("Profile CSV requires at least StructureId and Station columns.")
-                rows = []
-                for row in rdr:
-                    if not any(str(v or "").strip() for v in row.values()):
-                        continue
-                    rows.append(
-                        {
-                            "StructureId": str(row.get(mapping.get("StructureId"), "") or "").strip(),
-                            "Station": self._parse_float(row.get(mapping.get("Station"), "")),
-                            "Offset": self._parse_float(row.get(mapping.get("Offset"), "")),
-                            "Width": self._parse_float(row.get(mapping.get("Width"), "")),
-                            "Height": self._parse_float(row.get(mapping.get("Height"), "")),
-                            "BottomElevation": self._parse_float(row.get(mapping.get("BottomElevation"), "")),
-                            "Cover": self._parse_float(row.get(mapping.get("Cover"), "")),
-                            "WallThickness": self._parse_float(row.get(mapping.get("WallThickness"), "")),
-                            "FootingWidth": self._parse_float(row.get(mapping.get("FootingWidth"), "")),
-                            "FootingThickness": self._parse_float(row.get(mapping.get("FootingThickness"), "")),
-                            "CapHeight": self._parse_float(row.get(mapping.get("CapHeight"), "")),
-                            "CellCount": self._parse_float(row.get(mapping.get("CellCount"), "")),
-                        }
-                    )
+            payload = _read_csv_dict_rows(path)
+            linear_unit = str((payload.get("metadata", {}) or {}).get("linear_unit", "") or "")
+            mapping = _structure_profile_csv_mapping(payload.get("fieldnames", []))
+            if not mapping.get("StructureId") or not mapping.get("Station"):
+                raise Exception("Profile CSV requires at least StructureId and Station columns.")
+            rows = []
+            for row in list(payload.get("rows", []) or []):
+                if not any(str(v or "").strip() for v in row.values()):
+                    continue
+                rows.append(
+                    {
+                        "StructureId": str(row.get(mapping.get("StructureId"), "") or "").strip(),
+                        "Station": self._meters_from_csv(self._parse_float(row.get(mapping.get("Station"), "")), linear_unit),
+                        "Offset": self._meters_from_csv(self._parse_float(row.get(mapping.get("Offset"), "")), linear_unit),
+                        "Width": self._meters_from_csv(self._parse_float(row.get(mapping.get("Width"), "")), linear_unit),
+                        "Height": self._meters_from_csv(self._parse_float(row.get(mapping.get("Height"), "")), linear_unit),
+                        "BottomElevation": self._meters_from_csv(self._parse_float(row.get(mapping.get("BottomElevation"), "")), linear_unit),
+                        "Cover": self._meters_from_csv(self._parse_float(row.get(mapping.get("Cover"), "")), linear_unit),
+                        "WallThickness": self._meters_from_csv(self._parse_float(row.get(mapping.get("WallThickness"), "")), linear_unit),
+                        "FootingWidth": self._meters_from_csv(self._parse_float(row.get(mapping.get("FootingWidth"), "")), linear_unit),
+                        "FootingThickness": self._meters_from_csv(self._parse_float(row.get(mapping.get("FootingThickness"), "")), linear_unit),
+                        "CapHeight": self._meters_from_csv(self._parse_float(row.get(mapping.get("CapHeight"), "")), linear_unit),
+                        "CellCount": self._parse_float(row.get(mapping.get("CellCount"), "")),
+                    }
+                )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Profile CSV load failed: {ex}")
             return
 
         self._set_profile_rows(rows)
         self._refresh_profile_table()
-        self.lbl_status.setText(f"Loaded profile CSV rows: {len(rows)}")
+        self.lbl_status.setText(f"Loaded profile CSV rows: {len(rows)} | linear={linear_unit or _units.get_linear_import_unit(self._unit_context())}")
         self._refresh_validation_visuals()
 
     def _apply(self):
