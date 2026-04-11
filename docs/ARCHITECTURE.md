@@ -662,6 +662,8 @@ Practical rule:
 
 ### 3.10 Command Label Policy
 - Toolbar/menu labels omit `Generate` prefix.
+- Toolbar/menu labels should also omit `Import` when the command opens the primary task panel for that feature domain (for example `PointCloud DEM`, not `Import PointCloud DEM`).
+- Toolbar/menu labels should omit redundant object-type suffixes when the feature area is already clear in context (for example `Manage Regions`, not `Manage Region Plan`).
 - Command IDs follow current feature naming (`CorridorRoad_GenerateCutFillCalc` etc.).
 
 ## 4) Design Rules

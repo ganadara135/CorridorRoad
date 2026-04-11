@@ -54,9 +54,9 @@ Important behavior:
 8. Lock the coordinate setup after the coordinate policy is confirmed.
 
 ### Practical Notes
-1. If point cloud CSV is in UTM, `Project Setup` should usually be completed before `Import PointCloud DEM`.
+1. If point cloud CSV is in UTM, `Project Setup` should usually be completed before `PointCloud DEM`.
 2. If alignment and terrain appear shifted, check `Project Origin`, `Local Origin`, and `North Rotation` before changing other tools.
-3. If `Auto-apply recommended modes in task panels` is enabled, `Import PointCloud DEM`, `Alignment`, `Edit Profiles`, `Generate Sections`, `Design Terrain`, and `Cut/Fill Calc` will start from the workflow recommendation.
+3. If `Auto-apply recommended modes in task panels` is enabled, `PointCloud DEM`, `Alignment`, `Edit Profiles`, `Generate Sections`, `Design Terrain`, and `Cut/Fill Calc` will start from the workflow recommendation.
 4. `Setup Status` is useful for team workflow, but it does not prevent generation commands by itself.
 5. Unit settings do not retroactively rescale existing geometry. They control input parsing and display/export formatting only.
 
@@ -97,9 +97,9 @@ Important behavior:
 > [Screenshot Needed] Alignment editor showing the Preset combo, Load Preset, and Coord Input.
 > Suggested file: `wiki-menu-reference-alignment-preset.png`
 
-## 3. Import PointCloud DEM
+## 3. PointCloud DEM
 
-Use `Import PointCloud DEM` to turn point cloud CSV data into a DEM-style mesh terrain for EG sampling, daylight reference, and terrain-based analysis.
+Use `PointCloud DEM` to turn point cloud CSV data into a DEM-style mesh terrain for EG sampling, daylight reference, and terrain-based analysis.
 
 Important behavior:
 1. If a `PointCloudDEM` object already exists, this panel updates that object instead of creating a second terrain object.
@@ -406,9 +406,9 @@ Current practical workflow:
 > [Screenshot Needed] Edit Structures panel with sample rows loaded.
 > Suggested file: `wiki-menu-reference-edit-structures.png`
 
-## 5A. Manage Region Plan
+## 5A. Manage Regions
 
-Use `Manage Region Plan` to define alignment-owned span logic before section generation.
+Use `Manage Regions` to define alignment-owned span logic before section generation.
 This panel is now the main place to author corridor span intent, not a low-level runtime rule table.
 
 Important behavior:

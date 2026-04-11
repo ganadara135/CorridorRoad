@@ -12,7 +12,7 @@ class CmdImportPointCloudDEM:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Import PointCloud DEM",
+            "MenuText": "PointCloud DEM",
             "ToolTip": "Import UTM CSV point cloud (E/N/Z) and build DEM mesh terrain",
         }
 

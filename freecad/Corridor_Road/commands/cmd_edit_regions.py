@@ -11,7 +11,7 @@ class CmdEditRegions:
     def GetResources(self):
         return {
             "Pixmap": "",
-            "MenuText": "Manage Region Plan",
+            "MenuText": "Manage Regions",
             "ToolTip": "Create or edit alignment-owned region plan definitions for section generation",
         }
 

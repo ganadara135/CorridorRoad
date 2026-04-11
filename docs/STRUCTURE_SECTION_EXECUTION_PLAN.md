@@ -153,7 +153,7 @@ Remaining validation:
 ### Recommended menu position
 1. `New Project`
 2. `Project Setup`
-3. `Import PointCloud DEM`
+3. `PointCloud DEM`
 4. `Edit Structures`
 5. `Alignment`
 

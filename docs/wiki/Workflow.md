@@ -26,7 +26,7 @@ Validation:
 ![Screenshot Needed Project tree immediately after setup](images/wiki-workflow-01-project-init.png)
 
 ## 2. Existing Terrain (EG)
-1. Run `Import PointCloud DEM`.
+1. Run `PointCloud DEM`.
 2. Load point cloud CSV (UTM or project coordinates).
 3. Generate DEM mesh terrain.
 
@@ -183,7 +183,7 @@ Validation:
 
 
 ## 5A. Region Plan
-1. Run `Manage Region Plan`.
+1. Run `Manage Regions`.
 2. Create or select the alignment-owned `RegionPlan`.
 3. Define `Base Regions` first so the main corridor span layout is clear.
 4. Add `Overrides` for local ditch/urban/corridor behaviors only where needed.

@@ -39,7 +39,7 @@ Follow this order so one project session can produce most screenshots without re
 
 1. `New Project`
 2. `Project Setup`
-3. `Import PointCloud DEM`
+3. `PointCloud DEM`
 4. `Alignment`
 5. `Generate Stations`
 6. `Edit Profiles`
@@ -64,7 +64,7 @@ Follow this order so one project session can produce most screenshots without re
 - [ ] `images/wiki-quickstart-step2-project-setup.png`
   - Capture `Project Setup` with basic values visible.
 - [ ] `images/wiki-quickstart-step3-pointcloud-dem.png`
-  - Show `Import PointCloud DEM` task panel and generated terrain mesh together if possible.
+  - Show `PointCloud DEM` task panel and generated terrain mesh together if possible.
 - [ ] `images/wiki-quickstart-step4-alignment-import.png`
   - Show imported alignment table or alignment geometry clearly.
 - [ ] `images/wiki-quickstart-step5-stations-complete.png`
@@ -116,7 +116,7 @@ Follow this order so one project session can produce most screenshots without re
 - [ ] `images/wiki-menu-reference-project-setup.png`
   - Show all major `Project Setup` fields in one view.
 - [ ] `images/wiki-menu-reference-pointcloud-dem.png`
-  - Show `Import PointCloud DEM` options including `Cell Size`, `Aggregation`, and coordinate settings.
+  - Show `PointCloud DEM` options including `Cell Size`, `Aggregation`, and coordinate settings.
 - [ ] `images/wiki-menu-reference-edit-profiles.png`
   - Show `Edit Profiles` table and options including terrain source and coord mode.
 - [ ] `images/wiki-menu-reference-edit-pvi.png`
