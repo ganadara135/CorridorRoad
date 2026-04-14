@@ -56,6 +56,8 @@ For the maintained extended sample inventory, see [../PRACTICAL_SAMPLE_SET.md](.
    - [Screenshot Needed] Profile table with EG values.
    - Suggested file: `wiki-quickstart-step6-profiles-eg.png`
 7. Run `3D Centerline`.
+   - In the task panel, keep `Display Quality = Normal` first.
+   - Click `Generate 3D Centerline Now`.
    - Confirm completion message appears and 3D wire is visible.
    - [Screenshot Needed] 3D Centerline completion dialog + wire.
    - Suggested file: `wiki-quickstart-step7-centerline-complete.png`

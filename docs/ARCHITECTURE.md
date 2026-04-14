@@ -70,14 +70,21 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 
 ### 2.6 Centerline3DDisplay (`freecad/Corridor_Road/objects/obj_centerline3d_display.py`)
 - Purpose: 3D centerline rendering only.
+- Precision/rendering note:
+  - visual zig-zag or wiggly appearance in zoom/pan scenarios should be treated as a display-side sampling/rendering artifact, not as the engineering source-of-truth path
+  - station-based section/corridor design must continue to resolve geometry from `point3d_at_station(...)` / `frame_at_station(...)` rather than trusting the rendered wire as the design contract
+  - because this visual artifact can reduce user confidence, the preferred mitigation is denser centerline display sampling rather than changing the station-based design model
 - Input:
   - direct source links: `Alignment`, `Stationing`, `VerticalAlignment`, `ProfileBundle`
+  - semantic split links: `RegionPlanSource`, `StructureSetSource`
   - optional legacy link: `SourceCenterline` (Centerline3D)
 - Controls:
   - `ShowWire`, `UseStationing`, `SamplingInterval`, `ElevationSource`
-  - `MaxChordError`, `MinStep`, `MaxStep`, `UseKeyStations`
+  - `MaxChordError`, `MinStep`, `MaxStep`, `UseKeyStations`, `DisplayQuality`
+  - `SegmentByRegions`, `SegmentByStructures`
 - Results:
   - `SampledStations`, `SampledPoints`, `SampleCount`, `Status`
+  - `SegmentCount`, `SegmentKindSummary`, `SegmentSplitSourceSummary`, `SegmentRows`, `SamplingPolicySummary`
 
 ### 2.7 AssemblyTemplate (`freecad/Corridor_Road/objects/obj_assembly_template.py`)
 - Purpose: cross-section template parameters.

@@ -18,6 +18,8 @@ This page is the quick technical map for contributors.
 - Terrain/design/cut-fill runtime uses DEM-style regular XY grid sampling.
 - Daylight terrain source in section generation is mesh based.
 - Coordinate handling uses project-level local/world transform policy.
+- 3D centerline wire is a sampled display object; station-based design logic must not treat its visual polyline as the engineering source of truth.
+- If the 3D centerline looks zig-zag or slightly wiggly during zoom/pan, interpret that first as a sampling/rendering precision issue. The current mitigation direction is denser display sampling, not a change to the station-based design method.
 
 ## Main Objects
 - `HorizontalAlignment`: horizontal geometry + key stations
@@ -114,10 +116,23 @@ Command-id note:
   - `Use Selected Section` and `Refresh Context` on the row directly below `Section Set`
   - `Station` selector at the bottom of the `Source` group
   - no user-facing `Show labels` toggle
+- `3D Centerline` task panel currently keeps:
+  - command title/user intent focused on display generation, not design regeneration
+  - optional `RegionPlan` / `StructureSet` source pickers
+  - semantic split toggles for region/structure boundaries and transitions
+  - `Display Quality` as the first tuning control; `Max Chord Error`, `Min Step`, and `Max Step` remain advanced display controls
+  - completion/status text explicitly stating that station-based frames remain the engineering source of truth
 - `Typical Section` editor currently keeps:
   - `Shape` active only on `ditch` rows; non-ditch rows keep it blank and disabled
   - manual 3D preview via `Refresh Preview`; row edits do not auto-preview
   - full preview wire visible together with `SelectedComponentPreview` for the selected component row
+
+## 3D Centerline Confidence Note
+- `Centerline3DDisplay` is a viewer-facing sampled wire.
+- `SectionSet`, structure frame placement, and corridor generation should continue to evaluate the alignment/profile model at stations rather than inheriting geometric truth from the sampled wire.
+- A visibly segmented 3D centerline can still make the model look less trustworthy to users even when the station-based calculations are correct.
+- Preferred follow-up is to increase centerline display sampling density so the rendered wire better matches the underlying station-based geometry.
+- Region/structure semantic segmentation may intentionally increase visible wire splits while still preserving the same station-based engineering numbers downstream.
   - pavement preview/report object label as `PavementDisplay`
   - click-locked component-row activation; hover should not change the active row
 - `Manage Regions` currently keeps:

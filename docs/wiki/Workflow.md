@@ -170,7 +170,17 @@ Current notes:
 
 ## 5. 3D Centerline
 1. Run `3D Centerline`.
-2. Confirm sampled station count and wire in 3D view.
+2. In the task panel, confirm the source links:
+   - `Alignment`
+   - optional `Stationing`
+   - optional `Vertical Alignment` / `ProfileBundle`
+   - optional `RegionPlan`
+   - optional `StructureSet`
+3. If you want the display wire to break at semantic boundaries, keep region/structure split toggles enabled.
+4. Choose `Display Quality` first for normal review work.
+5. Adjust `Max Chord Error`, `Min Step`, and `Max Step` only when you need manual display tuning.
+6. Click `Build 3D Centerline Display`.
+7. Confirm sampled station count and wire in 3D view.
 
 Output:
 - Centerline3D display object
@@ -178,6 +188,8 @@ Output:
 Validation:
 - Completion popup appears.
 - Sampled station count is non-zero and wire is visible.
+- Task panel status reports the current display quality and sampling summary.
+- If semantic split is enabled, split-source summary reflects region/structure boundaries and transitions.
 
 [3D centerline wire and completion popup](images/wiki-workflow-05-centerline3d.png)
 

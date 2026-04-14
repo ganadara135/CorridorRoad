@@ -201,6 +201,22 @@ Interpretation:
 1. `retaining_wall` uses a shorter auto transition than `culvert` or `bridge_zone`.
 2. `bridge_zone` and `abutment_zone` use longer transition distances by design.
 
+## 3D centerline wire looks zig-zag or wiggly
+Symptoms:
+- The generated 3D centerline looks segmented, zig-zag, or slightly unstable while zooming or panning.
+- Users may suspect the station-based corridor geometry itself is inaccurate.
+
+Interpretation:
+1. This is typically a display-side sampling/rendering precision issue.
+2. The station-based engineering logic does not use the rendered wire as the design source of truth.
+3. Sections, structure frames, and corridor generation still evaluate the underlying alignment/profile model at stations.
+
+Actions:
+1. Treat the current wire as a visual guide, not as the final proof of geometric smoothness.
+2. If field review depends heavily on centerline appearance, note that denser centerline display sampling is the preferred mitigation path.
+3. If section/corridor output is numerically and station-wise correct, do not treat the sampled-wire look alone as a design failure.
+4. If the wire is split more often than expected, inspect the task-panel `Split Sources` summary before assuming a geometry error. Region/structure semantic splits are display-side by design.
+
 ## Region Plan rows are hard to read in dark theme
 Symptoms:
 - `Manage Regions` shows pale or tinted rows but the cell text is hard to read.
