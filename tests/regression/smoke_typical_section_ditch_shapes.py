@@ -22,6 +22,10 @@ def _assert(cond, msg):
         raise Exception(msg)
 
 
+def _almost_equal(a, b, tol=1e-6):
+    return abs(float(a) - float(b)) <= float(tol)
+
+
 def _make_typical(doc, name, shape_mode, extra_width):
     typ = doc.addObject("Part::FeaturePython", name)
     TypicalSectionTemplate(typ)
@@ -63,6 +67,10 @@ def run():
         _assert(len(pts_v) == 3, f"V ditch should produce 3 top-profile points, got {len(pts_v)}")
         _assert(len(pts_trap) == 4, f"Trapezoid ditch should produce 4 top-profile points, got {len(pts_trap)}")
         _assert(len(pts_u) == 5, f"U ditch should produce 5 top-profile points, got {len(pts_u)}")
+        _assert(float(pts_trap[1].y) < float(pts_trap[0].y), "Trapezoid ditch should drop below the starting elevation")
+        _assert(_almost_equal(float(pts_trap[1].y), float(pts_trap[2].y)), "Trapezoid ditch bottom should stay flat")
+        _assert(_almost_equal(float(pts_trap[3].y), float(pts_trap[0].y)), "Trapezoid ditch should return to the starting elevation at the outer edge")
+        _assert(float(pts_trap[0].x) > float(pts_trap[1].x) > float(pts_trap[2].x) > float(pts_trap[3].x), "Left-side trapezoid ditch points should progress from the outer edge back toward the centerline")
 
         shape_rows_u = [str(row or "") for row in list(getattr(typ_u, "SectionComponentSummaryRows", []) or [])]
         _assert(any("type=ditch" in row and "shape=u" in row for row in shape_rows_u), "U ditch report row missing shape=u")

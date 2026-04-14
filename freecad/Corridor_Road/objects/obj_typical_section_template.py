@@ -779,16 +779,28 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
             y_end = y - (width * slope / 100.0)
             pts.append(App.Vector(x_end, y_end, 0.0))
             return pts
-        outer_total = max(0.0, width - bottom_w)
-        inner_w = 0.5 * outer_total
-        outer_w = max(0.0, outer_total - inner_w)
+        top_run = max(0.0, width - bottom_w)
+        inner_grade = abs(float(slope))
+        outer_grade = abs(float(back_slope))
+        if top_run <= 1e-9:
+            inner_w = 0.0
+            outer_w = 0.0
+        else:
+            inner_weight = 1.0 / max(inner_grade, 1.0)
+            outer_weight = 1.0 / max(outer_grade, 1.0)
+            denom = inner_weight + outer_weight
+            if denom <= 1e-9:
+                inner_w = 0.5 * top_run
+            else:
+                inner_w = top_run * (inner_weight / denom)
+            outer_w = max(0.0, top_run - inner_w)
         x_mid = x + float(direction) * inner_w
         y_mid = y - abs(height)
         pts.append(App.Vector(x_mid, y_mid, 0.0))
         x_bottom = x_mid + float(direction) * bottom_w
         pts.append(App.Vector(x_bottom, y_mid, 0.0))
         x_end = x_bottom + float(direction) * outer_w
-        y_end = y_mid - (outer_w * back_slope / 100.0)
+        y_end = y
         pts.append(App.Vector(x_end, y_end, 0.0))
         return pts
 
