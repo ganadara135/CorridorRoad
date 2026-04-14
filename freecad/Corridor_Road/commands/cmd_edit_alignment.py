@@ -4,15 +4,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_alignment_editor import AlignmentEditorTaskPanel
 
 
 class CmdEditAlignment:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("alignment.svg"),
             "MenuText": "Alignment",
-            "ToolTip": "Edit alignment IP/radius/transition and run criteria checks",
+            "ToolTip": "Edit alignment geometry and criteria",
         }
 
     def IsActive(self):

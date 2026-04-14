@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_cut_fill_calc import CutFillCalcTaskPanel
 
 
 class CmdGenerateCutFillCalc:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("cut_fill.svg"),
             "MenuText": "Cut-Fill Calc",
-            "ToolTip": "Cut/Fill calculation from Existing(Mesh) vs Design(Corridor top surface)",
+            "ToolTip": "Calculate cut and fill from existing vs design surfaces",
         }
 
     def IsActive(self):

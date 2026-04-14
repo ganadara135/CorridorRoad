@@ -4,15 +4,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_cross_section_viewer import CrossSectionViewerTaskPanel
 
 
 class CmdViewCrossSection:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("view_cross_section.svg"),
             "MenuText": "Cross Section Viewer",
-            "ToolTip": "Open a 2D viewer for SectionSet cross-sections",
+            "ToolTip": "Open the 2D cross-section viewer",
         }
 
     def IsActive(self):

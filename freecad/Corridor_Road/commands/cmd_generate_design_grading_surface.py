@@ -6,6 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface, ViewProviderDesignGradingSurface
 from freecad.Corridor_Road.objects.project_links import link_project
@@ -22,9 +23,9 @@ def _find_design_grading_surface(doc):
 class CmdGenerateDesignGradingSurface:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("design_grading_surface.svg"),
             "MenuText": "Design Grading Surface",
-            "ToolTip": "Create/update design grading surface (road + side slopes) from SectionSet",
+            "ToolTip": "Generate design grading surface from SectionSet",
         }
 
     def IsActive(self):

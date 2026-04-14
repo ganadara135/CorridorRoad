@@ -5,6 +5,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_properties,
@@ -17,9 +18,9 @@ from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
 class CmdNewProject:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("new_project.svg"),
             "MenuText": "New Project",
-            "ToolTip": "Create a CorridorRoad project container object",
+            "ToolTip": "Create a new CorridorRoad project",
         }
 
     def IsActive(self):

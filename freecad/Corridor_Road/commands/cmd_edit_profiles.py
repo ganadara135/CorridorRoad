@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_profile_editor import ProfileEditorTaskPanel
 
 
 class CmdEditProfiles:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("edit_profiles.svg"),
             "MenuText": "Edit Profiles (Data/EG)",
-            "ToolTip": "Edit profile data (Data/EG) and FG display/source settings by station",
+            "ToolTip": "Edit Data/EG profiles and FG sources",
         }
 
     def IsActive(self):

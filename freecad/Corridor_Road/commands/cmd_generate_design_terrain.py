@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_design_terrain import DesignTerrainTaskPanel
 
 
 class CmdGenerateDesignTerrain:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("design_terrain.svg"),
             "MenuText": "Design Terrain",
-            "ToolTip": "Create/update composite design terrain from DesignGradingSurface and Existing Terrain",
+            "ToolTip": "Merge design grading surface with existing terrain",
         }
 
     def IsActive(self):

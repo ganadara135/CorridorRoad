@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_corridor_loft import CorridorLoftTaskPanel
 
 
 class CmdGenerateCorridor:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("corridor.svg"),
             "MenuText": "Corridor",
-            "ToolTip": "Create/update corridor from SectionSet",
+            "ToolTip": "Generate corridor surface from SectionSet",
         }
 
     def IsActive(self):

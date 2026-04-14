@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_section_generator import SectionGeneratorTaskPanel
 
 
 class CmdGenerateSections:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("sections.svg"),
             "MenuText": "Sections",
-            "ToolTip": "Generate section set from assembly template (range/manual stations)",
+            "ToolTip": "Generate sections from the active template",
         }
 
     def IsActive(self):
