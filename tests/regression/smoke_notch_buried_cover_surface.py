@@ -56,7 +56,7 @@ def run():
         },
     }
 
-    out_wire = CorridorLoft._make_notch_profile_for_surface(open_wire, row, scale=1.0)
+    out_wire = CorridorLoft._make_notch_profile_for_surface(open_wire, row, doc_or_obj=None)
     in_pts = CorridorLoft._wire_points(open_wire)
     out_pts = CorridorLoft._wire_points(out_wire)
 

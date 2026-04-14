@@ -25,6 +25,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_import_pointcloud_dem  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_import_pointcloud_tin  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_stations  # noqa: F401
@@ -47,6 +48,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_NewProject",
                 "CorridorRoad_ProjectSetup",
                 "CorridorRoad_ImportPointCloudDEM",
+                "CorridorRoad_ImportPointCloudTIN",
                 "CorridorRoad_EditAlignment",
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",
@@ -70,6 +72,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
                 "CorridorRoad_NewProject",
                 "CorridorRoad_ProjectSetup",
                 "CorridorRoad_ImportPointCloudDEM",
+                "CorridorRoad_ImportPointCloudTIN",
                 "CorridorRoad_EditAlignment",
                 "CorridorRoad_GenerateStations",
                 "CorridorRoad_EditProfiles",

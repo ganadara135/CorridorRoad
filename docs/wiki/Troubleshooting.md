@@ -203,16 +203,16 @@ Interpretation:
 
 ## Region Plan rows are hard to read in dark theme
 Symptoms:
-- `Manage Region Plan` shows pale or tinted rows but the cell text is hard to read.
+- `Manage Regions` shows pale or tinted rows but the cell text is hard to read.
 - `Station Timeline`, `Base Regions`, `Overrides`, or `Hints` look washed out after switching FreeCAD theme.
 
 Checks:
 1. Confirm the panel was opened after the current FreeCAD theme was already active.
 2. Confirm the problem is in the grouped workflow tables, not a screenshot viewer or external image viewer.
-3. Confirm the issue persists after closing and reopening `Manage Region Plan`.
+3. Confirm the issue persists after closing and reopening `Manage Regions`.
 
 Actions:
-1. Reopen `Manage Region Plan` so row tinting is rebuilt from the current Qt palette.
+1. Reopen `Manage Regions` so row tinting is rebuilt from the current Qt palette.
 2. Keep FreeCAD on a normal dark or light application palette rather than a partially mixed custom palette if possible.
 3. If the issue still persists, report which table is affected:
    - `Station Timeline`
@@ -226,7 +226,7 @@ Interpretation:
 
 ## Region Plan changes do not affect generated sections
 Symptoms:
-- `Manage Region Plan` looks correct, but `Generate Sections` output does not reflect region boundaries or overrides.
+- `Manage Regions` looks correct, but `Generate Sections` output does not reflect region boundaries or overrides.
 
 Checks:
 1. Confirm `Use linked Region Plan` is enabled in `Generate Sections`.

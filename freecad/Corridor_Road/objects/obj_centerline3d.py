@@ -7,8 +7,8 @@ import math
 import FreeCAD as App
 import Part
 
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment
 
 
@@ -28,7 +28,14 @@ def _build_bundle_pairs(bundle_obj):
     if n < 1:
         return []
 
-    pairs = [(float(st[i]), float(fg[i])) for i in range(n)]
+    doc = getattr(bundle_obj, "Document", None)
+    pairs = [
+        (
+            _units.meters_from_internal_length(doc, float(st[i])),
+            _units.meters_from_internal_length(doc, float(fg[i])),
+        )
+        for i in range(n)
+    ]
     pairs.sort(key=lambda x: x[0])
     return pairs
 
@@ -56,8 +63,6 @@ def _interp_bundle_fg(bundle_obj, s: float):
 
 
 def ensure_centerline3d_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     if not hasattr(obj, "Alignment"):
         obj.addProperty("App::PropertyLink", "Alignment", "Centerline3D", "HorizontalAlignment link")
     if not hasattr(obj, "Stationing"):
@@ -73,7 +78,7 @@ def ensure_centerline3d_properties(obj):
 
     if not hasattr(obj, "SamplingInterval"):
         obj.addProperty("App::PropertyFloat", "SamplingInterval", "Sampling", "Sampling interval (m) when Stationing is not used")
-        obj.SamplingInterval = 5.0 * scale
+        obj.SamplingInterval = 5.0
 
     if not hasattr(obj, "ElevationSource"):
         obj.addProperty("App::PropertyEnumeration", "ElevationSource", "Sampling", "Elevation source mode")
@@ -95,6 +100,15 @@ def ensure_centerline3d_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Centerline3D", "Centerline3D scalar length storage schema")
+        obj.LengthSchemaVersion = 2
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema < 2:
+        obj.LengthSchemaVersion = 2
 
 
 class Centerline3D:
@@ -126,7 +140,7 @@ class Centerline3D:
 
         interval = float(getattr(obj, "SamplingInterval", 5.0))
         if not math.isfinite(interval) or interval <= 1e-6:
-            interval = 5.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
+            interval = 5.0
             obj.SamplingInterval = interval
 
         s = 0.0
@@ -172,7 +186,9 @@ class Centerline3D:
         if z_provider is None:
             _, z_provider = Centerline3D._resolve_z_provider(obj)
 
-        total = float(aln.Shape.Length)
+        total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+        if total <= 1.0e-9:
+            total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
         ss = float(s)
         if ss < 0.0:
             ss = 0.0
@@ -180,8 +196,9 @@ class Centerline3D:
             ss = total
 
         p_xy = HorizontalAlignment.point_at_station(aln, ss)
-        z = float(z_provider(ss))
-        return App.Vector(float(p_xy.x), float(p_xy.y), z)
+        z_m = float(z_provider(ss))
+        z_model = _units.model_length_from_meters(getattr(obj, "Document", None), z_m)
+        return App.Vector(float(p_xy.x), float(p_xy.y), float(z_model))
 
     @staticmethod
     def tangent3d_at_station(obj, s: float, eps: float = 0.1, z_provider=None) -> App.Vector:
@@ -192,7 +209,9 @@ class Centerline3D:
         if aln is None or aln.Shape is None or aln.Shape.isNull():
             raise Exception("Centerline3D.Alignment is missing or empty.")
 
-        total = float(aln.Shape.Length)
+        total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+        if total <= 1.0e-9:
+            total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
         if total <= 1e-9:
             return App.Vector(1.0, 0.0, 0.0)
 
@@ -262,7 +281,9 @@ class Centerline3D:
                 obj.Status = "Missing Alignment"
                 return
 
-            total = float(aln.Shape.Length)
+            total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+            if total <= 1.0e-9:
+                total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
             if total <= 1e-9:
                 obj.Shape = Part.Shape()
                 obj.StationValues = []
@@ -304,7 +325,7 @@ class Centerline3D:
             total3d = 0.0
             for i in range(len(points) - 1):
                 total3d += float((points[i + 1] - points[i]).Length)
-            obj.TotalLength3D = float(total3d)
+            obj.TotalLength3D = _units.meters_from_model_length(getattr(obj, "Document", None), float(total3d))
             obj.ResolvedElevationSource = source_name
             obj.Status = "OK"
 

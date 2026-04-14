@@ -4,15 +4,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_region_editor import RegionEditorTaskPanel
 
 
 class CmdEditRegions:
     def GetResources(self):
         return {
-            "Pixmap": "",
-            "MenuText": "Manage Region Plan",
-            "ToolTip": "Create or edit alignment-owned region plan definitions for section generation",
+            "Pixmap": icon_path("edit_regions.svg"),
+            "MenuText": "Manage Regions",
+            "ToolTip": "Edit region spans for sections and corridor behavior",
         }
 
     def IsActive(self):

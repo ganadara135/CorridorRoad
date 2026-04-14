@@ -14,12 +14,13 @@ from freecad.Corridor_Road.objects.obj_project import ensure_region_plan_object,
 from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan as RegionPlanSource
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.objects.obj_typical_section_template import build_top_profile as _build_typical_top_profile
-from freecad.Corridor_Road.objects.obj_assembly_template import _collect_side_bench_rows, _resolve_side_bench_profile
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects.obj_assembly_template import _collect_side_bench_rows, _resolve_side_bench_profile, _parse_bench_row, _serialize_bench_row
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
+_SECTIONSET_LENGTH_SCHEMA_TARGET = 2
 
 
 def _is_mesh_object(obj) -> bool:
@@ -330,6 +331,34 @@ def _safe_float(value, default=0.0):
         return float(default)
 
 
+def _model_length(doc_or_obj, meters: float) -> float:
+    return _units.model_length_from_meters(doc_or_obj, meters)
+
+
+def _model_length_factor(doc_or_obj) -> float:
+    return _model_length(doc_or_obj, 1.0)
+
+
+def _assembly_model_value(asm_obj, prop: str, default: float = 0.0) -> float:
+    if asm_obj is None:
+        return float(default)
+    return _model_length(getattr(asm_obj, "Document", None), float(getattr(asm_obj, prop, default) or default))
+
+
+def _assembly_model_bench_rows(asm_obj, prop: str):
+    if asm_obj is None:
+        return []
+    out = []
+    for row in list(getattr(asm_obj, prop, []) or []):
+        parsed = _parse_bench_row(row, 0.0)
+        if parsed is None:
+            continue
+        parsed["drop"] = _model_length(getattr(asm_obj, "Document", None), float(parsed.get("drop", 0.0) or 0.0))
+        parsed["width"] = _model_length(getattr(asm_obj, "Document", None), float(parsed.get("width", 0.0) or 0.0))
+        out.append(_serialize_bench_row(parsed))
+    return out
+
+
 def _typical_edge_anchors(segment_rows):
     anchors = {}
     for row_txt in list(segment_rows or []):
@@ -366,6 +395,30 @@ def _parse_station_text(text: str):
         except Exception:
             continue
     return out
+
+
+def _format_station_text_values(values):
+    cleaned = []
+    for value in list(values or []):
+        try:
+            cleaned.append(f"{float(value):.6f}")
+        except Exception:
+            continue
+    return ", ".join(cleaned)
+
+
+def _station_text_internal_from_meters(doc, text: str) -> str:
+    values = []
+    for value in _parse_station_text(text):
+        values.append(_units.internal_length_from_meters(doc, float(value)))
+    return _format_station_text_values(values)
+
+
+def _station_text_meters_from_internal(doc, text: str) -> str:
+    values = []
+    for value in _parse_station_text(text):
+        values.append(_units.meters_from_internal_length(doc, float(value)))
+    return _format_station_text_values(values)
 
 
 def _resolve_structure_source(obj):
@@ -838,34 +891,104 @@ def _parse_region_daylight_policy(policy_text: str):
 def _alignment_ip_key_stations(aln):
     if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
         return []
-    total = float(aln.Shape.Length)
-    if total <= 1e-9:
+    total_m = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+    if total_m <= 1e-9:
+        total_m = _units.meters_from_model_length(getattr(aln, "Document", None), float(aln.Shape.Length))
+    if total_m <= 1e-9:
         return [0.0]
 
-    vals = [0.0, total]
+    vals = [0.0, total_m]
     pts = list(getattr(aln, "IPPoints", []) or [])
     for p in pts:
         try:
-            s = float(HorizontalAlignment.station_at_xy(aln, float(p.x), float(p.y), samples_per_edge=48))
-            vals.append(s)
+            vals.append(float(HorizontalAlignment.station_at_xy(aln, float(p.x), float(p.y), samples_per_edge=48)))
         except Exception:
             continue
-    vals = [min(max(0.0, float(v)), total) for v in vals]
+    vals = [min(max(0.0, float(v)), total_m) for v in vals]
     return _unique_sorted(vals)
 
 
 def _alignment_transition_key_stations(aln):
     if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
         return [], [], [], []
-    total = float(aln.Shape.Length)
-    if total <= 1e-9:
+    total_m = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+    if total_m <= 1e-9:
+        total_m = _units.meters_from_model_length(getattr(aln, "Document", None), float(aln.Shape.Length))
+    if total_m <= 1e-9:
         return [], [], [], []
 
-    ts = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "TSKeyStations", []) or [])]
-    sc = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "SCKeyStations", []) or [])]
-    cs = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "CSKeyStations", []) or [])]
-    st = [min(max(0.0, float(v)), total) for v in list(getattr(aln, "STKeyStations", []) or [])]
+    ts = [min(max(0.0, float(v)), total_m) for v in list(getattr(aln, "TSKeyStations", []) or [])]
+    sc = [min(max(0.0, float(v)), total_m) for v in list(getattr(aln, "SCKeyStations", []) or [])]
+    cs = [min(max(0.0, float(v)), total_m) for v in list(getattr(aln, "CSKeyStations", []) or [])]
+    st = [min(max(0.0, float(v)), total_m) for v in list(getattr(aln, "STKeyStations", []) or [])]
     return _unique_sorted(ts), _unique_sorted(sc), _unique_sorted(cs), _unique_sorted(st)
+
+
+def _alignment_total_station_m(aln):
+    if aln is None:
+        return 0.0
+    total_m = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+    if total_m > 1e-9:
+        return total_m
+    shp = getattr(aln, "Shape", None)
+    if shp is None:
+        return 0.0
+    try:
+        if shp.isNull():
+            return 0.0
+    except Exception:
+        pass
+    return max(0.0, _units.meters_from_model_length(getattr(aln, "Document", None), float(getattr(shp, "Length", 0.0) or 0.0)))
+
+
+def _structure_station_internal_from_meters(doc, station_m: float) -> float:
+    return _units.internal_length_from_meters(doc, float(station_m))
+
+
+def _structure_tolerance_internal_from_meters(doc, tol_m: float) -> float:
+    return max(1e-9, _units.internal_length_from_meters(doc, float(tol_m)))
+
+
+def _structure_meter_schema(struct_obj) -> bool:
+    try:
+        if struct_obj is not None:
+            StructureSetSource.records(struct_obj)
+    except Exception:
+        pass
+    try:
+        return int(getattr(struct_obj, "LengthSchemaVersion", 0) or 0) >= 1
+    except Exception:
+        return False
+
+
+def _structure_station_items_to_meters(doc, items, struct_obj=None):
+    out = []
+    use_meter_schema = _structure_meter_schema(struct_obj)
+    for item in list(items or []):
+        rec = dict(item)
+        raw_station = float(item.get("station", 0.0) or 0.0)
+        rec["station"] = raw_station if use_meter_schema else _units.meters_from_internal_length(doc, raw_station)
+        out.append(rec)
+    return out
+
+
+def _structure_active_records_at_station(struct_obj, doc, station_m: float, tol_m: float = 1e-6):
+    if _structure_meter_schema(struct_obj):
+        return StructureSetSource.active_records_at_station(struct_obj, float(station_m), tol=max(1e-9, float(tol_m)))
+    station_internal = _structure_station_internal_from_meters(doc, station_m)
+    tol_internal = _structure_tolerance_internal_from_meters(doc, tol_m)
+    return StructureSetSource.active_records_at_station(struct_obj, station_internal, tol=tol_internal)
+
+
+def _structure_resolve_profile_at_station(struct_obj, doc, structure_ref, station_m: float):
+    resolved = StructureSetSource.resolve_profile_at_station(
+        struct_obj,
+        structure_ref,
+        float(station_m) if _structure_meter_schema(struct_obj) else _structure_station_internal_from_meters(doc, station_m),
+    )
+    if isinstance(resolved, dict):
+        resolved["ResolvedProfileStation"] = float(station_m)
+    return resolved
 
 
 def _mark_corridor_needs_recompute(obj_corridor):
@@ -881,7 +1004,18 @@ def _mark_corridor_needs_recompute(obj_corridor):
 
 
 def ensure_section_set_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    scale = _model_length_factor(getattr(obj, "Document", None))
+    had_station_props = any(
+        hasattr(obj, prop)
+        for prop in (
+            "StartStation",
+            "EndStation",
+            "Interval",
+            "StationText",
+            "StructureTransitionDistance",
+            "StructureStationText",
+        )
+    )
 
     if not hasattr(obj, "Group"):
         obj.addProperty("App::PropertyLinkList", "Group", "Sections", "Child section objects")
@@ -920,10 +1054,10 @@ def ensure_section_set_properties(obj):
         obj.StartStation = 0.0
     if not hasattr(obj, "EndStation"):
         obj.addProperty("App::PropertyFloat", "EndStation", "Sections", "End station (m)")
-        obj.EndStation = 100.0 * scale
+        obj.EndStation = 100.0
     if not hasattr(obj, "Interval"):
         obj.addProperty("App::PropertyFloat", "Interval", "Sections", "Interval for range mode (m)")
-        obj.Interval = 20.0 * scale
+        obj.Interval = 20.0
     if not hasattr(obj, "StationText"):
         obj.addProperty("App::PropertyString", "StationText", "Sections", "Manual station list text")
         obj.StationText = ""
@@ -957,9 +1091,8 @@ def ensure_section_set_properties(obj):
         obj.addProperty("App::PropertyBool", "AutoStructureTransitionDistance", "Structures", "Automatically derive transition distance from structure type and size")
         obj.AutoStructureTransitionDistance = True
     if not hasattr(obj, "StructureTransitionDistance"):
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
         obj.addProperty("App::PropertyFloat", "StructureTransitionDistance", "Structures", "Transition distance used before and after structure boundaries")
-        obj.StructureTransitionDistance = 5.0 * scale
+        obj.StructureTransitionDistance = 5.0
     if not hasattr(obj, "StructureBufferBefore"):
         obj.addProperty("App::PropertyFloat", "StructureBufferBefore", "Structures", "Additional station before structure start")
         obj.StructureBufferBefore = 0.0
@@ -1104,6 +1237,9 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Sections", "SectionSet scalar length storage schema")
+        obj.LengthSchemaVersion = _SECTIONSET_LENGTH_SCHEMA_TARGET
 
     if not hasattr(obj, "CreateChildSections"):
         obj.addProperty("App::PropertyBool", "CreateChildSections", "Sections", "Create child section objects in tree")
@@ -1118,6 +1254,16 @@ def ensure_section_set_properties(obj):
     if not hasattr(obj, "ShowSectionWires"):
         obj.addProperty("App::PropertyBool", "ShowSectionWires", "Display", "Show section wires as set shape")
         obj.ShowSectionWires = True
+
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema < _SECTIONSET_LENGTH_SCHEMA_TARGET:
+        try:
+            obj.LengthSchemaVersion = _SECTIONSET_LENGTH_SCHEMA_TARGET
+        except Exception:
+            pass
 
 
 class SectionSet:
@@ -1137,6 +1283,7 @@ class SectionSet:
         items = []
         source_kind = ""
         source_obj = None
+        doc = getattr(obj, "Document", None)
 
         if bool(getattr(obj, "UseStructureSet", False)):
             ss = _resolve_structure_source(obj)
@@ -1149,8 +1296,13 @@ class SectionSet:
                     include_centers=bool(getattr(obj, "IncludeStructureCenters", True)),
                     include_transition=bool(getattr(obj, "IncludeStructureTransitionStations", True)),
                     auto_transition=bool(getattr(obj, "AutoStructureTransitionDistance", True)),
-                    transition=float(getattr(obj, "StructureTransitionDistance", 0.0) or 0.0),
+                    transition=(
+                        float(getattr(obj, "StructureTransitionDistance", 0.0) or 0.0)
+                        if _structure_meter_schema(ss)
+                        else _structure_station_internal_from_meters(doc, float(getattr(obj, "StructureTransitionDistance", 0.0) or 0.0))
+                    ),
                 )
+                items = _structure_station_items_to_meters(doc, items, ss)
 
         out = []
         lo = None if s0 is None else float(min(s0, s1))
@@ -1354,10 +1506,10 @@ class SectionSet:
 
         src = getattr(obj, "SourceCenterlineDisplay", None)
         aln = getattr(src, "Alignment", None) if src is not None else None
-        total = float(getattr(getattr(aln, "Shape", None), "Length", 0.0) or 0.0)
+        total = _alignment_total_station_m(aln)
         tol = max(1e-4, 1e-6 * max(total, 1.0))
         try:
-            active = StructureSetSource.active_records_at_station(ss, float(station), tol=tol)
+            active = _structure_active_records_at_station(ss, getattr(obj, "Document", None), float(station), tol_m=tol)
         except Exception:
             active = []
         if not active:
@@ -1366,7 +1518,7 @@ class SectionSet:
         resolved_active = []
         for rec in list(active or []):
             try:
-                resolved = StructureSetSource.resolve_profile_at_station(ss, rec, float(station))
+                resolved = _structure_resolve_profile_at_station(ss, getattr(obj, "Document", None), rec, float(station))
                 resolved_active.append(resolved if resolved else rec)
             except Exception:
                 resolved_active.append(rec)
@@ -1375,12 +1527,14 @@ class SectionSet:
         ctx["ActiveRecords"] = list(resolved_active)
         ctx["OverlayRecords"] = list(resolved_active)
         try:
+            s0_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "StartStation", 0.0) or 0.0))
+            s1_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "EndStation", _units.meters_from_internal_length(getattr(obj, "Document", None), total)) or _units.meters_from_internal_length(getattr(obj, "Document", None), total)))
             station_items, _sk, _so = SectionSet._resolve_structure_station_items(
                 obj,
                 total,
                 mode=str(getattr(obj, "Mode", "Range") or "Range"),
-                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
-                s1=float(getattr(obj, "EndStation", total) or total),
+                s0=s0_internal,
+                s1=s1_internal,
             )
         except Exception:
             station_items = []
@@ -1397,7 +1551,7 @@ class SectionSet:
         if ctx["IsBoundaryStation"]:
             return ctx
 
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+        scale = _model_length_factor(getattr(obj, "Document", None))
         for rec in resolved_active:
             mode = str(rec.get("BehaviorMode", "") or "").strip().lower()
             if mode not in ("section_overlay", "assembly_override"):
@@ -1430,37 +1584,37 @@ class SectionSet:
         if aln is None or aln.Shape is None or aln.Shape.isNull():
             return []
 
-        total = float(aln.Shape.Length)
+        total_m = _alignment_total_station_m(aln)
         mode = str(getattr(obj, "Mode", "Range"))
         vals = []
         s0 = 0.0
-        s1 = float(total)
+        s1 = float(total_m)
 
         if mode == "Manual":
             vals = _parse_station_text(getattr(obj, "StationText", ""))
-            vals = [min(max(0.0, float(v)), total) for v in vals]
+            vals = [min(max(0.0, float(v)), total_m) for v in vals]
         else:
             # Range mode
             s0 = float(getattr(obj, "StartStation", 0.0))
-            s1 = float(getattr(obj, "EndStation", total))
+            s1 = float(getattr(obj, "EndStation", total_m))
             if s1 < s0:
                 s0, s1 = s1, s0
 
-            s0 = min(max(0.0, s0), total)
-            s1 = min(max(0.0, s1), total)
+            s0 = min(max(0.0, s0), total_m)
+            s1 = min(max(0.0, s1), total_m)
             if s1 < s0 + 1e-9:
                 vals = [s0]
             else:
                 itv = float(getattr(obj, "Interval", 20.0))
                 if itv <= 1e-9:
-                    itv = 20.0 * get_length_scale(getattr(obj, "Document", None), default=1.0)
+                    itv = 20.0
                     obj.Interval = itv
 
                 vals = [s0]
-                s = s0 + itv
-                while s < s1 - 1e-9:
-                    vals.append(float(s))
-                    s += itv
+                station = s0 + itv
+                while station < s1 - 1e-9:
+                    vals.append(float(station))
+                    station += itv
                 vals.append(float(s1))
 
             if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
@@ -1487,7 +1641,7 @@ class SectionSet:
         try:
             struct_items, _skind, _sobj = SectionSet._resolve_structure_station_items(
                 obj,
-                total,
+                total_m,
                 mode=mode,
                 s0=s0,
                 s1=s1,
@@ -1498,7 +1652,7 @@ class SectionSet:
         try:
             region_items, _rkind, _robj = SectionSet._resolve_region_station_items(
                 obj,
-                total,
+                total_m,
                 mode=mode,
                 s0=s0,
                 s1=s1,
@@ -1522,7 +1676,8 @@ class SectionSet:
         if aln is None or getattr(aln, "Shape", None) is None or aln.Shape.isNull():
             return out
 
-        tol = max(1e-4, 1e-6 * float(getattr(aln.Shape, "Length", 1.0)))
+        total_m = _alignment_total_station_m(aln)
+        tol = max(1e-4, 1e-6 * max(total_m, 1.0))
         key_sets = []
 
         if bool(getattr(obj, "IncludeAlignmentIPStations", True)):
@@ -1546,22 +1701,26 @@ class SectionSet:
         region_kind = ""
         region_obj = None
         try:
+            s0_meter = float(getattr(obj, "StartStation", 0.0) or 0.0)
+            s1_meter = float(getattr(obj, "EndStation", total_m) or total_m)
             struct_items, struct_kind, struct_obj = SectionSet._resolve_structure_station_items(
                 obj,
-                float(aln.Shape.Length),
+                total_m,
                 mode=str(getattr(obj, "Mode", "Range") or "Range"),
-                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
-                s1=float(getattr(obj, "EndStation", float(aln.Shape.Length)) or float(aln.Shape.Length)),
+                s0=s0_meter,
+                s1=s1_meter,
             )
         except Exception:
             struct_items = []
         try:
+            s0_meter = float(getattr(obj, "StartStation", 0.0) or 0.0)
+            s1_meter = float(getattr(obj, "EndStation", total_m) or total_m)
             region_items, region_kind, region_obj = SectionSet._resolve_region_station_items(
                 obj,
-                float(aln.Shape.Length),
+                total_m,
                 mode=str(getattr(obj, "Mode", "Range") or "Range"),
-                s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
-                s1=float(getattr(obj, "EndStation", float(aln.Shape.Length)) or float(aln.Shape.Length)),
+                s0=s0_meter,
+                s1=s1_meter,
             )
         except Exception:
             region_items = []
@@ -1595,7 +1754,7 @@ class SectionSet:
                     tags.append(tag)
             if bool(getattr(obj, "CreateStructureTaggedChildren", True)) and struct_kind == "structure_set" and struct_obj is not None:
                 try:
-                    active = StructureSetSource.active_records_at_station(struct_obj, ss, tol=tol)
+                    active = _structure_active_records_at_station(struct_obj, getattr(obj, "Document", None), ss, tol_m=tol)
                     if active:
                         tags.append("STR")
                 except Exception:
@@ -1624,7 +1783,7 @@ class SectionSet:
 
         src = getattr(obj, "SourceCenterlineDisplay", None)
         aln = getattr(src, "Alignment", None) if src is not None else None
-        total = float(getattr(getattr(aln, "Shape", None), "Length", 0.0) or 0.0)
+        total = _alignment_total_station_m(aln)
         tol = max(1e-4, 1e-6 * max(total, 1.0))
 
         struct_items = []
@@ -1649,7 +1808,7 @@ class SectionSet:
 
             if struct_kind == "structure_set" and struct_obj is not None:
                 try:
-                    active = StructureSetSource.active_records_at_station(struct_obj, ss, tol=tol)
+                    active = _structure_active_records_at_station(struct_obj, getattr(obj, "Document", None), ss, tol_m=tol)
                 except Exception:
                     active = []
                 for rec in active:
@@ -1701,7 +1860,7 @@ class SectionSet:
 
         src = getattr(obj, "SourceCenterlineDisplay", None)
         aln = getattr(src, "Alignment", None) if src is not None else None
-        total = float(getattr(getattr(aln, "Shape", None), "Length", 0.0) or 0.0)
+        total = _alignment_total_station_m(aln)
         tol = max(1e-4, 1e-6 * max(total, 1.0))
 
         region_items = []
@@ -1865,19 +2024,24 @@ class SectionSet:
         struct_src = _resolve_structure_source(section_obj)
         try:
             if struct_src is not None and str(rec.get("Id", "") or "").strip():
-                resolved = StructureSetSource.resolve_profile_at_station(struct_src, rec, float(station))
+                resolved = _structure_resolve_profile_at_station(
+                    struct_src,
+                    getattr(section_obj, "Document", None),
+                    rec,
+                    float(station),
+                )
                 if resolved:
                     rec = resolved
         except Exception:
             pass
-        scale = get_length_scale(getattr(section_obj, "Document", None), default=1.0)
-        frame = Centerline3D.frame_at_station(src, float(station), eps=0.1 * scale, prev_n=None)
+        scale = _model_length_factor(getattr(section_obj, "Document", None))
+        frame = Centerline3D.frame_at_station(src, float(station), eps=_model_length(getattr(section_obj, "Document", None), 0.1), prev_n=None)
         p = frame["point"]
         n = frame["N"]
         z = frame["Z"]
 
-        width = max(0.2 * scale, abs(float(rec.get("Width", 0.0) or 0.0)))
-        height = max(0.2 * scale, abs(float(rec.get("Height", 0.0) or 0.0)))
+        width = max(_model_length(getattr(section_obj, "Document", None), 0.2), abs(float(rec.get("Width", 0.0) or 0.0)))
+        height = max(_model_length(getattr(section_obj, "Document", None), 0.2), abs(float(rec.get("Height", 0.0) or 0.0)))
         bottom = float(rec.get("BottomElevation", 0.0) or 0.0)
         cover = abs(float(rec.get("Cover", 0.0) or 0.0))
         z_ref = float(getattr(p, "z", 0.0) or 0.0)
@@ -1894,18 +2058,18 @@ class SectionSet:
         for off in _structure_overlay_offsets(rec):
             c = App.Vector(float(p.x), float(p.y), float(z0)) + (n * float(off))
             if geom_mode == "template" and template_name == "box_culvert":
-                wall = max(0.10 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                wall = max(_model_length(getattr(section_obj, "Document", None), 0.10), abs(float(rec.get("WallThickness", 0.0) or 0.0)))
                 cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
                 top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
-                total_h = max(0.2 * scale, height + top_cap)
+                total_h = max(_model_length(getattr(section_obj, "Document", None), 0.2), height + top_cap)
                 wires.append(_overlay_rect_wire(c, n, z, width, total_h))
                 inner_h = total_h - (2.0 * wall)
                 clear_w = width - (2.0 * wall)
-                if inner_h > 0.05 * scale and clear_w > 0.05 * scale:
+                if inner_h > _model_length(getattr(section_obj, "Document", None), 0.05) and clear_w > _model_length(getattr(section_obj, "Document", None), 0.05):
                     gap = wall
                     total_gap = max(0.0, float(cells - 1)) * gap
                     cell_w = (clear_w - total_gap) / float(cells)
-                    if cell_w > 0.05 * scale:
+                    if cell_w > _model_length(getattr(section_obj, "Document", None), 0.05):
                         inner_center = App.Vector(float(c.x), float(c.y), float(z0) + wall)
                         start_center = -0.5 * clear_w + 0.5 * cell_w
                         for i in range(cells):
@@ -1913,18 +2077,18 @@ class SectionSet:
                             cell_center = inner_center + (n * shift)
                             wires.append(_overlay_rect_wire(cell_center, n, z, cell_w, inner_h))
             elif geom_mode == "template" and template_name == "utility_crossing":
-                wall = max(0.08 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                wall = max(_model_length(getattr(section_obj, "Document", None), 0.08), abs(float(rec.get("WallThickness", 0.0) or 0.0)))
                 cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
                 top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
-                total_h = max(0.2 * scale, height + top_cap)
+                total_h = max(_model_length(getattr(section_obj, "Document", None), 0.2), height + top_cap)
                 wires.append(_overlay_rect_wire(c, n, z, width, total_h))
                 clear_w = width - (2.0 * wall)
-                duct_h = max(0.10 * scale, min(0.45 * total_h, total_h - (2.0 * wall)))
-                if clear_w > 0.05 * scale and duct_h > 0.05 * scale:
-                    gap = max(0.10 * scale, 0.60 * wall)
+                duct_h = max(_model_length(getattr(section_obj, "Document", None), 0.10), min(0.45 * total_h, total_h - (2.0 * wall)))
+                if clear_w > _model_length(getattr(section_obj, "Document", None), 0.05) and duct_h > _model_length(getattr(section_obj, "Document", None), 0.05):
+                    gap = max(_model_length(getattr(section_obj, "Document", None), 0.10), 0.60 * wall)
                     total_gap = max(0.0, float(cells - 1)) * gap
                     duct_w = (clear_w - total_gap) / float(cells)
-                    if duct_w > 0.05 * scale:
+                    if duct_w > _model_length(getattr(section_obj, "Document", None), 0.05):
                         z_clear_bottom = max(wall, 0.28 * total_h)
                         z_clear_top = z_clear_bottom + duct_h
                         if z_clear_top >= total_h - wall:
@@ -1936,15 +2100,15 @@ class SectionSet:
                             duct_center = inner_center + (n * shift)
                             wires.append(_overlay_rect_wire(duct_center, n, z, duct_w, duct_h))
             elif geom_mode == "template" and template_name == "retaining_wall":
-                wall = max(0.10 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+                wall = max(_model_length(getattr(section_obj, "Document", None), 0.10), abs(float(rec.get("WallThickness", 0.0) or 0.0)))
                 footing_w = max(wall * 2.0, abs(float(rec.get("FootingWidth", 0.0) or 0.0)), max(width, wall * 3.0))
-                footing_h = max(0.10 * scale, abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
+                footing_h = max(_model_length(getattr(section_obj, "Document", None), 0.10), abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
                 cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
                 sign = _overlay_signed_side_factor(rec)
                 heel = footing_w * 0.65
                 toe = footing_w - heel
-                top_wall = max(0.08 * scale, wall * 0.70)
-                total_h = footing_h + max(0.2 * scale, height)
+                top_wall = max(_model_length(getattr(section_obj, "Document", None), 0.08), wall * 0.70)
+                total_h = footing_h + max(_model_length(getattr(section_obj, "Document", None), 0.2), height)
                 coords = [
                     (-sign * toe, 0.0),
                     (sign * heel, 0.0),
@@ -1961,16 +2125,16 @@ class SectionSet:
                 if cap_h > 1e-9:
                     cap_center = App.Vector(float(c.x), float(c.y), float(z0) + total_h)
                     cap_center = cap_center + (n * (sign * 0.10 * wall))
-                    wires.append(_overlay_rect_wire(cap_center, n, z, max(top_wall * 1.8, wall + 0.20 * scale), cap_h))
+                    wires.append(_overlay_rect_wire(cap_center, n, z, max(top_wall * 1.8, wall + _model_length(getattr(section_obj, "Document", None), 0.20)), cap_h))
             elif geom_mode == "template" and template_name == "abutment_block":
-                wall = max(0.20 * scale, abs(float(rec.get("WallThickness", 0.0) or 0.0)), max(0.20 * scale, 0.35 * height))
-                footing_h = max(0.20 * scale, abs(float(rec.get("FootingThickness", 0.0) or 0.0)), max(0.20 * scale, 0.18 * height))
+                wall = max(_model_length(getattr(section_obj, "Document", None), 0.20), abs(float(rec.get("WallThickness", 0.0) or 0.0)), max(_model_length(getattr(section_obj, "Document", None), 0.20), 0.35 * height))
+                footing_h = max(_model_length(getattr(section_obj, "Document", None), 0.20), abs(float(rec.get("FootingThickness", 0.0) or 0.0)), max(_model_length(getattr(section_obj, "Document", None), 0.20), 0.18 * height))
                 footing_w = max(abs(float(rec.get("FootingWidth", 0.0) or 0.0)), width, wall * 2.5)
                 cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
                 stem_w = max(wall * 1.4, min(width * 0.55, footing_w * 0.60))
                 seat_w = max(stem_w * 0.55, wall * 1.4)
-                total_h = footing_h + max(0.2 * scale, height)
-                seat_h0 = footing_h + max(0.30 * scale, 0.60 * height)
+                total_h = footing_h + max(_model_length(getattr(section_obj, "Document", None), 0.2), height)
+                seat_h0 = footing_h + max(_model_length(getattr(section_obj, "Document", None), 0.30), 0.60 * height)
                 coords = [
                     (-0.5 * footing_w, 0.0),
                     (0.5 * footing_w, 0.0),
@@ -1988,7 +2152,7 @@ class SectionSet:
                     wires.append(pw)
                 if cap_h > 1e-9:
                     cap_center = App.Vector(float(c.x), float(c.y), float(z0) + total_h)
-                    wires.append(_overlay_rect_wire(cap_center, n, z, max(seat_w * 1.1, seat_w + 0.20 * scale), cap_h))
+                    wires.append(_overlay_rect_wire(cap_center, n, z, max(seat_w * 1.1, seat_w + _model_length(getattr(section_obj, "Document", None), 0.20)), cap_h))
             else:
                 wires.append(_overlay_rect_wire(c, n, z, width, height))
         if not wires:
@@ -2109,15 +2273,18 @@ class SectionSet:
         mt = int(max(1000, int(max_triangles)))
         tris = _ssc.decimate_triangles(tris, mt)
 
-        scale = get_length_scale(getattr(src_obj, "Document", None), default=1.0)
-        bucket = 2.0 * scale
+        bucket = _model_length(getattr(src_obj, "Document", None), 2.0)
         try:
             n = max(1, len(tris))
             xmin, xmax, ymin, ymax = _ct.triangles_bbox_xy(tris)
             xlen = float(xmax - xmin)
             ylen = float(ymax - ymin)
-            area = max((1.0 * scale) ** 2, xlen * ylen)
-            bucket = max(0.5 * scale, min(20.0 * scale, math.sqrt(area / float(n)) * 2.0))
+            one_meter = _model_length(getattr(src_obj, "Document", None), 1.0)
+            area = max((one_meter) ** 2, xlen * ylen)
+            bucket = max(
+                _model_length(getattr(src_obj, "Document", None), 0.5),
+                min(_model_length(getattr(src_obj, "Document", None), 20.0), math.sqrt(area / float(n)) * 2.0),
+            )
         except Exception:
             pass
         buckets, wide = SectionSet._build_xy_buckets(tris, bucket)
@@ -2277,12 +2444,12 @@ class SectionSet:
         if asm is None:
             return {"left": "side_slope", "right": "side_slope"}, prev_n
 
-        lw = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
-        rw = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
+        lw = max(0.0, _assembly_model_value(asm, "LeftWidth", 0.0))
+        rw = max(0.0, _assembly_model_value(asm, "RightWidth", 0.0))
         ls = float(getattr(asm, "LeftSlopePct", 0.0) or 0.0)
         rs = float(getattr(asm, "RightSlopePct", 0.0) or 0.0)
-        lsw = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
-        rsw = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        lsw = max(0.0, _assembly_model_value(asm, "LeftSideWidth", 0.0))
+        rsw = max(0.0, _assembly_model_value(asm, "RightSideWidth", 0.0))
         lss = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
         rss = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
 
@@ -2293,8 +2460,7 @@ class SectionSet:
         if src is None:
             return resolved, prev_n
 
-        scale = get_length_scale(getattr(src, "Document", None), default=1.0)
-        frame = Centerline3D.frame_at_station(src, float(station), eps=0.1 * scale, prev_n=prev_n)
+        frame = Centerline3D.frame_at_station(src, float(station), eps=_model_length(getattr(src, "Document", None), 0.1), prev_n=prev_n)
         p = frame["point"]
         n = frame["N"]
         z = frame["Z"]
@@ -2337,20 +2503,20 @@ class SectionSet:
         typical_section_obj=None,
         use_typical_section: bool = False,
     ):
-        scale = get_length_scale(getattr(source_obj, "Document", None), default=1.0)
-        stub_side_w = max(0.01, 0.01 * scale)
-        frame = Centerline3D.frame_at_station(source_obj, float(station), eps=0.1 * scale, prev_n=prev_n)
+        scale = _model_length_factor(getattr(source_obj, "Document", None))
+        stub_side_w = max(0.01, _model_length(getattr(source_obj, "Document", None), 0.01))
+        frame = Centerline3D.frame_at_station(source_obj, float(station), eps=_model_length(getattr(source_obj, "Document", None), 0.1), prev_n=prev_n)
         p = frame["point"]
         n = frame["N"]
         z = frame["Z"]
 
-        lw = max(0.0, float(getattr(asm_obj, "LeftWidth", 0.0)))
-        rw = max(0.0, float(getattr(asm_obj, "RightWidth", 0.0)))
+        lw = max(0.0, _assembly_model_value(asm_obj, "LeftWidth", 0.0))
+        rw = max(0.0, _assembly_model_value(asm_obj, "RightWidth", 0.0))
         ls = float(getattr(asm_obj, "LeftSlopePct", 0.0))
         rs = float(getattr(asm_obj, "RightSlopePct", 0.0))
         use_ss = bool(getattr(asm_obj, "UseSideSlopes", False))
-        lsw = max(0.0, float(getattr(asm_obj, "LeftSideWidth", 0.0)))
-        rsw = max(0.0, float(getattr(asm_obj, "RightSideWidth", 0.0)))
+        lsw = max(0.0, _assembly_model_value(asm_obj, "LeftSideWidth", 0.0))
+        rsw = max(0.0, _assembly_model_value(asm_obj, "RightSideWidth", 0.0))
         lss = float(getattr(asm_obj, "LeftSideSlopePct", 0.0))
         rss = float(getattr(asm_obj, "RightSideSlopePct", 0.0))
         use_day = bool(use_daylight) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
@@ -2459,25 +2625,25 @@ class SectionSet:
         use_right_bench = bool(use_right_bench) and right_has_side
         left_bench_rows = _collect_side_bench_rows(
             use_left_bench,
-            float(getattr(asm_obj, "LeftBenchDrop", 0.0) or 0.0),
-            float(getattr(asm_obj, "LeftBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm_obj, "LeftBenchDrop", 0.0),
+            _assembly_model_value(asm_obj, "LeftBenchWidth", 0.0),
             float(getattr(asm_obj, "LeftBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm_obj, "LeftPostBenchSlopePct", lss) or lss),
-            list(getattr(asm_obj, "LeftBenchRows", []) or []),
+            _assembly_model_bench_rows(asm_obj, "LeftBenchRows"),
         )
         left_repeat_to_daylight = bool(getattr(asm_obj, "LeftBenchRepeatToDaylight", False))
         right_bench_rows = _collect_side_bench_rows(
             use_right_bench,
-            float(getattr(asm_obj, "RightBenchDrop", 0.0) or 0.0),
-            float(getattr(asm_obj, "RightBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm_obj, "RightBenchDrop", 0.0),
+            _assembly_model_value(asm_obj, "RightBenchWidth", 0.0),
             float(getattr(asm_obj, "RightBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm_obj, "RightPostBenchSlopePct", rss) or rss),
-            list(getattr(asm_obj, "RightBenchRows", []) or []),
+            _assembly_model_bench_rows(asm_obj, "RightBenchRows"),
         )
         right_repeat_to_daylight = bool(getattr(asm_obj, "RightBenchRepeatToDaylight", False))
-        day_step = max(0.2 * scale, float(getattr(asm_obj, "DaylightSearchStep", 1.0 * scale)))
-        day_max_w = max(0.0, float(getattr(asm_obj, "DaylightMaxSearchWidth", 200.0 * scale)))
-        day_max_delta = max(0.0, float(getattr(asm_obj, "DaylightMaxWidthDelta", 0.0)))
+        day_step = max(0.2 * scale, _assembly_model_value(asm_obj, "DaylightSearchStep", 1.0))
+        day_max_w = max(0.0, _assembly_model_value(asm_obj, "DaylightMaxSearchWidth", 200.0))
+        day_max_delta = max(0.0, _assembly_model_value(asm_obj, "DaylightMaxWidthDelta", 0.0))
         left_profile_width = max(lsw, day_max_w) if (left_repeat_to_daylight and bool(use_day_left)) else lsw
         right_profile_width = max(rsw, day_max_w) if (right_repeat_to_daylight and bool(use_day_right)) else rsw
         left_bench = _resolve_side_bench_profile(
@@ -2731,8 +2897,8 @@ class SectionSet:
         terrain_sampler = None
         terrain_found = False
         use_ss = bool(getattr(asm, "UseSideSlopes", False))
-        lsw = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0)))
-        rsw = max(0.0, float(getattr(asm, "RightSideWidth", 0.0)))
+        lsw = max(0.0, _assembly_model_value(asm, "LeftSideWidth", 0.0))
+        rsw = max(0.0, _assembly_model_value(asm, "RightSideWidth", 0.0))
         use_day = bool(getattr(obj, "DaylightAuto", True)) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
         try:
             if use_day:
@@ -2753,21 +2919,21 @@ class SectionSet:
         left_cfg_count = len(
             _collect_side_bench_rows(
                 bool(getattr(asm, "UseLeftBench", False)),
-                float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
-                float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+                _assembly_model_value(asm, "LeftBenchDrop", 0.0),
+                _assembly_model_value(asm, "LeftBenchWidth", 0.0),
                 float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
                 float(getattr(asm, "LeftPostBenchSlopePct", getattr(asm, "LeftSideSlopePct", 0.0)) or getattr(asm, "LeftSideSlopePct", 0.0)),
-                list(getattr(asm, "LeftBenchRows", []) or []),
+                _assembly_model_bench_rows(asm, "LeftBenchRows"),
             )
         )
         right_cfg_count = len(
             _collect_side_bench_rows(
                 bool(getattr(asm, "UseRightBench", False)),
-                float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
-                float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+                _assembly_model_value(asm, "RightBenchDrop", 0.0),
+                _assembly_model_value(asm, "RightBenchWidth", 0.0),
                 float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
                 float(getattr(asm, "RightPostBenchSlopePct", getattr(asm, "RightSideSlopePct", 0.0)) or getattr(asm, "RightSideSlopePct", 0.0)),
-                list(getattr(asm, "RightBenchRows", []) or []),
+                _assembly_model_bench_rows(asm, "RightBenchRows"),
             )
         )
         wires = []
@@ -3324,8 +3490,8 @@ class SectionSet:
                 }
             )
 
-        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
-        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
+        left_width = max(0.0, _assembly_model_value(asm, "LeftWidth", 0.0))
+        right_width = max(0.0, _assembly_model_value(asm, "RightWidth", 0.0))
         if left_width > 1e-9:
             _append("left", 1, "carriageway", left_width, label="Left Carriageway")
         if right_width > 1e-9:
@@ -3335,26 +3501,26 @@ class SectionSet:
         if not use_side_slopes:
             return rows
 
-        left_side_width = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
-        right_side_width = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        left_side_width = max(0.0, _assembly_model_value(asm, "LeftSideWidth", 0.0))
+        right_side_width = max(0.0, _assembly_model_value(asm, "RightSideWidth", 0.0))
         left_side_slope = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
         right_side_slope = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
 
         left_bench_rows = _collect_side_bench_rows(
             bool(getattr(asm, "UseLeftBench", False)),
-            float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
-            float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm, "LeftBenchDrop", 0.0),
+            _assembly_model_value(asm, "LeftBenchWidth", 0.0),
             float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm, "LeftPostBenchSlopePct", left_side_slope) or left_side_slope),
-            list(getattr(asm, "LeftBenchRows", []) or []),
+            _assembly_model_bench_rows(asm, "LeftBenchRows"),
         )
         right_bench_rows = _collect_side_bench_rows(
             bool(getattr(asm, "UseRightBench", False)),
-            float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
-            float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm, "RightBenchDrop", 0.0),
+            _assembly_model_value(asm, "RightBenchWidth", 0.0),
             float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
-            list(getattr(asm, "RightBenchRows", []) or []),
+            _assembly_model_bench_rows(asm, "RightBenchRows"),
         )
         left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
         right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
@@ -3512,10 +3678,10 @@ class SectionSet:
         if not stations:
             return []
 
-        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0))
-        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0))
-        left_side_width = max(0.0, float(getattr(asm, "LeftSideWidth", 0.0) or 0.0))
-        right_side_width = max(0.0, float(getattr(asm, "RightSideWidth", 0.0) or 0.0))
+        left_width = max(0.0, _assembly_model_value(asm, "LeftWidth", 0.0))
+        right_width = max(0.0, _assembly_model_value(asm, "RightWidth", 0.0))
+        left_side_width = max(0.0, _assembly_model_value(asm, "LeftSideWidth", 0.0))
+        right_side_width = max(0.0, _assembly_model_value(asm, "RightSideWidth", 0.0))
         left_side_slope = float(getattr(asm, "LeftSideSlopePct", 0.0) or 0.0)
         right_side_slope = float(getattr(asm, "RightSideSlopePct", 0.0) or 0.0)
         terrain_sampler = None
@@ -3537,23 +3703,23 @@ class SectionSet:
                 terrain_sampler = None
         left_bench_rows = _collect_side_bench_rows(
             bool(getattr(asm, "UseLeftBench", False)),
-            float(getattr(asm, "LeftBenchDrop", 0.0) or 0.0),
-            float(getattr(asm, "LeftBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm, "LeftBenchDrop", 0.0),
+            _assembly_model_value(asm, "LeftBenchWidth", 0.0),
             float(getattr(asm, "LeftBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm, "LeftPostBenchSlopePct", left_side_slope) or left_side_slope),
-            list(getattr(asm, "LeftBenchRows", []) or []),
+            _assembly_model_bench_rows(asm, "LeftBenchRows"),
         )
         right_bench_rows = _collect_side_bench_rows(
             bool(getattr(asm, "UseRightBench", False)),
-            float(getattr(asm, "RightBenchDrop", 0.0) or 0.0),
-            float(getattr(asm, "RightBenchWidth", 0.0) or 0.0),
+            _assembly_model_value(asm, "RightBenchDrop", 0.0),
+            _assembly_model_value(asm, "RightBenchWidth", 0.0),
             float(getattr(asm, "RightBenchSlopePct", 0.0) or 0.0),
             float(getattr(asm, "RightPostBenchSlopePct", right_side_slope) or right_side_slope),
-            list(getattr(asm, "RightBenchRows", []) or []),
+            _assembly_model_bench_rows(asm, "RightBenchRows"),
         )
         left_repeat_to_daylight = bool(getattr(asm, "LeftBenchRepeatToDaylight", False))
         right_repeat_to_daylight = bool(getattr(asm, "RightBenchRepeatToDaylight", False))
-        day_max_search_width = max(0.0, float(getattr(asm, "DaylightMaxSearchWidth", 0.0) or 0.0))
+        day_max_search_width = max(0.0, _assembly_model_value(asm, "DaylightMaxSearchWidth", 0.0))
         left_profile = _resolve_side_bench_profile(
             max(left_side_width, day_max_search_width) if (left_repeat_to_daylight and use_day) else left_side_width,
             left_side_slope,
@@ -3668,8 +3834,8 @@ class SectionSet:
         rows = SectionSet._component_segment_rows_from_assembly(obj, stations) if not station_profiles else []
         typical_anchors = _typical_edge_anchors(typical_segment_rows)
         asm = getattr(obj, "AssemblyTemplate", None)
-        left_width = max(0.0, float(getattr(asm, "LeftWidth", 0.0) or 0.0)) if asm is not None else 0.0
-        right_width = max(0.0, float(getattr(asm, "RightWidth", 0.0) or 0.0)) if asm is not None else 0.0
+        left_width = max(0.0, _assembly_model_value(asm, "LeftWidth", 0.0)) if asm is not None else 0.0
+        right_width = max(0.0, _assembly_model_value(asm, "RightWidth", 0.0)) if asm is not None else 0.0
         if station_profiles:
             out = []
             prev_n = None
@@ -3823,8 +3989,7 @@ class SectionSet:
         src = getattr(obj, "SourceCenterlineDisplay", None)
         if src is None:
             raise Exception("SourceCenterlineDisplay is missing.")
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-        frame = Centerline3D.frame_at_station(src, station_value, eps=0.1 * scale, prev_n=None)
+        frame = Centerline3D.frame_at_station(src, station_value, eps=_model_length(getattr(obj, "Document", None), 0.1), prev_n=None)
         origin = frame["point"]
         nvec = frame["N"]
         zvec = frame["Z"]
@@ -4253,8 +4418,8 @@ class SectionSet:
         try:
             asm = getattr(obj, "AssemblyTemplate", None)
             use_ss = bool(getattr(asm, "UseSideSlopes", False)) if asm is not None else False
-            left_on = float(getattr(asm, "LeftSideWidth", 0.0)) > 1e-9 if asm is not None else False
-            right_on = float(getattr(asm, "RightSideWidth", 0.0)) > 1e-9 if asm is not None else False
+            left_on = float(getattr(asm, "LeftSideWidth", 0.0) or 0.0) > 1e-9 if asm is not None else False
+            right_on = float(getattr(asm, "RightSideWidth", 0.0) or 0.0) > 1e-9 if asm is not None else False
             use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and getattr(obj, "TypicalSectionTemplate", None) is not None
             stations = SectionSet.resolve_station_values(obj)
             # Schema contract:
@@ -4322,12 +4487,14 @@ class SectionSet:
             aln0 = getattr(src0, "Alignment", None) if src0 is not None else None
             total0 = float(getattr(getattr(aln0, "Shape", None), "Length", 0.0) or 0.0)
             try:
+                s0_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "StartStation", 0.0) or 0.0))
+                s1_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "EndStation", _units.meters_from_internal_length(getattr(obj, "Document", None), total0)) or _units.meters_from_internal_length(getattr(obj, "Document", None), total0)))
                 st_items, st_kind, st_obj = SectionSet._resolve_structure_station_items(
                     obj,
                     total0,
                     mode=str(getattr(obj, "Mode", "Range") or "Range"),
-                    s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
-                    s1=float(getattr(obj, "EndStation", total0) or total0),
+                    s0=s0_internal,
+                    s1=s1_internal,
                 )
                 st_count, st_rows = SectionSet._resolved_structure_summary(st_items)
                 obj.ResolvedStructureCount = int(st_count)
@@ -4338,12 +4505,14 @@ class SectionSet:
                 st_kind = ""
                 st_obj = None
             try:
+                s0_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "StartStation", 0.0) or 0.0))
+                s1_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "EndStation", _units.meters_from_internal_length(getattr(obj, "Document", None), total0)) or _units.meters_from_internal_length(getattr(obj, "Document", None), total0)))
                 rg_items, rg_kind, rg_obj = SectionSet._resolve_region_station_items(
                     obj,
                     total0,
                     mode=str(getattr(obj, "Mode", "Range") or "Range"),
-                    s0=float(getattr(obj, "StartStation", 0.0) or 0.0),
-                    s1=float(getattr(obj, "EndStation", total0) or total0),
+                    s0=s0_internal,
+                    s1=s1_internal,
                 )
                 rg_count, rg_rows = SectionSet._resolved_region_summary(rg_items)
                 obj.ResolvedRegionCount = int(rg_count)

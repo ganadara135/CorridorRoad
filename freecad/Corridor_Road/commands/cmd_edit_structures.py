@@ -4,15 +4,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_structure_editor import StructureEditorTaskPanel
 
 
 class CmdEditStructures:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("edit_structures.svg"),
             "MenuText": "Edit Structures",
-            "ToolTip": "Create or edit structure definitions for section generation",
+            "ToolTip": "Edit structures used during section generation",
         }
 
     def IsActive(self):

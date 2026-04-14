@@ -8,6 +8,7 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_typical_section_template import (
     ALLOWED_COMPONENT_SIDES,
     ALLOWED_DITCH_SHAPES,
@@ -58,8 +59,8 @@ COMPONENT_TYPE_HINTS = {
     "green_strip": {"row": "Green strip or planted verge. Width and CrossSlopePct define the strip.", "highlight": "slope"},
     "gutter": {"row": "Gutter/drain strip. Width and CrossSlopePct control the shallow drainage break.", "highlight": "slope"},
     "curb": {"row": "Curb step. Height is curb rise; Width is curb top width; ExtraWidth is curb face/gutter run; BackSlopePct is top/back slope.", "highlight": "height"},
-    "ditch": {"row": "Ditch profile. Shape chooses v, u, or trapezoid. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope.", "highlight": "height"},
-    "berm": {"row": "Berm/platform. Width is bench width; CrossSlopePct is bench slope; ExtraWidth is outer taper width; BackSlopePct is taper slope.", "highlight": "width"},
+    "ditch": {"row": "Ditch profile. Shape chooses v, u, or trapezoid. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope. Pavement preview stops before ditch rows.", "highlight": "height"},
+    "berm": {"row": "Berm/platform. Width is bench width; CrossSlopePct is bench slope; ExtraWidth is outer taper width; BackSlopePct is taper slope. Pavement preview stops before berm rows.", "highlight": "width"},
 }
 
 
@@ -198,10 +199,73 @@ COMP_COL_BACK_SLOPE = 8
 COMP_COL_OFFSET = 9
 COMP_COL_ORDER = 10
 COMP_COL_ENABLED = 11
+CSV_COMMENT_PREFIX = "#"
+CSV_LINEAR_UNIT_KEYS = {
+    "linear",
+    "linearunit",
+    "linear_unit",
+    "lengthunit",
+    "length_unit",
+    "unit",
+    "units",
+}
 
 
 def _find_typical_section_templates(doc):
     return find_all(doc, proxy_type="TypicalSectionTemplate", name_prefixes=("TypicalSectionTemplate",))
+
+
+def _normalize_csv_linear_unit(value):
+    token = str(value or "").strip().lower()
+    if token in ("m", "meter", "meters", "metre", "metres"):
+        return "m"
+    if token in ("mm", "millimeter", "millimeters", "millimetre", "millimetres"):
+        return "mm"
+    if token == "custom":
+        return "custom"
+    return ""
+
+
+def _parse_csv_unit_metadata(lines):
+    meta = {}
+    for raw_line in list(lines or []):
+        line = str(raw_line or "").strip()
+        if not line.startswith(CSV_COMMENT_PREFIX):
+            continue
+        body = line[1:].strip()
+        if not body:
+            continue
+        for part in body.replace(";", ",").split(","):
+            seg = str(part or "").strip()
+            if "=" not in seg:
+                continue
+            key, value = seg.split("=", 1)
+            norm_key = "".join(ch for ch in str(key or "").strip().lower() if ch.isalnum() or ch == "_")
+            if norm_key in CSV_LINEAR_UNIT_KEYS:
+                token = _normalize_csv_linear_unit(value)
+                if token:
+                    meta["linear_unit"] = token
+    return meta
+
+
+def _read_csv_dict_rows(path: str):
+    with open(path, "r", encoding="utf-8-sig", newline="") as fp:
+        lines = list(fp.readlines())
+    metadata = _parse_csv_unit_metadata(lines)
+    data_lines = [line for line in lines if not str(line or "").lstrip().startswith(CSV_COMMENT_PREFIX)]
+    if not data_lines:
+        return {"rows": [], "fieldnames": [], "metadata": metadata}
+    sample = "".join(data_lines[:20])
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+    except Exception:
+        dialect = csv.excel
+    reader = csv.DictReader(data_lines, dialect=dialect)
+    return {
+        "rows": [dict(row) for row in reader],
+        "fieldnames": list(reader.fieldnames or []),
+        "metadata": metadata,
+    }
 
 
 class TypicalSectionEditorTaskPanel:
@@ -228,6 +292,28 @@ class TypicalSectionEditorTaskPanel:
 
     def reject(self):
         Gui.Control.closeDialog()
+
+    def _unit_context(self):
+        prj = find_project(self.doc)
+        return prj if prj is not None else self.doc
+
+    def _meters_from_csv(self, value, linear_unit: str = ""):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), unit=linear_unit, use_default="import")
+
+    def _csv_from_meters(self, meters, linear_unit: str = ""):
+        return _units.user_length_from_meters(self._unit_context(), float(meters or 0.0), unit=linear_unit, use_default="export")
+
+    def _display_unit_label(self) -> str:
+        return str(_units.get_linear_display_unit(self._unit_context()) or "m")
+
+    def _meters_from_display(self, value):
+        return _units.meters_from_user_length(self._unit_context(), float(value or 0.0), use_default="display")
+
+    def _display_from_meters(self, meters):
+        return _units.user_length_from_meters(self._unit_context(), float(meters or 0.0), use_default="display")
+
+    def _format_display_length(self, meters, digits: int = 3) -> str:
+        return f"{self._display_from_meters(meters):.{int(digits)}f}"
 
     def _build_ui(self):
         w = QtWidgets.QWidget()
@@ -508,7 +594,8 @@ class TypicalSectionEditorTaskPanel:
             self.lbl_info.setText(
                 "Typical section components define the finished-grade top profile.\n"
                 "You can also load component rows from CSV.\n"
-                f"TypicalSectionTemplate objects found: {len(self._templates)}"
+                f"TypicalSectionTemplate objects found: {len(self._templates)}\n"
+                f"Display unit: {self._display_unit_label()}"
             )
         finally:
             self._loading = False
@@ -547,12 +634,12 @@ class TypicalSectionEditorTaskPanel:
                 self._set_cell_text(i, COMP_COL_TYPE, row.get("Type", ""))
                 self._set_cell_text(i, COMP_COL_SHAPE, row.get("Shape", ""))
                 self._set_cell_text(i, COMP_COL_SIDE, row.get("Side", ""))
-                self._set_cell_text(i, COMP_COL_WIDTH, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_WIDTH, self._format_display_length(row.get("Width", 0.0)))
                 self._set_cell_text(i, COMP_COL_SLOPE, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_HEIGHT, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_EXTRA, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_HEIGHT, self._format_display_length(row.get("Height", 0.0)))
+                self._set_cell_text(i, COMP_COL_EXTRA, self._format_display_length(row.get("ExtraWidth", 0.0)))
                 self._set_cell_text(i, COMP_COL_BACK_SLOPE, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_OFFSET, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_OFFSET, self._format_display_length(row.get("Offset", 0.0)))
                 self._set_cell_text(i, COMP_COL_ORDER, f"{int(row.get('Order', 0) or 0)}")
                 self._set_cell_text(i, COMP_COL_ENABLED, "true" if bool(row.get("Enabled", True)) else "false")
             self.pav_table.setRowCount(0)
@@ -560,7 +647,7 @@ class TypicalSectionEditorTaskPanel:
             for i, row in enumerate(pav_rows):
                 self._set_pavement_cell_text(i, 0, row.get("Id", ""))
                 self._set_pavement_cell_text(i, 1, row.get("Type", ""))
-                self._set_pavement_cell_text(i, 2, f"{float(row.get('Thickness', 0.0) or 0.0):.3f}")
+                self._set_pavement_cell_text(i, 2, self._format_display_length(row.get("Thickness", 0.0)))
                 self._set_pavement_cell_text(i, 3, "true" if bool(row.get("Enabled", True)) else "false")
             self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
         finally:
@@ -776,12 +863,12 @@ class TypicalSectionEditorTaskPanel:
                     "Type": typ,
                     "Shape": shape,
                     "Side": row[COMP_COL_SIDE],
-                    "Width": self._parse_float(row[COMP_COL_WIDTH]),
+                    "Width": self._meters_from_display(self._parse_float(row[COMP_COL_WIDTH])),
                     "CrossSlopePct": self._parse_float(row[COMP_COL_SLOPE]),
-                    "Height": self._parse_float(row[COMP_COL_HEIGHT]),
-                    "ExtraWidth": self._parse_float(row[COMP_COL_EXTRA]),
+                    "Height": self._meters_from_display(self._parse_float(row[COMP_COL_HEIGHT])),
+                    "ExtraWidth": self._meters_from_display(self._parse_float(row[COMP_COL_EXTRA])),
                     "BackSlopePct": self._parse_float(row[COMP_COL_BACK_SLOPE]),
-                    "Offset": self._parse_float(row[COMP_COL_OFFSET]),
+                    "Offset": self._meters_from_display(self._parse_float(row[COMP_COL_OFFSET])),
                     "Order": self._parse_int(row[COMP_COL_ORDER]),
                     "Enabled": str(row[COMP_COL_ENABLED] or "true").strip().lower() not in ("0", "false", "no", "off"),
                 }
@@ -798,7 +885,7 @@ class TypicalSectionEditorTaskPanel:
                 {
                     "Id": row[0] or f"LAYER-{r+1:02d}",
                     "Type": row[1],
-                    "Thickness": self._parse_float(row[2]),
+                    "Thickness": self._meters_from_display(self._parse_float(row[2])),
                     "Enabled": str(row[3] or "true").strip().lower() not in ("0", "false", "no", "off"),
                 }
             )
@@ -814,12 +901,12 @@ class TypicalSectionEditorTaskPanel:
                 self._set_cell_text(i, COMP_COL_TYPE, row.get("Type", ""))
                 self._set_cell_text(i, COMP_COL_SHAPE, row.get("Shape", ""))
                 self._set_cell_text(i, COMP_COL_SIDE, row.get("Side", ""))
-                self._set_cell_text(i, COMP_COL_WIDTH, f"{float(row.get('Width', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_WIDTH, self._format_display_length(row.get("Width", 0.0)))
                 self._set_cell_text(i, COMP_COL_SLOPE, f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_HEIGHT, f"{float(row.get('Height', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_EXTRA, f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_HEIGHT, self._format_display_length(row.get("Height", 0.0)))
+                self._set_cell_text(i, COMP_COL_EXTRA, self._format_display_length(row.get("ExtraWidth", 0.0)))
                 self._set_cell_text(i, COMP_COL_BACK_SLOPE, f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}")
-                self._set_cell_text(i, COMP_COL_OFFSET, f"{float(row.get('Offset', 0.0) or 0.0):.3f}")
+                self._set_cell_text(i, COMP_COL_OFFSET, self._format_display_length(row.get("Offset", 0.0)))
                 self._set_cell_text(i, COMP_COL_ORDER, f"{int(row.get('Order', 0) or 0)}")
                 self._set_cell_text(i, COMP_COL_ENABLED, "true" if bool(row.get("Enabled", True)) else "false")
         finally:
@@ -836,7 +923,7 @@ class TypicalSectionEditorTaskPanel:
             for i, row in enumerate(rows):
                 self._set_pavement_cell_text(i, 0, row.get("Id", ""))
                 self._set_pavement_cell_text(i, 1, row.get("Type", ""))
-                self._set_pavement_cell_text(i, 2, f"{float(row.get('Thickness', 0.0) or 0.0):.3f}")
+                self._set_pavement_cell_text(i, 2, self._format_display_length(row.get("Thickness", 0.0)))
                 self._set_pavement_cell_text(i, 3, "true" if bool(row.get("Enabled", True)) else "false")
         finally:
             self._loading = False
@@ -1081,8 +1168,10 @@ class TypicalSectionEditorTaskPanel:
         if not path:
             return
         rows = self._read_rows()
+        linear_unit = str(_units.get_linear_export_unit(self._unit_context()) or "m")
         try:
             with open(path, "w", encoding="utf-8-sig", newline="") as fp:
+                fp.write(f"# CorridorRoadUnits,linear={linear_unit}\n")
                 writer = csv.DictWriter(fp, fieldnames=list(COL_HEADERS))
                 writer.writeheader()
                 for row in rows:
@@ -1092,18 +1181,18 @@ class TypicalSectionEditorTaskPanel:
                             "Type": row.get("Type", ""),
                             "Shape": row.get("Shape", ""),
                             "Side": row.get("Side", ""),
-                            "Width": f"{float(row.get('Width', 0.0) or 0.0):.3f}",
+                            "Width": f"{self._csv_from_meters(row.get('Width', 0.0), linear_unit):.3f}",
                             "CrossSlopePct": f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}",
-                            "Height": f"{float(row.get('Height', 0.0) or 0.0):.3f}",
-                            "ExtraWidth": f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}",
+                            "Height": f"{self._csv_from_meters(row.get('Height', 0.0), linear_unit):.3f}",
+                            "ExtraWidth": f"{self._csv_from_meters(row.get('ExtraWidth', 0.0), linear_unit):.3f}",
                             "BackSlopePct": f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}",
-                            "Offset": f"{float(row.get('Offset', 0.0) or 0.0):.3f}",
+                            "Offset": f"{self._csv_from_meters(row.get('Offset', 0.0), linear_unit):.3f}",
                             "Order": int(row.get("Order", 0) or 0),
                             "Enabled": "true" if bool(row.get("Enabled", True)) else "false",
                         }
                     )
             self.txt_csv.setText(path)
-            self.lbl_status.setText(f"Saved {len(rows)} component rows to CSV.")
+            self.lbl_status.setText(f"Saved {len(rows)} component rows to CSV. | linear={linear_unit}")
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"CSV save failed: {ex}")
 
@@ -1127,8 +1216,10 @@ class TypicalSectionEditorTaskPanel:
         if not path:
             return
         rows = self._read_pavement_rows()
+        linear_unit = str(_units.get_linear_export_unit(self._unit_context()) or "m")
         try:
             with open(path, "w", encoding="utf-8-sig", newline="") as fp:
+                fp.write(f"# CorridorRoadUnits,linear={linear_unit}\n")
                 writer = csv.DictWriter(fp, fieldnames=list(PAV_HEADERS))
                 writer.writeheader()
                 for row in rows:
@@ -1136,12 +1227,12 @@ class TypicalSectionEditorTaskPanel:
                         {
                             "Id": row.get("Id", ""),
                             "Type": row.get("Type", ""),
-                            "Thickness": f"{float(row.get('Thickness', 0.0) or 0.0):.3f}",
+                            "Thickness": f"{self._csv_from_meters(row.get('Thickness', 0.0), linear_unit):.3f}",
                             "Enabled": "true" if bool(row.get("Enabled", True)) else "false",
                         }
                     )
             self.txt_pavement_csv.setText(path)
-            self.lbl_status.setText(f"Saved {len(rows)} pavement rows to CSV.")
+            self.lbl_status.setText(f"Saved {len(rows)} pavement rows to CSV. | linear={linear_unit}")
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Pavement CSV save failed: {ex}")
 
@@ -1176,34 +1267,28 @@ class TypicalSectionEditorTaskPanel:
             return
 
         try:
-            with open(path, "r", encoding="utf-8-sig", newline="") as fp:
-                sample = fp.read(4096)
-                fp.seek(0)
-                try:
-                    dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-                except Exception:
-                    dialect = csv.excel
-                reader = csv.DictReader(fp, dialect=dialect)
-                rows = []
-                for i, row_dict in enumerate(reader, start=1):
-                    if not any(str(v or "").strip() for v in dict(row_dict).values()):
-                        continue
-                    rows.append(
-                        {
-                            "Id": str(self._find_col(row_dict, ("Id", "ComponentId"), f"COMP-{i:02d}") or f"COMP-{i:02d}").strip(),
-                            "Type": str(self._find_col(row_dict, ("Type", "ComponentType"), "lane") or "lane").strip().lower(),
-                            "Shape": str(self._find_col(row_dict, ("Shape", "ShapeMode"), "") or "").strip().lower(),
-                            "Side": str(self._find_col(row_dict, ("Side",), "left") or "left").strip().lower(),
-                            "Width": self._parse_float(self._find_col(row_dict, ("Width",), 0.0)),
-                            "CrossSlopePct": self._parse_float(self._find_col(row_dict, ("CrossSlopePct", "CrossSlope", "SlopePct"), 0.0)),
-                            "Height": self._parse_float(self._find_col(row_dict, ("Height", "StepHeight"), 0.0)),
-                            "ExtraWidth": self._parse_float(self._find_col(row_dict, ("ExtraWidth", "BottomWidth", "FaceWidth", "OuterWidth"), 0.0)),
-                            "BackSlopePct": self._parse_float(self._find_col(row_dict, ("BackSlopePct", "OuterSlopePct", "SecondarySlopePct"), 0.0)),
-                            "Offset": self._parse_float(self._find_col(row_dict, ("Offset",), 0.0)),
-                            "Order": self._parse_int(self._find_col(row_dict, ("Order", "SortOrder"), i * 10)),
-                            "Enabled": str(self._find_col(row_dict, ("Enabled", "Use"), "true")).strip().lower() not in ("0", "false", "no", "off"),
-                        }
-                    )
+            payload = _read_csv_dict_rows(path)
+            linear_unit = str((payload.get("metadata", {}) or {}).get("linear_unit", "") or "")
+            rows = []
+            for i, row_dict in enumerate(list(payload.get("rows", []) or []), start=1):
+                if not any(str(v or "").strip() for v in dict(row_dict).values()):
+                    continue
+                rows.append(
+                    {
+                        "Id": str(self._find_col(row_dict, ("Id", "ComponentId"), f"COMP-{i:02d}") or f"COMP-{i:02d}").strip(),
+                        "Type": str(self._find_col(row_dict, ("Type", "ComponentType"), "lane") or "lane").strip().lower(),
+                        "Shape": str(self._find_col(row_dict, ("Shape", "ShapeMode"), "") or "").strip().lower(),
+                        "Side": str(self._find_col(row_dict, ("Side",), "left") or "left").strip().lower(),
+                        "Width": self._meters_from_csv(self._parse_float(self._find_col(row_dict, ("Width",), 0.0)), linear_unit),
+                        "CrossSlopePct": self._parse_float(self._find_col(row_dict, ("CrossSlopePct", "CrossSlope", "SlopePct"), 0.0)),
+                        "Height": self._meters_from_csv(self._parse_float(self._find_col(row_dict, ("Height", "StepHeight"), 0.0)), linear_unit),
+                        "ExtraWidth": self._meters_from_csv(self._parse_float(self._find_col(row_dict, ("ExtraWidth", "BottomWidth", "FaceWidth", "OuterWidth"), 0.0)), linear_unit),
+                        "BackSlopePct": self._parse_float(self._find_col(row_dict, ("BackSlopePct", "OuterSlopePct", "SecondarySlopePct"), 0.0)),
+                        "Offset": self._meters_from_csv(self._parse_float(self._find_col(row_dict, ("Offset",), 0.0)), linear_unit),
+                        "Order": self._parse_int(self._find_col(row_dict, ("Order", "SortOrder"), i * 10)),
+                        "Enabled": str(self._find_col(row_dict, ("Enabled", "Use"), "true")).strip().lower() not in ("0", "false", "no", "off"),
+                    }
+                )
             if not rows:
                 QtWidgets.QMessageBox.warning(None, "Typical Section", "No component rows were found in the CSV.")
                 return
@@ -1211,7 +1296,7 @@ class TypicalSectionEditorTaskPanel:
                 if str(row.get("Type", "") or "").strip().lower() == "bench":
                     row["Type"] = "berm"
             self._write_rows_to_table(rows)
-            self.lbl_status.setText(f"Loaded {len(rows)} component rows from CSV.")
+            self.lbl_status.setText(f"Loaded {len(rows)} component rows from CSV. | linear={linear_unit or _units.get_linear_import_unit(self._unit_context())}")
             self._schedule_preview()
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"CSV load failed: {ex}")
@@ -1226,31 +1311,25 @@ class TypicalSectionEditorTaskPanel:
             return
 
         try:
-            with open(path, "r", encoding="utf-8-sig", newline="") as fp:
-                sample = fp.read(4096)
-                fp.seek(0)
-                try:
-                    dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-                except Exception:
-                    dialect = csv.excel
-                reader = csv.DictReader(fp, dialect=dialect)
-                rows = []
-                for i, row_dict in enumerate(reader, start=1):
-                    if not any(str(v or "").strip() for v in dict(row_dict).values()):
-                        continue
-                    rows.append(
-                        {
-                            "Id": str(self._find_col(row_dict, ("Id", "LayerId"), f"LAYER-{i:02d}") or f"LAYER-{i:02d}").strip(),
-                            "Type": str(self._find_col(row_dict, ("Type", "LayerType"), "base") or "base").strip().lower(),
-                            "Thickness": self._parse_float(self._find_col(row_dict, ("Thickness", "Depth"), 0.0)),
-                            "Enabled": str(self._find_col(row_dict, ("Enabled", "Use"), "true")).strip().lower() not in ("0", "false", "no", "off"),
-                        }
-                    )
+            payload = _read_csv_dict_rows(path)
+            linear_unit = str((payload.get("metadata", {}) or {}).get("linear_unit", "") or "")
+            rows = []
+            for i, row_dict in enumerate(list(payload.get("rows", []) or []), start=1):
+                if not any(str(v or "").strip() for v in dict(row_dict).values()):
+                    continue
+                rows.append(
+                    {
+                        "Id": str(self._find_col(row_dict, ("Id", "LayerId"), f"LAYER-{i:02d}") or f"LAYER-{i:02d}").strip(),
+                        "Type": str(self._find_col(row_dict, ("Type", "LayerType"), "base") or "base").strip().lower(),
+                        "Thickness": self._meters_from_csv(self._parse_float(self._find_col(row_dict, ("Thickness", "Depth"), 0.0)), linear_unit),
+                        "Enabled": str(self._find_col(row_dict, ("Enabled", "Use"), "true")).strip().lower() not in ("0", "false", "no", "off"),
+                    }
+                )
             if not rows:
                 QtWidgets.QMessageBox.warning(None, "Typical Section", "No pavement rows were found in the CSV.")
                 return
             self._write_pavement_rows_to_table(rows)
-            self.lbl_status.setText(f"Loaded {len(rows)} pavement rows from CSV.")
+            self.lbl_status.setText(f"Loaded {len(rows)} pavement rows from CSV. | linear={linear_unit or _units.get_linear_import_unit(self._unit_context())}")
             self._schedule_preview()
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Pavement CSV load failed: {ex}")
@@ -1345,10 +1424,10 @@ class TypicalSectionEditorTaskPanel:
         try:
             snap = self._component_summary_snapshot()
             self.lbl_summary_components.setText(f"{snap['enabled']} enabled / {snap['total']} total")
-            self.lbl_summary_width.setText(f"{snap['top_width']:.3f} m")
+            self.lbl_summary_width.setText(f"{self._format_display_length(snap['top_width'])} {self._display_unit_label()}")
             self.lbl_summary_edges.setText(f"{snap['left_edge']} / {snap['right_edge']}")
             self.lbl_summary_pavement.setText(
-                f"{snap['pav_enabled']} enabled / {snap['pav_count']} total, {snap['pav_total']:.3f} m"
+                f"{snap['pav_enabled']} enabled / {snap['pav_count']} total, {self._format_display_length(snap['pav_total'])} {self._display_unit_label()}"
             )
         except Exception:
             self.lbl_summary_components.setText("-")
@@ -1587,7 +1666,7 @@ class TypicalSectionEditorTaskPanel:
                 f"Components: {len(rows)}\n"
                 f"Advanced components: {int(getattr(obj, 'AdvancedComponentCount', 0) or 0)}\n"
                 f"Pavement layers: {len(pav_rows)}\n"
-                f"Pavement total thickness: {float(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0):.3f} m",
+                f"Pavement total thickness: {self._format_display_length(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0)} {self._display_unit_label()}",
             )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Apply failed: {ex}")

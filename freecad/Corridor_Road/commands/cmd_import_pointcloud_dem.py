@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_pointcloud_dem import PointCloudDEMTaskPanel
 
 
 class CmdImportPointCloudDEM:
     def GetResources(self):
         return {
-            "Pixmap": "",
-            "MenuText": "Import PointCloud DEM",
-            "ToolTip": "Import UTM CSV point cloud (E/N/Z) and build DEM mesh terrain",
+            "Pixmap": icon_path("pointcloud_dem.svg"),
+            "MenuText": "PointCloud DEM",
+            "ToolTip": "Import point cloud CSV and build DEM terrain",
         }
 
     def IsActive(self):

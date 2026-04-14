@@ -13,7 +13,7 @@ from freecad.Corridor_Road.objects.obj_pointcloud_dem import (
     ViewProviderPointCloudDEM,
     ensure_pointcloud_dem_properties,
 )
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
 
@@ -35,7 +35,6 @@ def _find_pointcloud_dem(doc):
 class PointCloudDEMTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
         self._project = None
         self._loading = False
         self._running = False
@@ -99,10 +98,13 @@ class PointCloudDEMTaskPanel:
 
         gb_dem = QtWidgets.QGroupBox("DEM Options")
         form_dem = QtWidgets.QFormLayout(gb_dem)
+        unit = self._display_unit()
+        display_scale = self._display_scale()
         self.spin_cell = QtWidgets.QDoubleSpinBox()
-        self.spin_cell.setRange(0.2 * self._scale, 10000.0 * self._scale)
+        self.spin_cell.setRange(0.2 * display_scale, 10000.0 * display_scale)
         self.spin_cell.setDecimals(3)
-        self.spin_cell.setValue(4.0 * self._scale)
+        self.spin_cell.setSuffix(f" {unit}")
+        self.spin_cell.setValue(self._meters_to_display(4.0))
         self.cmb_agg = QtWidgets.QComboBox()
         self.cmb_agg.addItems(["Mean", "Median", "Min", "Max"])
         self.spin_max_cells = QtWidgets.QSpinBox()
@@ -110,7 +112,7 @@ class PointCloudDEMTaskPanel:
         self.spin_max_cells.setValue(2000000)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on parameter changes")
         self.chk_auto.setChecked(True)
-        form_dem.addRow("Cell Size (scaled):", self.spin_cell)
+        form_dem.addRow(f"Cell Size ({unit}):", self.spin_cell)
         form_dem.addRow("Aggregation:", self.cmb_agg)
         form_dem.addRow("Max Cells:", self.spin_max_cells)
         form_dem.addRow(self.chk_auto)
@@ -149,6 +151,37 @@ class PointCloudDEMTaskPanel:
             return self._project
         return self.doc
 
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self._project or self.doc)
+
+    def _display_scale(self):
+        return max(1.0e-9, _units.user_length_from_meters(self._project or self.doc, 1.0))
+
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self._project or self.doc, meters)
+
+    def _display_to_meters(self, value):
+        return _units.meters_from_user_length(self._project or self.doc, value, use_default="display")
+
+    def _build_completion_message(self, dem):
+        return "\n".join(
+            [
+                str(getattr(dem, "Status", "Done") or "Done"),
+                f"Display unit: {self._display_unit()}",
+                f"CSV: {str(getattr(dem, 'CsvPath', '') or '')}",
+                f"Coords: {str(getattr(dem, 'InputCoords', 'World') or 'World')}",
+                f"OutputCoords: {str(getattr(dem, 'OutputCoords', 'Local') or 'Local')}",
+                f"CellSize: {_units.format_length(self._project or self.doc, float(getattr(dem, 'CellSize', 0.0) or 0.0))}",
+                f"Aggregation: {str(getattr(dem, 'Aggregation', 'Mean') or 'Mean')}",
+                f"Points used/raw: {int(getattr(dem, 'PointCountUsed', 0))} / {int(getattr(dem, 'PointCountRaw', 0))}",
+                f"Skipped rows: {int(getattr(dem, 'SkippedRows', 0))}",
+                f"Grid: {int(getattr(dem, 'GridNX', 0))} x {int(getattr(dem, 'GridNY', 0))}, NoData: {int(getattr(dem, 'NoDataCount', 0))}",
+                "Z range: "
+                f"{_units.format_internal_length(self._project or self.doc, float(getattr(dem, 'ZMin', 0.0) or 0.0))} .. "
+                f"{_units.format_internal_length(self._project or self.doc, float(getattr(dem, 'ZMax', 0.0) or 0.0))}",
+            ]
+        )
+
     def _update_coord_hint(self, *_args):
         self.lbl_coord_hint.setText(coord_hint_text(self._coord_context_obj()))
 
@@ -172,7 +205,7 @@ class PointCloudDEMTaskPanel:
                 self.cmb_out_coords.setCurrentText(str(getattr(obj, "OutputCoords", "Local") or "Local"))
                 self.cmb_delim.setCurrentText(str(getattr(obj, "Delimiter", "Auto") or "Auto"))
                 self.chk_header.setChecked(bool(getattr(obj, "HasHeader", True)))
-                self.spin_cell.setValue(float(getattr(obj, "CellSize", 4.0 * self._scale)))
+                self.spin_cell.setValue(self._meters_to_display(float(getattr(obj, "CellSize", 4.0) or 4.0)))
                 self.cmb_agg.setCurrentText(str(getattr(obj, "Aggregation", "Mean") or "Mean"))
                 self.spin_max_cells.setValue(int(getattr(obj, "MaxCells", 2000000)))
                 self.chk_auto.setChecked(bool(getattr(obj, "AutoUpdate", True)))
@@ -184,6 +217,7 @@ class PointCloudDEMTaskPanel:
                     [
                         "PointCloudDEM object: FOUND (will update)",
                         f"Last status: {str(getattr(obj, 'Status', '') or '')}",
+                        "CSV E/N/Z values are imported as-is. Project units affect CellSize display only.",
                     ]
                 )
             )
@@ -194,7 +228,14 @@ class PointCloudDEMTaskPanel:
                 self.cmb_out_coords.setCurrentText("Local")
             finally:
                 self._loading = False
-            self.lbl_info.setText("PointCloudDEM object: NOT FOUND (will create)")
+            self.lbl_info.setText(
+                "\n".join(
+                    [
+                        "PointCloudDEM object: NOT FOUND (will create)",
+                        "CSV E/N/Z values are imported as-is. Project units affect CellSize display only.",
+                    ]
+                )
+            )
 
     def _on_browse(self):
         path, _flt = QtWidgets.QFileDialog.getOpenFileName(
@@ -260,7 +301,7 @@ class PointCloudDEMTaskPanel:
             dem.OutputCoords = str(self.cmb_out_coords.currentText() or "Local")
             dem.Delimiter = str(self.cmb_delim.currentText() or "Auto")
             dem.HasHeader = bool(self.chk_header.isChecked())
-            dem.CellSize = float(self.spin_cell.value())
+            dem.CellSize = self._display_to_meters(float(self.spin_cell.value()))
             dem.Aggregation = str(self.cmb_agg.currentText() or "Mean")
             dem.MaxCells = int(self.spin_max_cells.value())
             dem.AutoUpdate = bool(self.chk_auto.isChecked())
@@ -304,19 +345,7 @@ class PointCloudDEMTaskPanel:
         if not (status.startswith("ERROR") or status.startswith("CANCELED")):
             self.pbar.setValue(100)
 
-        msg = [
-            status,
-            f"CSV: {str(getattr(dem, 'CsvPath', '') or '')}",
-            f"Coords: {str(getattr(dem, 'InputCoords', 'World') or 'World')}",
-            f"OutputCoords: {str(getattr(dem, 'OutputCoords', 'Local') or 'Local')}",
-            f"CellSize: {float(getattr(dem, 'CellSize', 0.0)):.3f} (scaled)",
-            f"Aggregation: {str(getattr(dem, 'Aggregation', 'Mean') or 'Mean')}",
-            f"Points used/raw: {int(getattr(dem, 'PointCountUsed', 0))} / {int(getattr(dem, 'PointCountRaw', 0))}",
-            f"Skipped rows: {int(getattr(dem, 'SkippedRows', 0))}",
-            f"Grid: {int(getattr(dem, 'GridNX', 0))} x {int(getattr(dem, 'GridNY', 0))}, NoData: {int(getattr(dem, 'NoDataCount', 0))}",
-            f"Z range: {float(getattr(dem, 'ZMin', 0.0)):.3f} .. {float(getattr(dem, 'ZMax', 0.0)):.3f}",
-        ]
-        QtWidgets.QMessageBox.information(None, "PointCloud DEM", "\n".join(msg))
+        QtWidgets.QMessageBox.information(None, "PointCloud DEM", self._build_completion_message(dem))
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()

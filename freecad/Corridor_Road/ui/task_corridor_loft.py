@@ -6,9 +6,9 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft, ensure_corridor_loft_properties
 from freecad.Corridor_Road.objects.obj_section_set import region_plan_usage_enabled
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.project_links import link_project
 
 
@@ -23,7 +23,6 @@ def _find_corridor_lofts(doc):
 class CorridorLoftTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
-        self._scale = get_length_scale(self.doc, default=1.0)
         self._sections = []
         self._corridors = []
         self._loading = False
@@ -63,10 +62,13 @@ class CorridorLoftTaskPanel:
 
         gb_opt = QtWidgets.QGroupBox("Options")
         form_opts = QtWidgets.QFormLayout(gb_opt)
+        unit = self._display_unit()
+        display_scale = self._display_scale()
         self.spin_min_spacing = QtWidgets.QDoubleSpinBox()
-        self.spin_min_spacing.setRange(0.0, 10000.0 * self._scale)
+        self.spin_min_spacing.setRange(0.0, 10000.0 * display_scale)
         self.spin_min_spacing.setDecimals(3)
-        self.spin_min_spacing.setValue(0.50 * self._scale)
+        self.spin_min_spacing.setSuffix(f" {unit}")
+        self.spin_min_spacing.setValue(self._meters_to_display(0.50))
         self.chk_ruled = QtWidgets.QCheckBox("Use ruled surface")
         self.chk_ruled.setChecked(False)
         self.chk_auto_ruled_typical = QtWidgets.QCheckBox("Auto-use ruled surface for Typical Section")
@@ -89,7 +91,7 @@ class CorridorLoftTaskPanel:
         self.spin_notch_transition_scale.setValue(1.0)
         self.chk_auto = QtWidgets.QCheckBox("Auto update on source changes")
         self.chk_auto.setChecked(True)
-        form_opts.addRow("Min Section Spacing:", self.spin_min_spacing)
+        form_opts.addRow(f"Min Section Spacing ({unit}):", self.spin_min_spacing)
         form_opts.addRow(self.chk_ruled)
         form_opts.addRow(self.chk_auto_ruled_typical)
         form_opts.addRow(self.chk_fix_orientation)
@@ -125,6 +127,18 @@ class CorridorLoftTaskPanel:
     def _fmt_obj(prefix: str, obj):
         return f"[{prefix}] {obj.Label} ({obj.Name})"
 
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self.doc)
+
+    def _display_scale(self):
+        return max(1.0e-9, _units.user_length_from_meters(self.doc, 1.0))
+
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self.doc, meters)
+
+    def _display_to_meters(self, value):
+        return _units.meters_from_user_length(self.doc, value, use_default="display")
+
     @staticmethod
     def _status_text(cor):
         if cor is None:
@@ -157,6 +171,107 @@ class CorridorLoftTaskPanel:
         if mode_summary != "-":
             lines.append(f"Modes: {mode_summary}")
         return "\n".join(lines)
+
+    def _build_completion_message(self, cor, sec):
+        n = len(list(getattr(sec, "StationValues", []) or []))
+        src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
+        top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
+        top_edges = str(getattr(sec, "TopProfileEdgeSummary", "-") or "-")
+        advanced_components = int(getattr(cor, "TypicalSectionAdvancedComponentCount", 0) or 0)
+        pavement_layers = int(getattr(cor, "PavementLayerCount", 0) or 0)
+        pavement_layers_enabled = int(getattr(cor, "EnabledPavementLayerCount", 0) or 0)
+        pavement_total = float(getattr(cor, "PavementTotalThickness", 0.0) or 0.0)
+        pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
+        ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
+        structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
+        corridor_segment_count = int(getattr(cor, "CorridorSegmentCount", 0) or 0)
+        segment_package_count = int(getattr(cor, "SegmentPackageCount", 0) or 0)
+        segment_object_count = int(getattr(cor, "SegmentObjectCount", 0) or 0)
+        skipped_segment_count = int(getattr(cor, "SkippedSegmentCount", 0) or 0)
+        segment_kind_summary = str(getattr(cor, "SegmentKindSummary", "-") or "-")
+        segment_source_summary = str(getattr(cor, "SegmentSourceSummary", "-") or "-")
+        segment_driver_source_summary = str(getattr(cor, "SegmentDriverSourceSummary", "-") or "-")
+        segment_driver_mode_summary = str(getattr(cor, "SegmentDriverModeSummary", "-") or "-")
+        segment_profile_contract_summary = str(getattr(cor, "SegmentProfileContractSummary", "-") or "-")
+        segment_package_summary = str(getattr(cor, "SegmentPackageSummary", "-") or "-")
+        segment_display_summary = str(getattr(cor, "SegmentDisplaySummary", "-") or "-")
+        profile_contract_source = str(getattr(cor, "ProfileContractSource", "-") or "-")
+        diag_summary = str(getattr(cor, "DiagnosticSummary", "-") or "-")
+        diag_classes = str(getattr(cor, "DiagnosticClassSummary", "-") or "-")
+        diag_source = str(getattr(cor, "SourceDiagnostic", "-") or "-")
+        diag_connectivity = str(getattr(cor, "ConnectivityDiagnostic", "-") or "-")
+        diag_packaging = str(getattr(cor, "PackagingDiagnostic", "-") or "-")
+        diag_policy = str(getattr(cor, "PolicyDiagnostic", "-") or "-")
+        skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
+        corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
+        region_corridor_mode_summary = str(getattr(cor, "ResolvedRegionCorridorModeSummary", "-") or "-")
+        combined_corridor_mode_summary = str(getattr(cor, "ResolvedCombinedCorridorModeSummary", "-") or "-")
+        corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
+        region_corridor_warning_count = len(list(getattr(cor, "ResolvedRegionCorridorWarnings", []) or []))
+        combined_corridor_warning_count = len(list(getattr(cor, "ResolvedCombinedCorridorWarnings", []) or []))
+        skip_boundary_behavior = str(getattr(cor, "ResolvedSkipBoundaryBehavior", "-") or "-")
+        skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
+        segment_summary_rows = list(getattr(cor, "SegmentSummaryRows", []) or [])
+        notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
+        notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
+        notch_schema_name = str(getattr(cor, "ResolvedNotchSchemaName", "-") or "-")
+        notch_profile_summary = str(getattr(cor, "ResolvedNotchProfileSummary", "-") or "-")
+        notch_build_mode = str(getattr(cor, "ResolvedNotchBuildMode", "-") or "-")
+        notch_cutter_count = int(getattr(cor, "ResolvedNotchCutterCount", 0) or 0)
+        closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
+        skip_marker_count = int(getattr(cor, "SkipMarkerCount", 0) or 0)
+        return (
+            f"Corridor build completed.\n"
+            f"Display unit: {self._display_unit()}\n"
+            f"Sections used: {n}\n"
+            f"Points per section: {pt_count}\n"
+            f"Source section schema: {src_schema}\n"
+            f"Top profile source: {top_profile}\n"
+            f"Top profile edges: {top_edges}\n"
+            f"Typical advanced components: {advanced_components}\n"
+            f"Pavement layers: {pavement_layers_enabled}/{pavement_layers}\n"
+            f"Pavement total thickness: {_units.format_internal_length(self.doc, pavement_total)}\n"
+            f"Output mode: surface\n"
+            f"Ruled mode: {ruled_mode}\n"
+            f"Corridor-aware segments: {structure_seg_count}\n"
+            f"Segment packages: {segment_package_count}\n"
+            f"Segment objects: {segment_object_count}\n"
+            f"Kept corridor segments: {corridor_segment_count}\n"
+            f"Skipped segment rows: {skipped_segment_count}\n"
+            f"Segment summary rows: {len(segment_summary_rows)}\n"
+            f"Segment kinds: {segment_kind_summary}\n"
+            f"Segment drivers: {segment_source_summary}\n"
+            f"Segment driver sources: {segment_driver_source_summary}\n"
+            f"Segment driver modes: {segment_driver_mode_summary}\n"
+            f"Segment profile contracts: {segment_profile_contract_summary}\n"
+            f"Segment package summary: {segment_package_summary}\n"
+            f"Segment display: {segment_display_summary}\n"
+            f"Profile contract source: {profile_contract_source}\n"
+            f"Diagnostic summary: {diag_summary}\n"
+            f"Diagnostic classes: {diag_classes}\n"
+            f"Source diagnostic: {diag_source}\n"
+            f"Connectivity diagnostic: {diag_connectivity}\n"
+            f"Packaging diagnostic: {diag_packaging}\n"
+            f"Policy diagnostic: {diag_policy}\n"
+            f"Effective corridor modes: {combined_corridor_mode_summary}\n"
+            f"Effective corridor warnings: {combined_corridor_warning_count}\n"
+            f"Structure corridor modes: {corridor_mode_summary}\n"
+            f"Structure corridor warnings: {corridor_warning_count}\n"
+            f"Region corridor modes: {region_corridor_mode_summary}\n"
+            f"Region corridor warnings: {region_corridor_warning_count}\n"
+            f"Skipped corridor ranges: {len(skipped_ranges)}\n"
+            f"Skip boundary behavior: {skip_boundary_behavior}\n"
+            f"Skip boundary states: {len(skip_boundary_states)}\n"
+            f"Skip boundary markers: {skip_marker_count}\n"
+            f"Applied notches: {notch_count}\n"
+            f"Notch-aware stations: {notch_station_count}\n"
+            f"Notch schema: {notch_schema_name}\n"
+            f"Notch profile summary: {notch_profile_summary}\n"
+            f"Notch build mode: {notch_build_mode}\n"
+            f"Notch cutter count: {notch_cutter_count}\n"
+            f"Profile schema: {closed_profile_schema}\n"
+            f"Status: {getattr(cor, 'Status', 'OK')}"
+        )
 
     def _fill_sections(self, selected=None):
         self.cmb_section.clear()
@@ -271,7 +386,7 @@ class CorridorLoftTaskPanel:
             return
         cor = self._current_target()
         if cor is None:
-            self.spin_min_spacing.setValue(0.50 * self._scale)
+            self.spin_min_spacing.setValue(self._meters_to_display(0.50))
             self.chk_ruled.setChecked(False)
             self.chk_auto_ruled_typical.setChecked(True)
             self.chk_fix_orientation.setChecked(True)
@@ -289,9 +404,9 @@ class CorridorLoftTaskPanel:
         except Exception:
             pass
         try:
-            self.spin_min_spacing.setValue(float(getattr(cor, "MinSectionSpacing", 0.50 * self._scale)))
+            self.spin_min_spacing.setValue(self._meters_to_display(float(getattr(cor, "MinSectionSpacing", 0.50) or 0.50)))
         except Exception:
-            self.spin_min_spacing.setValue(0.50 * self._scale)
+            self.spin_min_spacing.setValue(self._meters_to_display(0.50))
         self.chk_ruled.setChecked(bool(getattr(cor, "UseRuled", False)))
         self.chk_auto_ruled_typical.setChecked(bool(getattr(cor, "AutoUseRuledForTypicalSection", True)))
         self.chk_fix_orientation.setChecked(bool(getattr(cor, "AutoFixSectionOrientation", True)))
@@ -412,7 +527,7 @@ class CorridorLoftTaskPanel:
             cor.NotchTransitionScale = float(self.spin_notch_transition_scale.value())
             cor.AutoUpdate = bool(self.chk_auto.isChecked())
             if hasattr(cor, "MinSectionSpacing"):
-                cor.MinSectionSpacing = float(self.spin_min_spacing.value())
+                cor.MinSectionSpacing = self._display_to_meters(float(self.spin_min_spacing.value()))
             cor.touch()
 
             prj = find_project(self.doc)
@@ -457,57 +572,10 @@ class CorridorLoftTaskPanel:
                 except Exception:
                     pass
             self.lbl_status.setText(self._status_text(cor))
-            n = len(list(getattr(sec, "StationValues", []) or []))
-            src_schema = int(getattr(sec, "SectionSchemaVersion", 1) or 1)
-            top_profile = str(getattr(sec, "TopProfileSource", "assembly_simple") or "assembly_simple")
-            top_edges = str(getattr(sec, "TopProfileEdgeSummary", "-") or "-")
-            advanced_components = int(getattr(cor, "TypicalSectionAdvancedComponentCount", 0) or 0)
-            pavement_layers = int(getattr(cor, "PavementLayerCount", 0) or 0)
-            pavement_layers_enabled = int(getattr(cor, "EnabledPavementLayerCount", 0) or 0)
-            pavement_total = float(getattr(cor, "PavementTotalThickness", 0.0) or 0.0)
-            pt_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
-            ruled_mode = str(getattr(cor, "ResolvedRuledMode", "off") or "off")
-            structure_seg_count = int(getattr(cor, "StructureSegmentCount", 0) or 0)
-            corridor_segment_count = int(getattr(cor, "CorridorSegmentCount", 0) or 0)
-            segment_package_count = int(getattr(cor, "SegmentPackageCount", 0) or 0)
-            segment_object_count = int(getattr(cor, "SegmentObjectCount", 0) or 0)
-            skipped_segment_count = int(getattr(cor, "SkippedSegmentCount", 0) or 0)
-            segment_kind_summary = str(getattr(cor, "SegmentKindSummary", "-") or "-")
-            segment_source_summary = str(getattr(cor, "SegmentSourceSummary", "-") or "-")
-            segment_driver_source_summary = str(getattr(cor, "SegmentDriverSourceSummary", "-") or "-")
-            segment_driver_mode_summary = str(getattr(cor, "SegmentDriverModeSummary", "-") or "-")
-            segment_profile_contract_summary = str(getattr(cor, "SegmentProfileContractSummary", "-") or "-")
-            segment_package_summary = str(getattr(cor, "SegmentPackageSummary", "-") or "-")
-            segment_display_summary = str(getattr(cor, "SegmentDisplaySummary", "-") or "-")
-            profile_contract_source = str(getattr(cor, "ProfileContractSource", "-") or "-")
-            diag_summary = str(getattr(cor, "DiagnosticSummary", "-") or "-")
-            diag_classes = str(getattr(cor, "DiagnosticClassSummary", "-") or "-")
-            diag_source = str(getattr(cor, "SourceDiagnostic", "-") or "-")
-            diag_connectivity = str(getattr(cor, "ConnectivityDiagnostic", "-") or "-")
-            diag_packaging = str(getattr(cor, "PackagingDiagnostic", "-") or "-")
-            diag_policy = str(getattr(cor, "PolicyDiagnostic", "-") or "-")
-            skipped_ranges = list(getattr(cor, "SkippedStationRanges", []) or [])
-            corridor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "-") or "-")
-            region_corridor_mode_summary = str(getattr(cor, "ResolvedRegionCorridorModeSummary", "-") or "-")
-            combined_corridor_mode_summary = str(getattr(cor, "ResolvedCombinedCorridorModeSummary", "-") or "-")
-            corridor_warning_count = len(list(getattr(cor, "ResolvedStructureCorridorWarnings", []) or []))
-            region_corridor_warning_count = len(list(getattr(cor, "ResolvedRegionCorridorWarnings", []) or []))
-            combined_corridor_warning_count = len(list(getattr(cor, "ResolvedCombinedCorridorWarnings", []) or []))
-            skip_boundary_behavior = str(getattr(cor, "ResolvedSkipBoundaryBehavior", "-") or "-")
-            skip_boundary_states = list(getattr(cor, "ResolvedSkipBoundaryStates", []) or [])
-            segment_summary_rows = list(getattr(cor, "SegmentSummaryRows", []) or [])
-            notch_count = int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0)
-            notch_station_count = int(getattr(cor, "ResolvedNotchStationCount", 0) or 0)
-            notch_schema_name = str(getattr(cor, "ResolvedNotchSchemaName", "-") or "-")
-            notch_profile_summary = str(getattr(cor, "ResolvedNotchProfileSummary", "-") or "-")
-            notch_build_mode = str(getattr(cor, "ResolvedNotchBuildMode", "-") or "-")
-            notch_cutter_count = int(getattr(cor, "ResolvedNotchCutterCount", 0) or 0)
-            closed_profile_schema = int(getattr(cor, "ClosedProfileSchemaVersion", 1) or 1)
-            skip_marker_count = int(getattr(cor, "SkipMarkerCount", 0) or 0)
             QtWidgets.QMessageBox.information(
                 None,
                 "Corridor",
-                f"Corridor build completed.\nSections used: {n}\nPoints per section: {pt_count}\nSource section schema: {src_schema}\nTop profile source: {top_profile}\nTop profile edges: {top_edges}\nTypical advanced components: {advanced_components}\nPavement layers: {pavement_layers_enabled}/{pavement_layers}\nPavement total thickness: {pavement_total:.3f} m\nOutput mode: surface\nRuled mode: {ruled_mode}\nCorridor-aware segments: {structure_seg_count}\nSegment packages: {segment_package_count}\nSegment objects: {segment_object_count}\nKept corridor segments: {corridor_segment_count}\nSkipped segment rows: {skipped_segment_count}\nSegment summary rows: {len(segment_summary_rows)}\nSegment kinds: {segment_kind_summary}\nSegment drivers: {segment_source_summary}\nSegment driver sources: {segment_driver_source_summary}\nSegment driver modes: {segment_driver_mode_summary}\nSegment profile contracts: {segment_profile_contract_summary}\nSegment package summary: {segment_package_summary}\nSegment display: {segment_display_summary}\nProfile contract source: {profile_contract_source}\nDiagnostic summary: {diag_summary}\nDiagnostic classes: {diag_classes}\nSource diagnostic: {diag_source}\nConnectivity diagnostic: {diag_connectivity}\nPackaging diagnostic: {diag_packaging}\nPolicy diagnostic: {diag_policy}\nEffective corridor modes: {combined_corridor_mode_summary}\nEffective corridor warnings: {combined_corridor_warning_count}\nStructure corridor modes: {corridor_mode_summary}\nStructure corridor warnings: {corridor_warning_count}\nRegion corridor modes: {region_corridor_mode_summary}\nRegion corridor warnings: {region_corridor_warning_count}\nSkipped corridor ranges: {len(skipped_ranges)}\nSkip boundary behavior: {skip_boundary_behavior}\nSkip boundary states: {len(skip_boundary_states)}\nSkip boundary markers: {skip_marker_count}\nApplied notches: {notch_count}\nNotch-aware stations: {notch_station_count}\nNotch schema: {notch_schema_name}\nNotch profile summary: {notch_profile_summary}\nNotch build mode: {notch_build_mode}\nNotch cutter count: {notch_cutter_count}\nProfile schema: {closed_profile_schema}\nStatus: {getattr(cor, 'Status', 'OK')}",
+                self._build_completion_message(cor, sec),
             )
             self._refresh_context()
             try:

@@ -4,8 +4,8 @@
 # CorridorRoad/objects/obj_centerline3d_display.py
 import Part
 
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment
 
 
@@ -26,7 +26,7 @@ def _alignment_edge_boundaries(aln):
     acc = 0.0
     for e in list(aln.Shape.Edges):
         acc += float(e.Length)
-        vals.append(float(acc))
+        vals.append(_units.meters_from_model_length(getattr(aln, "Document", None), float(acc)))
     return vals
 
 
@@ -49,8 +49,6 @@ def _vertical_key_stations(va):
 
 
 def ensure_centerline3d_display_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     # Optional legacy link: if provided, display can read source data from engine object.
     if not hasattr(obj, "SourceCenterline"):
         obj.addProperty("App::PropertyLink", "SourceCenterline", "Display", "Centerline3D engine source")
@@ -71,7 +69,7 @@ def ensure_centerline3d_display_properties(obj):
 
     if not hasattr(obj, "SamplingInterval"):
         obj.addProperty("App::PropertyFloat", "SamplingInterval", "Sampling", "Sampling interval (m) when Stationing is not used")
-        obj.SamplingInterval = 5.0 * scale
+        obj.SamplingInterval = 5.0
     else:
         # Migrate older objects where SamplingInterval was under "Source"
         try:
@@ -90,15 +88,15 @@ def ensure_centerline3d_display_properties(obj):
 
     if not hasattr(obj, "MaxChordError"):
         obj.addProperty("App::PropertyFloat", "MaxChordError", "Sampling", "Maximum chord error for adaptive sampling (m)")
-        obj.MaxChordError = 0.02 * scale
+        obj.MaxChordError = 0.02
 
     if not hasattr(obj, "MinStep"):
         obj.addProperty("App::PropertyFloat", "MinStep", "Sampling", "Minimum station step for adaptive sampling (m)")
-        obj.MinStep = 0.5 * scale
+        obj.MinStep = 0.5
 
     if not hasattr(obj, "MaxStep"):
         obj.addProperty("App::PropertyFloat", "MaxStep", "Sampling", "Maximum station step for adaptive sampling (m)")
-        obj.MaxStep = 10.0 * scale
+        obj.MaxStep = 10.0
 
     if not hasattr(obj, "UseKeyStations"):
         obj.addProperty("App::PropertyBool", "UseKeyStations", "Sampling", "Always include key stations (edge bounds, BVC/EVC)")
@@ -118,6 +116,15 @@ def ensure_centerline3d_display_properties(obj):
     if not hasattr(obj, "ResolvedElevationSource"):
         obj.addProperty("App::PropertyString", "ResolvedElevationSource", "Result", "Resolved elevation source used at runtime")
         obj.ResolvedElevationSource = "N/A"
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Display", "Centerline3DDisplay scalar length storage schema")
+        obj.LengthSchemaVersion = 2
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema < 2:
+        obj.LengthSchemaVersion = 2
 
 
 class Centerline3DDisplay:
@@ -133,18 +140,17 @@ class Centerline3DDisplay:
 
     @staticmethod
     def _safe_sampling_params(obj):
-        scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-        max_err = float(getattr(obj, "MaxChordError", 0.02 * scale))
-        if max_err < 1e-6 * scale:
-            max_err = 1e-6 * scale
+        max_err = float(getattr(obj, "MaxChordError", 0.02))
+        if max_err < 1e-6:
+            max_err = 1e-6
             obj.MaxChordError = max_err
 
-        min_step = float(getattr(obj, "MinStep", 0.5 * scale))
-        if min_step < 1e-3 * scale:
-            min_step = 1e-3 * scale
+        min_step = float(getattr(obj, "MinStep", 0.5))
+        if min_step < 1e-3:
+            min_step = 1e-3
             obj.MinStep = min_step
 
-        max_step = float(getattr(obj, "MaxStep", 10.0 * scale))
+        max_step = float(getattr(obj, "MaxStep", 10.0))
         if max_step < min_step:
             max_step = min_step
             obj.MaxStep = max_step
@@ -181,7 +187,8 @@ class Centerline3DDisplay:
         pm = Centerline3D.point3d_at_station(src_obj, float(sm), z_provider=z_provider)
 
         chord_mid = p0 + (p1 - p0) * 0.5
-        return float((pm - chord_mid).Length), float(sm)
+        dev_model = float((pm - chord_mid).Length)
+        return float(_units.meters_from_model_length(getattr(src_obj, "Document", None), dev_model)), float(sm)
 
     @staticmethod
     def _append_adaptive(src_obj, z_provider, out_stations, s0: float, s1: float, max_err: float, min_step: float, max_step: float, depth: int):
@@ -232,7 +239,9 @@ class Centerline3DDisplay:
                 obj.ResolvedElevationSource = "N/A"
                 return
 
-            total = float(aln.Shape.Length)
+            total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+            if total <= 1.0e-9:
+                total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
             if total <= 1e-9:
                 obj.Shape = Part.Shape()
                 obj.SampledStations = []

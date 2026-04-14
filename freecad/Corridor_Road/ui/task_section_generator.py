@@ -6,6 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 from freecad.Corridor_Road.objects.obj_assembly_template import (
     AssemblyTemplate,
@@ -24,7 +25,7 @@ from freecad.Corridor_Road.objects.obj_section_set import (
     resolve_region_plan_source,
     set_region_plan_source,
 )
-from freecad.Corridor_Road.objects.obj_project import assign_project_region_plan, find_region_plan_objects, get_length_scale
+from freecad.Corridor_Road.objects.obj_project import assign_project_region_plan, find_region_plan_objects
 from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan as RegionPlanSource
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
@@ -89,6 +90,112 @@ def _find_typical_section_templates(doc):
 class SectionGeneratorTaskPanel:
     _BENCH_HEADERS = ("Drop", "Width", "Slope", "Post-Slope")
 
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self._project or self.doc)
+
+    def _display_scale(self):
+        return max(1.0e-9, _units.user_length_from_meters(self._project or self.doc, 1.0))
+
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self._project or self.doc, meters)
+
+    def _display_from_meters(self, value):
+        return _units.user_length_from_meters(self._project or self.doc, value)
+
+    def _meters_from_display(self, value):
+        return _units.meters_from_user_length(self._project or self.doc, value, use_default="display")
+
+    def _display_from_internal(self, value):
+        return _units.display_length_from_internal(self._project or self.doc, value)
+
+    def _internal_from_display(self, value):
+        return _units.internal_length_from_display(self._project or self.doc, value)
+
+    def _format_display_value(self, value: float, digits: int = 3) -> str:
+        return f"{float(value):.{int(digits)}f}"
+
+    def _completion_summary_text(self, sec, struct_src=None, reg_src=None, typ_src=None):
+        n = len(list(getattr(sec, "StationValues", []) or []))
+        struct_count = int(getattr(sec, "ResolvedStructureCount", 0) or 0)
+        region_count = int(getattr(sec, "ResolvedRegionCount", 0) or 0)
+        msg = [
+            "Section generation completed.",
+            f"Resolved stations: {n}",
+            f"Display unit: {self._display_unit()}",
+        ]
+        if str(self.cmb_mode.currentText() or "") == "Range":
+            msg.append(
+                "Range input (display): "
+                f"{self._format_display_value(float(self.spin_start.value()))} -> "
+                f"{self._format_display_value(float(self.spin_end.value()))} "
+                f"@ {self._format_display_value(float(self.spin_itv.value()))} {self._display_unit()}"
+            )
+        if bool(self.chk_use_structure_set.isChecked()):
+            if struct_src is not None:
+                msg.append(f"Structure source: {struct_src.Label} ({struct_src.Name})")
+            msg.append(f"Merged structure stations: {struct_count}")
+            if bool(self.chk_struct_apply_overrides.isChecked()):
+                msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, 'StructureOverrideHitCount', 0) or 0))}")
+        if bool(self.chk_use_region_plan.isChecked()):
+            if reg_src is not None:
+                msg.append(f"Region plan source: {reg_src.Label} ({reg_src.Name})")
+            msg.append(f"Merged region stations: {region_count}")
+            if bool(self.chk_region_apply_overrides.isChecked()):
+                msg.append(f"Region override-enabled stations: {max(0, int(getattr(sec, 'RegionOverrideHitCount', 0) or 0))}")
+        if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
+            msg.append(f"Typical section source: {typ_src.Label} ({typ_src.Name})")
+        return "\n".join(msg)
+
+    def _bench_headers(self):
+        unit = self._display_unit()
+        return (f"Drop ({unit})", f"Width ({unit})", "Slope", "Post-Slope")
+
+    def _bench_row_display_from_meters(self, row):
+        parsed = self._normalize_bench_row(row)
+        if parsed is None:
+            return None
+        return {
+            "drop": self._display_from_meters(float(parsed.get("drop", 0.0) or 0.0)),
+            "width": self._display_from_meters(float(parsed.get("width", 0.0) or 0.0)),
+            "slope": float(parsed.get("slope", 0.0) or 0.0),
+            "post_slope": float(parsed.get("post_slope", 0.0) or 0.0),
+        }
+
+    def _bench_row_meters_from_display(self, row):
+        parsed = self._normalize_bench_row(row)
+        if parsed is None:
+            return None
+        return {
+            "drop": self._meters_from_display(float(parsed.get("drop", 0.0) or 0.0)),
+            "width": self._meters_from_display(float(parsed.get("width", 0.0) or 0.0)),
+            "slope": float(parsed.get("slope", 0.0) or 0.0),
+            "post_slope": float(parsed.get("post_slope", 0.0) or 0.0),
+        }
+
+    def _station_text_from_internal(self, text: str) -> str:
+        return self._station_text_from_meters(text)
+
+    def _station_text_from_meters(self, text: str) -> str:
+        values = []
+        for token in str(text or "").replace(";", " ").replace(",", " ").split():
+            try:
+                values.append(self._display_from_meters(float(token)))
+            except Exception:
+                continue
+        return ", ".join(f"{float(v):.3f}" for v in values)
+
+    def _station_text_to_internal(self, text: str) -> str:
+        return self._station_text_to_meters(text)
+
+    def _station_text_to_meters(self, text: str) -> str:
+        values = []
+        for token in str(text or "").replace(";", " ").replace(",", " ").split():
+            try:
+                values.append(self._meters_from_display(float(token)))
+            except Exception:
+                continue
+        return ", ".join(f"{float(v):.6f}" for v in values)
+
     @staticmethod
     def _normalize_bench_row(row):
         if isinstance(row, dict) and ("post_slope" in row):
@@ -118,12 +225,11 @@ class SectionGeneratorTaskPanel:
         return "drop={drop:.6f}|width={width:.6f}|slope={slope:.6f}|post={post_slope:.6f}".format(**parsed)
 
     def _default_bench_row(self, side: str):
-        scale = get_length_scale(self.doc, default=1.0)
         side_key = str(side or "").strip().lower()
         post = float(self.spin_side_s_left.value()) if side_key == "left" else float(self.spin_side_s_right.value())
         return {
-            "drop": 1.0 * scale,
-            "width": 1.5 * scale,
+            "drop": self._meters_to_display(1.0),
+            "width": self._meters_to_display(1.5),
             "slope": 0.0,
             "post_slope": post,
         }
@@ -164,14 +270,17 @@ class SectionGeneratorTaskPanel:
                 continue
             parsed = _parse_bench_row(",".join(vals), fallback_post)
             if parsed is not None:
-                rows.append(parsed)
+                converted = self._bench_row_meters_from_display(parsed)
+                if converted is not None:
+                    rows.append(converted)
         return rows
 
     def _set_bench_table_rows(self, side: str, rows):
         table = self._bench_table(side)
         table.setRowCount(0)
         for row in list(rows or []):
-            self._insert_bench_table_row(side, row)
+            disp = self._bench_row_display_from_meters(row)
+            self._insert_bench_table_row(side, disp)
 
     def _trim_bench_rows_to_first(self, side: str):
         table = self._bench_table(side)
@@ -260,7 +369,8 @@ class SectionGeneratorTaskPanel:
         Gui.Control.closeDialog()
 
     def _build_ui(self):
-        scale = get_length_scale(self.doc, default=1.0)
+        unit = self._display_unit()
+        display_scale = self._display_scale()
 
         w = QtWidgets.QWidget()
         w.setWindowTitle("CorridorRoad - Generate Sections")
@@ -282,21 +392,24 @@ class SectionGeneratorTaskPanel:
         self.spin_start = QtWidgets.QDoubleSpinBox()
         self.spin_start.setRange(0.0, 1.0e9)
         self.spin_start.setDecimals(3)
+        self.spin_start.setSuffix(f" {unit}")
         self.spin_start.setValue(0.0)
         self.spin_end = QtWidgets.QDoubleSpinBox()
         self.spin_end.setRange(0.0, 1.0e9)
         self.spin_end.setDecimals(3)
-        self.spin_end.setValue(100.0 * scale)
+        self.spin_end.setSuffix(f" {unit}")
+        self.spin_end.setValue(self._meters_to_display(100.0))
         self.spin_itv = QtWidgets.QDoubleSpinBox()
         self.spin_itv.setRange(0.001, 1.0e6)
         self.spin_itv.setDecimals(3)
-        self.spin_itv.setValue(20.0 * scale)
-        fm.addRow("Start Station:", self.spin_start)
-        fm.addRow("End Station:", self.spin_end)
-        fm.addRow("Interval:", self.spin_itv)
+        self.spin_itv.setSuffix(f" {unit}")
+        self.spin_itv.setValue(self._meters_to_display(20.0))
+        fm.addRow(f"Start Station ({unit}):", self.spin_start)
+        fm.addRow(f"End Station ({unit}):", self.spin_end)
+        fm.addRow(f"Interval ({unit}):", self.spin_itv)
 
         self.txt_manual = QtWidgets.QPlainTextEdit()
-        self.txt_manual.setPlaceholderText("Manual stations (comma/space/newline), e.g. 0, 20, 37.5, 80")
+        self.txt_manual.setPlaceholderText(f"Manual stations in {unit} (comma/space/newline), e.g. 0, 20, 37.5, 80")
         self.txt_manual.setFixedHeight(80)
         fm.addRow("Manual Stations:", self.txt_manual)
         self.chk_include_ip_keys = QtWidgets.QCheckBox("Include Alignment IP Key Stations (Range)")
@@ -329,7 +442,8 @@ class SectionGeneratorTaskPanel:
         self.spin_struct_transition = QtWidgets.QDoubleSpinBox()
         self.spin_struct_transition.setRange(0.0, 1.0e6)
         self.spin_struct_transition.setDecimals(3)
-        self.spin_struct_transition.setValue(5.0 * scale)
+        self.spin_struct_transition.setSuffix(f" {unit}")
+        self.spin_struct_transition.setValue(self._meters_to_display(5.0))
         self.chk_struct_tagged_children = QtWidgets.QCheckBox("Add structure tags to child sections")
         self.chk_struct_tagged_children.setChecked(True)
         self.chk_struct_apply_overrides = QtWidgets.QCheckBox("Apply structure overrides (reserved)")
@@ -347,7 +461,7 @@ class SectionGeneratorTaskPanel:
         form_struct.addRow(self.chk_struct_centers)
         form_struct.addRow(self.chk_struct_transition)
         form_struct.addRow(self.chk_struct_transition_auto)
-        form_struct.addRow("Transition Distance:", self.spin_struct_transition)
+        form_struct.addRow(f"Transition Distance ({unit}):", self.spin_struct_transition)
         form_struct.addRow(self.chk_struct_tagged_children)
         form_struct.addRow(self.chk_struct_apply_overrides)
         form_struct.addRow(self.lbl_struct_note)
@@ -402,13 +516,15 @@ class SectionGeneratorTaskPanel:
         self.chk_side = QtWidgets.QCheckBox("Use side slopes")
         self.chk_side.setChecked(False)
         self.spin_side_w_left = QtWidgets.QDoubleSpinBox()
-        self.spin_side_w_left.setRange(0.0, 1000.0 * scale)
+        self.spin_side_w_left.setRange(0.0, 1000.0 * display_scale)
         self.spin_side_w_left.setDecimals(3)
-        self.spin_side_w_left.setValue(2.0 * scale)
+        self.spin_side_w_left.setSuffix(f" {unit}")
+        self.spin_side_w_left.setValue(self._meters_to_display(2.0))
         self.spin_side_w_right = QtWidgets.QDoubleSpinBox()
-        self.spin_side_w_right.setRange(0.0, 1000.0 * scale)
+        self.spin_side_w_right.setRange(0.0, 1000.0 * display_scale)
         self.spin_side_w_right.setDecimals(3)
-        self.spin_side_w_right.setValue(2.0 * scale)
+        self.spin_side_w_right.setSuffix(f" {unit}")
+        self.spin_side_w_right.setValue(self._meters_to_display(2.0))
         self.spin_side_s_left = QtWidgets.QDoubleSpinBox()
         self.spin_side_s_left.setRange(-1000.0, 1000.0)
         self.spin_side_s_left.setDecimals(3)
@@ -420,14 +536,14 @@ class SectionGeneratorTaskPanel:
         self.chk_left_bench = QtWidgets.QCheckBox("Use Left Bench")
         self.chk_right_bench = QtWidgets.QCheckBox("Use Right Bench")
         self.tbl_left_bench_rows = QtWidgets.QTableWidget(0, 4)
-        self.tbl_left_bench_rows.setHorizontalHeaderLabels(list(self._BENCH_HEADERS))
+        self.tbl_left_bench_rows.setHorizontalHeaderLabels(list(self._bench_headers()))
         self.tbl_left_bench_rows.verticalHeader().setVisible(False)
         self.tbl_left_bench_rows.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.tbl_left_bench_rows.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.tbl_left_bench_rows.setMinimumHeight(110)
         self.tbl_left_bench_rows.horizontalHeader().setStretchLastSection(True)
         self.tbl_right_bench_rows = QtWidgets.QTableWidget(0, 4)
-        self.tbl_right_bench_rows.setHorizontalHeaderLabels(list(self._BENCH_HEADERS))
+        self.tbl_right_bench_rows.setHorizontalHeaderLabels(list(self._bench_headers()))
         self.tbl_right_bench_rows.verticalHeader().setVisible(False)
         self.tbl_right_bench_rows.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.tbl_right_bench_rows.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -448,24 +564,27 @@ class SectionGeneratorTaskPanel:
         self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_day_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.spin_day_step = QtWidgets.QDoubleSpinBox()
-        self.spin_day_step.setRange(0.2 * scale, 100.0 * scale)
+        self.spin_day_step.setRange(0.2 * display_scale, 100.0 * display_scale)
         self.spin_day_step.setDecimals(3)
-        self.spin_day_step.setValue(1.0 * scale)
+        self.spin_day_step.setSuffix(f" {unit}")
+        self.spin_day_step.setValue(self._meters_to_display(1.0))
         self.spin_day_max_w = QtWidgets.QDoubleSpinBox()
-        self.spin_day_max_w.setRange(1.0 * scale, 10000.0 * scale)
+        self.spin_day_max_w.setRange(1.0 * display_scale, 10000.0 * display_scale)
         self.spin_day_max_w.setDecimals(3)
-        self.spin_day_max_w.setValue(200.0 * scale)
+        self.spin_day_max_w.setSuffix(f" {unit}")
+        self.spin_day_max_w.setValue(self._meters_to_display(200.0))
         self.spin_day_max_delta = QtWidgets.QDoubleSpinBox()
-        self.spin_day_max_delta.setRange(0.0, 1000.0 * scale)
+        self.spin_day_max_delta.setRange(0.0, 1000.0 * display_scale)
         self.spin_day_max_delta.setDecimals(3)
-        self.spin_day_max_delta.setValue(6.0 * scale)
+        self.spin_day_max_delta.setSuffix(f" {unit}")
+        self.spin_day_max_delta.setValue(self._meters_to_display(6.0))
         self.btn_make_assembly = QtWidgets.QPushButton("Create/Update Assembly Template")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
         form_opts.addRow(self.chk_create_new)
         form_opts.addRow(self.chk_children)
         form_opts.addRow(self.chk_side)
-        form_opts.addRow("Side Width Left:", self.spin_side_w_left)
-        form_opts.addRow("Side Width Right:", self.spin_side_w_right)
+        form_opts.addRow(f"Side Width Left ({unit}):", self.spin_side_w_left)
+        form_opts.addRow(f"Side Width Right ({unit}):", self.spin_side_w_right)
         form_opts.addRow("Side Slope Left (%):", self.spin_side_s_left)
         form_opts.addRow("Side Slope Right (%):", self.spin_side_s_right)
         row_left_bench_btns = QtWidgets.QHBoxLayout()
@@ -497,9 +616,9 @@ class SectionGeneratorTaskPanel:
         w_coords.setLayout(row_coords)
         form_opts.addRow("Daylight Terrain Coords:", w_coords)
         form_opts.addRow(self.btn_pick_day_terrain)
-        form_opts.addRow("Daylight Search Step:", self.spin_day_step)
-        form_opts.addRow("Daylight Max Search Width:", self.spin_day_max_w)
-        form_opts.addRow("Daylight Max Width Delta:", self.spin_day_max_delta)
+        form_opts.addRow(f"Daylight Search Step ({unit}):", self.spin_day_step)
+        form_opts.addRow(f"Daylight Max Search Width ({unit}):", self.spin_day_max_w)
+        form_opts.addRow(f"Daylight Max Width Delta ({unit}):", self.spin_day_max_delta)
         form_opts.addRow(self.btn_make_assembly)
         form_opts.addRow(self.btn_refresh)
         main.addWidget(gb_opt)
@@ -637,12 +756,11 @@ class SectionGeneratorTaskPanel:
 
     def _update_side_ui(self):
         on = bool(self.chk_side.isChecked())
-        scale = get_length_scale(self.doc, default=1.0)
         if on:
             if float(self.spin_side_w_left.value()) <= 1e-9:
-                self.spin_side_w_left.setValue(2.0 * scale)
+                self.spin_side_w_left.setValue(self._meters_to_display(2.0))
             if float(self.spin_side_w_right.value()) <= 1e-9:
-                self.spin_side_w_right.setValue(2.0 * scale)
+                self.spin_side_w_right.setValue(self._meters_to_display(2.0))
         left_bench_on = on and bool(self.chk_left_bench.isChecked())
         right_bench_on = on and bool(self.chk_right_bench.isChecked())
         if left_bench_on:
@@ -772,9 +890,9 @@ class SectionGeneratorTaskPanel:
         if hasattr(asm, "UseSideSlopes"):
             asm.UseSideSlopes = bool(self.chk_side.isChecked())
         if hasattr(asm, "LeftSideWidth"):
-            asm.LeftSideWidth = float(self.spin_side_w_left.value())
+            asm.LeftSideWidth = self._meters_from_display(float(self.spin_side_w_left.value()))
         if hasattr(asm, "RightSideWidth"):
-            asm.RightSideWidth = float(self.spin_side_w_right.value())
+            asm.RightSideWidth = self._meters_from_display(float(self.spin_side_w_right.value()))
         if hasattr(asm, "LeftSideSlopePct"):
             asm.LeftSideSlopePct = float(self.spin_side_s_left.value())
         if hasattr(asm, "RightSideSlopePct"):
@@ -822,11 +940,11 @@ class SectionGeneratorTaskPanel:
         if hasattr(asm, "UseDaylightToTerrain"):
             asm.UseDaylightToTerrain = bool(self.chk_daylight.isChecked())
         if hasattr(asm, "DaylightSearchStep"):
-            asm.DaylightSearchStep = float(self.spin_day_step.value())
+            asm.DaylightSearchStep = self._meters_from_display(float(self.spin_day_step.value()))
         if hasattr(asm, "DaylightMaxSearchWidth"):
-            asm.DaylightMaxSearchWidth = float(self.spin_day_max_w.value())
+            asm.DaylightMaxSearchWidth = self._meters_from_display(float(self.spin_day_max_w.value()))
         if hasattr(asm, "DaylightMaxWidthDelta"):
-            asm.DaylightMaxWidthDelta = float(self.spin_day_max_delta.value())
+            asm.DaylightMaxWidthDelta = self._meters_from_display(float(self.spin_day_max_delta.value()))
 
     def _resolve_template_base(self):
         src = _find_source_centerline_display(self.doc)
@@ -897,13 +1015,13 @@ class SectionGeneratorTaskPanel:
                 if hasattr(sec, "Mode"):
                     self.cmb_mode.setCurrentText(str(sec.Mode or "Range"))
                 if hasattr(sec, "StartStation"):
-                    self.spin_start.setValue(float(sec.StartStation))
+                    self.spin_start.setValue(self._display_from_meters(float(sec.StartStation)))
                 if hasattr(sec, "EndStation"):
-                    self.spin_end.setValue(float(sec.EndStation))
+                    self.spin_end.setValue(self._display_from_meters(float(sec.EndStation)))
                 if hasattr(sec, "Interval"):
-                    self.spin_itv.setValue(float(sec.Interval))
+                    self.spin_itv.setValue(self._display_from_meters(float(sec.Interval)))
                 if hasattr(sec, "StationText"):
-                    self.txt_manual.setPlainText(str(sec.StationText or ""))
+                    self.txt_manual.setPlainText(self._station_text_from_meters(str(sec.StationText or "")))
                 if hasattr(sec, "DaylightAuto"):
                     self.chk_daylight.setChecked(bool(sec.DaylightAuto))
                 if hasattr(sec, "TerrainMeshCoords"):
@@ -933,7 +1051,7 @@ class SectionGeneratorTaskPanel:
                 if hasattr(sec, "AutoStructureTransitionDistance"):
                     self.chk_struct_transition_auto.setChecked(bool(sec.AutoStructureTransitionDistance))
                 if hasattr(sec, "StructureTransitionDistance"):
-                    self.spin_struct_transition.setValue(float(sec.StructureTransitionDistance))
+                    self.spin_struct_transition.setValue(self._display_from_meters(float(sec.StructureTransitionDistance)))
                 if hasattr(sec, "CreateStructureTaggedChildren"):
                     self.chk_struct_tagged_children.setChecked(bool(sec.CreateStructureTaggedChildren))
                 if hasattr(sec, "ApplyStructureOverrides"):
@@ -951,9 +1069,9 @@ class SectionGeneratorTaskPanel:
                 if hasattr(asm, "UseSideSlopes"):
                     self.chk_side.setChecked(bool(asm.UseSideSlopes))
                 if hasattr(asm, "LeftSideWidth"):
-                    self.spin_side_w_left.setValue(float(asm.LeftSideWidth))
+                    self.spin_side_w_left.setValue(self._display_from_meters(float(asm.LeftSideWidth)))
                 if hasattr(asm, "RightSideWidth"):
-                    self.spin_side_w_right.setValue(float(asm.RightSideWidth))
+                    self.spin_side_w_right.setValue(self._display_from_meters(float(asm.RightSideWidth)))
                 if hasattr(asm, "LeftSideSlopePct"):
                     self.spin_side_s_left.setValue(float(asm.LeftSideSlopePct))
                 if hasattr(asm, "RightSideSlopePct"):
@@ -977,24 +1095,24 @@ class SectionGeneratorTaskPanel:
                 if (sec is None or (not hasattr(sec, "DaylightAuto"))) and hasattr(asm, "UseDaylightToTerrain"):
                     self.chk_daylight.setChecked(bool(asm.UseDaylightToTerrain))
                 if hasattr(asm, "DaylightSearchStep"):
-                    self.spin_day_step.setValue(float(asm.DaylightSearchStep))
+                    self.spin_day_step.setValue(self._display_from_meters(float(asm.DaylightSearchStep)))
                 if hasattr(asm, "DaylightMaxSearchWidth"):
-                    self.spin_day_max_w.setValue(float(asm.DaylightMaxSearchWidth))
+                    self.spin_day_max_w.setValue(self._display_from_meters(float(asm.DaylightMaxSearchWidth)))
                 if hasattr(asm, "DaylightMaxWidthDelta"):
-                    self.spin_day_max_delta.setValue(float(asm.DaylightMaxWidthDelta))
+                    self.spin_day_max_delta.setValue(self._display_from_meters(float(asm.DaylightMaxWidthDelta)))
             except Exception:
                 pass
 
         if src is not None and getattr(src, "Alignment", None) is not None and getattr(src.Alignment, "Shape", None):
             try:
-                total = float(src.Alignment.Shape.Length)
-                self.spin_end.setValue(max(self.spin_end.value(), total))
+                total = float(getattr(src.Alignment, "TotalLength", 0.0) or 0.0)
+                self.spin_end.setValue(max(self.spin_end.value(), self._display_from_meters(total)))
             except Exception:
                 pass
         elif aln is not None and getattr(aln, "Shape", None):
             try:
-                total = float(aln.Shape.Length)
-                self.spin_end.setValue(max(self.spin_end.value(), total))
+                total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
+                self.spin_end.setValue(max(self.spin_end.value(), self._display_from_meters(total)))
             except Exception:
                 pass
 
@@ -1015,6 +1133,13 @@ class SectionGeneratorTaskPanel:
         if pref_typical is not None:
             msg.append(f"Typical section source: {pref_typical.Label} ({pref_typical.Name})")
         msg.append(f"Daylight terrain coords: {self.cmb_day_coords.currentText()}")
+        msg.append(f"Display unit: {self._display_unit()}")
+        msg.append(
+            "Current range inputs: "
+            f"start={self._format_display_value(float(self.spin_start.value()))}, "
+            f"end={self._format_display_value(float(self.spin_end.value()))}, "
+            f"interval={self._format_display_value(float(self.spin_itv.value()))} {self._display_unit()}"
+        )
         msg.append("")
         msg.append("Workflow:")
         msg.append("1) Select mode (Range or Manual)")
@@ -1248,10 +1373,10 @@ class SectionGeneratorTaskPanel:
             if hasattr(sec, "UseTypicalSectionTemplate"):
                 sec.UseTypicalSectionTemplate = bool(self.chk_use_typical.isChecked())
             sec.Mode = self.cmb_mode.currentText()
-            sec.StartStation = float(self.spin_start.value())
-            sec.EndStation = float(self.spin_end.value())
-            sec.Interval = float(self.spin_itv.value())
-            sec.StationText = str(self.txt_manual.toPlainText() or "")
+            sec.StartStation = self._meters_from_display(float(self.spin_start.value()))
+            sec.EndStation = self._meters_from_display(float(self.spin_end.value()))
+            sec.Interval = self._meters_from_display(float(self.spin_itv.value()))
+            sec.StationText = self._station_text_to_meters(str(self.txt_manual.toPlainText() or ""))
             if hasattr(sec, "IncludeAlignmentIPStations"):
                 sec.IncludeAlignmentIPStations = bool(self.chk_include_ip_keys.isChecked())
             if hasattr(sec, "IncludeAlignmentSCCSStations"):
@@ -1273,7 +1398,7 @@ class SectionGeneratorTaskPanel:
             if hasattr(sec, "AutoStructureTransitionDistance"):
                 sec.AutoStructureTransitionDistance = bool(self.chk_struct_transition_auto.isChecked())
             if hasattr(sec, "StructureTransitionDistance"):
-                sec.StructureTransitionDistance = float(self.spin_struct_transition.value())
+                sec.StructureTransitionDistance = self._meters_from_display(float(self.spin_struct_transition.value()))
             if hasattr(sec, "CreateStructureTaggedChildren"):
                 sec.CreateStructureTaggedChildren = bool(self.chk_struct_tagged_children.isChecked())
             if hasattr(sec, "ApplyStructureOverrides"):
@@ -1327,31 +1452,10 @@ class SectionGeneratorTaskPanel:
                 adopt_extra=[src, asm, typ_src, reg_src, sec],
             )
 
-        n = len(list(getattr(sec, "StationValues", []) or []))
-        struct_count = int(getattr(sec, "ResolvedStructureCount", 0) or 0)
-        region_count = int(getattr(sec, "ResolvedRegionCount", 0) or 0)
-        msg = [
-            "Section generation completed.",
-            f"Resolved stations: {n}",
-        ]
-        if bool(self.chk_use_structure_set.isChecked()):
-            if struct_src is not None:
-                msg.append(f"Structure source: {struct_src.Label} ({struct_src.Name})")
-            msg.append(f"Merged structure stations: {struct_count}")
-            if bool(self.chk_struct_apply_overrides.isChecked()):
-                msg.append(f"Override-enabled stations: {max(0, int(getattr(sec, 'StructureOverrideHitCount', 0) or 0))}")
-        if bool(self.chk_use_region_plan.isChecked()):
-            if reg_src is not None:
-                msg.append(f"Region plan source: {reg_src.Label} ({reg_src.Name})")
-            msg.append(f"Merged region stations: {region_count}")
-            if bool(self.chk_region_apply_overrides.isChecked()):
-                msg.append(f"Region override-enabled stations: {max(0, int(getattr(sec, 'RegionOverrideHitCount', 0) or 0))}")
-        if bool(self.chk_use_typical.isChecked()) and typ_src is not None:
-            msg.append(f"Typical section source: {typ_src.Label} ({typ_src.Name})")
         QtWidgets.QMessageBox.information(
             None,
             "Generate Sections",
-            "\n".join(msg),
+            self._completion_summary_text(sec, struct_src=struct_src, reg_src=reg_src, typ_src=typ_src),
         )
 
         try:

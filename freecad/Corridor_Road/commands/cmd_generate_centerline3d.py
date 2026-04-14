@@ -6,6 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.objects.obj_centerline3d_display import (
@@ -51,9 +52,9 @@ def _find_structure_set(doc):
 class CmdGenerateCenterline3D:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("centerline3d.svg"),
             "MenuText": "3D Centerline",
-            "ToolTip": "Create/update 3D centerline display from horizontal + vertical sources",
+            "ToolTip": "Generate 3D centerline from horizontal and vertical inputs",
         }
 
     def IsActive(self):

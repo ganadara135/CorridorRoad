@@ -14,7 +14,7 @@ except Exception:
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 
 ALLOWED_TYPES = (
@@ -47,6 +47,34 @@ _PROFILE_LINEAR_FIELDS = (
 )
 _PROFILE_STEP_FIELDS = ("CellCount",)
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
+_STRUCTURE_LENGTH_SCHEMA_TARGET = 1
+_STRUCTURE_LINEAR_RECORD_PROPS = (
+    "StartStations",
+    "EndStations",
+    "CenterStations",
+    "Offsets",
+    "Widths",
+    "Heights",
+    "BottomElevations",
+    "Covers",
+    "WallThicknesses",
+    "FootingWidths",
+    "FootingThicknesses",
+    "CapHeights",
+    "CorridorMargins",
+)
+_STRUCTURE_LINEAR_PROFILE_PROPS = (
+    "ProfileStations",
+    "ProfileOffsets",
+    "ProfileWidths",
+    "ProfileHeights",
+    "ProfileBottomElevations",
+    "ProfileCovers",
+    "ProfileWallThicknesses",
+    "ProfileFootingWidths",
+    "ProfileFootingThicknesses",
+    "ProfileCapHeights",
+)
 
 
 def _split_external_shape_source(path: str):
@@ -249,11 +277,11 @@ def _resolve_station_point(obj, station: float, aln=None):
 
 
 def _resolve_station_frame(obj, station: float, aln=None, prev_n=None):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    frame_eps = _units.model_length_from_meters(getattr(obj, "Document", None), 0.1)
     src3d = _resolve_centerline_source(obj)
     if src3d is not None:
         try:
-            frame = Centerline3D.frame_at_station(src3d, float(station), eps=0.1 * scale, prev_n=prev_n)
+            frame = Centerline3D.frame_at_station(src3d, float(station), eps=frame_eps, prev_n=prev_n)
             if frame is not None:
                 return {
                     "point": frame.get("point", App.Vector(0.0, 0.0, 0.0)),
@@ -303,11 +331,11 @@ def _station_for_record(rec):
     return s0
 
 
-def _side_offsets(rec):
+def _side_offsets(rec, doc_or_obj=None):
     side = str(rec.get("Side", "") or "").strip().lower()
-    off = float(rec.get("Offset", 0.0) or 0.0)
-    width = abs(float(rec.get("Width", 0.0) or 0.0))
-    sep = max(abs(off), 0.5 * width, 0.5)
+    off = _model_length(doc_or_obj, float(rec.get("Offset", 0.0) or 0.0))
+    width = abs(_model_length(doc_or_obj, float(rec.get("Width", 0.0) or 0.0)))
+    sep = max(abs(off), 0.5 * width, _model_length(doc_or_obj, 0.5))
     if side == "left":
         return [off if abs(off) > 1e-9 else sep]
     if side == "right":
@@ -318,7 +346,9 @@ def _side_offsets(rec):
 
 
 def _record_transition_distance(obj, rec, auto_transition: bool = True, transition: float = 0.0):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
+    default_transition = 5.0
+    retaining_wall_transition = 3.0
+    bridge_transition = 10.0
     width = max(0.0, abs(float(rec.get("Width", 0.0) or 0.0)))
     height = max(0.0, abs(float(rec.get("Height", 0.0) or 0.0)))
     typ = str(rec.get("Type", "") or "").strip().lower()
@@ -327,12 +357,12 @@ def _record_transition_distance(obj, rec, auto_transition: bool = True, transiti
         return max(0.0, float(transition))
 
     if typ in ("culvert", "crossing"):
-        return max(5.0 * scale, 0.75 * width, 1.50 * height)
+        return max(default_transition, 0.75 * width, 1.50 * height)
     if typ == "retaining_wall":
-        return max(3.0 * scale, 0.50 * width, 1.00 * height)
+        return max(retaining_wall_transition, 0.50 * width, 1.00 * height)
     if typ in ("bridge_zone", "abutment_zone"):
-        return max(10.0 * scale, 0.50 * width, 1.00 * height)
-    return max(5.0 * scale, 0.50 * width, 1.00 * height)
+        return max(bridge_transition, 0.50 * width, 1.00 * height)
+    return max(default_transition, 0.50 * width, 1.00 * height)
 
 
 def _default_corridor_mode(rec, fallback: str = "split_only"):
@@ -401,9 +431,9 @@ def _build_box_geometry(base_pt, t, n, length: float, width: float, height: floa
     return face.extrude(App.Vector(0, 0, max(1e-6, float(height))))
 
 
-def _resolved_bottom_z(base_pt, rec, height: float):
-    z0_raw = float(rec.get("BottomElevation", 0.0) or 0.0)
-    cover = abs(float(rec.get("Cover", 0.0) or 0.0))
+def _resolved_bottom_z(base_pt, rec, height: float, doc_or_obj=None):
+    z0_raw = _model_length(doc_or_obj, float(rec.get("BottomElevation", 0.0) or 0.0))
+    cover = abs(_model_length(doc_or_obj, float(rec.get("Cover", 0.0) or 0.0)))
     z_ref = float(getattr(base_pt, "z", 0.0) or 0.0)
     if abs(z0_raw) > 1e-9:
         return z0_raw
@@ -423,13 +453,13 @@ def _make_profile_wire(origin, nvec, zvec, coords_nz):
     return Part.makePolygon(pts)
 
 
-def _outer_profile_coords_nz(rec):
-    width = abs(float(rec.get("Width", 0.0) or 0.0))
-    height = abs(float(rec.get("Height", 0.0) or 0.0))
-    wall = max(0.10, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
-    footing_w = max(abs(float(rec.get("FootingWidth", 0.0) or 0.0)), width, wall * 2.5)
-    footing_h = max(0.10, abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
-    cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+def _outer_profile_coords_nz(rec, doc_or_obj=None):
+    width = abs(_model_length(doc_or_obj, float(rec.get("Width", 0.0) or 0.0)))
+    height = abs(_model_length(doc_or_obj, float(rec.get("Height", 0.0) or 0.0)))
+    wall = max(_model_length(doc_or_obj, 0.10), abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))))
+    footing_w = max(abs(_model_length(doc_or_obj, float(rec.get("FootingWidth", 0.0) or 0.0))), width, wall * 2.5)
+    footing_h = max(_model_length(doc_or_obj, 0.10), abs(_model_length(doc_or_obj, float(rec.get("FootingThickness", 0.0) or 0.0))))
+    cap_h = max(0.0, abs(_model_length(doc_or_obj, float(rec.get("CapHeight", 0.0) or 0.0))))
     geom_mode = _default_geometry_mode(rec, fallback="box")
     template_name = _default_template_name(rec)
 
@@ -483,18 +513,18 @@ def _outer_profile_coords_nz(rec):
     ]
 
 
-def _section_wire_for_profile_record(base_pt, normal, zvec, rec):
-    coords = _outer_profile_coords_nz(rec)
-    height = abs(float(rec.get("Height", 0.0) or 0.0))
-    z0 = _resolved_bottom_z(base_pt, rec, height)
+def _section_wire_for_profile_record(base_pt, normal, zvec, rec, doc_or_obj=None):
+    coords = _outer_profile_coords_nz(rec, doc_or_obj=doc_or_obj)
+    height = abs(_model_length(doc_or_obj, float(rec.get("Height", 0.0) or 0.0)))
+    z0 = _resolved_bottom_z(base_pt, rec, height, doc_or_obj=doc_or_obj)
     origin = App.Vector(float(base_pt.x), float(base_pt.y), float(z0))
     return _make_profile_wire(origin, normal, zvec, coords)
 
 
-def _build_box_culvert_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float):
-    wall = max(0.10, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+def _build_box_culvert_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float, doc_or_obj=None):
+    wall = max(_model_length(doc_or_obj, 0.10), abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))))
     cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
-    top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+    top_cap = max(0.0, abs(_model_length(doc_or_obj, float(rec.get("CapHeight", 0.0) or 0.0))))
     outer = _build_box_geometry(base_pt, t, n, length, width, height + top_cap, z0)
     if outer is None or outer.isNull():
         return outer
@@ -531,10 +561,10 @@ def _build_box_culvert_template(base_pt, t, n, rec, length: float, width: float,
     return out
 
 
-def _build_utility_crossing_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float):
-    wall = max(0.08, abs(float(rec.get("WallThickness", 0.0) or 0.0)))
+def _build_utility_crossing_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float, doc_or_obj=None):
+    wall = max(_model_length(doc_or_obj, 0.08), abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))))
     cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
-    top_cap = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+    top_cap = max(0.0, abs(_model_length(doc_or_obj, float(rec.get("CapHeight", 0.0) or 0.0))))
     outer = _build_box_geometry(base_pt, t, n, length, width, height + top_cap, z0)
     if outer is None or outer.isNull():
         return outer
@@ -582,11 +612,15 @@ def _build_utility_crossing_template(base_pt, t, n, rec, length: float, width: f
     return out
 
 
-def _build_retaining_wall_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float):
-    wall = max(0.10, abs(float(rec.get("WallThickness", 0.0) or 0.0)), max(0.10, 0.60 * width))
-    footing_w = max(wall * 2.5, abs(float(rec.get("FootingWidth", 0.0) or 0.0)), max(width * 2.0, wall * 4.0))
-    footing_h = max(0.10, abs(float(rec.get("FootingThickness", 0.0) or 0.0)))
-    cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+def _build_retaining_wall_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float, doc_or_obj=None):
+    wall = max(
+        _model_length(doc_or_obj, 0.10),
+        abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))),
+        max(_model_length(doc_or_obj, 0.10), 0.60 * width),
+    )
+    footing_w = max(wall * 2.5, abs(_model_length(doc_or_obj, float(rec.get("FootingWidth", 0.0) or 0.0))), max(width * 2.0, wall * 4.0))
+    footing_h = max(_model_length(doc_or_obj, 0.10), abs(_model_length(doc_or_obj, float(rec.get("FootingThickness", 0.0) or 0.0))))
+    cap_h = max(0.0, abs(_model_length(doc_or_obj, float(rec.get("CapHeight", 0.0) or 0.0))))
     sign = _signed_side_factor(rec)
 
     heel = footing_w * 0.65
@@ -635,11 +669,19 @@ def _build_retaining_wall_template(base_pt, t, n, rec, length: float, width: flo
     return _build_box_geometry(base_pt, t, n, length, footing_w, total_h, z0)
 
 
-def _build_abutment_block_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float):
-    wall = max(0.20, abs(float(rec.get("WallThickness", 0.0) or 0.0)), max(0.20, 0.35 * height))
-    footing_h = max(0.20, abs(float(rec.get("FootingThickness", 0.0) or 0.0)), max(0.20, 0.18 * height))
-    footing_w = max(abs(float(rec.get("FootingWidth", 0.0) or 0.0)), width, wall * 2.5)
-    cap_h = max(0.0, abs(float(rec.get("CapHeight", 0.0) or 0.0)))
+def _build_abutment_block_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float, doc_or_obj=None):
+    wall = max(
+        _model_length(doc_or_obj, 0.20),
+        abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))),
+        max(_model_length(doc_or_obj, 0.20), 0.35 * height),
+    )
+    footing_h = max(
+        _model_length(doc_or_obj, 0.20),
+        abs(_model_length(doc_or_obj, float(rec.get("FootingThickness", 0.0) or 0.0))),
+        max(_model_length(doc_or_obj, 0.20), 0.18 * height),
+    )
+    footing_w = max(abs(_model_length(doc_or_obj, float(rec.get("FootingWidth", 0.0) or 0.0))), width, wall * 2.5)
+    cap_h = max(0.0, abs(_model_length(doc_or_obj, float(rec.get("CapHeight", 0.0) or 0.0))))
 
     stem_w = max(wall * 1.4, min(width * 0.55, footing_w * 0.60))
     seat_w = max(stem_w * 0.55, wall * 1.4)
@@ -686,12 +728,12 @@ def _build_abutment_block_template(base_pt, t, n, rec, length: float, width: flo
     return _build_box_geometry(base_pt, t, n, length, footing_w, total_h, z0)
 
 
-def _build_structure_solid(base_pt, tangent, normal, rec):
+def _build_structure_solid(base_pt, tangent, normal, rec, doc_or_obj=None):
     if Part is None:
         return None
-    length = abs(float(rec.get("EndStation", 0.0) or 0.0) - float(rec.get("StartStation", 0.0) or 0.0))
-    width = abs(float(rec.get("Width", 0.0) or 0.0))
-    height = abs(float(rec.get("Height", 0.0) or 0.0))
+    length = abs(_model_length(doc_or_obj, float(rec.get("EndStation", 0.0) or 0.0) - float(rec.get("StartStation", 0.0) or 0.0)))
+    width = abs(_model_length(doc_or_obj, float(rec.get("Width", 0.0) or 0.0)))
+    height = abs(_model_length(doc_or_obj, float(rec.get("Height", 0.0) or 0.0)))
     rot = math.radians(float(rec.get("RotationDeg", 0.0) or 0.0))
 
     length = max(length, 1.0)
@@ -708,7 +750,7 @@ def _build_structure_solid(base_pt, tangent, normal, rec):
         t = _safe_vec((t0 * cs) + (n0 * sn), App.Vector(1, 0, 0))
         n = _safe_vec((n0 * cs) - (t0 * sn), App.Vector(0, 1, 0))
 
-    z0 = _resolved_bottom_z(base_pt, rec, height)
+    z0 = _resolved_bottom_z(base_pt, rec, height, doc_or_obj=doc_or_obj)
     geom_mode = _default_geometry_mode(rec, fallback="box")
     template_name = _default_template_name(rec)
 
@@ -719,19 +761,19 @@ def _build_structure_solid(base_pt, tangent, normal, rec):
 
     if geom_mode == "template":
         if template_name == "box_culvert":
-            solid = _build_box_culvert_template(base_pt, t, n, rec, length, width, height, z0)
+            solid = _build_box_culvert_template(base_pt, t, n, rec, length, width, height, z0, doc_or_obj=doc_or_obj)
             if _usable_solid(solid):
                 return solid
         elif template_name == "utility_crossing":
-            solid = _build_utility_crossing_template(base_pt, t, n, rec, length, width, height, z0)
+            solid = _build_utility_crossing_template(base_pt, t, n, rec, length, width, height, z0, doc_or_obj=doc_or_obj)
             if _usable_solid(solid):
                 return solid
         elif template_name == "retaining_wall":
-            solid = _build_retaining_wall_template(base_pt, t, n, rec, length, width, height, z0)
+            solid = _build_retaining_wall_template(base_pt, t, n, rec, length, width, height, z0, doc_or_obj=doc_or_obj)
             if _usable_solid(solid):
                 return solid
         elif template_name == "abutment_block":
-            solid = _build_abutment_block_template(base_pt, t, n, rec, length, width, height, z0)
+            solid = _build_abutment_block_template(base_pt, t, n, rec, length, width, height, z0, doc_or_obj=doc_or_obj)
             if _usable_solid(solid):
                 return solid
 
@@ -770,14 +812,14 @@ def _build_profile_segment_solids(obj, aln, rec, prev_n=None):
         return [], local_prev_n
 
     solids = []
-    branch_count = max(1, len(_side_offsets(sample_recs[0])))
+    branch_count = max(1, len(_side_offsets(sample_recs[0], obj)))
     for branch_idx in range(branch_count):
         wires = []
         fallback_needed = False
         for rr, frame in frames:
-            offs = _side_offsets(rr)
+            offs = _side_offsets(rr, obj)
             off = float(offs[min(branch_idx, len(offs) - 1)] if offs else 0.0)
-            wire = _section_wire_for_profile_record(frame["point"] + (frame["N"] * off), frame["N"], frame["Z"], rr)
+            wire = _section_wire_for_profile_record(frame["point"] + (frame["N"] * off), frame["N"], frame["Z"], rr, doc_or_obj=obj)
             if wire is None:
                 fallback_needed = True
                 break
@@ -815,9 +857,9 @@ def _build_profile_segment_solids(obj, aln, rec, prev_n=None):
                 t = frame["T"]
                 n = frame["N"]
                 local_prev_n = n
-                offs = _side_offsets(seg_rec)
+                offs = _side_offsets(seg_rec, obj)
                 off = float(offs[min(branch_idx, len(offs) - 1)] if offs else 0.0)
-                solid = _build_structure_solid(p + (n * off), t, n, seg_rec)
+                solid = _build_structure_solid(p + (n * off), t, n, seg_rec, doc_or_obj=obj)
                 if solid is not None and not solid.isNull():
                     solids.append(solid)
     return solids, local_prev_n
@@ -866,6 +908,24 @@ def _safe_int_list(values):
             x = 0
         out.append(int(x))
     return out
+
+
+def _convert_float_list(values, converter):
+    out = []
+    for value in list(values or []):
+        try:
+            out.append(float(converter(value)))
+        except Exception:
+            out.append(0.0)
+    return out
+
+
+def _float_list_meters_from_internal(doc_or_obj, values):
+    return _convert_float_list(values, lambda v: _units.meters_from_internal_length(doc_or_obj, float(v or 0.0)))
+
+
+def _model_length(doc_or_obj, meters: float) -> float:
+    return _units.model_length_from_meters(doc_or_obj, float(meters or 0.0))
 
 
 def _unique_sorted_floats(values, tol: float = 1e-6):
@@ -1148,7 +1208,7 @@ def _external_shape_proxy_key(path: str, scale_factor: float):
     return f"{key}|{float(scale_factor or 1.0):.9g}"
 
 
-def _external_shape_bbox_proxy(rec):
+def _external_shape_bbox_proxy(rec, doc_or_obj=None):
     geom_mode = str(rec.get("GeometryMode", "") or "").strip().lower()
     if geom_mode != "external_shape":
         return None, ""
@@ -1171,9 +1231,9 @@ def _external_shape_bbox_proxy(rec):
     if bb is None:
         return None, "bbox_missing"
 
-    width = max(0.0, float(getattr(bb, "YLength", 0.0) or 0.0))
-    height = max(0.0, float(getattr(bb, "ZLength", 0.0) or 0.0))
-    length = max(0.0, float(getattr(bb, "XLength", 0.0) or 0.0))
+    width = max(0.0, _units.meters_from_model_length(doc_or_obj, float(getattr(bb, "YLength", 0.0) or 0.0)))
+    height = max(0.0, _units.meters_from_model_length(doc_or_obj, float(getattr(bb, "ZLength", 0.0) or 0.0)))
+    length = max(0.0, _units.meters_from_model_length(doc_or_obj, float(getattr(bb, "XLength", 0.0) or 0.0)))
     if width <= 1e-9 or height <= 1e-9:
         return None, "bbox_flat"
 
@@ -1188,9 +1248,9 @@ def _external_shape_bbox_proxy(rec):
     return dict(proxy), "external_shape_bbox"
 
 
-def _apply_external_shape_earthwork_proxy(rec, prefer_proxy: bool):
+def _apply_external_shape_earthwork_proxy(rec, prefer_proxy: bool, doc_or_obj=None):
     out = dict(rec or {})
-    proxy, status = _external_shape_bbox_proxy(out)
+    proxy, status = _external_shape_bbox_proxy(out, doc_or_obj=doc_or_obj)
     if proxy is None:
         if str(out.get("GeometryMode", "") or "").strip().lower() == "external_shape":
             out["ResolvedEarthworkProxyMode"] = "-"
@@ -1213,6 +1273,10 @@ def _apply_external_shape_earthwork_proxy(rec, prefer_proxy: bool):
 
 
 def ensure_structure_set_properties(obj):
+    had_linear_props = any(
+        hasattr(obj, prop)
+        for prop in (_STRUCTURE_LINEAR_RECORD_PROPS + _STRUCTURE_LINEAR_PROFILE_PROPS)
+    )
     if not hasattr(obj, "StructureIds"):
         obj.addProperty("App::PropertyStringList", "StructureIds", "Structures", "Structure identifiers")
         obj.StructureIds = []
@@ -1357,9 +1421,26 @@ def ensure_structure_set_properties(obj):
     if not hasattr(obj, "ResolvedFrameStatusNotes"):
         obj.addProperty("App::PropertyStringList", "ResolvedFrameStatusNotes", "Result", "Resolved frame source diagnostics for structure display placement")
         obj.ResolvedFrameStatusNotes = []
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Result", "Length storage schema version")
+        obj.LengthSchemaVersion = 0
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+
+    schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    if schema < _STRUCTURE_LENGTH_SCHEMA_TARGET:
+        if had_linear_props:
+            for prop in _STRUCTURE_LINEAR_RECORD_PROPS + _STRUCTURE_LINEAR_PROFILE_PROPS:
+                try:
+                    setattr(
+                        obj,
+                        prop,
+                        _float_list_meters_from_internal(getattr(obj, "Document", None), list(getattr(obj, prop, []) or [])),
+                    )
+                except Exception:
+                    pass
+        obj.LengthSchemaVersion = _STRUCTURE_LENGTH_SCHEMA_TARGET
 
 
 class StructureSet:
@@ -1422,7 +1503,7 @@ class StructureSet:
                             note = f"{rid}: external_shape source={ext_status} -> box fallback"
                             shape_notes.append(note)
                             shape_status_notes.append(note)
-                        proxy, proxy_status = _external_shape_bbox_proxy(rec)
+                        proxy, proxy_status = _external_shape_bbox_proxy(rec, doc_or_obj=obj)
                         if proxy is not None:
                             earthwork_proxy_ids.append(rid)
                             earthwork_proxy_notes.append(
@@ -1437,8 +1518,8 @@ class StructureSet:
                         profile_driven_hits += 1
                         solids.extend(seg_solids)
                     else:
-                        for off in _side_offsets(rec):
-                            solid = _build_structure_solid(p + (n * float(off)), t, n, rec)
+                        for off in _side_offsets(rec, obj):
+                            solid = _build_structure_solid(p + (n * float(off)), t, n, rec, doc_or_obj=obj)
                             if solid is not None and not solid.isNull():
                                 solids.append(solid)
                 except Exception:
@@ -1732,12 +1813,12 @@ class StructureSet:
         resolved["ResolvedProfilePointCount"] = int(len(pts))
         resolved["ResolvedProfileMode"] = "base_row"
         if not pts:
-            return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=True)
+            return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=True, doc_or_obj=obj)
 
         for key in _PROFILE_LINEAR_FIELDS + _PROFILE_STEP_FIELDS:
             resolved[key] = _resolve_profile_interpolated_value(pts, station, key, rec.get(key, _profile_row_defaults().get(key)))
         resolved["ResolvedProfileMode"] = "station_profile"
-        return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=False)
+        return _apply_external_shape_earthwork_proxy(resolved, prefer_proxy=False, doc_or_obj=obj)
 
     @staticmethod
     def resolve_profile_span(obj, structure_ref, station_from: float, station_to: float):

@@ -7,12 +7,12 @@ import FreeCADGui as Gui
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.objects import design_standards as _ds
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment, ViewProviderHorizontalAlignment, ensure_alignment_properties
 from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_properties,
     find_project,
     get_design_standard,
-    get_length_scale,
     local_to_world,
     world_to_local,
 )
@@ -127,9 +127,74 @@ class AlignmentEditorTaskPanel:
     def reject(self):
         Gui.Control.closeDialog()
 
-    def _build_ui(self):
-        scale = get_length_scale(self.doc, default=1.0)
+    def _display_unit(self):
+        return _units.get_linear_display_unit(self.prj if self.prj is not None else self.doc)
 
+    def _meters_to_display(self, meters):
+        return _units.user_length_from_meters(self.prj if self.prj is not None else self.doc, meters)
+
+    def _display_from_meters(self, value):
+        return _units.user_length_from_meters(self.prj if self.prj is not None else self.doc, value)
+
+    def _meters_from_display(self, value):
+        return _units.meters_from_user_length(self.prj if self.prj is not None else self.doc, value, use_default="display")
+
+    def _csv_inspect_summary_text(self, info):
+        sample = list(info.get("sample_rows", []) or [])
+        lines = [
+            f"Rows: {int(info.get('row_count', 0))}",
+            f"Delimiter: {str(info.get('delimiter', ','))}",
+            f"Encoding: {str(info.get('encoding', ''))}",
+            f"Header guess: {'Yes' if bool(info.get('header_guess', False)) else 'No'}",
+            f"Display unit: {self._display_unit()}",
+            f"CSV linear values: {str(info.get('linear_unit', 'm'))}",
+        ]
+        if sample:
+            lines.append("")
+            lines.append("Sample:")
+            for r in sample[:3]:
+                lines.append(", ".join([str(x) for x in r]))
+        return "\n".join(lines)
+
+    def _csv_load_summary_text(self, info):
+        loaded = int(info.get("loaded", len(list(info.get("rows", []) or []))))
+        skipped = int(info.get("skipped", 0))
+        delim = str(info.get("delimiter", ","))
+        enc = str(info.get("encoding", ""))
+        header = bool(info.get("header", False))
+        linear_unit = str(info.get("linear_unit", "m"))
+        reasons = list(info.get("skip_reasons", []) or [])
+        msg_lines = [
+            f"Loaded rows: {loaded}",
+            f"Skipped rows: {skipped}",
+            f"Delimiter: {delim}",
+            f"Encoding: {enc}",
+            f"Header: {'Yes' if header else 'No'}",
+            f"Display unit: {self._display_unit()}",
+            f"CSV linear values: {linear_unit}",
+            f"Sort: {'By STA' if self._csv_default_sort() == 'sta' else 'Input Order'}",
+            f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}",
+        ]
+        if reasons:
+            msg_lines.append("")
+            msg_lines.append("Skipped details:")
+            msg_lines.extend(reasons)
+        return "\n".join(msg_lines)
+
+    def _csv_save_summary_text(self, info, path):
+        return "\n".join(
+            [
+                f"Saved rows: {int(info.get('written', 0))}",
+                f"Delimiter: {str(info.get('delimiter', ','))}",
+                f"Encoding: {str(info.get('encoding', 'utf-8-sig'))}",
+                f"Header: {'Yes' if bool(info.get('header', True)) else 'No'}",
+                f"Display unit: {self._display_unit()}",
+                f"CSV linear values: {str(info.get('linear_unit', 'm'))}",
+                f"Path: {str(info.get('path', path))}",
+            ]
+        )
+
+    def _build_ui(self):
         w = QtWidgets.QWidget()
         w.setWindowTitle("CorridorRoad - Edit Alignment")
 
@@ -229,8 +294,9 @@ class AlignmentEditorTaskPanel:
         row_coord.addWidget(self.lbl_coord_hint, 1)
         root.addLayout(row_coord)
 
+        unit = self._display_unit()
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
+        self.table.setHorizontalHeaderLabels(["X", "Y", f"Radius ({unit})", f"Transition Ls ({unit})"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -277,18 +343,21 @@ class AlignmentEditorTaskPanel:
         self.spin_min_r = QtWidgets.QDoubleSpinBox()
         self.spin_min_r.setRange(0.0, 100000.0)
         self.spin_min_r.setDecimals(3)
+        self.spin_min_r.setSuffix(f" {unit}")
         self.spin_min_r.setValue(0.0)
         self.spin_min_r.setToolTip("0 = auto from V/e/f")
 
         self.spin_min_tan = QtWidgets.QDoubleSpinBox()
         self.spin_min_tan.setRange(0.0, 100000.0)
         self.spin_min_tan.setDecimals(3)
-        self.spin_min_tan.setValue(20.0 * scale)
+        self.spin_min_tan.setSuffix(f" {unit}")
+        self.spin_min_tan.setValue(self._meters_to_display(20.0))
 
         self.spin_min_ls = QtWidgets.QDoubleSpinBox()
         self.spin_min_ls.setRange(0.0, 100000.0)
         self.spin_min_ls.setDecimals(3)
-        self.spin_min_ls.setValue(20.0 * scale)
+        self.spin_min_ls.setSuffix(f" {unit}")
+        self.spin_min_ls.setValue(self._meters_to_display(20.0))
 
         self.cmb_design_standard = QtWidgets.QComboBox()
         self.cmb_design_standard.addItems(list(_ds.SUPPORTED_STANDARDS))
@@ -300,9 +369,9 @@ class AlignmentEditorTaskPanel:
         form.addRow("Design speed:", self.spin_v)
         form.addRow("Superelevation e:", self.spin_e)
         form.addRow("Side friction f:", self.spin_f)
-        form.addRow("Min radius (override):", self.spin_min_r)
-        form.addRow("Min tangent length:", self.spin_min_tan)
-        form.addRow("Min transition length:", self.spin_min_ls)
+        form.addRow(f"Min radius (override, {unit}):", self.spin_min_r)
+        form.addRow(f"Min tangent length ({unit}):", self.spin_min_tan)
+        form.addRow(f"Min transition length ({unit}):", self.spin_min_ls)
         root.addWidget(gb_opts)
 
         rep_row = QtWidgets.QHBoxLayout()
@@ -355,10 +424,11 @@ class AlignmentEditorTaskPanel:
         return int(self.cmb_coord_mode.currentIndex()) == 1
 
     def _update_coord_headers(self):
+        unit = self._display_unit()
         if self._use_world_mode():
-            self.table.setHorizontalHeaderLabels(["E", "N", "Radius (m)", "Transition Ls (m)"])
+            self.table.setHorizontalHeaderLabels(["E", "N", f"Radius ({unit})", f"Transition Ls ({unit})"])
         else:
-            self.table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
+            self.table.setHorizontalHeaderLabels(["X", "Y", f"Radius ({unit})", f"Transition Ls ({unit})"])
 
     def _coord_context_obj(self):
         return self.prj if self.prj is not None else self.doc
@@ -479,11 +549,13 @@ class AlignmentEditorTaskPanel:
 
         self.aln = self._current_alignment_from_combo()
         if self.aln is None:
-            self.lbl_info.setText(f"HorizontalAlignment: 0 found, Sketch: {len(self._sketches)} found")
+            self.lbl_info.setText(
+                f"HorizontalAlignment: 0 found, Sketch: {len(self._sketches)} found | Display unit: {self._display_unit()}"
+            )
         else:
             self.lbl_info.setText(
                 f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label}), "
-                f"Sketch: {len(self._sketches)} found"
+                f"Sketch: {len(self._sketches)} found | Display unit: {self._display_unit()}"
             )
 
     def _on_alignment_changed(self):
@@ -606,7 +678,7 @@ class AlignmentEditorTaskPanel:
                 lx, ly, _lz = world_to_local(self._coord_context_obj(), float(x), float(y), 0.0)
                 xv = float(lx)
                 yv = float(ly)
-            out.append((float(xv), float(yv), float(rr), float(ls)))
+            out.append((float(xv), float(yv), self._display_from_meters(float(rr)), self._display_from_meters(float(ls))))
         return out
 
     def _rows_from_csv_mode_rows(self, rows_csv, csv_coord_mode: str):
@@ -615,7 +687,10 @@ class AlignmentEditorTaskPanel:
             return self._rows_from_local_rows(rows_csv)
         if mode == "world":
             return self._rows_from_world_rows(rows_csv)
-        return list(rows_csv or [])
+        out = []
+        for x, y, rr, ls in list(rows_csv or []):
+            out.append((float(x), float(y), self._display_from_meters(float(rr)), self._display_from_meters(float(ls))))
+        return out
 
     def _on_browse_csv(self):
         path, _flt = QtWidgets.QFileDialog.getOpenFileName(
@@ -637,6 +712,7 @@ class AlignmentEditorTaskPanel:
         try:
             info = inspect_alignment_csv(
                 path,
+                doc_or_project=self.prj if self.prj is not None else self.doc,
                 encoding=self._csv_default_encoding(),
                 delimiter=self._csv_default_delimiter(),
             )
@@ -645,19 +721,7 @@ class AlignmentEditorTaskPanel:
             return
 
         self._set_csv_columns(info.get("columns", []), guess=info.get("guess_mapping", {}))
-        sample = list(info.get("sample_rows", []) or [])
-        lines = [
-            f"Rows: {int(info.get('row_count', 0))}",
-            f"Delimiter: {str(info.get('delimiter', ','))}",
-            f"Encoding: {str(info.get('encoding', ''))}",
-            f"Header guess: {'Yes' if bool(info.get('header_guess', False)) else 'No'}",
-        ]
-        if sample:
-            lines.append("")
-            lines.append("Sample:")
-            for r in sample[:3]:
-                lines.append(", ".join([str(x) for x in r]))
-        QtWidgets.QMessageBox.information(None, "Inspect CSV", "\n".join(lines))
+        QtWidgets.QMessageBox.information(None, "Inspect CSV", self._csv_inspect_summary_text(info))
 
     def _apply_import_rows(self, imported_rows, mode_text: str):
         if str(mode_text or "") == "Append Rows":
@@ -752,6 +816,7 @@ class AlignmentEditorTaskPanel:
         try:
             info = read_alignment_csv(
                 path,
+                doc_or_project=self.prj if self.prj is not None else self.doc,
                 encoding=self._csv_default_encoding(),
                 delimiter=self._csv_default_delimiter(),
                 has_header=self._csv_default_header(),
@@ -772,29 +837,10 @@ class AlignmentEditorTaskPanel:
         rows_table = self._rows_from_csv_mode_rows(rows, "panel")
         self._apply_import_rows(rows_table, self.cmb_csv_mode.currentText())
 
-        loaded = int(info.get("loaded", len(rows)))
-        skipped = int(info.get("skipped", 0))
-        delim = str(info.get("delimiter", ","))
-        enc = str(info.get("encoding", ""))
-        header = bool(info.get("header", False))
-        reasons = list(info.get("skip_reasons", []) or [])
-        msg_lines = [
-            f"Loaded rows: {loaded}",
-            f"Skipped rows: {skipped}",
-            f"Delimiter: {delim}",
-            f"Encoding: {enc}",
-            f"Header: {'Yes' if header else 'No'}",
-            f"Sort: {'By STA' if self._csv_default_sort() == 'sta' else 'Input Order'}",
-            f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}",
-        ]
-        if reasons:
-            msg_lines.append("")
-            msg_lines.append("Skipped details:")
-            msg_lines.extend(reasons)
-        QtWidgets.QMessageBox.information(None, "Load from CSV", "\n".join(msg_lines))
+        QtWidgets.QMessageBox.information(None, "Load from CSV", self._csv_load_summary_text(info))
 
     def _on_save_csv(self):
-        rows = list(self._read_rows())
+        rows = list(self._read_rows_internal())
         if len(rows) < 1:
             QtWidgets.QMessageBox.warning(None, "Save CSV", "No valid table rows to export.")
             return
@@ -822,6 +868,7 @@ class AlignmentEditorTaskPanel:
             info = write_alignment_csv(
                 path,
                 rows,
+                doc_or_project=self.prj if self.prj is not None else self.doc,
                 x_header=x_header,
                 y_header=y_header,
                 delimiter=delim,
@@ -833,14 +880,7 @@ class AlignmentEditorTaskPanel:
             return
 
         self.ed_csv_path.setText(str(path))
-        msg_lines = [
-            f"Saved rows: {int(info.get('written', 0))}",
-            f"Delimiter: {str(info.get('delimiter', ','))}",
-            f"Encoding: {str(info.get('encoding', 'utf-8-sig'))}",
-            f"Header: {'Yes' if bool(info.get('header', True)) else 'No'}",
-            f"Path: {str(info.get('path', path))}",
-        ]
-        QtWidgets.QMessageBox.information(None, "Save CSV", "\n".join(msg_lines))
+        QtWidgets.QMessageBox.information(None, "Save CSV", self._csv_save_summary_text(info, path))
 
     def _set_rows(self, n):
         self._loading = True
@@ -879,7 +919,7 @@ class AlignmentEditorTaskPanel:
         out = []
         for x, y, rr, ls in list(rows_local or []):
             xv, yv = self._table_xy_from_local(float(x), float(y), 0.0)
-            out.append((float(xv), float(yv), float(rr), float(ls)))
+            out.append((float(xv), float(yv), self._display_from_meters(float(rr)), self._display_from_meters(float(ls))))
         return out
 
     def _terrain_declared_world_mode(self, terrain_obj):
@@ -1000,6 +1040,12 @@ class AlignmentEditorTaskPanel:
             rows.append((float(x), float(y), float(rr if rr is not None else 0.0), float(ls if ls is not None else 0.0)))
         return rows
 
+    def _read_rows_internal(self):
+        rows = []
+        for x, y, rr, ls in self._read_rows():
+            rows.append((float(x), float(y), self._meters_from_display(float(rr)), self._meters_from_display(float(ls))))
+        return rows
+
     def _load_from_doc(self):
         self._load_design_standard()
         if self.aln is None:
@@ -1034,17 +1080,17 @@ class AlignmentEditorTaskPanel:
                     yv = float(n1)
                 self._set_float(i, 0, xv)
                 self._set_float(i, 1, yv)
-                self._set_float(i, 2, float(rr[i]))
-                self._set_float(i, 3, float(ls[i]))
+                self._set_float(i, 2, self._display_from_meters(float(rr[i])))
+                self._set_float(i, 3, self._display_from_meters(float(ls[i])))
 
             self.chk_use_trans.setChecked(bool(getattr(self.aln, "UseTransitionCurves", True)))
             self.spin_spiral_segments.setValue(int(getattr(self.aln, "SpiralSegments", 16)))
             self.spin_v.setValue(float(getattr(self.aln, "DesignSpeedKph", 60.0)))
             self.spin_e.setValue(float(getattr(self.aln, "SuperelevationPct", 8.0)))
             self.spin_f.setValue(float(getattr(self.aln, "SideFriction", 0.15)))
-            self.spin_min_r.setValue(float(getattr(self.aln, "MinRadius", 0.0)))
-            self.spin_min_tan.setValue(float(getattr(self.aln, "MinTangentLength", 20.0)))
-            self.spin_min_ls.setValue(float(getattr(self.aln, "MinTransitionLength", 20.0)))
+            self.spin_min_r.setValue(self._display_from_meters(float(getattr(self.aln, "MinRadius", 0.0))))
+            self.spin_min_tan.setValue(self._display_from_meters(float(getattr(self.aln, "MinTangentLength", 20.0))))
+            self.spin_min_ls.setValue(self._display_from_meters(float(getattr(self.aln, "MinTransitionLength", 20.0))))
         finally:
             self._loading = False
 
@@ -1063,8 +1109,9 @@ class AlignmentEditorTaskPanel:
         else:
             lines.append(f"Design standard: {applied_std} (applied)")
             lines.append(f"Design standard (editor): {editor_std} (pending apply)")
+        lines.append(f"Display unit: {self._display_unit()}")
         lines.append(f"Status: {getattr(self.aln, 'CriteriaStatus', 'N/A')}")
-        lines.append(f"Total length: {float(getattr(self.aln, 'TotalLength', 0.0)):.3f}")
+        lines.append(f"Total length: {_units.format_length(self.prj if self.prj is not None else self.doc, float(getattr(self.aln, 'TotalLength', 0.0) or 0.0))}")
         pts = list(getattr(self.aln, "IPPoints", []) or [])
         lines.append(f"IP count: {len(pts)}")
         if self._last_apply_warnings:
@@ -1084,7 +1131,7 @@ class AlignmentEditorTaskPanel:
             for i, p in enumerate(pts):
                 try:
                     sta = float(HorizontalAlignment.station_at_xy(self.aln, float(p.x), float(p.y)))
-                    lines.append(f"IP#{i}: {sta:.3f}")
+                    lines.append(f"IP#{i}: {_units.format_internal_length(self.prj if self.prj is not None else self.doc, sta)}")
                 except Exception:
                     lines.append(f"IP#{i}: N/A")
         lines.append("")
@@ -1160,7 +1207,7 @@ class AlignmentEditorTaskPanel:
         if self.doc is None:
             return
 
-        rows_input = self._read_rows()
+        rows_input = self._read_rows_internal()
         rows = []
         for x, y, rr, ls in rows_input:
             if self._use_world_mode():
@@ -1199,9 +1246,9 @@ class AlignmentEditorTaskPanel:
         aln.DesignSpeedKph = float(self.spin_v.value())
         aln.SuperelevationPct = float(self.spin_e.value())
         aln.SideFriction = float(self.spin_f.value())
-        aln.MinRadius = float(self.spin_min_r.value())
-        aln.MinTangentLength = float(self.spin_min_tan.value())
-        aln.MinTransitionLength = float(self.spin_min_ls.value())
+        aln.MinRadius = self._meters_from_display(float(self.spin_min_r.value()))
+        aln.MinTangentLength = self._meters_from_display(float(self.spin_min_tan.value()))
+        aln.MinTransitionLength = self._meters_from_display(float(self.spin_min_ls.value()))
 
         # Sync alignment superelevation input to cross slope template defaults.
         asm = _find_assembly_template(self.doc, project=prj)

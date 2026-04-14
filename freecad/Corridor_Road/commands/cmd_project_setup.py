@@ -4,6 +4,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree
 from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
 
@@ -11,9 +12,9 @@ from freecad.Corridor_Road.ui.task_project_setup import ProjectSetupTaskPanel
 class CmdProjectSetup:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("project_setup.svg"),
             "MenuText": "Project Setup",
-            "ToolTip": "Set project coordinate system (CRS/origin/rotation/datum)",
+            "ToolTip": "Configure project CRS, origin, rotation, and datum",
         }
 
     def IsActive(self):

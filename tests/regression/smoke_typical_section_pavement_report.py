@@ -116,6 +116,11 @@ def run():
         _assert(abs(float(getattr(pav, "TotalThickness", 0.0) or 0.0) - 0.23) <= 1e-6, "Pavement display thickness mismatch")
         _assert(list(getattr(pav, "LayerIds", []) or []) == ["SURF", "BASE"], "Pavement display ids mismatch")
         _assert(list(getattr(pav, "LayerSummaryRows", []) or []) == ["SURF:surface:0.050m", "BASE:base:0.180m"], "Pavement display summary rows mismatch")
+        typ_bb = getattr(getattr(typ, "Shape", None), "BoundBox", None)
+        pav_bb = getattr(getattr(pav, "Shape", None), "BoundBox", None)
+        _assert(typ_bb is not None and pav_bb is not None, "Expected bound boxes for template and pavement display")
+        _assert(float(pav_bb.XMin) > float(typ_bb.XMin) + 1.0, "Pavement display should stop before ditch/berm components on the right side")
+        _assert(abs(float(pav_bb.XMax) - float(typ_bb.XMax)) <= 1.0e-6, "Pavement display should still follow the paved left-side edge")
 
         _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")

@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_pvi_editor import PviEditorTaskPanel
 
 
 class CmdEditPVI:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("edit_pvi.svg"),
             "MenuText": "Edit PVI (FG)",
-            "ToolTip": "Edit Vertical Alignment PVI and generate FG on stations (linear grade)",
+            "ToolTip": "Edit FG PVI points and vertical curves",
         }
 
     def IsActive(self):

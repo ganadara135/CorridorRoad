@@ -6,11 +6,12 @@ import math
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 _RECOMP_LABEL_SUFFIX = " [Recompute]"
+_DESIGN_TERRAIN_LENGTH_SCHEMA_TARGET = 1
 
 
 class _CanceledError(Exception):
@@ -54,8 +55,6 @@ def _mark_recompute_flag(obj, needed: bool):
 
 
 def ensure_design_terrain_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     if not hasattr(obj, "SourceDesignSurface"):
         obj.addProperty("App::PropertyLink", "SourceDesignSurface", "DesignTerrain", "DesignGradingSurface source")
     if not hasattr(obj, "ExistingTerrain"):
@@ -72,7 +71,7 @@ def ensure_design_terrain_properties(obj):
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "DesignTerrain", "Sampling cell size (m)")
-        obj.CellSize = 1.0 * scale
+        obj.CellSize = 1.0
     if not hasattr(obj, "MaxSamples"):
         obj.addProperty("App::PropertyInteger", "MaxSamples", "DesignTerrain", "Maximum allowed sample cells")
         obj.MaxSamples = 250000
@@ -102,7 +101,10 @@ def ensure_design_terrain_properties(obj):
         obj.MaxTrianglesPerSource = 150000
     if not hasattr(obj, "DomainMargin"):
         obj.addProperty("App::PropertyFloat", "DomainMargin", "DesignTerrain", "Margin from existing terrain bounds (m)")
-        obj.DomainMargin = 0.0 * scale
+        obj.DomainMargin = 0.0
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "DesignTerrain", "Length-storage schema version")
+        obj.LengthSchemaVersion = 0
 
     if not hasattr(obj, "AutoUpdate"):
         obj.addProperty("App::PropertyBool", "AutoUpdate", "DesignTerrain", "Auto update from source changes")
@@ -135,6 +137,15 @@ def ensure_design_terrain_properties(obj):
                 obj.Mesh = em
         except Exception:
             pass
+
+    try:
+        if int(getattr(obj, "LengthSchemaVersion", 0) or 0) < _DESIGN_TERRAIN_LENGTH_SCHEMA_TARGET:
+            for prop in ("CellSize", "DomainMargin"):
+                if hasattr(obj, prop):
+                    setattr(obj, prop, _units.meters_from_internal_length(getattr(obj, "Document", None), float(getattr(obj, prop, 0.0) or 0.0)))
+            obj.LengthSchemaVersion = int(_DESIGN_TERRAIN_LENGTH_SCHEMA_TARGET)
+    except Exception:
+        pass
 
 
 class DesignTerrain:
@@ -346,7 +357,6 @@ class DesignTerrain:
     def execute(self, obj):
         ensure_design_terrain_properties(obj)
         try:
-            scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
             if self._report_progress(1.0, "Preparing design terrain"):
                 raise _CanceledError("Canceled by user.")
 
@@ -359,22 +369,26 @@ class DesignTerrain:
             eg_coords = str(getattr(obj, "ExistingTerrainCoords", "Local") or "Local")
             use_world_existing = eg_coords == "World"
 
-            cell = float(getattr(obj, "CellSize", 1.0 * scale))
-            if (not math.isfinite(cell)) or cell <= 1e-6:
-                cell = 1.0 * scale
-                obj.CellSize = 1.0 * scale
+            cell_m = float(getattr(obj, "CellSize", 1.0) or 1.0)
+            if (not math.isfinite(cell_m)) or cell_m <= 1e-6:
+                cell_m = 1.0
+                obj.CellSize = 1.0
+            cell = _units.model_length_from_meters(getattr(obj, "Document", None), cell_m)
 
-            min_cell = 0.2 * scale
+            min_cell = _units.model_length_from_meters(getattr(obj, "Document", None), 0.2)
             if cell < min_cell:
                 cell = min_cell
-                obj.CellSize = min_cell
+                obj.CellSize = 0.2
 
             max_samples = int(getattr(obj, "MaxSamples", 250000))
             if max_samples <= 0:
                 max_samples = 250000
                 obj.MaxSamples = max_samples
 
-            margin = max(0.0, float(getattr(obj, "DomainMargin", 0.0)))
+            margin = _units.model_length_from_meters(
+                getattr(obj, "Document", None),
+                max(0.0, float(getattr(obj, "DomainMargin", 0.0) or 0.0)),
+            )
             max_candidates = int(getattr(obj, "MaxCandidateTriangles", 2500))
             if max_candidates <= 0:
                 max_candidates = 2500

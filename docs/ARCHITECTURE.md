@@ -408,9 +408,9 @@ Practical rule:
   - when `AutoUpdate=False`, source/parameter edits set pending status and do not auto-run
 - Performance guards:
   - precheck `EstimatedSamples <= MaxSamples`
-  - scale-aware defaults (`CellSize`, `DomainMargin`, display delta thresholds) from `Project.LengthScale`
-  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
-  - design tessellation deflection is scale-aware
+  - meter-native defaults (`CellSize`, `DomainMargin`, display delta thresholds)
+  - minimum cell guard: `CellSize >= 0.2 m`
+  - design tessellation deflection uses meter-native thresholds
   - wide-triangle bucket expansion is guarded to avoid bucket blow-up
   - status/progress updates are emitted in mesh-read, bucketing, and sampling phases
 
@@ -424,8 +424,8 @@ Practical rule:
   - `ExistingTerrainCoords` (`Local` or `World`)
   - `AutoUpdate`, `RebuildNow`
 - Guardrails:
-  - scale-aware defaults from `Project.LengthScale`
-  - minimum cell guard: `CellSize >= 0.2 m * LengthScale`
+  - meter-native defaults for terrain sampling inputs
+  - minimum cell guard: `CellSize >= 0.2 m`
 - Results:
   - `SampleCount`, `ValidCount`, `NoDataArea`, `NeedsRecompute`, `Status`
 - Merge rule:
@@ -436,10 +436,13 @@ Practical rule:
   - when `ExistingTerrainCoords=World`, existing terrain triangles are transformed to local before merge
 
 ### 2.13 CorridorRoadProject (`freecad/Corridor_Road/objects/obj_project.py`)
-- Purpose: project container + global unit/scale policy.
-- Key property:
-  - `LengthScale` (internal units per meter; `1.0=m`, `1000.0=mm-like`)
+- Purpose: project container + explicit unit policy + coordinate setup.
+- Key properties:
   - `DesignStandard` (`KDS` or `AASHTO`)
+  - `LinearUnitDisplay`
+  - `LinearUnitImportDefault`
+  - `LinearUnitExportDefault`
+  - `CustomLinearUnitScale`
 - Coordinate setup properties:
   - `CRSEPSG`, `HorizontalDatum`, `VerticalDatum`
   - `ProjectOriginE/N/Z`, `LocalOriginX/Y/Z`, `NorthRotationDeg`
@@ -450,11 +453,12 @@ Practical rule:
   - bulk/localized geometry helpers for world/local conversion: `freecad/Corridor_Road/objects/coord_transform.py`
   - world XY domain/bounds conversion helper: `world_xy_bounds_to_local(...)`
   - repeated point conversion caching helper: `world_point_to_local_cached(...)`
-- Scale usage:
-  - sample/default length values are initialized by `LengthScale`
-  - station/section/assembly/centerline defaults follow project scale
-  - geometry math stays in internal units; source survey data remains unchanged
-  - changing `LengthScale` does not retroactively rescale existing object values
+- Unit policy usage:
+  - stored engineering scalar values are meter-native
+  - geometry/runtime math assumes meters
+  - unit settings affect task-panel parsing, display formatting, and export formatting
+  - changing the project unit settings does not retroactively rescale existing object values
+  - coordinate setup remains independent from the unit policy
 
 ## 3) UI Contracts
 - Shared coordinate-mode UX policy:
@@ -464,6 +468,7 @@ Practical rule:
 ### 3.0 Project Setup (`freecad/Corridor_Road/commands/cmd_project_setup.py`, `freecad/Corridor_Road/ui/task_project_setup.py`)
 - Provides initial coordinate-system setup UI:
   - design standard selection (`KDS` / `AASHTO`)
+  - linear unit policy (`Display`, `Default Import`, `Default Export`, optional `Custom Unit Scale`)
   - CRS/EPSG, datum, world/local origin, north rotation
   - setup lock/status
 - `Apply Setup` commits values to `CorridorRoadProject`.
@@ -473,8 +478,8 @@ Practical rule:
 - Creates simple baseline alignment object and sample values.
 - Sample defaults include feasible S-C-S transition settings (`CurveRadii`, `TransitionLengths`, `UseTransitionCurves=True`).
 - Keep as lightweight starter command.
-- Uses current project `LengthScale` (no scale popup).
-- Creates `CorridorRoadProject` automatically when missing and uses default `LengthScale`.
+- Uses meter-native sample values (no scale popup).
+- Creates `CorridorRoadProject` automatically when missing without introducing deprecated scale state.
 - Sample points are generated around project local origin (`LocalOriginX/Y`).
 
 ### 3.2 Practical Alignment Editor (`freecad/Corridor_Road/commands/cmd_edit_alignment.py`, `freecad/Corridor_Road/ui/task_alignment_editor.py`)
@@ -657,6 +662,8 @@ Practical rule:
 
 ### 3.10 Command Label Policy
 - Toolbar/menu labels omit `Generate` prefix.
+- Toolbar/menu labels should also omit `Import` when the command opens the primary task panel for that feature domain (for example `PointCloud DEM`, not `Import PointCloud DEM`).
+- Toolbar/menu labels should omit redundant object-type suffixes when the feature area is already clear in context (for example `Manage Regions`, not `Manage Region Plan`).
 - Command IDs follow current feature naming (`CorridorRoad_GenerateCutFillCalc` etc.).
 
 ## 4) Design Rules

@@ -120,7 +120,7 @@ Command-id note:
   - full preview wire visible together with `SelectedComponentPreview` for the selected component row
   - pavement preview/report object label as `PavementDisplay`
   - click-locked component-row activation; hover should not change the active row
-- `Manage Region Plan` currently keeps:
+- `Manage Regions` currently keeps:
   - `Workflow` as the main editing surface with grouped `Base Regions`, `Overrides`, and `Hints`
   - `Advanced` as a flat runtime preview/export surface for existing plans
   - direct flat-row editing available only while creating a new `RegionPlan`

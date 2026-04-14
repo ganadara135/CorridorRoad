@@ -10,6 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
+from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.ui.task_region_editor import RegionEditorTaskPanel
 
@@ -23,6 +24,10 @@ def run():
     _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     doc = App.newDocument("CRRegionEditorTimelineCsv")
     try:
+        prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+        ensure_project_properties(prj)
+        prj.LinearUnitDisplay = "mm"
+
         panel = RegionEditorTaskPanel()
         panel._populate_table(
             [
@@ -37,19 +42,28 @@ def run():
         panel.tbl_timeline.setCurrentCell(1, 0)
         _assert(panel.tbl_override.currentRow() == 0, "Timeline selection should sync to override summary")
         _assert(str(panel.cmb_override_kind.currentText() or "") == "Ditch / Berm", "Override editor should load from timeline selection")
+        _assert(panel.txt_timeline_start.text() == "20000.000", "Timeline editor should display start in display unit")
+        _assert(panel.txt_override_start.text() == "20000.000", "Override editor should display start in display unit")
 
-        panel.txt_timeline_start.setText("22.000")
-        panel.txt_timeline_end.setText("32.000")
+        panel.txt_timeline_start.setText("22000.000")
+        panel.txt_timeline_end.setText("32000.000")
         panel._apply_timeline_span_edit()
         rows_after_span = panel._read_rows()
         override_row = next(row for row in rows_after_span if str(row.get("Id", "") or "") == "OVR_A")
-        _assert(str(override_row.get("StartStation", "") or "") == "22.000", "Timeline span edit should update start station")
-        _assert(str(override_row.get("EndStation", "") or "") == "32.000", "Timeline span edit should update end station")
+        _assert(abs(float(override_row.get("StartStation", 0.0)) - 22.0) < 1.0e-6, "Timeline span edit should update start station in meters")
+        _assert(abs(float(override_row.get("EndStation", 0.0)) - 32.0) < 1.0e-6, "Timeline span edit should update end station in meters")
 
         panel.tbl_timeline.setCurrentCell(0, 0)
         panel._split_selected_timeline_base()
         _assert(panel.tbl_base.rowCount() == 2, f"Split from timeline should create two base rows, got {panel.tbl_base.rowCount()}")
 
+        panel._populate_table(
+            [
+                {"Id": "BASE_A", "RegionType": "roadway", "Layer": "base", "StartStation": 0.0, "EndStation": 40.0, "Priority": 0, "TransitionIn": 0.0, "TransitionOut": 0.0, "TemplateName": "roadway_default", "AssemblyName": "", "RuleSet": "", "SidePolicy": "", "DaylightPolicy": "", "CorridorPolicy": "", "Enabled": True, "Notes": "Base A"},
+                {"Id": "OVR_A", "RegionType": "ditch_override", "Layer": "overlay", "StartStation": 22.0, "EndStation": 32.0, "Priority": 10, "TransitionIn": 0.0, "TransitionOut": 0.0, "TemplateName": "", "AssemblyName": "", "RuleSet": "", "SidePolicy": "left:berm", "DaylightPolicy": "", "CorridorPolicy": "", "Enabled": True, "Notes": "Override A"},
+                {"Id": "HINT_A", "RegionType": "retaining_wall_zone", "Layer": "overlay", "StartStation": 50.0, "EndStation": 60.0, "Priority": 20, "TransitionIn": 0.0, "TransitionOut": 0.0, "TemplateName": "", "AssemblyName": "", "RuleSet": "typical:urban_edge:right", "SidePolicy": "", "DaylightPolicy": "right:off", "CorridorPolicy": "", "Enabled": False, "Notes": "Pending hint", "HintSource": "typical", "HintStatus": "pending", "HintReason": "Detected urban edge roadside pattern on the right side."},
+            ]
+        )
         flat_rows = panel._flatten_group_rows(panel._group_rows())
         csv_text = panel._rows_to_csv_text(flat_rows)
         imported_rows = panel._rows_from_csv_text(csv_text)

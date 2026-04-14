@@ -9,9 +9,11 @@ import FreeCAD as App
 import Part
 
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
+from freecad.Corridor_Road.objects import unit_policy as _units
+
+_CUTFILL_LENGTH_SCHEMA_TARGET = 1
 
 
 class _CanceledError(Exception):
@@ -55,8 +57,6 @@ def _report_row(kind: str, **fields) -> str:
 
 
 def ensure_cut_fill_calc_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-
     if not hasattr(obj, "SourceCorridor"):
         obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
     if not hasattr(obj, "ExistingSurface"):
@@ -73,7 +73,7 @@ def ensure_cut_fill_calc_properties(obj):
 
     if not hasattr(obj, "CellSize"):
         obj.addProperty("App::PropertyFloat", "CellSize", "Comparison", "Sampling cell size (m)")
-        obj.CellSize = 1.0 * scale
+        obj.CellSize = 1.0
     if not hasattr(obj, "MaxSamples"):
         obj.addProperty("App::PropertyInteger", "MaxSamples", "Comparison", "Maximum allowed sample cells")
         obj.MaxSamples = 200000
@@ -106,7 +106,7 @@ def ensure_cut_fill_calc_properties(obj):
         obj.MaxTrianglesPerSource = 150000
     if not hasattr(obj, "DomainMargin"):
         obj.addProperty("App::PropertyFloat", "DomainMargin", "Comparison", "Margin from corridor bounds (m)")
-        obj.DomainMargin = 5.0 * scale
+        obj.DomainMargin = 5.0
     if not hasattr(obj, "UseCorridorBounds"):
         obj.addProperty("App::PropertyBool", "UseCorridorBounds", "Comparison", "Use corridor top bounds for domain")
         obj.UseCorridorBounds = True
@@ -150,16 +150,19 @@ def ensure_cut_fill_calc_properties(obj):
         obj.ShowDeltaMap = True
     if not hasattr(obj, "DeltaDeadband"):
         obj.addProperty("App::PropertyFloat", "DeltaDeadband", "Display", "Neutral band threshold for |delta| (m)")
-        obj.DeltaDeadband = 0.02 * scale
+        obj.DeltaDeadband = 0.02
     if not hasattr(obj, "DeltaClamp"):
         obj.addProperty("App::PropertyFloat", "DeltaClamp", "Display", "Color clamp for |delta| (m)")
-        obj.DeltaClamp = 2.0 * scale
+        obj.DeltaClamp = 2.0
     if not hasattr(obj, "VisualZOffset"):
         obj.addProperty("App::PropertyFloat", "VisualZOffset", "Display", "Z offset for delta map display (m)")
-        obj.VisualZOffset = 0.05 * scale
+        obj.VisualZOffset = 0.05
     if not hasattr(obj, "MaxVisualCells"):
         obj.addProperty("App::PropertyInteger", "MaxVisualCells", "Display", "Maximum cells used for 3D delta map")
         obj.MaxVisualCells = 40000
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Comparison", "Length-storage schema version")
+        obj.LengthSchemaVersion = 0
 
     if not hasattr(obj, "SampleCount"):
         obj.addProperty("App::PropertyInteger", "SampleCount", "Result", "Total sample cell count")
@@ -245,6 +248,25 @@ def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Execution status")
         obj.Status = "Idle"
+
+    try:
+        if int(getattr(obj, "LengthSchemaVersion", 0) or 0) < _CUTFILL_LENGTH_SCHEMA_TARGET:
+            for prop in (
+                "CellSize",
+                "DomainMargin",
+                "DeltaDeadband",
+                "DeltaClamp",
+                "VisualZOffset",
+                "XMin",
+                "XMax",
+                "YMin",
+                "YMax",
+            ):
+                if hasattr(obj, prop):
+                    setattr(obj, prop, _units.meters_from_internal_length(getattr(obj, "Document", None), float(getattr(obj, prop, 0.0) or 0.0)))
+            obj.LengthSchemaVersion = int(_CUTFILL_LENGTH_SCHEMA_TARGET)
+    except Exception:
+        pass
 
 
 class CutFillCalc:
@@ -621,7 +643,7 @@ class CutFillCalc:
         use_corr = bool(getattr(obj, "UseCorridorBounds", True))
         if use_corr:
             bb = design_shape.BoundBox
-            m = max(0.0, float(getattr(obj, "DomainMargin", 0.0)))
+            m = _units.model_length_from_meters(getattr(obj, "Document", None), max(0.0, float(getattr(obj, "DomainMargin", 0.0) or 0.0)))
             return (
                 float(bb.XMin - m),
                 float(bb.XMax + m),
@@ -631,10 +653,10 @@ class CutFillCalc:
                 "Local",
             )
 
-        x0 = float(getattr(obj, "XMin", 0.0))
-        x1 = float(getattr(obj, "XMax", 0.0))
-        y0 = float(getattr(obj, "YMin", 0.0))
-        y1 = float(getattr(obj, "YMax", 0.0))
+        x0 = float(getattr(obj, "XMin", 0.0) or 0.0)
+        x1 = float(getattr(obj, "XMax", 0.0) or 0.0)
+        y0 = float(getattr(obj, "YMin", 0.0) or 0.0)
+        y1 = float(getattr(obj, "YMax", 0.0) or 0.0)
         if x1 < x0:
             x0, x1 = x1, x0
         if y1 < y0:
@@ -643,6 +665,11 @@ class CutFillCalc:
         mode = str(getattr(obj, "DomainCoords", "Local") or "Local")
         if mode == "World":
             x0, x1, y0, y1 = _ct.world_xy_bounds_to_local(x0, x1, y0, y1, doc_or_obj=obj)
+        else:
+            x0 = _units.model_length_from_meters(getattr(obj, "Document", None), x0)
+            x1 = _units.model_length_from_meters(getattr(obj, "Document", None), x1)
+            y0 = _units.model_length_from_meters(getattr(obj, "Document", None), y0)
+            y1 = _units.model_length_from_meters(getattr(obj, "Document", None), y1)
         return x0, x1, y0, y1, f"manual_bounds_{str(mode or 'Local').lower()}", str(mode or "Local")
 
     @staticmethod
@@ -668,7 +695,9 @@ class CutFillCalc:
     def _station_bin_edges(obj, corridor_obj, alignment_obj, station_values):
         edges = []
         raw_bin = float(getattr(obj, "StationBinSize", 0.0) or 0.0)
-        total = float(getattr(getattr(alignment_obj, "Shape", None), "Length", 0.0) or 0.0) if alignment_obj is not None else 0.0
+        total = float(getattr(alignment_obj, "TotalLength", 0.0) or 0.0) if alignment_obj is not None else 0.0
+        if total <= 1e-9 and alignment_obj is not None:
+            total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(getattr(alignment_obj, "Shape", None), "Length", 0.0) or 0.0))
         if raw_bin > 1e-9:
             lo = float(station_values[0]) if station_values else 0.0
             hi = float(station_values[-1]) if len(station_values) >= 2 else float(total)
@@ -888,7 +917,6 @@ class CutFillCalc:
     def execute(self, obj):
         ensure_cut_fill_calc_properties(obj)
         try:
-            scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
             if self._report_progress(1.0, "Preparing comparison"):
                 raise _CanceledError("Canceled by user.")
 
@@ -933,16 +961,18 @@ class CutFillCalc:
                     for side in ("all", "left", "right"):
                         bin_stats[(idx, side)] = CutFillCalc._empty_bin_stat()
 
-            cell = float(getattr(obj, "CellSize", 1.0 * scale))
-            if not _is_finite(cell) or cell <= 1e-6:
-                cell = 1.0 * scale
-                obj.CellSize = 1.0 * scale
+            cell_m = float(getattr(obj, "CellSize", 1.0) or 1.0)
+            if not _is_finite(cell_m) or cell_m <= 1e-6:
+                cell_m = 1.0
+                obj.CellSize = 1.0
+            cell = _units.model_length_from_meters(getattr(obj, "Document", None), cell_m)
 
             # Guardrail: comparison cell size is meter-policy based (>=0.2m), converted by project scale.
-            min_cell = 0.2 * scale
+            min_cell_m = 0.2
+            min_cell = _units.model_length_from_meters(getattr(obj, "Document", None), min_cell_m)
             if cell < min_cell:
                 cell = min_cell
-                obj.CellSize = min_cell
+                obj.CellSize = min_cell_m
 
             xmin, xmax, ymin, ymax, domain_mode, domain_coords = CutFillCalc._resolve_domain_info(obj, design_top)
             if xmax <= xmin + 1e-9 or ymax <= ymin + 1e-9:
@@ -963,7 +993,9 @@ class CutFillCalc:
                 )
 
             # Keep tessellation tolerance scale-aware to avoid over-tessellation at large model scales.
-            defl = max(0.05 * scale, min(2.0 * scale, 0.5 * cell))
+            min_defl = _units.model_length_from_meters(getattr(obj, "Document", None), 0.05)
+            max_defl = _units.model_length_from_meters(getattr(obj, "Document", None), 2.0)
+            defl = max(min_defl, min(max_defl, 0.5 * cell))
             tri_design = self._triangles_from_faces_progress(top_faces, defl, 10.0, 18.0)
             tri_exist = self._triangles_from_mesh_progress(eg, 18.0, 24.0)
             design_tri_before = int(len(tri_design))
@@ -1014,9 +1046,9 @@ class CutFillCalc:
             if max_candidates <= 0:
                 max_candidates = 2500
             show_map = bool(getattr(obj, "ShowDeltaMap", True))
-            deadband = max(0.0, float(getattr(obj, "DeltaDeadband", 0.02)))
-            clamp_abs = abs(float(getattr(obj, "DeltaClamp", 2.0)))
-            zoff = float(getattr(obj, "VisualZOffset", 0.05))
+            deadband = _units.model_length_from_meters(getattr(obj, "Document", None), max(0.0, float(getattr(obj, "DeltaDeadband", 0.02) or 0.02)))
+            clamp_abs = abs(_units.model_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "DeltaClamp", 2.0) or 2.0)))
+            zoff = _units.model_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "VisualZOffset", 0.05) or 0.05))
             max_vis = int(getattr(obj, "MaxVisualCells", 40000))
             if max_vis <= 0:
                 max_vis = 40000

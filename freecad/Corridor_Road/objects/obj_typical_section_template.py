@@ -3,7 +3,7 @@ import math
 import FreeCAD as App
 import Part
 
-from freecad.Corridor_Road.objects.obj_project import get_length_scale
+from freecad.Corridor_Road.objects import unit_policy as _units
 
 try:
     import FreeCADGui as Gui
@@ -27,6 +27,8 @@ ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
 ALLOWED_DITCH_SHAPES = ("", "v", "u", "trapezoid")
 ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
 ROADSIDE_ADVANCED_TYPES = ("curb", "ditch", "berm")
+PAVEMENT_EXCLUDED_COMPONENT_TYPES = ("ditch", "berm")
+_TYPICAL_SECTION_LENGTH_SCHEMA_TARGET = 1
 ROADSIDE_LIBRARY_BUNDLES = {
     "shoulder_edge": [
         {"Id": "SHL", "Type": "shoulder", "Side": "left", "Width": 1.500, "CrossSlopePct": 4.0, "Height": 0.000, "ExtraWidth": 0.000, "BackSlopePct": 0.000, "Offset": 0.000, "Order": 10, "Enabled": True},
@@ -71,7 +73,7 @@ def _as_bool_flag(v) -> bool:
         return bool(v)
 
 
-def _default_component_data(scale: float):
+def _default_component_data(scale: float = 1.0):
     return {
         "ComponentIds": ["LANE-L", "SHL-L", "LANE-R", "SHL-R"],
         "ComponentTypes": ["lane", "shoulder", "lane", "shoulder"],
@@ -88,7 +90,7 @@ def _default_component_data(scale: float):
     }
 
 
-def _component_array_specs(scale: float):
+def _component_array_specs(scale: float = 1.0):
     defaults = _default_component_data(scale)
     return (
         ("ComponentIds", "App::PropertyStringList", defaults["ComponentIds"], "Ordered component identifiers"),
@@ -106,7 +108,7 @@ def _component_array_specs(scale: float):
     )
 
 
-def _default_pavement_data(scale: float):
+def _default_pavement_data(scale: float = 1.0):
     return {
         "PavementLayerIds": ["SURF", "BINDER", "BASE", "SUBBASE"],
         "PavementLayerTypes": ["surface", "binder", "base", "subbase"],
@@ -115,7 +117,7 @@ def _default_pavement_data(scale: float):
     }
 
 
-def _pavement_array_specs(scale: float):
+def _pavement_array_specs(scale: float = 1.0):
     defaults = _default_pavement_data(scale)
     return (
         ("PavementLayerIds", "App::PropertyStringList", defaults["PavementLayerIds"], "Pavement layer identifiers"),
@@ -126,15 +128,38 @@ def _pavement_array_specs(scale: float):
 
 
 def ensure_typical_section_template_properties(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-    for name, ptype, default, doc in _component_array_specs(scale):
+    had_length_props = any(
+        hasattr(obj, prop)
+        for prop in (
+            "ComponentWidths",
+            "ComponentHeights",
+            "ComponentExtraWidths",
+            "ComponentOffsets",
+            "PavementLayerThicknesses",
+        )
+    )
+
+    for name, ptype, default, doc in _component_array_specs():
         if not hasattr(obj, name):
             obj.addProperty(ptype, name, "Components", doc)
             setattr(obj, name, list(default))
-    for name, ptype, default, doc in _pavement_array_specs(scale):
+    for name, ptype, default, doc in _pavement_array_specs():
         if not hasattr(obj, name):
             obj.addProperty(ptype, name, "Pavement", doc)
             setattr(obj, name, list(default))
+    if not hasattr(obj, "LengthSchemaVersion"):
+        obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Result", "Length storage schema version")
+        obj.LengthSchemaVersion = 0
+
+    try:
+        schema = int(getattr(obj, "LengthSchemaVersion", 0) or 0)
+    except Exception:
+        schema = 0
+    if schema < _TYPICAL_SECTION_LENGTH_SCHEMA_TARGET:
+        try:
+            obj.LengthSchemaVersion = _TYPICAL_SECTION_LENGTH_SCHEMA_TARGET
+        except Exception:
+            pass
 
     if not hasattr(obj, "PreviewSchemaVersion"):
         obj.addProperty("App::PropertyInteger", "PreviewSchemaVersion", "Result", "Preview schema version")
@@ -223,15 +248,14 @@ def ensure_typical_section_template_properties(obj):
 
 
 def _normalized_component_arrays(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-    specs = _component_array_specs(scale)
+    specs = _component_array_specs()
     lengths = []
     for name, _ptype, default, _doc in specs:
         raw = list(getattr(obj, name, list(default)) or [])
         lengths.append(len(raw))
     n = max(lengths or [0])
     if n <= 0:
-        n = len(_default_component_data(scale)["ComponentIds"])
+        n = len(_default_component_data()["ComponentIds"])
 
     out = {}
     for name, _ptype, default, _doc in specs:
@@ -248,15 +272,14 @@ def _normalized_component_arrays(obj):
 
 
 def _normalized_pavement_arrays(obj):
-    scale = get_length_scale(getattr(obj, "Document", None), default=1.0)
-    specs = _pavement_array_specs(scale)
+    specs = _pavement_array_specs()
     lengths = []
     for name, _ptype, default, _doc in specs:
         raw = list(getattr(obj, name, list(default)) or [])
         lengths.append(len(raw))
     n = max(lengths or [0])
     if n <= 0:
-        n = len(_default_pavement_data(scale)["PavementLayerIds"])
+        n = len(_default_pavement_data()["PavementLayerIds"])
 
     out = {}
     for name, _ptype, default, _doc in specs:
@@ -688,6 +711,27 @@ def _apply_segment(x0: float, y0: float, width: float, slope_pct: float, height:
     return x, y
 
 
+def _component_row_to_model_lengths(obj, row):
+    out = dict(row or {})
+    for key in ("Width", "Height", "ExtraWidth", "Offset"):
+        out[key] = _units.model_length_from_meters(getattr(obj, "Document", None), float(out.get(key, 0.0) or 0.0))
+    return out
+
+
+def _pavement_row_to_model_lengths(obj, row):
+    out = dict(row or {})
+    out["Thickness"] = _units.model_length_from_meters(getattr(obj, "Document", None), float(out.get("Thickness", 0.0) or 0.0))
+    return out
+
+
+def _component_rows_model(obj):
+    return [_component_row_to_model_lengths(obj, row) for row in component_rows(obj)]
+
+
+def _pavement_rows_model(obj):
+    return [_pavement_row_to_model_lengths(obj, row) for row in pavement_rows(obj)]
+
+
 def _segment_profile_points(x0: float, y0: float, row, direction: float):
     typ = str(row.get("Type", "") or "").strip().lower()
     width = max(0.0, _safe_float(row.get("Width", 0.0), default=0.0))
@@ -736,16 +780,28 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
             y_end = y - (width * slope / 100.0)
             pts.append(App.Vector(x_end, y_end, 0.0))
             return pts
-        outer_total = max(0.0, width - bottom_w)
-        inner_w = 0.5 * outer_total
-        outer_w = max(0.0, outer_total - inner_w)
+        top_run = max(0.0, width - bottom_w)
+        inner_grade = abs(float(slope))
+        outer_grade = abs(float(back_slope))
+        if top_run <= 1e-9:
+            inner_w = 0.0
+            outer_w = 0.0
+        else:
+            inner_weight = 1.0 / max(inner_grade, 1.0)
+            outer_weight = 1.0 / max(outer_grade, 1.0)
+            denom = inner_weight + outer_weight
+            if denom <= 1e-9:
+                inner_w = 0.5 * top_run
+            else:
+                inner_w = top_run * (inner_weight / denom)
+            outer_w = max(0.0, top_run - inner_w)
         x_mid = x + float(direction) * inner_w
         y_mid = y - abs(height)
         pts.append(App.Vector(x_mid, y_mid, 0.0))
         x_bottom = x_mid + float(direction) * bottom_w
         pts.append(App.Vector(x_bottom, y_mid, 0.0))
         x_end = x_bottom + float(direction) * outer_w
-        y_end = y_mid - (outer_w * back_slope / 100.0)
+        y_end = y
         pts.append(App.Vector(x_end, y_end, 0.0))
         return pts
 
@@ -763,7 +819,7 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
 
 
 def build_top_profile(obj):
-    rows = component_rows(obj)
+    rows = _component_rows_model(obj)
     left_rows, center_rows, right_rows = _split_rows_by_side(rows)
 
     left_pts = [App.Vector(0.0, 0.0, 0.0)]
@@ -807,7 +863,7 @@ def build_top_profile(obj):
 
 
 def build_component_preview_profile(obj, selected_index: int):
-    rows = component_rows(obj)
+    rows = _component_rows_model(obj)
     left_rows, center_rows, right_rows = _split_rows_by_side(rows)
     selected_index = int(selected_index)
 
@@ -868,12 +924,62 @@ def build_component_preview_profile(obj, selected_index: int):
     return []
 
 
+def build_pavement_reference_profile(obj):
+    rows = _component_rows_model(obj)
+    left_rows, center_rows, right_rows = _split_rows_by_side(rows)
+
+    left_pts = [App.Vector(0.0, 0.0, 0.0)]
+    right_pts = [App.Vector(0.0, 0.0, 0.0)]
+    x_left = 0.0
+    y_left = 0.0
+    x_right = 0.0
+    y_right = 0.0
+
+    for row in center_rows:
+        half_w = 0.5 * max(0.0, float(row.get("Width", 0.0) or 0.0))
+        slope = float(row.get("CrossSlopePct", 0.0) or 0.0)
+        height = float(row.get("Height", 0.0) or 0.0)
+        x_left, y_left = _apply_segment(x_left, y_left, half_w, slope, height, +1.0)
+        x_right, y_right = _apply_segment(x_right, y_right, half_w, slope, height, -1.0)
+        left_pts.append(App.Vector(x_left, y_left, 0.0))
+        right_pts.append(App.Vector(x_right, y_right, 0.0))
+
+    for row in left_rows:
+        typ = str(row.get("Type", "") or "").strip().lower()
+        if typ in PAVEMENT_EXCLUDED_COMPONENT_TYPES:
+            break
+        x_left += float(row.get("Offset", 0.0) or 0.0)
+        seg_pts = _segment_profile_points(x_left, y_left, row, +1.0)
+        if seg_pts:
+            left_pts.extend(seg_pts)
+            x_left = float(seg_pts[-1].x)
+            y_left = float(seg_pts[-1].y)
+
+    for row in right_rows:
+        typ = str(row.get("Type", "") or "").strip().lower()
+        if typ in PAVEMENT_EXCLUDED_COMPONENT_TYPES:
+            break
+        x_right -= float(row.get("Offset", 0.0) or 0.0)
+        seg_pts = _segment_profile_points(x_right, y_right, row, -1.0)
+        if seg_pts:
+            right_pts.extend(seg_pts)
+            x_right = float(seg_pts[-1].x)
+            y_right = float(seg_pts[-1].y)
+
+    top_pts = list(reversed(left_pts[1:])) + [left_pts[0]] + right_pts[1:]
+    cleaned = []
+    for pt in top_pts:
+        if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+            cleaned.append(pt)
+    return cleaned
+
+
 def build_pavement_layer_shapes(obj):
-    top_pts = build_top_profile(obj)
+    top_pts = build_pavement_reference_profile(obj)
     if len(top_pts) < 2:
         return []
 
-    layers = [r for r in pavement_rows(obj) if bool(r.get("Enabled", True)) and float(r.get("Thickness", 0.0) or 0.0) > 1e-9]
+    layers = [r for r in _pavement_rows_model(obj) if bool(r.get("Enabled", True)) and float(r.get("Thickness", 0.0) or 0.0) > 1e-9]
     if not layers:
         return []
 

@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
+import re
+
 import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
-from freecad.Corridor_Road.objects.doc_query import find_all
+from freecad.Corridor_Road.objects.doc_query import find_all, find_project
+from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
 
@@ -103,6 +106,59 @@ class CrossSectionViewerTaskPanel:
     def reject(self):
         self._teardown()
         Gui.Control.closeDialog()
+
+    def _unit_context(self):
+        prj = find_project(self.doc)
+        return prj if prj is not None else self.doc
+
+    @staticmethod
+    def _safe_float(value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return float(default)
+
+    def _display_unit_label(self) -> str:
+        return str(_units.get_linear_display_unit(self._unit_context()) or "m")
+
+    def _display_from_meters(self, meters) -> float:
+        return _units.user_length_from_meters(self._unit_context(), self._safe_float(meters, default=0.0), use_default="display")
+
+    def _format_display_length(self, meters, digits: int = 3) -> str:
+        return f"{self._display_from_meters(meters):.{int(digits)}f}"
+
+    def _station_row_display_label(self, row) -> str:
+        station_text = self._format_display_length(row.get("station", 0.0))
+        raw = str(row.get("label", "") or "").strip()
+        if raw:
+            return re.sub(r"^STA\s+[-+]?\d+(?:\.\d+)?", f"STA {station_text}", raw, count=1)
+        return f"STA {station_text}"
+
+    def _prepare_display_payload(self, payload):
+        model = dict(payload or {})
+        unit_label = self._display_unit_label()
+        model["display_unit_label"] = unit_label
+        model["station_display_text"] = self._format_display_length(model.get("station", 0.0))
+        model["station_label"] = f"STA {model['station_display_text']}"
+        model["pavement_total_display_text"] = self._format_display_length(model.get("pavement_total_thickness", 0.0))
+
+        component_rows = []
+        for row in list(model.get("component_rows", []) or []):
+            item = dict(row or {})
+            item["display_span"] = self._display_from_meters(item.get("span", 0.0))
+            component_rows.append(item)
+        model["component_rows"] = component_rows
+
+        dimension_rows = []
+        for row in list(model.get("dimension_rows", []) or []):
+            item = dict(row or {})
+            display_value = self._display_from_meters(item.get("value", 0.0))
+            item["display_value"] = display_value
+            role = str(item.get("role", item.get("kind", "")) or "")
+            item["label_display"] = self._full_dimension_label(role, display_value, unit_label=unit_label)
+            dimension_rows.append(item)
+        model["dimension_rows"] = dimension_rows
+        return model
 
     def _teardown(self):
         if self._selection_observer is None:
@@ -287,7 +343,8 @@ class CrossSectionViewerTaskPanel:
 
         self.lbl_info.setText(
             "2D cross-section viewer for SectionSet wires. "
-            "Use 3D SectionSlice selection or choose a station here."
+            "Use 3D SectionSlice selection or choose a station here.\n"
+            f"Display unit: {self._display_unit_label()}"
         )
         self._render_current_payload()
 
@@ -300,7 +357,7 @@ class CrossSectionViewerTaskPanel:
             if sec is not None:
                 self._station_rows = SectionSet.resolve_viewer_station_rows(sec)
                 for row in self._station_rows:
-                    self.cmb_station.addItem(str(row.get("label", f"STA {float(row.get('station', 0.0)):.3f}")))
+                    self.cmb_station.addItem(self._station_row_display_label(row))
                 if self._station_rows:
                     idx = 0
                     if preferred_station is not None:
@@ -563,21 +620,36 @@ class CrossSectionViewerTaskPanel:
         return raw
 
     @staticmethod
-    def _compact_dimension_label(role: str, value: float):
+    def _full_dimension_label(role: str, value: float, unit_label: str = "m"):
         role = str(role or "").strip().lower()
         value = float(value or 0.0)
+        unit_text = str(unit_label or "m")
         if role == "overall_width":
-            return f"OA {value:.2f}m"
+            return f"Overall {value:.3f} {unit_text}"
         if role == "left_reach":
-            return f"L {value:.2f}m"
+            return f"Left {value:.3f} {unit_text}"
         if role == "right_reach":
-            return f"R {value:.2f}m"
+            return f"Right {value:.3f} {unit_text}"
         name = CrossSectionViewerTaskPanel._short_component_name(role)
-        return f"{name} {value:.2f}m"
+        return f"{name} {value:.3f} {unit_text}"
 
     @staticmethod
-    def _numeric_dimension_label(value: float):
-        return f"{float(value or 0.0):.2f}m"
+    def _compact_dimension_label(role: str, value: float, unit_label: str = "m"):
+        role = str(role or "").strip().lower()
+        value = float(value or 0.0)
+        unit_text = str(unit_label or "m")
+        if role == "overall_width":
+            return f"OA {value:.2f}{unit_text}"
+        if role == "left_reach":
+            return f"L {value:.2f}{unit_text}"
+        if role == "right_reach":
+            return f"R {value:.2f}{unit_text}"
+        name = CrossSectionViewerTaskPanel._short_component_name(role)
+        return f"{name} {value:.2f}{unit_text}"
+
+    @staticmethod
+    def _numeric_dimension_label(value: float, unit_label: str = "m"):
+        return f"{float(value or 0.0):.2f}{str(unit_label or 'm')}"
 
     @staticmethod
     def _component_effective_width_from_row(row):
@@ -932,6 +1004,7 @@ class CrossSectionViewerTaskPanel:
     @staticmethod
     def build_layout_plan(payload):
         payload = dict(payload or {})
+        unit_label = str(payload.get("display_unit_label", "m") or "m")
         bounds = dict(payload.get("bounds", {}) or {})
         xmin = float(bounds.get("xmin", -1.0))
         xmax = float(bounds.get("xmax", 1.0))
@@ -1240,7 +1313,8 @@ class CrossSectionViewerTaskPanel:
             full_text = str(full_name or short_name or typ.title() or "Comp")
             short_text = str(short_name or full_text)
             span = max(0.0, float(seg.get("span", 0.0) or 0.0))
-            value_text = f"{span:.3f} m"
+            display_span = float(seg.get("display_span", span) or span)
+            value_text = f"{display_span:.3f} {unit_label}"
             side = str(seg.get("side", "") or "").strip().lower()
             band_name = f"component_label_{scope}_{side or 'center'}"
             value_band_name = f"component_value_{scope}_{side or 'center'}"
@@ -1510,6 +1584,7 @@ class CrossSectionViewerTaskPanel:
             role = str(row.get("role", row.get("kind", "")) or "")
             kind = str(row.get("kind", "") or "")
             value = float(row.get("value", 0.0) or 0.0)
+            display_value = float(row.get("display_value", value) or value)
             x0 = float(row.get("x0", 0.0) or 0.0)
             x1 = float(row.get("x1", 0.0) or 0.0)
             span = abs(x1 - x0)
@@ -1517,9 +1592,9 @@ class CrossSectionViewerTaskPanel:
                 continue
             if kind in ("left_reach", "right_reach") or kind.startswith("component_"):
                 continue
-            full_text = str(row.get("label", "") or "").strip()
-            short_text = CrossSectionViewerTaskPanel._compact_dimension_label(role or kind, value)
-            numeric_text = CrossSectionViewerTaskPanel._numeric_dimension_label(value)
+            full_text = str(row.get("label_display", row.get("label", "")) or "").strip()
+            short_text = CrossSectionViewerTaskPanel._compact_dimension_label(role or kind, display_value, unit_label=unit_label)
+            numeric_text = CrossSectionViewerTaskPanel._numeric_dimension_label(display_value, unit_label=unit_label)
             svg_font_size = 0.26 if kind.startswith("component_") else 0.34
             full_need = CrossSectionViewerTaskPanel._estimate_text_width(full_text, svg_font_size) * 1.20
             short_need = CrossSectionViewerTaskPanel._estimate_text_width(short_text, svg_font_size) * 1.15
@@ -1687,7 +1762,7 @@ class CrossSectionViewerTaskPanel:
             self.txt_summary.setPlainText("No cross-section payload available.")
             self.scene.addText("No section payload available.")
             return
-        payload = dict(payload)
+        payload = self._prepare_display_payload(payload)
         payload.update(self.build_layout_plan(payload))
         self._current_payload = dict(payload)
         payload = self._filter_layout_by_scope(
@@ -1798,20 +1873,34 @@ class CrossSectionViewerTaskPanel:
         )
 
     def _summary_lines(self, payload, sec=None, include_diagnostics=True):
-        blocks = CrossSectionViewerTaskPanel._summary_blocks(payload, sec=sec, include_diagnostics=include_diagnostics)
+        blocks = CrossSectionViewerTaskPanel._summary_blocks(
+            payload,
+            sec=sec,
+            include_diagnostics=include_diagnostics,
+            unit_label=self._display_unit_label(),
+        )
         return CrossSectionViewerTaskPanel._flatten_summary_blocks(blocks)
 
     @staticmethod
-    def _summary_blocks(payload, sec=None, include_diagnostics=True):
+    def _summary_blocks(payload, sec=None, include_diagnostics=True, unit_label: str = "m"):
         payload = dict(payload or {})
         sec = sec
         sec_label = str(getattr(sec, "Label", "SectionSet") or "SectionSet")
         sec_name = str(getattr(sec, "Name", "SectionSet") or "SectionSet")
         blocks = []
+        station_text = str(payload.get("station_display_text", f"{float(payload.get('station', 0.0)):.3f}") or "-")
+        pavement_text = str(
+            payload.get(
+                "pavement_total_display_text",
+                f"{float(payload.get('pavement_total_thickness', 0.0) or 0.0):.3f}",
+            )
+            or "-"
+        )
+        unit_text = str(unit_label or payload.get("display_unit_label", "m") or "m")
 
         context_lines = [
             f"Section Set: {sec_label} ({sec_name})",
-            f"Station: {float(payload.get('station', 0.0)):.3f}",
+            f"Station: {station_text} {unit_text}",
             f"Station Tags: {str(payload.get('tag_summary', '-') or '-')}",
             f"Top Edges: {str(payload.get('top_profile_edge_summary', '-') or '-')}",
             f"Polylines: section={len(list(payload.get('section_polylines', []) or []))}, "
@@ -1821,7 +1910,7 @@ class CrossSectionViewerTaskPanel:
 
         component_rows = list(payload.get("component_rows", []) or [])
         component_lines = [
-            f"Pavement: {float(payload.get('pavement_total_thickness', 0.0) or 0.0):.3f} m "
+            f"Pavement: {pavement_text} {unit_text} "
             f"({int(payload.get('enabled_pavement_layer_count', 0) or 0)}/{int(payload.get('pavement_layer_count', 0) or 0)} layers)",
             f"Bench Summary: {str(payload.get('bench_summary', '-') or '-')}",
         ]
@@ -2018,6 +2107,18 @@ class CrossSectionViewerTaskPanel:
         sec_name = str(getattr(sec, "Name", "SectionSet") or "SectionSet")
         return f"{sec_name}_STA_{station:.3f}.{ext}"
 
+    def _export_success_text(self, kind: str, path: str) -> str:
+        payload = dict(self._current_payload or {})
+        station_label = str(payload.get("station_label", "") or "").strip()
+        lines = [
+            f"{str(kind or 'Export')} exported.",
+            f"Display unit: {self._display_unit_label()}",
+        ]
+        if station_label:
+            lines.append(f"Station: {station_label}")
+        lines.append(f"Path: {str(path or '')}")
+        return "\n".join(lines)
+
     def _export_png(self):
         if not self._current_payload:
             QtWidgets.QMessageBox.information(None, "Cross Section Viewer", "No rendered section to export.")
@@ -2033,7 +2134,7 @@ class CrossSectionViewerTaskPanel:
         if not str(path).lower().endswith(".png"):
             path = f"{path}.png"
         self._export_png_to_path(path)
-        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", f"PNG exported:\n{path}")
+        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", self._export_success_text("PNG", path))
 
     def _export_svg(self):
         if not self._current_payload:
@@ -2050,7 +2151,7 @@ class CrossSectionViewerTaskPanel:
         if not str(path).lower().endswith(".svg"):
             path = f"{path}.svg"
         self._export_svg_to_path(path)
-        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", f"SVG exported:\n{path}")
+        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", self._export_success_text("SVG", path))
 
     def _export_sheet_svg(self):
         if not self._current_payload:
@@ -2067,7 +2168,7 @@ class CrossSectionViewerTaskPanel:
         if not str(path).lower().endswith(".svg"):
             path = f"{path}.svg"
         self._export_sheet_svg_to_path(path)
-        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", f"Sheet SVG exported:\n{path}")
+        QtWidgets.QMessageBox.information(None, "Cross Section Viewer", self._export_success_text("Sheet SVG", path))
 
     def _export_png_to_path(self, path: str):
         rect = self._last_fit_rect if self._last_fit_rect is not None else self.scene.sceneRect()
@@ -2269,6 +2370,7 @@ class CrossSectionViewerTaskPanel:
                 payload,
                 sec=sheet_sec,
                 include_diagnostics=include_diagnostics,
+                unit_label=str(payload.get("display_unit_label", "m") or "m"),
             )
         )
         summary_lines = [CrossSectionViewerTaskPanel._svg_escape(line) for line in summary_lines]

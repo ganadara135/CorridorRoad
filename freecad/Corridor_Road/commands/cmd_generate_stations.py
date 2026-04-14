@@ -5,15 +5,16 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_station_generator import StationGeneratorTaskPanel
 
 
 class CmdGenerateStations:
     def GetResources(self):
         return {
-            "Pixmap": "",
+            "Pixmap": icon_path("stations.svg"),
             "MenuText": "Stations",
-            "ToolTip": "Create Stationing object and generate station ticks along alignment",
+            "ToolTip": "Generate station ticks along the alignment",
         }
 
     def IsActive(self):
