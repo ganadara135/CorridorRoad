@@ -27,6 +27,7 @@ ALLOWED_COMPONENT_SIDES = ("left", "right", "center", "both")
 ALLOWED_DITCH_SHAPES = ("", "v", "u", "trapezoid")
 ALLOWED_PAVEMENT_LAYER_TYPES = ("surface", "binder", "base", "subbase", "subgrade")
 ROADSIDE_ADVANCED_TYPES = ("curb", "ditch", "berm")
+PAVEMENT_EXCLUDED_COMPONENT_TYPES = ("ditch", "berm")
 _TYPICAL_SECTION_LENGTH_SCHEMA_TARGET = 1
 ROADSIDE_LIBRARY_BUNDLES = {
     "shoulder_edge": [
@@ -923,8 +924,58 @@ def build_component_preview_profile(obj, selected_index: int):
     return []
 
 
+def build_pavement_reference_profile(obj):
+    rows = _component_rows_model(obj)
+    left_rows, center_rows, right_rows = _split_rows_by_side(rows)
+
+    left_pts = [App.Vector(0.0, 0.0, 0.0)]
+    right_pts = [App.Vector(0.0, 0.0, 0.0)]
+    x_left = 0.0
+    y_left = 0.0
+    x_right = 0.0
+    y_right = 0.0
+
+    for row in center_rows:
+        half_w = 0.5 * max(0.0, float(row.get("Width", 0.0) or 0.0))
+        slope = float(row.get("CrossSlopePct", 0.0) or 0.0)
+        height = float(row.get("Height", 0.0) or 0.0)
+        x_left, y_left = _apply_segment(x_left, y_left, half_w, slope, height, +1.0)
+        x_right, y_right = _apply_segment(x_right, y_right, half_w, slope, height, -1.0)
+        left_pts.append(App.Vector(x_left, y_left, 0.0))
+        right_pts.append(App.Vector(x_right, y_right, 0.0))
+
+    for row in left_rows:
+        typ = str(row.get("Type", "") or "").strip().lower()
+        if typ in PAVEMENT_EXCLUDED_COMPONENT_TYPES:
+            break
+        x_left += float(row.get("Offset", 0.0) or 0.0)
+        seg_pts = _segment_profile_points(x_left, y_left, row, +1.0)
+        if seg_pts:
+            left_pts.extend(seg_pts)
+            x_left = float(seg_pts[-1].x)
+            y_left = float(seg_pts[-1].y)
+
+    for row in right_rows:
+        typ = str(row.get("Type", "") or "").strip().lower()
+        if typ in PAVEMENT_EXCLUDED_COMPONENT_TYPES:
+            break
+        x_right -= float(row.get("Offset", 0.0) or 0.0)
+        seg_pts = _segment_profile_points(x_right, y_right, row, -1.0)
+        if seg_pts:
+            right_pts.extend(seg_pts)
+            x_right = float(seg_pts[-1].x)
+            y_right = float(seg_pts[-1].y)
+
+    top_pts = list(reversed(left_pts[1:])) + [left_pts[0]] + right_pts[1:]
+    cleaned = []
+    for pt in top_pts:
+        if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
+            cleaned.append(pt)
+    return cleaned
+
+
 def build_pavement_layer_shapes(obj):
-    top_pts = build_top_profile(obj)
+    top_pts = build_pavement_reference_profile(obj)
     if len(top_pts) < 2:
         return []
 

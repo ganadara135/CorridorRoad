@@ -59,8 +59,8 @@ COMPONENT_TYPE_HINTS = {
     "green_strip": {"row": "Green strip or planted verge. Width and CrossSlopePct define the strip.", "highlight": "slope"},
     "gutter": {"row": "Gutter/drain strip. Width and CrossSlopePct control the shallow drainage break.", "highlight": "slope"},
     "curb": {"row": "Curb step. Height is curb rise; Width is curb top width; ExtraWidth is curb face/gutter run; BackSlopePct is top/back slope.", "highlight": "height"},
-    "ditch": {"row": "Ditch profile. Shape chooses v, u, or trapezoid. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope.", "highlight": "height"},
-    "berm": {"row": "Berm/platform. Width is bench width; CrossSlopePct is bench slope; ExtraWidth is outer taper width; BackSlopePct is taper slope.", "highlight": "width"},
+    "ditch": {"row": "Ditch profile. Shape chooses v, u, or trapezoid. Width is total span; Height is ditch depth; ExtraWidth is flat bottom width; BackSlopePct is outer-side slope. Pavement preview stops before ditch rows.", "highlight": "height"},
+    "berm": {"row": "Berm/platform. Width is bench width; CrossSlopePct is bench slope; ExtraWidth is outer taper width; BackSlopePct is taper slope. Pavement preview stops before berm rows.", "highlight": "width"},
 }
 
 
