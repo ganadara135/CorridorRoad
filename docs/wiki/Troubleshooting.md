@@ -207,15 +207,19 @@ Symptoms:
 - Users may suspect the station-based corridor geometry itself is inaccurate.
 
 Interpretation:
-1. This is typically a display-side sampling/rendering precision issue.
+1. This is typically a display-side geometry/rendering issue, sometimes amplified by large world-coordinate values.
 2. The station-based engineering logic does not use the rendered wire as the design source of truth.
 3. Sections, structure frames, and corridor generation still evaluate the underlying alignment/profile model at stations.
+4. CorridorRoad already supports project-level world/local transforms (`Project Origin`, `Local Origin`, `North Rotation`) so world-coordinate workflows can be normalized into local model space.
+5. The recent visible zig-zag issue was addressed primarily by changing the visible 3D centerline from a polyline-style wire to a spline-based wire.
 
 Actions:
-1. Treat the current wire as a visual guide, not as the final proof of geometric smoothness.
-2. If field review depends heavily on centerline appearance, note that denser centerline display sampling is the preferred mitigation path.
-3. If section/corridor output is numerically and station-wise correct, do not treat the sampled-wire look alone as a design failure.
-4. If the wire is split more often than expected, inspect the task-panel `Split Sources` summary before assuming a geometry error. Region/structure semantic splits are display-side by design.
+1. Treat the visible wire as a display guide, not as the final proof of engineering smoothness.
+2. Confirm `Project Setup` is using a sensible local/world anchor when the source data comes in world coordinates.
+3. Rebuild `3D Centerline` and confirm the active wire mode is `SmoothSpline`.
+4. Use `Polyline` only when you want a debug/comparison view of the visible wire build.
+5. If section/corridor output is numerically and station-wise correct, do not treat visible wire roughness alone as a design failure.
+6. If the wire is split more often than expected, inspect the task-panel `Split Sources` summary before assuming a geometry error. Region/structure semantic splits are display-side by design.
 
 ## Region Plan rows are hard to read in dark theme
 Symptoms:

@@ -28,6 +28,7 @@ ALIGNMENT_ROOT = "alignment_root"
 ALIGNMENT_HORIZONTAL = "alignment_horizontal"
 ALIGNMENT_STATIONING = "alignment_stationing"
 ALIGNMENT_VERTICAL = "alignment_vertical_profiles"
+ALIGNMENT_CENTERLINE = "alignment_centerline"
 ALIGNMENT_ASSEMBLY = "alignment_assembly"
 ALIGNMENT_REGIONS = "alignment_regions"
 ALIGNMENT_SECTIONS = "alignment_sections"
@@ -49,6 +50,7 @@ ALIGNMENT_SUBTREE_DEFS = (
     (ALIGNMENT_HORIZONTAL, "Horizontal", "CR_ALN_Horizontal"),
     (ALIGNMENT_STATIONING, "Stationing", "CR_ALN_Stationing"),
     (ALIGNMENT_VERTICAL, "VerticalProfiles", "CR_ALN_VerticalProfiles"),
+    (ALIGNMENT_CENTERLINE, "3D Centerline", "CR_ALN_Centerline3D"),
     (ALIGNMENT_ASSEMBLY, "Assembly", "CR_ALN_Assembly"),
     (ALIGNMENT_REGIONS, "Regions", "CR_ALN_Regions"),
     (ALIGNMENT_SECTIONS, "Sections", "CR_ALN_Sections"),
@@ -772,6 +774,12 @@ def _resolve_alignment_for_object(prj, child):
         if aln is not None:
             return aln
 
+    if _is_type(child, proxy_types=(), name_prefixes=("CenterlineBoundaryMarker",)):
+        disp = getattr(child, "ParentCenterline3DDisplay", None)
+        aln = _alignment_from_centerline_display(disp) if disp is not None else None
+        if aln is not None:
+            return aln
+
     if _is_type(child, proxy_types=("SectionSet",), name_prefixes=("SectionSet",)):
         aln = _alignment_from_section_set(child)
         if aln is not None:
@@ -896,6 +904,7 @@ def _is_alignment_related(child):
             "ProfileBundle",
             "FGDisplay",
             "Centerline3DDisplay",
+            "CenterlineBoundaryMarker",
             "Centerline3D",
             "AssemblyTemplate",
             "TypicalSectionTemplate",
@@ -915,6 +924,7 @@ def _is_alignment_related(child):
             "ProfileBundle",
             "FinishedGradeFG",
             "Centerline3DDisplay",
+            "CenterlineBoundaryMarker",
             "Centerline3D",
             "AssemblyTemplate",
             "TypicalSectionTemplate",
@@ -981,6 +991,8 @@ def _target_folder_for_alignment_child(prj, child):
     if not aln_tree:
         return None
 
+    if _is_type(child, proxy_types=("Centerline3DDisplay",), name_prefixes=("Centerline3DDisplay",)):
+        return aln_tree.get(ALIGNMENT_CENTERLINE, None)
     if _is_type(child, proxy_types=("HorizontalAlignment",), name_prefixes=("HorizontalAlignment",)) or _looks_like_horizontal_alignment(child):
         return aln_tree.get(ALIGNMENT_HORIZONTAL, None)
     if _is_type(child, proxy_types=("Stationing",), name_prefixes=("Stationing",)):
@@ -1003,6 +1015,8 @@ def _target_folder_for_alignment_child(prj, child):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
     if _is_type(child, proxy_types=("CorridorLoft",), name_prefixes=("CorridorLoft",)):
         return aln_tree.get(ALIGNMENT_CORRIDOR, None)
+    if _is_type(child, proxy_types=(), name_prefixes=("CenterlineBoundaryMarker",)):
+        return None
     return aln_tree.get(ALIGNMENT_VERTICAL, None)
 
 
@@ -1709,6 +1723,9 @@ class CorridorRoadProject:
         """Place child into fixed schema folders under project."""
         if obj_project is None or child is None:
             return
+        if _is_type(child, proxy_types=(), name_prefixes=("CenterlineBoundaryMarker",)):
+            CorridorRoadProject.unadopt(obj_project, child)
+            return
         ensure_project_properties(obj_project)
         target = _resolve_target_container(obj_project, child, allow_references=True)
         if target is None:
@@ -1723,6 +1740,18 @@ class CorridorRoadProject:
             if child in roots:
                 _group_set(obj_project, [ch for ch in roots if ch != child])
             _prune_root_nonfolders(obj_project)
+
+    @staticmethod
+    def unadopt(obj_project, child):
+        """Remove child from project tree folders so it can be shown only via claimChildren."""
+        if obj_project is None or child is None:
+            return
+        owners = [obj_project] + _iter_tree_folders(obj_project)
+        for owner in owners:
+            if owner is None or owner == child:
+                continue
+            _group_remove(owner, child)
+        _prune_root_nonfolders(obj_project)
 
     @staticmethod
     def auto_link(doc, obj_project):

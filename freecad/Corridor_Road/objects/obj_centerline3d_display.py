@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
+import FreeCAD as App
+
 # CorridorRoad/objects/obj_centerline3d_display.py
 import Part
 
 from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
-from freecad.Corridor_Road.objects.obj_project import find_region_plan_objects
+from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, find_region_plan_objects
 from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
 from freecad.Corridor_Road.objects.obj_vertical_alignment import VerticalAlignment
@@ -106,7 +108,39 @@ def _count_summary(rows, key):
     return ", ".join(f"{name}:{count}" for name, count in order)
 
 
+def _kind_display_name(kind: str) -> str:
+    token = str(kind or "").strip().lower()
+    mapping = {
+        "base": "Base",
+        "horizontal_ip": "Horizontal IP",
+        "horizontal_transition": "Horizontal Transition",
+        "vertical_curve": "Vertical Curve",
+        "region_boundary": "Region Boundary",
+        "region_transition": "Region Transition",
+        "structure_zone": "Structure Zone",
+        "structure_transition": "Structure Transition",
+        "mixed": "Mixed",
+        "endpoint": "Endpoint",
+        "boundary": "Boundary",
+    }
+    return mapping.get(token, token.replace("_", " ").title() if token else "Boundary")
+
+
+def _marker_kind_color(kind: str):
+    token = str(kind or "").strip().lower()
+    mapping = {
+        "region_boundary": (0.35, 0.82, 0.56),
+        "region_transition": (1.00, 0.68, 0.18),
+        "structure_zone": (0.94, 0.38, 0.38),
+        "structure_transition": (1.00, 0.35, 0.35),
+        "mixed": (0.86, 0.54, 0.98),
+        "endpoint": (0.70, 0.70, 0.70),
+    }
+    return mapping.get(token, (0.95, 0.80, 0.30))
+
+
 _DISPLAY_QUALITY_PRESETS = ("Fast", "Normal", "Fine", "Ultra")
+_DISPLAY_WIRE_MODES = ("SmoothSpline", "Polyline")
 _DISPLAY_QUALITY_FACTORS = {
     "Fast": {"err": 2.0, "min": 2.0, "max": 1.6},
     "Normal": {"err": 1.0, "min": 1.0, "max": 1.0},
@@ -124,9 +158,41 @@ _SEGMENT_KIND_FACTORS = {
     "structure_transition": {"err": 0.4, "min": 0.5, "max": 0.6},
     "mixed": {"err": 0.35, "min": 0.5, "max": 0.6},
 }
+_HIDDEN_PROPERTY_NAMES = (
+    "SourceCenterline",
+    "MaxChordError",
+    "MinStep",
+    "MaxStep",
+    "UseKeyStations",
+    "DisplayQuality",
+    "DisplayStations",
+    "DisplayPoints",
+    "DisplayPointCount",
+    "DisplayPolicySummary",
+    "MostDetailedSegmentSummary",
+    "SegmentRows",
+    "BoundaryMarkerRows",
+    "SegmentBoundaryStations",
+    "LengthSchemaVersion",
+)
 
 
 def ensure_centerline3d_display_properties(obj):
+    # Hard-remove legacy display compatibility properties.
+    for legacy_prop in (
+        "SamplingInterval",
+        "SampledStations",
+        "SampledPoints",
+        "SampleCount",
+        "DensestSegmentSummary",
+        "SamplingPolicySummary",
+    ):
+        try:
+            if hasattr(obj, legacy_prop):
+                obj.removeProperty(legacy_prop)
+        except Exception:
+            pass
+
     # Optional legacy link: if provided, display can read source data from engine object.
     if not hasattr(obj, "SourceCenterline"):
         obj.addProperty("App::PropertyLink", "SourceCenterline", "Display", "Centerline3D engine source")
@@ -149,16 +215,6 @@ def ensure_centerline3d_display_properties(obj):
         obj.addProperty("App::PropertyBool", "UseStationing", "Source", "Use Stationing.StationValues when available")
         obj.UseStationing = True
 
-    if not hasattr(obj, "SamplingInterval"):
-        obj.addProperty("App::PropertyFloat", "SamplingInterval", "Sampling", "Sampling interval (m) when Stationing is not used")
-        obj.SamplingInterval = 5.0
-    else:
-        # Migrate older objects where SamplingInterval was under "Source"
-        try:
-            obj.setGroupOfProperty("SamplingInterval", "Sampling")
-        except Exception:
-            pass
-
     if not hasattr(obj, "ElevationSource"):
         obj.addProperty("App::PropertyEnumeration", "ElevationSource", "Source", "Elevation source mode")
         obj.ElevationSource = ["Auto", "VerticalAlignment", "ProfileBundleFG", "FlatZero"]
@@ -167,40 +223,94 @@ def ensure_centerline3d_display_properties(obj):
     if not hasattr(obj, "ShowWire"):
         obj.addProperty("App::PropertyBool", "ShowWire", "Display", "Show 3D centerline wire")
         obj.ShowWire = True
+    if not hasattr(obj, "DisplayWireMode"):
+        obj.addProperty("App::PropertyEnumeration", "DisplayWireMode", "Display", "Visible 3D wire display mode")
+        obj.DisplayWireMode = list(_DISPLAY_WIRE_MODES)
+        obj.DisplayWireMode = "SmoothSpline"
+    if not hasattr(obj, "ShowBoundaryMarkers"):
+        obj.addProperty("App::PropertyBool", "ShowBoundaryMarkers", "Display", "Show semantic boundary marker child objects")
+        obj.ShowBoundaryMarkers = True
+    if not hasattr(obj, "BoundaryMarkerLength"):
+        obj.addProperty("App::PropertyFloat", "BoundaryMarkerLength", "Display", "Boundary marker line length (m)")
+        obj.BoundaryMarkerLength = 4.0
+    if not hasattr(obj, "IncludeEndpointBoundaryMarkers"):
+        obj.addProperty("App::PropertyBool", "IncludeEndpointBoundaryMarkers", "Display", "Include start/end boundary markers")
+        obj.IncludeEndpointBoundaryMarkers = False
 
     if not hasattr(obj, "MaxChordError"):
-        obj.addProperty("App::PropertyFloat", "MaxChordError", "Sampling", "Maximum chord error for adaptive sampling (m)")
+        obj.addProperty("App::PropertyFloat", "MaxChordError", "Internal", "Internal maximum display chord error (m)")
         obj.MaxChordError = 0.02
+    else:
+        try:
+            obj.setGroupOfProperty("MaxChordError", "Internal")
+        except Exception:
+            pass
 
     if not hasattr(obj, "MinStep"):
-        obj.addProperty("App::PropertyFloat", "MinStep", "Sampling", "Minimum station step for adaptive sampling (m)")
+        obj.addProperty("App::PropertyFloat", "MinStep", "Internal", "Internal minimum display station step (m)")
         obj.MinStep = 0.5
+    else:
+        try:
+            obj.setGroupOfProperty("MinStep", "Internal")
+        except Exception:
+            pass
 
     if not hasattr(obj, "MaxStep"):
-        obj.addProperty("App::PropertyFloat", "MaxStep", "Sampling", "Maximum station step for adaptive sampling (m)")
+        obj.addProperty("App::PropertyFloat", "MaxStep", "Internal", "Internal maximum display station step (m)")
         obj.MaxStep = 10.0
+    else:
+        try:
+            obj.setGroupOfProperty("MaxStep", "Internal")
+        except Exception:
+            pass
 
     if not hasattr(obj, "UseKeyStations"):
-        obj.addProperty("App::PropertyBool", "UseKeyStations", "Sampling", "Always include key stations (edge bounds, BVC/EVC)")
+        obj.addProperty("App::PropertyBool", "UseKeyStations", "Internal", "Internal toggle to always include key stations (edge bounds, BVC/EVC)")
         obj.UseKeyStations = True
+    else:
+        try:
+            obj.setGroupOfProperty("UseKeyStations", "Internal")
+        except Exception:
+            pass
     if not hasattr(obj, "SegmentByRegions"):
-        obj.addProperty("App::PropertyBool", "SegmentByRegions", "Sampling", "Split display at RegionPlan boundaries and transitions")
+        obj.addProperty("App::PropertyBool", "SegmentByRegions", "Display", "Split visible display at RegionPlan boundaries and transitions")
         obj.SegmentByRegions = True
+    else:
+        try:
+            obj.setGroupOfProperty("SegmentByRegions", "Display")
+        except Exception:
+            pass
     if not hasattr(obj, "SegmentByStructures"):
-        obj.addProperty("App::PropertyBool", "SegmentByStructures", "Sampling", "Split display at StructureSet boundaries and transitions")
+        obj.addProperty("App::PropertyBool", "SegmentByStructures", "Display", "Split visible display at StructureSet boundaries and transitions")
         obj.SegmentByStructures = True
+    else:
+        try:
+            obj.setGroupOfProperty("SegmentByStructures", "Display")
+        except Exception:
+            pass
     if not hasattr(obj, "DisplayQuality"):
-        obj.addProperty("App::PropertyEnumeration", "DisplayQuality", "Sampling", "Display sampling quality preset")
+        obj.addProperty("App::PropertyEnumeration", "DisplayQuality", "Internal", "Internal display-point generation quality preset")
         obj.DisplayQuality = list(_DISPLAY_QUALITY_PRESETS)
         obj.DisplayQuality = "Normal"
+    else:
+        try:
+            obj.setGroupOfProperty("DisplayQuality", "Internal")
+        except Exception:
+            pass
 
-    if not hasattr(obj, "SampledStations"):
-        obj.addProperty("App::PropertyFloatList", "SampledStations", "Result", "Adaptive sampled station values (m)")
-    if not hasattr(obj, "SampledPoints"):
-        obj.addProperty("App::PropertyVectorList", "SampledPoints", "Result", "Adaptive sampled 3D points")
-    if not hasattr(obj, "SampleCount"):
-        obj.addProperty("App::PropertyInteger", "SampleCount", "Result", "Sample point count")
-        obj.SampleCount = 0
+    if not hasattr(obj, "DisplayStations"):
+        obj.addProperty("App::PropertyFloatList", "DisplayStations", "Result", "Visible display station values (m)")
+    if not hasattr(obj, "DisplayPoints"):
+        obj.addProperty("App::PropertyVectorList", "DisplayPoints", "Result", "Visible 3D display points")
+    if not hasattr(obj, "DisplayPointCount"):
+        obj.addProperty("App::PropertyInteger", "DisplayPointCount", "Result", "Display point count")
+        obj.DisplayPointCount = 0
+    if not hasattr(obj, "DisplayPolicySummary"):
+        obj.addProperty("App::PropertyString", "DisplayPolicySummary", "Result", "Applied display-point generation summary")
+        obj.DisplayPolicySummary = "-"
+    if not hasattr(obj, "MostDetailedSegmentSummary"):
+        obj.addProperty("App::PropertyString", "MostDetailedSegmentSummary", "Result", "Most detailed planned display segment")
+        obj.MostDetailedSegmentSummary = "-"
     if not hasattr(obj, "SegmentCount"):
         obj.addProperty("App::PropertyInteger", "SegmentCount", "Result", "Planned display segment count")
         obj.SegmentCount = 0
@@ -213,15 +323,27 @@ def ensure_centerline3d_display_properties(obj):
     if not hasattr(obj, "SegmentRows"):
         obj.addProperty("App::PropertyStringList", "SegmentRows", "Result", "Structured display segment rows")
         obj.SegmentRows = []
+    if not hasattr(obj, "BoundaryMarkerRows"):
+        obj.addProperty("App::PropertyStringList", "BoundaryMarkerRows", "Result", "Structured boundary marker rows")
+        obj.BoundaryMarkerRows = []
+    if not hasattr(obj, "BoundaryMarkerCount"):
+        obj.addProperty("App::PropertyInteger", "BoundaryMarkerCount", "Result", "Generated boundary marker object count")
+        obj.BoundaryMarkerCount = 0
+    if not hasattr(obj, "BoundaryMarkerKindSummary"):
+        obj.addProperty("App::PropertyString", "BoundaryMarkerKindSummary", "Result", "Boundary marker kind summary")
+        obj.BoundaryMarkerKindSummary = "-"
+    if not hasattr(obj, "ActiveWireDisplayMode"):
+        obj.addProperty("App::PropertyString", "ActiveWireDisplayMode", "Result", "Resolved display wire mode")
+        obj.ActiveWireDisplayMode = "SmoothSpline"
+    if not hasattr(obj, "SourceTransitionGeometry"):
+        obj.addProperty("App::PropertyString", "SourceTransitionGeometry", "Result", "Resolved source transition geometry mode")
+        obj.SourceTransitionGeometry = "-"
+    if not hasattr(obj, "SourceEdgeTypeSummary"):
+        obj.addProperty("App::PropertyString", "SourceEdgeTypeSummary", "Result", "Resolved source edge makeup summary")
+        obj.SourceEdgeTypeSummary = "-"
     if not hasattr(obj, "SegmentBoundaryStations"):
         obj.addProperty("App::PropertyStringList", "SegmentBoundaryStations", "Result", "Segment boundary station list with source labels")
         obj.SegmentBoundaryStations = []
-    if not hasattr(obj, "DensestSegmentSummary"):
-        obj.addProperty("App::PropertyString", "DensestSegmentSummary", "Result", "Most densely sampled planned display segment")
-        obj.DensestSegmentSummary = "-"
-    if not hasattr(obj, "SamplingPolicySummary"):
-        obj.addProperty("App::PropertyString", "SamplingPolicySummary", "Result", "Applied display quality and per-segment sampling summary")
-        obj.SamplingPolicySummary = "-"
 
     if not hasattr(obj, "Status"):
         obj.addProperty("App::PropertyString", "Status", "Result", "Display generation status")
@@ -238,12 +360,17 @@ def ensure_centerline3d_display_properties(obj):
         schema = 0
     if schema < 2:
         obj.LengthSchemaVersion = 2
+    for internal_prop in _HIDDEN_PROPERTY_NAMES:
+        try:
+            obj.setEditorMode(internal_prop, 2)
+        except Exception:
+            pass
 
 
 class Centerline3DDisplay:
     """
     Display-only object for Centerline3D.
-    Uses adaptive sampling to represent curved 3D geometry.
+    Uses internal display-point generation to represent curved 3D geometry.
     """
 
     def __init__(self, obj):
@@ -256,13 +383,28 @@ class Centerline3DDisplay:
         obj.SegmentCount = 0
         obj.SegmentRows = []
         obj.SegmentBoundaryStations = []
+        obj.BoundaryMarkerRows = []
+        obj.BoundaryMarkerCount = 0
+        obj.BoundaryMarkerKindSummary = "-"
         obj.SegmentKindSummary = "-"
         obj.SegmentSplitSourceSummary = "-"
-        obj.DensestSegmentSummary = "-"
-        obj.SamplingPolicySummary = "-"
+        obj.MostDetailedSegmentSummary = "-"
+        obj.DisplayPolicySummary = "-"
 
     @staticmethod
-    def _publish_segment_diagnostics(obj, segment_rows, merged_markers, sampled_stations):
+    def _clear_display_outputs(obj):
+        obj.DisplayStations = []
+        obj.DisplayPoints = []
+        obj.DisplayPointCount = 0
+
+    @staticmethod
+    def _set_display_outputs(obj, display_stations, display_points):
+        obj.DisplayStations = list(display_stations or [])
+        obj.DisplayPoints = list(display_points or [])
+        obj.DisplayPointCount = len(list(display_points or []))
+
+    @staticmethod
+    def _publish_segment_diagnostics(obj, segment_rows, merged_markers, display_stations):
         obj.SegmentCount = len(list(segment_rows or []))
         obj.SegmentRows = Centerline3DDisplay._segment_rows_to_strings(segment_rows)
         obj.SegmentBoundaryStations = Centerline3DDisplay._marker_rows_to_strings(merged_markers)
@@ -271,8 +413,171 @@ class Centerline3DDisplay:
             [{"source": src0} for row in list(merged_markers or []) for src0 in list(row.get("sources", []) or [])],
             "source",
         )
-        obj.DensestSegmentSummary = Centerline3DDisplay._densest_segment_summary(segment_rows, sampled_stations)
-        obj.SamplingPolicySummary = Centerline3DDisplay._sampling_policy_summary(obj, segment_rows)
+        obj.MostDetailedSegmentSummary = Centerline3DDisplay._most_detailed_segment_summary(segment_rows, display_stations)
+        obj.DisplayPolicySummary = Centerline3DDisplay._display_policy_summary(obj, segment_rows)
+
+    @staticmethod
+    def _boundary_marker_objects(obj):
+        doc = getattr(obj, "Document", None)
+        if doc is None:
+            return []
+        out = []
+        for ch in list(getattr(doc, "Objects", []) or []):
+            try:
+                if not str(getattr(ch, "Name", "") or "").startswith("CenterlineBoundaryMarker"):
+                    continue
+                if getattr(ch, "ParentCenterline3DDisplay", None) != obj:
+                    continue
+                out.append(ch)
+            except Exception:
+                continue
+        out.sort(key=lambda item: float(getattr(item, "MarkerStation", 0.0) or 0.0))
+        return out
+
+    @staticmethod
+    def _ensure_boundary_marker_properties(obj):
+        if not hasattr(obj, "ParentCenterline3DDisplay"):
+            obj.addProperty("App::PropertyLink", "ParentCenterline3DDisplay", "Centerline", "Owning Centerline3DDisplay")
+        if not hasattr(obj, "MarkerStation"):
+            obj.addProperty("App::PropertyFloat", "MarkerStation", "Centerline", "Boundary marker station (m)")
+            obj.MarkerStation = 0.0
+        if not hasattr(obj, "MarkerKind"):
+            obj.addProperty("App::PropertyString", "MarkerKind", "Centerline", "Boundary marker kind")
+            obj.MarkerKind = "-"
+        if not hasattr(obj, "MarkerSources"):
+            obj.addProperty("App::PropertyStringList", "MarkerSources", "Centerline", "Boundary marker sources")
+            obj.MarkerSources = []
+        try:
+            obj.setEditorMode("ParentCenterline3DDisplay", 2)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _filtered_boundary_marker_rows(merged_markers):
+        out = []
+        for row in list(merged_markers or []):
+            sources = [str(v or "").strip() for v in list(row.get("sources", []) or []) if str(v or "").strip()]
+            if not sources:
+                continue
+            internal_sources = [src for src in sources if src not in ("start", "end")]
+            if not internal_sources:
+                continue
+            out.append({"station": float(row.get("station", 0.0) or 0.0), "sources": list(internal_sources)})
+        return out
+
+    @staticmethod
+    def _filtered_boundary_marker_rows_for_display(display_obj, merged_markers):
+        include_endpoints = bool(getattr(display_obj, "IncludeEndpointBoundaryMarkers", False))
+        out = []
+        for row in list(merged_markers or []):
+            sources = [str(v or "").strip() for v in list(row.get("sources", []) or []) if str(v or "").strip()]
+            if not sources:
+                continue
+            non_endpoints = [src for src in sources if src not in ("start", "end")]
+            if non_endpoints:
+                out.append({"station": float(row.get("station", 0.0) or 0.0), "sources": list(non_endpoints)})
+            if include_endpoints and any(src in ("start", "end") for src in sources):
+                out.append({"station": float(row.get("station", 0.0) or 0.0), "sources": ["endpoint"]})
+        return out
+
+    @staticmethod
+    def _boundary_marker_kind(row):
+        sources = list(row.get("sources", []) or [])
+        if not sources:
+            return "boundary"
+        if sources == ["endpoint"]:
+            return "endpoint"
+        return Centerline3DDisplay._classify_segment_kind(sources)
+
+    @staticmethod
+    def _boundary_marker_shape(src_obj, station: float, marker_length_m: float, z_provider=None):
+        frame = Centerline3D.frame_at_station(src_obj, float(station), z_provider=z_provider)
+        p = frame.get("point", App.Vector(0.0, 0.0, 0.0))
+        n = frame.get("N", App.Vector(0.0, 1.0, 0.0))
+        z = frame.get("Z", App.Vector(0.0, 0.0, 1.0))
+        if getattr(n, "Length", 0.0) <= 1e-9:
+            n = App.Vector(0.0, 1.0, 0.0)
+        else:
+            n = n.normalize()
+        half = max(0.05, 0.5 * float(marker_length_m))
+        half_model = _units.model_length_from_meters(getattr(src_obj, "Document", None), half)
+        z_offset = _units.model_length_from_meters(getattr(src_obj, "Document", None), 0.02)
+        p0 = p - (n * half_model) + (z * z_offset)
+        p1 = p + (n * half_model) + (z * z_offset)
+        return Part.makeLine(p0, p1)
+
+    @staticmethod
+    def _boundary_marker_rows_to_strings(rows):
+        out = []
+        for row in list(rows or []):
+            out.append(
+                "station={station}|kind={kind}|sources={sources}".format(
+                    station=_format_station_text(row.get("station", 0.0)),
+                    kind=str(row.get("kind", "-") or "-"),
+                    sources=",".join(list(row.get("sources", []) or [])) or "-",
+                )
+            )
+        return out
+
+    @staticmethod
+    def _sync_boundary_marker_children(display_obj, src_obj, merged_markers, z_provider=None):
+        rows = []
+        if bool(getattr(display_obj, "ShowBoundaryMarkers", True)):
+            for row in list(Centerline3DDisplay._filtered_boundary_marker_rows_for_display(display_obj, merged_markers) or []):
+                row_copy = dict(row)
+                row_copy["kind"] = Centerline3DDisplay._boundary_marker_kind(row)
+                rows.append(row_copy)
+
+        existing = Centerline3DDisplay._boundary_marker_objects(display_obj)
+        doc = getattr(display_obj, "Document", None)
+        if doc is None:
+            display_obj.BoundaryMarkerRows = Centerline3DDisplay._boundary_marker_rows_to_strings(rows)
+            display_obj.BoundaryMarkerCount = len(rows)
+            return []
+
+        created_or_kept = []
+        prj = find_project(doc)
+        marker_length_m = max(0.10, float(getattr(display_obj, "BoundaryMarkerLength", 4.0) or 4.0))
+        for idx, row in enumerate(rows):
+            if idx < len(existing):
+                mk = existing[idx]
+            else:
+                mk = doc.addObject("Part::Feature", "CenterlineBoundaryMarker")
+                Centerline3DDisplay._ensure_boundary_marker_properties(mk)
+            Centerline3DDisplay._ensure_boundary_marker_properties(mk)
+            mk.ParentCenterline3DDisplay = display_obj
+            mk.MarkerStation = float(row.get("station", 0.0) or 0.0)
+            mk.MarkerKind = str(row.get("kind", "-") or "-")
+            mk.MarkerSources = list(row.get("sources", []) or [])
+            mk.Label = f"Boundary [{_kind_display_name(mk.MarkerKind)}] @STA {_format_station_text(mk.MarkerStation)}"
+            mk.Shape = Centerline3DDisplay._boundary_marker_shape(src_obj, mk.MarkerStation, marker_length_m, z_provider=z_provider)
+            try:
+                vobj = getattr(mk, "ViewObject", None)
+                if vobj is not None:
+                    vobj.Visibility = True
+                    vobj.DisplayMode = "Wireframe"
+                    vobj.LineWidth = 2
+                    vobj.LineColor = _marker_kind_color(mk.MarkerKind)
+                mk.setEditorMode("Placement", 2)
+            except Exception:
+                pass
+            if prj is not None:
+                try:
+                    CorridorRoadProject.unadopt(prj, mk)
+                except Exception:
+                    pass
+            created_or_kept.append(mk)
+
+        for mk in list(existing[len(rows):] or []):
+            try:
+                doc.removeObject(mk.Name)
+            except Exception:
+                pass
+
+        display_obj.BoundaryMarkerRows = Centerline3DDisplay._boundary_marker_rows_to_strings(rows)
+        display_obj.BoundaryMarkerCount = len(rows)
+        display_obj.BoundaryMarkerKindSummary = _count_summary(rows, "kind")
+        return created_or_kept
 
     @staticmethod
     def _resolve_region_plan_source(display_obj):
@@ -509,14 +814,14 @@ class Centerline3DDisplay:
         out = []
         for row in list(rows or []):
             out.append(
-                "idx={idx}|start={start}|end={end}|len={length}|kind={kind}|sources={sources}|samples={samples}|err={err}|min={min_step}|max={max_step}".format(
+                "idx={idx}|start={start}|end={end}|len={length}|kind={kind}|sources={sources}|points={points}|err={err}|min={min_step}|max={max_step}".format(
                     idx=int(row.get("index", 0) or 0),
                     start=_format_station_text(row.get("start", 0.0)),
                     end=_format_station_text(row.get("end", 0.0)),
                     length=_format_station_text(row.get("length", 0.0)),
                     kind=str(row.get("kind", "base") or "base"),
                     sources=",".join(list(row.get("boundary_sources", []) or [])) or "-",
-                    samples=int(row.get("sample_count", 0) or 0),
+                    points=int(row.get("display_point_count", 0) or 0),
                     err=_format_station_text(row.get("max_err", 0.0)),
                     min_step=_format_station_text(row.get("min_step", 0.0)),
                     max_step=_format_station_text(row.get("max_step", 0.0)),
@@ -537,9 +842,9 @@ class Centerline3DDisplay:
         return out
 
     @staticmethod
-    def _sample_count_for_range(sampled_stations, s0: float, s1: float, tol: float = 1.0e-6):
+    def _display_point_count_for_range(display_stations, s0: float, s1: float, tol: float = 1.0e-6):
         count = 0
-        for value in list(sampled_stations or []):
+        for value in list(display_stations or []):
             try:
                 station = float(value)
             except Exception:
@@ -549,14 +854,14 @@ class Centerline3DDisplay:
         return int(count)
 
     @staticmethod
-    def _densest_segment_summary(segment_rows, sampled_stations):
+    def _most_detailed_segment_summary(segment_rows, display_stations):
         best = None
         best_count = -1
         for row in list(segment_rows or []):
-            count = int(row.get("sample_count", 0) or 0)
+            count = int(row.get("display_point_count", 0) or 0)
             if count <= 0:
-                count = Centerline3DDisplay._sample_count_for_range(
-                    sampled_stations,
+                count = Centerline3DDisplay._display_point_count_for_range(
+                    display_stations,
                     row.get("start", 0.0),
                     row.get("end", 0.0),
                 )
@@ -569,7 +874,7 @@ class Centerline3DDisplay:
             f"{str(best.get('kind', 'base') or 'base')}:"
             f"{_format_station_text(best.get('start', 0.0))}"
             f"-{_format_station_text(best.get('end', 0.0))}"
-            f" ({int(best_count)} samples)"
+            f" ({int(best_count)} points)"
         )
 
     @staticmethod
@@ -578,7 +883,7 @@ class Centerline3DDisplay:
         return raw if raw in _DISPLAY_QUALITY_FACTORS else "Normal"
 
     @staticmethod
-    def _segment_sampling_policy(obj, row, max_err: float, min_step: float, max_step: float):
+    def _segment_display_policy(obj, row, max_err: float, min_step: float, max_step: float):
         quality = Centerline3DDisplay._display_quality_name(obj)
         qf = dict(_DISPLAY_QUALITY_FACTORS.get(quality, _DISPLAY_QUALITY_FACTORS["Normal"]))
         kind = str(row.get("kind", "base") or "base")
@@ -596,7 +901,7 @@ class Centerline3DDisplay:
         }
 
     @staticmethod
-    def _sampling_policy_summary(obj, segment_rows):
+    def _display_policy_summary(obj, segment_rows):
         quality = Centerline3DDisplay._display_quality_name(obj)
         if not segment_rows:
             return f"{quality} | no-segments"
@@ -616,10 +921,10 @@ class Centerline3DDisplay:
         return f"{quality} | " + "; ".join(parts)
 
     @staticmethod
-    def _sample_segment_stations(src_obj, z_provider, s0: float, s1: float, max_err: float, min_step: float, max_step: float):
+    def _segment_display_stations(src_obj, z_provider, s0: float, s1: float, max_err: float, min_step: float, max_step: float):
         stations = [float(s0)]
         if float(s1) > float(s0) + 1.0e-9:
-            Centerline3DDisplay._append_adaptive(
+            Centerline3DDisplay._append_display_adaptive_stations(
                 src_obj,
                 z_provider,
                 stations,
@@ -634,12 +939,11 @@ class Centerline3DDisplay:
 
     @staticmethod
     def _build_segmented_display(display_obj, src_obj, segment_rows, z_provider, max_err: float, min_step: float, max_step: float):
-        sampled_all = []
-        segment_shapes = []
+        display_station_values = []
         planned_rows = []
         for row in list(segment_rows or []):
-            policy = Centerline3DDisplay._segment_sampling_policy(display_obj, row, max_err, min_step, max_step)
-            sampled_seg = Centerline3DDisplay._sample_segment_stations(
+            policy = Centerline3DDisplay._segment_display_policy(display_obj, row, max_err, min_step, max_step)
+            display_stations_seg = Centerline3DDisplay._segment_display_stations(
                 src_obj,
                 z_provider,
                 row.get("start", 0.0),
@@ -648,28 +952,25 @@ class Centerline3DDisplay:
                 min_step=policy["min_step"],
                 max_step=policy["max_step"],
             )
-            pts = [Centerline3D.point3d_at_station(src_obj, s, z_provider=z_provider) for s in sampled_seg]
+            display_points_seg = [Centerline3D.point3d_at_station(src_obj, s, z_provider=z_provider) for s in display_stations_seg]
             row_copy = dict(row)
             row_copy["quality"] = str(policy.get("quality", "Normal"))
             row_copy["max_err"] = float(policy.get("max_err", max_err))
             row_copy["min_step"] = float(policy.get("min_step", min_step))
             row_copy["max_step"] = float(policy.get("max_step", max_step))
-            row_copy["sample_count"] = int(len(pts))
+            row_copy["display_point_count"] = int(len(display_points_seg))
             planned_rows.append(row_copy)
-            if len(pts) < 2:
-                continue
-            segment_shapes.append(Part.makePolygon(pts))
-            sampled_all.extend(sampled_seg)
+            display_station_values.extend(display_stations_seg)
 
-        sampled = _unique_sorted(sampled_all)
-        points = [Centerline3D.point3d_at_station(src_obj, s, z_provider=z_provider) for s in sampled]
-        if not segment_shapes:
-            return Part.Shape(), sampled, points, planned_rows
-        shape = segment_shapes[0] if len(segment_shapes) == 1 else Part.Compound(segment_shapes)
-        return shape, sampled, points, planned_rows
+        display_stations = _unique_sorted(display_station_values)
+        display_points = [Centerline3D.point3d_at_station(src_obj, s, z_provider=z_provider) for s in display_stations]
+        if len(display_points) < 2:
+            return Part.Shape(), display_stations, display_points, planned_rows
+        shape = Centerline3DDisplay._build_display_shape(display_obj, display_points)
+        return shape, display_stations, display_points, planned_rows
 
     @staticmethod
-    def _safe_sampling_params(obj):
+    def _safe_display_params(obj):
         max_err = float(getattr(obj, "MaxChordError", 0.02))
         if max_err < 1e-6:
             max_err = 1e-6
@@ -688,6 +989,40 @@ class Centerline3DDisplay:
         return max_err, min_step, max_step
 
     @staticmethod
+    def _requested_wire_mode(obj) -> str:
+        raw = str(getattr(obj, "DisplayWireMode", "SmoothSpline") or "SmoothSpline").strip()
+        return raw if raw in _DISPLAY_WIRE_MODES else "SmoothSpline"
+
+    @staticmethod
+    def _build_display_shape(obj, points):
+        pts = list(points or [])
+        requested = Centerline3DDisplay._requested_wire_mode(obj)
+        if len(pts) < 2:
+            obj.ActiveWireDisplayMode = requested
+            return Part.Shape()
+        if requested == "SmoothSpline" and len(pts) >= 3:
+            try:
+                curve = Part.BSplineCurve()
+                curve.interpolate(pts)
+                obj.ActiveWireDisplayMode = "SmoothSpline"
+                return curve.toShape()
+            except Exception:
+                pass
+        obj.ActiveWireDisplayMode = "Polyline"
+        return Part.makePolygon(pts)
+
+    @staticmethod
+    def _publish_source_geometry_diagnostics(obj, alignment_obj):
+        if not str(getattr(obj, "ActiveWireDisplayMode", "") or "").strip():
+            obj.ActiveWireDisplayMode = Centerline3DDisplay._requested_wire_mode(obj)
+        if alignment_obj is None:
+            obj.SourceTransitionGeometry = "-"
+            obj.SourceEdgeTypeSummary = "-"
+            return
+        obj.SourceTransitionGeometry = str(getattr(alignment_obj, "TransitionGeometryMode", "-") or "-")
+        obj.SourceEdgeTypeSummary = str(getattr(alignment_obj, "EdgeTypeSummary", "-") or "-")
+
+    @staticmethod
     def _midpoint_dev(src_obj, z_provider, s0: float, s1: float):
         p0 = Centerline3D.point3d_at_station(src_obj, float(s0), z_provider=z_provider)
         p1 = Centerline3D.point3d_at_station(src_obj, float(s1), z_provider=z_provider)
@@ -699,7 +1034,7 @@ class Centerline3DDisplay:
         return float(_units.meters_from_model_length(getattr(src_obj, "Document", None), dev_model)), float(sm)
 
     @staticmethod
-    def _append_adaptive(src_obj, z_provider, out_stations, s0: float, s1: float, max_err: float, min_step: float, max_step: float, depth: int):
+    def _append_display_adaptive_stations(src_obj, z_provider, out_stations, s0: float, s1: float, max_err: float, min_step: float, max_step: float, depth: int):
         ds = float(s1 - s0)
         if ds <= min_step + 1e-9:
             out_stations.append(float(s1))
@@ -715,62 +1050,65 @@ class Centerline3DDisplay:
                 need_split = True
 
         if need_split and depth < 32:
-            Centerline3DDisplay._append_adaptive(src_obj, z_provider, out_stations, s0, sm, max_err, min_step, max_step, depth + 1)
-            Centerline3DDisplay._append_adaptive(src_obj, z_provider, out_stations, sm, s1, max_err, min_step, max_step, depth + 1)
+            Centerline3DDisplay._append_display_adaptive_stations(src_obj, z_provider, out_stations, s0, sm, max_err, min_step, max_step, depth + 1)
+            Centerline3DDisplay._append_display_adaptive_stations(src_obj, z_provider, out_stations, sm, s1, max_err, min_step, max_step, depth + 1)
             return
 
         out_stations.append(float(s1))
 
     def execute(self, obj):
         ensure_centerline3d_display_properties(obj)
+        obj.ActiveWireDisplayMode = Centerline3DDisplay._requested_wire_mode(obj)
         try:
             if not bool(getattr(obj, "ShowWire", True)):
                 obj.Shape = Part.Shape()
-                obj.SampledStations = []
-                obj.SampledPoints = []
-                obj.SampleCount = 0
+                Centerline3DDisplay._clear_display_outputs(obj)
+                Centerline3DDisplay._sync_boundary_marker_children(obj, obj, [], z_provider=None)
                 Centerline3DDisplay._reset_segment_diagnostics(obj)
+                Centerline3DDisplay._publish_source_geometry_diagnostics(obj, getattr(obj, "Alignment", None))
                 obj.Status = "Hidden"
                 return
 
             src = getattr(obj, "SourceCenterline", None)
             if src is None:
-                # Preferred mode: display uses its own source links/sampling properties.
+                # Preferred mode: display uses its own source links and internal display settings.
                 src = obj
 
             aln = getattr(src, "Alignment", None)
             if aln is None or aln.Shape is None or aln.Shape.isNull():
                 obj.Shape = Part.Shape()
-                obj.SampledStations = []
-                obj.SampledPoints = []
-                obj.SampleCount = 0
+                Centerline3DDisplay._clear_display_outputs(obj)
+                Centerline3DDisplay._sync_boundary_marker_children(obj, obj, [], z_provider=None)
                 Centerline3DDisplay._reset_segment_diagnostics(obj)
+                Centerline3DDisplay._publish_source_geometry_diagnostics(obj, None)
                 obj.Status = "Source alignment is missing"
                 obj.ResolvedElevationSource = "N/A"
                 return
+
+            Centerline3DDisplay._publish_source_geometry_diagnostics(obj, aln)
 
             total = float(getattr(aln, "TotalLength", 0.0) or 0.0)
             if total <= 1.0e-9:
                 total = _units.meters_from_model_length(getattr(obj, "Document", None), float(getattr(aln.Shape, "Length", 0.0) or 0.0))
             if total <= 1e-9:
                 obj.Shape = Part.Shape()
-                obj.SampledStations = []
-                obj.SampledPoints = []
-                obj.SampleCount = 0
+                Centerline3DDisplay._clear_display_outputs(obj)
+                Centerline3DDisplay._sync_boundary_marker_children(obj, obj, [], z_provider=None)
                 Centerline3DDisplay._reset_segment_diagnostics(obj)
+                Centerline3DDisplay._publish_source_geometry_diagnostics(obj, aln)
                 obj.Status = "Source alignment length is zero"
                 obj.ResolvedElevationSource = "N/A"
                 return
 
             source_name, z_provider = Centerline3D._resolve_z_provider(src)
-            max_err, min_step, max_step = Centerline3DDisplay._safe_sampling_params(obj)
+            max_err, min_step, max_step = Centerline3DDisplay._safe_display_params(obj)
 
             merged_markers = Centerline3DDisplay._merge_split_markers(
                 Centerline3DDisplay._collect_split_markers(obj, src, total)
             )
             segment_rows = Centerline3DDisplay._build_segment_rows(merged_markers)
 
-            shape, sampled, points, planned_rows = Centerline3DDisplay._build_segmented_display(
+            shape, display_stations, display_points, planned_rows = Centerline3DDisplay._build_segmented_display(
                 obj,
                 src,
                 segment_rows,
@@ -779,30 +1117,28 @@ class Centerline3DDisplay:
                 min_step=min_step,
                 max_step=max_step,
             )
-            if len(points) < 2:
+            if len(display_points) < 2:
                 obj.Shape = Part.Shape()
-                obj.SampledStations = sampled
-                obj.SampledPoints = points
-                obj.SampleCount = len(points)
-                Centerline3DDisplay._publish_segment_diagnostics(obj, planned_rows, merged_markers, sampled)
-                obj.Status = "Insufficient sampled points"
+                Centerline3DDisplay._set_display_outputs(obj, display_stations, display_points)
+                Centerline3DDisplay._publish_segment_diagnostics(obj, planned_rows, merged_markers, display_stations)
+                Centerline3DDisplay._publish_source_geometry_diagnostics(obj, aln)
+                obj.Status = "Insufficient display points"
                 obj.ResolvedElevationSource = source_name
                 return
 
             obj.Shape = shape
-            obj.SampledStations = sampled
-            obj.SampledPoints = points
-            obj.SampleCount = len(points)
-            Centerline3DDisplay._publish_segment_diagnostics(obj, planned_rows, merged_markers, sampled)
+            Centerline3DDisplay._set_display_outputs(obj, display_stations, display_points)
+            Centerline3DDisplay._publish_segment_diagnostics(obj, planned_rows, merged_markers, display_stations)
+            Centerline3DDisplay._sync_boundary_marker_children(obj, src, merged_markers, z_provider=z_provider)
             obj.Status = "OK"
             obj.ResolvedElevationSource = source_name
 
         except Exception as ex:
             obj.Shape = Part.Shape()
-            obj.SampledStations = []
-            obj.SampledPoints = []
-            obj.SampleCount = 0
+            Centerline3DDisplay._clear_display_outputs(obj)
+            Centerline3DDisplay._sync_boundary_marker_children(obj, obj, [], z_provider=None)
             Centerline3DDisplay._reset_segment_diagnostics(obj)
+            Centerline3DDisplay._publish_source_geometry_diagnostics(obj, getattr(obj, "Alignment", None))
             obj.Status = f"ERROR: {ex}"
             obj.ResolvedElevationSource = "N/A"
 
@@ -816,9 +1152,12 @@ class Centerline3DDisplay:
             "RegionPlanSource",
             "StructureSetSource",
             "UseStationing",
-            "SamplingInterval",
             "ElevationSource",
             "ShowWire",
+            "DisplayWireMode",
+            "ShowBoundaryMarkers",
+            "BoundaryMarkerLength",
+            "IncludeEndpointBoundaryMarkers",
             "MaxChordError",
             "MinStep",
             "MaxStep",
@@ -844,6 +1183,7 @@ class ViewProviderCenterline3DDisplay:
 
     def attach(self, vobj):
         try:
+            self.Object = getattr(vobj, "Object", None)
             vobj.Visibility = True
             vobj.DisplayMode = "Wireframe"
             vobj.LineWidth = 3
@@ -858,6 +1198,13 @@ class ViewProviderCenterline3DDisplay:
 
     def onChanged(self, vobj, prop):
         return
+
+    def claimChildren(self):
+        try:
+            obj = getattr(self, "Object", None)
+            return Centerline3DDisplay._boundary_marker_objects(obj) if obj is not None else []
+        except Exception:
+            return []
 
     def getDisplayModes(self, vobj):
         return ["Wireframe", "Flat Lines"]

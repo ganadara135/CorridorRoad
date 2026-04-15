@@ -15,12 +15,12 @@ The target is to improve user trust and visual stability by replacing the curren
 The plan assumes:
 
 1. station-based design remains the engineering source of truth
-2. visible zig-zag / wiggly centerline behavior is primarily a display-side sampling/rendering issue
-3. the best fix is to improve display segmentation and sampling policy, not to move design logic away from station-based evaluation
+2. visible zig-zag / wiggly centerline behavior is primarily a display-side point-generation/rendering issue
+3. the best fix is to improve display segmentation and display-point policy, not to move design logic away from station-based evaluation
 
 ## Problem Statement
 
-The current `Centerline3DDisplay` builds one sampled polyline wire across the full alignment.
+The historical `Centerline3DDisplay` built one sampled polyline wire across the full alignment.
 
 That causes three kinds of confusion:
 
@@ -41,8 +41,9 @@ Today:
    - resolves `tangent3d_at_station(...)`
    - resolves `frame_at_station(...)`
 2. `Centerline3DDisplay` is a viewer object
-   - adaptively samples stations
-   - builds a single `Part.makePolygon(points)` wire
+   - generates internal display points per segment
+   - defaults to `SmoothSpline` wire output
+   - keeps `Polyline` available for debugging/comparison
 3. sections and corridor logic already depend on station-based frame evaluation, not on the displayed wire as the design contract
 
 This split is already directionally correct.
@@ -61,7 +62,7 @@ The target system should satisfy all of the following.
 ### Display contract
 
 1. the visible centerline should be divided into meaningful segments
-2. each segment should be sampled according to its geometric/design context
+2. each segment should generate display points according to its geometric/design context
 3. display segmentation should make boundaries easier to understand visually and easier to debug
 
 ### Workflow contract
@@ -123,7 +124,7 @@ Keep responsibility limited to:
 Evolve into:
 
 1. segmented display assembly object
-2. owner of display sampling policy
+2. owner of display-point policy
 3. owner of segment-level diagnostics
 4. optional consumer of segmentation hints from:
    - `Stationing`
@@ -361,22 +362,19 @@ Recommended panel composition:
 2. `Display`
    - target display object selector
    - `Show Wire`
-   - `Use Key Stations`
-   - `Display Quality`
-3. `Sampling`
-   - `Max Chord Error`
-   - `Min Step`
-   - `Max Step`
-4. `Run`
+   - `Wire Display Mode`
+   - boundary-marker visibility
+   - semantic split toggles
+3. `Run`
    - status/summary text
    - explicit `Generate 3D Centerline Now`
 
 UX rules:
 
 1. keep `Centerline3DDisplay` as the visible user object
-2. keep the panel explicit that the 3D wire is a sampled display object
+2. keep the panel explicit that the 3D wire is a display object, not the engineering source of truth
 3. remind users that station-based frames remain the engineering source of truth
-4. keep advanced numeric sampling values visible, but make `Display Quality` the main normal-path control
+4. keep internal display-point generation hidden from the normal task-panel UX unless a future debug-only panel is added
 
 Recommended completion/status wording:
 
@@ -386,7 +384,7 @@ Recommended completion/status wording:
 Example wording:
 
 - `3D centerline display updated.`
-- `Segments: 18 | Sampled points: 412 | Design frames remain station-based.`
+- `Segments: 18 | Boundaries: 9 | Design frames remain station-based.`
 
 ## Compatibility Policy
 

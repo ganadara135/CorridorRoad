@@ -45,6 +45,22 @@ def _find_centerline3d_engine(doc):
     )
 
 
+def _find_boundary_markers_for_display(doc, display_obj):
+    out = []
+    if doc is None or display_obj is None:
+        return out
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if not str(getattr(obj, "Name", "") or "").startswith("CenterlineBoundaryMarker"):
+                continue
+            if getattr(obj, "ParentCenterline3DDisplay", None) != display_obj:
+                continue
+            out.append(obj)
+        except Exception:
+            continue
+    return out
+
+
 def _find_structure_sets(doc):
     return find_all(doc, proxy_type="StructureSet", name_prefixes=("StructureSet",))
 
@@ -116,48 +132,33 @@ class Centerline3DTaskPanel:
         gb_display = QtWidgets.QGroupBox("Display")
         fd = QtWidgets.QFormLayout(gb_display)
         self.cmb_target = QtWidgets.QComboBox()
-        self.chk_show_wire = QtWidgets.QCheckBox("Show sampled 3D centerline wire")
+        self.chk_show_wire = QtWidgets.QCheckBox("Show 3D centerline wire")
         self.chk_show_wire.setChecked(True)
-        self.chk_use_keys = QtWidgets.QCheckBox("Use key stations for segmentation")
-        self.chk_use_keys.setChecked(True)
+        self.cmb_wire_mode = QtWidgets.QComboBox()
+        self.cmb_wire_mode.addItems(["SmoothSpline", "Polyline"])
+        self.cmb_wire_mode.setCurrentText("SmoothSpline")
+        self.chk_show_boundary_markers = QtWidgets.QCheckBox("Show boundary-marker child objects")
+        self.chk_show_boundary_markers.setChecked(True)
+        self.chk_include_endpoint_markers = QtWidgets.QCheckBox("Include start/end markers")
+        self.chk_include_endpoint_markers.setChecked(False)
         self.chk_segment_regions = QtWidgets.QCheckBox("Split by region boundaries and transitions")
         self.chk_segment_regions.setChecked(True)
         self.chk_segment_structures = QtWidgets.QCheckBox("Split by structure boundaries and transitions")
         self.chk_segment_structures.setChecked(True)
-        self.cmb_quality = QtWidgets.QComboBox()
-        self.cmb_quality.addItems(["Fast", "Normal", "Fine", "Ultra"])
-        self.cmb_quality.setCurrentText("Normal")
+        self.spin_marker_length = QtWidgets.QDoubleSpinBox()
+        self.spin_marker_length.setRange(0.10, 1000.0)
+        self.spin_marker_length.setDecimals(3)
+        self.spin_marker_length.setSuffix(f" {self._display_unit()}")
+        self.spin_marker_length.setValue(self._meters_to_display(4.0))
         fd.addRow("Target Display:", self.cmb_target)
         fd.addRow(self.chk_show_wire)
-        fd.addRow(self.chk_use_keys)
+        fd.addRow("Wire Display Mode:", self.cmb_wire_mode)
+        fd.addRow(self.chk_show_boundary_markers)
+        fd.addRow(self.chk_include_endpoint_markers)
+        fd.addRow(f"Boundary Marker Length ({self._display_unit()}):", self.spin_marker_length)
         fd.addRow(self.chk_segment_regions)
         fd.addRow(self.chk_segment_structures)
-        fd.addRow("Display Quality:", self.cmb_quality)
         main.addWidget(gb_display)
-
-        gb_sampling = QtWidgets.QGroupBox("Sampling")
-        fo = QtWidgets.QFormLayout(gb_sampling)
-        unit = self._display_unit()
-        scale = self._display_scale()
-        self.spin_err = QtWidgets.QDoubleSpinBox()
-        self.spin_err.setRange(0.0001 * scale, 1000.0 * scale)
-        self.spin_err.setDecimals(4)
-        self.spin_err.setSuffix(f" {unit}")
-        self.spin_err.setValue(self._meters_to_display(0.02))
-        self.spin_min = QtWidgets.QDoubleSpinBox()
-        self.spin_min.setRange(0.001 * scale, 1000.0 * scale)
-        self.spin_min.setDecimals(4)
-        self.spin_min.setSuffix(f" {unit}")
-        self.spin_min.setValue(self._meters_to_display(0.5))
-        self.spin_max = QtWidgets.QDoubleSpinBox()
-        self.spin_max.setRange(0.001 * scale, 10000.0 * scale)
-        self.spin_max.setDecimals(4)
-        self.spin_max.setSuffix(f" {unit}")
-        self.spin_max.setValue(self._meters_to_display(10.0))
-        fo.addRow(f"Max Chord Error ({unit}):", self.spin_err)
-        fo.addRow(f"Min Step ({unit}):", self.spin_min)
-        fo.addRow(f"Max Step ({unit}):", self.spin_max)
-        main.addWidget(gb_sampling)
 
         row_btn = QtWidgets.QHBoxLayout()
         self.btn_generate = QtWidgets.QPushButton("Build 3D Centerline Display")
@@ -175,6 +176,7 @@ class Centerline3DTaskPanel:
 
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.cmb_target.currentIndexChanged.connect(self._on_target_changed)
+        self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
         self.btn_generate.clicked.connect(self._build)
         self.btn_close.clicked.connect(self.reject)
         return w
@@ -210,6 +212,94 @@ class Centerline3DTaskPanel:
             return None
         return combo.itemData(combo.currentIndex())
 
+    @staticmethod
+    def _first_or_none(objects):
+        items = list(objects or [])
+        return items[0] if items else None
+
+    def _preferred_stationing(self, alignment_obj):
+        if alignment_obj is None:
+            return self._first_or_none(self._stationings)
+        for obj in list(self._stationings or []):
+            if getattr(obj, "Alignment", None) == alignment_obj:
+                return obj
+        return self._first_or_none(self._stationings)
+
+    def _preferred_vertical(self, alignment_obj=None, stationing_obj=None):
+        if stationing_obj is not None:
+            for bundle in list(self._profiles or []):
+                if getattr(bundle, "Stationing", None) == stationing_obj:
+                    va = getattr(bundle, "VerticalAlignment", None)
+                    if va is not None:
+                        return va
+        if alignment_obj is not None:
+            for bundle in list(self._profiles or []):
+                st = getattr(bundle, "Stationing", None)
+                if st is not None and getattr(st, "Alignment", None) == alignment_obj:
+                    va = getattr(bundle, "VerticalAlignment", None)
+                    if va is not None:
+                        return va
+        return self._first_or_none(self._verticals)
+
+    def _preferred_profile(self, alignment_obj=None, stationing_obj=None, vertical_obj=None):
+        if stationing_obj is not None and vertical_obj is not None:
+            for bundle in list(self._profiles or []):
+                if getattr(bundle, "Stationing", None) == stationing_obj and getattr(bundle, "VerticalAlignment", None) == vertical_obj:
+                    return bundle
+        if stationing_obj is not None:
+            for bundle in list(self._profiles or []):
+                if getattr(bundle, "Stationing", None) == stationing_obj:
+                    return bundle
+        if vertical_obj is not None:
+            for bundle in list(self._profiles or []):
+                if getattr(bundle, "VerticalAlignment", None) == vertical_obj:
+                    return bundle
+        if alignment_obj is not None:
+            for bundle in list(self._profiles or []):
+                st = getattr(bundle, "Stationing", None)
+                if st is not None and getattr(st, "Alignment", None) == alignment_obj:
+                    return bundle
+        return self._first_or_none(self._profiles)
+
+    def _preferred_region(self):
+        pref_region = getattr(self._project, "RegionPlan", None) if self._project is not None and hasattr(self._project, "RegionPlan") else None
+        if pref_region is not None:
+            return pref_region
+        return self._first_or_none(self._regions)
+
+    def _preferred_structure(self):
+        pref_structure = getattr(self._project, "StructureSet", None) if self._project is not None and hasattr(self._project, "StructureSet") else None
+        if pref_structure is not None:
+            return pref_structure
+        return self._first_or_none(self._structures)
+
+    def _apply_default_sources(self):
+        alignment_obj = self._current_obj(self.cmb_alignment)
+        stationing_obj = self._preferred_stationing(alignment_obj)
+        vertical_obj = self._preferred_vertical(alignment_obj=alignment_obj, stationing_obj=stationing_obj)
+        profile_obj = self._preferred_profile(
+            alignment_obj=alignment_obj,
+            stationing_obj=stationing_obj,
+            vertical_obj=vertical_obj,
+        )
+        region_obj = self._preferred_region()
+        structure_obj = self._preferred_structure()
+
+        self._set_combo_to_object(self.cmb_stationing, stationing_obj)
+        self._set_combo_to_object(self.cmb_vertical, vertical_obj)
+        self._set_combo_to_object(self.cmb_profile, profile_obj)
+        self._set_combo_to_object(self.cmb_region, region_obj)
+        self._set_combo_to_object(self.cmb_structure, structure_obj)
+
+        self.chk_use_stationing.setChecked(stationing_obj is not None)
+        self.cmb_elevation.setCurrentText("Auto" if (vertical_obj is not None or profile_obj is not None) else "FlatZero")
+        self.cmb_wire_mode.setCurrentText("SmoothSpline")
+        self.chk_show_boundary_markers.setChecked(True)
+        self.chk_include_endpoint_markers.setChecked(False)
+        self.spin_marker_length.setValue(self._meters_to_display(4.0))
+        self.chk_segment_regions.setChecked(region_obj is not None)
+        self.chk_segment_structures.setChecked(structure_obj is not None)
+
     def _populate_optional_combo(self, combo, objects, prefix: str, include_none_label: str):
         combo.clear()
         combo.addItem(include_none_label, None)
@@ -241,14 +331,13 @@ class Centerline3DTaskPanel:
             self._set_combo_to_object(self.cmb_structure, getattr(obj, "StructureSetSource", None))
             self.chk_use_stationing.setChecked(bool(getattr(obj, "UseStationing", True)))
             self.chk_show_wire.setChecked(bool(getattr(obj, "ShowWire", True)))
-            self.chk_use_keys.setChecked(bool(getattr(obj, "UseKeyStations", True)))
+            self.cmb_wire_mode.setCurrentText(str(getattr(obj, "DisplayWireMode", "SmoothSpline") or "SmoothSpline"))
+            self.chk_show_boundary_markers.setChecked(bool(getattr(obj, "ShowBoundaryMarkers", True)))
+            self.chk_include_endpoint_markers.setChecked(bool(getattr(obj, "IncludeEndpointBoundaryMarkers", False)))
             self.chk_segment_regions.setChecked(bool(getattr(obj, "SegmentByRegions", True)))
             self.chk_segment_structures.setChecked(bool(getattr(obj, "SegmentByStructures", True)))
             self.cmb_elevation.setCurrentText(str(getattr(obj, "ElevationSource", "Auto") or "Auto"))
-            self.cmb_quality.setCurrentText(str(getattr(obj, "DisplayQuality", "Normal") or "Normal"))
-            self.spin_err.setValue(self._meters_to_display(float(getattr(obj, "MaxChordError", 0.02) or 0.02)))
-            self.spin_min.setValue(self._meters_to_display(float(getattr(obj, "MinStep", 0.5) or 0.5)))
-            self.spin_max.setValue(self._meters_to_display(float(getattr(obj, "MaxStep", 10.0) or 10.0)))
+            self.spin_marker_length.setValue(self._meters_to_display(float(getattr(obj, "BoundaryMarkerLength", 4.0) or 4.0)))
         finally:
             self._loading = False
 
@@ -256,52 +345,37 @@ class Centerline3DTaskPanel:
         if self.doc is None:
             self.lbl_info.setText("No active document.")
             return
-        self._project = find_project(self.doc)
-        self._alignments = _find_alignments(self.doc)
-        self._stationings = _find_stationings(self.doc)
-        self._verticals = _find_vertical_alignments(self.doc)
-        self._profiles = _find_profile_bundles(self.doc)
-        self._regions = _find_region_plans(self.doc)
-        self._structures = _find_structure_sets(self.doc)
-        self._displays = _find_centerline3d_display(self.doc)
+        self._loading = True
+        try:
+            self._project = find_project(self.doc)
+            self._alignments = _find_alignments(self.doc)
+            self._stationings = _find_stationings(self.doc)
+            self._verticals = _find_vertical_alignments(self.doc)
+            self._profiles = _find_profile_bundles(self.doc)
+            self._regions = _find_region_plans(self.doc)
+            self._structures = _find_structure_sets(self.doc)
+            self._displays = _find_centerline3d_display(self.doc)
 
-        current_display = self._current_obj(self.cmb_target)
-        self._populate_required_combo(self.cmb_alignment, self._alignments, "Alignment")
-        self._populate_optional_combo(self.cmb_stationing, self._stationings, "Stationing", "[None] No stationing")
-        self._populate_optional_combo(self.cmb_vertical, self._verticals, "VA", "[None] No vertical alignment")
-        self._populate_optional_combo(self.cmb_profile, self._profiles, "Profile", "[None] No profile bundle")
-        self._populate_optional_combo(self.cmb_region, self._regions, "RegionPlan", "[None] Auto-detect from project")
-        self._populate_optional_combo(self.cmb_structure, self._structures, "StructureSet", "[None] Auto-detect from project")
-        self._populate_target_combo(current_display=current_display)
+            current_display = self._current_obj(self.cmb_target)
+            self._populate_required_combo(self.cmb_alignment, self._alignments, "Alignment")
+            self._populate_optional_combo(self.cmb_stationing, self._stationings, "Stationing", "[None] No stationing")
+            self._populate_optional_combo(self.cmb_vertical, self._verticals, "VA", "[None] No vertical alignment")
+            self._populate_optional_combo(self.cmb_profile, self._profiles, "Profile", "[None] No profile bundle")
+            self._populate_optional_combo(self.cmb_region, self._regions, "RegionPlan", "[None] Auto-detect from project")
+            self._populate_optional_combo(self.cmb_structure, self._structures, "StructureSet", "[None] Auto-detect from project")
+            self._populate_target_combo(current_display=current_display)
 
-        if self._alignments:
-            if self.cmb_alignment.currentIndex() < 0:
-                self.cmb_alignment.setCurrentIndex(0)
+            if self._alignments:
+                if self.cmb_alignment.currentIndex() < 0:
+                    self.cmb_alignment.setCurrentIndex(0)
 
-        chosen_display = self._current_obj(self.cmb_target)
-        if chosen_display is not None:
-            self._load_from_display(chosen_display)
-        else:
-            self._loading = True
-            try:
-                pref_region = getattr(self._project, "RegionPlan", None) if self._project is not None and hasattr(self._project, "RegionPlan") else None
-                if pref_region is None and self._regions:
-                    pref_region = self._regions[0]
-                pref_structure = getattr(self._project, "StructureSet", None) if self._project is not None and hasattr(self._project, "StructureSet") else None
-                if pref_structure is None and self._structures:
-                    pref_structure = self._structures[0]
-                self._set_combo_to_object(self.cmb_region, pref_region)
-                self._set_combo_to_object(self.cmb_structure, pref_structure)
-                self.chk_use_stationing.setChecked(bool(self._stationings))
-                self.cmb_elevation.setCurrentText("Auto" if (self._verticals or self._profiles) else "FlatZero")
-                self.chk_segment_regions.setChecked(pref_region is not None)
-                self.chk_segment_structures.setChecked(pref_structure is not None)
-                self.cmb_quality.setCurrentText("Normal")
-                self.spin_err.setValue(self._meters_to_display(0.02))
-                self.spin_min.setValue(self._meters_to_display(0.5))
-                self.spin_max.setValue(self._meters_to_display(10.0))
-            finally:
-                self._loading = False
+            chosen_display = self._current_obj(self.cmb_target)
+            if chosen_display is not None:
+                self._load_from_display(chosen_display)
+            else:
+                self._apply_default_sources()
+        finally:
+            self._loading = False
 
         info = [
             f"Alignment: {len(self._alignments)} found",
@@ -311,8 +385,8 @@ class Centerline3DTaskPanel:
             f"RegionPlan: {len(self._regions)} found",
             f"StructureSet: {len(self._structures)} found",
             f"Centerline Display: {len(self._displays)} found",
-            "This command builds a sampled display wire only. Station-based frames remain the engineering source of truth.",
-            "Choose Display Quality first for normal review work. Region/structure split controls only affect display segmentation and diagnostics.",
+            "This command builds one 3D centerline display wire. Station-based frames remain the engineering source of truth.",
+            "Region/structure split controls add boundary-marker child objects and diagnostics without breaking the main wire into tree-level pieces.",
         ]
         self.lbl_info.setText("\n".join(info))
         self._update_status()
@@ -325,20 +399,37 @@ class Centerline3DTaskPanel:
             self._load_from_display(obj)
         self._update_status()
 
+    def _on_alignment_changed(self, *_args):
+        if self._loading:
+            return
+        if self._current_obj(self.cmb_target) is not None:
+            return
+        self._loading = True
+        try:
+            self._apply_default_sources()
+        finally:
+            self._loading = False
+        self._update_status()
+
     def _status_text(self, obj):
         if obj is None:
-            return "Ready to build sampled display wire."
+            return "Ready to build main wire and optional boundary markers."
         lines = [str(getattr(obj, "Status", "Ready") or "Ready")]
-        sample_count = int(getattr(obj, "SampleCount", 0) or 0)
         segment_count = int(getattr(obj, "SegmentCount", 0) or 0)
-        quality = str(getattr(obj, "DisplayQuality", "Normal") or "Normal")
-        policy = str(getattr(obj, "SamplingPolicySummary", "-") or "-")
+        boundary_count = int(getattr(obj, "BoundaryMarkerCount", 0) or 0)
+        boundary_kind_summary = str(getattr(obj, "BoundaryMarkerKindSummary", "-") or "-")
         split_summary = str(getattr(obj, "SegmentSplitSourceSummary", "-") or "-")
-        lines.append(f"Samples: {sample_count} | Segments: {segment_count} | Quality: {quality}")
-        if policy != "-":
-            lines.append(f"Sampling: {policy}")
+        wire_mode = str(getattr(obj, "ActiveWireDisplayMode", "Polyline") or "Polyline")
+        source_transition_geometry = str(getattr(obj, "SourceTransitionGeometry", "-") or "-")
+        source_edge_summary = str(getattr(obj, "SourceEdgeTypeSummary", "-") or "-")
+        lines.append(f"Segments: {segment_count} | Boundaries: {boundary_count}")
+        lines.append(f"Wire Mode: {wire_mode}")
         if split_summary != "-":
             lines.append(f"Split Sources: {split_summary}")
+        if boundary_kind_summary != "-":
+            lines.append(f"Boundary Kinds: {boundary_kind_summary}")
+        if source_transition_geometry != "-" or source_edge_summary != "-":
+            lines.append(f"Source Geometry: {source_transition_geometry} | {source_edge_summary}")
         return "\n".join(lines)
 
     def _update_status(self):
@@ -375,16 +466,20 @@ class Centerline3DTaskPanel:
     def _build_completion_message(self, disp):
         lines = [
             "3D centerline display build completed.",
-            f"Sampled stations: {int(getattr(disp, 'SampleCount', 0) or 0)}",
             f"Planned segments: {int(getattr(disp, 'SegmentCount', 0) or 0)}",
-            f"Display quality: {str(getattr(disp, 'DisplayQuality', 'Normal') or 'Normal')}",
+            f"Boundary markers: {int(getattr(disp, 'BoundaryMarkerCount', 0) or 0)}",
+            f"Wire mode: {str(getattr(disp, 'ActiveWireDisplayMode', 'Polyline') or 'Polyline')}",
         ]
-        policy = str(getattr(disp, "SamplingPolicySummary", "-") or "-")
         split_summary = str(getattr(disp, "SegmentSplitSourceSummary", "-") or "-")
-        if policy != "-":
-            lines.append(f"Sampling: {policy}")
+        boundary_kind_summary = str(getattr(disp, "BoundaryMarkerKindSummary", "-") or "-")
+        source_transition_geometry = str(getattr(disp, "SourceTransitionGeometry", "-") or "-")
+        source_edge_summary = str(getattr(disp, "SourceEdgeTypeSummary", "-") or "-")
         if split_summary != "-":
             lines.append(f"Split sources: {split_summary}")
+        if boundary_kind_summary != "-":
+            lines.append(f"Boundary kinds: {boundary_kind_summary}")
+        if source_transition_geometry != "-" or source_edge_summary != "-":
+            lines.append(f"Source geometry: {source_transition_geometry} | {source_edge_summary}")
         lines.append("Design frames remain station-based.")
         return "\n".join(lines)
 
@@ -413,13 +508,17 @@ class Centerline3DTaskPanel:
         disp.UseStationing = bool(self.chk_use_stationing.isChecked()) and (st is not None)
         disp.ElevationSource = str(self.cmb_elevation.currentText() or "Auto")
         disp.ShowWire = bool(self.chk_show_wire.isChecked())
-        disp.UseKeyStations = bool(self.chk_use_keys.isChecked())
+        disp.DisplayWireMode = str(self.cmb_wire_mode.currentText() or "SmoothSpline")
+        disp.ShowBoundaryMarkers = bool(self.chk_show_boundary_markers.isChecked())
+        disp.IncludeEndpointBoundaryMarkers = bool(self.chk_include_endpoint_markers.isChecked())
+        disp.BoundaryMarkerLength = self._display_to_meters(float(self.spin_marker_length.value()))
+        disp.UseKeyStations = True
         disp.SegmentByRegions = bool(self.chk_segment_regions.isChecked()) and (region is not None or bool(self._regions))
         disp.SegmentByStructures = bool(self.chk_segment_structures.isChecked()) and (structure is not None or bool(self._structures))
-        disp.DisplayQuality = str(self.cmb_quality.currentText() or "Normal")
-        disp.MaxChordError = self._display_to_meters(float(self.spin_err.value()))
-        disp.MinStep = self._display_to_meters(float(self.spin_min.value()))
-        disp.MaxStep = self._display_to_meters(float(self.spin_max.value()))
+        disp.DisplayQuality = "Normal"
+        disp.MaxChordError = 0.02
+        disp.MinStep = 0.5
+        disp.MaxStep = 10.0
         disp.SourceCenterline = None
         disp.touch()
 

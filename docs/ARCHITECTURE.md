@@ -71,20 +71,22 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 ### 2.6 Centerline3DDisplay (`freecad/Corridor_Road/objects/obj_centerline3d_display.py`)
 - Purpose: 3D centerline rendering only.
 - Precision/rendering note:
-  - visual zig-zag or wiggly appearance in zoom/pan scenarios should be treated as a display-side sampling/rendering artifact, not as the engineering source-of-truth path
+  - visual zig-zag or wiggly appearance in zoom/pan scenarios should be treated as a display-side rendering symptom, not as the engineering source-of-truth path
   - station-based section/corridor design must continue to resolve geometry from `point3d_at_station(...)` / `frame_at_station(...)` rather than trusting the rendered wire as the design contract
-  - because this visual artifact can reduce user confidence, the preferred mitigation is denser centerline display sampling rather than changing the station-based design model
+  - current implementation prefers BSpline transition source geometry plus `SmoothSpline` display wire output before considering denser internal point generation
 - Input:
   - direct source links: `Alignment`, `Stationing`, `VerticalAlignment`, `ProfileBundle`
   - semantic split links: `RegionPlanSource`, `StructureSetSource`
   - optional legacy link: `SourceCenterline` (Centerline3D)
 - Controls:
-  - `ShowWire`, `UseStationing`, `SamplingInterval`, `ElevationSource`
-  - `MaxChordError`, `MinStep`, `MaxStep`, `UseKeyStations`, `DisplayQuality`
-  - `SegmentByRegions`, `SegmentByStructures`
+  - visible controls: `ShowWire`, `DisplayWireMode`, `ShowBoundaryMarkers`, `IncludeEndpointBoundaryMarkers`, `BoundaryMarkerLength`
+  - source links: `UseStationing`, `ElevationSource`, direct source links, semantic split links
+  - hidden internal controls: `MaxChordError`, `MinStep`, `MaxStep`, `UseKeyStations`, `DisplayQuality`
+  - semantic split toggles: `SegmentByRegions`, `SegmentByStructures`
 - Results:
-  - `SampledStations`, `SampledPoints`, `SampleCount`, `Status`
-  - `SegmentCount`, `SegmentKindSummary`, `SegmentSplitSourceSummary`, `SegmentRows`, `SamplingPolicySummary`
+  - preferred result names: `DisplayStations`, `DisplayPoints`, `DisplayPointCount`, `DisplayPolicySummary`, `MostDetailedSegmentSummary`
+  - user-facing summaries: `SegmentCount`, `SegmentKindSummary`, `SegmentSplitSourceSummary`, `BoundaryMarkerCount`, `BoundaryMarkerKindSummary`, `ActiveWireDisplayMode`, `SourceTransitionGeometry`, `SourceEdgeTypeSummary`, `Status`
+  - no legacy `Sampled*` / `Sampling*` shadow properties are retained on `Centerline3DDisplay`
 
 ### 2.7 AssemblyTemplate (`freecad/Corridor_Road/objects/obj_assembly_template.py`)
 - Purpose: cross-section template parameters.
@@ -695,7 +697,7 @@ Practical rule:
   - `VerticalAlignment.elevation_at_station` if available
   - else `ProfileBundle` FG interpolation
   - else `FlatZero`
-- Display tessellation settings (`SamplingInterval`, `MaxChordError`) must not change section baseline.
+- Display tessellation settings (`MaxChordError`) must not change section baseline.
 
 ### 5.2 Section Frame Rule (T-N-Z)
 - `T(s) = normalize(P(s+eps) - P(s-eps))`

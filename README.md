@@ -12,6 +12,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
   - Assembly -> Sections -> Corridor Loft -> Design Terrain -> Cut/Fill
 - Enforces a fixed Civil3D-style project tree schema with automatic object routing.
 - Keeps object links and recompute flow organized under a project container.
+- Uses a project-level local/world coordinate transform policy so world-coordinate inputs can be normalized into local engineering model space.
 
 ## Wiki Documentation
 - Online Wiki: https://github.com/ganadara135/CorridorRoad/wiki
@@ -31,8 +32,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
 
 ## Latest Release
-- Current stable release: `v0.2.3`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.3
+- Current stable release: `v0.2.6`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.6
 
 ## Main Commands
 - `New Project`
@@ -42,12 +43,12 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - `Generate Stations`
 - `Edit Profiles`
 - `Edit PVI`
-- `Generate Centerline3D`
+- `3D Centerline`
 - `Typical Section`
 - `Edit Structure`
 - `Sections`
 - `Cross Section Viewer`
-- `Generate Corridor Loft`
+- `Build Corridor`
 - `Generate Design Grading Surface`
 - `Generate Design Terrain`
 - `Generate Cut/Fill Calc`
@@ -57,7 +58,7 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Fixed Project Tree Schema
 - `CorridorRoad Project`
 - `01_Inputs/{Terrains,Survey,Structures}`
-- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,Assembly,Sections,Structure Sections,Corridor}`
+- `02_Alignments/ALN_<Name>/{Horizontal,Stationing,VerticalProfiles,3D Centerline,Assembly,Regions,Sections,Structure Sections,Corridor}`
 - `03_Surfaces`
 - `04_Analysis`
 - `05_References` (optional)
@@ -65,6 +66,11 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 ## Current Key Policies
 - SectionSet daylight terrain source is `Mesh only`.
 - Project Setup is opened from the project context menu.
+- Project Setup stores both world origin and local origin:
+  - `Project Origin E/N/Z`
+  - `Local Origin X/Y/Z`
+  - `North Rotation`
+- World-coordinate workflows are intended to convert into project-local model space as early as possible, instead of carrying large global coordinates through the full modeling/display pipeline.
 - `Project Setup` now stores a `Coordinate Workflow` recommendation:
   - `World-first`
   - `Local-first`
@@ -82,6 +88,12 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Alignment presets are authored as local-pattern rows.
 - If `Alignment` is currently in `World (E/N)` mode, `Load Preset` converts those local preset rows to world coordinates using the active `Project Setup`.
 - `DesignTerrain`/`CutFillCalc` runtime sampling uses a DEM-style regular XY grid (`CellSize` based), with per-cell elevation queried from source mesh triangles.
+- `3D Centerline` is a display object (`Centerline3DDisplay`) and is not the engineering source of truth for section/corridor evaluation.
+- Current 3D centerline display policy:
+  - default visible wire mode is `SmoothSpline`
+  - `Polyline` remains available as a debug/comparison mode
+  - semantic boundary markers may be shown for regions/structures without breaking the main wire into tree-level segment objects
+- The recent visible zig-zag / wiggly 3D centerline issue was addressed on the display side by switching the visible line build from a polyline-style representation to a spline-based representation, while keeping station-based engineering logic unchanged.
 
 ## Release And Versioning Policy
 - Addon listing remains branch-based.

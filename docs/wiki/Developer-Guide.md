@@ -18,14 +18,15 @@ This page is the quick technical map for contributors.
 - Terrain/design/cut-fill runtime uses DEM-style regular XY grid sampling.
 - Daylight terrain source in section generation is mesh based.
 - Coordinate handling uses project-level local/world transform policy.
-- 3D centerline wire is a sampled display object; station-based design logic must not treat its visual polyline as the engineering source of truth.
-- If the 3D centerline looks zig-zag or slightly wiggly during zoom/pan, interpret that first as a sampling/rendering precision issue. The current mitigation direction is denser display sampling, not a change to the station-based design method.
+- 3D centerline wire is a display object; station-based design logic must not treat its visible wire as the engineering source of truth.
+- `HorizontalAlignment` transition curves now prefer BSpline source edges, while `Centerline3DDisplay` defaults to `SmoothSpline` for viewer-facing wire output.
+- If the 3D centerline still looks zig-zag or slightly wiggly during zoom/pan, treat that as a display/rendering symptom first, then inspect source/display diagnostics such as `TransitionGeometryMode`, `EdgeTypeSummary`, `DisplayWireMode`, and `ActiveWireDisplayMode`.
 
 ## Main Objects
 - `HorizontalAlignment`: horizontal geometry + key stations
 - `Stationing`: station list generation
 - `ProfileBundle` / `VerticalAlignment`: EG/FG data and vertical geometry
-- `Centerline3DDisplay`: sampled centerline rendering
+- `Centerline3DDisplay`: viewer-facing centerline rendering
 - `RegionPlan`: alignment-owned region authoring model with grouped `Base Regions`, `Overrides`, and `Hints`
 - `SectionSet`: station resolve + section generation + daylight
 - `CorridorLoft`: corridor surface generation from sections
@@ -119,19 +120,30 @@ Command-id note:
 - `3D Centerline` task panel currently keeps:
   - command title/user intent focused on display generation, not design regeneration
   - optional `RegionPlan` / `StructureSet` source pickers
+  - `Wire Display Mode` with `SmoothSpline` as the default user-facing mode and `Polyline` retained for debugging
   - semantic split toggles for region/structure boundaries and transitions
-  - `Display Quality` as the first tuning control; `Max Chord Error`, `Min Step`, and `Max Step` remain advanced display controls
+  - boundary-marker child objects under the main centerline object instead of turning the main wire into explicit tree-level segment objects
+  - optional endpoint markers for explicit start/end review
+  - no user-facing sampling or chord-error tuning; internal display-point generation now stays behind the task-panel UX
+  - preferred runtime/result naming is now `Display*`; older `Sampled*` / `Sampling*` compatibility shadows have been removed from `Centerline3DDisplay`
+  - property view should also hide raw display-point arrays and internal segmentation row payloads
   - completion/status text explicitly stating that station-based frames remain the engineering source of truth
+  - source/display diagnostics kept distinct so users can tell whether jaggedness comes from source transition geometry or display wire mode
 - `Typical Section` editor currently keeps:
   - `Shape` active only on `ditch` rows; non-ditch rows keep it blank and disabled
   - manual 3D preview via `Refresh Preview`; row edits do not auto-preview
   - full preview wire visible together with `SelectedComponentPreview` for the selected component row
 
 ## 3D Centerline Confidence Note
-- `Centerline3DDisplay` is a viewer-facing sampled wire.
-- `SectionSet`, structure frame placement, and corridor generation should continue to evaluate the alignment/profile model at stations rather than inheriting geometric truth from the sampled wire.
+- `Centerline3DDisplay` is a viewer-facing wire and is not the engineering source of truth.
+- `HorizontalAlignment` transition spirals now prefer fitted BSpline source edges; `Centerline3DDisplay` adds an independent display-layer `SmoothSpline` / `Polyline` choice on top of that source.
+- `Polyline` remains a supported debug/display comparison mode; cleanup work on 3D centerline UX must not remove it.
+- `SectionSet`, structure frame placement, and corridor generation continue to evaluate the alignment/profile model at stations rather than inheriting geometric truth from the visible wire.
 - A visibly segmented 3D centerline can still make the model look less trustworthy to users even when the station-based calculations are correct.
-- Preferred follow-up is to increase centerline display sampling density so the rendered wire better matches the underlying station-based geometry.
+- Preferred debugging order is:
+  - inspect source diagnostics (`TransitionGeometryMode`, `EdgeTypeSummary`)
+  - inspect display diagnostics (`DisplayWireMode`, `ActiveWireDisplayMode`)
+  - only then inspect internal display-point density if debugging really requires it
 - Region/structure semantic segmentation may intentionally increase visible wire splits while still preserving the same station-based engineering numbers downstream.
   - pavement preview/report object label as `PavementDisplay`
   - click-locked component-row activation; hover should not change the active row
@@ -182,4 +194,4 @@ Command-id note:
 4. Attach minimal CSV reproducer when possible.
 
 ---
-Last verified with commit: `61ba6d5`
+Last verified with commit: `5174237`
