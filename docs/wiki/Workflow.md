@@ -170,14 +170,28 @@ Current notes:
 
 ## 5. 3D Centerline
 1. Run `3D Centerline`.
-2. Confirm sampled station count and wire in 3D view.
+2. In the task panel, confirm the source links:
+   - `Alignment`
+   - optional `Stationing`
+   - optional `Vertical Alignment` / `ProfileBundle`
+   - optional `RegionPlan`
+   - optional `StructureSet`
+3. If you want the display wire to break at semantic boundaries, keep region/structure split toggles enabled.
+4. Use `Show boundary-marker child objects` to reveal semantic boundaries without fragmenting the main wire.
+5. Turn on `Include start/end markers` only when you want explicit endpoint markers in the tree and 3D view.
+6. Click `Build 3D Centerline Display`.
+7. Confirm the wire in 3D view.
+8. If enabled, confirm `Boundary [Kind] @STA ...` child objects appear under the centerline in the tree.
 
 Output:
 - Centerline3D display object
 
 Validation:
 - Completion popup appears.
-- Sampled station count is non-zero and wire is visible.
+- Wire is visible and the reported wire mode matches the requested display mode.
+- Task panel status reports segment/boundary counts plus source/display diagnostics.
+- If semantic split is enabled, split-source summary reflects region/structure boundaries and transitions.
+- Boundary-marker child objects appear only at semantic boundary stations; the main wire stays continuous.
 
 [3D centerline wire and completion popup](images/wiki-workflow-05-centerline3d.png)
 

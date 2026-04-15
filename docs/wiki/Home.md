@@ -19,6 +19,8 @@ This wiki is the practical guide for daily use and development.
 - Build alignment/stations/profiles/sections/corridor in one pipeline.
 - Import terrain from point cloud CSV using DEM-style grid sampling.
 - Run design terrain and cut/fill analysis.
+- Use project-level local/world coordinate transforms so world-coordinate inputs can be normalized into local engineering model space.
+- Review a spline-based `3D Centerline` display while keeping station-based geometry as the engineering source of truth.
 
 ![Workbench overview screen with main toolbar commands visible](images/wiki-home-workbench-overview.png)
 
@@ -58,8 +60,8 @@ Practical validation note:
 - Use the forum thread for usage questions, bug discussion, and development feedback.
 
 ## Latest Release
-- Current stable release: `v0.2.0`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.0
+- Current stable release: `v0.2.6`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.6
 
 ## Core Pipeline
 `Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor -> Design Terrain -> Cut/Fill`
@@ -81,6 +83,9 @@ Practical validation note:
 - Daylight terrain source in section workflow is mesh based.
 - Runtime terrain/cut-fill sampling follows DEM-style regular XY grid.
 - For coordinate-sensitive workflows, confirm Local/World mode before generation commands.
+- Project Setup stores world origin, local origin, and north rotation so world-coordinate workflows can be converted back into local model space.
+- `3D Centerline` is a display object; sections, structures, and corridor generation still evaluate the underlying station-based alignment/profile model.
+- The recent visible zig-zag / wiggly 3D centerline issue was addressed on the display side by replacing the old polyline-style visible wire with a spline-based visible wire.
 - Structure section overlays are shown in a separate `Structure Sections` tree folder so section display stays corridor-safe.
 - `GeometryMode=external_shape` currently improves realistic structure display/reference placement, but earthwork still follows structure `Type`-based rules.
 - The maintained practical sample inventory lives in `docs/PRACTICAL_SAMPLE_SET.md`.

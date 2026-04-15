@@ -16,6 +16,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     ALN_REF_NAME_PROP,
     ALN_REF_PROP,
     ALIGNMENT_ASSEMBLY,
+    ALIGNMENT_CENTERLINE,
     ALIGNMENT_CORRIDOR,
     ALIGNMENT_HORIZONTAL,
     ALIGNMENT_REGIONS,
@@ -176,6 +177,10 @@ def run():
     disp.VerticalAlignment = va
     sec.SourceCenterlineDisplay = disp
     sec.AssemblyTemplate = asm
+    cl_boundary = doc.addObject("Part::Feature", "CenterlineBoundaryMarker")
+    if not hasattr(cl_boundary, "ParentCenterline3DDisplay"):
+        cl_boundary.addProperty("App::PropertyLink", "ParentCenterline3DDisplay", "Smoke", "Centerline display link")
+    cl_boundary.ParentCenterline3DDisplay = disp
     cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
     if not hasattr(cor, "SourceSectionSet"):
         cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
@@ -185,7 +190,7 @@ def run():
         cor_seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Smoke", "Corridor link")
     cor_seg.ParentCorridorLoft = cor
     assign_project_region_plan(prj, reg)
-    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp])
+    link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp, cl_boundary])
 
     # Late-binding alignment context should not leave an empty ALN_Unassigned root behind.
     sec_late = doc.addObject("Part::FeaturePython", "SectionSetLateBind")
@@ -203,7 +208,7 @@ def run():
     link_project(prj, adopt_extra=[disp_late, sec_late])
 
     _assert(_find_folder(prj, ALIGNMENT_ROOT) is not None, "Missing alignment root")
-    for k in (ALIGNMENT_HORIZONTAL, ALIGNMENT_STATIONING, ALIGNMENT_VERTICAL, ALIGNMENT_ASSEMBLY, ALIGNMENT_REGIONS, ALIGNMENT_SECTIONS, ALIGNMENT_CORRIDOR):
+    for k in (ALIGNMENT_HORIZONTAL, ALIGNMENT_STATIONING, ALIGNMENT_VERTICAL, ALIGNMENT_CENTERLINE, ALIGNMENT_ASSEMBLY, ALIGNMENT_REGIONS, ALIGNMENT_SECTIONS, ALIGNMENT_CORRIDOR):
         _assert(_find_folder(prj, k) is not None, f"Missing alignment subfolder: {k}")
     roots = [f for f in _iter_tree_folders(prj) if _key(f) == ALIGNMENT_ROOT]
     _assert(len(roots) >= 2, "Expected at least two alignment roots")
@@ -260,6 +265,7 @@ def run():
         va: ALIGNMENT_VERTICAL,
         pb: ALIGNMENT_VERTICAL,
         fg: ALIGNMENT_VERTICAL,
+        disp: ALIGNMENT_CENTERLINE,
         asm: ALIGNMENT_ASSEMBLY,
         reg: ALIGNMENT_REGIONS,
         sec: ALIGNMENT_SECTIONS,
@@ -278,6 +284,9 @@ def run():
     for obj, want_key in expected.items():
         got_key = _owner_key(prj, obj)
         _assert(got_key == want_key, f"{obj.Name} owner mismatch: got={got_key}, want={want_key}")
+    _assert(getattr(cl_boundary, "ParentCenterline3DDisplay", None) == disp, "Boundary marker should keep parent display link")
+    _assert(not _owners(prj, cl_boundary), "CenterlineBoundaryMarker should not be adopted into project tree folders")
+    _assert(_owner_key(prj, disp_late) == ALIGNMENT_CENTERLINE, "Late-bound 3D centerline display should land in alignment centerline folder")
 
     # No direct project links: object should still land under a valid alignment root.
     # Current routing prefers a document-level fallback alignment when one exists,

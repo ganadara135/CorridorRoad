@@ -99,12 +99,55 @@ def _polyline_edges(points, tol: float = 1e-7):
     return edges
 
 
+def _spline_edge(points, start_tangent=None, end_tangent=None, tol: float = 1e-7):
+    pts = _dedupe_points(list(points or []), tol=tol)
+    if len(pts) < 2:
+        return None
+    if len(pts) == 2:
+        return Part.makeLine(pts[0], pts[1])
+
+    def _norm_vec(vec):
+        if vec is None or getattr(vec, "Length", 0.0) <= 1.0e-12:
+            return None
+        vv = App.Vector(float(vec.x), float(vec.y), float(vec.z))
+        if vv.Length <= 1.0e-12:
+            return None
+        return vv.normalize()
+
+    try:
+        curve = Part.BSplineCurve()
+        st = _norm_vec(start_tangent)
+        et = _norm_vec(end_tangent)
+        if st is not None and et is not None:
+            try:
+                curve.interpolate(pts, InitialTangent=st, FinalTangent=et)
+            except TypeError:
+                curve.interpolate(pts)
+        else:
+            curve.interpolate(pts)
+        return curve.toShape()
+    except Exception:
+        return None
+
+
 def _model_length_from_meters(obj, meters: float) -> float:
     return _units.model_length_from_meters(getattr(obj, "Document", None), meters)
 
 
 def _meters_from_model_length(obj, value: float) -> float:
     return _units.meters_from_model_length(getattr(obj, "Document", None), value)
+
+
+def _edge_curve_kind(edge) -> str:
+    curve = getattr(edge, "Curve", None)
+    cname = str(type(curve).__name__ if curve is not None else "")
+    if "Line" in cname:
+        return "line"
+    if "BSpline" in cname or "Bezier" in cname:
+        return "spline"
+    if "Circle" in cname:
+        return "arc"
+    return "other"
 
 
 def _alignment_total_length_m(obj) -> float:
@@ -173,7 +216,7 @@ def ensure_alignment_properties(obj):
         obj.addProperty("App::PropertyBool", "UseTransitionCurves", "Alignment", "Enable transition curves (S-C-S) for corners")
         obj.UseTransitionCurves = True
     if not hasattr(obj, "SpiralSegments"):
-        obj.addProperty("App::PropertyInteger", "SpiralSegments", "Alignment", "Polyline segments per transition curve")
+        obj.addProperty("App::PropertyInteger", "SpiralSegments", "Alignment", "Control points per transition curve approximation")
         obj.SpiralSegments = 16
     if not hasattr(obj, "Closed"):
         obj.addProperty("App::PropertyBool", "Closed", "Alignment", "Close the wire")
@@ -220,6 +263,33 @@ def ensure_alignment_properties(obj):
         obj.addProperty("App::PropertyFloatList", "CSKeyStations", "Result", "Approx station at transition CS points")
     if not hasattr(obj, "STKeyStations"):
         obj.addProperty("App::PropertyFloatList", "STKeyStations", "Result", "Approx station at transition ST points")
+    if not hasattr(obj, "TransitionGeometryMode"):
+        obj.addProperty("App::PropertyString", "TransitionGeometryMode", "Result", "Transition geometry mode summary")
+        obj.TransitionGeometryMode = "-"
+    if not hasattr(obj, "EdgeTypeSummary"):
+        obj.addProperty("App::PropertyString", "EdgeTypeSummary", "Result", "Edge makeup summary")
+        obj.EdgeTypeSummary = "-"
+    if not hasattr(obj, "LineEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "LineEdgeCount", "Result", "Resolved line-edge count")
+        obj.LineEdgeCount = 0
+    if not hasattr(obj, "ArcEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "ArcEdgeCount", "Result", "Resolved arc-edge count")
+        obj.ArcEdgeCount = 0
+    if not hasattr(obj, "SplineEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "SplineEdgeCount", "Result", "Resolved spline-edge count")
+        obj.SplineEdgeCount = 0
+    if not hasattr(obj, "OtherEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "OtherEdgeCount", "Result", "Resolved other-edge count")
+        obj.OtherEdgeCount = 0
+    if not hasattr(obj, "TransitionCornerCount"):
+        obj.addProperty("App::PropertyInteger", "TransitionCornerCount", "Result", "Transition corner count")
+        obj.TransitionCornerCount = 0
+    if not hasattr(obj, "TransitionSplineEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "TransitionSplineEdgeCount", "Result", "Spline edge count used by transition spirals")
+        obj.TransitionSplineEdgeCount = 0
+    if not hasattr(obj, "TransitionPolylineEdgeCount"):
+        obj.addProperty("App::PropertyInteger", "TransitionPolylineEdgeCount", "Result", "Polyline edge count used by transition spirals")
+        obj.TransitionPolylineEdgeCount = 0
     if not hasattr(obj, "LengthSchemaVersion"):
         obj.addProperty("App::PropertyInteger", "LengthSchemaVersion", "Alignment", "Alignment scalar length storage schema")
         obj.LengthSchemaVersion = _ALIGNMENT_LENGTH_SCHEMA_TARGET
@@ -244,11 +314,20 @@ class HorizontalAlignment:
         ensure_alignment_properties(obj)
 
         try:
-            shape, total_len, messages = self._build_shape_and_checks(obj)
+            shape, total_len, messages, geometry_diag = self._build_shape_and_checks(obj)
             obj.Shape = shape
             obj.TotalLength = _meters_from_model_length(obj, float(total_len))
             obj.CriteriaMessages = messages
             obj.CriteriaStatus = "OK" if not messages else f"WARN ({len(messages)})"
+            obj.TransitionGeometryMode = str(geometry_diag.get("transition_geometry_mode", "-") or "-")
+            obj.EdgeTypeSummary = str(geometry_diag.get("edge_type_summary", "-") or "-")
+            obj.LineEdgeCount = int(geometry_diag.get("line_edge_count", 0) or 0)
+            obj.ArcEdgeCount = int(geometry_diag.get("arc_edge_count", 0) or 0)
+            obj.SplineEdgeCount = int(geometry_diag.get("spline_edge_count", 0) or 0)
+            obj.OtherEdgeCount = int(geometry_diag.get("other_edge_count", 0) or 0)
+            obj.TransitionCornerCount = int(geometry_diag.get("transition_corner_count", 0) or 0)
+            obj.TransitionSplineEdgeCount = int(geometry_diag.get("transition_spline_edge_count", 0) or 0)
+            obj.TransitionPolylineEdgeCount = int(geometry_diag.get("transition_polyline_edge_count", 0) or 0)
         except Exception as ex:
             obj.Shape = Part.Shape()
             obj.TotalLength = 0.0
@@ -259,6 +338,15 @@ class HorizontalAlignment:
             obj.SCKeyStations = []
             obj.CSKeyStations = []
             obj.STKeyStations = []
+            obj.TransitionGeometryMode = "-"
+            obj.EdgeTypeSummary = "-"
+            obj.LineEdgeCount = 0
+            obj.ArcEdgeCount = 0
+            obj.SplineEdgeCount = 0
+            obj.OtherEdgeCount = 0
+            obj.TransitionCornerCount = 0
+            obj.TransitionSplineEdgeCount = 0
+            obj.TransitionPolylineEdgeCount = 0
 
     def _build_shape_and_checks(self, obj):
         obj.IPKeyStations = []
@@ -269,7 +357,7 @@ class HorizontalAlignment:
 
         pts = _dedupe_points(list(getattr(obj, "IPPoints", []) or []))
         if len(pts) < 2:
-            return Part.Shape(), 0.0, ["Need at least 2 IP points."]
+            return Part.Shape(), 0.0, ["Need at least 2 IP points."], self._build_geometry_diagnostics([], [], use_transitions=False)
 
         poly_pts = list(pts)
         if bool(getattr(obj, "Closed", False)):
@@ -288,7 +376,8 @@ class HorizontalAlignment:
                     obj.IPKeyStations = _unique_sorted_floats(vals)
             except Exception:
                 pass
-            return wire, float(wire.Length), []
+            diag = self._build_geometry_diagnostics(list(getattr(wire, "Edges", []) or []), [], use_transitions=False)
+            return wire, float(wire.Length), [], diag
 
         n = len(pts)
         radii_m = list(getattr(obj, "CurveRadii", []) or [])
@@ -419,7 +508,76 @@ class HorizontalAlignment:
             obj.STKeyStations = []
 
         messages = self._run_criteria(obj, pts, seg_len, corners)
-        return shape, float(shape.Length), messages
+        diag = self._build_geometry_diagnostics(list(getattr(shape, "Edges", []) or []), corners, use_transitions=use_transitions)
+        return shape, float(shape.Length), messages, diag
+
+    @staticmethod
+    def _build_geometry_diagnostics(edges, corners, use_transitions: bool):
+        line_count = 0
+        arc_count = 0
+        spline_count = 0
+        other_count = 0
+        for edge in list(edges or []):
+            kind = _edge_curve_kind(edge)
+            if kind == "line":
+                line_count += 1
+            elif kind == "arc":
+                arc_count += 1
+            elif kind == "spline":
+                spline_count += 1
+            else:
+                other_count += 1
+
+        transition_corner_count = 0
+        transition_spline_edge_count = 0
+        transition_polyline_edge_count = 0
+        for corner in list(corners or []):
+            if not corner:
+                continue
+            if float(corner.get("ls_eff", 0.0) or 0.0) <= 1.0e-9:
+                continue
+            transition_corner_count += 1
+            if str(corner.get("spiral_in_mode", "") or "") == "spline":
+                transition_spline_edge_count += int(corner.get("spiral_in_edge_count", 0) or 0)
+            else:
+                transition_polyline_edge_count += int(corner.get("spiral_in_edge_count", 0) or 0)
+            if str(corner.get("spiral_out_mode", "") or "") == "spline":
+                transition_spline_edge_count += int(corner.get("spiral_out_edge_count", 0) or 0)
+            else:
+                transition_polyline_edge_count += int(corner.get("spiral_out_edge_count", 0) or 0)
+
+        if transition_spline_edge_count > 0 and transition_polyline_edge_count <= 0:
+            transition_geometry_mode = "BSplineSpiral"
+        elif transition_spline_edge_count > 0 and transition_polyline_edge_count > 0:
+            transition_geometry_mode = "HybridSpiral"
+        elif transition_polyline_edge_count > 0:
+            transition_geometry_mode = "PolylineSpiral"
+        elif arc_count > 0:
+            transition_geometry_mode = "ArcOnly"
+        elif use_transitions:
+            transition_geometry_mode = "NoEffectiveTransition"
+        else:
+            transition_geometry_mode = "NoTransition"
+
+        parts = [f"line:{line_count}", f"arc:{arc_count}", f"spline:{spline_count}", f"other:{other_count}"]
+        if transition_spline_edge_count > 0:
+            parts.append(f"transition_spline:{transition_spline_edge_count}")
+        if transition_polyline_edge_count > 0:
+            parts.append(f"transition_polyline:{transition_polyline_edge_count}")
+        if transition_corner_count > 0:
+            parts.append(f"transition_corners:{transition_corner_count}")
+
+        return {
+            "transition_geometry_mode": transition_geometry_mode,
+            "edge_type_summary": ", ".join(parts) if parts else "-",
+            "line_edge_count": int(line_count),
+            "arc_edge_count": int(arc_count),
+            "spline_edge_count": int(spline_count),
+            "other_edge_count": int(other_count),
+            "transition_corner_count": int(transition_corner_count),
+            "transition_spline_edge_count": int(transition_spline_edge_count),
+            "transition_polyline_edge_count": int(transition_polyline_edge_count),
+        }
 
     def _solve_corner(self, ip, u_in, u_out, len_in, len_out, radius_req, ls_req, spiral_segments):
         if radius_req <= 1e-9:
@@ -525,14 +683,28 @@ class HorizontalAlignment:
             xk, yk = _spiral_xy(u, r_eff, ls_eff)
             pts_sp2.append(exitp - u_out * xk + n_out * yk)
 
+        spiral_in_edge = _spline_edge(pts_sp1, start_tangent=u_in, end_tangent=t_sc)
+        if spiral_in_edge is not None:
+            spiral_in_edges = [spiral_in_edge]
+            spiral_in_mode = "spline"
+        else:
+            spiral_in_edges = _polyline_edges(pts_sp1)
+            spiral_in_mode = "polyline"
         edges = []
-        edges.extend(_polyline_edges(pts_sp1))
+        edges.extend(spiral_in_edges)
 
         arc = self._make_arc_edge(c1, r_eff, sc, csp, turn_sign)
         if arc is not None:
             edges.append(arc)
 
-        edges.extend(_polyline_edges(pts_sp2))
+        spiral_out_edge = _spline_edge(pts_sp2, start_tangent=t_cs, end_tangent=u_out)
+        if spiral_out_edge is not None:
+            spiral_out_edges = [spiral_out_edge]
+            spiral_out_mode = "spline"
+        else:
+            spiral_out_edges = _polyline_edges(pts_sp2)
+            spiral_out_mode = "polyline"
+        edges.extend(spiral_out_edges)
 
         if not edges:
             return None
@@ -552,6 +724,10 @@ class HorizontalAlignment:
             "theta": float(theta),
             "trim": float(t_use),
             "turn_sign": float(turn_sign),
+            "spiral_in_mode": str(spiral_in_mode),
+            "spiral_in_edge_count": int(len(spiral_in_edges)),
+            "spiral_out_mode": str(spiral_out_mode),
+            "spiral_out_edge_count": int(len(spiral_out_edges)),
         }
 
     @staticmethod

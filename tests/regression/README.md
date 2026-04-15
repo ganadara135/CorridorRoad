@@ -43,6 +43,9 @@ Run these before merging short-term structure/corridor validation work:
 23. `smoke_profile_fg_tools.py`
 24. `smoke_pvi_starter_defaults.py`
 25. `smoke_cross_section_viewer_payload.py`
+26. `smoke_centerline3d_display_segmentation.py`
+27. `smoke_alignment_transition_geometry.py`
+28. `smoke_alignment_transition_downstream.py`
 
 ## How To Run
 
@@ -76,6 +79,9 @@ FreeCADCmd -c "exec(open(r'tests/regression/smoke_cutfill_quality_review.py', 'r
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
 FreeCADCmd -c "exec(open(r'tests/regression/smoke_cross_section_viewer_payload.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_centerline3d_display_segmentation.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_alignment_transition_geometry.py', 'r', encoding='utf-8').read())"
+FreeCADCmd -c "exec(open(r'tests/regression/smoke_alignment_transition_downstream.py', 'r', encoding='utf-8').read())"
 ```
 
 If you need an explicit executable path, use your local FreeCAD installation path:
@@ -106,6 +112,9 @@ If you need an explicit executable path, use your local FreeCAD installation pat
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_profile_fg_tools.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_pvi_starter_defaults.py', 'r', encoding='utf-8').read())"
 & 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_cross_section_viewer_payload.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_centerline3d_display_segmentation.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_alignment_transition_geometry.py', 'r', encoding='utf-8').read())"
+& 'D:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe' -c "exec(open(r'tests/regression/smoke_alignment_transition_downstream.py', 'r', encoding='utf-8').read())"
 ```
 
 For a repeatable short-term pass, you can also use:
