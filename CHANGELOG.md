@@ -9,6 +9,11 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Changed
+- Placeholder for upcoming changes.
+
+## [0.2.7] - 2026-04-15
+
 ### Added
 - Spline-based `3D Centerline` visible wire mode with `SmoothSpline` as the default display path and `Polyline` retained for debug/comparison review.
 - Semantic boundary-marker child objects and task-panel diagnostics for region/structure-aware 3D centerline display review.
