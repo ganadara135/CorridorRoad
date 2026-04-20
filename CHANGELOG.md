@@ -10,6 +10,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Changed
+- Retired the legacy proxy module `obj_corridor_loft.py` and its internal `CorridorLoft` proxy type, establishing `obj_corridor.py` and `Corridor` as the canonical standard.
+- Established backwards compatibility module mappings in `virtual_paths.py` so legacy `.FCStd` files containing `CorridorLoft` and its historical module paths restore transparently to the new `Corridor` proxy.
 - Retired the legacy command alias `CorridorRoad_GenerateCorridorLoft` and removed the legacy command-wrapper module.
 - Retired the legacy task-panel alias path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) and updated the Loft-retirement gate docs/tests accordingly.
 - Retired the hidden project-link property name `CorridorLoft` and switched `CorridorRoadProject` to the canonical hidden `Corridor` link.
