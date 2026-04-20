@@ -11,6 +11,7 @@ try:
 except Exception:
     Part = None
 
+from freecad.Corridor_Road.corridor_compat import CORRIDOR_PROXY_TYPE
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 
@@ -71,7 +72,7 @@ def _empty_shape():
 
 def _mark_dependency_needs_recompute(obj_dep, status_text: str):
     proxy_type = str(getattr(getattr(obj_dep, "Proxy", None), "Type", "") or "")
-    hide_user_stale_state = proxy_type == "CorridorLoft"
+    hide_user_stale_state = proxy_type == CORRIDOR_PROXY_TYPE
     try:
         if hasattr(obj_dep, "NeedsRecompute"):
             obj_dep.NeedsRecompute = True
@@ -377,7 +378,7 @@ def _mark_dependents_from_region_plan(region_obj):
             try:
                 proxy_type = str(getattr(getattr(o, "Proxy", None), "Type", "") or "")
                 if getattr(o, "SourceSectionSet", None) == sec:
-                    if proxy_type == "CorridorLoft":
+                    if proxy_type == CORRIDOR_PROXY_TYPE:
                         _mark_dependency_needs_recompute(o, "NEEDS_RECOMPUTE: Source SectionSet changed.")
                     elif proxy_type == "DesignGradingSurface":
                         _mark_dependency_needs_recompute(o, "NEEDS_RECOMPUTE: Source SectionSet changed.")

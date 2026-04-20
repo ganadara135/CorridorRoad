@@ -205,20 +205,63 @@ Tasks:
 
 Current Phase 5 note:
 
-- Current active step: `Phase 5C.1 - compatibility boundary consolidation and retirement-gate hardening`
+- Current active step: `Phase 5C.6 - task-panel alias retirement gate coverage`
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
 - Preferred command module path now uses `cmd_generate_corridor.py`, while `cmd_generate_corridor_loft.py` remains as a compatibility wrapper.
 - Preferred task-panel class path now uses `CorridorTaskPanel`, while `CorridorLoftTaskPanel` remains as a compatibility alias.
 - Preferred task-panel module path now uses `task_corridor.py`, while `task_corridor_loft.py` remains as a compatibility wrapper.
 - Corridor compatibility names are now centralized in `freecad/Corridor_Road/corridor_compat.py`.
+- Raw compatibility literals in recompute routing and task-panel corridor creation now also resolve through `corridor_compat.py`.
+- Legacy corridor command id is now expected to remain only inside the compatibility-registration boundary, not in normal workbench UI wiring.
+- Legacy task-panel module/class aliases are now expected to remain only inside the compatibility import boundary, not in normal runtime imports.
 - Compatibility gates now have direct regression coverage:
   - `tests/regression/smoke_corridor_compat_aliases.py`
+  - `tests/regression/smoke_corridor_command_alias_boundary.py`
+  - `tests/regression/smoke_corridor_taskpanel_alias_boundary.py`
+  - `tests/regression/smoke_corridor_fcstd_restore.py`
   - `tests/regression/smoke_tree_schema.py`
 - Hard blockers still preventing full internal-name removal:
   - FCStd proxy/type restore still depends on `CorridorLoft`
   - hidden project link property `CorridorLoft` is still part of compatibility reopen logic
   - generated child-link property `ParentCorridorLoft` is still part of corridor segment/skip-marker ownership recovery
   - legacy command id `CorridorRoad_GenerateCorridorLoft` is still retained for older toolbars/macros
+
+Recommended retirement order from this point:
+
+1. Command alias retirement
+   - target: `CorridorRoad_GenerateCorridorLoft`
+   - why first: it is the least persistence-sensitive compatibility point
+   - gate:
+     - preferred command id has stayed documented for at least one release cycle
+     - in-repo workbench wiring and internal code no longer reference the legacy id except at the compatibility registration boundary
+     - toolbar/menu/macro compatibility has been manually re-checked
+     - release notes explicitly announce alias removal
+2. Task-panel import alias retirement
+   - targets: `task_corridor_loft.py`, `CorridorLoftTaskPanel`
+   - why second: import compatibility is easier to remove than persisted proxy/type names once command alias fallout is understood
+   - gate:
+     - in-repo runtime imports no longer reference the legacy task-panel module/class except at the compatibility import boundary
+     - no in-repo imports still depend on the legacy task-panel path
+     - compatibility smoke no longer needs the legacy import branch
+3. Hidden project link retirement
+   - target: hidden property `CorridorLoft`
+   - why third: FCStd project reopen still depends on it today
+   - gate:
+     - replacement persistence path exists
+     - FCStd reopen smokes pass without resynchronizing through the compatibility property
+4. Child-link property retirement
+   - target: `ParentCorridorLoft`
+   - why fourth: generated child ownership still persists through that compatibility name
+   - gate:
+     - segment/skip-marker ownership recovery uses a replacement property name
+     - tree/adoption and reopen smokes pass with the replacement path
+5. Proxy/module/type retirement
+   - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
+   - why last: this is the highest-risk FCStd restore boundary
+   - gate:
+     - canonical replacement proxy/type/module path exists
+     - FCStd reopen/restore smokes pass for the renamed path
+     - virtual-path fallback can be removed without restore regressions
 
 ## Current Phase 1 Work Log
 
@@ -260,5 +303,10 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5A2 preferred module path cleanup (`cmd_generate_corridor.py`, `task_corridor.py`)
 - [x] Phase 5B compatibility gate regression coverage
 - [x] Phase 5B2 compatibility-name centralization (`corridor_compat.py`)
-- [ ] Phase 5C1 child-link compatibility retirement gate (`ParentCorridorLoft`)
+- [x] Phase 5C1 child-link compatibility retirement gate (`ParentCorridorLoft`)
+- [x] Phase 5C2 FCStd restore/reopen smoke coverage (`smoke_corridor_fcstd_restore.py`)
+- [x] Phase 5C3 raw compatibility literal isolation (`obj_region_plan.py`, `obj_structure_set.py`, `task_corridor.py`)
+- [x] Phase 5C4 alias retirement sequencing and exit-check ownership
+- [x] Phase 5C5 command alias boundary coverage (`smoke_corridor_command_alias_boundary.py`)
+- [x] Phase 5C6 task-panel alias boundary coverage (`smoke_corridor_taskpanel_alias_boundary.py`)
 - [ ] Phase 5C compatibility alias retirement gates

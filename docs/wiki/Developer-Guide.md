@@ -84,9 +84,12 @@ Compatibility window:
 - Proxy/module/type names such as `CorridorLoft` stay only while FCStd proxy restore and virtual-path alias mapping still rely on them. Remove them only after restore/recompute smokes prove the renamed path is stable.
 - Generated child objects still use `ParentCorridorLoft` as the compatibility ownership link. New code should reference the compatibility constant instead of spelling that property name directly.
 - New code should use corridor helpers such as `resolve_project_corridor()` and `assign_project_corridor()` instead of reading compatibility names directly.
+- Recompute routing and task-panel corridor creation should also use `corridor_compat.py` constants instead of raw `CorridorLoft` literals.
+- The legacy command id `CorridorRoad_GenerateCorridorLoft` should remain only in the command registration compatibility boundary; normal workbench UI wiring should reference `CorridorRoad_GenerateCorridor`.
+- The legacy task-panel path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) should remain only in the task-panel import compatibility boundary; normal runtime imports should reference `task_corridor.py` and `CorridorTaskPanel`.
 - Preferred task-panel class path is now `CorridorTaskPanel`; `CorridorLoftTaskPanel` remains only as an import-compatibility alias.
 - Preferred task-panel module path is `task_corridor.py`; `task_corridor_loft.py` remains only as a compatibility wrapper.
-- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py` and `smoke_tree_schema.py`.
+- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.
 
 ## Completion Message Policy
 - Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.

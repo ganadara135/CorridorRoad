@@ -15,6 +15,7 @@ import Part
 
 from freecad.Corridor_Road.corridor_compat import (
     CORRIDOR_CHILD_LINK_PROPERTY,
+    CORRIDOR_PROXY_TYPE,
     CORRIDOR_SEGMENT_NAME,
     CORRIDOR_SKIP_MARKER_NAME,
 )
@@ -658,7 +659,7 @@ class CorridorLoft:
 
     def __init__(self, obj):
         obj.Proxy = self
-        self.Type = "CorridorLoft"
+        self.Type = CORRIDOR_PROXY_TYPE
         ensure_corridor_loft_properties(obj)
 
     @staticmethod

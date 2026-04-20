@@ -9,6 +9,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from freecad.Corridor_Road.corridor_compat import (
     CORRIDOR_CHILD_LINK_PROPERTY,
+    CORRIDOR_NAME_PREFIX,
     CORRIDOR_SEGMENT_NAME,
     CORRIDOR_SKIP_MARKER_NAME,
 )
@@ -446,7 +447,7 @@ class CorridorTaskPanel:
             if repaired is not None:
                 return repaired
 
-        cor = self.doc.addObject("Part::FeaturePython", "CorridorLoft")
+        cor = self.doc.addObject("Part::FeaturePython", CORRIDOR_NAME_PREFIX)
         CorridorLoft(cor)
         ViewProviderCorridorLoft(cor.ViewObject)
         cor.Label = "Corridor"
