@@ -15,6 +15,10 @@ from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
 from freecad.Corridor_Road.objects import unit_policy as _units
+from freecad.Corridor_Road.objects.section_strip_builder import (
+    make_tri_face as _shared_make_tri_face,
+    wire_points as _shared_wire_points,
+)
 
 
 ALLOWED_TYPES = (
@@ -209,7 +213,7 @@ def _mark_dependents_from_structure_set(structure_obj):
                             try:
                                 dep_type = str(getattr(getattr(dep, "Proxy", None), "Type", "") or "")
                                 if dep_type == "CutFillCalc" and getattr(dep, "SourceCorridor", None) == o:
-                                    _mark_dependency_needs_recompute(dep, "NEEDS_RECOMPUTE: Source CorridorLoft changed.")
+                                    _mark_dependency_needs_recompute(dep, "NEEDS_RECOMPUTE: Source corridor changed.")
                             except Exception:
                                 continue
                     elif proxy_type == "DesignGradingSurface":
@@ -521,6 +525,103 @@ def _section_wire_for_profile_record(base_pt, normal, zvec, rec, doc_or_obj=None
     return _make_profile_wire(origin, normal, zvec, coords)
 
 
+def _wire_loop_points(wire):
+    pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in list(_shared_wire_points(wire) or [])]
+    if len(pts) >= 2 and (pts[0] - pts[-1]).Length <= 1e-9:
+        pts = pts[:-1]
+    return pts
+
+
+def _face_from_loop_points(points):
+    pts = [App.Vector(float(p.x), float(p.y), float(p.z)) for p in list(points or [])]
+    if len(pts) < 3:
+        return None
+    if (pts[0] - pts[-1]).Length > 1e-9:
+        pts.append(pts[0])
+    try:
+        face = Part.Face(Part.makePolygon(pts))
+        if face is None or face.isNull():
+            return None
+        return face
+    except Exception:
+        return None
+
+
+def _build_profile_pair_solid(wire0, wire1):
+    if Part is None:
+        return None
+
+    pts0 = _wire_loop_points(wire0)
+    pts1 = _wire_loop_points(wire1)
+    if len(pts0) < 3 or len(pts1) < 3:
+        raise Exception("Profile pair has insufficient closed-loop points.")
+    if len(pts0) != len(pts1):
+        raise Exception(f"Profile pair point-count mismatch ({len(pts0)} vs {len(pts1)})")
+
+    faces = []
+    cap0 = _face_from_loop_points(pts0)
+    cap1 = _face_from_loop_points(list(reversed(pts1)))
+    if cap0 is None or cap1 is None:
+        raise Exception("Profile pair cap face construction failed.")
+    faces.extend([cap0, cap1])
+
+    count = len(pts0)
+    for idx in range(count):
+        p00 = pts0[idx]
+        p01 = pts0[(idx + 1) % count]
+        p10 = pts1[idx]
+        p11 = pts1[(idx + 1) % count]
+
+        try:
+            quad = Part.Face(Part.makePolygon([p00, p01, p11, p10, p00]))
+            if quad is not None and not quad.isNull():
+                faces.append(quad)
+                continue
+        except Exception:
+            pass
+
+        tri0 = _shared_make_tri_face(p00, p01, p11)
+        tri1 = _shared_make_tri_face(p00, p11, p10)
+        if tri0 is not None:
+            faces.append(tri0)
+        if tri1 is not None:
+            faces.append(tri1)
+
+    if len(faces) < 4:
+        raise Exception("Profile pair shell produced insufficient faces.")
+
+    shell = None
+    make_shell = getattr(Part, "makeShell", None)
+    if callable(make_shell):
+        try:
+            shell = make_shell(faces)
+        except Exception:
+            shell = None
+    if shell is None:
+        try:
+            shell = Part.Shell(faces)
+        except Exception as ex:
+            raise Exception(f"Profile pair shell construction failed: {ex}")
+    if shell is None or shell.isNull():
+        raise Exception("Profile pair shell construction returned null.")
+
+    make_solid = getattr(Part, "makeSolid", None)
+    if callable(make_solid):
+        try:
+            solid = make_solid(shell)
+            if _usable_solid(solid):
+                return solid
+        except Exception:
+            pass
+    try:
+        solid = Part.Solid(shell)
+        if _usable_solid(solid):
+            return solid
+    except Exception:
+        pass
+    raise Exception("Profile pair solid construction produced no usable solid.")
+
+
 def _build_box_culvert_template(base_pt, t, n, rec, length: float, width: float, height: float, z0: float, doc_or_obj=None):
     wall = max(_model_length(doc_or_obj, 0.10), abs(_model_length(doc_or_obj, float(rec.get("WallThickness", 0.0) or 0.0))))
     cells = max(1, int(round(float(rec.get("CellCount", 1) or 1))))
@@ -828,7 +929,7 @@ def _build_profile_segment_solids(obj, aln, rec, prev_n=None):
         if not fallback_needed and len(wires) >= 2 and Part is not None:
             for i in range(len(wires) - 1):
                 try:
-                    solid = Part.makeLoft([wires[i], wires[i + 1]], True, True)
+                    solid = _build_profile_pair_solid(wires[i], wires[i + 1])
                     if _usable_solid(solid):
                         solids.append(solid)
                         continue

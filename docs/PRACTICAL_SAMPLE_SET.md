@@ -78,7 +78,7 @@ It is the source of truth for:
 - Goal:
   - ditch / berm top-edge handling
   - pavement and roadside summary stability
-  - downstream `SectionSet -> CorridorLoft -> DesignGradingSurface` checks
+  - downstream `SectionSet -> Corridor -> DesignGradingSurface` checks
 
 ### 4. Structure Notch / Template Workflow
 - Structures:

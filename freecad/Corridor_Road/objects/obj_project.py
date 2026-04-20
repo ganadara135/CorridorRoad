@@ -1401,6 +1401,8 @@ def ensure_project_properties(obj):
     # Keep hidden property name `CorridorLoft` for compatibility with older files.
     # New code should prefer resolve/assign corridor helpers instead of using the
     # raw property name directly.
+    # Removal gate: only after a replacement persistence path exists and older
+    # FCStd files reopen with corridor links preserved.
     _ensure_hidden_link_property(obj, "CorridorLoft", "CorridorRoad", "Link to corridor object (compatibility name)")
     _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
     _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
@@ -1439,7 +1441,12 @@ def assign_project_region_plan(project_obj, region_obj):
 
 
 def ensure_corridor_object(corridor_obj):
-    """Return the corridor object or None when the input is not a CorridorLoft result."""
+    """Return the corridor object or None when the input is not a CorridorLoft result.
+
+    This helper is the preferred boundary for compatibility-name handling.
+    New code should call this helper instead of matching the raw compatibility
+    proxy/type/property names directly.
+    """
     if corridor_obj is None:
         return None
     try:
@@ -1453,6 +1460,23 @@ def ensure_corridor_object(corridor_obj):
     if proxy_type == "CorridorLoft" or name.startswith("CorridorLoft"):
         return corridor_obj
     return None
+
+
+def find_corridor_objects(doc):
+    out = []
+    seen = set()
+    if doc is None:
+        return out
+    for o in list(getattr(doc, "Objects", []) or []):
+        cor = ensure_corridor_object(o)
+        if cor is None:
+            continue
+        key = str(getattr(cor, "Name", "") or "") or str(id(cor))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cor)
+    return out
 
 
 def assign_project_corridor(project_obj, corridor_obj):
@@ -1487,10 +1511,8 @@ def resolve_project_corridor(project_obj_or_doc):
     corridor_obj = _project_corridor_candidate(prj)
     if corridor_obj is None:
         doc = getattr(prj, "Document", None)
-        for o in list(getattr(doc, "Objects", []) or []):
-            corridor_obj = ensure_corridor_object(o)
-            if corridor_obj is not None:
-                break
+        found = find_corridor_objects(doc)
+        corridor_obj = found[0] if found else None
     if corridor_obj is not None:
         assign_project_corridor(prj, corridor_obj)
     return corridor_obj

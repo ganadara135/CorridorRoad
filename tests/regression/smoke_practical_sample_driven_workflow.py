@@ -292,7 +292,7 @@ def run():
 
         _assert(_shape_ok(typ), "TypicalSectionTemplate did not generate geometry from practical sample CSV")
         _assert(_shape_ok(sec), "SectionSet did not generate geometry from practical sample workflow")
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry from practical sample workflow")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry from practical sample workflow")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh from practical sample workflow")
 
         _assert(int(getattr(typ, "AdvancedComponentCount", 0) or 0) >= 2, "Practical sample typical section should report advanced components")
@@ -315,8 +315,8 @@ def run():
         _assert(len(list(getattr(cor, "ResolvedNotchStructureIds", []) or [])) >= 1, "CorridorLoft notch structure ids missing")
         _assert(len(list(getattr(cor, "ExportSummaryRows", []) or [])) >= 1, "CorridorLoft export summary rows missing")
         cor_status = str(getattr(cor, "Status", "") or "")
-        _assert("corridorModes=" in cor_status, "CorridorLoft status missing corridor mode token")
-        _assert("typicalAdvanced=" in cor_status, "CorridorLoft status missing advanced typical summary")
+        _assert("corridorModes=" in cor_status, "Corridor status missing corridor mode token")
+        _assert("typicalAdvanced=" in cor_status, "Corridor status missing advanced typical summary")
 
         dgs_status = str(getattr(dgs, "Status", "") or "")
         _assert("earthwork=" in dgs_status, "DesignGradingSurface status missing earthwork token")

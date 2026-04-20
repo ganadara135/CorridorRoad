@@ -156,7 +156,7 @@ def run():
     cor_status = str(getattr(cor_multi, "Status", "") or "")
     _assert("bench=left" in cor_status, "Corridor status should propagate multi-bench summary")
     _assert("benchSections=2" in cor_status, "Corridor status should propagate multi-bench section count")
-    _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable ruled loft for multi-bench profiles")
+    _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable the ruled fallback for multi-bench profiles")
     dgs_status = str(getattr(dgs_multi, "Status", "") or "")
     _assert("bench=left" in dgs_status, "Design grading surface status should propagate multi-bench summary")
     _assert("benchSections=2" in dgs_status, "Design grading surface status should propagate multi-bench section count")

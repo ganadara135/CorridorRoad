@@ -8,6 +8,11 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft, ensure_corridor_loft_properties
+from freecad.Corridor_Road.objects.obj_project import (
+    assign_project_corridor,
+    find_corridor_objects,
+    resolve_project_corridor,
+)
 from freecad.Corridor_Road.objects.obj_section_set import region_plan_usage_enabled
 from freecad.Corridor_Road.objects.project_links import link_project
 
@@ -17,10 +22,10 @@ def _find_section_sets(doc):
 
 
 def _find_corridor_lofts(doc):
-    return find_all(doc, proxy_type="CorridorLoft", name_prefixes=("CorridorLoft",))
+    return find_corridor_objects(doc)
 
 
-class CorridorLoftTaskPanel:
+class CorridorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
         self._sections = []
@@ -346,15 +351,9 @@ class CorridorLoftTaskPanel:
 
         prj = find_project(self.doc)
         if prj is not None:
-            _add(getattr(prj, "CorridorLoft", None))
+            _add(resolve_project_corridor(prj))
         for o in self._corridors:
             _add(o)
-        for o in list(getattr(self.doc, "Objects", []) or []):
-            try:
-                if str(getattr(o, "Name", "") or "").startswith("CorridorLoft"):
-                    _add(o)
-            except Exception:
-                pass
         return out
 
     def _refresh_context(self):
@@ -369,7 +368,7 @@ class CorridorLoftTaskPanel:
 
             prj = find_project(self.doc)
             selected_sec = getattr(prj, "SectionSet", None) if prj is not None else None
-            selected_cor = getattr(prj, "CorridorLoft", None) if prj is not None else None
+            selected_cor = resolve_project_corridor(prj) if prj is not None else None
 
             self._fill_sections(selected=selected_sec)
             self._fill_targets(selected=selected_cor)
@@ -532,9 +531,9 @@ class CorridorLoftTaskPanel:
 
             prj = find_project(self.doc)
             if prj is not None:
+                assign_project_corridor(prj, cor)
                 link_project(
                     prj,
-                    links={"CorridorLoft": cor},
                     links_if_empty={"SectionSet": sec},
                     adopt_extra=[cor, sec],
                 )
@@ -563,9 +562,9 @@ class CorridorLoftTaskPanel:
                 segment_objs = []
             if prj is not None:
                 try:
+                    assign_project_corridor(prj, cor)
                     link_project(
                         prj,
-                        links={"CorridorLoft": cor},
                         links_if_empty={"SectionSet": sec},
                         adopt_extra=[cor, sec] + list(marker_objs) + list(segment_objs),
                     )
@@ -584,3 +583,7 @@ class CorridorLoftTaskPanel:
                 pass
         except Exception as ex:
             self.lbl_status.setText(f"ERROR: {ex}")
+
+
+# Legacy class alias retained for compatibility with older imports/tests.
+CorridorLoftTaskPanel = CorridorTaskPanel

@@ -150,7 +150,7 @@ def run():
     cor_status = str(getattr(cor_bench, "Status", "") or "")
     _assert("bench=left" in cor_status, "Corridor status should propagate bench summary")
     _assert("benchSections=2" in cor_status, "Corridor status should propagate bench section count")
-    _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable ruled loft for bench profiles")
+    _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable the ruled fallback for bench profiles")
     _assert(int(getattr(cor_bench, "AutoFixedSectionCount", 0) or 0) == 0, "Bench corridor should keep SectionSet point order without auto-flip")
     _assert(
         len(list(getattr(getattr(cor_bench, "Shape", None), "Faces", []) or []))

@@ -15,7 +15,7 @@ The implementation should preserve backward compatibility with existing CSV file
 
 - `SectionSet`
 - `Cross Section Viewer`
-- `Corridor Loft`
+- `Corridor`
 - pavement / report rows
 
 
@@ -148,7 +148,7 @@ Recommended first implementation:
 
 Reason:
 
-- safer for downstream loft/section consumption
+- safer for downstream corridor/section consumption
 - easier regression testing
 - avoids OCC instability from introducing mixed arc/spline geometry too early
 
@@ -284,7 +284,7 @@ Scope:
 Done when:
 
 - `u` rows produce stable top-profile points
-- `SectionSet` and `Corridor Loft` still consume them without regression
+- `SectionSet` and `Corridor` still consume them without regression
 
 ### Phase D3: Viewer / Report Refinement
 
@@ -311,7 +311,7 @@ Add or extend smokes for:
 2. `Typical Section` with `ditch shape = trapezoid`
 3. `Typical Section` with `ditch shape = u`
 4. `SectionSet` generated from each shape
-5. `Corridor Loft` consuming each shape
+5. `Corridor` consuming each shape
 
 Recommended target files:
 
@@ -337,7 +337,7 @@ Mitigation:
 
 Risk:
 
-- true arcs/splines may destabilize downstream lofting
+- true arcs/splines may destabilize downstream corridor surface assembly
 
 Mitigation:
 

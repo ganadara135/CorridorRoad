@@ -89,7 +89,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
     status = str(getattr(cor, "Status", "") or "")
     _assert("corridorModes=boolean_cut=1" in status, "Corridor status missing boolean_cut mode summary")
     _assert("notchSchema=" not in status, "Boolean-cut workflow should not imply notch schema usage")

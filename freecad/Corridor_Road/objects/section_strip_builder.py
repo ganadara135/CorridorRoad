@@ -185,10 +185,7 @@ def build_part_pair_surface(wire0, wire1, pts0=None, pts1=None, point_count_hint
     if faces:
         return Part.Compound(faces)
 
-    try:
-        return Part.makeLoft([wire0, wire1], False, True, False)
-    except Exception as ex:
-        raise Exception(f"Section pair surface failed: {ex}")
+    raise Exception("Section pair surface produced no valid strip faces.")
 
 
 def build_part_strip_surface(wires, point_lists=None, point_count_hint: int = 0):

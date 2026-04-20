@@ -18,7 +18,12 @@ ensure_package_on_sys_path()
 
 
 def install_virtual_path_mappings(eager: bool = False):
-    """Install legacy->canonical module aliases for FCStd proxy restore."""
+    """Install legacy->canonical module aliases for FCStd proxy restore.
+
+    These aliases are part of the current CorridorLoft compatibility window.
+    Do not remove them until older FCStd files reopen cleanly after any proxy
+    or module-path rename.
+    """
     try:
         from .virtual_paths import install_virtual_path_mappings as _install
 

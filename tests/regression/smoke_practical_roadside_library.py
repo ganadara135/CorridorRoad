@@ -152,7 +152,7 @@ def run():
         _assert(f"roadside={expected_summary}" in typ_status, "TypicalSectionTemplate status missing roadside summary")
 
         _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
 
         for obj in (sec, cor, dgs):

@@ -122,7 +122,7 @@ def run():
         _assert(float(pav_bb.XMin) > float(typ_bb.XMin) + 1.0, "Pavement display should stop before ditch/berm components on the right side")
         _assert(abs(float(pav_bb.XMax) - float(typ_bb.XMax)) <= 1.0e-6, "Pavement display should still follow the paved left-side edge")
 
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
 
         for obj in (sec, cor, dgs):

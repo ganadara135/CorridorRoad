@@ -95,7 +95,7 @@ def run():
 
         doc.recompute()
 
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(_shape_ok(cfc), "CutFillCalc did not generate output shape")
 
         _assert(int(getattr(cfc, "ComparisonSchemaVersion", 0) or 0) == 1, "Comparison schema mismatch")

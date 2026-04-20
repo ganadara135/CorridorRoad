@@ -6,7 +6,7 @@
 For current mixed-workflow support and warning expectations, also see `docs/MIXED_WORKFLOW_VALIDATION_MATRIX.md`.
 
 ## 1) Pipeline View
-Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor/Loft (Surface) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
+Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Profile (from PVI) -> Delta -> 3D Centerline -> Assembly -> Sections -> Corridor (Surface) + DesignGradingSurface (Mesh) -> DesignTerrain (Mesh) -> Cut-Fill Calc -> Cut/Fill
 
 ## 2) Object Responsibilities
 ### 2.1 VerticalAlignment (`freecad/Corridor_Road/objects/obj_vertical_alignment.py`)
@@ -337,13 +337,13 @@ Current direction:
 | Topic | Legacy loft-centric approach | Section-strip assembly approach |
 |---|---|---|
 | Primary builder idea | pass section wires into a loft engine and let it infer correspondence | connect adjacent section profiles point-to-point explicitly |
-| Main primitive | `Part.makeLoft(...)` / ruled loft fallback | pairwise strip triangulation with `Part.Face` and `Part.Compound` |
+| Main primitive | `Part.makeLoft(...)` historical path (removed) | pairwise strip triangulation with `Part.Face` and `Part.Compound` |
 | Input priority | wire shape and loft heuristics | ordered section points from `SectionSet` |
 | Point correspondence | inferred by the loft engine | fixed by profile index order |
 | Predictability | lower | higher |
 | Section fidelity | can drift from visible section lines | should stay aligned with the section contract |
-| Debugging | distortion often appears as a whole-loft failure | problems can be localized to a station pair or corridor segment |
-| Corridor span support | span handling must be layered on top of the loft result | split/skip/notch packaging fits naturally around strip assembly |
+| Debugging | distortion often appears as a whole-corridor build failure | problems can be localized to a station pair or corridor segment |
+| Corridor span support | span handling must be layered on top of the legacy loft result | split/skip/notch packaging fits naturally around strip assembly |
 
 Practical rule:
 
@@ -707,13 +707,13 @@ Practical rule:
 - If `dot(N, prev_n) < 0`, flip `N` to maintain continuity
 - Recommended default: `eps = 0.1 m`
 
-## 6) Corridor Loft Preconditions (Fixed)
+## 6) Corridor Surface Preconditions (Fixed)
 ### 6.1 Section Shape Contract
 - `SectionSchemaVersion = 1 or 2`
 - `v1`: section point order fixed: `Left -> Center -> Right`
 - `v2`: side-slope extended order: `LeftOuter? -> Left -> Center -> Right -> RightOuter?`
 - Point count/order must be identical at all stations
-- If mismatch is detected, Loft must stop with explicit status/error
+- If mismatch is detected, corridor build must stop with explicit status/error
 
 ### 6.2 Output Type Policy
 - `OutputType` is `Surface` only
@@ -730,7 +730,7 @@ Practical rule:
 - Instead, linked corridor objects are marked as pending recompute in tree/status
 - Manual override trigger must exist: `RebuildNow=True`
 
-### 6.4 Loft Failure Guards
+### 6.4 Corridor Build Failure Guards
 - Prechecks:
   - at least 2 sections
   - equal point count/order
@@ -738,9 +738,9 @@ Practical rule:
   - no NaN/duplicate critical points
 - Continuity guard:
   - detect orientation flips between neighboring sections
-  - auto-fix orientation before Loft
+  - auto-fix orientation before corridor build
 - Failure fallback:
-  - try adaptive segmented Loft by station ranges (range split on failure)
+  - try adaptive segmented corridor build by station ranges (range split on failure)
   - record failed range/stations in `Status`
 
 ## 7) Validation Strategy

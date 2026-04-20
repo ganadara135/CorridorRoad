@@ -25,14 +25,14 @@ Unsupported:
 
 ## Matrix
 
-### 1. Typical Section + Sections + Corridor Loft
+### 1. Typical Section + Sections + Corridor
 Status:
 - Supported
 
 Expected behavior:
 - `TypicalSectionTemplate` drives the finished-grade top profile.
 - `SectionSchemaVersion=2` may be used.
-- `CorridorLoft` may auto-prefer ruled loft for richer profiles.
+- `CorridorLoft` may still auto-prefer the legacy ruled fallback for richer profiles.
 
 Validation expectation:
 - Confirm section schema, top-profile source, and pavement summary propagation.
@@ -68,7 +68,7 @@ Status:
 
 Expected behavior:
 - corridor omits structure-active spans
-- surviving pre/post spans remain loftable
+- surviving pre/post spans remain buildable as corridor spans
 
 Validation expectation:
 - report skipped ranges, skip markers, and corridor mode summary
@@ -189,7 +189,7 @@ The runtime should warn for the following short-term cases:
 The runtime should block or fail clearly for the following:
 - invalid required fields for the chosen geometry mode
 - invalid corridor span ordering that cannot be resolved safely
-- impossible loft input such as fully skipped corridor station coverage
+- impossible corridor-build input such as fully skipped corridor station coverage
 
 ## References
 

@@ -6,6 +6,9 @@ Date: 2026-03-29
 # CorridorRoad Roadmap To-Do
 
 This document converts the current roadmap discussion into a practical to-do list.
+Historical note:
+Some checklist items use the older `Corridor Loft` or `CorridorLoft` wording because they record work completed before the current terminology cleanup.
+
 Priority order is:
 1. `skip_zone` / validation / regression tests
 2. `notch`

@@ -61,9 +61,9 @@ def run():
     _assert(str(getattr(sec, "Status", "") or "").startswith("NEEDS_RECOMPUTE"), "SectionSet was not marked for recompute")
     _assert("[Recompute]" in str(getattr(sec, "Label", "") or ""), "SectionSet label was not marked")
 
-    _assert(bool(getattr(cor, "NeedsRecompute", False)), "CorridorLoft NeedsRecompute was not set")
-    _assert("NEEDS_RECOMPUTE" not in str(getattr(cor, "Status", "") or ""), "CorridorLoft should keep stale state internal rather than overwriting user-facing status")
-    _assert("[Recompute]" not in str(getattr(cor, "Label", "") or ""), "CorridorLoft should not add a recompute suffix to the user-facing label")
+    _assert(bool(getattr(cor, "NeedsRecompute", False)), "Corridor NeedsRecompute was not set")
+    _assert("NEEDS_RECOMPUTE" not in str(getattr(cor, "Status", "") or ""), "Corridor should keep stale state internal rather than overwriting user-facing status")
+    _assert("[Recompute]" not in str(getattr(cor, "Label", "") or ""), "Corridor should not add a recompute suffix to the user-facing label")
 
     _assert(bool(getattr(dgs, "NeedsRecompute", False)), "DesignGradingSurface NeedsRecompute was not set")
     _assert(str(getattr(dgs, "Status", "") or "").startswith("NEEDS_RECOMPUTE"), "DesignGradingSurface status was not marked")

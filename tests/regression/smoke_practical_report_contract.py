@@ -127,7 +127,7 @@ def run():
 
         _assert(_shape_ok(typ), "TypicalSectionTemplate did not generate geometry")
         _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
 
         expected_component_rows = [

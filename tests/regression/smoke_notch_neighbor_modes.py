@@ -101,7 +101,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
     _assert(int(getattr(cor, "StructureSegmentCount", 0) or 0) == 2, "Expected mixed structure segmentation to preserve two kept ranges around skip-zone gaps")
     _assert(int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0) == 1, "Expected exactly one notch structure")
     _assert(int(getattr(cor, "ResolvedNotchStationCount", 0) or 0) == 5, "Unexpected notch station count in mixed-mode case")

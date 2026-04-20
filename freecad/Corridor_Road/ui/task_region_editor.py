@@ -385,7 +385,7 @@ class RegionEditorTaskPanel:
                     transition_in=4.0,
                     transition_out=4.0,
                     corridor_policy="skip_zone",
-                    notes="Skip loft generation through localized bridge work zone",
+                    notes="Skip corridor generation through localized bridge work zone",
                 ),
             ]
         if preset == "Base + Overlay Mixed":

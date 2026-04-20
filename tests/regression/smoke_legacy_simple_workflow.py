@@ -75,7 +75,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "Simple SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "Simple CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Simple Corridor did not generate geometry")
     _assert(int(getattr(sec, "SectionSchemaVersion", 0) or 0) == 1, "Legacy simple workflow should stay on schema 1")
     _assert(str(getattr(sec, "TopProfileSource", "") or "") == "assembly_simple", "Legacy simple workflow top profile mismatch")
     sec_status = str(getattr(sec, "Status", "") or "")

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.ui.task_corridor_loft import CorridorLoftTaskPanel
+from freecad.Corridor_Road.ui.task_corridor_loft import CorridorTaskPanel
 from freecad.Corridor_Road.ui.task_cut_fill_calc import CutFillCalcTaskPanel
 from freecad.Corridor_Road.ui.task_design_terrain import DesignTerrainTaskPanel
 from freecad.Corridor_Road.ui.task_pointcloud_dem import PointCloudDEMTaskPanel
@@ -52,7 +52,7 @@ def run():
         _assert(abs(float(cutfill_panel.spin_zoff.value()) - 50.0) < 1.0e-6, "Cut/Fill visual offset should display as 50 mm")
         _assert(cutfill_panel.spin_xmin.suffix().strip() == "mm", "Cut/Fill manual domain inputs should show millimeters")
 
-        corridor_panel = CorridorLoftTaskPanel()
+        corridor_panel = CorridorTaskPanel()
         _assert(corridor_panel.spin_min_spacing.suffix().strip() == "mm", "Corridor min spacing suffix should show millimeters")
         _assert(abs(float(corridor_panel.spin_min_spacing.value()) - 500.0) < 1.0e-6, "Corridor min spacing should display as 500 mm")
 

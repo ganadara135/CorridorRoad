@@ -9,7 +9,12 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects import coord_transform as _ct
 from freecad.Corridor_Road.objects import unit_policy as _units
-from freecad.Corridor_Road.objects.obj_project import resolve_project_corridor
+from freecad.Corridor_Road.objects.obj_project import (
+    assign_project_corridor,
+    ensure_corridor_object,
+    find_corridor_objects,
+    resolve_project_corridor,
+)
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc, ViewProviderCutFillCalc, ensure_cut_fill_calc_properties
 from freecad.Corridor_Road.objects.project_links import link_project
 from freecad.Corridor_Road.ui.common.coord_ui import coord_hint_text, should_default_world_mode
@@ -31,25 +36,8 @@ def _is_mesh_obj(obj):
         return False
 
 
-def _is_corridor_obj(obj):
-    if obj is None:
-        return False
-    try:
-        if getattr(obj, "Proxy", None) and getattr(obj.Proxy, "Type", "") == "CorridorLoft":
-            return True
-    except Exception:
-        pass
-    return bool(obj.Name.startswith("CorridorLoft"))
-
-
 def _find_corridors(doc):
-    out = []
-    if doc is None:
-        return out
-    for o in doc.Objects:
-        if _is_corridor_obj(o):
-            out.append(o)
-    return out
+    return find_corridor_objects(doc)
 
 
 def _find_cut_fill_calc(doc):
@@ -438,7 +426,7 @@ class CutFillCalcTaskPanel:
         if cmp_obj is not None:
             try:
                 if getattr(cmp_obj, "SourceCorridor", None) is not None:
-                    preferred_corridor = cmp_obj.SourceCorridor
+                    preferred_corridor = ensure_corridor_object(cmp_obj.SourceCorridor)
                 if getattr(cmp_obj, "ExistingSurface", None) is not None:
                     preferred_surface = cmp_obj.ExistingSurface
             except Exception:
@@ -690,10 +678,10 @@ class CutFillCalcTaskPanel:
 
             prj = find_project(self.doc)
             if prj is not None:
+                assign_project_corridor(prj, corridor)
                 link_project(
                     prj,
                     links={
-                        "CorridorLoft": corridor,
                         "Terrain": mesh,
                         "CutFillCalc": cmp_obj,
                     },

@@ -117,7 +117,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
     _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
     _assert(str(getattr(sec, "TopProfileSource", "") or "") == "typical_section", "Top profile should be typical_section")
     _assert(str(getattr(sec, "TopProfileEdgeSummary", "") or "") == "berm/berm", "Top edge summary should stay berm/berm")

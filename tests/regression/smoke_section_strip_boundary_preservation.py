@@ -5,12 +5,16 @@
 Section-strip boundary preservation smoke test.
 
 Run in FreeCAD Python environment:
-    python tests/regression/smoke_section_strip_boundary_preservation.py
+    FreeCADCmd tests/regression/smoke_section_strip_boundary_preservation.py
 """
 
 import FreeCAD as App
+import Part
 
-from freecad.Corridor_Road.objects.section_strip_builder import harmonize_pair_points
+from freecad.Corridor_Road.objects.section_strip_builder import (
+    build_part_pair_surface,
+    harmonize_pair_points,
+)
 
 
 def _assert(cond, msg):
@@ -49,6 +53,37 @@ def run():
     _assert(_contains_point(aa, a[2]), "Section A second interior break point should be preserved")
     _assert(_contains_point(bb, b[2]), "Section B interior break point should be preserved")
     _assert(_contains_point(bb, b[3]), "Section B second interior break point should be preserved")
+
+    surface = build_part_pair_surface(
+        Part.makePolygon(a),
+        Part.makePolygon(b),
+        pts0=a,
+        pts1=b,
+        point_count_hint=0,
+    )
+    _assert(not surface.isNull(), "Section-strip builder should create a non-null surface")
+    _assert(len(list(getattr(surface, "Faces", []) or [])) > 0, "Section-strip builder should create strip faces")
+
+    flat = [
+        App.Vector(0.0, 0.0, 0.0),
+        App.Vector(5.0, 0.0, 0.0),
+        App.Vector(10.0, 0.0, 0.0),
+    ]
+    try:
+        build_part_pair_surface(
+            Part.makePolygon(flat),
+            Part.makePolygon(flat),
+            pts0=flat,
+            pts1=flat,
+            point_count_hint=0,
+        )
+        raise Exception("Degenerate strip pair should fail without loft fallback")
+    except Exception as ex:
+        _assert(
+            "no valid strip faces" in str(ex).lower(),
+            f"Unexpected degenerate strip failure: {ex}",
+        )
+
     print("[PASS] Section-strip boundary preservation smoke test completed.")
 
 

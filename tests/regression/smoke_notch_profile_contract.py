@@ -114,9 +114,9 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
     _assert(int(getattr(cor, "ClosedProfileSchemaVersion", 0) or 0) == 2, "Notch workflow should use closed profile schema 2")
-    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "CorridorLoft should not generate solids in surface mode")
+    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "Corridor should not generate solids in surface mode")
     _assert(str(getattr(cor, "ResolvedNotchSchemaName", "") or "") == "notch_v1_8pt", "Unexpected notch schema name")
     _assert(int(getattr(cor, "ResolvedNotchStationCount", 0) or 0) == 5, "Unexpected notch-aware station count")
     _assert(int(getattr(cor, "ResolvedStructureNotchCount", 0) or 0) == 1, "Unexpected notch structure count")

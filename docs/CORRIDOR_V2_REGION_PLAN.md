@@ -5,6 +5,10 @@
 
 Date: 2026-04-10
 
+Historical note:
+This plan was written during the transition from user-facing `Corridor Loft` wording to `Corridor`.
+References to `Corridor Loft` or `CorridorLoft` in this document should be read as historical naming or internal compatibility naming unless the text explicitly discusses migration work.
+
 ## Purpose
 
 This document defines the next corridor runtime direction:

@@ -101,8 +101,8 @@ Completed:
   - source section schema
   - top profile source
   - top profile edges
-- automatic ruled-loft preference for richer typical-section edge conditions
-- automatic ruled retry when typical-section lofting is unstable
+- automatic legacy ruled-fallback preference for richer typical-section edge conditions
+- automatic retry when typical-section corridor surface assembly is unstable
 
 Current scope:
 - quality/stability focused
@@ -223,7 +223,7 @@ Planned phases:
 6. Safe recompute contract
 - preview updates must not:
   - force `Sections`
-  - force `Corridor Loft`
+  - force `Corridor`
   - force grading/terrain analysis
 - only the local `TypicalSectionTemplate` and linked `PavementDisplay` should recompute during preview work
 
@@ -252,7 +252,7 @@ Verification targets:
 
 `Typical Section` is now usable as a real finished-grade top-profile source for:
 - `Sections`
-- `Corridor Loft`
+- `Corridor`
 - `Design Grading Surface`
 
 It currently supports:

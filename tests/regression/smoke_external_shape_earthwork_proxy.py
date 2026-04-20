@@ -128,7 +128,7 @@ def run():
         doc.recompute()
 
         _assert(_shape_ok(ss), "StructureSet did not generate display geometry")
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(int(getattr(ss, "ResolvedEarthworkProxyCount", 0) or 0) == 1, "Expected one external-shape proxy record")
         _assert(list(getattr(ss, "ResolvedEarthworkProxyIds", []) or []) == ["EXT_PROXY"], "Unexpected proxy structure ids")
 
@@ -147,8 +147,8 @@ def run():
         _assert("displayOnly=external_shape" not in sec_status, "SectionSet status should not advertise display-only when proxy is active")
 
         cor_status = str(getattr(cor, "Status", "") or "")
-        _assert("earthwork=external_shape_proxy" in cor_status, "CorridorLoft status missing proxy earthwork token")
-        _assert("externalShapeProxy=1" in cor_status, "CorridorLoft status missing proxy count")
+        _assert("earthwork=external_shape_proxy" in cor_status, "Corridor status missing proxy earthwork token")
+        _assert("externalShapeProxy=1" in cor_status, "Corridor status missing proxy count")
         _assert("displayOnly=external_shape" not in cor_status, "CorridorLoft status should not advertise display-only when proxy is active")
 
         dgs_status = str(getattr(dgs, "Status", "") or "")

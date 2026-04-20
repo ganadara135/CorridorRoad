@@ -5,6 +5,10 @@
 
 Date: 2026-04-10
 
+Historical note:
+This execution plan preserves transition-era naming.
+References to `Corridor Loft` or `CorridorLoft` here are intentionally kept where they describe migration steps, compatibility names, or past user-facing wording.
+
 ## Purpose
 
 This document turns [CORRIDOR_V2_REGION_PLAN.md](c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CORRIDOR_V2_REGION_PLAN.md) into an implementation sequence.

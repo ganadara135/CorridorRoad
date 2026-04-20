@@ -89,7 +89,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
     _assert(list(getattr(cor, "SkippedStationRanges", []) or []) == ["0.000-10.000", "30.000-40.000"], "Skipped ranges mismatch")
     _assert(str(getattr(cor, "ResolvedSkipBoundaryBehavior", "") or "") == "caps_deferred", "Skip boundary behavior mismatch")
     _assert(list(getattr(cor, "ResolvedSkipBoundaryStates", []) or []) == ["open_start:0.000-10.000", "open_end:30.000-40.000"], "Skip boundary states mismatch")
@@ -98,10 +98,10 @@ def run():
     _assert(len(package_rows) == 1, "Skip-boundary corridor should produce one kept package")
     _assert("start=10.000" in package_rows[0] and "end=30.000" in package_rows[0], "Kept package should retain boundary sections at 10.000 and 30.000")
     status = str(getattr(cor, "Status", "") or "")
-    _assert("corridorRule=structure_aware" in status, "CorridorLoft status missing structure-aware corridor token")
-    _assert("earthwork=simplified_type_driven" in status, "CorridorLoft status missing simplified earthwork token")
-    _assert("skipCaps=deferred" in status, "CorridorLoft status missing deferred cap summary")
-    _assert("skipBoundary=open_start,open_end" in status, "CorridorLoft status missing boundary summary")
+    _assert("corridorRule=structure_aware" in status, "Corridor status missing structure-aware corridor token")
+    _assert("earthwork=simplified_type_driven" in status, "Corridor status missing simplified earthwork token")
+    _assert("skipCaps=deferred" in status, "Corridor status missing deferred cap summary")
+    _assert("skipBoundary=open_start,open_end" in status, "Corridor status missing boundary summary")
 
     App.closeDocument(doc.Name)
     print("[PASS] Skip-zone boundary behavior smoke test completed.")

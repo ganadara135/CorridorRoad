@@ -2,7 +2,7 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 """
-CorridorLoft section-strip surface smoke test.
+Corridor section-strip surface smoke test.
 
 Run in FreeCAD Python environment:
     FreeCADCmd tests/regression/smoke_corridor_loft_section_strip_surface.py
@@ -76,7 +76,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Corridor did not generate geometry")
 
     section_count = int(getattr(cor, "SectionCount", 0) or 0)
     point_count = int(getattr(cor, "PointCountPerSection", 0) or 0)
@@ -85,11 +85,11 @@ def run():
 
     _assert(section_count == 4, "Unexpected simple corridor section count")
     _assert(point_count == 3, "Unexpected simple corridor point count")
-    _assert(face_count == expected_faces, f"CorridorLoft strip face count mismatch: {face_count} != {expected_faces}")
-    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "CorridorLoft should stay surface-only")
+    _assert(face_count == expected_faces, f"Corridor strip face count mismatch: {face_count} != {expected_faces}")
+    _assert(len(list(getattr(getattr(cor, "Shape", None), "Solids", []) or [])) == 0, "Corridor should stay surface-only")
 
     App.closeDocument(doc.Name)
-    print("[PASS] CorridorLoft section-strip surface smoke test completed.")
+    print("[PASS] Corridor section-strip surface smoke test completed.")
 
 
 if __name__ == "__main__":

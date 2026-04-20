@@ -117,7 +117,7 @@ def run():
         _assert("subSchema=1" in typ_status, "TypicalSectionTemplate status missing subassembly schema summary")
 
         _assert(_shape_ok(sec), "SectionSet did not generate geometry")
-        _assert(_shape_ok(cor), "CorridorLoft did not generate geometry")
+        _assert(_shape_ok(cor), "Corridor did not generate geometry")
         _assert(_mesh_ok(dgs), "DesignGradingSurface did not generate mesh")
 
         for obj in (sec, cor, dgs):

@@ -58,7 +58,7 @@ def _report_row(kind: str, **fields) -> str:
 
 def ensure_cut_fill_calc_properties(obj):
     if not hasattr(obj, "SourceCorridor"):
-        obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "CorridorLoft source (design)")
+        obj.addProperty("App::PropertyLink", "SourceCorridor", "Source", "Corridor source (design)")
     if not hasattr(obj, "ExistingSurface"):
         obj.addProperty("App::PropertyLink", "ExistingSurface", "Source", "Existing surface source (Mesh)")
     if not hasattr(obj, "ExistingSurfaceCoords"):
@@ -272,7 +272,7 @@ def ensure_cut_fill_calc_properties(obj):
 class CutFillCalc:
     """
     Existing/Design surface comparison:
-    - Design source: upward faces extracted from CorridorLoft surface
+    - Design source: upward faces extracted from the corridor surface
     - Existing source: mesh object
     - Method: grid sampling and delta integration
     """

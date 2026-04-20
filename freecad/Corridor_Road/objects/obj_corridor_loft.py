@@ -721,7 +721,7 @@ class CorridorLoft:
     @staticmethod
     def _validate_and_normalize(stations, wires, schema_version: int, auto_fix_orientation: bool):
         if len(stations) < 2 or len(wires) < 2:
-            raise Exception("Need at least 2 sections for loft.")
+            raise Exception("Need at least 2 sections for corridor build.")
         if len(stations) != len(wires):
             raise Exception("Stations/wires size mismatch.")
 
@@ -750,7 +750,7 @@ class CorridorLoft:
             if len(pts) != ref_n:
                 raise Exception(
                     f"Section point count mismatch at index {i}: {len(pts)} != {ref_n}. "
-                    "Loft stopped by section contract."
+                    "Corridor build stopped by section contract."
                 )
 
         if int(schema_version) == 1 and ref_n != 3:
@@ -869,69 +869,6 @@ class CorridorLoft:
         return out_st, out_wr, dropped
 
     @staticmethod
-    def _valid_heights(h_left: float, h_right: float):
-        if not (_is_finite(h_left) and _is_finite(h_right)):
-            return False
-        if h_left < -1e-9 or h_right < -1e-9:
-            return False
-        return max(float(h_left), float(h_right)) > 1e-6
-
-    @staticmethod
-    def _make_closed_profiles_for_solid(open_wires, h_left: float, h_right: float):
-        hl = float(h_left)
-        hr = float(h_right)
-        if not CorridorLoft._valid_heights(hl, hr):
-            raise Exception("HeightLeft/HeightRight must be finite, non-negative, and at least one > 0.")
-
-        closed = []
-        for i, w in enumerate(open_wires):
-            up = CorridorLoft._wire_points(w)
-            if len(up) < 2:
-                raise Exception(f"Section[{i}] has insufficient points for solid profile.")
-
-            n = len(up)
-            dn = []
-            for j, p in enumerate(up):
-                alpha = float(j) / float(n - 1) if n > 1 else 0.5
-                h = (1.0 - alpha) * hl + alpha * hr
-                dn.append(App.Vector(p.x, p.y, p.z - h))
-
-            poly = list(up) + list(reversed(dn))
-            poly.append(poly[0])
-            closed.append(Part.makePolygon(poly))
-        return closed
-
-    @staticmethod
-    def _resolve_heights(obj, src):
-        asm = getattr(src, "AssemblyTemplate", None) if src is not None else None
-        if asm is not None:
-            try:
-                hl_m = float(getattr(asm, "HeightLeft"))
-                hr_m = float(getattr(asm, "HeightRight"))
-                if CorridorLoft._valid_heights(hl_m, hr_m):
-                    return (
-                        _units.model_length_from_meters(getattr(asm, "Document", None), hl_m),
-                        _units.model_length_from_meters(getattr(asm, "Document", None), hr_m),
-                        "AssemblyTemplate.HeightLeft/HeightRight",
-                    )
-            except Exception:
-                pass
-
-        try:
-            hl_m = float(getattr(obj, "HeightLeft"))
-            hr_m = float(getattr(obj, "HeightRight"))
-            if CorridorLoft._valid_heights(hl_m, hr_m):
-                return (
-                    _units.model_length_from_meters(getattr(obj, "Document", None), hl_m),
-                    _units.model_length_from_meters(getattr(obj, "Document", None), hr_m),
-                    "CorridorLoft.HeightLeft/HeightRight",
-                )
-        except Exception:
-            pass
-
-        raise Exception("Valid HeightLeft/HeightRight are required for Solid output.")
-
-    @staticmethod
     def _typical_edge_types(src):
         try:
             if src is None or not bool(getattr(src, "UseTypicalSectionTemplate", False)):
@@ -1012,7 +949,7 @@ class CorridorLoft:
             return False
 
     @staticmethod
-    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, solid: bool = True, point_lists=None, point_count_hint: int = 0):
+    def _loft_with_retry(wires, stations, ranges, ruled: bool, src, point_lists=None, point_count_hint: int = 0):
         retry_used = False
         if ranges:
             try:
@@ -1021,7 +958,6 @@ class CorridorLoft:
                     stations,
                     ranges,
                     ruled=ruled,
-                    solid=solid,
                     point_lists=point_lists,
                     point_count_hint=point_count_hint,
                 )
@@ -1033,7 +969,6 @@ class CorridorLoft:
                         stations,
                         ranges,
                         ruled=True,
-                        solid=solid,
                         point_lists=point_lists,
                         point_count_hint=point_count_hint,
                     )
@@ -1043,7 +978,6 @@ class CorridorLoft:
             shape = CorridorLoft._loft(
                 wires,
                 ruled=ruled,
-                solid=solid,
                 point_lists=point_lists,
                 point_count_hint=point_count_hint,
             )
@@ -1053,7 +987,6 @@ class CorridorLoft:
                 shape = CorridorLoft._loft(
                     wires,
                     ruled=True,
-                    solid=solid,
                     point_lists=point_lists,
                     point_count_hint=point_count_hint,
                 )
@@ -1061,13 +994,12 @@ class CorridorLoft:
             raise
 
     @staticmethod
-    def _loft(wires, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
-        if not bool(solid):
-            return CorridorLoft._section_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
-        return Part.makeLoft(wires, bool(solid), bool(ruled), False)
+    def _loft(wires, ruled: bool, point_lists=None, point_count_hint: int = 0):
+        # Corridor runtime is now surface-only; ruled/segmented policy stays above this builder.
+        return CorridorLoft._section_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
 
     @staticmethod
-    def _loft_adaptive(wires, stations, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
+    def _loft_adaptive(wires, stations, ruled: bool, point_lists=None, point_count_hint: int = 0):
         parts = []
         failed = []
         point_lists = list(point_lists or [])
@@ -1078,7 +1010,6 @@ class CorridorLoft:
                 seg = CorridorLoft._loft(
                     wires[i0 : i1 + 1],
                     ruled=ruled,
-                    solid=solid,
                     point_lists=(point_lists[i0 : i1 + 1] if use_point_lists else None),
                     point_count_hint=point_count_hint,
                 )
@@ -2126,9 +2057,9 @@ class CorridorLoft:
         return _shared_segment_ranges(count, boundaries)
 
     @staticmethod
-    def _loft_by_ranges(wires, stations, ranges, ruled: bool, solid: bool = True, point_lists=None, point_count_hint: int = 0):
+    def _loft_by_ranges(wires, stations, ranges, ruled: bool, point_lists=None, point_count_hint: int = 0):
         if not ranges:
-            shp = CorridorLoft._loft(wires, ruled=ruled, solid=solid, point_lists=point_lists, point_count_hint=point_count_hint)
+            shp = CorridorLoft._loft(wires, ruled=ruled, point_lists=point_lists, point_count_hint=point_count_hint)
             return shp, [], [shp]
 
         shapes = []
@@ -2140,13 +2071,12 @@ class CorridorLoft:
             seg_sta = list(stations[i0 : i1 + 1])
             seg_pts = list(point_lists[i0 : i1 + 1]) if use_point_lists else None
             try:
-                shp = CorridorLoft._loft(seg_wires, ruled=ruled, solid=solid, point_lists=seg_pts, point_count_hint=point_count_hint)
+                shp = CorridorLoft._loft(seg_wires, ruled=ruled, point_lists=seg_pts, point_count_hint=point_count_hint)
             except Exception as ex:
                 shp, failed = CorridorLoft._loft_adaptive(
                     seg_wires,
                     seg_sta,
                     ruled=ruled,
-                    solid=solid,
                     point_lists=seg_pts,
                     point_count_hint=point_count_hint,
                 )
@@ -2584,7 +2514,6 @@ class CorridorLoft:
                     structure_ranges if use_segmented_ranges else [],
                     ruled=ruled,
                     src=src,
-                    solid=False,
                     point_lists=loft_point_lists,
                     point_count_hint=pt_count,
                 )
@@ -2613,7 +2542,6 @@ class CorridorLoft:
                         structure_ranges,
                         ruled=ruled,
                         src=src,
-                        solid=False,
                         point_lists=loft_point_lists,
                         point_count_hint=pt_count,
                     )
@@ -2622,7 +2550,6 @@ class CorridorLoft:
                         loft_wires,
                         stations,
                         ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
-                        solid=False,
                         point_lists=loft_point_lists,
                         point_count_hint=pt_count,
                     )

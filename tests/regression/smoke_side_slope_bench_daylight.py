@@ -137,7 +137,7 @@ def run():
     doc.recompute()
 
     _assert(_shape_ok(sec), "Bench+daylight SectionSet did not generate geometry")
-    _assert(_shape_ok(cor), "Bench+daylight CorridorLoft did not generate geometry")
+    _assert(_shape_ok(cor), "Bench+daylight Corridor did not generate geometry")
     _assert(_mesh_ok(dgs), "Bench+daylight DesignGradingSurface did not generate mesh")
     _assert(int(getattr(sec, "BenchAppliedSectionCount", 0) or 0) == 1, "Exactly one section should retain a visible bench")
     _assert(int(getattr(sec, "BenchDaylightAdjustedSectionCount", 0) or 0) == 2, "Both sections should be daylight-adjusted")
@@ -155,11 +155,11 @@ def run():
     _assert("benchDaySkip=1" in sec_status, "SectionSet status missing bench daylight-skipped count")
 
     cor_status = str(getattr(cor, "Status", "") or "")
-    _assert("bench=left" in cor_status, "CorridorLoft status missing bench side token")
-    _assert("benchSections=1" in cor_status, "CorridorLoft status missing visible bench count")
-    _assert("benchDayAdj=2" in cor_status, "CorridorLoft status missing bench daylight-adjusted count")
-    _assert("benchDaySkip=1" in cor_status, "CorridorLoft status missing bench daylight-skipped count")
-    _assert("ruled=auto:bench_profile" in cor_status, "CorridorLoft should auto-enable ruled mode for bench profiles")
+    _assert("bench=left" in cor_status, "Corridor status missing bench side token")
+    _assert("benchSections=1" in cor_status, "Corridor status missing visible bench count")
+    _assert("benchDayAdj=2" in cor_status, "Corridor status missing bench daylight-adjusted count")
+    _assert("benchDaySkip=1" in cor_status, "Corridor status missing bench daylight-skipped count")
+    _assert("ruled=auto:bench_profile" in cor_status, "Corridor should auto-enable ruled mode for bench profiles")
 
     dgs_status = str(getattr(dgs, "Status", "") or "")
     _assert("bench=left" in dgs_status, "DesignGradingSurface status missing bench side token")
