@@ -61,14 +61,15 @@ def run():
     try:
         prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         ensure_project_properties(prj)
-        _assert(hasattr(prj, CORRIDOR_PROJECT_PROPERTY), "Project should retain hidden CorridorLoft link property for compatibility")
+        _assert(hasattr(prj, CORRIDOR_PROJECT_PROPERTY), "Project should expose the canonical hidden corridor link property")
+        _assert(not hasattr(prj, "CorridorLoft"), "Project should no longer create the legacy hidden CorridorLoft property")
 
         cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
         CorridorLoft(cor)
 
         assigned = assign_project_corridor(prj, cor)
         _assert(assigned is cor, "assign_project_corridor should return the corridor object")
-        _assert(getattr(prj, CORRIDOR_PROJECT_PROPERTY, None) is cor, "Compatibility hidden property should store the assigned corridor")
+        _assert(getattr(prj, CORRIDOR_PROJECT_PROPERTY, None) is cor, "Canonical hidden project property should store the assigned corridor")
         _assert(resolve_project_corridor(prj) is cor, "resolve_project_corridor should return the assigned corridor")
         _assert(ensure_corridor_object(cor) is cor, "ensure_corridor_object should accept CorridorLoft proxy objects")
 
@@ -81,7 +82,7 @@ def run():
         setattr(prj, CORRIDOR_PROJECT_PROPERTY, None)
         resolved_from_doc = resolve_project_corridor(doc)
         _assert(resolved_from_doc is cor, "resolve_project_corridor(doc) should rediscover corridor objects from the document")
-        _assert(getattr(prj, CORRIDOR_PROJECT_PROPERTY, None) is cor, "resolve_project_corridor should resync the compatibility hidden property")
+        _assert(getattr(prj, CORRIDOR_PROJECT_PROPERTY, None) is cor, "resolve_project_corridor should resync the canonical hidden project property")
 
         print("[PASS] Corridor compatibility-alias smoke test completed.")
     finally:

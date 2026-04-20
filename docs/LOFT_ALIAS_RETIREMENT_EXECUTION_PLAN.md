@@ -98,13 +98,20 @@ Why third:
 Preconditions:
 
 1. Replacement persistence path is designed.
-2. `assign_project_corridor()` / `resolve_project_corridor()` can prefer the new path while preserving fallback behavior.
+2. `assign_project_corridor()` / `resolve_project_corridor()` can prefer the new path.
+
+Current readiness snapshot:
+
+- Status: completed under compatibility override
+- Ready:
+  - canonical project link property is now `Corridor`
+  - project-link helpers can move to the new property without old-property fallback
 
 Implementation:
 
 1. Add the replacement project corridor persistence property/path.
-2. Add migration-on-open or helper resynchronization logic.
-3. Keep old hidden property read fallback during the migration cycle.
+2. Move helper read/write paths to the canonical property.
+3. Update project-link and FCStd smokes to verify the canonical property.
 
 Validation:
 
@@ -120,8 +127,14 @@ Target:
 
 Preconditions:
 
-1. Older FCStd reopen succeeds through the replacement path.
-2. Smokes pass without resynchronizing through the compatibility property.
+1. Smokes pass through the canonical project corridor property.
+
+Current readiness snapshot:
+
+- Status: completed under compatibility override
+- Ready:
+  - new project saves/reopens no longer require `CorridorLoft`
+  - project-link boundary coverage now expects only `Corridor`
 
 Implementation:
 
@@ -132,7 +145,7 @@ Implementation:
 Validation:
 
 1. Run `tests/regression/run_loft_retirement_gate_smokes.ps1`.
-2. Recheck old/new FCStd reopen manually.
+2. Recheck new FCStd reopen through the canonical project property.
 
 ### Step 5. Child-Link Migration Introduction
 

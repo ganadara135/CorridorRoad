@@ -27,6 +27,8 @@ def run():
     repo_root = os.getcwd()
     freecad_root = os.path.join(repo_root, "freecad", "Corridor_Road")
 
+    _assert(CORRIDOR_PROJECT_PROPERTY == "Corridor", "Project corridor link property should use the canonical 'Corridor' name")
+
     allowed_property_refs = {
         os.path.normpath(os.path.join(freecad_root, "corridor_compat.py")),
         os.path.normpath(os.path.join(freecad_root, "objects", "obj_project.py")),
@@ -52,17 +54,17 @@ def run():
     project_text = _read_text(project_path)
     _assert(
         "_ensure_hidden_link_property(obj, CORRIDOR_PROJECT_PROPERTY" in project_text,
-        "Project helper should retain the compatibility hidden link property definition until retirement",
+        "Project helper should define the canonical hidden corridor link property",
     )
     _assert(
         "def assign_project_corridor(project_obj, corridor_obj):" in project_text
         and "setattr(prj, CORRIDOR_PROJECT_PROPERTY, corridor_obj)" in project_text,
-        "Project helper should own compatibility hidden-link assignment",
+        "Project helper should own canonical project-link assignment",
     )
     _assert(
         "def resolve_project_corridor(project_obj_or_doc):" in project_text
         and "assign_project_corridor(prj, corridor_obj)" in project_text,
-        "Project helper should own compatibility hidden-link resynchronization",
+        "Project helper should own canonical project-link resynchronization",
     )
 
     print("[PASS] Corridor hidden project-link boundary smoke test completed.")

@@ -639,6 +639,11 @@ Practical rule:
 - Opens the dedicated task panel and keeps `CorridorLoft` on the current surface-only policy.
 - Runtime command/task-panel entry points now use only `cmd_generate_corridor.py` and `task_corridor.py`.
 
+Project-link note:
+
+- `CorridorRoadProject` now persists its corridor link through the hidden `Corridor` property.
+- Older hidden project-link property `CorridorLoft` is retired.
+
 ### 3.7 Design Grading Surface Command (`freecad/Corridor_Road/commands/cmd_generate_design_grading_surface.py`)
 - Creates/updates `DesignGradingSurface`.
 - Links current `SectionSet`.

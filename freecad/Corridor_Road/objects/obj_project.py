@@ -1406,12 +1406,7 @@ def ensure_project_properties(obj):
     _ensure_hidden_link_property(obj, "StructureSet", "CorridorRoad", "Link to structure set object")
     _ensure_hidden_link_property(obj, "RegionPlan", "CorridorRoad", "Link to region plan object")
     _ensure_hidden_link_property(obj, "SectionSet", "CorridorRoad", "Link to section set object")
-    # Keep hidden property name `CorridorLoft` for compatibility with older files.
-    # New code should prefer resolve/assign corridor helpers instead of using the
-    # raw property name directly.
-    # Removal gate: only after a replacement persistence path exists and older
-    # FCStd files reopen with corridor links preserved.
-    _ensure_hidden_link_property(obj, CORRIDOR_PROJECT_PROPERTY, "CorridorRoad", "Link to corridor object (compatibility name)")
+    _ensure_hidden_link_property(obj, CORRIDOR_PROJECT_PROPERTY, "CorridorRoad", "Link to corridor object")
     _ensure_hidden_link_property(obj, "DesignGradingSurface", "CorridorRoad", "Link to design grading surface object")
     _ensure_hidden_link_property(obj, "DesignTerrain", "CorridorRoad", "Link to design terrain object")
     _ensure_hidden_link_property(obj, "CutFillCalc", "CorridorRoad", "Link to cut/fill calc object")
@@ -1511,7 +1506,7 @@ def _project_corridor_candidate(project_obj):
 def resolve_project_corridor(project_obj_or_doc):
     """
     Resolve the preferred corridor object for a project/document and keep the
-    hidden compatibility link synchronized when possible.
+    project corridor link synchronized when possible.
     """
     prj = _resolve_project(project_obj_or_doc)
     if prj is None:

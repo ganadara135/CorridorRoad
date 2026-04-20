@@ -5,7 +5,8 @@ Current state:
 - User-facing `Loft` wording cleanup is complete.
 - Live runtime `Part.makeLoft(...)` usage is removed.
 - Command/task-panel compatibility aliases are retired.
-- Remaining work is project-link, child-link, proxy/type compatibility retirement and historical-note cleanup.
+- Hidden project-link compatibility is retired.
+- Remaining work is child-link, proxy/type compatibility retirement and historical-note cleanup.
 
 ## Goal
 
@@ -135,14 +136,7 @@ Tasks:
 
 Compatibility window targets:
 
-1. Project hidden link property
-   - Keep: hidden property `CorridorLoft`
-   - Why: older FCStd files may restore project corridor links through that property name
-   - Remove only when:
-     - a replacement persistence path exists
-     - old FCStd files reopen with corridor links preserved
-     - project-link helpers no longer need the compatibility property
-2. Proxy/module/type naming
+1. Proxy/module/type naming
    - Keep: proxy/type/module compatibility names such as `CorridorLoft`
    - Why: FCStd proxy restore and legacy module-path recovery still depend on them
    - Remove only when:
@@ -199,16 +193,16 @@ Tasks:
 
 Current Phase 5 note:
 
-- Current active step: `Phase 5E.3 - project-link compatibility retirement design`
+- Current active step: `Phase 5E.4 - child-link compatibility retirement design`
 - Detailed execution sequence is tracked in `docs/LOFT_ALIAS_RETIREMENT_EXECUTION_PLAN.md`.
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
 - Legacy command alias `CorridorRoad_GenerateCorridorLoft` is retired.
 - Preferred command module path now uses `cmd_generate_corridor.py` only.
 - Legacy task-panel class alias `CorridorLoftTaskPanel` is retired.
 - Preferred task-panel module path now uses `task_corridor.py` only.
+- Project corridor link property now uses `Corridor`.
 - Corridor compatibility names are now centralized in `freecad/Corridor_Road/corridor_compat.py`.
 - Raw compatibility literals in recompute routing and task-panel corridor creation now also resolve through `corridor_compat.py`.
-- Hidden corridor project-link property is now expected to remain only inside the project-link helper boundary, not in normal runtime feature code.
 - Corridor child-link ownership property is now expected to remain only inside the corridor ownership-recovery boundary, not in unrelated runtime code.
 - Corridor proxy/type/name-prefix compatibility is now expected to remain only inside the FCStd restore and corridor-routing boundary, not in unrelated runtime code.
 - Compatibility gates now have direct regression coverage:
@@ -223,26 +217,18 @@ Current Phase 5 note:
   - bundled runner: `tests/regression/run_loft_retirement_gate_smokes.ps1`
 - Hard blockers still preventing full internal-name removal:
   - FCStd proxy/type restore still depends on `CorridorLoft`
-  - hidden project link property `CorridorLoft` is still part of compatibility reopen logic
   - generated child-link property `ParentCorridorLoft` is still part of corridor segment/skip-marker ownership recovery
 
 Recommended retirement order from this point:
 
-1. Hidden project link retirement
-   - target: hidden property `CorridorLoft`
-   - why next: command/task-panel alias retirement is complete, but FCStd project reopen still depends on it today
-   - gate:
-     - in-repo runtime code no longer references the hidden compatibility property except through the project-link helper boundary
-     - replacement persistence path exists
-     - FCStd reopen smokes pass without resynchronizing through the compatibility property
-2. Child-link property retirement
+1. Child-link property retirement
    - target: `ParentCorridorLoft`
-   - why after project link: generated child ownership still persists through that compatibility name
+   - why next: generated child ownership still persists through that compatibility name
    - gate:
      - in-repo runtime code no longer references the compatibility child-link except through the corridor ownership-recovery boundary
      - segment/skip-marker ownership recovery uses a replacement property name
      - tree/adoption and reopen smokes pass with the replacement path
-3. Proxy/module/type retirement
+2. Proxy/module/type retirement
    - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
    - why last: this is the highest-risk FCStd restore boundary
    - gate:
@@ -304,3 +290,4 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5D bundled retirement-gate runner (`run_loft_retirement_gate_smokes.ps1`)
 - [x] Phase 5E1 command alias retirement (`CorridorRoad_GenerateCorridorLoft`)
 - [x] Phase 5E2 task-panel import alias retirement (`task_corridor_loft.py`, `CorridorLoftTaskPanel`)
+- [x] Phase 5E3 hidden project-link retirement (`CorridorLoft` -> `Corridor`)

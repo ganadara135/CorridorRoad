@@ -89,13 +89,14 @@ def _validate_reopened_document(doc):
         None,
     )
     _assert(project is not None, "Reopened document should contain a CorridorRoadProject proxy")
-    _assert(hasattr(project, CORRIDOR_PROJECT_PROPERTY), "Reopened project should retain the compatibility corridor link property")
+    _assert(hasattr(project, CORRIDOR_PROJECT_PROPERTY), "Reopened project should retain the canonical corridor link property")
+    _assert(not hasattr(project, "CorridorLoft"), "Reopened project should not recreate the legacy hidden CorridorLoft property")
 
     corridor = resolve_project_corridor(project)
     _assert(corridor is not None, "Reopened project should resolve a corridor object")
     _assert(ensure_corridor_object(corridor) is corridor, "Reopened corridor should still pass compatibility corridor resolution")
-    _assert(str(getattr(getattr(corridor, "Proxy", None), "Type", "") or "") == CORRIDOR_PROXY_TYPE, "Reopened corridor proxy type should stay CorridorLoft during the compatibility window")
-    _assert(getattr(project, CORRIDOR_PROJECT_PROPERTY, None) is corridor, "Reopened project should keep the compatibility corridor link synchronized")
+    _assert(str(getattr(getattr(corridor, "Proxy", None), "Type", "") or "") == CORRIDOR_PROXY_TYPE, "Reopened corridor proxy type should stay CorridorLoft until proxy retirement")
+    _assert(getattr(project, CORRIDOR_PROJECT_PROPERTY, None) is corridor, "Reopened project should keep the canonical corridor link synchronized")
 
     child_links = [o for o in list(getattr(doc, "Objects", []) or []) if getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) is corridor]
     _assert(child_links, "Reopened document should retain child objects linked through ParentCorridorLoft")
