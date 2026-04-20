@@ -10,6 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
+from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
@@ -135,7 +136,7 @@ def run():
         o
         for o in list(getattr(doc, "Objects", []) or [])
         if str(getattr(o, "Name", "") or "").startswith("CorridorSegment")
-        and getattr(o, "ParentCorridorLoft", None) == cor
+        and getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) == cor
     ]
     _assert(len(segment_objs) == 2, "Region-driven split/skip should create two CorridorSegment children")
     _assert(all(_shape_ok(o) for o in segment_objs), "CorridorSegment children should carry valid shapes")

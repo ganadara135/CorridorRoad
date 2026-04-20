@@ -643,6 +643,7 @@ Project-link note:
 
 - `CorridorRoadProject` now persists its corridor link through the hidden `Corridor` property.
 - Older hidden project-link property `CorridorLoft` is retired.
+- Generated corridor child ownership now persists through `ParentCorridor`.
 
 ### 3.7 Design Grading Surface Command (`freecad/Corridor_Road/commands/cmd_generate_design_grading_surface.py`)
 - Creates/updates `DesignGradingSurface`.

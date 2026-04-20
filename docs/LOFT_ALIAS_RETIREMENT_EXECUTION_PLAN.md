@@ -162,11 +162,18 @@ Preconditions:
 1. Replacement child ownership property/path is designed.
 2. Segment/skip-marker creation, adoption, and recovery understand the new path.
 
+Current readiness snapshot:
+
+- Status: completed under compatibility override
+- Ready:
+  - canonical child-link property is now `ParentCorridor`
+  - segment/skip-marker creation and ownership recovery can move to the new property without old-property fallback
+
 Implementation:
 
 1. Add a replacement child-link property.
-2. Write the new property during generation while keeping old read fallback.
-3. Update `obj_corridor_loft.py`, `obj_project.py`, and `task_corridor.py`.
+2. Move generation and ownership recovery to the canonical property.
+3. Update `obj_corridor_loft.py`, `obj_project.py`, `task_corridor.py`, and affected corridor regression tests.
 
 Validation:
 
@@ -181,7 +188,14 @@ Target:
 
 Preconditions:
 
-1. Tree/adoption/restore smokes pass without the compatibility child-link.
+1. Tree/adoption/restore smokes pass through the canonical child-link property.
+
+Current readiness snapshot:
+
+- Status: completed under compatibility override
+- Ready:
+  - new corridor children no longer require `ParentCorridorLoft`
+  - ownership boundary coverage now expects only `ParentCorridor`
 
 Implementation:
 
@@ -191,7 +205,7 @@ Implementation:
 Validation:
 
 1. Run `tests/regression/run_loft_retirement_gate_smokes.ps1`.
-2. Manually verify skip-marker and segment ownership recovery.
+2. Re-run corridor segment ownership smokes that inspect generated child objects directly.
 
 ### Step 7. Proxy/Type/Module Rename Introduction
 

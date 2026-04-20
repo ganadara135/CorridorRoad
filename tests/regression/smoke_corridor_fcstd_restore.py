@@ -99,7 +99,8 @@ def _validate_reopened_document(doc):
     _assert(getattr(project, CORRIDOR_PROJECT_PROPERTY, None) is corridor, "Reopened project should keep the canonical corridor link synchronized")
 
     child_links = [o for o in list(getattr(doc, "Objects", []) or []) if getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) is corridor]
-    _assert(child_links, "Reopened document should retain child objects linked through ParentCorridorLoft")
+    _assert(child_links, "Reopened document should retain child objects linked through ParentCorridor")
+    _assert(all(not hasattr(o, "ParentCorridorLoft") for o in child_links), "Reopened child objects should not recreate the legacy ParentCorridorLoft property")
 
 
 def _roundtrip_fcstd(temp_root, doc_name, fcstd_name, proxy_module_path):

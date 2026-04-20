@@ -1500,7 +1500,7 @@ class CorridorLoft:
                     mk = doc.addObject("Part::Feature", CORRIDOR_SKIP_MARKER_NAME)
                     mk.Label = f"STA {float(stations[idx]):.3f} [{role}]"
                     if not hasattr(mk, CORRIDOR_CHILD_LINK_PROPERTY):
-                        mk.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning CorridorLoft")
+                        mk.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning Corridor")
                     setattr(mk, CORRIDOR_CHILD_LINK_PROPERTY, obj)
                     if not hasattr(mk, "Station"):
                         mk.addProperty("App::PropertyFloat", "Station", "Corridor", "Boundary station")
@@ -1549,7 +1549,7 @@ class CorridorLoft:
                 seg = doc.addObject("Part::Feature", CORRIDOR_SEGMENT_NAME)
                 seg.Label = str(fields.get("displayLabel", fields.get("segmentId", f"Segment {idx + 1}")) or f"Segment {idx + 1}")
                 if not hasattr(seg, CORRIDOR_CHILD_LINK_PROPERTY):
-                    seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning CorridorLoft")
+                    seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning Corridor")
                 setattr(seg, CORRIDOR_CHILD_LINK_PROPERTY, obj)
                 if not hasattr(seg, "SegmentId"):
                     seg.addProperty("App::PropertyString", "SegmentId", "Corridor", "Segment identifier")

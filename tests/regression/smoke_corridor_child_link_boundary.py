@@ -10,6 +10,8 @@ Run in FreeCAD Python environment:
 
 import os
 
+from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY
+
 
 def _assert(cond, msg):
     if not cond:
@@ -24,6 +26,7 @@ def _read_text(path):
 def run():
     repo_root = os.getcwd()
     freecad_root = os.path.join(repo_root, "freecad", "Corridor_Road")
+    _assert(CORRIDOR_CHILD_LINK_PROPERTY == "ParentCorridor", "Corridor child-link property should use the canonical 'ParentCorridor' name")
 
     compat_path = os.path.normpath(os.path.join(freecad_root, "corridor_compat.py"))
     loft_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_corridor_loft.py"))
@@ -50,7 +53,7 @@ def run():
     unexpected = sorted(path for path in found_child_link_token_refs if path not in allowed_child_link_refs)
     _assert(
         not unexpected,
-        f"Corridor child-link compatibility token should stay isolated to ownership boundary files only: {unexpected}",
+        f"Corridor child-link token should stay isolated to ownership boundary files only: {unexpected}",
     )
 
     loft_text = _read_text(loft_path)
@@ -68,13 +71,13 @@ def run():
     project_text = _read_text(project_path)
     _assert(
         "getattr(child, CORRIDOR_CHILD_LINK_PROPERTY, None)" in project_text,
-        "Project tree routing should resolve child ownership through the compatibility child-link helper boundary",
+        "Project tree routing should resolve child ownership through the canonical child-link helper boundary",
     )
 
     task_text = _read_text(task_path)
     _assert(
         "getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) == cor" in task_text,
-        "Corridor task panel should recover generated child ownership through the compatibility child-link boundary",
+        "Corridor task panel should recover generated child ownership through the canonical child-link boundary",
     )
 
     print("[PASS] Corridor child-link boundary smoke test completed.")

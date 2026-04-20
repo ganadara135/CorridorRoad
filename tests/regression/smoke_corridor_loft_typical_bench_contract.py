@@ -10,6 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
+from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
@@ -137,7 +138,7 @@ def run():
         o
         for o in list(getattr(doc, "Objects", []) or [])
         if str(getattr(o, "Name", "") or "").startswith("CorridorSegment")
-        and getattr(o, "ParentCorridorLoft", None) == cor
+        and getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) == cor
     ]
     _assert(len(segment_objs) >= 1, "Typical+bench corridor should create at least one CorridorSegment child")
     _assert(all(str(getattr(o, "ProfileContractSource", "-") or "-") == "section_profiles" for o in segment_objs), "Typical+bench CorridorSegment children should carry the section_profiles contract source")

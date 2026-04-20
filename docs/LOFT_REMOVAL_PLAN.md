@@ -6,7 +6,8 @@ Current state:
 - Live runtime `Part.makeLoft(...)` usage is removed.
 - Command/task-panel compatibility aliases are retired.
 - Hidden project-link compatibility is retired.
-- Remaining work is child-link, proxy/type compatibility retirement and historical-note cleanup.
+- Child-link compatibility is retired.
+- Remaining work is proxy/type compatibility retirement and historical-note cleanup.
 
 ## Goal
 
@@ -193,7 +194,7 @@ Tasks:
 
 Current Phase 5 note:
 
-- Current active step: `Phase 5E.4 - child-link compatibility retirement design`
+- Current active step: `Phase 5E.5 - proxy/type compatibility retirement design`
 - Detailed execution sequence is tracked in `docs/LOFT_ALIAS_RETIREMENT_EXECUTION_PLAN.md`.
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
 - Legacy command alias `CorridorRoad_GenerateCorridorLoft` is retired.
@@ -201,6 +202,7 @@ Current Phase 5 note:
 - Legacy task-panel class alias `CorridorLoftTaskPanel` is retired.
 - Preferred task-panel module path now uses `task_corridor.py` only.
 - Project corridor link property now uses `Corridor`.
+- Child ownership link property now uses `ParentCorridor`.
 - Corridor compatibility names are now centralized in `freecad/Corridor_Road/corridor_compat.py`.
 - Raw compatibility literals in recompute routing and task-panel corridor creation now also resolve through `corridor_compat.py`.
 - Corridor child-link ownership property is now expected to remain only inside the corridor ownership-recovery boundary, not in unrelated runtime code.
@@ -217,18 +219,10 @@ Current Phase 5 note:
   - bundled runner: `tests/regression/run_loft_retirement_gate_smokes.ps1`
 - Hard blockers still preventing full internal-name removal:
   - FCStd proxy/type restore still depends on `CorridorLoft`
-  - generated child-link property `ParentCorridorLoft` is still part of corridor segment/skip-marker ownership recovery
 
 Recommended retirement order from this point:
 
-1. Child-link property retirement
-   - target: `ParentCorridorLoft`
-   - why next: generated child ownership still persists through that compatibility name
-   - gate:
-     - in-repo runtime code no longer references the compatibility child-link except through the corridor ownership-recovery boundary
-     - segment/skip-marker ownership recovery uses a replacement property name
-     - tree/adoption and reopen smokes pass with the replacement path
-2. Proxy/module/type retirement
+1. Proxy/module/type retirement
    - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
    - why last: this is the highest-risk FCStd restore boundary
    - gate:
@@ -291,3 +285,4 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5E1 command alias retirement (`CorridorRoad_GenerateCorridorLoft`)
 - [x] Phase 5E2 task-panel import alias retirement (`task_corridor_loft.py`, `CorridorLoftTaskPanel`)
 - [x] Phase 5E3 hidden project-link retirement (`CorridorLoft` -> `Corridor`)
+- [x] Phase 5E4 child-link retirement (`ParentCorridorLoft` -> `ParentCorridor`)

@@ -77,7 +77,8 @@ def run():
         if not hasattr(seg, CORRIDOR_CHILD_LINK_PROPERTY):
             seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Smoke", "Corridor link")
         setattr(seg, CORRIDOR_CHILD_LINK_PROPERTY, cor)
-        _assert(getattr(seg, CORRIDOR_CHILD_LINK_PROPERTY, None) is cor, "Compatibility child-link property should attach generated corridor children to the corridor")
+        _assert(not hasattr(seg, "ParentCorridorLoft"), "Generated corridor child should not create the legacy ParentCorridorLoft property")
+        _assert(getattr(seg, CORRIDOR_CHILD_LINK_PROPERTY, None) is cor, "Canonical child-link property should attach generated corridor children to the corridor")
 
         setattr(prj, CORRIDOR_PROJECT_PROPERTY, None)
         resolved_from_doc = resolve_project_corridor(doc)
