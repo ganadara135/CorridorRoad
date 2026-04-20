@@ -205,7 +205,7 @@ Tasks:
 
 Current Phase 5 note:
 
-- Current active step: `Phase 5C.6 - task-panel alias retirement gate coverage`
+- Current active step: `Phase 5D - bundled retirement-gate rerun and release handoff prep`
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
 - Preferred command module path now uses `cmd_generate_corridor.py`, while `cmd_generate_corridor_loft.py` remains as a compatibility wrapper.
 - Preferred task-panel class path now uses `CorridorTaskPanel`, while `CorridorLoftTaskPanel` remains as a compatibility alias.
@@ -214,12 +214,19 @@ Current Phase 5 note:
 - Raw compatibility literals in recompute routing and task-panel corridor creation now also resolve through `corridor_compat.py`.
 - Legacy corridor command id is now expected to remain only inside the compatibility-registration boundary, not in normal workbench UI wiring.
 - Legacy task-panel module/class aliases are now expected to remain only inside the compatibility import boundary, not in normal runtime imports.
+- Hidden corridor project-link property is now expected to remain only inside the project-link helper boundary, not in normal runtime feature code.
+- Corridor child-link ownership property is now expected to remain only inside the corridor ownership-recovery boundary, not in unrelated runtime code.
+- Corridor proxy/type/name-prefix compatibility is now expected to remain only inside the FCStd restore and corridor-routing boundary, not in unrelated runtime code.
 - Compatibility gates now have direct regression coverage:
   - `tests/regression/smoke_corridor_compat_aliases.py`
+  - `tests/regression/smoke_corridor_child_link_boundary.py`
   - `tests/regression/smoke_corridor_command_alias_boundary.py`
+  - `tests/regression/smoke_corridor_project_link_boundary.py`
+  - `tests/regression/smoke_corridor_proxy_boundary.py`
   - `tests/regression/smoke_corridor_taskpanel_alias_boundary.py`
   - `tests/regression/smoke_corridor_fcstd_restore.py`
   - `tests/regression/smoke_tree_schema.py`
+  - bundled runner: `tests/regression/run_loft_retirement_gate_smokes.ps1`
 - Hard blockers still preventing full internal-name removal:
   - FCStd proxy/type restore still depends on `CorridorLoft`
   - hidden project link property `CorridorLoft` is still part of compatibility reopen logic
@@ -247,18 +254,21 @@ Recommended retirement order from this point:
    - target: hidden property `CorridorLoft`
    - why third: FCStd project reopen still depends on it today
    - gate:
+     - in-repo runtime code no longer references the hidden compatibility property except through the project-link helper boundary
      - replacement persistence path exists
      - FCStd reopen smokes pass without resynchronizing through the compatibility property
 4. Child-link property retirement
    - target: `ParentCorridorLoft`
    - why fourth: generated child ownership still persists through that compatibility name
    - gate:
+     - in-repo runtime code no longer references the compatibility child-link except through the corridor ownership-recovery boundary
      - segment/skip-marker ownership recovery uses a replacement property name
      - tree/adoption and reopen smokes pass with the replacement path
 5. Proxy/module/type retirement
    - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
    - why last: this is the highest-risk FCStd restore boundary
    - gate:
+     - in-repo runtime code no longer references proxy/type/name-prefix compatibility except through FCStd restore and corridor-routing boundaries
      - canonical replacement proxy/type/module path exists
      - FCStd reopen/restore smokes pass for the renamed path
      - virtual-path fallback can be removed without restore regressions
@@ -309,4 +319,8 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5C4 alias retirement sequencing and exit-check ownership
 - [x] Phase 5C5 command alias boundary coverage (`smoke_corridor_command_alias_boundary.py`)
 - [x] Phase 5C6 task-panel alias boundary coverage (`smoke_corridor_taskpanel_alias_boundary.py`)
-- [ ] Phase 5C compatibility alias retirement gates
+- [x] Phase 5C7 hidden project-link boundary coverage (`smoke_corridor_project_link_boundary.py`)
+- [x] Phase 5C8 child-link ownership boundary coverage (`smoke_corridor_child_link_boundary.py`)
+- [x] Phase 5C9 proxy/type/module boundary coverage (`smoke_corridor_proxy_boundary.py`)
+- [x] Phase 5C compatibility alias retirement gates
+- [x] Phase 5D bundled retirement-gate runner (`run_loft_retirement_gate_smokes.ps1`)

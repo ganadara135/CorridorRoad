@@ -87,9 +87,13 @@ Compatibility window:
 - Recompute routing and task-panel corridor creation should also use `corridor_compat.py` constants instead of raw `CorridorLoft` literals.
 - The legacy command id `CorridorRoad_GenerateCorridorLoft` should remain only in the command registration compatibility boundary; normal workbench UI wiring should reference `CorridorRoad_GenerateCorridor`.
 - The legacy task-panel path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) should remain only in the task-panel import compatibility boundary; normal runtime imports should reference `task_corridor.py` and `CorridorTaskPanel`.
+- The hidden project link property `CorridorLoft` should remain only in the project-link helper boundary; normal runtime code should go through `assign_project_corridor()` and `resolve_project_corridor()`.
+- The child ownership link `ParentCorridorLoft` should remain only in the corridor ownership-recovery boundary; normal runtime code should not spell or route around that compatibility path elsewhere.
+- The proxy/type/name-prefix compatibility (`CorridorLoft`, `obj_corridor_loft.py`) should remain only in the FCStd restore and corridor-routing boundary until proxy retirement is explicitly opened.
 - Preferred task-panel class path is now `CorridorTaskPanel`; `CorridorLoftTaskPanel` remains only as an import-compatibility alias.
 - Preferred task-panel module path is `task_corridor.py`; `task_corridor_loft.py` remains only as a compatibility wrapper.
-- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.
+- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_child_link_boundary.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_project_link_boundary.py`, `smoke_corridor_proxy_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.
+- Use `tests/regression/run_loft_retirement_gate_smokes.ps1` to rerun the full Loft-retirement gate set before opening any real alias-removal PR.
 
 ## Completion Message Policy
 - Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.
