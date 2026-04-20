@@ -12,6 +12,7 @@ or inside Python console:
 
 import FreeCAD as App
 
+from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY, CORRIDOR_SEGMENT_NAME
 from freecad.Corridor_Road.objects.obj_project import (
     ALN_REF_NAME_PROP,
     ALN_REF_PROP,
@@ -185,10 +186,10 @@ def run():
     if not hasattr(cor, "SourceSectionSet"):
         cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
     cor.SourceSectionSet = sec
-    cor_seg = doc.addObject("Part::Feature", "CorridorSegment")
-    if not hasattr(cor_seg, "ParentCorridorLoft"):
-        cor_seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Smoke", "Corridor link")
-    cor_seg.ParentCorridorLoft = cor
+    cor_seg = doc.addObject("Part::Feature", CORRIDOR_SEGMENT_NAME)
+    if not hasattr(cor_seg, CORRIDOR_CHILD_LINK_PROPERTY):
+        cor_seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Smoke", "Corridor link")
+    setattr(cor_seg, CORRIDOR_CHILD_LINK_PROPERTY, cor)
     assign_project_region_plan(prj, reg)
     link_project(prj, links={"RegionPlan": reg}, adopt_extra=[va, pb, fg, asm, reg, sec, cor, cor_seg, disp, cl_boundary])
 

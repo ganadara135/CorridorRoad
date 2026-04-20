@@ -205,11 +205,19 @@ Tasks:
 
 Current Phase 5 note:
 
+- Current active step: `Phase 5C.1 - compatibility boundary consolidation and retirement-gate hardening`
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
+- Preferred command module path now uses `cmd_generate_corridor.py`, while `cmd_generate_corridor_loft.py` remains as a compatibility wrapper.
 - Preferred task-panel class path now uses `CorridorTaskPanel`, while `CorridorLoftTaskPanel` remains as a compatibility alias.
+- Preferred task-panel module path now uses `task_corridor.py`, while `task_corridor_loft.py` remains as a compatibility wrapper.
+- Corridor compatibility names are now centralized in `freecad/Corridor_Road/corridor_compat.py`.
+- Compatibility gates now have direct regression coverage:
+  - `tests/regression/smoke_corridor_compat_aliases.py`
+  - `tests/regression/smoke_tree_schema.py`
 - Hard blockers still preventing full internal-name removal:
   - FCStd proxy/type restore still depends on `CorridorLoft`
   - hidden project link property `CorridorLoft` is still part of compatibility reopen logic
+  - generated child-link property `ParentCorridorLoft` is still part of corridor segment/skip-marker ownership recovery
   - legacy command id `CorridorRoad_GenerateCorridorLoft` is still retained for older toolbars/macros
 
 ## Current Phase 1 Work Log
@@ -249,4 +257,8 @@ Code follow-up identified by the doc audit:
 - [x] Phase 4B StructureSet solid replacement
 - [x] Phase 4C corridor solid-path replacement/removal
 - [x] Phase 5A preferred task-panel path cleanup (`CorridorTaskPanel`)
-- [ ] Phase 5B compatibility alias retirement gates
+- [x] Phase 5A2 preferred module path cleanup (`cmd_generate_corridor.py`, `task_corridor.py`)
+- [x] Phase 5B compatibility gate regression coverage
+- [x] Phase 5B2 compatibility-name centralization (`corridor_compat.py`)
+- [ ] Phase 5C1 child-link compatibility retirement gate (`ParentCorridorLoft`)
+- [ ] Phase 5C compatibility alias retirement gates

@@ -68,11 +68,12 @@ Practical debugging order:
 - `cmd_generate_stations.py`
 - `cmd_generate_centerline3d.py`
 - `cmd_generate_sections.py`
-- `cmd_generate_corridor_loft.py`
+- `cmd_generate_corridor.py`
 - `cmd_import_pointcloud_dem.py`
 
 Command-id note:
 - Preferred command id is `CorridorRoad_GenerateCorridor`.
+- Preferred command module path is `cmd_generate_corridor.py`.
 - Legacy alias `CorridorRoad_GenerateCorridorLoft` is intentionally retained for compatibility with older toolbars and macros.
 - Project hidden link property is still named `CorridorLoft` for file compatibility; new code should prefer corridor helper functions instead of reading that property name directly.
 - Proxy/module names such as `CorridorLoft` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
@@ -81,7 +82,11 @@ Compatibility window:
 - `CorridorRoad_GenerateCorridorLoft` stays only as a legacy command alias. Remove it only after the preferred `CorridorRoad_GenerateCorridor` id has been the documented path for at least one release cycle and toolbar/macro compatibility has been re-checked.
 - Hidden project link property `CorridorLoft` stays only for FCStd compatibility. Remove it only after older project files reopen with corridor links preserved through a replacement persistence path.
 - Proxy/module/type names such as `CorridorLoft` stay only while FCStd proxy restore and virtual-path alias mapping still rely on them. Remove them only after restore/recompute smokes prove the renamed path is stable.
+- Generated child objects still use `ParentCorridorLoft` as the compatibility ownership link. New code should reference the compatibility constant instead of spelling that property name directly.
 - New code should use corridor helpers such as `resolve_project_corridor()` and `assign_project_corridor()` instead of reading compatibility names directly.
+- Preferred task-panel class path is now `CorridorTaskPanel`; `CorridorLoftTaskPanel` remains only as an import-compatibility alias.
+- Preferred task-panel module path is `task_corridor.py`; `task_corridor_loft.py` remains only as a compatibility wrapper.
+- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py` and `smoke_tree_schema.py`.
 
 ## Completion Message Policy
 - Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.

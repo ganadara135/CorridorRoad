@@ -13,6 +13,11 @@ import math
 import FreeCAD as App
 import Part
 
+from freecad.Corridor_Road.corridor_compat import (
+    CORRIDOR_CHILD_LINK_PROPERTY,
+    CORRIDOR_SEGMENT_NAME,
+    CORRIDOR_SKIP_MARKER_NAME,
+)
 from freecad.Corridor_Road.objects.obj_section_set import (
     SectionSet,
     _display_only_status_token,
@@ -1444,9 +1449,9 @@ class CorridorLoft:
             return
         for ch in list(getattr(doc, "Objects", []) or []):
             try:
-                if not str(getattr(ch, "Name", "") or "").startswith("CorridorSkipMarker"):
+                if not str(getattr(ch, "Name", "") or "").startswith(CORRIDOR_SKIP_MARKER_NAME):
                     continue
-                if getattr(ch, "ParentCorridorLoft", None) != obj:
+                if getattr(ch, CORRIDOR_CHILD_LINK_PROPERTY, None) != obj:
                     continue
                 doc.removeObject(ch.Name)
             except Exception:
@@ -1459,9 +1464,9 @@ class CorridorLoft:
             return
         for ch in list(getattr(doc, "Objects", []) or []):
             try:
-                if not str(getattr(ch, "Name", "") or "").startswith("CorridorSegment"):
+                if not str(getattr(ch, "Name", "") or "").startswith(CORRIDOR_SEGMENT_NAME):
                     continue
-                if getattr(ch, "ParentCorridorLoft", None) != obj:
+                if getattr(ch, CORRIDOR_CHILD_LINK_PROPERTY, None) != obj:
                     continue
                 doc.removeObject(ch.Name)
             except Exception:
@@ -1491,11 +1496,11 @@ class CorridorLoft:
                 if shp is None or shp.isNull():
                     continue
                 try:
-                    mk = doc.addObject("Part::Feature", "CorridorSkipMarker")
+                    mk = doc.addObject("Part::Feature", CORRIDOR_SKIP_MARKER_NAME)
                     mk.Label = f"STA {float(stations[idx]):.3f} [{role}]"
-                    if not hasattr(mk, "ParentCorridorLoft"):
-                        mk.addProperty("App::PropertyLink", "ParentCorridorLoft", "Corridor", "Owning CorridorLoft")
-                    mk.ParentCorridorLoft = obj
+                    if not hasattr(mk, CORRIDOR_CHILD_LINK_PROPERTY):
+                        mk.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning CorridorLoft")
+                    setattr(mk, CORRIDOR_CHILD_LINK_PROPERTY, obj)
                     if not hasattr(mk, "Station"):
                         mk.addProperty("App::PropertyFloat", "Station", "Corridor", "Boundary station")
                     mk.Station = float(stations[idx])
@@ -1540,11 +1545,11 @@ class CorridorLoft:
                 key, value = part.split("=", 1)
                 fields[str(key or "").strip()] = str(value or "").strip()
             try:
-                seg = doc.addObject("Part::Feature", "CorridorSegment")
+                seg = doc.addObject("Part::Feature", CORRIDOR_SEGMENT_NAME)
                 seg.Label = str(fields.get("displayLabel", fields.get("segmentId", f"Segment {idx + 1}")) or f"Segment {idx + 1}")
-                if not hasattr(seg, "ParentCorridorLoft"):
-                    seg.addProperty("App::PropertyLink", "ParentCorridorLoft", "Corridor", "Owning CorridorLoft")
-                seg.ParentCorridorLoft = obj
+                if not hasattr(seg, CORRIDOR_CHILD_LINK_PROPERTY):
+                    seg.addProperty("App::PropertyLink", CORRIDOR_CHILD_LINK_PROPERTY, "Corridor", "Owning CorridorLoft")
+                setattr(seg, CORRIDOR_CHILD_LINK_PROPERTY, obj)
                 if not hasattr(seg, "SegmentId"):
                     seg.addProperty("App::PropertyString", "SegmentId", "Corridor", "Segment identifier")
                 seg.SegmentId = str(fields.get("segmentId", "") or "")

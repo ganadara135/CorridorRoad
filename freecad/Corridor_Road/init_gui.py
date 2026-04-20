@@ -37,7 +37,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_edit_regions  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_sections  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_corridor_loft  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_generate_corridor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_design_grading_surface  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_design_terrain  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401

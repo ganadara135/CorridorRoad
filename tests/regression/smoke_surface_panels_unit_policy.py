@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.ui.task_corridor_loft import CorridorTaskPanel
+from freecad.Corridor_Road.ui.task_corridor import CorridorTaskPanel
 from freecad.Corridor_Road.ui.task_cut_fill_calc import CutFillCalcTaskPanel
 from freecad.Corridor_Road.ui.task_design_terrain import DesignTerrainTaskPanel
 from freecad.Corridor_Road.ui.task_pointcloud_dem import PointCloudDEMTaskPanel
