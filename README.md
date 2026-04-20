@@ -32,8 +32,8 @@ It covers a practical pipeline from alignment to sections, corridor geometry, de
 - Use the project thread for workflow questions, bug reports, usage problems, and development discussion.
 
 ## Latest Release
-- Current stable release: `v0.2.6`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.6
+- Current stable release: `v0.2.7`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.7
 
 ## Main Commands
 - `New Project`

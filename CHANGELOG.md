@@ -10,7 +10,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Changed
-- Placeholder for upcoming changes.
+- Retired the legacy command alias `CorridorRoad_GenerateCorridorLoft` and removed the legacy command-wrapper module.
+- Retired the legacy task-panel alias path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) and updated the Loft-retirement gate docs/tests accordingly.
 
 ## [0.2.7] - 2026-04-15
 

@@ -5,7 +5,7 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from freecad.Corridor_Road.corridor_compat import LEGACY_COMMAND_ID, PREFERRED_COMMAND_ID
+from freecad.Corridor_Road.corridor_compat import PREFERRED_COMMAND_ID
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.ui.task_corridor import CorridorTaskPanel
 
@@ -29,10 +29,4 @@ class CmdGenerateCorridor:
 _CMD = CmdGenerateCorridor()
 
 if hasattr(Gui, "addCommand"):
-    # Preferred user-facing command id.
     Gui.addCommand(PREFERRED_COMMAND_ID, _CMD)
-    # Compatibility alias kept for older workbench layouts/macros.
-    # Removal gate: retire only after the preferred command id has been the
-    # documented path for at least one release cycle and legacy macro/toolbar
-    # compatibility has been re-verified.
-    Gui.addCommand(LEGACY_COMMAND_ID, _CMD)

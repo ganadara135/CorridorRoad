@@ -10,7 +10,10 @@ Run in FreeCAD Python environment:
 
 import os
 
-from freecad.Corridor_Road.corridor_compat import LEGACY_COMMAND_ID, PREFERRED_COMMAND_ID
+from freecad.Corridor_Road.corridor_compat import PREFERRED_COMMAND_ID
+
+
+LEGACY_COMMAND_ID = "CorridorRoad_GenerateCorridorLoft"
 
 
 def _assert(cond, msg):
@@ -26,12 +29,7 @@ def _read_text(path):
 def run():
     repo_root = os.getcwd()
     freecad_root = os.path.join(repo_root, "freecad", "Corridor_Road")
-
-    allowed_legacy_id_files = {
-        os.path.normpath(os.path.join(freecad_root, "corridor_compat.py")),
-        os.path.normpath(os.path.join(freecad_root, "commands", "cmd_generate_corridor.py")),
-    }
-    found_legacy_id_files = set()
+    found_legacy_id_files = []
 
     for root, _dirs, files in os.walk(freecad_root):
         for name in files:
@@ -40,10 +38,9 @@ def run():
             path = os.path.normpath(os.path.join(root, name))
             text = _read_text(path)
             if LEGACY_COMMAND_ID in text:
-                found_legacy_id_files.add(path)
+                found_legacy_id_files.append(path)
 
-    unexpected = sorted(path for path in found_legacy_id_files if path not in allowed_legacy_id_files)
-    _assert(not unexpected, f"Legacy command id should stay isolated to compatibility boundary files only: {unexpected}")
+    _assert(not found_legacy_id_files, f"Legacy command id should be fully removed from runtime code: {sorted(found_legacy_id_files)}")
 
     init_gui_path = os.path.join(freecad_root, "init_gui.py")
     init_gui_text = _read_text(init_gui_path)
@@ -53,7 +50,9 @@ def run():
     cmd_path = os.path.join(freecad_root, "commands", "cmd_generate_corridor.py")
     cmd_text = _read_text(cmd_path)
     _assert("Gui.addCommand(PREFERRED_COMMAND_ID, _CMD)" in cmd_text, "Canonical command module should register the preferred command id through the preferred constant")
-    _assert("Gui.addCommand(LEGACY_COMMAND_ID, _CMD)" in cmd_text, "Canonical command module should retain the legacy command alias through the compatibility constant until retirement")
+
+    legacy_wrapper_path = os.path.join(freecad_root, "commands", "cmd_generate_corridor_loft.py")
+    _assert(not os.path.exists(legacy_wrapper_path), "Legacy corridor command wrapper should be removed")
 
     print("[PASS] Corridor command-alias boundary smoke test completed.")
 

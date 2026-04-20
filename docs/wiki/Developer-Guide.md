@@ -74,24 +74,23 @@ Practical debugging order:
 Command-id note:
 - Preferred command id is `CorridorRoad_GenerateCorridor`.
 - Preferred command module path is `cmd_generate_corridor.py`.
-- Legacy alias `CorridorRoad_GenerateCorridorLoft` is intentionally retained for compatibility with older toolbars and macros.
+- Legacy alias `CorridorRoad_GenerateCorridorLoft` is retired.
 - Project hidden link property is still named `CorridorLoft` for file compatibility; new code should prefer corridor helper functions instead of reading that property name directly.
 - Proxy/module names such as `CorridorLoft` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
 
 Compatibility window:
-- `CorridorRoad_GenerateCorridorLoft` stays only as a legacy command alias. Remove it only after the preferred `CorridorRoad_GenerateCorridor` id has been the documented path for at least one release cycle and toolbar/macro compatibility has been re-checked.
 - Hidden project link property `CorridorLoft` stays only for FCStd compatibility. Remove it only after older project files reopen with corridor links preserved through a replacement persistence path.
 - Proxy/module/type names such as `CorridorLoft` stay only while FCStd proxy restore and virtual-path alias mapping still rely on them. Remove them only after restore/recompute smokes prove the renamed path is stable.
 - Generated child objects still use `ParentCorridorLoft` as the compatibility ownership link. New code should reference the compatibility constant instead of spelling that property name directly.
 - New code should use corridor helpers such as `resolve_project_corridor()` and `assign_project_corridor()` instead of reading compatibility names directly.
 - Recompute routing and task-panel corridor creation should also use `corridor_compat.py` constants instead of raw `CorridorLoft` literals.
-- The legacy command id `CorridorRoad_GenerateCorridorLoft` should remain only in the command registration compatibility boundary; normal workbench UI wiring should reference `CorridorRoad_GenerateCorridor`.
-- The legacy task-panel path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) should remain only in the task-panel import compatibility boundary; normal runtime imports should reference `task_corridor.py` and `CorridorTaskPanel`.
+- The retired command id `CorridorRoad_GenerateCorridorLoft` should not appear in runtime wiring anymore.
+- The retired task-panel path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) should not appear in runtime imports anymore.
 - The hidden project link property `CorridorLoft` should remain only in the project-link helper boundary; normal runtime code should go through `assign_project_corridor()` and `resolve_project_corridor()`.
 - The child ownership link `ParentCorridorLoft` should remain only in the corridor ownership-recovery boundary; normal runtime code should not spell or route around that compatibility path elsewhere.
 - The proxy/type/name-prefix compatibility (`CorridorLoft`, `obj_corridor_loft.py`) should remain only in the FCStd restore and corridor-routing boundary until proxy retirement is explicitly opened.
-- Preferred task-panel class path is now `CorridorTaskPanel`; `CorridorLoftTaskPanel` remains only as an import-compatibility alias.
-- Preferred task-panel module path is `task_corridor.py`; `task_corridor_loft.py` remains only as a compatibility wrapper.
+- Preferred task-panel class path is `CorridorTaskPanel`.
+- Preferred task-panel module path is `task_corridor.py`.
 - Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_child_link_boundary.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_project_link_boundary.py`, `smoke_corridor_proxy_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.
 - Use `tests/regression/run_loft_retirement_gate_smokes.ps1` to rerun the full Loft-retirement gate set before opening any real alias-removal PR.
 

@@ -4,11 +4,12 @@ Current state:
 
 - User-facing `Loft` wording cleanup is complete.
 - Live runtime `Part.makeLoft(...)` usage is removed.
-- Remaining work is compatibility-name retirement and historical-note cleanup.
+- Command/task-panel compatibility aliases are retired.
+- Remaining work is project-link, child-link, proxy/type compatibility retirement and historical-note cleanup.
 
 ## Goal
 
-Retire `Loft` as the default corridor concept without breaking file compatibility or removing live runtime paths too early.
+Retire `Loft` as the default corridor concept in a staged order while keeping only the remaining FCStd-sensitive compatibility boundaries.
 
 This plan separates three different kinds of `Loft` usage:
 
@@ -16,7 +17,7 @@ This plan separates three different kinds of `Loft` usage:
 2. Internal compatibility names such as `CorridorLoft` and `CorridorRoad_GenerateCorridorLoft`
 3. Runtime geometry dependencies such as `Part.makeLoft(...)`
 
-They must not be removed in one pass.
+They should still be removed in a controlled order.
 
 ## Principles
 
@@ -134,21 +135,14 @@ Tasks:
 
 Compatibility window targets:
 
-1. Command alias
-   - Keep: `CorridorRoad_GenerateCorridorLoft`
-   - Why: older toolbar layouts and user macros may still call the legacy id
-   - Remove only when:
-     - `CorridorRoad_GenerateCorridor` is the only preferred id in docs and UI
-     - release notes have warned about the alias retirement for at least one release cycle
-     - toolbar/menu/macro compatibility is explicitly re-verified
-2. Project hidden link property
+1. Project hidden link property
    - Keep: hidden property `CorridorLoft`
    - Why: older FCStd files may restore project corridor links through that property name
    - Remove only when:
      - a replacement persistence path exists
      - old FCStd files reopen with corridor links preserved
      - project-link helpers no longer need the compatibility property
-3. Proxy/module/type naming
+2. Proxy/module/type naming
    - Keep: proxy/type/module compatibility names such as `CorridorLoft`
    - Why: FCStd proxy restore and legacy module-path recovery still depend on them
    - Remove only when:
@@ -205,15 +199,15 @@ Tasks:
 
 Current Phase 5 note:
 
-- Current active step: `Phase 5D - bundled retirement-gate rerun and release handoff prep`
+- Current active step: `Phase 5E.3 - project-link compatibility retirement design`
+- Detailed execution sequence is tracked in `docs/LOFT_ALIAS_RETIREMENT_EXECUTION_PLAN.md`.
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
-- Preferred command module path now uses `cmd_generate_corridor.py`, while `cmd_generate_corridor_loft.py` remains as a compatibility wrapper.
-- Preferred task-panel class path now uses `CorridorTaskPanel`, while `CorridorLoftTaskPanel` remains as a compatibility alias.
-- Preferred task-panel module path now uses `task_corridor.py`, while `task_corridor_loft.py` remains as a compatibility wrapper.
+- Legacy command alias `CorridorRoad_GenerateCorridorLoft` is retired.
+- Preferred command module path now uses `cmd_generate_corridor.py` only.
+- Legacy task-panel class alias `CorridorLoftTaskPanel` is retired.
+- Preferred task-panel module path now uses `task_corridor.py` only.
 - Corridor compatibility names are now centralized in `freecad/Corridor_Road/corridor_compat.py`.
 - Raw compatibility literals in recompute routing and task-panel corridor creation now also resolve through `corridor_compat.py`.
-- Legacy corridor command id is now expected to remain only inside the compatibility-registration boundary, not in normal workbench UI wiring.
-- Legacy task-panel module/class aliases are now expected to remain only inside the compatibility import boundary, not in normal runtime imports.
 - Hidden corridor project-link property is now expected to remain only inside the project-link helper boundary, not in normal runtime feature code.
 - Corridor child-link ownership property is now expected to remain only inside the corridor ownership-recovery boundary, not in unrelated runtime code.
 - Corridor proxy/type/name-prefix compatibility is now expected to remain only inside the FCStd restore and corridor-routing boundary, not in unrelated runtime code.
@@ -231,40 +225,24 @@ Current Phase 5 note:
   - FCStd proxy/type restore still depends on `CorridorLoft`
   - hidden project link property `CorridorLoft` is still part of compatibility reopen logic
   - generated child-link property `ParentCorridorLoft` is still part of corridor segment/skip-marker ownership recovery
-  - legacy command id `CorridorRoad_GenerateCorridorLoft` is still retained for older toolbars/macros
 
 Recommended retirement order from this point:
 
-1. Command alias retirement
-   - target: `CorridorRoad_GenerateCorridorLoft`
-   - why first: it is the least persistence-sensitive compatibility point
-   - gate:
-     - preferred command id has stayed documented for at least one release cycle
-     - in-repo workbench wiring and internal code no longer reference the legacy id except at the compatibility registration boundary
-     - toolbar/menu/macro compatibility has been manually re-checked
-     - release notes explicitly announce alias removal
-2. Task-panel import alias retirement
-   - targets: `task_corridor_loft.py`, `CorridorLoftTaskPanel`
-   - why second: import compatibility is easier to remove than persisted proxy/type names once command alias fallout is understood
-   - gate:
-     - in-repo runtime imports no longer reference the legacy task-panel module/class except at the compatibility import boundary
-     - no in-repo imports still depend on the legacy task-panel path
-     - compatibility smoke no longer needs the legacy import branch
-3. Hidden project link retirement
+1. Hidden project link retirement
    - target: hidden property `CorridorLoft`
-   - why third: FCStd project reopen still depends on it today
+   - why next: command/task-panel alias retirement is complete, but FCStd project reopen still depends on it today
    - gate:
      - in-repo runtime code no longer references the hidden compatibility property except through the project-link helper boundary
      - replacement persistence path exists
      - FCStd reopen smokes pass without resynchronizing through the compatibility property
-4. Child-link property retirement
+2. Child-link property retirement
    - target: `ParentCorridorLoft`
-   - why fourth: generated child ownership still persists through that compatibility name
+   - why after project link: generated child ownership still persists through that compatibility name
    - gate:
      - in-repo runtime code no longer references the compatibility child-link except through the corridor ownership-recovery boundary
      - segment/skip-marker ownership recovery uses a replacement property name
      - tree/adoption and reopen smokes pass with the replacement path
-5. Proxy/module/type retirement
+3. Proxy/module/type retirement
    - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
    - why last: this is the highest-risk FCStd restore boundary
    - gate:
@@ -324,3 +302,5 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5C9 proxy/type/module boundary coverage (`smoke_corridor_proxy_boundary.py`)
 - [x] Phase 5C compatibility alias retirement gates
 - [x] Phase 5D bundled retirement-gate runner (`run_loft_retirement_gate_smokes.ps1`)
+- [x] Phase 5E1 command alias retirement (`CorridorRoad_GenerateCorridorLoft`)
+- [x] Phase 5E2 task-panel import alias retirement (`task_corridor_loft.py`, `CorridorLoftTaskPanel`)

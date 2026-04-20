@@ -60,8 +60,8 @@ Practical validation note:
 - Use the forum thread for usage questions, bug discussion, and development feedback.
 
 ## Latest Release
-- Current stable release: `v0.2.6`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.6
+- Current stable release: `v0.2.7`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v0.2.7
 
 ## Core Pipeline
 `Terrain (EG) -> Alignment -> Stations -> Structures -> Profiles/PVI -> 3D Centerline -> Sections -> Corridor -> Design Terrain -> Cut/Fill`

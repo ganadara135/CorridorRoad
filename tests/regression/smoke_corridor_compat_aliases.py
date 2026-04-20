@@ -18,9 +18,6 @@ from freecad.Corridor_Road.corridor_compat import (
     CORRIDOR_CHILD_LINK_PROPERTY,
     CORRIDOR_PROJECT_PROPERTY,
     CORRIDOR_SEGMENT_NAME,
-    LEGACY_COMMAND_MODULE,
-    LEGACY_TASK_PANEL_CLASS,
-    LEGACY_TASK_MODULE,
     PREFERRED_COMMAND_MODULE,
     PREFERRED_TASK_PANEL_CLASS,
     PREFERRED_TASK_MODULE,
@@ -46,17 +43,13 @@ def run():
     legacy_a = importlib.import_module("Corridor_Road.objects.obj_corridor_loft")
     legacy_b = importlib.import_module("objects.obj_corridor_loft")
     task_canonical = importlib.import_module(PREFERRED_TASK_MODULE)
-    task_legacy = importlib.import_module(LEGACY_TASK_MODULE)
     cmd_canonical = importlib.import_module(PREFERRED_COMMAND_MODULE)
-    cmd_legacy = importlib.import_module(LEGACY_COMMAND_MODULE)
 
     _assert(legacy_a is canonical, "Legacy Corridor_Road module alias should resolve to canonical module")
     _assert(legacy_b is canonical, "Legacy objects module alias should resolve to canonical module")
     _assert(getattr(task_canonical, PREFERRED_TASK_PANEL_CLASS) is task_canonical.CorridorTaskPanel, "Canonical task-panel module should expose the preferred CorridorTaskPanel class")
-    _assert(task_legacy.CorridorTaskPanel is task_canonical.CorridorTaskPanel, "Legacy task-panel module should expose the canonical CorridorTaskPanel")
-    _assert(getattr(task_legacy, LEGACY_TASK_PANEL_CLASS) is task_canonical.CorridorTaskPanel, "Legacy task-panel alias should resolve to the canonical CorridorTaskPanel")
-    _assert(cmd_legacy._CMD is cmd_canonical._CMD, "Legacy command module should reuse the canonical corridor command instance")
-    _assert(cmd_legacy.CmdGenerateCorridor is cmd_canonical.CmdGenerateCorridor, "Legacy command module should re-export the canonical command class")
+    _assert(hasattr(cmd_canonical, "CmdGenerateCorridor"), "Canonical command module should expose the corridor command class")
+    _assert(hasattr(cmd_canonical, "_CMD"), "Canonical command module should expose the shared corridor command instance")
     _assert(
         str(getattr(canonical.CorridorLoft, "__module__", "") or "") == "freecad.Corridor_Road.objects.obj_corridor_loft",
         "CorridorLoft class module path should stay canonical after alias install",

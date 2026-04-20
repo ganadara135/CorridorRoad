@@ -591,7 +591,3 @@ class CorridorTaskPanel:
                 pass
         except Exception as ex:
             self.lbl_status.setText(f"ERROR: {ex}")
-
-
-# Legacy class alias retained for compatibility with older imports/tests.
-CorridorLoftTaskPanel = CorridorTaskPanel
