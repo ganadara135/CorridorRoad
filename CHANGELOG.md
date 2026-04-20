@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
-## [Unreleased]
+## [0.2.8] - 2026-04-20
 
 ### Changed
 - Retired the legacy proxy module `obj_corridor_loft.py` and its internal `CorridorLoft` proxy type, establishing `obj_corridor.py` and `Corridor` as the canonical standard.
