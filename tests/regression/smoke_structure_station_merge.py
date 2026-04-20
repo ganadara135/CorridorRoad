@@ -13,7 +13,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
 
@@ -100,8 +100,8 @@ def run():
     sec.CreateChildSections = True
     sec.AutoRebuildChildren = True
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
     cor.UseStructureCorridorModes = True
     cor.SplitAtStructureZones = True
@@ -137,7 +137,7 @@ def run():
 
     _assert(_shape_ok(cor), "Corridor did not generate geometry")
     _assert(int(getattr(cor, "StructureSegmentCount", 0) or 0) >= 2, "Corridor should split across structure ranges")
-    _assert(len(list(getattr(cor, "SkippedStationRanges", []) or [])) >= 1, "CorridorLoft missing skipped station ranges")
+    _assert(len(list(getattr(cor, "SkippedStationRanges", []) or [])) >= 1, "Corridor missing skipped station ranges")
     mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "") or "")
     _assert("skip_zone=2" in mode_summary, "Corridor mode summary missing skip_zone count")
     _assert("split_only=1" in mode_summary, "Corridor mode summary missing split_only count")

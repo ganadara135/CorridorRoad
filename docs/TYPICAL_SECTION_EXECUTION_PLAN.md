@@ -94,7 +94,7 @@ Completed:
 - `TopProfileSource=typical_section`
 - `TopProfileEdgeSummary` propagated to:
   - `SectionSet`
-  - `CorridorLoft`
+  - `Corridor`
   - `DesignGradingSurface`
 - corridor completion dialog enriched with:
   - points per section
@@ -110,7 +110,7 @@ Current scope:
 
 Key files:
 - `freecad/Corridor_Road/objects/obj_section_set.py`
-- `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+- `freecad/Corridor_Road/objects/obj_corridor.py`
 - `freecad/Corridor_Road/objects/obj_design_grading_surface.py`
 - `freecad/Corridor_Road/ui/task_corridor_loft.py`
 
@@ -128,7 +128,7 @@ Completed:
 - pavement preview offset wires added to `TypicalSectionTemplate`
 - pavement summary propagated to:
   - `SectionSet`
-  - `CorridorLoft`
+  - `Corridor`
   - `DesignGradingSurface`
 - `TypicalSectionPavementDisplay` now provides separate pavement geometry/report output
 - pavement layer report rows now propagate downstream with the summary fields
@@ -141,7 +141,7 @@ Key files:
 - `freecad/Corridor_Road/objects/obj_typical_section_template.py`
 - `freecad/Corridor_Road/ui/task_typical_section_editor.py`
 - `freecad/Corridor_Road/objects/obj_section_set.py`
-- `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+- `freecad/Corridor_Road/objects/obj_corridor.py`
 - `freecad/Corridor_Road/objects/obj_design_grading_surface.py`
 
 ### Sprint I: Samples and Documentation

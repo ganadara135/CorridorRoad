@@ -457,7 +457,7 @@ Remaining validation:
 
 ## Sprint 6
 1. corridor-mode fields in `StructureSet`
-2. `skip_zone` implementation in `CorridorLoft`
+2. `skip_zone` implementation in `Corridor`
 3. status/result reporting for skipped structure ranges
 4. UI exposure for corridor structure handling
 
@@ -480,7 +480,7 @@ Done when:
 2. notch transition remains loft-safe and reproducible
 
 Completed:
-1. `CorridorLoft` can build notch-aware closed profiles for `culvert` and `crossing`
+1. `Corridor` can build notch-aware closed profiles for `culvert` and `crossing`
 2. notch ramping follows structure transition stations
 3. result reporting includes closed-profile schema version and notch-aware station count
 

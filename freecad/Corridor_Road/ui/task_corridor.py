@@ -15,7 +15,7 @@ from freecad.Corridor_Road.corridor_compat import (
 )
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects import unit_policy as _units
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ViewProviderCorridorLoft, ensure_corridor_loft_properties
+from freecad.Corridor_Road.objects.obj_corridor import Corridor, ViewProviderCorridor, ensure_corridor_loft_properties
 from freecad.Corridor_Road.objects.obj_project import (
     assign_project_corridor,
     find_corridor_objects,
@@ -332,14 +332,14 @@ class CorridorTaskPanel:
         if cor is None:
             return None
         try:
-            CorridorLoft(cor)
+            Corridor(cor)
         except Exception:
             try:
                 ensure_corridor_loft_properties(cor)
             except Exception:
                 return None
         try:
-            ViewProviderCorridorLoft(cor.ViewObject)
+            ViewProviderCorridor(cor.ViewObject)
         except Exception:
             pass
         return cor
@@ -448,8 +448,8 @@ class CorridorTaskPanel:
                 return repaired
 
         cor = self.doc.addObject("Part::FeaturePython", CORRIDOR_NAME_PREFIX)
-        CorridorLoft(cor)
-        ViewProviderCorridorLoft(cor.ViewObject)
+        Corridor(cor)
+        ViewProviderCorridor(cor.ViewObject)
         cor.Label = "Corridor"
         return cor
 
@@ -461,8 +461,8 @@ class CorridorTaskPanel:
         try:
             if bool(self.chk_structure_modes.isChecked()) and bool(getattr(sec, "UseStructureSet", False)):
                 fallback_mode = str(self.cmb_default_structure_mode.currentText() or "split_only")
-                rows = CorridorLoft._resolve_structure_corridor_records(sec, fallback_mode=fallback_mode)
-                _detail_rows, corridor_warning_rows, mode_summary, spans = CorridorLoft._describe_structure_corridor_records(rows)
+                rows = Corridor._resolve_structure_corridor_records(sec, fallback_mode=fallback_mode)
+                _detail_rows, corridor_warning_rows, mode_summary, spans = Corridor._describe_structure_corridor_records(rows)
                 if any(str(mode or "").strip().lower() == "skip_zone" for _s0, _s1, mode in list(spans or [])):
                     warnings.append(
                         "skip_zone omits corridor body across active spans. Skip boundary caps are deferred in this phase and only skip markers are generated."
@@ -477,8 +477,8 @@ class CorridorTaskPanel:
             pass
         try:
             if bool(self.chk_region_modes.isChecked()) and bool(region_plan_usage_enabled(sec)):
-                rows = CorridorLoft._resolve_region_corridor_records(sec)
-                _detail_rows, region_warning_rows, mode_summary, spans = CorridorLoft._describe_region_corridor_records(rows)
+                rows = Corridor._resolve_region_corridor_records(sec)
+                _detail_rows, region_warning_rows, mode_summary, spans = Corridor._describe_region_corridor_records(rows)
                 if any(str(mode or "").strip().lower() == "skip_zone" for _s0, _s1, mode in list(spans or [])):
                     warnings.append(
                         "Region skip_zone omits corridor body across active spans and uses the same deferred skip-boundary behavior as structure skip zones."
@@ -547,7 +547,7 @@ class CorridorTaskPanel:
                 )
 
             self.doc.recompute()
-            CorridorLoft.refresh_if_needed(cor, max_passes=2)
+            Corridor.refresh_if_needed(cor, max_passes=2)
             marker_objs = []
             segment_objs = []
             try:

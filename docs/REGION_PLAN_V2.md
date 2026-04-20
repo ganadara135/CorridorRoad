@@ -24,7 +24,7 @@ This document redefines Region around:
 2. tree placement
 3. object model
 4. UI mental model
-5. compatibility with current `SectionSet` and `CorridorLoft`
+5. compatibility with current `SectionSet` and `Corridor`
 
 ## Problem Statement
 
@@ -499,7 +499,7 @@ That runtime does not need to be thrown away immediately.
 
 1. new user-facing `RegionPlan` model
 2. adapter layer that converts `RegionPlan` into current flat runtime records
-3. current `SectionSet` and `CorridorLoft` keep consuming the adapted runtime form during transition
+3. current `SectionSet` and `Corridor` keep consuming the adapted runtime form during transition
 
 ### Why use an adapter
 
@@ -511,14 +511,14 @@ This gives:
 
 ## Runtime Compatibility
 
-### Existing `SectionSet` and `CorridorLoft`
+### Existing `SectionSet` and `Corridor`
 
 Keep the current runtime contract until Region Plan V2 is stable.
 
 That means:
 
 1. `SectionSet` still resolves station-local region context
-2. `CorridorLoft` still consumes resolved region corridor policy
+2. `Corridor` still consumes resolved region corridor policy
 3. the source of those rows changes from direct authoring to adapter output
 
 ## Recommended Data Model
@@ -652,7 +652,7 @@ Validation should also be expressed in user language.
 ### Phase 6. Runtime adapter
 
 1. emit the current flat records from the new model
-2. keep `SectionSet` and `CorridorLoft` working
+2. keep `SectionSet` and `Corridor` working
 
 ### Phase 7. Runtime cleanup
 
@@ -699,7 +699,7 @@ Region V2 is complete when:
 2. the tree places Region alongside alignment design objects
 3. users author base spans and local overrides separately
 4. `Auto-seed` generates hints, not ambiguous disabled rows
-5. `SectionSet` and `CorridorLoft` still consume resolved station-local region behavior reliably
+5. `SectionSet` and `Corridor` still consume resolved station-local region behavior reliably
 6. runtime export remains reliable and inspectable
 
 ## Summary

@@ -13,7 +13,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
@@ -124,7 +124,7 @@ def run():
     sec_single = _make_section_set(doc, "SectionSetSingleBench", disp, asm_single)
     sec_multi = _make_section_set(doc, "SectionSetMultiBench", disp, asm_multi)
     cor_multi = doc.addObject("Part::FeaturePython", "CorridorMultiBench")
-    CorridorLoft(cor_multi)
+    Corridor(cor_multi)
     cor_multi.SourceSectionSet = sec_multi
     dgs_multi = doc.addObject("Mesh::FeaturePython", "GradingMultiBench")
     DesignGradingSurface(dgs_multi)

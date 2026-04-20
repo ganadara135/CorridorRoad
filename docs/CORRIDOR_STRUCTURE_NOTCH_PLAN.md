@@ -95,7 +95,7 @@ Meaning:
 5. `CorridorMargins`
    - extra tolerance around the structure zone for conservative corridor trimming
 
-### CorridorLoft additions
+### Corridor additions
 Suggested object properties:
 1. `UseStructureCorridorModes`
 2. `DefaultStructureCorridorMode`
@@ -107,7 +107,7 @@ Suggested object properties:
 
 Meaning:
 1. `UseStructureCorridorModes`
-   - lets `CorridorLoft` consume structure corridor policy from `StructureSet`
+   - lets `Corridor` consume structure corridor policy from `StructureSet`
 2. `DefaultStructureCorridorMode`
    - fallback when a record has no corridor mode
 3. `SkipZoneCaps`
@@ -324,7 +324,7 @@ Reason:
 ### Sprint A: corridor mode plumbing
 1. add corridor-mode fields to `StructureSet`
 2. add corridor-mode fields to `Edit Structures`
-3. add `CorridorLoft` properties for structure corridor consumption
+3. add `Corridor` properties for structure corridor consumption
 4. resolve station spans by corridor mode
 
 ### Sprint B: `skip_zone`
@@ -350,7 +350,7 @@ Main files expected to change:
 1. `freecad/Corridor_Road/objects/obj_structure_set.py`
 2. `freecad/Corridor_Road/ui/task_structure_editor.py`
 3. `freecad/Corridor_Road/objects/obj_section_set.py`
-4. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+4. `freecad/Corridor_Road/objects/obj_corridor.py`
 5. `freecad/Corridor_Road/ui/task_corridor_loft.py`
 
 Docs expected to change:

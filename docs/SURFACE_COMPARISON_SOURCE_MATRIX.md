@@ -34,6 +34,6 @@
 
 ## Notes
 
-- The current implementation keeps the design side tied to corridor top-face extraction from the current `CorridorLoft` object.
+- The current implementation keeps the design side tied to corridor top-face extraction from the current `Corridor` object.
 - Domain and station-bin reporting are now explicit result contracts, but they do not yet change the underlying comparison source pair.
 - Future source pairs should add a new explicit `ComparisonSourceMode` value rather than overloading `corridor_top_vs_existing_mesh`.

@@ -20,7 +20,7 @@ from freecad.Corridor_Road.corridor_compat import (
     CORRIDOR_PROJECT_PROPERTY,
     CORRIDOR_PROXY_TYPE,
 )
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     assign_project_corridor,
@@ -29,8 +29,8 @@ from freecad.Corridor_Road.objects.obj_project import (
 )
 
 
-LEGACY_PROXY_MODULE = "objects.obj_corridor_loft"
-CANONICAL_PROXY_MODULE = "freecad.Corridor_Road.objects.obj_corridor_loft"
+LEGACY_PROXY_MODULE = "objects.obj_corridor"
+CANONICAL_PROXY_MODULE = "freecad.Corridor_Road.objects.obj_corridor"
 
 
 def _assert(cond, msg):
@@ -68,8 +68,8 @@ def _make_project_with_corridor(doc_name):
     prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
     CorridorRoadProject(prj)
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
 
     compat_child = doc.addObject("App::FeaturePython", "CorridorCompatChild")
     if not hasattr(compat_child, CORRIDOR_CHILD_LINK_PROPERTY):
@@ -95,7 +95,7 @@ def _validate_reopened_document(doc):
     corridor = resolve_project_corridor(project)
     _assert(corridor is not None, "Reopened project should resolve a corridor object")
     _assert(ensure_corridor_object(corridor) is corridor, "Reopened corridor should still pass compatibility corridor resolution")
-    _assert(str(getattr(getattr(corridor, "Proxy", None), "Type", "") or "") == CORRIDOR_PROXY_TYPE, "Reopened corridor proxy type should stay CorridorLoft until proxy retirement")
+    _assert(str(getattr(getattr(corridor, "Proxy", None), "Type", "") or "") == CORRIDOR_PROXY_TYPE, "Reopened corridor proxy type should stay Corridor until proxy retirement")
     _assert(getattr(project, CORRIDOR_PROJECT_PROPERTY, None) is corridor, "Reopened project should keep the canonical corridor link synchronized")
 
     child_links = [o for o in list(getattr(doc, "Objects", []) or []) if getattr(o, CORRIDOR_CHILD_LINK_PROPERTY, None) is corridor]
@@ -107,13 +107,13 @@ def _roundtrip_fcstd(temp_root, doc_name, fcstd_name, proxy_module_path):
     doc = None
     reopened = None
     out_path = os.path.join(temp_root, fcstd_name)
-    original_module = CorridorLoft.__module__
+    original_module = Corridor.__module__
     try:
-        CorridorLoft.__module__ = proxy_module_path
+        Corridor.__module__ = proxy_module_path
         doc, _project, _corridor = _make_project_with_corridor(doc_name)
         doc.saveAs(out_path)
     finally:
-        CorridorLoft.__module__ = original_module
+        Corridor.__module__ = original_module
         _close_document(doc)
 
     xml_text = _document_xml_text(out_path)

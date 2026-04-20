@@ -1460,7 +1460,11 @@ def ensure_corridor_object(corridor_obj):
         name = str(getattr(corridor_obj, "Name", "") or "")
     except Exception:
         name = ""
-    if proxy_type == CORRIDOR_PROXY_TYPE or name.startswith(CORRIDOR_NAME_PREFIX):
+    if proxy_type == CORRIDOR_PROXY_TYPE or (
+        name.startswith(CORRIDOR_NAME_PREFIX)
+        and not name.startswith("CorridorRoadProject")
+        and not name.startswith("CorridorSegment")
+    ):
         return corridor_obj
     return None
 

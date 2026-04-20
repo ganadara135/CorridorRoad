@@ -13,7 +13,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
 
@@ -62,23 +62,23 @@ def run():
     sec.IncludeAlignmentSCCSStations = False
     sec.CreateChildSections = False
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
 
     doc.recompute()
 
     _assert(_shape_ok(sec), "SectionSet did not generate geometry")
     _assert(_shape_ok(cor), "Corridor did not generate geometry")
-    _assert(not CorridorLoft._needs_refresh(cor), "Fresh corridor should not start in stale state")
+    _assert(not Corridor._needs_refresh(cor), "Fresh corridor should not start in stale state")
 
     sec.touch()
     doc.recompute()
-    _assert(CorridorLoft._needs_refresh(cor), "SectionSet recompute should mark linked corridor stale")
+    _assert(Corridor._needs_refresh(cor), "SectionSet recompute should mark linked corridor stale")
 
-    refreshed = CorridorLoft.refresh_if_needed(cor, max_passes=2)
+    refreshed = Corridor.refresh_if_needed(cor, max_passes=2)
     _assert(refreshed, "Corridor refresh helper should clear stale state")
-    _assert(not CorridorLoft._needs_refresh(cor), "Corridor should no longer report stale status after refresh helper")
+    _assert(not Corridor._needs_refresh(cor), "Corridor should no longer report stale status after refresh helper")
     _assert(_shape_ok(cor), "Corridor should keep valid geometry after refresh helper")
 
     App.closeDocument(doc.Name)

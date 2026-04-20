@@ -16,7 +16,7 @@ Retire `Loft` as the default corridor concept in a staged order while keeping on
 This plan separates three different kinds of `Loft` usage:
 
 1. User-facing wording such as `Corridor Loft`
-2. Internal compatibility names such as `CorridorLoft` and `CorridorRoad_GenerateCorridorLoft`
+2. Internal compatibility names such as `Corridor` and `CorridorRoad_GenerateCorridor`
 3. Runtime geometry dependencies such as `Part.makeLoft(...)`
 
 They should still be removed in a controlled order.
@@ -24,7 +24,7 @@ They should still be removed in a controlled order.
 ## Principles
 
 - `Corridor` is the preferred product term.
-- `CorridorLoft` remains only where compatibility still requires it.
+- `Corridor` remains only where compatibility still requires it.
 - `Part.makeLoft(...)` was a legacy runtime dependency and is now removed from live runtime paths.
 - Documentation cleanup happens before code rename work.
 - Runtime removal happens last.
@@ -46,7 +46,7 @@ Tasks:
 
 1. Replace `Corridor Loft` with `Corridor` where the text describes the current product concept.
 2. Rewrite `Loft`-centric explanations so the preferred runtime is described as corridor surface assembly or section-strip assembly.
-3. Keep `CorridorLoft` only where the text is explicitly documenting internal compatibility names.
+3. Keep `Corridor` only where the text is explicitly documenting internal compatibility names.
 4. Mark `Part.makeLoft(...)` as a historical path during the migration window.
 
 Done when:
@@ -69,7 +69,7 @@ Tasks:
 
 1. Replace user-facing `Corridor Loft` wording with `Corridor`.
 2. Rewrite `ruled loft` wording into corridor-build wording unless the text is intentionally historical.
-3. Keep internal symbol names such as `CorridorLoft` only when the document refers to code symbols or file compatibility.
+3. Keep internal symbol names such as `Corridor` only when the document refers to code symbols or file compatibility.
 
 Done when:
 
@@ -79,7 +79,7 @@ Done when:
 
 Scope:
 
-- Remaining `docs/**` hits for `Loft`, `Corridor Loft`, `CorridorLoft`, and `makeLoft`
+- Remaining `docs/**` hits for `Loft`, `Corridor Loft`, `Corridor`, and `makeLoft`
 
 Tasks:
 
@@ -111,7 +111,7 @@ Tasks:
 Tasks:
 
 1. Rename user-visible test expectations and messages to `Corridor` where appropriate.
-2. Keep code-symbol references to `CorridorLoft` only where tests must target the current internal API.
+2. Keep code-symbol references to `Corridor` only where tests must target the current internal API.
 
 ### Phase 3. Internal Compatibility Isolation
 
@@ -121,7 +121,7 @@ Status: completed
 
 Tasks:
 
-1. Route project links and command lookups through helpers rather than direct `CorridorLoft` name reads.
+1. Route project links and command lookups through helpers rather than direct `Corridor` name reads.
 2. Document which internal names are still required for FCStd, macros, or toolbar compatibility.
 
 Status note:
@@ -138,7 +138,7 @@ Tasks:
 Compatibility window targets:
 
 1. Proxy/module/type naming
-   - Keep: proxy/type/module compatibility names such as `CorridorLoft`
+   - Keep: proxy/type/module compatibility names such as `Corridor`
    - Why: FCStd proxy restore and legacy module-path recovery still depend on them
    - Remove only when:
      - virtual path alias coverage handles the rename
@@ -147,7 +147,7 @@ Compatibility window targets:
 
 Done when:
 
-- Every retained `CorridorLoft` compatibility point has a written owner, reason, and removal gate.
+- Every retained `Corridor` compatibility point has a written owner, reason, and removal gate.
 - New code paths use helpers instead of reading compatibility names directly.
 
 ### Phase 4. Runtime `Part.makeLoft(...)` Removal
@@ -178,7 +178,7 @@ Status: completed
 
 Tasks:
 
-1. Retire `obj_corridor_loft.py` solid-path `makeLoft` use only after equivalent behavior exists.
+1. Retire `obj_corridor.py` solid-path `makeLoft` use only after equivalent behavior exists.
 2. Keep surface-only corridor behavior stable during the transition.
 
 ### Phase 5. Final Legacy Removal
@@ -197,9 +197,9 @@ Current Phase 5 note:
 - Current active step: `Phase 5E.5 - proxy/type compatibility retirement design`
 - Detailed execution sequence is tracked in `docs/LOFT_ALIAS_RETIREMENT_EXECUTION_PLAN.md`.
 - Preferred command path already uses `CorridorRoad_GenerateCorridor`.
-- Legacy command alias `CorridorRoad_GenerateCorridorLoft` is retired.
+- Legacy command alias `CorridorRoad_GenerateCorridor` is retired.
 - Preferred command module path now uses `cmd_generate_corridor.py` only.
-- Legacy task-panel class alias `CorridorLoftTaskPanel` is retired.
+- Legacy task-panel class alias `CorridorTaskPanel` is retired.
 - Preferred task-panel module path now uses `task_corridor.py` only.
 - Project corridor link property now uses `Corridor`.
 - Child ownership link property now uses `ParentCorridor`.
@@ -218,12 +218,12 @@ Current Phase 5 note:
   - `tests/regression/smoke_tree_schema.py`
   - bundled runner: `tests/regression/run_loft_retirement_gate_smokes.ps1`
 - Hard blockers still preventing full internal-name removal:
-  - FCStd proxy/type restore still depends on `CorridorLoft`
+  - FCStd proxy/type restore still depends on `Corridor`
 
 Recommended retirement order from this point:
 
 1. Proxy/module/type retirement
-   - targets: `CorridorLoft`, `obj_corridor_loft.py`, virtual-path alias mapping
+   - targets: `Corridor`, `obj_corridor.py`, virtual-path alias mapping
    - why last: this is the highest-risk FCStd restore boundary
    - gate:
      - in-repo runtime code no longer references proxy/type/name-prefix compatibility except through FCStd restore and corridor-routing boundaries
@@ -255,7 +255,7 @@ Intentional remaining `Loft` mentions in `docs/` now fall into these buckets:
 Code follow-up identified by the doc audit:
 
 1. Remove remaining user-facing `Loft` wording from command and panel code.
-2. Keep `CorridorLoft` internal names only behind compatibility boundaries.
+2. Keep `Corridor` internal names only behind compatibility boundaries.
 3. Runtime `Part.makeLoft(...)` removal is complete; remaining work is compatibility-name retirement only.
 
 ## Progress Snapshot
@@ -271,7 +271,7 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5A2 preferred module path cleanup (`cmd_generate_corridor.py`, `task_corridor.py`)
 - [x] Phase 5B compatibility gate regression coverage
 - [x] Phase 5B2 compatibility-name centralization (`corridor_compat.py`)
-- [x] Phase 5C1 child-link compatibility retirement gate (`ParentCorridorLoft`)
+- [x] Phase 5C1 child-link compatibility retirement gate (`ParentCorridor`)
 - [x] Phase 5C2 FCStd restore/reopen smoke coverage (`smoke_corridor_fcstd_restore.py`)
 - [x] Phase 5C3 raw compatibility literal isolation (`obj_region_plan.py`, `obj_structure_set.py`, `task_corridor.py`)
 - [x] Phase 5C4 alias retirement sequencing and exit-check ownership
@@ -282,7 +282,7 @@ Code follow-up identified by the doc audit:
 - [x] Phase 5C9 proxy/type/module boundary coverage (`smoke_corridor_proxy_boundary.py`)
 - [x] Phase 5C compatibility alias retirement gates
 - [x] Phase 5D bundled retirement-gate runner (`run_loft_retirement_gate_smokes.ps1`)
-- [x] Phase 5E1 command alias retirement (`CorridorRoad_GenerateCorridorLoft`)
-- [x] Phase 5E2 task-panel import alias retirement (`task_corridor_loft.py`, `CorridorLoftTaskPanel`)
-- [x] Phase 5E3 hidden project-link retirement (`CorridorLoft` -> `Corridor`)
-- [x] Phase 5E4 child-link retirement (`ParentCorridorLoft` -> `ParentCorridor`)
+- [x] Phase 5E1 command alias retirement (`CorridorRoad_GenerateCorridor`)
+- [x] Phase 5E2 task-panel import alias retirement (`task_corridor_loft.py`, `CorridorTaskPanel`)
+- [x] Phase 5E3 hidden project-link retirement (`Corridor` -> `Corridor`)
+- [x] Phase 5E4 child-link retirement (`ParentCorridor` -> `ParentCorridor`)

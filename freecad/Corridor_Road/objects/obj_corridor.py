@@ -5,7 +5,7 @@
 #
 # Internal compatibility note:
 # - user-facing wording has moved to "Corridor"
-# - the proxy/module name remains `CorridorLoft` for this migration cycle
+# - the proxy/module name remains `Corridor` for this migration cycle
 # - keep new code focused on section-strip/segment runtime behavior
 #   rather than broad symbol renames
 import math
@@ -652,7 +652,7 @@ def ensure_corridor_loft_properties(obj):
         pass
 
 
-class CorridorLoft:
+class Corridor:
     """
     Corridor loft from SectionSet (surface-first).
     """
@@ -740,7 +740,7 @@ class CorridorLoft:
 
         pt_lists = []
         for i, w in enumerate(wires):
-            pts = CorridorLoft._wire_points(w)
+            pts = Corridor._wire_points(w)
             if len(pts) < 2:
                 raise Exception(f"Section[{i}] has insufficient points.")
             for j, p in enumerate(pts):
@@ -775,13 +775,13 @@ class CorridorLoft:
         prev_pts = None
         fixed_count = 0
         for i, pts in enumerate(pt_lists):
-            if allow_auto_flip and CorridorLoft._should_flip_points(prev_pts, pts):
+            if allow_auto_flip and Corridor._should_flip_points(prev_pts, pts):
                 pts = list(reversed(pts))
                 fixed_count += 1
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"Section[{i}] left/right axis is degenerate.")
-            out_wires.append(CorridorLoft._make_wire(pts))
+            out_wires.append(Corridor._make_wire(pts))
             out_points.append(list(pts))
             prev_pts = pts
 
@@ -834,13 +834,13 @@ class CorridorLoft:
         prev_pts = None
         fixed_count = 0
         for i, pts in enumerate(point_lists):
-            if allow_auto_flip and CorridorLoft._should_flip_points(prev_pts, pts):
+            if allow_auto_flip and Corridor._should_flip_points(prev_pts, pts):
                 pts = list(reversed(pts))
                 fixed_count += 1
             axis = pts[0] - pts[-1]
             if axis.Length <= 1e-12:
                 raise Exception(f"SectionProfile[{i}] left/right axis is degenerate.")
-            out_wires.append(CorridorLoft._make_wire(pts))
+            out_wires.append(Corridor._make_wire(pts))
             out_points.append(list(pts))
             prev_pts = pts
 
@@ -909,7 +909,7 @@ class CorridorLoft:
         if str(getattr(src, "TopProfileSource", "assembly_simple") or "assembly_simple") != "typical_section":
             return False, "off"
 
-        edge_types = set(CorridorLoft._typical_edge_types(src))
+        edge_types = set(Corridor._typical_edge_types(src))
         rich_edges = bool(edge_types.intersection({"curb", "ditch", "berm", "gutter"}))
         if rich_edges:
             return True, "auto:typical_edges"
@@ -941,16 +941,16 @@ class CorridorLoft:
         try:
             doc = getattr(obj, "Document", None)
             if doc is None:
-                return not CorridorLoft._needs_refresh(obj)
+                return not Corridor._needs_refresh(obj)
             passes = 0
-            while passes < max(0, int(max_passes or 0)) and CorridorLoft._needs_refresh(obj):
+            while passes < max(0, int(max_passes or 0)) and Corridor._needs_refresh(obj):
                 try:
                     obj.touch()
                 except Exception:
                     pass
                 doc.recompute()
                 passes += 1
-            return not CorridorLoft._needs_refresh(obj)
+            return not Corridor._needs_refresh(obj)
         except Exception:
             return False
 
@@ -959,7 +959,7 @@ class CorridorLoft:
         retry_used = False
         if ranges:
             try:
-                shape, failed_ranges, package_shapes = CorridorLoft._loft_by_ranges(
+                shape, failed_ranges, package_shapes = Corridor._loft_by_ranges(
                     wires,
                     stations,
                     ranges,
@@ -969,8 +969,8 @@ class CorridorLoft:
                 )
                 return shape, failed_ranges, retry_used, package_shapes
             except Exception:
-                if CorridorLoft._should_retry_with_ruled(src, ruled):
-                    shape, failed_ranges, package_shapes = CorridorLoft._loft_by_ranges(
+                if Corridor._should_retry_with_ruled(src, ruled):
+                    shape, failed_ranges, package_shapes = Corridor._loft_by_ranges(
                         wires,
                         stations,
                         ranges,
@@ -981,7 +981,7 @@ class CorridorLoft:
                     return shape, failed_ranges, True, package_shapes
                 raise
         try:
-            shape = CorridorLoft._loft(
+            shape = Corridor._loft(
                 wires,
                 ruled=ruled,
                 point_lists=point_lists,
@@ -989,8 +989,8 @@ class CorridorLoft:
             )
             return shape, [], retry_used, []
         except Exception:
-            if CorridorLoft._should_retry_with_ruled(src, ruled):
-                shape = CorridorLoft._loft(
+            if Corridor._should_retry_with_ruled(src, ruled):
+                shape = Corridor._loft(
                     wires,
                     ruled=True,
                     point_lists=point_lists,
@@ -1002,7 +1002,7 @@ class CorridorLoft:
     @staticmethod
     def _loft(wires, ruled: bool, point_lists=None, point_count_hint: int = 0):
         # Corridor runtime is now surface-only; ruled/segmented policy stays above this builder.
-        return CorridorLoft._section_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
+        return Corridor._section_strip_surface(wires, point_lists=point_lists, point_count_hint=point_count_hint)
 
     @staticmethod
     def _loft_adaptive(wires, stations, ruled: bool, point_lists=None, point_count_hint: int = 0):
@@ -1013,7 +1013,7 @@ class CorridorLoft:
 
         def _run(i0: int, i1: int):
             try:
-                seg = CorridorLoft._loft(
+                seg = Corridor._loft(
                     wires[i0 : i1 + 1],
                     ruled=ruled,
                     point_lists=(point_lists[i0 : i1 + 1] if use_point_lists else None),
@@ -1104,7 +1104,7 @@ class CorridorLoft:
             rows = StructureSetSource.corridor_zone_records(ss, fallback_mode=fallback_mode)
         except Exception:
             return []
-        _detail_rows, _warning_rows, _mode_summary, spans = CorridorLoft._describe_structure_corridor_records(rows)
+        _detail_rows, _warning_rows, _mode_summary, spans = Corridor._describe_structure_corridor_records(rows)
         return spans
 
     @staticmethod
@@ -1240,11 +1240,11 @@ class CorridorLoft:
 
     @staticmethod
     def _describe_structure_corridor_records(corridor_records):
-        return CorridorLoft._describe_corridor_records(corridor_records)
+        return Corridor._describe_corridor_records(corridor_records)
 
     @staticmethod
     def _describe_region_corridor_records(corridor_records):
-        return CorridorLoft._describe_corridor_records(corridor_records)
+        return Corridor._describe_corridor_records(corridor_records)
 
     @staticmethod
     def _describe_corridor_records(corridor_records):
@@ -1258,7 +1258,7 @@ class CorridorLoft:
             mode = str(rec.get("ResolvedCorridorMode", "") or "").strip().lower()
             if mode in ("", "none"):
                 continue
-            rid = CorridorLoft._corridor_record_ref(rec)
+            rid = Corridor._corridor_record_ref(rec)
             typ = str(rec.get("Type", "") or "structure").strip().lower() or "structure"
             s0 = float(rec.get("ResolvedStartStation", 0.0) or 0.0)
             s1 = float(rec.get("ResolvedEndStation", 0.0) or 0.0)
@@ -1271,7 +1271,7 @@ class CorridorLoft:
                 extras.append(f"margin={mg:.3f}")
             if source and source != "start_end":
                 extras.append(f"source={source}")
-            row = f"{rid}:{typ}:{mode}:{CorridorLoft._format_station_span(lo, hi)}"
+            row = f"{rid}:{typ}:{mode}:{Corridor._format_station_span(lo, hi)}"
             if extras:
                 row += f" ({', '.join(extras)})"
             detail_rows.append(row)
@@ -1366,8 +1366,8 @@ class CorridorLoft:
             if b <= a + 1e-6:
                 continue
             mid = 0.5 * (a + b)
-            srec = CorridorLoft._corridor_record_at_station(active_structure, mid)
-            rrec = CorridorLoft._corridor_record_at_station(active_region, mid)
+            srec = Corridor._corridor_record_at_station(active_structure, mid)
+            rrec = Corridor._corridor_record_at_station(active_region, mid)
             chosen = {}
             source = ""
             if srec:
@@ -1383,7 +1383,7 @@ class CorridorLoft:
                 continue
             source_tags.add(source)
             mode = str(chosen.get("ResolvedCorridorMode", "") or "").strip().lower()
-            rec_id = CorridorLoft._corridor_record_ref(chosen)
+            rec_id = Corridor._corridor_record_ref(chosen)
             if current is not None and str(current.get("ResolvedCorridorMode", "")) == mode and str(current.get("ResolvedStationSource", "")) == source and str(current.get("Id", "")) == rec_id:
                 current["ResolvedEndStation"] = float(b)
             else:
@@ -1400,15 +1400,15 @@ class CorridorLoft:
                     "ResolvedCorridorWarnings": [],
                 }
             if srec and rrec:
-                region_id = CorridorLoft._corridor_record_ref(rrec)
-                structure_id = CorridorLoft._corridor_record_ref(srec)
+                region_id = Corridor._corridor_record_ref(rrec)
+                structure_id = Corridor._corridor_record_ref(srec)
                 msg = f"{region_id}: overridden by structure corridor mode '{str(srec.get('ResolvedCorridorMode', '') or '')}' from {structure_id}"
                 if msg not in warning_rows:
                     warning_rows.append(msg)
         if current is not None:
             combined_rows.append(dict(current))
 
-        detail_rows, _unused_warning_rows, summary_text, spans = CorridorLoft._describe_corridor_records(combined_rows)
+        detail_rows, _unused_warning_rows, summary_text, spans = Corridor._describe_corridor_records(combined_rows)
         source_summary = "full"
         if source_tags == {"structure"}:
             source_summary = "structure"
@@ -1425,9 +1425,9 @@ class CorridorLoft:
             return [], []
         candidates = []
         rows = []
-        prev_mode = str(CorridorLoft._corridor_record_at_station(corridor_records, vals[0]).get("ResolvedCorridorMode", "") or "").strip().lower()
+        prev_mode = str(Corridor._corridor_record_at_station(corridor_records, vals[0]).get("ResolvedCorridorMode", "") or "").strip().lower()
         for i in range(1, len(vals)):
-            curr_mode = str(CorridorLoft._corridor_record_at_station(corridor_records, vals[i]).get("ResolvedCorridorMode", "") or "").strip().lower()
+            curr_mode = str(Corridor._corridor_record_at_station(corridor_records, vals[i]).get("ResolvedCorridorMode", "") or "").strip().lower()
             if curr_mode != prev_mode:
                 candidates.append(int(i))
                 rows.append(f"{float(vals[i]):.3f}")
@@ -1487,13 +1487,13 @@ class CorridorLoft:
         doc = getattr(obj, "Document", None)
         if doc is None:
             return 0
-        CorridorLoft._clear_skip_markers(obj)
+        Corridor._clear_skip_markers(obj)
         count = 0
         for run_idx, (i0, i1) in enumerate(list(skip_runs or []), start=1):
             for role, idx in (("SKIP_START", int(i0)), ("SKIP_END", int(i1))):
                 if idx < 0 or idx >= len(loft_wires):
                     continue
-                shp = CorridorLoft._make_skip_marker_face(loft_wires[idx])
+                shp = Corridor._make_skip_marker_face(loft_wires[idx])
                 if shp is None or shp.isNull():
                     continue
                 try:
@@ -1529,7 +1529,7 @@ class CorridorLoft:
         doc = getattr(obj, "Document", None)
         if doc is None:
             return 0
-        CorridorLoft._clear_segment_objects(obj)
+        Corridor._clear_segment_objects(obj)
         rows = list(package_rows or [])
         shapes = list(segment_shapes or [])
         count = 0
@@ -1648,7 +1648,7 @@ class CorridorLoft:
 
     @staticmethod
     def _notch_profile_spec_rows(src, stations, fallback_mode: str, notch_transition_scale: float):
-        recs = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
+        recs = Corridor._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
         if not recs:
             return [], []
 
@@ -1664,7 +1664,7 @@ class CorridorLoft:
                 + float(rec.get("ResolvedEndStation", rec.get("EndStation", 0.0)) or 0.0)
             )
             resolved_mid = _resolve_corridor_record_at_station(src, rec, midpoint_station)
-            spec = CorridorLoft._structure_notch_spec(resolved_mid, getattr(src, "Document", None))
+            spec = Corridor._structure_notch_spec(resolved_mid, getattr(src, "Document", None))
             if not bool(spec.get("Enabled", False)):
                 notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
                 continue
@@ -1731,7 +1731,7 @@ class CorridorLoft:
                 resolved_best["ResolvedCorridorMode"] = str(best.get("ResolvedCorridorMode", "") or "")
                 resolved_best["ResolvedCorridorMargin"] = float(best.get("ResolvedCorridorMargin", 0.0) or 0.0)
                 resolved_best["_transition"] = float(best.get("_transition", 0.0) or 0.0)
-                resolved_best["_notch_spec"] = CorridorLoft._structure_notch_spec(resolved_best, getattr(src, "Document", None))
+                resolved_best["_notch_spec"] = Corridor._structure_notch_spec(resolved_best, getattr(src, "Document", None))
                 roles = []
                 start_sta = float(best.get("ResolvedStartStation", best.get("StartStation", 0.0)) or 0.0)
                 end_sta = float(best.get("ResolvedEndStation", best.get("EndStation", 0.0)) or 0.0)
@@ -1808,14 +1808,14 @@ class CorridorLoft:
 
     @staticmethod
     def _make_notch_profile_for_surface(open_wire, row, doc_or_obj=None):
-        pts = CorridorLoft._wire_points(open_wire)
+        pts = Corridor._wire_points(open_wire)
         if len(pts) < 2:
             raise Exception("Section has insufficient points for notch-aware surface profile.")
 
         left_outer = pts[0]
         right_outer = pts[-1]
-        left_car = pts[1] if len(pts) >= 4 else CorridorLoft._lerp_point(left_outer, right_outer, 0.25)
-        right_car = pts[-2] if len(pts) >= 4 else CorridorLoft._lerp_point(left_outer, right_outer, 0.75)
+        left_car = pts[1] if len(pts) >= 4 else Corridor._lerp_point(left_outer, right_outer, 0.25)
+        right_car = pts[-2] if len(pts) >= 4 else Corridor._lerp_point(left_outer, right_outer, 0.75)
         axis = right_car - left_car
         axis_len = float(axis.Length)
         if axis_len <= 1e-9:
@@ -1875,15 +1875,15 @@ class CorridorLoft:
                 left_t = max(0.02, mid - 5e-4)
                 right_t = min(0.98, mid + 5e-4)
 
-            notch_lt = CorridorLoft._lerp_point(left_car, right_car, left_t)
-            notch_rt = CorridorLoft._lerp_point(left_car, right_car, right_t)
+            notch_lt = Corridor._lerp_point(left_car, right_car, left_t)
+            notch_rt = Corridor._lerp_point(left_car, right_car, right_t)
             notch_lb = App.Vector(float(notch_lt.x), float(notch_lt.y), float(notch_lt.z) - eff_depth)
             notch_rb = App.Vector(float(notch_rt.x), float(notch_rt.y), float(notch_rt.z) - eff_depth)
             shoulder_t = min(0.10, max(0.01, 0.22 * half_t))
             left_shoulder_t = max(0.0, left_t - shoulder_t)
             right_shoulder_t = min(1.0, right_t + shoulder_t)
-            notch_ls = CorridorLoft._lerp_point(left_car, right_car, left_shoulder_t)
-            notch_rs = CorridorLoft._lerp_point(left_car, right_car, right_shoulder_t)
+            notch_ls = Corridor._lerp_point(left_car, right_car, left_shoulder_t)
+            notch_rs = Corridor._lerp_point(left_car, right_car, right_shoulder_t)
             shoulder_drop = max(0.0, eff_depth * 0.45)
             notch_ls = App.Vector(float(notch_ls.x), float(notch_ls.y), float(notch_ls.z) - shoulder_drop)
             notch_rs = App.Vector(float(notch_rs.x), float(notch_rs.y), float(notch_rs.z) - shoulder_drop)
@@ -1897,11 +1897,11 @@ class CorridorLoft:
             right_car,
             right_outer,
         ]
-        return CorridorLoft._make_wire(_dedupe_consecutive_points(wire_pts))
+        return Corridor._make_wire(_dedupe_consecutive_points(wire_pts))
 
     @staticmethod
     def _make_profiles_with_notch_schema(open_wires, stations, src, fallback_mode: str, notch_transition_scale: float):
-        rows, notes = CorridorLoft._notch_profile_spec_rows(
+        rows, notes = Corridor._notch_profile_spec_rows(
             src,
             stations,
             fallback_mode=fallback_mode,
@@ -1915,8 +1915,8 @@ class CorridorLoft:
         for w, row in zip(list(open_wires or []), list(rows or [])):
             if str(row.get("Mode", "default") or "default") == "notch":
                 notch_station_count += 1
-            out.append(CorridorLoft._make_notch_profile_for_surface(w, row, getattr(src, "Document", None)))
-        summary, diag_rows, ids = CorridorLoft._describe_notch_profile_rows(rows)
+            out.append(Corridor._make_notch_profile_for_surface(w, row, getattr(src, "Document", None)))
+        summary, diag_rows, ids = Corridor._describe_notch_profile_rows(rows)
         schema_name = _notch_schema_name() if int(notch_station_count) > 0 else "-"
         return out, int(notch_station_count), notes, {"schema_name": schema_name, "summary": summary, "rows": diag_rows, "ids": ids, "spec_rows": rows}
 
@@ -1974,7 +1974,7 @@ class CorridorLoft:
                 continue
             try:
                 local = dict(rec)
-                spec = CorridorLoft._structure_notch_spec(local, getattr(src, "Document", None))
+                spec = Corridor._structure_notch_spec(local, getattr(src, "Document", None))
                 rid = str(rec.get("Id", "") or f"#{int(rec.get('Index', 0)) + 1}")
                 if not bool(spec.get("Enabled", False)):
                     notes.append(f"{rid}: {str(spec.get('Reason', 'notch disabled'))}")
@@ -2000,7 +2000,7 @@ class CorridorLoft:
                         continue
                     sm = 0.5 * (ss0 + ss1)
                     local_seg = _resolve_corridor_record_at_station(src, rec, sm)
-                    seg_spec = CorridorLoft._structure_notch_spec(local_seg, getattr(src, "Document", None))
+                    seg_spec = Corridor._structure_notch_spec(local_seg, getattr(src, "Document", None))
                     if not bool(seg_spec.get("Enabled", False)):
                         continue
                     long_pad = max(0.0, float(seg_spec.get("LongPad", 0.0) or 0.0))
@@ -2065,7 +2065,7 @@ class CorridorLoft:
     @staticmethod
     def _loft_by_ranges(wires, stations, ranges, ruled: bool, point_lists=None, point_count_hint: int = 0):
         if not ranges:
-            shp = CorridorLoft._loft(wires, ruled=ruled, point_lists=point_lists, point_count_hint=point_count_hint)
+            shp = Corridor._loft(wires, ruled=ruled, point_lists=point_lists, point_count_hint=point_count_hint)
             return shp, [], [shp]
 
         shapes = []
@@ -2077,9 +2077,9 @@ class CorridorLoft:
             seg_sta = list(stations[i0 : i1 + 1])
             seg_pts = list(point_lists[i0 : i1 + 1]) if use_point_lists else None
             try:
-                shp = CorridorLoft._loft(seg_wires, ruled=ruled, point_lists=seg_pts, point_count_hint=point_count_hint)
+                shp = Corridor._loft(seg_wires, ruled=ruled, point_lists=seg_pts, point_count_hint=point_count_hint)
             except Exception as ex:
-                shp, failed = CorridorLoft._loft_adaptive(
+                shp, failed = Corridor._loft_adaptive(
                     seg_wires,
                     seg_sta,
                     ruled=ruled,
@@ -2101,8 +2101,8 @@ class CorridorLoft:
         try:
             src = getattr(obj, "SourceSectionSet", None)
             if src is None:
-                CorridorLoft._clear_skip_markers(obj)
-                CorridorLoft._clear_segment_objects(obj)
+                Corridor._clear_skip_markers(obj)
+                Corridor._clear_segment_objects(obj)
                 obj.Shape = Part.Shape()
                 obj.SectionCount = 0
                 obj.PointCountPerSection = 0
@@ -2229,7 +2229,7 @@ class CorridorLoft:
 
             stations, wires, _tf, _so, _bench_info = SectionSet.build_section_wires(src)
             min_spacing = max(0.0, float(getattr(obj, "MinSectionSpacing", 0.0)))
-            stations, wires, dropped = CorridorLoft._filter_close_sections(stations, wires, min_spacing)
+            stations, wires, dropped = Corridor._filter_close_sections(stations, wires, min_spacing)
             schema = int(getattr(src, "SectionSchemaVersion", 1))
             profile_contract_source = "section_profiles"
 
@@ -2239,7 +2239,7 @@ class CorridorLoft:
                 stations=stations,
                 wires=wires,
             )
-            stations, norm_wires, norm_points, pt_count, fixed_count = CorridorLoft._validate_profiles_and_normalize(
+            stations, norm_wires, norm_points, pt_count, fixed_count = Corridor._validate_profiles_and_normalize(
                 section_profiles,
                 schema,
                 auto_fix_orientation,
@@ -2249,7 +2249,7 @@ class CorridorLoft:
             height_source = "surface_only"
             loft_wires = list(norm_wires)
             loft_point_lists = list(norm_points)
-            ruled, ruled_mode = CorridorLoft._resolve_ruled_mode(obj, src, pt_count)
+            ruled, ruled_mode = Corridor._resolve_ruled_mode(obj, src, pt_count)
             obj.TopProfileEdgeSummary = str(getattr(src, "TopProfileEdgeSummary", "-") or "-")
             obj.SubassemblySchemaVersion = int(getattr(src, "SubassemblySchemaVersion", 0) or 0)
             obj.PracticalSectionMode = str(getattr(src, "PracticalSectionMode", "simple") or "simple")
@@ -2288,15 +2288,15 @@ class CorridorLoft:
             notch_build_mode = "-"
             notch_cutter_count = 0
             fallback_mode = str(getattr(obj, "DefaultStructureCorridorMode", "split_only") or "split_only").strip().lower()
-            structure_corridor_records = CorridorLoft._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
-            structure_range_rows, structure_warning_rows, structure_mode_summary, structure_spans = CorridorLoft._describe_structure_corridor_records(
+            structure_corridor_records = Corridor._resolve_structure_corridor_records(src, fallback_mode=fallback_mode)
+            structure_range_rows, structure_warning_rows, structure_mode_summary, structure_spans = Corridor._describe_structure_corridor_records(
                 structure_corridor_records
             )
-            region_corridor_records = CorridorLoft._resolve_region_corridor_records(src) if bool(getattr(obj, "UseRegionCorridorModes", True)) else []
-            region_range_rows, region_warning_rows, region_mode_summary, _region_spans = CorridorLoft._describe_region_corridor_records(
+            region_corridor_records = Corridor._resolve_region_corridor_records(src) if bool(getattr(obj, "UseRegionCorridorModes", True)) else []
+            region_range_rows, region_warning_rows, region_mode_summary, _region_spans = Corridor._describe_region_corridor_records(
                 region_corridor_records
             )
-            corridor_range_rows, corridor_warning_rows, corridor_mode_summary_raw, corridor_spans, corridor_source_summary, combined_corridor_records = CorridorLoft._combine_corridor_records(
+            corridor_range_rows, corridor_warning_rows, corridor_mode_summary_raw, corridor_spans, corridor_source_summary, combined_corridor_records = Corridor._combine_corridor_records(
                 structure_corridor_records if bool(getattr(obj, "UseStructureCorridorModes", True)) else [],
                 region_corridor_records if bool(getattr(obj, "UseRegionCorridorModes", True)) else [],
             )
@@ -2306,7 +2306,7 @@ class CorridorLoft:
             loft_retry_count = 0
             status_head = "OK (Surface)"
             if bool(getattr(obj, "UseStructureCorridorModes", True)):
-                notch_wires, notch_station_count, notch_notes, notch_meta = CorridorLoft._make_profiles_with_notch_schema(
+                notch_wires, notch_station_count, notch_notes, notch_meta = Corridor._make_profiles_with_notch_schema(
                     norm_wires,
                     stations,
                     src,
@@ -2339,11 +2339,11 @@ class CorridorLoft:
             notch_split_idx = []
             notch_split_rows = []
             if bool(getattr(obj, "SplitAtStructureZones", True)):
-                split_idx, split_station_rows = CorridorLoft._structure_split_candidates(src, stations)
+                split_idx, split_station_rows = Corridor._structure_split_candidates(src, stations)
             if bool(getattr(obj, "UseRegionCorridorModes", True)):
-                region_split_idx, region_split_rows = CorridorLoft._corridor_split_candidates_from_records(stations, combined_corridor_records)
+                region_split_idx, region_split_rows = Corridor._corridor_split_candidates_from_records(stations, combined_corridor_records)
             if closed_profile_schema > 1 and notch_spec_rows:
-                notch_split_idx, notch_split_rows = CorridorLoft._notch_split_candidates(notch_spec_rows)
+                notch_split_idx, notch_split_rows = Corridor._notch_split_candidates(notch_spec_rows)
             if (
                 bool(getattr(obj, "SplitAtStructureZones", True))
                 or bool(getattr(obj, "UseStructureCorridorModes", True))
@@ -2514,7 +2514,7 @@ class CorridorLoft:
                 return _status_join(head, *tokens)
 
             try:
-                shape, failed_ranges, retry_used, segment_package_shapes = CorridorLoft._loft_with_retry(
+                shape, failed_ranges, retry_used, segment_package_shapes = Corridor._loft_with_retry(
                     loft_wires,
                     stations,
                     structure_ranges if use_segmented_ranges else [],
@@ -2528,7 +2528,7 @@ class CorridorLoft:
                 elif retry_used:
                     ruled_mode = f"{ruled_mode}+retry"
                 try:
-                    skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
+                    skip_marker_count = Corridor._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 except Exception as marker_ex:
                     skip_marker_count = 0
                     notch_failures.append(f"skipMarkers: {marker_ex}")
@@ -2542,7 +2542,7 @@ class CorridorLoft:
                     status_head = "OK (Surface)"
             except Exception as ex:
                 if use_segmented_ranges:
-                    shape, failed_ranges, retry_used, segment_package_shapes = CorridorLoft._loft_with_retry(
+                    shape, failed_ranges, retry_used, segment_package_shapes = Corridor._loft_with_retry(
                         loft_wires,
                         stations,
                         structure_ranges,
@@ -2552,21 +2552,21 @@ class CorridorLoft:
                         point_count_hint=pt_count,
                     )
                 else:
-                    shape, failed_ranges = CorridorLoft._loft_adaptive(
+                    shape, failed_ranges = Corridor._loft_adaptive(
                         loft_wires,
                         stations,
-                        ruled=(True if CorridorLoft._should_retry_with_ruled(src, ruled) else ruled),
+                        ruled=(True if Corridor._should_retry_with_ruled(src, ruled) else ruled),
                         point_lists=loft_point_lists,
                         point_count_hint=pt_count,
                     )
-                    retry_used = CorridorLoft._should_retry_with_ruled(src, ruled) and not bool(ruled)
+                    retry_used = Corridor._should_retry_with_ruled(src, ruled) and not bool(ruled)
                     segment_package_shapes = []
                 if retry_used and str(ruled_mode or "off") == "off":
                     ruled_mode = "retry:typical_section"
                 elif retry_used:
                     ruled_mode = f"{ruled_mode}+retry"
                 try:
-                    skip_marker_count = CorridorLoft._create_skip_markers(obj, stations, loft_wires, skip_runs)
+                    skip_marker_count = Corridor._create_skip_markers(obj, stations, loft_wires, skip_runs)
                 except Exception as marker_ex:
                     skip_marker_count = 0
                     notch_failures.append(f"skipMarkers: {marker_ex}")
@@ -2581,7 +2581,7 @@ class CorridorLoft:
                     )
 
             try:
-                segment_object_count = CorridorLoft._create_segment_objects(obj, segment_package_rows, segment_package_shapes)
+                segment_object_count = Corridor._create_segment_objects(obj, segment_package_rows, segment_package_shapes)
             except Exception as seg_ex:
                 notch_failures.append(f"segmentObjects: {seg_ex}")
 
@@ -2767,8 +2767,8 @@ class CorridorLoft:
                 obj.RebuildNow = False
 
         except Exception as ex:
-            CorridorLoft._clear_skip_markers(obj)
-            CorridorLoft._clear_segment_objects(obj)
+            Corridor._clear_skip_markers(obj)
+            Corridor._clear_segment_objects(obj)
             obj.Shape = Part.Shape()
             obj.SectionCount = 0
             obj.PointCountPerSection = 0
@@ -2938,7 +2938,7 @@ class CorridorLoft:
                 pass
 
 
-class ViewProviderCorridorLoft:
+class ViewProviderCorridor:
     def __init__(self, vobj):
         vobj.Proxy = self
 
@@ -2967,3 +2967,8 @@ class ViewProviderCorridorLoft:
 
     def setDisplayMode(self, mode):
         return mode
+
+
+# Legacy aliases for FCStd restore compatibility window.
+CorridorLoft = Corridor
+ViewProviderCorridorLoft = ViewProviderCorridor

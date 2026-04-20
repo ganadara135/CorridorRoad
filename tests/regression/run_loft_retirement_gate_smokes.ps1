@@ -1,5 +1,5 @@
 param(
-    [string]$FreeCADCmdPath = "FreeCADCmd"
+    [string]$FreeCADCmdPath = "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe"
 )
 
 $resolvedFreeCADCmd = $FreeCADCmdPath

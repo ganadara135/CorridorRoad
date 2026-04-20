@@ -26,7 +26,7 @@ def run():
     freecad_root = os.path.join(repo_root, "freecad", "Corridor_Road")
 
     compat_path = os.path.normpath(os.path.join(freecad_root, "corridor_compat.py"))
-    corridor_obj_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_corridor_loft.py"))
+    corridor_obj_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_corridor.py"))
     project_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_project.py"))
     region_plan_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_region_plan.py"))
     structure_set_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_structure_set.py"))
@@ -65,7 +65,7 @@ def run():
 
     project_text = _read_text(project_path)
     _assert(
-        "if proxy_type == CORRIDOR_PROXY_TYPE or name.startswith(CORRIDOR_NAME_PREFIX):" in project_text,
+        "if proxy_type == CORRIDOR_PROXY_TYPE or (" in project_text and "name.startswith(CORRIDOR_NAME_PREFIX)" in project_text,
         "Project helper should resolve corridor objects through centralized proxy/name-prefix compatibility constants",
     )
 

@@ -23,7 +23,7 @@ Retire the remaining `Loft` compatibility aliases in a staged order, with each s
 
 Target:
 
-- `CorridorRoad_GenerateCorridorLoft`
+- `CorridorRoad_GenerateCorridor`
 
 Why first:
 
@@ -56,7 +56,7 @@ Validation:
 Targets:
 
 - `freecad/Corridor_Road/ui/task_corridor_loft.py`
-- `CorridorLoftTaskPanel`
+- `CorridorTaskPanel`
 
 Why second:
 
@@ -77,7 +77,7 @@ Current readiness snapshot:
 Implementation:
 
 1. Remove `task_corridor_loft.py`.
-2. Remove `CorridorLoftTaskPanel = CorridorTaskPanel` from `task_corridor.py`.
+2. Remove `CorridorTaskPanel = CorridorTaskPanel` from `task_corridor.py`.
 3. Update task-panel boundary and compatibility smokes.
 
 Validation:
@@ -89,7 +89,7 @@ Validation:
 
 Target:
 
-- hidden property `CorridorLoft`
+- hidden property `Corridor`
 
 Why third:
 
@@ -123,7 +123,7 @@ Validation:
 
 Target:
 
-- hidden property `CorridorLoft`
+- hidden property `Corridor`
 
 Preconditions:
 
@@ -133,7 +133,7 @@ Current readiness snapshot:
 
 - Status: completed under compatibility override
 - Ready:
-  - new project saves/reopens no longer require `CorridorLoft`
+  - new project saves/reopens no longer require `Corridor`
   - project-link boundary coverage now expects only `Corridor`
 
 Implementation:
@@ -151,7 +151,7 @@ Validation:
 
 Target:
 
-- `ParentCorridorLoft`
+- `ParentCorridor`
 
 Why fourth:
 
@@ -173,7 +173,7 @@ Implementation:
 
 1. Add a replacement child-link property.
 2. Move generation and ownership recovery to the canonical property.
-3. Update `obj_corridor_loft.py`, `obj_project.py`, `task_corridor.py`, and affected corridor regression tests.
+3. Update `obj_corridor.py`, `obj_project.py`, `task_corridor.py`, and affected corridor regression tests.
 
 Validation:
 
@@ -184,7 +184,7 @@ Validation:
 
 Target:
 
-- `ParentCorridorLoft`
+- `ParentCorridor`
 
 Preconditions:
 
@@ -194,7 +194,7 @@ Current readiness snapshot:
 
 - Status: completed under compatibility override
 - Ready:
-  - new corridor children no longer require `ParentCorridorLoft`
+  - new corridor children no longer require `ParentCorridor`
   - ownership boundary coverage now expects only `ParentCorridor`
 
 Implementation:
@@ -211,8 +211,8 @@ Validation:
 
 Targets:
 
-- `CorridorLoft`
-- `obj_corridor_loft.py`
+- `Corridor`
+- `obj_corridor.py`
 - virtual-path alias mapping
 
 Why last:
@@ -241,8 +241,8 @@ Validation:
 
 Targets:
 
-- old `CorridorLoft` proxy/type/module path
-- `obj_corridor_loft.py` compatibility path
+- old `Corridor` proxy/type/module path
+- `obj_corridor.py` compatibility path
 - related virtual-path fallback
 
 Preconditions:

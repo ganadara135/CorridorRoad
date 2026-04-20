@@ -13,7 +13,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
@@ -109,7 +109,7 @@ def _make_section_set(doc, name, disp, asm):
 
 def _make_corridor(doc, name, sec):
     cor = doc.addObject("Part::FeaturePython", name)
-    CorridorLoft(cor)
+    Corridor(cor)
     cor.SourceSectionSet = sec
     return cor
 

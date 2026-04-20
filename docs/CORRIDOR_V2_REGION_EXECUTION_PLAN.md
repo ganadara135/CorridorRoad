@@ -7,7 +7,7 @@ Date: 2026-04-10
 
 Historical note:
 This execution plan preserves transition-era naming.
-References to `Corridor Loft` or `CorridorLoft` here are intentionally kept where they describe migration steps, compatibility names, or past user-facing wording.
+References to `Corridor Loft` or `Corridor` here are intentionally kept where they describe migration steps, compatibility names, or past user-facing wording.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ This document turns [CORRIDOR_V2_REGION_PLAN.md](c:/Users/ganad/AppData/Roaming/
 
 The main goals are:
 
-1. move `CorridorLoft` runtime away from loft-centric thinking
+1. move `Corridor` runtime away from loft-centric thinking
 2. make corridor connectivity follow the same section contract used by `DesignGradingSurface`
 3. make `RegionPlan` a first-class corridor segmentation and policy source
 4. rename the user-facing command and panel from `Corridor Loft` to `Corridor`
@@ -33,7 +33,7 @@ Recommended order:
 5. integrate `RegionPlan` directly into corridor segmentation
 6. rename the user-facing command and panel to `Corridor`
 7. tighten diagnostics and reduce legacy loft wording
-8. review whether internal `CorridorLoft` names should remain or be renamed later
+8. review whether internal `Corridor` names should remain or be renamed later
 
 ## Current Status
 
@@ -59,7 +59,7 @@ Interpretation:
 Progress notes:
 
 1. `PR-1` currently includes `SectionProfileRows`, `SectionProfileCount`, and `resolve_section_profiles(...)` on `SectionSet`, with `DesignGradingSurface` already consuming the exported profile contract.
-2. `PR-2` currently includes a shared `section_strip_builder.py` used by both `DesignGradingSurface` and `CorridorLoft` for strip-based connectivity.
+2. `PR-2` currently includes a shared `section_strip_builder.py` used by both `DesignGradingSurface` and `Corridor` for strip-based connectivity.
 3. `PR-3` currently includes `corridor_segment_builder.py`, `SegmentSummaryRows`, and export/status tokens that expose segment planning before deeper corridor-object packaging changes are finished.
 4. `PR-3` now also includes `CorridorSegmentCount`, `SkippedSegmentCount`, `SegmentKindSummary`, and `SegmentSourceSummary` so corridor segment reasons are visible without opening raw segment rows.
 5. `PR-3` now also includes `SegmentPackageRows` and `SegmentPackageCount` so kept corridor shape packages are visible before child segment objects are introduced.
@@ -67,14 +67,14 @@ Progress notes:
 7. `PR-4` has started with driver-aware package rows and `CorridorSegment` driver metadata so effective region/structure ownership is visible at segment level.
 8. `PR-4` now also exposes driver-source and driver-mode summaries in corridor result properties, status text, and export rows.
 9. `PR-4` now also exposes readable segment display labels/summaries so `CorridorSegment` children are understandable directly in the tree.
-10. `PR-5` renamed normal user-facing corridor command/panel/button wording from `Corridor Loft` to `Corridor`, while keeping internal `CorridorLoft` symbols unchanged.
+10. `PR-5` renamed normal user-facing corridor command/panel/button wording from `Corridor Loft` to `Corridor`, while keeping internal `Corridor` symbols unchanged.
 11. `PR-5` also updated user-facing wiki/help wording in `Quick Start`, `Workflow`, `Troubleshooting`, `Screenshot Checklist`, `Home`, and `Menu Reference`, plus the mirrored wiki pages.
-12. `PR-5` also updated panel option wording and user-visible corridor status/error text so normal UI flow no longer says `ruled loft`, `full loft failed`, or `CorridorLoft Phase 1`.
+12. `PR-5` also updated panel option wording and user-visible corridor status/error text so normal UI flow no longer says `ruled loft`, `full loft failed`, or `Corridor Phase 1`.
 13. `PR-6` has started because corridor runtime now publishes structured diagnostics as `source / connectivity / packaging / policy`, and completion/status reporting is beginning to surface those categories directly.
 14. `PR-6` now also pushes the same diagnostic categories through missing-source and execution-failure status/export paths, with dedicated failure-path smoke coverage.
 15. `PR-6` now also formats the task-panel status area around diagnostic classes and segment counts so the corridor state is readable without parsing the raw status token string.
 16. `PR-6` is complete because success and failure paths now share the same diagnostic categories, and per-category vocabulary has been normalized to short summaries like `clean`, `segmented`, and `region_aware`.
-17. `PR-7` is now active because project/cut-fill/new-project flows are starting to resolve corridor links through helper functions instead of directly reading the hidden `CorridorLoft` property name.
+17. `PR-7` is now active because project/cut-fill/new-project flows are starting to resolve corridor links through helper functions instead of directly reading the hidden `Corridor` property name.
 18. `PR-1` has moved further because normal corridor execution now resolves explicit `SectionProfile` rows from `SectionSet` and validates corridor point order from that profile contract instead of re-reading section-wire points directly.
 19. `PR-1` now also exposes `ProfileContractSource` in corridor result/status/export diagnostics so standard section-profile packaging can be distinguished from notch-schema packaging.
 20. `PR-3` now also propagates `ProfileContractSource` into `SegmentPackageRows` and tree-visible `CorridorSegment` children so package-level corridor results can be traced back to the section-profile contract source.
@@ -162,7 +162,7 @@ Primary files:
 
 1. `freecad/Corridor_Road/objects/obj_section_set.py`
 2. `freecad/Corridor_Road/objects/obj_design_grading_surface.py`
-3. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+3. `freecad/Corridor_Road/objects/obj_corridor.py`
 
 Acceptance:
 
@@ -199,7 +199,7 @@ Tasks:
 Primary files:
 
 1. `freecad/Corridor_Road/objects/obj_design_grading_surface.py`
-2. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+2. `freecad/Corridor_Road/objects/obj_corridor.py`
 3. new shared helper under `freecad/Corridor_Road/objects/`
 
 Acceptance:
@@ -238,7 +238,7 @@ Tasks:
 
 Primary files:
 
-1. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+1. `freecad/Corridor_Road/objects/obj_corridor.py`
 2. optional shared helper module for segment range resolution
 
 Acceptance:
@@ -274,7 +274,7 @@ Tasks:
 
 Primary files:
 
-1. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+1. `freecad/Corridor_Road/objects/obj_corridor.py`
 2. `freecad/Corridor_Road/objects/obj_region_plan.py`
 3. `freecad/Corridor_Road/objects/obj_section_set.py`
 
@@ -353,7 +353,7 @@ Tasks:
 
 Primary files:
 
-1. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+1. `freecad/Corridor_Road/objects/obj_corridor.py`
 2. `freecad/Corridor_Road/ui/task_corridor_loft.py`
 3. docs troubleshooting pages
 
@@ -379,20 +379,20 @@ Status: completed
 
 Goal:
 
-1. decide what legacy `CorridorLoft` naming and fallback should remain internally
+1. decide what legacy `Corridor` naming and fallback should remain internally
 
 Tasks:
 
 1. review whether to keep:
-   - proxy type `CorridorLoft`
-   - command id `CorridorRoad_GenerateCorridorLoft`
+   - proxy type `Corridor`
+   - command id `CorridorRoad_GenerateCorridor`
    - file names under `cmd_generate_corridor_loft.py` and `task_corridor_loft.py`
 2. if internal rename is chosen, do it only after geometry/runtime stabilization
 3. document retained legacy names if they remain intentionally
 
 Primary files:
 
-1. command/ui/object files using `CorridorLoft`
+1. command/ui/object files using `Corridor`
 2. architecture and developer docs
 
 Acceptance:
@@ -400,7 +400,7 @@ Acceptance:
 1. internal naming policy is explicit
 2. unnecessary churn is avoided during geometry migration
 3. preferred command id can move to `CorridorRoad_GenerateCorridor` without breaking older layouts or macros
-4. project/cut-fill/new-project code paths use corridor helper functions instead of depending directly on the hidden `CorridorLoft` property name
+4. project/cut-fill/new-project code paths use corridor helper functions instead of depending directly on the hidden `Corridor` property name
 
 ## Command Rename Schedule
 
@@ -427,7 +427,7 @@ During PR-7:
 1. decide whether internal symbol rename is worth the churn
 2. if yes, do it as a dedicated cleanup pass
 3. if not, document the intentional compatibility names
-4. move workbench registration to the preferred `CorridorRoad_GenerateCorridor` id while keeping `CorridorRoad_GenerateCorridorLoft` as an alias
+4. move workbench registration to the preferred `CorridorRoad_GenerateCorridor` id while keeping `CorridorRoad_GenerateCorridor` as an alias
 5. current decision: keep proxy type, file names, and hidden project link name as compatibility names for this cycle
 
 ## Testing Strategy
@@ -456,17 +456,17 @@ During PR-7:
 1. mixing user-facing rename with deep geometry refactor can hide regressions
 2. section-profile extraction may reveal hidden assumptions in current wire-centric code
 3. region and structure precedence may become hard to debug without strong segment diagnostics
-4. internal `CorridorLoft` names may continue to confuse developers if not documented clearly
+4. internal `Corridor` names may continue to confuse developers if not documented clearly
 
 ## Final Naming Policy
 
 Decision for this migration cycle:
 
-1. keep proxy type `CorridorLoft`
-2. keep file names `cmd_generate_corridor_loft.py`, `task_corridor_loft.py`, `obj_corridor_loft.py`
-3. keep hidden project link property `CorridorLoft`
+1. keep proxy type `Corridor`
+2. keep file names `cmd_generate_corridor_loft.py`, `task_corridor_loft.py`, `obj_corridor.py`
+3. keep hidden project link property `Corridor`
 4. prefer command id `CorridorRoad_GenerateCorridor`
-5. keep alias `CorridorRoad_GenerateCorridorLoft` for compatibility
+5. keep alias `CorridorRoad_GenerateCorridor` for compatibility
 6. prefer corridor helper functions such as `resolve_project_corridor()` instead of reading hidden compatibility names directly
 
 Reason:

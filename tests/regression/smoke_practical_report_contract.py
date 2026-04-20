@@ -13,7 +13,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
@@ -113,8 +113,8 @@ def run():
         sec.IncludeStructureCenters = True
         sec.IncludeStructureTransitionStations = False
 
-        cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-        CorridorLoft(cor)
+        cor = doc.addObject("Part::FeaturePython", "Corridor")
+        Corridor(cor)
         cor.SourceSectionSet = sec
         cor.UseStructureCorridorModes = True
         cor.SplitAtStructureZones = True
@@ -163,14 +163,14 @@ def run():
         _assert(list(getattr(sec, "ExportSummaryRows", []) or []) == expected_sec_export, "SectionSet export summary mismatch")
 
         cor_export = list(getattr(cor, "ExportSummaryRows", []) or [])
-        _assert(len(cor_export) == 1, "CorridorLoft export summary row missing")
-        _assert("export|target=corridor_loft|" in cor_export[0], "CorridorLoft export summary target mismatch")
-        _assert("reportSchema=1" in cor_export[0], "CorridorLoft export summary schema mismatch")
-        _assert("practical=advanced" in cor_export[0], "CorridorLoft export summary practical mode mismatch")
-        _assert("roadside=shoulder_edge:1" in cor_export[0], "CorridorLoft export summary roadside mismatch")
-        _assert(list(getattr(cor, "SectionComponentSummaryRows", []) or []) == expected_component_rows, "CorridorLoft component report rows mismatch")
-        _assert(list(getattr(cor, "PavementScheduleRows", []) or []) == expected_pavement_rows, "CorridorLoft pavement schedule rows mismatch")
-        _assert(list(getattr(cor, "StructureInteractionSummaryRows", []) or []) == expected_structure_rows, "CorridorLoft structure interaction rows mismatch")
+        _assert(len(cor_export) == 1, "Corridor export summary row missing")
+        _assert("export|target=corridor_loft|" in cor_export[0], "Corridor export summary target mismatch")
+        _assert("reportSchema=1" in cor_export[0], "Corridor export summary schema mismatch")
+        _assert("practical=advanced" in cor_export[0], "Corridor export summary practical mode mismatch")
+        _assert("roadside=shoulder_edge:1" in cor_export[0], "Corridor export summary roadside mismatch")
+        _assert(list(getattr(cor, "SectionComponentSummaryRows", []) or []) == expected_component_rows, "Corridor component report rows mismatch")
+        _assert(list(getattr(cor, "PavementScheduleRows", []) or []) == expected_pavement_rows, "Corridor pavement schedule rows mismatch")
+        _assert(list(getattr(cor, "StructureInteractionSummaryRows", []) or []) == expected_structure_rows, "Corridor structure interaction rows mismatch")
 
         dgs_export = list(getattr(dgs, "ExportSummaryRows", []) or [])
         _assert(len(dgs_export) == 1, "DesignGradingSurface export summary row missing")

@@ -38,23 +38,23 @@ Object link chain (typical):
 ## Corridor Stability Notes
 - `SectionSet` keeps section frame continuity using previous normal direction.
 - Daylight side-width changes are smoothed by `AssemblyTemplate.DaylightMaxWidthDelta`.
-- `CorridorLoft.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
-- `CorridorLoft.AutoFixedSectionCount` reports how many sections were auto-corrected during build.
+- `Corridor.AutoFixSectionOrientation` tries to reverse section point order only when neighboring-section comparison strongly suggests a left/right flip.
+- `Corridor.AutoFixedSectionCount` reports how many sections were auto-corrected during build.
 - If the full corridor build still fails, adaptive segmented fallback is used and failed ranges are recorded in status.
 
 Role split:
 - `DesignGradingSurface` is the section-faithful reference mesh. It connects neighboring section points directly and is the easiest object to compare against generated section lines.
-- `CorridorLoft` is the current internal compatibility name for the range-aware `Part` result. It should still follow the same section contract, but it also has to preserve corridor span meaning such as `split_only`, `skip_zone`, and notch-aware structure handling.
+- `Corridor` is the current internal compatibility name for the range-aware `Part` result. It should still follow the same section contract, but it also has to preserve corridor span meaning such as `split_only`, `skip_zone`, and notch-aware structure handling.
 - If the two outputs disagree visually, first confirm whether the issue is true section-contract drift or a corridor-span/range behavior difference.
 
 Quick comparison:
-- `CorridorLoft`: keep corridor span meaning and downstream `Part` shape identity.
+- `Corridor`: keep corridor span meaning and downstream `Part` shape identity.
 - `DesignGradingSurface`: show the most section-faithful strip-style reference surface.
 
 Connectivity strategy:
 - legacy `loft` behavior means handing section wires to a loft engine and letting it infer point correspondence
 - preferred section-strip behavior means consuming the ordered points from `SectionSet` and connecting adjacent stations point-to-point
-- `CorridorLoft` should add corridor span packaging on top of that section contract, not replace it with a different connectivity rule
+- `Corridor` should add corridor span packaging on top of that section contract, not replace it with a different connectivity rule
 
 Practical debugging order:
 1. Inspect section wires before inspecting corridor output.
@@ -74,20 +74,20 @@ Practical debugging order:
 Command-id note:
 - Preferred command id is `CorridorRoad_GenerateCorridor`.
 - Preferred command module path is `cmd_generate_corridor.py`.
-- Legacy alias `CorridorRoad_GenerateCorridorLoft` is retired.
+- Legacy alias `CorridorRoad_GenerateCorridor` is retired.
 - Project hidden link property is now `Corridor`; new code should prefer corridor helper functions instead of reading that property name directly.
 - Child ownership link property is now `ParentCorridor`; new code should use the compatibility constant instead of spelling the property name directly.
-- Proxy/module names such as `CorridorLoft` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
+- Proxy/module names such as `Corridor` also remain internal compatibility names for this cycle; do not start broad internal renames while geometry migration is still active.
 
 Compatibility window:
-- Proxy/module/type names such as `CorridorLoft` stay only while FCStd proxy restore and virtual-path alias mapping still rely on them. Remove them only after restore/recompute smokes prove the renamed path is stable.
+- Proxy/module/type names such as `Corridor` stay only while FCStd proxy restore and virtual-path alias mapping still rely on them. Remove them only after restore/recompute smokes prove the renamed path is stable.
 - New code should use corridor helpers such as `resolve_project_corridor()` and `assign_project_corridor()` instead of reading compatibility names directly.
-- Recompute routing and task-panel corridor creation should also use `corridor_compat.py` constants instead of raw `CorridorLoft` literals.
-- The retired command id `CorridorRoad_GenerateCorridorLoft` should not appear in runtime wiring anymore.
-- The retired task-panel path/class (`task_corridor_loft.py`, `CorridorLoftTaskPanel`) should not appear in runtime imports anymore.
+- Recompute routing and task-panel corridor creation should also use `corridor_compat.py` constants instead of raw `Corridor` literals.
+- The retired command id `CorridorRoad_GenerateCorridor` should not appear in runtime wiring anymore.
+- The retired task-panel path/class (`task_corridor_loft.py`, `CorridorTaskPanel`) should not appear in runtime imports anymore.
 - The canonical hidden project link property is `Corridor`; normal runtime code should still go through `assign_project_corridor()` and `resolve_project_corridor()`.
 - The canonical child ownership link is `ParentCorridor`; normal runtime code should still reference it through `corridor_compat.py`.
-- The proxy/type/name-prefix compatibility (`CorridorLoft`, `obj_corridor_loft.py`) should remain only in the FCStd restore and corridor-routing boundary until proxy retirement is explicitly opened.
+- The proxy/type/name-prefix compatibility (`Corridor`, `obj_corridor.py`) should remain only in the FCStd restore and corridor-routing boundary until proxy retirement is explicitly opened.
 - Preferred task-panel class path is `CorridorTaskPanel`.
 - Preferred task-panel module path is `task_corridor.py`.
 - Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_child_link_boundary.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_project_link_boundary.py`, `smoke_corridor_proxy_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.

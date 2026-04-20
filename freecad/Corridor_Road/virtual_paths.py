@@ -40,7 +40,7 @@ _PROXY_OBJECT_MODULES = (
     "obj_assembly_template",
     "obj_centerline3d",
     "obj_centerline3d_display",
-    "obj_corridor_loft",
+    "obj_corridor",
     "obj_cut_fill_calc",
     "obj_design_grading_surface",
     "obj_design_terrain",
@@ -151,6 +151,13 @@ def install_virtual_path_mappings(*, eager: bool = False) -> None:
     if eager:
         # Preload proxy-bearing object modules in canonical namespace.
         _preload_proxy_modules()
+        
+        # Explicitly alias retired modules
+        corridor_mod = sys.modules.get(f"{CANONICAL_OBJECTS}.obj_corridor")
+        if corridor_mod:
+            _set_alias(f"{CANONICAL_OBJECTS}.obj_corridor_loft", corridor_mod)
+            _set_alias("obj_corridor_loft", corridor_mod)
+
 
     # Map legacy package roots to canonical package roots.
     _alias_loaded_subtree("CorridorRoad.freecad.Corridor_Road", CANONICAL_ROOT)

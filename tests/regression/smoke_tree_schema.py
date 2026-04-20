@@ -182,7 +182,7 @@ def run():
     if not hasattr(cl_boundary, "ParentCenterline3DDisplay"):
         cl_boundary.addProperty("App::PropertyLink", "ParentCenterline3DDisplay", "Smoke", "Centerline display link")
     cl_boundary.ParentCenterline3DDisplay = disp
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
     if not hasattr(cor, "SourceSectionSet"):
         cor.addProperty("App::PropertyLink", "SourceSectionSet", "Smoke", "Section set link")
     cor.SourceSectionSet = sec

@@ -10,7 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft, ensure_corridor_loft_properties
+from freecad.Corridor_Road.objects.obj_corridor import Corridor, ensure_corridor_loft_properties
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc, ensure_cut_fill_calc_properties
 from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
 
@@ -26,8 +26,8 @@ def run():
         prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         ensure_project_properties(prj)
 
-        cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-        CorridorLoft(cor)
+        cor = doc.addObject("Part::FeaturePython", "Corridor")
+        Corridor(cor)
         cor.LengthSchemaVersion = 0
         cor.MinSectionSpacing = 0.5
         ensure_corridor_loft_properties(cor)

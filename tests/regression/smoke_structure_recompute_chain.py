@@ -10,7 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_design_terrain import DesignTerrain
@@ -35,8 +35,8 @@ def run():
     sec.StructureSet = ss
     sec.Status = "OK"
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
     cor.Status = "OK"
 

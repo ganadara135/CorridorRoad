@@ -29,7 +29,7 @@ def run():
     _assert(CORRIDOR_CHILD_LINK_PROPERTY == "ParentCorridor", "Corridor child-link property should use the canonical 'ParentCorridor' name")
 
     compat_path = os.path.normpath(os.path.join(freecad_root, "corridor_compat.py"))
-    loft_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_corridor_loft.py"))
+    loft_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_corridor.py"))
     project_path = os.path.normpath(os.path.join(freecad_root, "objects", "obj_project.py"))
     task_path = os.path.normpath(os.path.join(freecad_root, "ui", "task_corridor.py"))
 

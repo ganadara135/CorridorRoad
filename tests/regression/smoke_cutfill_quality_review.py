@@ -14,7 +14,7 @@ import Mesh
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_cut_fill_calc import CutFillCalc
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
@@ -55,8 +55,8 @@ def _base_setup(doc_name: str):
     sec.Interval = 20.0
     sec.CreateChildSections = False
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
 
     existing = doc.addObject("Mesh::Feature", "ExistingSurface")

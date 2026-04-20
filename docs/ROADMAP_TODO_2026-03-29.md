@@ -7,7 +7,7 @@ Date: 2026-03-29
 
 This document converts the current roadmap discussion into a practical to-do list.
 Historical note:
-Some checklist items use the older `Corridor Loft` or `CorridorLoft` wording because they record work completed before the current terminology cleanup.
+Some checklist items use the older `Corridor Loft` or `Corridor` wording because they record work completed before the current terminology cleanup.
 
 Priority order is:
 1. `skip_zone` / validation / regression tests
@@ -22,7 +22,7 @@ Priority order is:
 
 #### Sprint 1. `skip_zone` baseline + validation matrix
 - [x] Complete `1-1. Data and span resolution`
-- [x] Complete `1-2. CorridorLoft range splitting`
+- [x] Complete `1-2. Corridor range splitting`
 - [x] Complete `1-4. Status and diagnostics`
 - [x] Complete `2-1. Validation matrix definition`
 - [x] Define the minimum regression set from `3-1. Test target definition`
@@ -64,8 +64,8 @@ Sprint 3 goal:
 - [x] Define the exact station-envelope rule for `skip_zone`.
 - [x] Document fallback behavior when structure station fields are incomplete or inconsistent.
 
-#### 1-2. CorridorLoft range splitting
-- [x] Identify the current section grouping/splitting logic inside `CorridorLoft`.
+#### 1-2. Corridor range splitting
+- [x] Identify the current section grouping/splitting logic inside `Corridor`.
 - [x] Add logic that classifies kept ranges versus skipped ranges from structure-active spans.
 - [x] Preserve valid pre-structure and post-structure loft segments as separate build ranges.
 - [x] Confirm behavior when multiple structure zones overlap or touch.
@@ -109,7 +109,7 @@ Reference:
 
 #### 2-4. Status message cleanup
 - [x] Improve status messages so users can tell whether a result is using display-only logic, simplified earthwork logic, or a full corridor rule.
-- [x] Normalize wording across `SectionSet`, `CorridorLoft`, `DesignGradingSurface`, and related panels.
+- [x] Normalize wording across `SectionSet`, `Corridor`, `DesignGradingSurface`, and related panels.
 - [x] Review existing status text for ambiguity, duplication, or missing next-step guidance.
 
 #### 2-5. Documentation sync
@@ -265,7 +265,7 @@ Reference:
 - [x] Keep summary totals available even when richer pavement outputs are not generated.
 
 #### 6-4. Stability re-verification
-- [x] Re-verify that `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` remain stable with richer component definitions.
+- [x] Re-verify that `SectionSet`, `Corridor`, and `DesignGradingSurface` remain stable with richer component definitions.
 - [x] Extend regression coverage for richer component definitions, pavement outputs, and downstream status propagation.
 - [x] Re-check UI/task-panel messaging so advanced templates do not imply unsupported production outputs.
 
@@ -303,7 +303,7 @@ Sprint 8A goal:
 
 Sprint 8B goal:
 - Make common practical roadside assemblies reusable without custom row editing each time.
-- Stabilize richer sections through `SectionSet`, `CorridorLoft`, and `DesignGradingSurface`.
+- Stabilize richer sections through `SectionSet`, `Corridor`, and `DesignGradingSurface`.
 - Leave behind a repeatable preset contract.
 
 ##### Sprint 8C. Report data contract
@@ -373,7 +373,7 @@ Sprint 8F goal:
 
 #### 8-6. Rich-section downstream safety
 - [x] Re-verify richer practical sections through `SectionSet`.
-- [x] Re-verify richer practical sections through `CorridorLoft`.
+- [x] Re-verify richer practical sections through `Corridor`.
 - [x] Re-verify richer practical sections through `DesignGradingSurface`.
 
 #### 8-7. Structured report rows

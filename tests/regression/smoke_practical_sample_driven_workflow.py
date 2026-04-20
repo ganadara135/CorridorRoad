@@ -16,7 +16,7 @@ import FreeCAD as App
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
@@ -278,8 +278,8 @@ def run():
         sec.IncludeAlignmentSCCSStations = False
         sec.CreateChildSections = False
 
-        cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-        CorridorLoft(cor)
+        cor = doc.addObject("Part::FeaturePython", "Corridor")
+        Corridor(cor)
         cor.SourceSectionSet = sec
         cor.UseStructureCorridorModes = True
         cor.SplitAtStructureZones = True
@@ -309,11 +309,11 @@ def run():
         _assert("structures=" in sec_status, "SectionSet status missing structure count token")
 
         cor_mode_summary = str(getattr(cor, "ResolvedStructureCorridorModeSummary", "") or "")
-        _assert("notch=" in cor_mode_summary, "CorridorLoft corridor mode summary missing notch")
-        _assert("split_only=" in cor_mode_summary, "CorridorLoft corridor mode summary missing split_only")
-        _assert("skip_zone=" in cor_mode_summary, "CorridorLoft corridor mode summary missing skip_zone")
-        _assert(len(list(getattr(cor, "ResolvedNotchStructureIds", []) or [])) >= 1, "CorridorLoft notch structure ids missing")
-        _assert(len(list(getattr(cor, "ExportSummaryRows", []) or [])) >= 1, "CorridorLoft export summary rows missing")
+        _assert("notch=" in cor_mode_summary, "Corridor corridor mode summary missing notch")
+        _assert("split_only=" in cor_mode_summary, "Corridor corridor mode summary missing split_only")
+        _assert("skip_zone=" in cor_mode_summary, "Corridor corridor mode summary missing skip_zone")
+        _assert(len(list(getattr(cor, "ResolvedNotchStructureIds", []) or [])) >= 1, "Corridor notch structure ids missing")
+        _assert(len(list(getattr(cor, "ExportSummaryRows", []) or [])) >= 1, "Corridor export summary rows missing")
         cor_status = str(getattr(cor, "Status", "") or "")
         _assert("corridorModes=" in cor_status, "Corridor status missing corridor mode token")
         _assert("typicalAdvanced=" in cor_status, "Corridor status missing advanced typical summary")

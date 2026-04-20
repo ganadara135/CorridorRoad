@@ -68,7 +68,7 @@ Required:
 3. grouped authoring UI
 4. hint workflow
 5. runtime adapter
-6. compatibility with current `SectionSet` and `CorridorLoft`
+6. compatibility with current `SectionSet` and `Corridor`
 8. regression coverage
 
 Deferred:
@@ -221,7 +221,7 @@ Primary files:
 
 1. `freecad/Corridor_Road/objects/obj_region_plan.py`
 2. `freecad/Corridor_Road/objects/obj_section_set.py`
-3. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+3. `freecad/Corridor_Road/objects/obj_corridor.py`
 
 Acceptance:
 
@@ -307,7 +307,7 @@ Tasks:
 
 1. add `RegionPlan` link property to project and `SectionSet`
 2. update `Generate Sections` UI to prefer `RegionPlan`
-3. update `CorridorLoft` status text and diagnostics to say `Region Plan`
+3. update `Corridor` status text and diagnostics to say `Region Plan`
 
 Primary files:
 
@@ -315,7 +315,7 @@ Primary files:
 2. `freecad/Corridor_Road/objects/project_links.py`
 3. `freecad/Corridor_Road/objects/obj_section_set.py`
 4. `freecad/Corridor_Road/ui/task_section_generator.py`
-5. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+5. `freecad/Corridor_Road/objects/obj_corridor.py`
 6. `freecad/Corridor_Road/ui/task_corridor_loft.py`
 
 Acceptance:
@@ -505,7 +505,7 @@ New or updated tests:
 4. `freecad/Corridor_Road/commands/cmd_edit_regions.py`
 5. `freecad/Corridor_Road/ui/task_section_generator.py`
 6. `freecad/Corridor_Road/objects/obj_section_set.py`
-7. `freecad/Corridor_Road/objects/obj_corridor_loft.py`
+7. `freecad/Corridor_Road/objects/obj_corridor.py`
 
 ### Removed legacy compatibility files
 

@@ -11,7 +11,7 @@ Run in FreeCAD Python environment:
 import FreeCAD as App
 import Part
 
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 
 
 def _assert(cond, msg):
@@ -59,9 +59,9 @@ def run():
         },
     }
 
-    out_wire = CorridorLoft._make_notch_profile_for_surface(open_wire, row, doc_or_obj=None)
-    in_pts = CorridorLoft._wire_points(open_wire)
-    out_pts = CorridorLoft._wire_points(out_wire)
+    out_wire = Corridor._make_notch_profile_for_surface(open_wire, row, doc_or_obj=None)
+    in_pts = Corridor._wire_points(open_wire)
+    out_pts = Corridor._wire_points(out_wire)
 
     _assert(_points_equal(in_pts, out_pts), "Non-notch stations should preserve the original section wire")
     print("[PASS] Default-notch surface preservation smoke test completed.")

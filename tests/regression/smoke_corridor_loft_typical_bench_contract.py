@@ -2,7 +2,7 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 """
-CorridorLoft typical-section + bench strip contract smoke test.
+Corridor typical-section + bench strip contract smoke test.
 
 Run in FreeCAD Python environment:
     FreeCADCmd tests/regression/smoke_corridor_loft_typical_bench_contract.py
@@ -14,7 +14,7 @@ from freecad.Corridor_Road.corridor_compat import CORRIDOR_CHILD_LINK_PROPERTY
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_assembly_template import AssemblyTemplate
 from freecad.Corridor_Road.objects.obj_centerline3d_display import Centerline3DDisplay
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_design_grading_surface import DesignGradingSurface
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 from freecad.Corridor_Road.objects.obj_typical_section_template import TypicalSectionTemplate
@@ -107,8 +107,8 @@ def run():
     sec.CreateChildSections = False
     sec.DaylightAuto = False
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
 
     dgs = doc.addObject("Mesh::FeaturePython", "DesignGradingSurface")
@@ -128,7 +128,7 @@ def run():
 
     cor_faces = len(list(getattr(getattr(cor, "Shape", None), "Faces", []) or []))
     dgs_faces = int(getattr(dgs, "FaceCount", 0) or 0)
-    _assert(cor_faces == dgs_faces, f"CorridorLoft faces should match grading strip faces: {cor_faces} != {dgs_faces}")
+    _assert(cor_faces == dgs_faces, f"Corridor faces should match grading strip faces: {cor_faces} != {dgs_faces}")
 
     package_rows = list(getattr(cor, "SegmentPackageRows", []) or [])
     _assert(len(package_rows) >= 1, "Typical+bench corridor should expose at least one segment package row")
@@ -146,7 +146,7 @@ def run():
     _assert(all("|contract=section_profiles" in str(getattr(o, "SegmentSummary", "") or "") for o in segment_objs), "Typical+bench CorridorSegment summaries should expose the contract source")
 
     App.closeDocument(doc.Name)
-    print("[PASS] CorridorLoft typical-section + bench strip contract smoke test completed.")
+    print("[PASS] Corridor typical-section + bench strip contract smoke test completed.")
 
 
 if __name__ == "__main__":

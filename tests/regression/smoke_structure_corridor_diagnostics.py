@@ -10,7 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet
 
 
@@ -57,7 +57,7 @@ def run():
     wall = by_id["WALL_SPLIT"]
     _assert(str(wall.get("ResolvedCorridorMode", "")) == "split_only", "Retaining wall should stay split_only")
 
-    detail_rows, warning_rows, mode_summary, spans = CorridorLoft._describe_structure_corridor_records(rows)
+    detail_rows, warning_rows, mode_summary, spans = Corridor._describe_structure_corridor_records(rows)
     _assert(len(detail_rows) == 3, f"Expected 3 detail rows, got {len(detail_rows)}")
     _assert("skip_zone=2" in str(mode_summary), f"Missing skip_zone summary: {mode_summary}")
     _assert("split_only=1" in str(mode_summary), f"Missing split_only summary: {mode_summary}")
@@ -79,11 +79,11 @@ def run():
     doc.recompute()
     _assert("externalShapeDisplayOnly=1" in str(getattr(ss, "Status", "") or ""), "Expected externalShapeDisplayOnly summary in status")
 
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
-    _assert(hasattr(cor, "ResolvedStructureCorridorRanges"), "CorridorLoft missing ResolvedStructureCorridorRanges")
-    _assert(hasattr(cor, "ResolvedStructureCorridorWarnings"), "CorridorLoft missing ResolvedStructureCorridorWarnings")
-    _assert(hasattr(cor, "ResolvedStructureCorridorModeSummary"), "CorridorLoft missing ResolvedStructureCorridorModeSummary")
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
+    _assert(hasattr(cor, "ResolvedStructureCorridorRanges"), "Corridor missing ResolvedStructureCorridorRanges")
+    _assert(hasattr(cor, "ResolvedStructureCorridorWarnings"), "Corridor missing ResolvedStructureCorridorWarnings")
+    _assert(hasattr(cor, "ResolvedStructureCorridorModeSummary"), "Corridor missing ResolvedStructureCorridorModeSummary")
 
     App.closeDocument(doc.Name)
 

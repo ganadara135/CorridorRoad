@@ -32,7 +32,7 @@ Status:
 Expected behavior:
 - `TypicalSectionTemplate` drives the finished-grade top profile.
 - `SectionSchemaVersion=2` may be used.
-- `CorridorLoft` may still auto-prefer the legacy ruled fallback for richer profiles.
+- `Corridor` may still auto-prefer the legacy ruled fallback for richer profiles.
 
 Validation expectation:
 - Confirm section schema, top-profile source, and pavement summary propagation.

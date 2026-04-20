@@ -235,11 +235,11 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `subWarn=N` when subassembly validation notes are active
   - `roadside=ditch_edge:1,urban_edge:1,...` when reusable roadside families are detected
 
-### 2.9 CorridorLoft (`freecad/Corridor_Road/objects/obj_corridor_loft.py`)
+### 2.9 Corridor (`freecad/Corridor_Road/objects/obj_corridor.py`)
 - Purpose: corridor loft generation from `SectionSet`.
 - Naming policy:
   - user-facing UI says `Corridor`
-  - internal proxy/module name remains `CorridorLoft` for compatibility in the current migration cycle
+  - internal proxy/module name remains `Corridor` for compatibility in the current migration cycle
 - Inputs:
   - `SourceSectionSet`
 - Controls:
@@ -263,7 +263,7 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
   - `FailedRanges`, `Status`
   - structured report contract copied from `SectionSet` plus corridor-specific `ExportSummaryRows`
 - Runtime role:
-  - `CorridorLoft` is the range-aware `Part Shape` result for corridor output
+  - `Corridor` is the range-aware `Part Shape` result for corridor output
   - it must preserve span-level corridor meaning such as `split_only`, `skip_zone`, and notch-aware structure spans
   - it is not just a display mesh and should remain suitable for downstream `Part`-based inspection/export
 - Output mode:
@@ -310,14 +310,14 @@ Terrain (EG) -> Horizontal Alignment -> Stations -> Profiles (Data/EG) -> FG Pro
 - Output mode:
   - uses the `SectionSet` point contract directly and connects adjacent sections point-to-point as strip facets
   - intended as the section-faithful reference mesh for visual grading, cut/fill-style surface inspection, and mesh-based analysis
-  - unlike `CorridorLoft`, it does not need to preserve corridor span semantics as `Part` shape segments
+  - unlike `Corridor`, it does not need to preserve corridor span semantics as `Part` shape segments
 - Pending-update marker:
   - tree label suffix: ` [Recompute]`
   - status text starts with `NEEDS_RECOMPUTE` when source changed
 
-### 2.10A CorridorLoft vs DesignGradingSurface
+### 2.10A Corridor vs DesignGradingSurface
 
-| Topic | CorridorLoft | DesignGradingSurface |
+| Topic | Corridor | DesignGradingSurface |
 |---|---|---|
 | Primary role | range-aware `Part Shape` corridor result | section-faithful reference mesh |
 | Main output | `Part` surface shape | `Mesh` facets |
@@ -332,7 +332,7 @@ Current direction:
 
 - `SectionSet` owns the ordered section-point contract.
 - `DesignGradingSurface` consumes that contract directly as strip facets.
-- `CorridorLoft` should consume the same contract, then add corridor span packaging on top of it.
+- `Corridor` should consume the same contract, then add corridor span packaging on top of it.
 
 | Topic | Legacy loft-centric approach | Section-strip assembly approach |
 |---|---|---|
@@ -348,13 +348,13 @@ Current direction:
 Practical rule:
 
 - `DesignGradingSurface` remains the easiest object for checking raw section connectivity.
-- `CorridorLoft` should use the same section-to-section contract and then preserve range-aware corridor meaning.
+- `Corridor` should use the same section-to-section contract and then preserve range-aware corridor meaning.
 - If the two outputs disagree, first decide whether the problem is raw section drift or corridor span packaging drift.
 
 ### 2.11 CutFillCalc (`freecad/Corridor_Road/objects/obj_cut_fill_calc.py`)
 - Purpose: Existing/Design surface comparison and cut/fill summary.
 - Inputs:
-  - `SourceCorridor` (`CorridorLoft`)
+  - `SourceCorridor` (`Corridor`)
   - `ExistingSurface` (Mesh object)
 - Controls:
   - `CellSize`, `MaxSamples`, `MinMeshFacets`, `DomainMargin`, `UseCorridorBounds`
@@ -389,7 +389,7 @@ Practical rule:
 - 3D color policy:
   - Cut=red, Fill=blue, Neutral=light gray, NoData=gray
 - Comparison rule:
-  - design side uses top surface extracted from `CorridorLoft`
+  - design side uses top surface extracted from `Corridor`
   - existing side uses mesh triangles
   - grid sampling integrates `delta = Design - Existing`
   - current supported source mode is explicitly reported as `corridor_top_vs_existing_mesh`
@@ -597,7 +597,7 @@ Practical rule:
   - `TypicalSectionPavementDisplay` is the first separate pavement geometry/report object
   - `TypicalSectionTemplate` stores `PavementLayerCount`, `EnabledPavementLayerCount`, `PavementTotalThickness`
   - `TypicalSectionTemplate` and `TypicalSectionPavementDisplay` also store enabled pavement layer report rows
-  - `SectionSet`, `CorridorLoft`, and `DesignGradingSurface` mirror the pavement summary and report rows for downstream reporting
+  - `SectionSet`, `Corridor`, and `DesignGradingSurface` mirror the pavement summary and report rows for downstream reporting
   - pavement preview offset wires were removed; `TypicalSectionTemplate.Shape` now stays focused on the top-profile wire for faster panel/apply behavior
 - execution-plan/status document:
   - `docs/TYPICAL_SECTION_EXECUTION_PLAN.md`
@@ -634,15 +634,15 @@ Practical rule:
   - `docs/PRACTICAL_SAMPLE_SET.md`
 
 ### 3.6 Corridor Command (`freecad/Corridor_Road/commands/cmd_generate_corridor.py`)
-- Creates/updates `CorridorLoft`.
+- Creates/updates `Corridor`.
 - Links current `SectionSet`.
-- Opens the dedicated task panel and keeps `CorridorLoft` on the current surface-only policy.
+- Opens the dedicated task panel and keeps `Corridor` on the current surface-only policy.
 - Runtime command/task-panel entry points now use only `cmd_generate_corridor.py` and `task_corridor.py`.
 
 Project-link note:
 
 - `CorridorRoadProject` now persists its corridor link through the hidden `Corridor` property.
-- Older hidden project-link property `CorridorLoft` is retired.
+- Older hidden project-link property `Corridor` is retired.
 - Generated corridor child ownership now persists through `ParentCorridor`.
 
 ### 3.7 Design Grading Surface Command (`freecad/Corridor_Road/commands/cmd_generate_design_grading_surface.py`)
@@ -654,14 +654,14 @@ Project-link note:
 ### 3.8 Cut-Fill Calc Command (`freecad/Corridor_Road/commands/cmd_generate_cut_fill_calc.py`)
 - Opens dedicated TaskPanel (`freecad/Corridor_Road/ui/task_cut_fill_calc.py`).
 - TaskPanel responsibilities:
-  - explicit source selection (`CorridorLoft`, Existing Mesh)
+  - explicit source selection (`Corridor`, Existing Mesh)
   - existing mesh coordinate mode selection (`Local`/`World`)
   - manual domain coordinate mode selection (`Local`/`World`)
   - set comparison controls (domain/resolution/update policy)
   - show run progress and support cancel
 - Execution path:
   - updates/creates `CutFillCalc`
-  - updates project links (`CorridorLoft`, `Terrain`, `CutFillCalc`)
+  - updates project links (`Corridor`, `Terrain`, `CutFillCalc`)
   - runs comparison through object proxy execution path for responsive UI
 
 ### 3.9 Design Terrain Command (`freecad/Corridor_Road/commands/cmd_generate_design_terrain.py`)
@@ -688,7 +688,7 @@ Project-link note:
   - Profile data storage != FG display
   - Centerline3D engine != Centerline3DDisplay rendering
 - Model representation policy:
-  - `CorridorLoft` is Surface model
+  - `Corridor` is Surface model
   - `DesignGradingSurface` is Mesh model (visual grading)
   - `DesignTerrain` is Mesh model (composite terrain)
   - other design/analysis objects are Surface/Wire based
@@ -733,7 +733,7 @@ Project-link note:
   - Vertical/Profile source changes
   - AssemblyTemplate changes
   - SectionSet changes
-- Section/Assembly source edits must not auto-recompute `CorridorLoft`
+- Section/Assembly source edits must not auto-recompute `Corridor`
 - Instead, linked corridor objects are marked as pending recompute in tree/status
 - Manual override trigger must exist: `RebuildNow=True`
 
@@ -763,12 +763,12 @@ Project-link note:
 Before entering `Existing/Design Surface` comparison stage, these are fixed:
 
 1. Corridor recompute UX
-- Source edits do not auto-recompute `CorridorLoft`.
+- Source edits do not auto-recompute `Corridor`.
 - Mark pending state in tree/status (`[Recompute]`, `NEEDS_RECOMPUTE`).
 - Recompute is explicit (manual trigger/command).
 
 2. Design Surface extraction
-- Comparison design surface is extracted from upward faces of `CorridorLoft`.
+- Comparison design surface is extracted from upward faces of `Corridor`.
 
 3. Existing Surface input format
 - Phase-1 existing surface input is `Mesh` only.

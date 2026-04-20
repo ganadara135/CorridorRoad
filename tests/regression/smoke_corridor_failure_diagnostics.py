@@ -10,7 +10,7 @@ Run in FreeCAD Python environment:
 
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_corridor_loft import CorridorLoft
+from freecad.Corridor_Road.objects.obj_corridor import Corridor
 from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
 
@@ -21,8 +21,8 @@ def _assert(cond, msg):
 
 def _build_missing_source_case():
     doc = App.newDocument("CRCorridorDiagMissingSource")
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     doc.recompute()
 
     status = str(getattr(cor, "Status", "") or "")
@@ -44,8 +44,8 @@ def _build_execution_failure_case():
     doc = App.newDocument("CRCorridorDiagExecutionFailure")
     sec = doc.addObject("Part::FeaturePython", "SectionSet")
     SectionSet(sec)
-    cor = doc.addObject("Part::FeaturePython", "CorridorLoft")
-    CorridorLoft(cor)
+    cor = doc.addObject("Part::FeaturePython", "Corridor")
+    Corridor(cor)
     cor.SourceSectionSet = sec
     doc.recompute()
 

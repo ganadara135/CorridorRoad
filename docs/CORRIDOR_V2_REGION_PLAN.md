@@ -7,7 +7,7 @@ Date: 2026-04-10
 
 Historical note:
 This plan was written during the transition from user-facing `Corridor Loft` wording to `Corridor`.
-References to `Corridor Loft` or `CorridorLoft` in this document should be read as historical naming or internal compatibility naming unless the text explicitly discusses migration work.
+References to `Corridor Loft` or `Corridor` in this document should be read as historical naming or internal compatibility naming unless the text explicitly discusses migration work.
 
 ## Purpose
 
@@ -24,7 +24,7 @@ This is a design and execution plan, not a commit log.
 
 The current corridor runtime still carries legacy loft-era assumptions:
 
-1. the object is named `CorridorLoft`
+1. the object is named `Corridor`
 2. parts of the runtime still think in terms of profile lofting rather than deterministic section assembly
 3. users expect the corridor result to follow generated sections the same way `DesignGradingSurface` does
 4. region-aware corridor behavior exists, but it is not yet the center of the corridor mental model
@@ -287,7 +287,7 @@ Recommended debugging policy:
 2. if grading is correct, debug segment packaging
 3. only use compatibility loft fallback as a last-resort temporary path
 
-## Naming Plan: CorridorLoft -> Corridor
+## Naming Plan: Corridor -> Corridor
 
 User-facing naming should move from `Corridor Loft` to `Corridor`.
 
@@ -316,10 +316,10 @@ User-facing naming should move from `Corridor Loft` to `Corridor`.
 
 For compatibility and code stability, the following may stay internal for one migration cycle:
 
-1. command id `CorridorRoad_GenerateCorridorLoft`
+1. command id `CorridorRoad_GenerateCorridor`
 2. file name `cmd_generate_corridor_loft.py`
-3. object proxy type `CorridorLoft`
-4. project hidden link property `CorridorLoft`
+3. object proxy type `Corridor`
+4. project hidden link property `Corridor`
 
 Current decision:
 
@@ -423,7 +423,7 @@ Status: planned
 
 Scope:
 
-1. decide whether to keep `CorridorLoft` as an internal proxy/type name
+1. decide whether to keep `Corridor` as an internal proxy/type name
 2. if safe, rename internal symbols in a separate low-risk pass
 
 Acceptance:
