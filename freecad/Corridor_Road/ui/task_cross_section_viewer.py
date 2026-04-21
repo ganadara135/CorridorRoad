@@ -64,6 +64,7 @@ class _SelectionObserver:
 class _CrossSectionGraphicsView(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._corridorroad_click_handler = None
         self.setRenderHints(
             QtGui.QPainter.Antialiasing
             | QtGui.QPainter.TextAntialiasing
@@ -81,6 +82,18 @@ class _CrossSectionGraphicsView(QtWidgets.QGraphicsView):
         factor = 1.20 if delta > 0 else (1.0 / 1.20)
         self.scale(factor, factor)
         event.accept()
+
+    def mousePressEvent(self, event):
+        handler = getattr(self, "_corridorroad_click_handler", None)
+        if handler is not None:
+            try:
+                scene_pos = self.mapToScene(event.pos())
+                if bool(handler(event, scene_pos)):
+                    event.accept()
+                    return
+            except Exception:
+                pass
+        super().mousePressEvent(event)
 
 
 class CrossSectionViewerTaskPanel:

@@ -90,8 +90,6 @@ Compatibility window:
 - The proxy/type/name-prefix compatibility (`Corridor`, `obj_corridor.py`) should remain only in the FCStd restore and corridor-routing boundary until proxy retirement is explicitly opened.
 - Preferred task-panel class path is `CorridorTaskPanel`.
 - Preferred task-panel module path is `task_corridor.py`.
-- Compatibility checks currently rely on `smoke_corridor_compat_aliases.py`, `smoke_corridor_child_link_boundary.py`, `smoke_corridor_command_alias_boundary.py`, `smoke_corridor_project_link_boundary.py`, `smoke_corridor_proxy_boundary.py`, `smoke_corridor_taskpanel_alias_boundary.py`, `smoke_corridor_fcstd_restore.py`, and `smoke_tree_schema.py`.
-- Use `tests/regression/run_loft_retirement_gate_smokes.ps1` to rerun the full Loft-retirement gate set before opening any real alias-removal PR.
 
 ## Completion Message Policy
 - Stations, 3D Centerline, Sections, and Corridor commands should show completion dialogs on successful run.
