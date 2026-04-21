@@ -24,4 +24,5 @@ class CmdEditCrossSection:
         Gui.Control.showDialog(panel)
 
 
-Gui.addCommand("CorridorRoad_EditCrossSection", CmdEditCrossSection())
+if hasattr(Gui, "addCommand"):
+    Gui.addCommand("CorridorRoad_EditCrossSection", CmdEditCrossSection())

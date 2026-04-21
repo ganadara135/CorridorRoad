@@ -17,23 +17,38 @@ Do not replace, remove, or rename `CorridorRoad_ViewCrossSection` as part of the
 
 Updated: 2026-04-21
 
-- Stage marker: `PH-3 CURRENT`
+- Stage marker: `PH-5 CURRENT`
 - `Cross Section Viewer` remains active and is not being retired.
-- Current development step: `PH-3 Impact Analyzer`.
+- Current development step: `PH-5 Typical Cross Slope Runtime Override`.
 - Completed before PH-3: target selector, canvas click selection, selected component highlight, source owner display, generated/raw row preview, read-only inspector, impact-preview scaffold.
 - Completed in PH-3 so far: parameter classification, affected station resolver, region owner summary, structure overlap preview, boundary station preview, downstream recompute/stale preview.
-- Next development step: `PH-4 Safe Edits Through Existing Sources`.
+- Completed in PH-4: guarded width apply paths for `Global Source` + linked `TypicalSectionTemplate`, `AssemblyTemplate` carriageway widths, simple and bench-aware `AssemblyTemplate` side-slope widths, simple and bench-aware `AssemblyTemplate` side-slope percent edits, guarded `Active Region` `RegionPlan` side/daylight policy edits, undo-friendly transactions, applied edit summary rows, PH-4 validation rows, downstream stale validation, and downstream recompute marking.
+- Completed in PH-5 so far: added `CrossSectionEditPlan` object skeleton, edit row parser/serializer, active-station lookup, boundary-station listing, SectionSet link properties, SectionSet edit-plan summary rows, `resolve_station_values(...)` boundary-station merge, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` edits, editor apply paths for `Station Range` and `Current Station Only`, and persistence/runtime/editor smoke coverage.
+- Next development step: extend typical/local runtime overrides beyond width and `cross_slope_pct` into richer component parameters such as height / extra width / back slope.
 - `PH-1 Refactor Viewer Core`: deferred. The current implementation still reuses [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) directly.
 - `PH-2 Selection And Inspection`: implementation complete; FreeCAD GUI manual check pending.
   - Added `CorridorRoad_EditCrossSection`.
   - Added [task_cross_section_editor.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_editor.py).
   - The editor currently wraps the existing viewer and adds a right-side `Selection / Edit Panel`.
   - Current capability is read-only component target selection, canvas click selection for visible component guides, selected component canvas highlight, source owner display, generated/raw row preview, parameter inspection, and impact-preview scaffolding.
-- `PH-3 Impact Analyzer`: in progress.
+- `PH-3 Impact Analyzer`: implemented for MVP text preview; GUI manual check pending.
   - Added parameter classification.
   - Added affected-station resolver for global source, active region, station range scaffold, and current-station-only scopes.
   - Added region owner, structure overlap, boundary station, downstream recompute, warning, and blocked-state preview text.
-- Editing/apply is intentionally disabled until source/override persistence and recompute integration are implemented.
+- `PH-4 Safe Edits Through Existing Sources`: in progress.
+  - Added guarded `PH-4 Width Edit` control.
+  - Added guarded `PH-4 Slope Edit` control.
+  - Apply is enabled only for guarded source-owner cases.
+  - Current `TypicalSectionTemplate` apply writes `TypicalSectionTemplate.ComponentWidths[index]`, touches the source and SectionSet, recomputes the document, and refreshes the editor at the current station.
+  - Current `AssemblyTemplate` apply writes `AssemblyTemplate.LeftWidth` or `AssemblyTemplate.RightWidth` for assembly carriageway targets.
+  - Current side-slope apply writes `AssemblyTemplate.LeftSideWidth` or `AssemblyTemplate.RightSideWidth`; when bench rows are configured, they are preserved and PH-4 validation emits a bench-aware warning.
+  - Current side-slope percent apply writes `AssemblyTemplate.LeftSideSlopePct` or `AssemblyTemplate.RightSideSlopePct`; when bench rows are configured, they are preserved and PH-4 validation emits a bench-aware warning.
+  - Current RegionPlan apply writes `RegionPlan.SidePolicy` or `RegionPlan.DaylightPolicy` on the active base region when scope is `Active Region`.
+  - PH-4 apply now opens a FreeCAD document transaction where available.
+  - Applied edits are recorded on the SectionSet as `CrossSectionEditorEditRows` and `CrossSectionEditorLastEditSummary`.
+  - PH-4 validation rows are shown in the editor and recorded on successful apply as `CrossSectionEditorValidationRows` and `CrossSectionEditorLastValidationSummary`.
+  - Linked downstream `Corridor`, `DesignGradingSurface`, `DesignTerrain`, and `CutFillCalc` outputs are listed in PH-4 validation and marked stale after successful apply.
+- Editing/apply remains disabled except for the guarded PH-4 source-owner paths described above.
 
 ### PH Status Map
 
@@ -41,9 +56,9 @@ Updated: 2026-04-21
 | --- | --- | --- |
 | `PH-1` | Deferred | Viewer core split is deferred. Viewer behavior must remain unchanged. |
 | `PH-2` | Implemented / GUI check pending | Editor shell, selection, inspection, click selection, highlight, and source/raw row visibility. |
-| `PH-3` | Current / In progress | Impact analyzer and affected-station resolver. |
-| `PH-4` | Next / Pending | Safe edits through existing source owners. |
-| `PH-5` | Pending | Dedicated `CrossSectionEditPlan` object. |
+| `PH-3` | Implemented / GUI check pending | Impact analyzer and affected-station resolver. |
+| `PH-4` | Implemented / GUI check pending | Safe edits through existing source owners. |
+| `PH-5` | Current / In progress | Dedicated `CrossSectionEditPlan` object. |
 | `PH-6` | Pending | Range and transition edits. |
 | `PH-7` | Pending | Advanced editing UX. |
 
@@ -938,22 +953,93 @@ Implemented so far:
 
 ### PH-4: Safe Edits Through Existing Sources
 
-Status: pending.
+Status: in progress. This is the current active development stage.
 
 - allow global `TypicalSectionTemplate` edits
 - allow global `AssemblyTemplate` edits
 - allow `RegionPlan` policy edits
 - recompute and refresh viewer
 
+Implemented so far:
+
+- first guarded apply path:
+  - scope must be `Global Source`
+  - selected component scope must be `typical`
+  - generated source must be `typical_summary` or `assembly_template`
+  - `typical_summary` edits require a linked `TypicalSectionTemplate`
+  - `assembly_template` carriageway edits require a linked `AssemblyTemplate` and a left/right `carriageway` target
+  - `assembly_template` side-width edits require a linked `AssemblyTemplate` and a primary left/right side-slope target
+  - `assembly_template` side-slope percent edits require a linked `AssemblyTemplate`, selected edit parameter `Slope %`, and a primary left/right side-slope target
+  - bench-aware side edits preserve configured bench rows and do not edit individual bench row width/drop/slope values yet
+  - `RegionPlan` side/daylight policy edits require `Active Region` scope, a linked RegionPlan, enabled `ApplyRegionOverrides`, and an active base-region id at the current station
+  - component type must be width-like and not topology/extra-width driven
+- write path:
+  - update `TypicalSectionTemplate.ComponentWidths[index]`
+  - or update `AssemblyTemplate.LeftWidth` / `AssemblyTemplate.RightWidth`
+  - or update `AssemblyTemplate.LeftSideWidth` / `AssemblyTemplate.RightSideWidth`
+  - or update `AssemblyTemplate.LeftSideSlopePct` / `AssemblyTemplate.RightSideSlopePct`
+  - or update the active base region `SidePolicy` / `DaylightPolicy` through `RegionPlan.apply_records(...)`
+  - touch edited source object and SectionSet
+  - recompute active document
+  - refresh editor at the current station
+- edit record path:
+  - append `cross_section_editor_edit|...` rows to `SectionSet.CrossSectionEditorEditRows`
+  - update `SectionSet.CrossSectionEditorLastEditSummary`
+  - keep only the latest 100 edit rows
+- validation row path:
+  - show `validation|phase=PH-4|...` rows in the editor before apply
+  - record the latest successful apply validation rows to `SectionSet.CrossSectionEditorValidationRows`
+  - update `SectionSet.CrossSectionEditorLastValidationSummary`
+- downstream stale path:
+  - detect objects linked through `SourceSectionSet`
+  - detect secondary outputs linked through `SourceCorridor` or `SourceDesignSurface`
+  - show `validation|phase=PH-4|level=warn|code=downstream_stale|...` before apply
+  - set `NeedsRecompute=True` where available after successful apply
+  - keep `Corridor` stale state internal, and use `Status=NEEDS_RECOMPUTE...` / `[Recompute]` label marking for downstream generated outputs
+
+Still pending:
+
+- individual bench-row width/drop/slope edits
+- station range edits through `CrossSectionEditPlan`
+- richer conflict validation against downstream object geometry/content conflicts
+
 ### PH-5: CrossSectionEditPlan Object
 
-Status: pending.
+Status: in progress. This is the current active development stage.
 
-- add object and properties
-- add row parser/serializer
-- link from `SectionSet`
-- add edit boundary station merge
-- add runtime override context
+- add object and properties: implemented
+- add row parser/serializer: implemented
+- link from `SectionSet`: implemented
+- add edit boundary station merge: implemented
+- add runtime override context: implemented for side-slope `width` / `slope_pct` and typical-component `width` / `cross_slope_pct`
+
+Implemented so far:
+
+- added [obj_cross_section_edit_plan.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/objects/obj_cross_section_edit_plan.py)
+- stores edit ids, enabled flags, scopes, start/end stations, transition distances, target metadata, parameter, value, unit, source scope, and notes
+- writes structured `cross_section_edit|...` rows to `CrossSectionEditPlan.EditRows`
+- validates duplicate ids, missing target/parameter, invalid scope, reversed ranges, and station-scope range mismatch
+- exposes active-record lookup at a station
+- exposes boundary station values including transition-in and transition-out stations
+- added `SectionSet.CrossSectionEditPlan`
+- added `SectionSet.UseCrossSectionEditPlan`
+- added `SectionSet.ResolvedCrossSectionEditCount`
+- added `SectionSet.ResolvedCrossSectionEditSummaryRows`
+- merges edit-plan boundary and transition stations into `SectionSet.resolve_station_values(...)`
+- applies active edit-plan side-slope `width` / `slope_pct` overrides during `build_section_wires`
+- applies active edit-plan typical-component `width` / `cross_slope_pct` overrides during `build_section_wires`
+- marks edited side-slope component rows as `source=cross_section_edit` with `editId=...`
+- marks edited typical component rows as `source=cross_section_edit` with `editId=...`
+- records active override hit count on `SectionSet.CrossSectionEditOverrideHitCount`
+- adds editor-side `Station Range` / `Current Station Only` apply paths that create or update linked `CrossSectionEditPlan` rows
+- extends PH-5 editor apply to local typical-component width / `cross_slope_pct` edits
+- auto-creates and links `CrossSectionEditPlan` from `Cross Section Editor` when needed
+- records PH-5 editor applies on `SectionSet` edit/validation summary rows
+- adds editor smoke coverage for range + station-only apply flows, including typical-component width / `cross_slope_pct` edits
+
+Still pending:
+
+- extend typical/local runtime overrides beyond width and `cross_slope_pct` into richer component parameters
 
 ### PH-6: Range And Transition Edits
 

@@ -23,12 +23,14 @@ Do not remove or hide the existing viewer command while adding editor UX. Users 
 
 Updated: 2026-04-21
 
-- Stage marker: `PH-3 CURRENT`
+- Stage marker: `PH-5 CURRENT`
 - `Cross Section Viewer` remains available and is not being retired.
-- Current development step: `PH-3 Impact Analyzer UX`.
+- Current development step: `PH-5 Typical Cross Slope Runtime Override`.
 - Completed before PH-3: target selector, canvas click selection, selected component highlight, source owner display, generated/raw row preview, read-only details, read-only parameter table, impact-preview scaffold.
 - Completed in PH-3 so far: computed affected range, affected station count, timeline, boundary station preview, region owner, structure overlap, downstream status, warnings, and blocked-state text.
-- Next development step: `PH-4 Safe Apply UX`.
+- Completed in PH-4: guarded width/slope edit controls, guarded RegionPlan policy controls, safe apply paths for `Global Source` + linked `TypicalSectionTemplate`, `AssemblyTemplate` carriageway widths, simple and bench-aware `AssemblyTemplate` side-slope widths, simple and bench-aware `AssemblyTemplate` side-slope percent edits, `Active Region` `RegionPlan` side/daylight policy edits, undo-friendly transactions, SectionSet edit summaries, PH-4 validation rows, downstream stale validation, and downstream recompute marking.
+- Completed in PH-5 so far: `CrossSectionEditPlan` persistence object, structured edit rows, validation rows, active-station lookup, boundary-station lookup, SectionSet link properties, SectionSet edit-plan summary rows, edit-plan boundary-station merge into `SectionSet` station resolution, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` edits, editor apply flows for `Station Range` and `Current Station Only`, and smoke coverage.
+- Next development step: extend typical/local runtime overrides beyond width and `cross_slope_pct` into height / extra width / back slope and other component parameters.
 - `PH-2 Review Mode`: inherited from the existing `Cross Section Viewer`.
 - `PH-2 Select Mode`: in progress.
   - Added `Cross Section Editor` command and task panel.
@@ -36,14 +38,31 @@ Updated: 2026-04-21
   - Added canvas click selection for visible component guides in `Select` / `Edit` modes.
   - Added selected component highlight overlay for the selected target.
   - Added read-only target detail, source owner, generated/raw row preview, and parameter panels.
-- `PH-2 Edit Mode`: scaffolded only.
+- `PH-2 Edit Mode`: implemented as guarded PH-4 source-owner editing.
   - Scope selector and impact-preview text area exist.
-  - `Apply` is disabled until edit persistence and recompute integration are implemented.
+  - `Apply` is enabled only for guarded PH-4 paths; all other targets remain disabled with a visible reason.
 - `PH-3 Impact Preview`: in progress.
   - Shows parameter class.
   - Shows affected range and station count.
   - Shows previous/current/next timeline.
   - Shows boundary stations, region owner, structure overlap, downstream recompute/stale text, warnings, and blocked states.
+- `PH-4 Safe Apply`: in progress.
+  - Shows `PH-4 Edit Parameter`.
+  - Shows `PH-4 Width Edit`.
+  - Shows `PH-4 Slope Edit`.
+  - Shows `PH-4 Region Policy`.
+  - Enables `Apply` only for guarded source-owner edit paths.
+  - Applies eligible width edits to linked `TypicalSectionTemplate`, recomputes, and refreshes current station.
+  - Applies assembly carriageway width edits to linked `AssemblyTemplate.LeftWidth` / `AssemblyTemplate.RightWidth`, recomputes, and refreshes current station.
+  - Applies assembly side-slope width edits to linked `AssemblyTemplate.LeftSideWidth` / `AssemblyTemplate.RightSideWidth`; configured bench rows are preserved and shown as a validation warning.
+  - Applies assembly side-slope percent edits to linked `AssemblyTemplate.LeftSideSlopePct` / `AssemblyTemplate.RightSideSlopePct`; configured bench rows are preserved and shown as a validation warning.
+  - Applies active-region side/daylight policy edits through the linked `RegionPlan`.
+  - Shows `PH-4 Validation` rows explaining apply readiness or block reasons.
+  - Shows linked downstream outputs that will become stale after apply.
+  - Records applied edits on the SectionSet for audit/review.
+  - Records successful apply validation rows on the SectionSet for audit/review.
+  - Uses a FreeCAD document transaction where available so the apply operation is undo-friendly.
+  - Marks linked downstream outputs as needing recompute after a successful apply.
 - Editable fields and before/after overlay are still pending.
 
 ### PH Status Map
@@ -52,9 +71,9 @@ Updated: 2026-04-21
 | --- | --- | --- |
 | `PH-1` | Deferred | Viewer UX remains intact; no viewer replacement. |
 | `PH-2` | Implemented / GUI check pending | Editor shell, target selector, canvas click selection, selected highlight, source/raw row visibility, read-only inspector. |
-| `PH-3` | Current / In progress | Impact preview becomes computed rather than text scaffold. |
-| `PH-4` | Next / Pending | First safe apply flow through existing source owners. |
-| `PH-5` | Pending | Station/range override UX backed by `CrossSectionEditPlan`. |
+| `PH-3` | Implemented / GUI check pending | Impact preview becomes computed rather than text scaffold. |
+| `PH-4` | Implemented / GUI check pending | First safe apply flow through existing source owners. |
+| `PH-5` | Current / In progress | Station/range override UX backed by `CrossSectionEditPlan`. |
 | `PH-6` | Pending | Range, transition, and adjacent-station visualization. |
 | `PH-7` | Pending | Drag handles, before/after overlay, and conflict-resolution UX. |
 
@@ -657,7 +676,7 @@ Sections were updated. Corridor result is now stale and should be regenerated.
 
 ## MVP UX
 
-Current status: `PH-3 Impact Analyzer UX` is in progress.
+Current status: `PH-5 Typical Cross Slope Runtime Override` is in progress.
 
 The MVP should include:
 
@@ -666,7 +685,7 @@ The MVP should include:
 - selected component highlight: implemented for target selector selection
 - source owner/raw row visibility: implemented
 - right-side read-only inspector: started
-- edit mode for one parameter: component width: pending
+- edit mode for guarded PH-4 source writes plus PH-5 side-slope/typical width/typical cross-slope edit-plan writes: in progress
 - scope choices:
   - global source: scaffolded
   - active region: scaffolded
