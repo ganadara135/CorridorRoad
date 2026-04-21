@@ -27,6 +27,10 @@ Thumbs.db
 .tmp_refs/
 .tmp_ref/
 
+# Local GitHub Wiki publish clones
+.tmp_wiki_repo/
+.git_wiki_repo/
+
 # Code consistency docs (local reference only)
 docs/CODEX_PROMPTS.md
 docs/RUNTIME_VALIDATION_CHECKLIST.md
