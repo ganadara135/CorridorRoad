@@ -65,6 +65,8 @@ class _CrossSectionGraphicsView(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._corridorroad_click_handler = None
+        self._corridorroad_move_handler = None
+        self._corridorroad_release_handler = None
         self.setRenderHints(
             QtGui.QPainter.Antialiasing
             | QtGui.QPainter.TextAntialiasing
@@ -94,6 +96,30 @@ class _CrossSectionGraphicsView(QtWidgets.QGraphicsView):
             except Exception:
                 pass
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        handler = getattr(self, "_corridorroad_move_handler", None)
+        if handler is not None:
+            try:
+                scene_pos = self.mapToScene(event.pos())
+                if bool(handler(event, scene_pos)):
+                    event.accept()
+                    return
+            except Exception:
+                pass
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        handler = getattr(self, "_corridorroad_release_handler", None)
+        if handler is not None:
+            try:
+                scene_pos = self.mapToScene(event.pos())
+                if bool(handler(event, scene_pos)):
+                    event.accept()
+                    return
+            except Exception:
+                pass
+        super().mouseReleaseEvent(event)
 
 
 class CrossSectionViewerTaskPanel:
@@ -228,6 +254,7 @@ class CrossSectionViewerTaskPanel:
         fs.addRow(action_widget)
         fs.addRow(self.chk_sync_selection)
         fs.addRow(self.chk_show_structures)
+        fs.addRow(self.chk_show_labels)
         fs.addRow(self.chk_show_dimensions)
         fs.addRow(self.chk_show_diagnostics)
         fs.addRow(self.chk_show_typical)
@@ -675,6 +702,12 @@ class CrossSectionViewerTaskPanel:
 
     @staticmethod
     def _component_segments_from_payload(payload):
+        def _safe_num(value, default=0.0):
+            try:
+                return float(value)
+            except Exception:
+                return float(default)
+
         component_rows = list(payload.get("component_rows", []) or [])
         explicit_segments = []
         for row in component_rows:
@@ -703,6 +736,13 @@ class CrossSectionViewerTaskPanel:
                     "label": str(row.get("label", "") or "").strip(),
                     "scope": str(row.get("scope", "") or "").strip().lower(),
                     "source": str(row.get("source", "") or "").strip(),
+                    "width": _safe_num(row.get("width", 0.0), 0.0),
+                    "slope": _safe_num(row.get("slope", 0.0), 0.0),
+                    "height": _safe_num(row.get("height", 0.0), 0.0),
+                    "extraWidth": _safe_num(row.get("extraWidth", 0.0), 0.0),
+                    "backSlopePct": _safe_num(row.get("backSlopePct", 0.0), 0.0),
+                    "editId": str(row.get("editId", "") or "").strip(),
+                    "override": str(row.get("override", "") or "").strip(),
                 }
             )
         if explicit_segments:

@@ -8,6 +8,7 @@ Date: 2026-04-21
 Related architecture:
 
 - [CROSS_SECTION_EDITOR_ARCHITECTURE.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_ARCHITECTURE.md)
+- [CROSS_SECTION_EDITOR_GUI_CHECKLIST.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_EDITOR_GUI_CHECKLIST.md)
 - [CROSS_SECTION_VIEWER_LAYOUT_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_VIEWER_LAYOUT_PLAN.md)
 - [CROSS_SECTION_COMPONENT_SCOPE_PLAN.md](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/docs/CROSS_SECTION_COMPONENT_SCOPE_PLAN.md)
 
@@ -23,14 +24,17 @@ Do not remove or hide the existing viewer command while adding editor UX. Users 
 
 Updated: 2026-04-21
 
-- Stage marker: `PH-5 CURRENT`
+- Stage marker: `PH-8 CURRENT`
 - `Cross Section Viewer` remains available and is not being retired.
-- Current development step: `PH-5 Typical Cross Slope Runtime Override`.
+- Current development step: `PH-8 Manual GUI Validation And Workflow Polish`.
 - Completed before PH-3: target selector, canvas click selection, selected component highlight, source owner display, generated/raw row preview, read-only details, read-only parameter table, impact-preview scaffold.
 - Completed in PH-3 so far: computed affected range, affected station count, timeline, boundary station preview, region owner, structure overlap, downstream status, warnings, and blocked-state text.
 - Completed in PH-4: guarded width/slope edit controls, guarded RegionPlan policy controls, safe apply paths for `Global Source` + linked `TypicalSectionTemplate`, `AssemblyTemplate` carriageway widths, simple and bench-aware `AssemblyTemplate` side-slope widths, simple and bench-aware `AssemblyTemplate` side-slope percent edits, `Active Region` `RegionPlan` side/daylight policy edits, undo-friendly transactions, SectionSet edit summaries, PH-4 validation rows, downstream stale validation, and downstream recompute marking.
-- Completed in PH-5 so far: `CrossSectionEditPlan` persistence object, structured edit rows, validation rows, active-station lookup, boundary-station lookup, SectionSet link properties, SectionSet edit-plan summary rows, edit-plan boundary-station merge into `SectionSet` station resolution, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` edits, editor apply flows for `Station Range` and `Current Station Only`, and smoke coverage.
-- Next development step: extend typical/local runtime overrides beyond width and `cross_slope_pct` into height / extra width / back slope and other component parameters.
+- Completed in PH-5 so far: `CrossSectionEditPlan` persistence object, structured edit rows, validation rows, active-station lookup, boundary-station lookup, SectionSet link properties, SectionSet edit-plan summary rows, edit-plan boundary-station merge into `SectionSet` station resolution, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct` edits, editor apply flows for `Station Range` and `Current Station Only`, repeat-bench contract-preserving normalization for side-slope edits, and smoke coverage.
+- Completed in PH-6 so far: impact preview now shows adjacent-station rows, explicit range/transition boundary roles, missing-boundary injection warnings, continuity warnings for range or station-only geometry edits, transition interpolation rows with old/new value summaries plus midpoint blend samples, and before/after sample rows across the affected range.
+- Completed in PH-7 so far: the selected component now renders a dashed cyan preview overlay and preview label when a pending geometry edit is present, width-like targets expose drag handles that update the editor value directly from the canvas, blocked/warning drag states are explained directly in the overlay, daylight/structure conflicts render explicit conflict overlays plus inspector labels, the editor now shows resolution guidance in the inspector, impact preview, and apply-state messaging when Region or Structure policy changes are needed, conflict-state action buttons can now switch directly into Active Region or Region Daylight Policy follow-up flows, the handoff preview now explains which policy path will be prepared and which side-aware daylight token will be selected, and local `CrossSectionEditPlan` overrides can now be handed off toward Region ownership and explicitly disabled after migration.
+- Completed in PH-8 so far: preview freshness is now explicit, `Apply` stays disabled until `Preview Impact` is rerun for the current editor state, stale-preview messaging appears directly in the impact panel and apply-state area, blocked previews continue to prevent apply, preview status text/button state make stale/current/blocked workflow status easier to read, and a dedicated GUI checklist is now available for manual validation closeout.
+- Next development step: `PH-8 GUI Pass/Fail Closeout`.
 - `PH-2 Review Mode`: inherited from the existing `Cross Section Viewer`.
 - `PH-2 Select Mode`: in progress.
   - Added `Cross Section Editor` command and task panel.
@@ -73,9 +77,10 @@ Updated: 2026-04-21
 | `PH-2` | Implemented / GUI check pending | Editor shell, target selector, canvas click selection, selected highlight, source/raw row visibility, read-only inspector. |
 | `PH-3` | Implemented / GUI check pending | Impact preview becomes computed rather than text scaffold. |
 | `PH-4` | Implemented / GUI check pending | First safe apply flow through existing source owners. |
-| `PH-5` | Current / In progress | Station/range override UX backed by `CrossSectionEditPlan`. |
-| `PH-6` | Pending | Range, transition, and adjacent-station visualization. |
-| `PH-7` | Pending | Drag handles, before/after overlay, and conflict-resolution UX. |
+| `PH-5` | Implemented / GUI check pending | Station/range override UX backed by `CrossSectionEditPlan`. |
+| `PH-6` | Implemented / GUI check pending | Range, transition, and adjacent-station visualization. |
+| `PH-7` | Implemented / GUI check pending | Drag handles, before/after overlay, conflict-resolution, handoff, and override-migration UX. |
+| `PH-8` | Current / In progress | Manual GUI validation, preview/apply workflow polish, and closeout checklist. |
 
 ## Goal
 
@@ -676,7 +681,7 @@ Sections were updated. Corridor result is now stale and should be regenerated.
 
 ## MVP UX
 
-Current status: `PH-5 Typical Cross Slope Runtime Override` is in progress.
+Current status: `PH-8 Manual GUI Validation And Workflow Polish` is in progress with a dedicated GUI checklist.
 
 The MVP should include:
 
@@ -685,7 +690,7 @@ The MVP should include:
 - selected component highlight: implemented for target selector selection
 - source owner/raw row visibility: implemented
 - right-side read-only inspector: started
-- edit mode for guarded PH-4 source writes plus PH-5 side-slope/typical width/typical cross-slope edit-plan writes: in progress
+- edit mode for guarded PH-4 source writes plus PH-5 side-slope/typical advanced-parameter edit-plan writes: in progress
 - scope choices:
   - global source: scaffolded
   - active region: scaffolded

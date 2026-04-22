@@ -17,14 +17,17 @@ Do not replace, remove, or rename `CorridorRoad_ViewCrossSection` as part of the
 
 Updated: 2026-04-21
 
-- Stage marker: `PH-5 CURRENT`
+- Stage marker: `PH-8 CURRENT`
 - `Cross Section Viewer` remains active and is not being retired.
-- Current development step: `PH-5 Typical Cross Slope Runtime Override`.
+- Current development step: `PH-8 Manual GUI Validation And Workflow Polish`.
 - Completed before PH-3: target selector, canvas click selection, selected component highlight, source owner display, generated/raw row preview, read-only inspector, impact-preview scaffold.
 - Completed in PH-3 so far: parameter classification, affected station resolver, region owner summary, structure overlap preview, boundary station preview, downstream recompute/stale preview.
 - Completed in PH-4: guarded width apply paths for `Global Source` + linked `TypicalSectionTemplate`, `AssemblyTemplate` carriageway widths, simple and bench-aware `AssemblyTemplate` side-slope widths, simple and bench-aware `AssemblyTemplate` side-slope percent edits, guarded `Active Region` `RegionPlan` side/daylight policy edits, undo-friendly transactions, applied edit summary rows, PH-4 validation rows, downstream stale validation, and downstream recompute marking.
-- Completed in PH-5 so far: added `CrossSectionEditPlan` object skeleton, edit row parser/serializer, active-station lookup, boundary-station listing, SectionSet link properties, SectionSet edit-plan summary rows, `resolve_station_values(...)` boundary-station merge, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` edits, editor apply paths for `Station Range` and `Current Station Only`, and persistence/runtime/editor smoke coverage.
-- Next development step: extend typical/local runtime overrides beyond width and `cross_slope_pct` into richer component parameters such as height / extra width / back slope.
+- Completed in PH-5 so far: added `CrossSectionEditPlan` object skeleton, edit row parser/serializer, active-station lookup, boundary-station listing, SectionSet link properties, SectionSet edit-plan summary rows, `resolve_station_values(...)` boundary-station merge, section-build runtime override consumption for side-slope width / slope edits plus typical-component width / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct` edits, editor apply paths for `Station Range` and `Current Station Only`, repeat-bench contract-preserving normalization for side-slope edits, and persistence/runtime/editor smoke coverage.
+- Completed in PH-6 so far: added station-preview rows for adjacent/boundary/current stations, explicit boundary-role rows for range and transition scopes, missing-boundary injection warnings, adjacent-station continuity warnings, transition interpolation preview rows that show old/new values plus midpoint blend samples, and before/after station sample rows for range edits in the editor impact preview.
+- Completed in PH-7 so far: added a first before/after canvas overlay slice for selected component edits, with dashed preview geometry, preview labels, overlay debug rows for smoke coverage, width-like drag handles that update the pending editor value from the canvas, handle state feedback for blocked or warning drag cases, explicit daylight/structure conflict overlays plus inspector conflict labels, resolution guidance in the inspector, impact preview, and apply-state messaging when Region or Structure policy changes are needed, direct resolution action buttons that switch the editor into Active Region or Region Daylight Policy follow-up flows, guided policy handoff text plus side-aware daylight-policy preparation when conflict actions are used, and override-migration UX that recognizes `CrossSectionEditPlan` ownership, prepares Region policy handoff, and can disable the local override row after migration.
+- Completed in PH-8 so far: preview freshness tracking now invalidates the impact preview when the target, parameter, scope, value, or range changes; `Apply` stays disabled until `Preview Impact` is current again; blocked previews keep `Apply` disabled; stale-preview messaging is shown directly in the impact panel and apply-state label; preview status text/button state now surface stale/current/blocked workflow status more directly; and a dedicated GUI checklist document has been added for manual closeout.
+- Next development step: `PH-8 GUI Pass/Fail Closeout`.
 - `PH-1 Refactor Viewer Core`: deferred. The current implementation still reuses [task_cross_section_viewer.py](/c:/Users/ganad/AppData/Roaming/FreeCAD/Mod/CorridorRoad/freecad/Corridor_Road/ui/task_cross_section_viewer.py) directly.
 - `PH-2 Selection And Inspection`: implementation complete; FreeCAD GUI manual check pending.
   - Added `CorridorRoad_EditCrossSection`.
@@ -58,9 +61,10 @@ Updated: 2026-04-21
 | `PH-2` | Implemented / GUI check pending | Editor shell, selection, inspection, click selection, highlight, and source/raw row visibility. |
 | `PH-3` | Implemented / GUI check pending | Impact analyzer and affected-station resolver. |
 | `PH-4` | Implemented / GUI check pending | Safe edits through existing source owners. |
-| `PH-5` | Current / In progress | Dedicated `CrossSectionEditPlan` object. |
-| `PH-6` | Pending | Range and transition edits. |
-| `PH-7` | Pending | Advanced editing UX. |
+| `PH-5` | Implemented / GUI check pending | Dedicated `CrossSectionEditPlan` object. |
+| `PH-6` | Implemented / GUI check pending | Range and transition impact visualization. |
+| `PH-7` | Implemented / GUI check pending | Advanced editing UX, conflict guidance, handoff, and override migration flows. |
+| `PH-8` | Current / In progress | Manual GUI validation, preview/apply workflow polish, and closeout checklist. |
 
 ## Goal
 
@@ -1011,7 +1015,7 @@ Status: in progress. This is the current active development stage.
 - add row parser/serializer: implemented
 - link from `SectionSet`: implemented
 - add edit boundary station merge: implemented
-- add runtime override context: implemented for side-slope `width` / `slope_pct` and typical-component `width` / `cross_slope_pct`
+- add runtime override context: implemented for side-slope `width` / `slope_pct` and typical-component `width` / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct`
 
 Implemented so far:
 
@@ -1027,19 +1031,19 @@ Implemented so far:
 - added `SectionSet.ResolvedCrossSectionEditSummaryRows`
 - merges edit-plan boundary and transition stations into `SectionSet.resolve_station_values(...)`
 - applies active edit-plan side-slope `width` / `slope_pct` overrides during `build_section_wires`
-- applies active edit-plan typical-component `width` / `cross_slope_pct` overrides during `build_section_wires`
+- applies active edit-plan typical-component `width` / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct` overrides during `build_section_wires`
 - marks edited side-slope component rows as `source=cross_section_edit` with `editId=...`
 - marks edited typical component rows as `source=cross_section_edit` with `editId=...`
 - records active override hit count on `SectionSet.CrossSectionEditOverrideHitCount`
 - adds editor-side `Station Range` / `Current Station Only` apply paths that create or update linked `CrossSectionEditPlan` rows
-- extends PH-5 editor apply to local typical-component width / `cross_slope_pct` edits
+- extends PH-5 editor apply to local typical-component `width` / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct` edits
 - auto-creates and links `CrossSectionEditPlan` from `Cross Section Editor` when needed
 - records PH-5 editor applies on `SectionSet` edit/validation summary rows
-- adds editor smoke coverage for range + station-only apply flows, including typical-component width / `cross_slope_pct` edits
+- adds editor smoke coverage for range + station-only apply flows, including typical-component `width` / `cross_slope_pct` / `height` / `extra_width` / `back_slope_pct` edits
 
 Still pending:
 
-- extend typical/local runtime overrides beyond width and `cross_slope_pct` into richer component parameters
+- completed: extend typical/local runtime overrides beyond width and `cross_slope_pct` into richer component parameters
 
 ### PH-6: Range And Transition Edits
 

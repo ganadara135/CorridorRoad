@@ -838,9 +838,17 @@ def _merge_parameter_override(current, incoming):
         return current
     out = dict(current or {})
     param = str(incoming.get("Parameter", "") or "").strip().lower()
-    if param not in ("width", "slope_pct"):
+    field_map = {
+        "width": "Width",
+        "slope_pct": "SlopePct",
+        "cross_slope_pct": "CrossSlopePct",
+        "height": "Height",
+        "extra_width": "ExtraWidth",
+        "back_slope_pct": "BackSlopePct",
+    }
+    field = str(field_map.get(param, "") or "")
+    if not field:
         return out if out else current
-    field = "Width" if param == "width" else "SlopePct"
     pri_field = f"{field}Priority"
     span_field = f"{field}Span"
     cur_pri = int(out.get(pri_field, -1) or -1)
@@ -872,12 +880,9 @@ def _merge_typical_component_override(current, incoming):
         return current
     out = dict(current or {})
     param = str(incoming.get("Parameter", "") or "").strip().lower()
-    if param not in ("width", "cross_slope_pct"):
+    if param not in ("width", "cross_slope_pct", "height", "extra_width", "back_slope_pct"):
         return out if out else current
-    normalized = dict(incoming or {})
-    if param == "cross_slope_pct":
-        normalized["Parameter"] = "slope_pct"
-    merged = _merge_parameter_override(out, normalized)
+    merged = _merge_parameter_override(out, incoming)
     if not isinstance(merged, dict):
         merged = dict(out or {})
     if "Side" not in merged and str(incoming.get("Side", "") or "").strip():
@@ -1784,14 +1789,14 @@ class SectionSet:
 
         for rec in active:
             parameter = str(rec.get("Parameter", "") or "").strip().lower()
-            if parameter not in ("width", "slope_pct", "cross_slope_pct"):
+            if parameter not in ("width", "slope_pct", "cross_slope_pct", "height", "extra_width", "back_slope_pct"):
                 continue
             source_scope = str(rec.get("SourceScope", "") or "").strip().lower()
             target_type = str(rec.get("TargetType", "") or "").strip().lower()
             side = str(rec.get("TargetSide", "") or "").strip().lower()
             target_id = str(rec.get("TargetId", "") or "").strip().upper()
 
-            if parameter in ("width", "cross_slope_pct") and (source_scope == "typical" or target_type not in ("side_slope", "cut_slope", "fill_slope", "")):
+            if parameter in ("width", "cross_slope_pct", "height", "extra_width", "back_slope_pct") and (source_scope == "typical" or target_type not in ("side_slope", "cut_slope", "fill_slope", "")):
                 if not target_id:
                     continue
                 priority, span = _priority_for_record(rec)
@@ -2868,8 +2873,17 @@ class SectionSet:
             if spec and "Width" in spec:
                 item["Width"] = max(0.0, float(spec.get("Width", item.get("Width", 0.0)) or item.get("Width", 0.0)))
                 edit_meta["override"] = True
-            if spec and "SlopePct" in spec:
-                item["CrossSlopePct"] = float(spec.get("SlopePct", item.get("CrossSlopePct", 0.0)) or item.get("CrossSlopePct", 0.0))
+            if spec and "CrossSlopePct" in spec:
+                item["CrossSlopePct"] = float(spec.get("CrossSlopePct", item.get("CrossSlopePct", 0.0)) or item.get("CrossSlopePct", 0.0))
+                edit_meta["override"] = True
+            if spec and "Height" in spec:
+                item["Height"] = float(spec.get("Height", item.get("Height", 0.0)) or item.get("Height", 0.0))
+                edit_meta["override"] = True
+            if spec and "ExtraWidth" in spec:
+                item["ExtraWidth"] = max(0.0, float(spec.get("ExtraWidth", item.get("ExtraWidth", 0.0)) or item.get("ExtraWidth", 0.0)))
+                edit_meta["override"] = True
+            if spec and "BackSlopePct" in spec:
+                item["BackSlopePct"] = float(spec.get("BackSlopePct", item.get("BackSlopePct", 0.0)) or item.get("BackSlopePct", 0.0))
                 edit_meta["override"] = True
             if spec and edit_meta.get("override", False):
                 edit_meta["edit_ids"] = [str(v or "") for v in list(spec.get("Ids", []) or []) if str(v or "")]
@@ -2944,6 +2958,9 @@ class SectionSet:
                         "x1": f"{x1:.3f}",
                         "width": f"{seg_w:.3f}",
                         "slope": f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}",
+                        "height": f"{float(row.get('Height', 0.0) or 0.0):.3f}",
+                        "extraWidth": f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}",
+                        "backSlopePct": f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}",
                         "source": "cross_section_edit" if bool(edit_meta.get("override", False)) else "typical_summary",
                     }
                     edit_ids = [str(v or "") for v in list(edit_meta.get("edit_ids", []) or []) if str(v or "")]
@@ -4149,6 +4166,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
@@ -4178,6 +4199,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
@@ -4206,6 +4231,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
