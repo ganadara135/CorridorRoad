@@ -12,8 +12,13 @@ from freecad.Corridor_Road.objects.obj_centerline3d import Centerline3D
 from freecad.Corridor_Road.objects.obj_alignment import HorizontalAlignment
 from freecad.Corridor_Road.objects.obj_project import ensure_region_plan_object, resolve_project_region_plan
 from freecad.Corridor_Road.objects.obj_region_plan import RegionPlan as RegionPlanSource
+from freecad.Corridor_Road.objects.obj_cross_section_edit_plan import CrossSectionEditPlan as CrossSectionEditPlanSource
 from freecad.Corridor_Road.objects.obj_structure_set import StructureSet as StructureSetSource
-from freecad.Corridor_Road.objects.obj_typical_section_template import build_top_profile as _build_typical_top_profile
+from freecad.Corridor_Road.objects.obj_typical_section_template import (
+    build_top_profile as _build_typical_top_profile,
+    build_top_profile_from_rows as _build_typical_top_profile_from_rows,
+    component_rows as _typical_component_rows,
+)
 from freecad.Corridor_Road.objects.obj_assembly_template import _collect_side_bench_rows, _resolve_side_bench_profile, _parse_bench_row, _serialize_bench_row
 from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects import coord_transform as _ct
@@ -303,6 +308,76 @@ def _preserve_bench_point_contract(profile, min_seg: float):
     return out
 
 
+def _normalize_profile_to_contract(profile, contract_profile, min_seg: float = 0.0):
+    out = dict(profile or {})
+    current_segments = [dict(seg) for seg in _profile_segments(profile)]
+    contract_segments = [dict(seg) for seg in _profile_segments(contract_profile)]
+    if not contract_segments:
+        out["segments"] = current_segments
+        return out
+
+    tol = 1e-9
+    eps = max(0.0, float(min_seg))
+    total_current = float(sum(max(0.0, float(seg.get("width", 0.0) or 0.0)) for seg in current_segments))
+    total_contract = float(sum(max(0.0, float(seg.get("width", 0.0) or 0.0)) for seg in contract_segments))
+    scale = 1.0
+    if total_contract > tol and total_current > tol:
+        scale = float(total_current / total_contract)
+
+    adjusted = []
+    current_kind_slots = {}
+    for seg in current_segments:
+        kind = str(seg.get("kind", "") or "")
+        current_kind_slots.setdefault(kind, []).append(dict(seg))
+    current_kind_indices = {key: 0 for key in current_kind_slots.keys()}
+
+    for contract_seg in contract_segments:
+        contract_kind = str(contract_seg.get("kind", "") or "")
+        base_width = max(0.0, float(contract_seg.get("width", 0.0) or 0.0))
+        seg = dict(contract_seg)
+        seg["width"] = float(base_width * scale)
+
+        kind_rows = list(current_kind_slots.get(contract_kind, []) or [])
+        kind_idx = int(current_kind_indices.get(contract_kind, 0) or 0)
+        if kind_idx < len(kind_rows):
+            src = dict(kind_rows[kind_idx] or {})
+            current_kind_indices[contract_kind] = kind_idx + 1
+            if "slope" in src:
+                try:
+                    seg["slope"] = float(src.get("slope", seg.get("slope", 0.0)) or seg.get("slope", 0.0))
+                except Exception:
+                    pass
+        if float(seg.get("width", 0.0) or 0.0) <= tol and base_width > tol and eps > tol:
+            seg["width"] = float(eps)
+        adjusted.append(seg)
+
+    if adjusted and total_current > tol:
+        total_adjusted = float(sum(max(0.0, float(seg.get("width", 0.0) or 0.0)) for seg in adjusted))
+        delta = float(total_current - total_adjusted)
+        if abs(delta) > tol:
+            adjusted[-1]["width"] = float(max(0.0, float(adjusted[-1].get("width", 0.0) or 0.0) + delta))
+
+    out["segments"] = adjusted
+    bench_visible_count = int(
+        sum(
+            1
+            for seg in adjusted
+            if str(seg.get("kind", "") or "") == "bench" and float(seg.get("width", 0.0) or 0.0) > tol
+        )
+    )
+    out["bench_count"] = int(bench_visible_count)
+    out["benchVisible"] = bool(bench_visible_count > 0)
+    if "active" in out:
+        out["active"] = bool(
+            bench_visible_count > 0
+            or any(str(seg.get("kind", "") or "") == "bench" for seg in contract_segments)
+        )
+    out["total_width"] = float(
+        sum(max(0.0, float(seg.get("width", 0.0) or 0.0)) for seg in adjusted)
+    )
+    return out
+
+
 def _report_row(kind: str, **fields) -> str:
     parts = [str(kind or "").strip() or "row"]
     for key, value in fields.items():
@@ -484,6 +559,33 @@ def synchronize_region_plan_state(obj, preferred_region=None, enabled=None):
     region_obj = ensure_region_plan_object(preferred_region) if preferred_region is not None else resolve_region_plan_source(obj)
     use_flag = region_plan_usage_enabled(obj) if enabled is None else bool(enabled)
     return set_region_plan_source(obj, region_obj, enabled=use_flag)
+
+
+def ensure_cross_section_edit_plan_object(edit_obj):
+    if edit_obj is None:
+        return None
+    proxy_type = str(getattr(getattr(edit_obj, "Proxy", None), "Type", "") or "")
+    if proxy_type == "CrossSectionEditPlan":
+        return edit_obj
+    name = str(getattr(edit_obj, "Name", "") or "")
+    if name.startswith("CrossSectionEditPlan"):
+        try:
+            CrossSectionEditPlanSource(edit_obj)
+        except Exception:
+            pass
+    return edit_obj
+
+
+def resolve_cross_section_edit_plan_source(obj):
+    edit_obj = getattr(obj, "CrossSectionEditPlan", None) if hasattr(obj, "CrossSectionEditPlan") else None
+    return ensure_cross_section_edit_plan_object(edit_obj)
+
+
+def cross_section_edit_plan_usage_enabled(obj) -> bool:
+    try:
+        return bool(getattr(obj, "UseCrossSectionEditPlan", False))
+    except Exception:
+        return False
 
 
 def _status_join(head: str, *tokens):
@@ -731,10 +833,70 @@ def _merge_side_override_spec(current, incoming):
     return current
 
 
+def _merge_parameter_override(current, incoming):
+    if incoming is None:
+        return current
+    out = dict(current or {})
+    param = str(incoming.get("Parameter", "") or "").strip().lower()
+    field_map = {
+        "width": "Width",
+        "slope_pct": "SlopePct",
+        "cross_slope_pct": "CrossSlopePct",
+        "height": "Height",
+        "extra_width": "ExtraWidth",
+        "back_slope_pct": "BackSlopePct",
+    }
+    field = str(field_map.get(param, "") or "")
+    if not field:
+        return out if out else current
+    pri_field = f"{field}Priority"
+    span_field = f"{field}Span"
+    cur_pri = int(out.get(pri_field, -1) or -1)
+    inc_pri = int(incoming.get("Priority", 0) or 0)
+    cur_span = float(out.get(span_field, 0.0) or 0.0)
+    inc_span = float(incoming.get("Span", 0.0) or 0.0)
+    should_replace = False
+    if field not in out:
+        should_replace = True
+    elif inc_pri > cur_pri:
+        should_replace = True
+    elif inc_pri == cur_pri and inc_span > 1e-9 and (cur_span <= 1e-9 or inc_span < cur_span):
+        should_replace = True
+    if should_replace:
+        out[field] = float(incoming.get("Value", 0.0) or 0.0)
+        out[pri_field] = int(inc_pri)
+        out[span_field] = float(inc_span)
+    ids = [str(v or "") for v in list(out.get("Ids", []) or []) if str(v or "")]
+    for rid in list(incoming.get("Ids", []) or []):
+        txt = str(rid or "").strip()
+        if txt and txt not in ids:
+            ids.append(txt)
+    out["Ids"] = ids
+    return out
+
+
+def _merge_typical_component_override(current, incoming):
+    if incoming is None:
+        return current
+    out = dict(current or {})
+    param = str(incoming.get("Parameter", "") or "").strip().lower()
+    if param not in ("width", "cross_slope_pct", "height", "extra_width", "back_slope_pct"):
+        return out if out else current
+    merged = _merge_parameter_override(out, incoming)
+    if not isinstance(merged, dict):
+        merged = dict(out or {})
+    if "Side" not in merged and str(incoming.get("Side", "") or "").strip():
+        merged["Side"] = str(incoming.get("Side", "") or "").strip().lower()
+    if "TargetType" not in merged and str(incoming.get("TargetType", "") or "").strip():
+        merged["TargetType"] = str(incoming.get("TargetType", "") or "").strip().lower()
+    return merged
+
+
 def _empty_runtime_override_context():
     return {
         "HasStructure": False,
         "HasRegion": False,
+        "HasCrossSectionEdit": False,
         "ActiveRecords": [],
         "OverlayRecords": [],
         "SuppressSideSlopes": False,
@@ -756,6 +918,11 @@ def _empty_runtime_override_context():
         "ResolvedDaylightPolicy": "",
         "ResolvedCorridorPolicy": "",
         "ResolvedWarnings": [],
+        "LeftParameterOverride": None,
+        "RightParameterOverride": None,
+        "LeftEditIds": [],
+        "RightEditIds": [],
+        "TypicalComponentOverrides": {},
     }
 
 
@@ -767,6 +934,10 @@ def _runtime_context_has_section_overrides(ctx) -> bool:
     if bool(ctx.get("LeftDisableDaylight", False)) or bool(ctx.get("RightDisableDaylight", False)):
         return True
     if ctx.get("LeftOverrideSpec") is not None or ctx.get("RightOverrideSpec") is not None:
+        return True
+    if ctx.get("LeftParameterOverride") is not None or ctx.get("RightParameterOverride") is not None:
+        return True
+    if bool(dict(ctx.get("TypicalComponentOverrides", {}) or {})):
         return True
     left_action = str(ctx.get("LeftAction", "keep") or "keep").strip().lower()
     right_action = str(ctx.get("RightAction", "keep") or "keep").strip().lower()
@@ -1124,6 +1295,21 @@ def ensure_section_set_properties(obj):
     except Exception:
         pass
 
+    if not hasattr(obj, "CrossSectionEditPlan"):
+        obj.addProperty("App::PropertyLink", "CrossSectionEditPlan", "CrossSectionEditor", "Linked CrossSectionEditPlan source")
+    if not hasattr(obj, "UseCrossSectionEditPlan"):
+        obj.addProperty("App::PropertyBool", "UseCrossSectionEditPlan", "CrossSectionEditor", "Use linked CrossSectionEditPlan for local section overrides")
+        obj.UseCrossSectionEditPlan = False
+    if not hasattr(obj, "ResolvedCrossSectionEditCount"):
+        obj.addProperty("App::PropertyInteger", "ResolvedCrossSectionEditCount", "Result", "Count of active CrossSectionEditPlan edits")
+        obj.ResolvedCrossSectionEditCount = 0
+    if not hasattr(obj, "CrossSectionEditOverrideHitCount"):
+        obj.addProperty("App::PropertyInteger", "CrossSectionEditOverrideHitCount", "Result", "Count of stations with active CrossSectionEditPlan runtime overrides")
+        obj.CrossSectionEditOverrideHitCount = 0
+    if not hasattr(obj, "ResolvedCrossSectionEditSummaryRows"):
+        obj.addProperty("App::PropertyStringList", "ResolvedCrossSectionEditSummaryRows", "Result", "Structured CrossSectionEditPlan summary rows")
+        obj.ResolvedCrossSectionEditSummaryRows = []
+
     if not hasattr(obj, "StationValues"):
         obj.addProperty("App::PropertyFloatList", "StationValues", "Result", "Resolved stations for sections (m)")
     if not hasattr(obj, "ResolvedStructureCount"):
@@ -1348,6 +1534,45 @@ class SectionSet:
         return out, source_kind, source_obj
 
     @staticmethod
+    def _resolve_cross_section_edit_station_items(obj, total: float, mode: str = "", s0: float = None, s1: float = None):
+        items = []
+        source_kind = ""
+        source_obj = None
+
+        if cross_section_edit_plan_usage_enabled(obj):
+            edit_obj = resolve_cross_section_edit_plan_source(obj)
+            if edit_obj is not None:
+                source_obj = edit_obj
+                source_kind = "cross_section_edit_plan"
+                for rec in list(CrossSectionEditPlanSource.records(edit_obj) or []):
+                    if not bool(rec.get("Enabled", True)):
+                        continue
+                    rid = str(rec.get("Id", "") or "")
+                    start = float(rec.get("StartStation", 0.0) or 0.0)
+                    end = float(rec.get("EndStation", start) or start)
+                    tin = max(0.0, float(rec.get("TransitionIn", 0.0) or 0.0))
+                    tout = max(0.0, float(rec.get("TransitionOut", 0.0) or 0.0))
+                    items.append({"station": start, "tag": "EDIT_START", "ids": [rid], "role": "start"})
+                    items.append({"station": end, "tag": "EDIT_END", "ids": [rid], "role": "end"})
+                    if tin > 1e-9:
+                        items.append({"station": start - tin, "tag": "EDIT_TRANSITION", "ids": [rid], "role": "transition_before"})
+                    if tout > 1e-9:
+                        items.append({"station": end + tout, "tag": "EDIT_TRANSITION", "ids": [rid], "role": "transition_after"})
+
+        out = []
+        lo = None if s0 is None else float(min(s0, s1))
+        hi = None if s1 is None else float(max(s0, s1))
+        for it in items:
+            st = _clamp(float(it.get("station", 0.0) or 0.0), 0.0, float(total))
+            if str(mode or "") == "Range" and lo is not None and hi is not None:
+                if st < lo - 1e-9 or st > hi + 1e-9:
+                    continue
+            rec = dict(it)
+            rec["station"] = st
+            out.append(rec)
+        return out, source_kind, source_obj
+
+    @staticmethod
     def _resolved_structure_summary(items):
         if not items:
             return 0, []
@@ -1442,13 +1667,15 @@ class SectionSet:
         return ctx
 
     @staticmethod
-    def _merge_runtime_override_contexts(region_context=None, structure_context=None):
+    def _merge_runtime_override_contexts(region_context=None, structure_context=None, cross_section_edit_context=None):
         merged = _empty_runtime_override_context()
         reg = dict(region_context or {})
         struct = dict(structure_context or {})
+        edit = dict(cross_section_edit_context or {})
 
         merged["HasRegion"] = bool(reg.get("HasRegion", False))
         merged["HasStructure"] = bool(struct.get("HasStructure", False))
+        merged["HasCrossSectionEdit"] = bool(edit.get("HasCrossSectionEdit", False))
         merged["BaseRegionId"] = str(reg.get("BaseRegionId", "") or "")
         merged["OverlayRegionIds"] = list(reg.get("OverlayRegionIds", []) or [])
         merged["ResolvedTemplate"] = str(reg.get("ResolvedTemplate", "") or "")
@@ -1458,16 +1685,16 @@ class SectionSet:
         merged["ResolvedDaylightPolicy"] = str(reg.get("ResolvedDaylightPolicy", "") or "")
         merged["ResolvedCorridorPolicy"] = str(reg.get("ResolvedCorridorPolicy", "") or "")
         merged["ResolvedWarnings"] = list(reg.get("ResolvedWarnings", []) or [])
-        merged["ActiveRecords"] = list(reg.get("ActiveRecords", []) or []) + list(struct.get("ActiveRecords", []) or [])
-        merged["OverlayRecords"] = list(reg.get("OverlayRecords", []) or []) + list(struct.get("OverlayRecords", []) or [])
+        merged["ActiveRecords"] = list(reg.get("ActiveRecords", []) or []) + list(struct.get("ActiveRecords", []) or []) + list(edit.get("ActiveRecords", []) or [])
+        merged["OverlayRecords"] = list(reg.get("OverlayRecords", []) or []) + list(struct.get("OverlayRecords", []) or []) + list(edit.get("OverlayRecords", []) or [])
 
         boundary_roles = []
-        for role in list(reg.get("BoundaryRoles", []) or []) + list(struct.get("BoundaryRoles", []) or []):
+        for role in list(reg.get("BoundaryRoles", []) or []) + list(struct.get("BoundaryRoles", []) or []) + list(edit.get("BoundaryRoles", []) or []):
             role_txt = str(role or "").strip()
             if role_txt and role_txt not in boundary_roles:
                 boundary_roles.append(role_txt)
         merged["BoundaryRoles"] = boundary_roles
-        merged["IsBoundaryStation"] = bool(reg.get("IsBoundaryStation", False) or struct.get("IsBoundaryStation", False))
+        merged["IsBoundaryStation"] = bool(reg.get("IsBoundaryStation", False) or struct.get("IsBoundaryStation", False) or edit.get("IsBoundaryStation", False))
 
         merged["LeftAction"] = str(reg.get("LeftAction", "keep") or "keep").strip().lower()
         merged["RightAction"] = str(reg.get("RightAction", "keep") or "keep").strip().lower()
@@ -1475,6 +1702,11 @@ class SectionSet:
         merged["RightOverrideSpec"] = reg.get("RightOverrideSpec")
         merged["LeftDisableDaylight"] = bool(reg.get("LeftDisableDaylight", False))
         merged["RightDisableDaylight"] = bool(reg.get("RightDisableDaylight", False))
+        merged["LeftParameterOverride"] = edit.get("LeftParameterOverride")
+        merged["RightParameterOverride"] = edit.get("RightParameterOverride")
+        merged["LeftEditIds"] = list(edit.get("LeftEditIds", []) or [])
+        merged["RightEditIds"] = list(edit.get("RightEditIds", []) or [])
+        merged["TypicalComponentOverrides"] = dict(edit.get("TypicalComponentOverrides", {}) or {})
 
         struct_left_action = str(struct.get("LeftAction", "keep") or "keep").strip().lower()
         struct_right_action = str(struct.get("RightAction", "keep") or "keep").strip().lower()
@@ -1491,9 +1723,123 @@ class SectionSet:
             and merged["RightAction"] == "stub"
             and merged.get("LeftOverrideSpec") is None
             and merged.get("RightOverrideSpec") is None
+            and merged.get("LeftParameterOverride") is None
+            and merged.get("RightParameterOverride") is None
+            and not bool(dict(merged.get("TypicalComponentOverrides", {}) or {}))
         )
         merged["SuppressDaylight"] = bool(merged["LeftDisableDaylight"] and merged["RightDisableDaylight"])
         return merged
+
+    @staticmethod
+    def _cross_section_edit_context_at_station(obj, station: float):
+        ctx = _empty_runtime_override_context()
+        if not cross_section_edit_plan_usage_enabled(obj):
+            return ctx
+        edit_obj = resolve_cross_section_edit_plan_source(obj)
+        if edit_obj is None:
+            return ctx
+
+        src = getattr(obj, "SourceCenterlineDisplay", None)
+        aln = getattr(src, "Alignment", None) if src is not None else None
+        total = _alignment_total_station_m(aln)
+        tol = max(1e-4, 1e-6 * max(total, 1.0))
+
+        try:
+            active = list(CrossSectionEditPlanSource.active_records_at_station(edit_obj, float(station), tol=tol) or [])
+        except Exception:
+            active = []
+        if not active:
+            return ctx
+
+        ctx["HasCrossSectionEdit"] = True
+        ctx["ActiveRecords"] = list(active)
+        ctx["OverlayRecords"] = list(active)
+
+        try:
+            s0_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "StartStation", 0.0) or 0.0))
+            s1_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "EndStation", _units.meters_from_internal_length(getattr(obj, "Document", None), total)) or _units.meters_from_internal_length(getattr(obj, "Document", None), total)))
+            station_items, _ek, _eo = SectionSet._resolve_cross_section_edit_station_items(
+                obj,
+                total,
+                mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                s0=s0_internal,
+                s1=s1_internal,
+            )
+        except Exception:
+            station_items = []
+
+        boundary_roles = []
+        for it in station_items:
+            if abs(float(it.get("station", 0.0) or 0.0) - float(station)) > tol:
+                continue
+            role = str(it.get("role", "") or "").strip().lower()
+            if role and role not in boundary_roles:
+                boundary_roles.append(role)
+        ctx["BoundaryRoles"] = list(boundary_roles)
+        ctx["IsBoundaryStation"] = any(r in ("start", "end", "transition_before", "transition_after") for r in boundary_roles)
+
+        def _priority_for_record(rec):
+            scope = str(rec.get("Scope", "") or "").strip().lower()
+            start = float(rec.get("StartStation", 0.0) or 0.0)
+            end = float(rec.get("EndStation", start) or start)
+            span = max(0.0, abs(end - start))
+            if scope == "station":
+                return 200000, span
+            return max(1, 100000 - int(round(span * 100.0))), span
+
+        for rec in active:
+            parameter = str(rec.get("Parameter", "") or "").strip().lower()
+            if parameter not in ("width", "slope_pct", "cross_slope_pct", "height", "extra_width", "back_slope_pct"):
+                continue
+            source_scope = str(rec.get("SourceScope", "") or "").strip().lower()
+            target_type = str(rec.get("TargetType", "") or "").strip().lower()
+            side = str(rec.get("TargetSide", "") or "").strip().lower()
+            target_id = str(rec.get("TargetId", "") or "").strip().upper()
+
+            if parameter in ("width", "cross_slope_pct", "height", "extra_width", "back_slope_pct") and (source_scope == "typical" or target_type not in ("side_slope", "cut_slope", "fill_slope", "")):
+                if not target_id:
+                    continue
+                priority, span = _priority_for_record(rec)
+                incoming = {
+                    "Priority": int(priority),
+                    "Span": float(span),
+                    "Value": float(rec.get("Value", 0.0) or 0.0),
+                    "Parameter": parameter,
+                    "Ids": [str(rec.get("Id", "") or "")],
+                    "Side": side,
+                    "TargetType": target_type,
+                }
+                typical_overrides = dict(ctx.get("TypicalComponentOverrides", {}) or {})
+                typical_overrides[target_id] = _merge_typical_component_override(typical_overrides.get(target_id), incoming)
+                ctx["TypicalComponentOverrides"] = typical_overrides
+                continue
+
+            if source_scope not in ("side_slope", "") and target_type not in ("side_slope", "cut_slope", "fill_slope"):
+                continue
+            if side not in ("left", "right"):
+                continue
+            if target_id and target_id not in ("L10", "R10"):
+                continue
+            priority, span = _priority_for_record(rec)
+            incoming = {
+                "Priority": int(priority),
+                "Span": float(span),
+                "Value": float(rec.get("Value", 0.0) or 0.0),
+                "Parameter": parameter,
+                "Ids": [str(rec.get("Id", "") or "")],
+            }
+            key = "LeftParameterOverride" if side == "left" else "RightParameterOverride"
+            ctx[key] = _merge_parameter_override(ctx.get(key), incoming)
+            ids = [str(v or "") for v in list(ctx.get("LeftEditIds" if side == "left" else "RightEditIds", []) or []) if str(v or "")]
+            rid = str(rec.get("Id", "") or "")
+            if rid and rid not in ids:
+                ids.append(rid)
+            if side == "left":
+                ctx["LeftEditIds"] = ids
+            else:
+                ctx["RightEditIds"] = ids
+
+        return ctx
 
     @staticmethod
     def _structure_context_at_station(obj, station: float):
@@ -1658,6 +2004,17 @@ class SectionSet:
                 s1=s1,
             )
             vals.extend([float(it.get("station", 0.0)) for it in region_items])
+        except Exception:
+            pass
+        try:
+            edit_items, _ekind, _eobj = SectionSet._resolve_cross_section_edit_station_items(
+                obj,
+                total_m,
+                mode=mode,
+                s0=s0,
+                s1=s1,
+            )
+            vals.extend([float(it.get("station", 0.0)) for it in edit_items])
         except Exception:
             pass
         return _unique_sorted(vals)
@@ -2490,6 +2847,130 @@ class SectionSet:
         return _clamp(w, lo, hi)
 
     @staticmethod
+    def _resolve_typical_component_rows(typical_section_obj, runtime_context=None):
+        if typical_section_obj is None:
+            return [], False
+        rows = [dict(row or {}) for row in list(_typical_component_rows(typical_section_obj) or [])]
+        overrides = dict(dict(runtime_context or {}).get("TypicalComponentOverrides", {}) or {})
+        if not overrides:
+            return rows, False
+        changed = False
+        out = []
+        for row in rows:
+            item = dict(row or {})
+            target_id = str(item.get("Id", "") or "").strip().upper()
+            spec = dict(overrides.get(target_id, {}) or {})
+            side = str(item.get("Side", "") or "").strip().lower()
+            typ = str(item.get("Type", "") or "").strip().lower()
+            if spec:
+                spec_side = str(spec.get("Side", "") or "").strip().lower()
+                spec_type = str(spec.get("TargetType", "") or "").strip().lower()
+                if spec_side and spec_side not in (side, "both"):
+                    spec = {}
+                if spec_type and spec_type != typ:
+                    spec = {}
+            edit_meta = dict(item.get("_EditMeta", {}) or {})
+            if spec and "Width" in spec:
+                item["Width"] = max(0.0, float(spec.get("Width", item.get("Width", 0.0)) or item.get("Width", 0.0)))
+                edit_meta["override"] = True
+            if spec and "CrossSlopePct" in spec:
+                item["CrossSlopePct"] = float(spec.get("CrossSlopePct", item.get("CrossSlopePct", 0.0)) or item.get("CrossSlopePct", 0.0))
+                edit_meta["override"] = True
+            if spec and "Height" in spec:
+                item["Height"] = float(spec.get("Height", item.get("Height", 0.0)) or item.get("Height", 0.0))
+                edit_meta["override"] = True
+            if spec and "ExtraWidth" in spec:
+                item["ExtraWidth"] = max(0.0, float(spec.get("ExtraWidth", item.get("ExtraWidth", 0.0)) or item.get("ExtraWidth", 0.0)))
+                edit_meta["override"] = True
+            if spec and "BackSlopePct" in spec:
+                item["BackSlopePct"] = float(spec.get("BackSlopePct", item.get("BackSlopePct", 0.0)) or item.get("BackSlopePct", 0.0))
+                edit_meta["override"] = True
+            if spec and edit_meta.get("override", False):
+                edit_meta["edit_ids"] = [str(v or "") for v in list(spec.get("Ids", []) or []) if str(v or "")]
+                item["_EditMeta"] = edit_meta
+                changed = True
+            out.append(item)
+        return out, changed
+
+    @staticmethod
+    def _component_segment_rows_from_typical_station_profiles(station_profiles):
+        if not station_profiles:
+            return []
+
+        def _sorted_rows(rows, side_name: str):
+            side_name = str(side_name or "").strip().lower()
+            side_rows = []
+            for row in list(rows or []):
+                item = dict(row or {})
+                if not bool(item.get("Enabled", True)):
+                    continue
+                side = str(item.get("Side", "") or "").strip().lower()
+                if side == side_name:
+                    side_rows.append(item)
+                elif side == "both" and side_name in ("left", "right"):
+                    clone = dict(item)
+                    clone["Side"] = side_name
+                    side_rows.append(clone)
+            side_rows.sort(key=lambda row: (int(row.get("Order", 0) or 0), str(row.get("Id", "") or "")))
+            return side_rows
+
+        out = []
+        for profile in list(station_profiles or []):
+            station_value = float(profile.get("station", 0.0) or 0.0)
+            rows = list(profile.get("typical_rows", []) or [])
+            if not rows:
+                continue
+            for side_name in ("left", "right", "center"):
+                ordered_rows = _sorted_rows(rows, side_name)
+                if side_name == "center":
+                    cursor = 0.0
+                else:
+                    cursor = 0.0
+                for row in ordered_rows:
+                    width = max(0.0, float(row.get("Width", 0.0) or 0.0))
+                    extra = max(0.0, float(row.get("ExtraWidth", 0.0) or 0.0))
+                    typ = str(row.get("Type", "") or "").strip().lower()
+                    seg_w = width + extra if typ in ("curb", "berm") else width
+                    if seg_w <= 1e-9:
+                        continue
+                    if side_name == "left":
+                        x0 = cursor - seg_w
+                        x1 = cursor
+                        cursor = x0
+                    elif side_name == "right":
+                        x0 = cursor
+                        x1 = cursor + seg_w
+                        cursor = x1
+                    else:
+                        x0 = -0.5 * seg_w
+                        x1 = 0.5 * seg_w
+                    edit_meta = dict(row.get("_EditMeta", {}) or {})
+                    fields = {
+                        "station": f"{station_value:.3f}",
+                        "side": side_name,
+                        "id": str(row.get("Id", "") or "").strip() or "-",
+                        "type": typ or "-",
+                        "shape": str(row.get("Shape", "") or "").strip().lower() or "-",
+                        "label": str(row.get("Type", "") or "").strip() or typ or "-",
+                        "scope": "typical",
+                        "order": int(row.get("Order", 0) or 0),
+                        "x0": f"{x0:.3f}",
+                        "x1": f"{x1:.3f}",
+                        "width": f"{seg_w:.3f}",
+                        "slope": f"{float(row.get('CrossSlopePct', 0.0) or 0.0):.3f}",
+                        "height": f"{float(row.get('Height', 0.0) or 0.0):.3f}",
+                        "extraWidth": f"{float(row.get('ExtraWidth', 0.0) or 0.0):.3f}",
+                        "backSlopePct": f"{float(row.get('BackSlopePct', 0.0) or 0.0):.3f}",
+                        "source": "cross_section_edit" if bool(edit_meta.get("override", False)) else "typical_summary",
+                    }
+                    edit_ids = [str(v or "") for v in list(edit_meta.get("edit_ids", []) or []) if str(v or "")]
+                    if edit_ids:
+                        fields["editId"] = ",".join(edit_ids)
+                        fields["override"] = "true"
+                    out.append(_report_row("component_segment", **fields))
+        return out
+
+    @staticmethod
     def build_section_wire(
         source_obj,
         asm_obj,
@@ -2519,6 +3000,32 @@ class SectionSet:
         rsw = max(0.0, _assembly_model_value(asm_obj, "RightSideWidth", 0.0))
         lss = float(getattr(asm_obj, "LeftSideSlopePct", 0.0))
         rss = float(getattr(asm_obj, "RightSideSlopePct", 0.0))
+        base_use_ss = bool(use_ss)
+        base_lsw = float(lsw)
+        base_rsw = float(rsw)
+        base_lss = float(lss)
+        base_rss = float(rss)
+        left_edit_meta = {}
+        right_edit_meta = {}
+        if bool(apply_structure_overrides) and structure_context is not None:
+            left_param = dict(structure_context.get("LeftParameterOverride") or {})
+            right_param = dict(structure_context.get("RightParameterOverride") or {})
+            if "Width" in left_param:
+                lsw = max(0.0, float(left_param.get("Width", lsw) or lsw))
+                left_edit_meta["override"] = True
+            if "SlopePct" in left_param:
+                lss = float(left_param.get("SlopePct", lss) or lss)
+                left_edit_meta["override"] = True
+            if "Ids" in left_param:
+                left_edit_meta["edit_ids"] = [str(v or "") for v in list(left_param.get("Ids", []) or []) if str(v or "")]
+            if "Width" in right_param:
+                rsw = max(0.0, float(right_param.get("Width", rsw) or rsw))
+                right_edit_meta["override"] = True
+            if "SlopePct" in right_param:
+                rss = float(right_param.get("SlopePct", rss) or rss)
+                right_edit_meta["override"] = True
+            if "Ids" in right_param:
+                right_edit_meta["edit_ids"] = [str(v or "") for v in list(right_param.get("Ids", []) or []) if str(v or "")]
         use_day = bool(use_daylight) and bool(use_ss) and ((lsw > 1e-9) or (rsw > 1e-9))
         left_has_side = bool(use_ss) and lsw > 1e-9
         right_has_side = bool(use_ss) and rsw > 1e-9
@@ -2644,6 +3151,20 @@ class SectionSet:
         day_step = max(0.2 * scale, _assembly_model_value(asm_obj, "DaylightSearchStep", 1.0))
         day_max_w = max(0.0, _assembly_model_value(asm_obj, "DaylightMaxSearchWidth", 200.0))
         day_max_delta = max(0.0, _assembly_model_value(asm_obj, "DaylightMaxWidthDelta", 0.0))
+        base_left_profile_width = max(base_lsw, day_max_w) if (left_repeat_to_daylight and bool(use_day) and bool(base_use_ss) and base_lsw > 1e-9) else base_lsw
+        base_right_profile_width = max(base_rsw, day_max_w) if (right_repeat_to_daylight and bool(use_day) and bool(base_use_ss) and base_rsw > 1e-9) else base_rsw
+        left_contract_profile = _resolve_side_bench_profile(
+            base_left_profile_width,
+            base_lss,
+            left_bench_rows,
+            repeat_first_row_to_end=left_repeat_to_daylight,
+        )
+        right_contract_profile = _resolve_side_bench_profile(
+            base_right_profile_width,
+            base_rss,
+            right_bench_rows,
+            repeat_first_row_to_end=right_repeat_to_daylight,
+        )
         left_profile_width = max(lsw, day_max_w) if (left_repeat_to_daylight and bool(use_day_left)) else lsw
         right_profile_width = max(rsw, day_max_w) if (right_repeat_to_daylight and bool(use_day_right)) else rsw
         left_bench = _resolve_side_bench_profile(
@@ -2658,6 +3179,19 @@ class SectionSet:
             right_bench_rows,
             repeat_first_row_to_end=right_repeat_to_daylight,
         )
+        contract_min_seg = max(1.0e-5 * scale, 1.0e-6)
+        if left_repeat_to_daylight and bool(left_contract_profile.get("segments", [])):
+            left_bench = _normalize_profile_to_contract(
+                left_bench,
+                left_contract_profile,
+                min_seg=contract_min_seg,
+            )
+        if right_repeat_to_daylight and bool(right_contract_profile.get("segments", [])):
+            right_bench = _normalize_profile_to_contract(
+                right_bench,
+                right_contract_profile,
+                min_seg=contract_min_seg,
+            )
         prev_left_w = None if prev_day_widths is None else prev_day_widths.get("left")
         prev_right_w = None if prev_day_widths is None else prev_day_widths.get("right")
         prev_left_post_w = None if prev_day_widths is None else prev_day_widths.get("left_post")
@@ -2666,9 +3200,17 @@ class SectionSet:
         top_pts = None
         p_l = None
         p_r = None
+        typical_rows_out = []
         if bool(use_typical_section) and typical_section_obj is not None:
             try:
-                local_pts = list(_build_typical_top_profile(typical_section_obj) or [])
+                typical_rows_out, _typical_changed = SectionSet._resolve_typical_component_rows(
+                    typical_section_obj,
+                    runtime_context=structure_context if bool(apply_structure_overrides) else None,
+                )
+                if typical_rows_out:
+                    local_pts = list(_build_typical_top_profile_from_rows(typical_section_obj, typical_rows_out) or [])
+                else:
+                    local_pts = list(_build_typical_top_profile(typical_section_obj) or [])
                 if len(local_pts) >= 2:
                     top_pts = [p + n * float(lp.x) + z * float(lp.y) for lp in local_pts]
                     p_l = top_pts[0]
@@ -2677,6 +3219,7 @@ class SectionSet:
                 top_pts = None
                 p_l = None
                 p_r = None
+                typical_rows_out = []
 
         if top_pts is None:
             dz_l = -lw * ls / 100.0
@@ -2876,6 +3419,9 @@ class SectionSet:
             "bench_right_skipped": bool(bench_right_skipped),
             "left_segments": list(left_segments_out),
             "right_segments": list(right_segments_out),
+            "left_edit": dict(left_edit_meta or {}),
+            "right_edit": dict(right_edit_meta or {}),
+            "typical_rows": [dict(row or {}) for row in list(typical_rows_out or [])],
         }
 
     @staticmethod
@@ -2949,12 +3495,15 @@ class SectionSet:
         bench_section_hits = 0
         bench_adjusted_hits = 0
         bench_skipped_hits = 0
+        cross_section_edit_override_hits = 0
         use_typ = bool(getattr(obj, "UseTypicalSectionTemplate", False)) and typ is not None
         apply_structure_overrides = bool(getattr(obj, "ApplyStructureOverrides", False))
         apply_region_overrides = bool(getattr(obj, "ApplyRegionOverrides", False))
+        apply_cross_section_edit_overrides = bool(cross_section_edit_plan_usage_enabled(obj))
         for s in stations:
             structure_context = None
             region_context = None
+            edit_context = None
             if apply_structure_overrides:
                 structure_context = SectionSet._structure_context_at_station(obj, float(s))
                 if _runtime_context_has_section_overrides(structure_context):
@@ -2967,11 +3516,16 @@ class SectionSet:
                     region_side_hits += 1
                 if bool(region_context.get("LeftDisableDaylight", False)) or bool(region_context.get("RightDisableDaylight", False)):
                     region_daylight_hits += 1
+            if apply_cross_section_edit_overrides:
+                edit_context = SectionSet._cross_section_edit_context_at_station(obj, float(s))
+                if _runtime_context_has_section_overrides(edit_context):
+                    cross_section_edit_override_hits += 1
             runtime_context = SectionSet._merge_runtime_override_contexts(
                 region_context=region_context,
                 structure_context=structure_context,
+                cross_section_edit_context=edit_context,
             )
-            apply_runtime_overrides = bool(apply_structure_overrides or apply_region_overrides)
+            apply_runtime_overrides = bool(apply_structure_overrides or apply_region_overrides or apply_cross_section_edit_overrides)
             try:
                 w, prev_n, prev_day_widths = SectionSet.build_section_wire(
                     src,
@@ -3017,8 +3571,11 @@ class SectionSet:
             station_profiles.append(
                 {
                     "station": float(s),
+                    "typical_rows": [dict(row or {}) for row in list(prev_day_widths.get("typical_rows", []) or [])],
                     "left_segments": [dict(seg) for seg in list(prev_day_widths.get("left_segments", []) or [])],
                     "right_segments": [dict(seg) for seg in list(prev_day_widths.get("right_segments", []) or [])],
+                    "left_edit": dict(prev_day_widths.get("left_edit", {}) or {}),
+                    "right_edit": dict(prev_day_widths.get("right_edit", {}) or {}),
                 }
             )
         try:
@@ -3028,6 +3585,7 @@ class SectionSet:
                 "regionOverrideHits": int(region_override_hits),
                 "regionSideHits": int(region_side_hits),
                 "regionDaylightHits": int(region_daylight_hits),
+                "crossSectionEditOverrideHits": int(cross_section_edit_override_hits),
                 "benchLeft": int(bench_left_hits),
                 "benchRight": int(bench_right_hits),
                 "benchSections": int(bench_section_hits),
@@ -3044,6 +3602,7 @@ class SectionSet:
                 "regionOverrideHits": int(region_override_hits),
                 "regionSideHits": int(region_side_hits),
                 "regionDaylightHits": int(region_daylight_hits),
+                "crossSectionEditOverrideHits": int(cross_section_edit_override_hits),
                 "benchLeft": 0,
                 "benchRight": 0,
                 "benchSections": 0,
@@ -3607,6 +4166,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
@@ -3636,6 +4199,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
@@ -3664,6 +4231,10 @@ class SectionSet:
                         x0=f"{x0:.3f}",
                         x1=f"{x1:.3f}",
                         width=f"{seg_w:.3f}",
+                        slope=f"{_safe_float_text(row.get('slope', 0.0), 0.0):.3f}",
+                        height=f"{_safe_float_text(row.get('height', 0.0), 0.0):.3f}",
+                        extraWidth=f"{_safe_float_text(row.get('extraWidth', 0.0), 0.0):.3f}",
+                        backSlopePct=f"{_safe_float_text(row.get('backSlopePct', 0.0), 0.0):.3f}",
                         source="typical_summary",
                     )
                 )
@@ -3858,6 +4429,7 @@ class SectionSet:
                     ("left", anchor_info.get("left", -left_width if left_width > 1e-9 else 0.0), list(info.get("left_segments", []) or [])),
                     ("right", anchor_info.get("right", right_width if right_width > 1e-9 else 0.0), list(info.get("right_segments", []) or [])),
                 ):
+                    edit_meta = dict(info.get(f"{side_name}_edit", {}) or {})
                     cursor = float(base_edge)
                     order = 10
                     slope_type = str(slope_types.get(side_name, "side_slope") or "side_slope")
@@ -3866,7 +4438,7 @@ class SectionSet:
                         if seg_w <= 1e-9:
                             continue
                         seg_kind = str(seg.get("kind", "") or "").strip().lower()
-                        seg_type = "bench" if seg_kind == "bench" else slope_type
+                        seg_type = "bench" if seg_kind == "bench" else SectionSet._slope_component_type(float(seg.get("slope", 0.0) or 0.0))
                         if side_name == "left":
                             x0 = cursor - seg_w
                             x1 = cursor
@@ -3875,22 +4447,24 @@ class SectionSet:
                             x0 = cursor
                             x1 = cursor + seg_w
                             cursor = x1
-                        out.append(
-                            _report_row(
-                                "component_segment",
-                                station=f"{station_value:.3f}",
-                                side=side_name,
-                                id=f"{side_name[:1].upper()}{order}",
-                                type=seg_type,
-                                label=seg_type,
-                                scope="side_slope",
-                                order=order,
-                                x0=f"{x0:.3f}",
-                                x1=f"{x1:.3f}",
-                                width=f"{seg_w:.3f}",
-                                source="resolved_section_profile",
-                            )
-                        )
+                        fields = {
+                            "station": f"{station_value:.3f}",
+                            "side": side_name,
+                            "id": f"{side_name[:1].upper()}{order}",
+                            "type": seg_type,
+                            "label": seg_type,
+                            "scope": "side_slope",
+                            "order": order,
+                            "x0": f"{x0:.3f}",
+                            "x1": f"{x1:.3f}",
+                            "width": f"{seg_w:.3f}",
+                            "source": "cross_section_edit" if bool(edit_meta.get("override", False)) else "resolved_section_profile",
+                        }
+                        edit_ids = [str(v or "") for v in list(edit_meta.get("edit_ids", []) or []) if str(v or "")]
+                        if edit_ids:
+                            fields["editId"] = ",".join(edit_ids)
+                            fields["override"] = "true"
+                        out.append(_report_row("component_segment", **fields))
                         order += 1
             return out
         out = []
@@ -4551,6 +5125,41 @@ class SectionSet:
                     )
             obj.ResolvedRegionSummaryRows = list(region_rows)
 
+            edit_rows = []
+            try:
+                s0_internal = _units.internal_length_from_meters(getattr(obj, "Document", None), float(getattr(obj, "StartStation", 0.0) or 0.0))
+                s1_internal = _units.internal_length_from_meters(
+                    getattr(obj, "Document", None),
+                    float(getattr(obj, "EndStation", _units.meters_from_internal_length(getattr(obj, "Document", None), total0)) or _units.meters_from_internal_length(getattr(obj, "Document", None), total0)),
+                )
+                edit_items, edit_kind, edit_obj = SectionSet._resolve_cross_section_edit_station_items(
+                    obj,
+                    total0,
+                    mode=str(getattr(obj, "Mode", "Range") or "Range"),
+                    s0=s0_internal,
+                    s1=s1_internal,
+                )
+                if edit_obj is None:
+                    obj.ResolvedCrossSectionEditCount = 0
+                    if cross_section_edit_plan_usage_enabled(obj):
+                        edit_rows.append(_report_row("cross_section_edit_plan", source="missing", edits=0, boundaries=0))
+                else:
+                    edit_records = [rec for rec in CrossSectionEditPlanSource.records(edit_obj) if bool(rec.get("Enabled", True))]
+                    edit_boundaries = [float(it.get("station", 0.0) or 0.0) for it in list(edit_items or [])]
+                    obj.ResolvedCrossSectionEditCount = int(len(edit_records))
+                    edit_rows.append(
+                        _report_row(
+                            "cross_section_edit_plan",
+                            source=str(edit_kind or getattr(edit_obj, "Name", "CrossSectionEditPlan") or "CrossSectionEditPlan"),
+                            edits=int(len(edit_records)),
+                            boundaries=int(len(_unique_sorted(edit_boundaries))),
+                        )
+                    )
+            except Exception:
+                obj.ResolvedCrossSectionEditCount = 0
+                edit_rows.append(_report_row("cross_section_edit_plan", source="error", edits=0, boundaries=0))
+            obj.ResolvedCrossSectionEditSummaryRows = list(edit_rows)
+
             if not bool(getattr(obj, "ShowSectionWires", True)):
                 obj.Shape = Part.Shape()
                 obj.SectionProfileCount = 0
@@ -4598,14 +5207,18 @@ class SectionSet:
             region_override_hits = int((bench_info or {}).get("regionOverrideHits", 0) or 0)
             region_side_hits = int((bench_info or {}).get("regionSideHits", 0) or 0)
             region_daylight_hits = int((bench_info or {}).get("regionDaylightHits", 0) or 0)
+            cross_section_edit_override_hits = int((bench_info or {}).get("crossSectionEditOverrideHits", 0) or 0)
             station_profiles = list((bench_info or {}).get("stationProfiles", []) or [])
             obj.StructureOverrideHitCount = int(structure_override_hits)
             obj.RegionOverrideHitCount = int(region_override_hits)
+            obj.CrossSectionEditOverrideHitCount = int(cross_section_edit_override_hits)
             if use_typ and typ is not None:
-                typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
-                    [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
-                    stations,
-                )
+                typical_segment_rows = SectionSet._component_segment_rows_from_typical_station_profiles(station_profiles)
+                if not typical_segment_rows:
+                    typical_segment_rows = SectionSet._component_segment_rows_from_summary_rows(
+                        [_parse_report_row(row) for row in list(getattr(typ, "SectionComponentSummaryRows", []) or [])],
+                        stations,
+                    )
                 side_slope_segment_rows = SectionSet._side_slope_segment_rows_from_assembly(
                     obj,
                     stations,
@@ -4814,6 +5427,10 @@ class SectionSet:
                     status_tokens.append(f"regionSide={int(region_side_hits)}")
                 if int(region_daylight_hits) > 0:
                     status_tokens.append(f"regionDaylight={int(region_daylight_hits)}")
+            if cross_section_edit_plan_usage_enabled(obj):
+                status_tokens.append(f"editPlan={int(getattr(obj, 'ResolvedCrossSectionEditCount', 0) or 0)}")
+                if int(getattr(obj, "CrossSectionEditOverrideHitCount", 0) or 0) > 0:
+                    status_tokens.append(f"editPlanActive={int(getattr(obj, 'CrossSectionEditOverrideHitCount', 0) or 0)}")
             obj.Status = _status_join(head, *status_tokens)
 
             # Push parametric updates to linked corridor objects.
@@ -4859,6 +5476,7 @@ class SectionSet:
             obj.BenchDaylightSkippedSectionCount = 0
             obj.StructureOverrideHitCount = 0
             obj.RegionOverrideHitCount = 0
+            obj.CrossSectionEditOverrideHitCount = 0
             obj.Status = f"ERROR: {ex}"
 
     def onChanged(self, obj, prop):
@@ -4897,6 +5515,8 @@ class SectionSet:
             "ApplyRegionOverrides",
             "IncludeRegionBoundaries",
             "IncludeRegionTransitions",
+            "CrossSectionEditPlan",
+            "UseCrossSectionEditPlan",
             "CreateChildSections",
             "AutoRebuildChildren",
             "RebuildNow",

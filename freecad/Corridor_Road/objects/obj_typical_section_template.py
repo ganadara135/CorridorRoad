@@ -818,8 +818,8 @@ def _segment_profile_points(x0: float, y0: float, row, direction: float):
     return pts
 
 
-def build_top_profile(obj):
-    rows = _component_rows_model(obj)
+def build_top_profile_from_rows(obj, rows):
+    rows = [_component_row_to_model_lengths(obj, row) for row in list(rows or [])]
     left_rows, center_rows, right_rows = _split_rows_by_side(rows)
 
     left_pts = [App.Vector(0.0, 0.0, 0.0)]
@@ -860,6 +860,11 @@ def build_top_profile(obj):
         if not cleaned or (pt - cleaned[-1]).Length > 1e-9:
             cleaned.append(pt)
     return cleaned
+
+
+def build_top_profile(obj):
+    rows = component_rows(obj)
+    return build_top_profile_from_rows(obj, rows)
 
 
 def build_component_preview_profile(obj, selected_index: int):

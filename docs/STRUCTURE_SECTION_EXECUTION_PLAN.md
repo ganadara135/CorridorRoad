@@ -437,9 +437,6 @@ Status:
 2. placement/orientation/scaling rules
 3. import and validation messaging
 
-Execution detail:
-1. see `docs/STRUCTURE_SPRINT5_EXTERNAL_SHAPE_PLAN.md`
-
 Done when:
 1. complex structures can be placed from external models
 2. alignment-based placement remains consistent
