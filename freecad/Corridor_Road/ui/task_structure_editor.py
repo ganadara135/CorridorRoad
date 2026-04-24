@@ -8,6 +8,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common import (
+    clear_ui_context,
+    context_station_label,
+    context_station_value,
+    get_ui_context,
+    nearest_span_index,
+    nearest_value_index,
+)
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_first, find_project
 from freecad.Corridor_Road.objects.obj_structure_set import (
@@ -135,6 +143,18 @@ CSV_LINEAR_UNIT_KEYS = {
     "unit",
     "units",
 }
+
+
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
 
 
 class _RowAwareComboBox(QtWidgets.QComboBox):
@@ -387,6 +407,8 @@ def _structure_profile_csv_mapping(fieldnames):
 class StructureEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self._structures = []
         self._stationing = None
         self._station_values = []
@@ -749,9 +771,13 @@ class StructureEditorTaskPanel:
         row_profile_actions.addWidget(self.btn_add_profile_midpoint)
         row_profile_actions.addWidget(self.btn_clear_profile)
         row_profile_actions.addStretch(1)
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Structure Impact")
         self.btn_apply = QtWidgets.QPushButton("Apply")
+        self.btn_apply_preview = QtWidgets.QPushButton("Apply + Review")
         self.btn_close = QtWidgets.QPushButton("Close")
+        row_profile_actions.addWidget(self.btn_open_v1_preview)
         row_profile_actions.addWidget(self.btn_apply)
+        row_profile_actions.addWidget(self.btn_apply_preview)
         row_profile_actions.addWidget(self.btn_close)
         main.addLayout(row_profile_actions)
 
@@ -828,6 +854,8 @@ class StructureEditorTaskPanel:
         self.btn_clear_profile.clicked.connect(self._clear_profile_rows_for_selected)
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply)
+        self.btn_apply_preview.clicked.connect(self._apply_and_open_v1_preview)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.btn_close.clicked.connect(self.reject)
         self.table.cellPressed.connect(self._on_structure_row_pressed)
         self.table.itemSelectionChanged.connect(self._enforce_structure_row_selection)
@@ -1694,7 +1722,9 @@ class StructureEditorTaskPanel:
         try:
             self._structures = _find_structure_sets(self.doc)
             prj = find_project(self.doc)
-            sel = getattr(prj, "StructureSet", None) if prj is not None and hasattr(prj, "StructureSet") else None
+            sel = self._preferred_structure_set_from_context()
+            if sel is None:
+                sel = getattr(prj, "StructureSet", None) if prj is not None and hasattr(prj, "StructureSet") else None
             self._fill_targets(selected=sel)
             st = getattr(prj, "Stationing", None) if prj is not None and hasattr(prj, "Stationing") else None
             if st is None:
@@ -1724,7 +1754,102 @@ class StructureEditorTaskPanel:
             self._loading = False
         self._on_target_changed()
         self._refresh_detail_panel()
-        self._refresh_validation_visuals()
+        self._apply_v1_station_focus()
+
+    def _preferred_structure_set_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        structure_set = _find_object_by_name(self.doc, str(legacy_names.get("structure_set", "") or ""))
+        if structure_set is not None:
+            return structure_set
+        section_set = _find_object_by_name(self.doc, str(legacy_names.get("section_set", "") or ""))
+        if section_set is None:
+            return None
+        linked = getattr(section_set, "StructureSet", None)
+        if linked is not None:
+            return linked
+        return None
+
+    def _preferred_section_set_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("section_set", "") or ""))
+
+    def _context_station_value(self):
+        return context_station_value(self._v1_context)
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _build_v1_preview_context(self):
+        section_set = self._preferred_section_set_from_context()
+        structure_set = self._current_target()
+        context_station = self._context_station_label()
+        viewer_context = {
+            "source_panel": "Edit Structures",
+            "section_set_label": str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip(),
+            "station_label": str(context_station or "").strip(),
+            "diagnostic_tokens": ["Opened from Edit Structures"],
+        }
+        if structure_set is not None:
+            viewer_context["structure_summary"] = (
+                f"Structure Set: {str(getattr(structure_set, 'Label', '') or getattr(structure_set, 'Name', '') or '').strip()}"
+            )
+        return {"viewer_context": viewer_context}
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_view_sections import show_v1_section_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_section_set = self._preferred_section_set_from_context()
+            preferred_station = self._context_station_value()
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_section_preview(
+                document=document,
+                preferred_section_set=preferred_section_set,
+                preferred_station=preferred_station,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Could not open structure-impact review: {ex}")
+
+    def _apply_v1_station_focus(self):
+        target_station = self._context_station_value()
+        if target_station is None:
+            return
+        rows = list(self._read_rows() or [])
+        spans = [
+            (
+                float(row.get("StartStation", 0.0) or 0.0),
+                float(row.get("EndStation", 0.0) or 0.0),
+            )
+            for row in rows
+        ]
+        target_index = nearest_span_index(spans, target_station)
+        if target_index < 0 or target_index >= len(rows):
+            return
+        self._set_active_structure_row(target_index)
+        self._refresh_profile_table()
+
+        sid = self._selected_structure_id()
+        profile_rows = list(self._filtered_profile_rows(sid) or [])
+        profile_stations = [float(row.get("Station", 0.0) or 0.0) for row in profile_rows]
+        profile_index = nearest_value_index(profile_stations, target_station)
+        if profile_index >= 0:
+            try:
+                self.profile_table.setCurrentCell(profile_index, 0)
+                self.profile_table.selectRow(profile_index)
+                item = self.profile_table.item(profile_index, 0)
+                if item is not None:
+                    self.profile_table.scrollToItem(item)
+            except Exception:
+                pass
+
+        label = self._context_station_label()
+        if label:
+            self.lbl_status.setText(f"Context: opened from v1 preview at {label}")
 
     def _set_rows(self, n):
         self._loading = True
@@ -1931,6 +2056,7 @@ class StructureEditorTaskPanel:
             finally:
                 self._loading = False
             self._refresh_detail_panel()
+            self._apply_v1_station_focus()
             return
 
         ensure_structure_set_properties(obj)
@@ -1940,6 +2066,7 @@ class StructureEditorTaskPanel:
         self._set_profile_rows(profile_rows)
         self._refresh_profile_table()
         self.lbl_status.setText(str(getattr(obj, "Status", "Loaded")))
+        self._apply_v1_station_focus()
         self._update_shape_status()
         self._refresh_detail_panel()
 
@@ -2642,22 +2769,22 @@ class StructureEditorTaskPanel:
         self.lbl_status.setText(f"Loaded profile CSV rows: {len(rows)} | linear={linear_unit or _units.get_linear_import_unit(self._unit_context())}")
         self._refresh_validation_visuals()
 
-    def _apply(self):
+    def _apply(self, show_message: bool = True):
         if self.doc is None:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "No active document.")
-            return
+            return False
         if self._stationing is None or not self._station_values:
             QtWidgets.QMessageBox.warning(
                 None,
                 "Edit Structures",
                 "No Stationing found.\nRun `Generate Stations` first, then define StartStation/EndStation/CenterStation from the station list.",
             )
-            return
+            return False
         rows = self._read_rows()
         self._sync_profile_table_to_store()
         if not rows:
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "No structure rows to save.")
-            return
+            return False
         ok_count, warn_count, err_count, lines = self._validation_snapshot()
         if err_count > 0:
             msg = [
@@ -2670,7 +2797,7 @@ class StructureEditorTaskPanel:
                 msg.append("")
                 msg.extend(list(lines[:10]))
             QtWidgets.QMessageBox.warning(None, "Edit Structures", "\n".join(msg))
-            return
+            return False
         if warn_count > 0:
             msg = [
                 "Apply with validation warnings?",
@@ -2688,7 +2815,7 @@ class StructureEditorTaskPanel:
                 QtWidgets.QMessageBox.No,
             )
             if reply != QtWidgets.QMessageBox.Yes:
-                return
+                return False
 
         try:
             obj = self._ensure_target()
@@ -2765,11 +2892,12 @@ class StructureEditorTaskPanel:
                     msg.append("")
                     msg.append("Frame diagnostics:")
                     msg.extend(list(frame_status_notes[:10]))
-                QtWidgets.QMessageBox.information(
-                    None,
-                    "Edit Structures",
-                    "\n".join(msg),
-                )
+                if show_message:
+                    QtWidgets.QMessageBox.information(
+                        None,
+                        "Edit Structures",
+                        "\n".join(msg),
+                    )
             else:
                 msg = [
                     f"Structure set saved.\nRecords: {len(rows)}\nProfile points: {len(self._profile_rows)}\nStatus: {getattr(obj, 'Status', 'Applied')}"
@@ -2786,12 +2914,19 @@ class StructureEditorTaskPanel:
                     msg.append("")
                     msg.append("Guide:")
                     msg.append("StartStation/EndStation based usage becomes effective after `Generate Stations` creates a `Stationing` object.")
-                QtWidgets.QMessageBox.information(None, "Edit Structures", "\n".join(msg))
+                if show_message:
+                    QtWidgets.QMessageBox.information(None, "Edit Structures", "\n".join(msg))
             self._refresh_context()
             try:
                 Gui.ActiveDocument.ActiveView.fitAll()
             except Exception:
                 pass
+            return True
         except Exception as ex:
             self.lbl_status.setText(f"ERROR: {ex}")
             QtWidgets.QMessageBox.warning(None, "Edit Structures", f"Apply failed: {ex}")
+            return False
+
+    def _apply_and_open_v1_preview(self):
+        if self._apply(show_message=False):
+            self._open_v1_preview()

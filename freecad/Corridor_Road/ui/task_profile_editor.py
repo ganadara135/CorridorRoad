@@ -10,6 +10,13 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common import (
+    clear_ui_context,
+    context_station_label,
+    context_station_value,
+    get_ui_context,
+    nearest_value_index,
+)
 
 from freecad.Corridor_Road.objects.doc_query import find_first, find_project
 from freecad.Corridor_Road.objects import unit_policy as _units
@@ -69,6 +76,18 @@ def _try_float(value):
         return float(txt)
     except Exception:
         return None
+
+
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
 
 
 def _normalize_fg_header(text: str) -> str:
@@ -149,6 +168,8 @@ class ProfileEditorTaskPanel:
 
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
 
         # prevent AttributeError during UI build
         self.bundle = None
@@ -236,8 +257,10 @@ class ProfileEditorTaskPanel:
         self.lbl_coord_hint.setWordWrap(True)
         self.btn_pick_terrain = QtWidgets.QPushButton("Use Selected Terrain")
         self.btn_apply = QtWidgets.QPushButton("Apply")
+        self.btn_apply_preview = QtWidgets.QPushButton("Next: Review Plan/Profile")
         self.btn_close = QtWidgets.QPushButton("Close")
         self.btn_open_pvi = QtWidgets.QPushButton("Open Edit PVI")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Plan/Profile")
         self.btn_refresh_fg_from_va = QtWidgets.QPushButton("Refresh FG from VerticalAlignment")
         self.btn_import_fg = QtWidgets.QPushButton("Import FG CSV")
         self.btn_fg_wizard = QtWidgets.QPushButton("FG Wizard")
@@ -258,12 +281,14 @@ class ProfileEditorTaskPanel:
         form.addRow(self.btn_pick_terrain)
         row_nav = QtWidgets.QHBoxLayout()
         row_nav.addWidget(self.btn_open_pvi)
+        row_nav.addWidget(self.btn_open_v1_preview)
         row_nav.addWidget(self.btn_refresh_fg_from_va)
         w_nav = QtWidgets.QWidget()
         w_nav.setLayout(row_nav)
         form.addRow(w_nav)
         row_apply = QtWidgets.QHBoxLayout()
         row_apply.addWidget(self.btn_apply)
+        row_apply.addWidget(self.btn_apply_preview)
         row_apply.addWidget(self.btn_close)
         w_apply = QtWidgets.QWidget()
         w_apply.setLayout(row_apply)
@@ -325,8 +350,10 @@ class ProfileEditorTaskPanel:
         self.btn_refresh_fg_from_va.clicked.connect(self._refresh_fg_from_va)
         self.btn_pick_terrain.clicked.connect(self._use_selected_terrain)
         self.btn_apply.clicked.connect(self._apply_changes)
+        self.btn_apply_preview.clicked.connect(self._apply_and_open_v1_preview)
         self.btn_close.clicked.connect(self.reject)
         self.btn_open_pvi.clicked.connect(self._open_edit_pvi)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.cmb_terrain_coords.currentIndexChanged.connect(self._on_terrain_coord_mode_changed)
         self.cmb_eg_terrain.currentIndexChanged.connect(self._on_terrain_source_changed)
 
@@ -907,16 +934,19 @@ class ProfileEditorTaskPanel:
 
         self.bundle = _find_profile_bundle(self.doc)
         self.project = _find_project(self.doc)
-        self.alignment = None
+        preferred_alignment = self._preferred_alignment_from_context()
+        preferred_profile = self._preferred_profile_from_context()
+        self.alignment = preferred_alignment
         try:
-            if self.project is not None and hasattr(self.project, "Alignment"):
+            if self.alignment is None and self.project is not None and hasattr(self.project, "Alignment"):
                 self.alignment = getattr(self.project, "Alignment", None)
         except Exception:
-            self.alignment = None
+            if self.alignment is None:
+                self.alignment = None
         if self.alignment is None:
             self.alignment = _find_alignment(self.doc)
         self.stationing = _find_stationing(self.doc)
-        self.va = _find_vertical_alignment(self.doc)
+        self.va = preferred_profile if preferred_profile is not None else _find_vertical_alignment(self.doc)
         self._terrains = _find_terrain_sources(self.doc)
         self._apply_default_coord_mode()
         self._update_coord_hint()
@@ -962,6 +992,116 @@ class ProfileEditorTaskPanel:
         self.btn_fill_fg_from_va.setEnabled(self.va is not None)
         self.btn_refresh_fg_from_va.setEnabled(self.va is not None)
         self._refresh_status_summary()
+
+    def _preferred_alignment_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("alignment", "") or ""))
+
+    def _preferred_profile_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("profile", "") or ""))
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import show_v1_plan_profile_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_alignment = self.alignment
+            preferred_profile = self.va
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_plan_profile_preview(
+                document=document,
+                preferred_alignment=preferred_alignment,
+                preferred_profile=preferred_profile,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Could not open plan/profile review: {ex}")
+
+    def _current_profile_row_context(self):
+        row_index = int(self.table.currentRow())
+        if row_index < 0 or row_index >= int(self.table.rowCount()):
+            return {}
+        station_value = self._get_cell_float(row_index, 0)
+        eg_value = self._get_cell_float(row_index, 1)
+        fg_value = self._get_cell_float(row_index, 2)
+        delta_value = self._get_cell_float(row_index, 3)
+        row_bits = [f"Row {row_index + 1}"]
+        if station_value is not None:
+            row_bits.append(f"STA {float(station_value):.3f}")
+        if eg_value is not None:
+            row_bits.append(f"EG {float(eg_value):.3f}")
+        if fg_value is not None:
+            row_bits.append(f"FG {float(fg_value):.3f}")
+        if delta_value is not None:
+            row_bits.append(f"Delta {float(delta_value):.3f}")
+        focus_station = None
+        focus_station_label = ""
+        if station_value is not None:
+            try:
+                focus_station = float(self._meters_from_display(float(station_value)))
+                focus_station_label = f"STA {float(station_value):.3f} {self._display_unit_label()}"
+            except Exception:
+                focus_station = None
+                focus_station_label = ""
+        return {
+            "focus_station": focus_station,
+            "focus_station_label": focus_station_label,
+            "selected_row_label": " | ".join(row_bits),
+        }
+
+    def _build_v1_preview_context(self):
+        row_context = self._current_profile_row_context()
+        return {
+            "viewer_context": {
+                "source_panel": "Edit Profiles",
+                "mode_summary": "FG Mode: "
+                + ("From VerticalAlignment" if bool(self.chk_fg_from_va.isChecked()) and self.va is not None else "Manual"),
+                "table_summary": str(self.lbl_table_summary.text() or "").strip(),
+                "status_summary": str(self.lbl_status.text() or "").strip().replace("\n", " | "),
+                **{key: value for key, value in row_context.items() if value not in (None, "")},
+            }
+        }
+
+    def _context_station_value(self):
+        return context_station_value(self._v1_context)
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _apply_v1_station_focus(self):
+        target_station = self._context_station_value()
+        if target_station is None or self.table.rowCount() <= 0:
+            return
+        station_values = []
+        row_map = []
+        for row in range(self.table.rowCount()):
+            station_value = self._get_cell_float(row, 0)
+            if station_value is None:
+                continue
+            row_map.append(int(row))
+            station_values.append(float(station_value))
+        target_index = nearest_value_index(station_values, target_station)
+        if target_index < 0 or target_index >= len(row_map):
+            return
+        target_row = int(row_map[target_index])
+        try:
+            self.table.setCurrentCell(target_row, 0)
+            self.table.selectRow(target_row)
+            item = self.table.item(target_row, 0)
+            if item is not None:
+                self.table.scrollToItem(item)
+        except Exception:
+            pass
+        label = self._context_station_label()
+        if label:
+            try:
+                self.lbl_status.setText(self.lbl_status.text() + f"\nContext: opened from v1 preview at {label}")
+            except Exception:
+                pass
     # ---- Table helpers ----
 
     def _set_rows(self, n):
@@ -1277,15 +1417,7 @@ class ProfileEditorTaskPanel:
 
     def _apply_changes(self):
         try:
-            terr = self._current_terrain()
-            if terr is not None and self.alignment is not None:
-                self._fill_eg_from_terrain(overwrite=True, show_message=False, terrain_obj=terr)
-            self._save_to_document()
-            self._refresh_status_summary()
-            total = 0
-            for r in range(self.table.rowCount()):
-                if self._get_cell_float(r, 0) is not None:
-                    total += 1
+            total = self._apply_profile_changes()
             QtWidgets.QMessageBox.information(
                 None,
                 "Edit Profiles",
@@ -1293,6 +1425,25 @@ class ProfileEditorTaskPanel:
             )
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Apply failed: {ex}")
+
+    def _apply_profile_changes(self):
+        terr = self._current_terrain()
+        if terr is not None and self.alignment is not None:
+            self._fill_eg_from_terrain(overwrite=True, show_message=False, terrain_obj=terr)
+        self._save_to_document()
+        self._refresh_status_summary()
+        total = 0
+        for r in range(self.table.rowCount()):
+            if self._get_cell_float(r, 0) is not None:
+                total += 1
+        return int(total)
+
+    def _apply_and_open_v1_preview(self):
+        try:
+            self._apply_profile_changes()
+            self._open_v1_preview()
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Profiles", f"Next: Review Plan/Profile failed: {ex}")
 
     def _fill_fg_from_va(self, force: bool = False):
         if self.va is None:
@@ -1440,6 +1591,7 @@ class ProfileEditorTaskPanel:
                     self._fill_fg_from_va()
 
             self._refresh_status_summary()
+            self._apply_v1_station_focus()
             return
 
         st = list(getattr(self.bundle, "Stations", []) or [])
@@ -1465,6 +1617,7 @@ class ProfileEditorTaskPanel:
         # if locked FG and VA exists, override FG display values from VA
         self._fill_fg_from_va()
         self._refresh_status_summary()
+        self._apply_v1_station_focus()
 
     def _read_table_rows(self, keep_blanks: bool):
         """

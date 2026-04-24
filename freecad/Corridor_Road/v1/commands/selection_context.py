@@ -1,0 +1,65 @@
+"""Shared selection-context helpers for CorridorRoad v1 command bridges."""
+
+from __future__ import annotations
+
+
+def selected_section_target(gui_module, document):
+    """Resolve the preferred SectionSet and station from the current GUI selection."""
+
+    if gui_module is None or document is None:
+        return None, None
+    try:
+        selection = list(gui_module.Selection.getSelection() or [])
+    except Exception:
+        selection = []
+    for obj in selection:
+        if obj is None:
+            continue
+        try:
+            if str(getattr(getattr(obj, "Proxy", None), "Type", "") or "") == "SectionSet":
+                return obj, None
+        except Exception:
+            pass
+        try:
+            parent = getattr(obj, "ParentSectionSet", None)
+            station = getattr(obj, "Station", None)
+            if parent is not None:
+                return parent, station
+        except Exception:
+            pass
+    return None, None
+
+
+def selected_alignment_profile_target(gui_module, document):
+    """Resolve preferred alignment/profile objects from the current GUI selection."""
+
+    if gui_module is None or document is None:
+        return None, None
+    try:
+        selection = list(gui_module.Selection.getSelection() or [])
+    except Exception:
+        selection = []
+
+    preferred_alignment = None
+    preferred_profile = None
+    for obj in selection:
+        if obj is None:
+            continue
+        proxy_type = ""
+        try:
+            proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
+        except Exception:
+            proxy_type = ""
+        if preferred_alignment is None and proxy_type == "HorizontalAlignment":
+            preferred_alignment = obj
+        if preferred_profile is None and proxy_type == "VerticalAlignment":
+            preferred_profile = obj
+        if preferred_alignment is None:
+            linked_alignment = getattr(obj, "Alignment", None)
+            if linked_alignment is not None:
+                preferred_alignment = linked_alignment
+        if preferred_profile is None:
+            linked_profile = getattr(obj, "VerticalAlignment", None)
+            if linked_profile is not None:
+                preferred_profile = linked_profile
+    return preferred_alignment, preferred_profile

@@ -7,6 +7,12 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common import (
+    clear_ui_context,
+    context_station_label,
+    context_station_value,
+    get_ui_context,
+)
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects import unit_policy as _units
@@ -15,6 +21,15 @@ from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
 def _find_section_sets(doc):
     return find_all(doc, proxy_type="SectionSet", name_prefixes=("SectionSet",))
+
+
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    try:
+        return doc.getObject(str(object_name))
+    except Exception:
+        return None
 
 
 def _selected_section_target(doc):
@@ -125,9 +140,13 @@ class _CrossSectionGraphicsView(QtWidgets.QGraphicsView):
 class CrossSectionViewerTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self._loading = False
         self._section_sets = []
         self._station_rows = []
+        self._focus_component_rows = []
+        self._pending_focus_component_key = self._context_focus_component_key()
         self._last_fit_rect = None
         self._current_payload = None
         self._selection_observer = None
@@ -224,6 +243,7 @@ class CrossSectionViewerTaskPanel:
         fs = QtWidgets.QFormLayout(gb_src)
         self.cmb_section_set = QtWidgets.QComboBox()
         self.cmb_station = QtWidgets.QComboBox()
+        self.cmb_focus_component = QtWidgets.QComboBox()
         self.chk_sync_selection = QtWidgets.QCheckBox("Sync with 3D selection")
         self.chk_sync_selection.setChecked(True)
         self.chk_show_structures = QtWidgets.QCheckBox("Show structure overlays")
@@ -261,6 +281,7 @@ class CrossSectionViewerTaskPanel:
         fs.addRow(self.chk_show_side_slope)
         fs.addRow(self.chk_show_daylight)
         fs.addRow("Station:", self.cmb_station)
+        fs.addRow("Focus Component:", self.cmb_focus_component)
         main.addWidget(gb_src)
 
         row_nav = QtWidgets.QHBoxLayout()
@@ -287,16 +308,19 @@ class CrossSectionViewerTaskPanel:
         self.btn_export_png = QtWidgets.QPushButton("Export PNG")
         self.btn_export_svg = QtWidgets.QPushButton("Export SVG")
         self.btn_export_sheet_svg = QtWidgets.QPushButton("Export Sheet SVG")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Open Current Viewer")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_export_png)
         row_btn.addWidget(self.btn_export_svg)
         row_btn.addWidget(self.btn_export_sheet_svg)
+        row_btn.addWidget(self.btn_open_v1_preview)
         row_btn.addStretch(1)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
 
         self.cmb_section_set.currentIndexChanged.connect(self._on_section_set_changed)
         self.cmb_station.currentIndexChanged.connect(self._render_current_payload)
+        self.cmb_focus_component.currentIndexChanged.connect(self._on_focus_component_changed)
         self.chk_show_structures.toggled.connect(self._render_current_payload)
         self.chk_show_labels.toggled.connect(self._render_current_payload)
         self.chk_show_dimensions.toggled.connect(self._render_current_payload)
@@ -312,6 +336,7 @@ class CrossSectionViewerTaskPanel:
         self.btn_export_png.clicked.connect(self._export_png)
         self.btn_export_svg.clicked.connect(self._export_svg)
         self.btn_export_sheet_svg.clicked.connect(self._export_sheet_svg)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.btn_close.clicked.connect(self.reject)
         return w
 
@@ -339,6 +364,12 @@ class CrossSectionViewerTaskPanel:
             return None
         return self._station_rows[idx]
 
+    def _current_focus_component_row(self):
+        idx = int(self.cmb_focus_component.currentIndex()) - 1
+        if idx < 0 or idx >= len(self._focus_component_rows):
+            return None
+        return self._focus_component_rows[idx]
+
     def _refresh_context(self, preserve_station=True):
         if self.doc is None:
             self.lbl_info.setText("No active document.")
@@ -353,8 +384,10 @@ class CrossSectionViewerTaskPanel:
         if row is not None:
             current_station = float(row.get("station", 0.0))
 
-        preferred_set = selected_set if selected_set is not None else current_set
-        preferred_station = selected_station if selected_station is not None else current_station
+        context_set = self._preferred_section_set_from_context()
+        context_station = self._context_station_value()
+        preferred_set = selected_set if selected_set is not None else (context_set if context_set is not None else current_set)
+        preferred_station = selected_station if selected_station is not None else (context_station if context_station is not None else current_station)
 
         self._section_sets = _find_section_sets(self.doc)
         self._loading = True
@@ -381,12 +414,29 @@ class CrossSectionViewerTaskPanel:
             self.txt_summary.setPlainText("No SectionSet found.")
             return
 
-        self.lbl_info.setText(
-            "2D cross-section viewer for SectionSet wires. "
-            "Use 3D SectionSlice selection or choose a station here.\n"
-            f"Display unit: {self._display_unit_label()}"
-        )
+        info_lines = [
+            "2D cross-section viewer for SectionSet wires. Use 3D SectionSlice selection or choose a station here.",
+            f"Display unit: {self._display_unit_label()}",
+        ]
+        context_label = self._context_station_label()
+        if context_label:
+            info_lines.append(f"Context: opened from v1 preview at {context_label}")
+        self.lbl_info.setText("\n".join(info_lines))
         self._render_current_payload()
+
+    def _preferred_section_set_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("section_set", "") or ""))
+
+    def _context_station_value(self):
+        return context_station_value(self._v1_context)
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _context_focus_component_key(self):
+        focused = dict(self._v1_context.get("focused_component", {}) or {})
+        return str(focused.get("key", "") or "").strip() or None
 
     def _reload_station_rows(self, preferred_station=None):
         sec = self._current_section_set()
@@ -413,10 +463,117 @@ class CrossSectionViewerTaskPanel:
         finally:
             self._loading = False
 
+    @staticmethod
+    def _focus_component_key(row):
+        item = dict(row or {})
+        explicit = str(item.get("key", "") or "").strip()
+        if explicit:
+            return explicit
+        component_id = str(item.get("id", "") or "").strip()
+        if component_id and component_id != "-":
+            return f"id:{component_id}"
+        parts = [
+            str(item.get("type", "") or "").strip().lower() or "-",
+            str(item.get("side", "") or "").strip().lower() or "-",
+            str(item.get("scope", "") or "").strip().lower() or "-",
+            str(item.get("source", "") or "").strip().lower() or "-",
+        ]
+        return "sig:" + "|".join(parts)
+
+    @staticmethod
+    def _focus_component_label(row):
+        item = dict(row or {})
+        component_id = str(item.get("id", "") or "").strip()
+        component_type = str(item.get("type", "") or "").strip() or "component"
+        side = str(item.get("side", "") or "").strip()
+        scope = str(item.get("scope", "") or "").strip()
+        source = str(item.get("source", "") or "").strip()
+        pieces = [component_type]
+        if side and side != "-":
+            pieces.append(side)
+        if scope and scope != "-":
+            pieces.append(scope)
+        if source and source != "-":
+            pieces.append(source)
+        label = " / ".join(pieces)
+        if component_id and component_id != "-":
+            label = f"{label} [{component_id}]"
+        return label
+
+    @staticmethod
+    def _focus_component_rows_from_payload(payload):
+        rows = []
+        seen = set()
+        for row in list(dict(payload or {}).get("component_rows", []) or []):
+            kind = str(row.get("kind", "") or "").strip().lower()
+            if kind not in ("component", "component_segment"):
+                continue
+            item = {
+                "id": str(row.get("id", "") or "").strip() or "-",
+                "type": str(row.get("type", "") or "").strip() or "-",
+                "side": str(row.get("side", "") or "").strip() or "-",
+                "source": str(row.get("source", "") or "").strip() or "-",
+                "scope": str(row.get("scope", "") or "").strip() or "-",
+            }
+            item["key"] = CrossSectionViewerTaskPanel._focus_component_key(item)
+            item["label"] = CrossSectionViewerTaskPanel._focus_component_label(item)
+            if item["key"] in seen:
+                continue
+            seen.add(item["key"])
+            rows.append(item)
+        return rows
+
+    def _reload_focus_component_rows(self, payload, preferred_key=None):
+        rows = self._focus_component_rows_from_payload(payload)
+        current = self._current_focus_component_row()
+        current_key = str(current.get("key", "") or "").strip() if current is not None else ""
+        target_key = preferred_key or current_key or self._pending_focus_component_key or ""
+
+        self._focus_component_rows = rows
+        self._loading = True
+        try:
+            self.cmb_focus_component.clear()
+            self.cmb_focus_component.addItem("Auto")
+            for row in rows:
+                self.cmb_focus_component.addItem(str(row.get("label", "") or "component"))
+            idx = 0
+            if target_key:
+                for i, row in enumerate(rows, start=1):
+                    if str(row.get("key", "") or "") == str(target_key):
+                        idx = i
+                        break
+            self.cmb_focus_component.setCurrentIndex(idx)
+            self.cmb_focus_component.setEnabled(bool(rows))
+        finally:
+            self._loading = False
+        self._pending_focus_component_key = None
+
+    def _focused_component_context(self):
+        row = self._current_focus_component_row()
+        if row is None and self._focus_component_rows:
+            row = self._focus_component_rows[0]
+        if row is None:
+            return None
+        return dict(row)
+
+    def _apply_focus_component_context(self, payload):
+        model = dict(payload or {})
+        focused = self._focused_component_context()
+        if focused is None:
+            model.pop("focused_component", None)
+            return model
+        model["focused_component"] = focused
+        return model
+
     def _on_section_set_changed(self, _idx):
         if self._loading:
             return
         self._reload_station_rows()
+        self._render_current_payload()
+
+    def _on_focus_component_changed(self, _idx):
+        if self._loading:
+            return
         self._render_current_payload()
 
     def _scene_point(self, x, y):
@@ -1802,6 +1959,7 @@ class CrossSectionViewerTaskPanel:
         self._current_payload = None
 
         if sec is None or row is None:
+            self._reload_focus_component_rows({})
             self.txt_summary.setPlainText("Select a SectionSet and station.")
             self.scene.addText("No section selected.")
             return
@@ -1812,11 +1970,14 @@ class CrossSectionViewerTaskPanel:
             include_structure_overlay=bool(self.chk_show_structures.isChecked()),
         )
         if not payload:
+            self._reload_focus_component_rows({})
             self.txt_summary.setPlainText("No cross-section payload available.")
             self.scene.addText("No section payload available.")
             return
         payload = self._prepare_display_payload(payload)
         payload.update(self.build_layout_plan(payload))
+        self._reload_focus_component_rows(payload)
+        payload = self._apply_focus_component_context(payload)
         self._current_payload = dict(payload)
         payload = self._filter_layout_by_scope(
             payload,
@@ -1983,6 +2144,16 @@ class CrossSectionViewerTaskPanel:
                 f"typical={int(visible_scope_counts.get('typical', 0) or 0)}, "
                 f"side_slope={int(visible_scope_counts.get('side_slope', 0) or 0)}, "
                 f"daylight={int(visible_scope_counts.get('daylight', 0) or 0)}"
+            )
+        focused = dict(payload.get("focused_component", {}) or {})
+        if focused:
+            component_lines.append(
+                "Focus Component: "
+                + str(
+                    focused.get("label", "")
+                    or CrossSectionViewerTaskPanel._focus_component_label(focused)
+                    or "-"
+                )
             )
         blocks.append(("Components", component_lines))
 
@@ -2620,6 +2791,55 @@ class CrossSectionViewerTaskPanel:
             self._loading = False
         self._reload_station_rows(preferred_station=station)
         self._render_current_payload()
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_view_sections import show_v1_section_preview
+
+            section_set = self._current_section_set()
+            station_row = self._current_station_row()
+            preferred_station = None
+            if station_row is not None:
+                try:
+                    preferred_station = float(station_row.get("station", 0.0))
+                except Exception:
+                    preferred_station = None
+            preview_context = self._build_v1_preview_context()
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_section_preview(
+                document=document,
+                preferred_section_set=section_set,
+                preferred_station=preferred_station,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Cross Section Viewer", f"Could not open current viewer: {ex}")
+
+    def _build_v1_preview_context(self):
+        payload = dict(self._current_payload or {})
+        component_rows = self._focus_component_rows_from_payload(payload)
+        structure_rows = []
+        for row in list(payload.get("structure_rows", []) or []):
+            raw = str(row.get("raw", "") or "").strip()
+            if raw:
+                structure_rows.append(raw)
+        focused_component = self._focused_component_context()
+        return {
+            "viewer_context": {
+                "section_set_label": self._format_section_set(self._current_section_set()) if self._current_section_set() is not None else "",
+                "station_label": str(payload.get("station_label", "") or "").strip(),
+                "tag_summary": str(payload.get("tag_summary", "") or "").strip(),
+                "top_profile_edge_summary": str(payload.get("top_profile_edge_summary", "") or "").strip(),
+                "structure_summary": str(payload.get("structure_summary", "") or "").strip(),
+                "diagnostic_tokens": [str(token) for token in list(payload.get("diagnostic_tokens", []) or []) if str(token or "").strip()],
+                "component_rows": component_rows[:12],
+                "structure_rows": structure_rows[:6],
+                "focused_component": focused_component or {},
+            }
+        }
 
     def _sync_from_selection(self, doc_name, obj_name):
         if not bool(self.chk_sync_selection.isChecked()):

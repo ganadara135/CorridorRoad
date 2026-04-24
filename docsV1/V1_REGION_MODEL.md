@@ -1,0 +1,494 @@
+# CorridorRoad V1 Region Model
+
+Date: 2026-04-23
+Branch: `v1-dev`
+Status: Draft baseline
+Depends on:
+
+- `docsV1/V1_MASTER_PLAN.md`
+- `docsV1/V1_ARCHITECTURE.md`
+- `docsV1/V1_SECTION_MODEL.md`
+- `docsV1/V1_ALIGNMENT_MODEL.md`
+- `docsV1/V1_PROFILE_MODEL.md`
+- `docsV1/V1_SUPERELEVATION_MODEL.md`
+
+## 1. Purpose
+
+This document defines the v1 internal source contract for station-range region policy.
+
+It exists to make clear:
+
+- what `RegionModel` owns
+- how regions differ from templates and overrides
+- how station ranges select active design policy
+- how region resolution feeds applied-section and corridor evaluation
+
+## 2. Scope
+
+This model covers:
+
+- station-range assignment
+- template switching
+- region-level policy selection
+- transition-in and transition-out behavior
+- precedence and conflict handling
+- diagnostics and traceability
+
+This model does not cover:
+
+- detailed section-template authoring
+- horizontal or vertical geometry authoring
+- final generated section geometry
+- unbounded free-form local edits
+
+## 3. Core Rule
+
+`RegionModel` is a durable source-of-truth model for station-range design policy.
+
+This means:
+
+- corridor evaluation reads from it
+- viewers may inspect its effect through applied results
+- regions select and modify policy
+- generated geometry does not become a substitute for region intent
+
+## 4. Why Regions Matter
+
+In v1, the corridor is not one uniform section repeated forever.
+
+It changes by station because of:
+
+- template changes
+- roadside treatment changes
+- structure influence
+- drainage policy changes
+- construction-stage or design exceptions
+
+`RegionModel` is the layer that says which policy applies where.
+
+## 5. Relationship to Templates and Overrides
+
+The architectural distinction is:
+
+- `AssemblyModel` defines reusable section intent
+- `RegionModel` assigns and modifies that intent over station ranges
+- explicit override models handle narrow exceptions
+
+Regions should not become:
+
+- a second template library
+- a hidden generated-geometry editor
+- an unlimited patch bucket for every local exception
+
+## 6. Relationship to Alignment, Profile, and Superelevation
+
+`RegionModel` is defined in the station space established by `AlignmentModel`.
+
+It may select or reference:
+
+- active section template families
+- profile-related policy modes where needed
+- active superelevation set or lane-group policy context
+
+But it does not own the underlying alignment, profile, or superelevation source definitions.
+
+## 7. Design Goals
+
+The v1 region subsystem should:
+
+- make station-range policy explicit
+- support template switching without geometry hacks
+- support transition-aware policy changes
+- preserve strong traceability into applied sections
+- support localized but structured change
+- expose deterministic region-resolution services
+
+## 8. Region Scope in v1
+
+Recommended early v1 support:
+
+- template assignment by station range
+- roadway-side policy switching
+- cut/fill and daylight policy selection
+- structure-sensitive range handling
+- transition zones between region states
+- region-boundary diagnostics
+
+Deferred or later refinements may include:
+
+- more advanced multi-alignment sharing
+- richer phased-construction region stacks
+- jurisdiction-specific automated region generation
+
+## 9. Region Object Families
+
+Recommended primary object families:
+
+- `RegionModel`
+- `RegionRow`
+- `RegionPolicySet`
+- `RegionTransitionRow`
+- `RegionConflictSet`
+- `RegionResolutionResult`
+
+## 10. RegionModel Root
+
+### 10.1 Purpose
+
+`RegionModel` is the durable container for station-range policy assignment.
+
+### 10.2 Recommended root fields
+
+- `schema_version`
+- `region_model_id`
+- `project_id`
+- `alignment_id`
+- `label`
+- `region_rows`
+- `transition_rows`
+- `constraint_rows`
+- `unit_context`
+- `source_refs`
+- `diagnostic_rows`
+
+### 10.3 Rule
+
+One `RegionModel` may manage many region rows for a given alignment context, but identity and ordering must remain explicit.
+
+## 11. RegionRow
+
+### 11.1 Purpose
+
+Each `RegionRow` represents one station-bounded policy zone.
+
+### 11.2 Recommended fields
+
+- `region_id`
+- `region_index`
+- `region_kind`
+- `station_start`
+- `station_end`
+- `policy_set_ref`
+- `template_ref`
+- optional `superelevation_ref`
+- `priority`
+- `source_ref`
+- `notes`
+
+### 11.3 Recommended kinds
+
+- `mainline_region`
+- `transition_region`
+- `structure_influence_region`
+- `daylight_control_region`
+- `temporary_candidate_region`
+
+### 11.4 Rule
+
+Region rows must be defined in station space, not only by visual extents or 3D shapes.
+
+## 12. RegionPolicySet
+
+### 12.1 Purpose
+
+`RegionPolicySet` preserves the actual policy choices applied over a region.
+
+### 12.2 Recommended fields
+
+- `policy_set_id`
+- `template_ref`
+- `component_policy_rows`
+- `daylight_policy`
+- `drainage_policy`
+- `structure_policy`
+- `earthwork_policy`
+- `notes`
+
+### 12.3 Rule
+
+Policy sets should preserve engineering meaning rather than turning into arbitrary key-value blobs.
+
+## 13. Component Policy Rows
+
+### 13.1 Purpose
+
+Component policy rows describe structured changes to template behavior over a region.
+
+### 13.2 Recommended fields
+
+- `component_policy_id`
+- `component_scope`
+- `parameter`
+- `value`
+- `unit`
+- `policy_kind`
+- `notes`
+
+### 13.3 Recommended policy kinds
+
+- `parameter_override`
+- `component_enable`
+- `component_disable`
+- `side_specific_policy`
+- `transition_policy`
+
+### 13.4 Rule
+
+These rows are structured region policy, not free-form geometry edits.
+
+## 14. RegionTransitionRow
+
+### 14.1 Purpose
+
+`RegionTransitionRow` preserves how policy changes blend at boundaries.
+
+### 14.2 Recommended fields
+
+- `transition_id`
+- `from_region_ref`
+- `to_region_ref`
+- `station_start`
+- `station_end`
+- `transition_kind`
+- `transition_policy`
+- `notes`
+
+### 14.3 Recommended kinds
+
+- `linear_blend`
+- `step_change`
+- `component_specific_blend`
+- `structure_forced_transition`
+
+### 14.4 Rule
+
+Transition intent should remain explicit instead of being inferred later from two disconnected region rows.
+
+## 15. Constraint Rows
+
+### 15.1 Purpose
+
+Constraint rows capture region-level design intent and validation context.
+
+### 15.2 Recommended fields
+
+- `constraint_id`
+- `kind`
+- `value`
+- `unit`
+- `hard_or_soft`
+- `notes`
+
+### 15.3 Recommended kinds
+
+- `protected_station_range`
+- `no_template_switch_zone`
+- `forced_structure_clearance_zone`
+- `fixed_daylight_policy`
+- `earthwork_priority_zone`
+
+## 16. Precedence Model
+
+Recommended evaluation precedence:
+
+1. template base definition
+2. region policy set
+3. region transition behavior
+4. explicit override rows
+5. structure interaction rules
+6. terrain and daylight evaluation
+
+This order should be documented and reused consistently across services.
+
+## 17. Region vs Override Boundary
+
+### 17.1 Region role
+
+Regions handle structured policy over meaningful station ranges.
+
+### 17.2 Override role
+
+Overrides handle explicit exceptions such as:
+
+- one narrow station range
+- one event-specific condition
+- one local parameter exception
+
+### 17.3 Rule
+
+If a change is reusable over a meaningful station range, it should probably be a region policy.
+
+If a change is narrow and exceptional, it should probably be an explicit override.
+
+## 18. RegionResolutionService
+
+### 18.1 Purpose
+
+This service resolves which region policy applies at a station or station range.
+
+### 18.2 Typical queries
+
+- station to active region
+- station range to overlapping regions
+- region boundary detection
+- transition interval lookup
+- conflict detection
+
+### 18.3 Rule
+
+Applied-section and corridor consumers should not re-implement their own region-selection logic.
+
+## 19. RegionResolutionResult
+
+### 19.1 Purpose
+
+This result object captures resolved region context for downstream consumers.
+
+### 19.2 Recommended fields
+
+- `resolution_id`
+- `station`
+- `active_region_id`
+- `active_policy_set_id`
+- `active_template_ref`
+- `active_transition_ref`
+- `diagnostic_rows`
+- `notes`
+
+### 19.3 Rule
+
+Resolution results are derived evaluation objects, not new durable source data.
+
+## 20. Conflict Handling
+
+Conflict handling should detect:
+
+- overlapping region rows with incompatible priority
+- gaps between required regions
+- conflicting transition definitions
+- template references that do not exist
+- illegal policy combinations
+
+The system should prefer explicit diagnostics over silent winner-takes-all behavior.
+
+## 21. Diagnostics
+
+Diagnostics should be produced when:
+
+- region rows overlap ambiguously
+- transition ranges are invalid
+- a station falls into a gap with no valid policy
+- a policy set references missing source objects
+- region policy requires degraded application
+
+Recommended diagnostic fields:
+
+- `diagnostic_id`
+- `severity`
+- `kind`
+- `source_ref`
+- `message`
+- `notes`
+
+## 22. Identity and Provenance
+
+Region objects should preserve:
+
+- stable `region_id`
+- related `alignment_id`
+- referenced `template_ref`
+- referenced `superelevation_ref` where used
+- source file or edit provenance
+- candidate-vs-approved status where applicable
+
+This is important for:
+
+- Viewer source inspection
+- applied-section traceability
+- AI candidate comparison
+- export and reporting diagnostics
+
+## 23. Relationship to AppliedSection and Corridor
+
+`AppliedSection` evaluation depends on `RegionModel` for:
+
+- active template selection
+- region-scoped parameter policy
+- transition behavior at station boundaries
+- structured local policy before explicit overrides
+
+`CorridorModel` must consume resolved region context rather than embedding hidden ad-hoc region logic.
+
+## 24. Relationship to Viewer and 3D Review
+
+Viewer and 3D review systems may consume region-derived context through:
+
+- region boundary markers
+- active region labels
+- source inspector rows
+- region-based review filtering
+
+But they must not become the new region source.
+
+The Viewer should be able to trace a section behavior back to:
+
+- active region
+- policy set
+- transition row
+- override source if one exists
+
+## 25. Relationship to Earthwork Balance
+
+Region policy may influence earthwork by selecting:
+
+- daylight rules
+- shoulder or slope treatments
+- structure-related constraints
+- earthwork-priority zones
+
+Earthwork analysis may compare region alternatives, but must not write hidden changes back into `RegionModel`.
+
+## 26. AI and Alternative Design
+
+AI-assisted workflows may propose:
+
+- new region splits
+- alternative template assignments
+- different daylight or roadside policies
+- earthwork-aware region policy changes
+
+But accepted changes must still be written into normalized region source objects.
+
+The AI layer must not keep a separate hidden region graph.
+
+## 27. Recommended Minimal Schema Version
+
+Recommended initial version:
+
+- `RegionModelSchemaVersion = 1`
+
+## 28. Anti-Patterns
+
+The following should be avoided:
+
+- using regions as unlabeled geometry patches
+- hiding major design changes inside ad-hoc override piles
+- treating generated section geometry as the true region definition
+- duplicating region-selection logic in many consumers
+- silently resolving overlapping conflicts without diagnostics
+
+## 29. Summary
+
+In v1, `RegionModel` is the durable source contract for:
+
+- station-range policy assignment
+- template switching
+- structured local policy
+- transition-aware region resolution
+
+It should remain explicit and station-based, so that:
+
+- `AppliedSection` can resolve the correct design intent at each station
+- Viewer traceability stays strong
+- overrides remain narrow and controlled
+- corridor, earthwork, and AI workflows can compare alternatives without corrupting source truth

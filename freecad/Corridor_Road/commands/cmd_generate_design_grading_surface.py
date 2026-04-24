@@ -24,8 +24,8 @@ class CmdGenerateDesignGradingSurface:
     def GetResources(self):
         return {
             "Pixmap": icon_path("design_grading_surface.svg"),
-            "MenuText": "Design Grading Surface",
-            "ToolTip": "Generate design grading surface from SectionSet",
+            "MenuText": "Build Design Grading Surface",
+            "ToolTip": "Build the design grading surface from generated sections",
         }
 
     def IsActive(self):
@@ -75,4 +75,5 @@ class CmdGenerateDesignGradingSurface:
             pass
 
 
-Gui.addCommand("CorridorRoad_GenerateDesignGradingSurface", CmdGenerateDesignGradingSurface())
+if hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
+    Gui.addCommand("CorridorRoad_GenerateDesignGradingSurface", CmdGenerateDesignGradingSurface())

@@ -14,8 +14,8 @@ class CmdGenerateCorridor:
     def GetResources(self):
         return {
             "Pixmap": icon_path("corridor.svg"),
-            "MenuText": "Corridor",
-            "ToolTip": "Generate corridor surface from SectionSet",
+            "MenuText": "Build Corridor",
+            "ToolTip": "Build corridor results from the current section set",
         }
 
     def IsActive(self):
