@@ -2,7 +2,7 @@
 
 Date: 2026-04-23
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, profile earthwork depth/area attachment bridge noted
 Depends on:
 
 - `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
@@ -372,6 +372,15 @@ Mass-haul curve rows should remain attached to normalized earthwork result ident
 - `waste_summary`
 - `balance_ratio_summary`
 - `mass_haul_summary`
+- `final_cumulative_mass`
+- `max_surplus_cumulative_mass`
+- `max_deficit_cumulative_mass`
+
+Current implementation note:
+
+- `MassHaulService` builds a cumulative mass curve from ordered earthwork balance rows
+- balance points are interpolated where the cumulative curve crosses zero inside a station window
+- `MassHaulOutput.summary_rows` include final cumulative mass and max surplus/deficit cumulative mass
 
 ## 19. Comparison Rows
 
@@ -432,6 +441,8 @@ Mass-haul curve rows should remain attached to normalized earthwork result ident
 Architectural rule:
 
 - `ProfileOutput` carries attached earthwork annotations for profile review
+- early profile attachments may include `profile_cut_depth`, `profile_fill_depth`, `profile_cut_area`, and `profile_fill_area`
+- current profile area attachments are rectangular-equivalent `depth * explicit_section_width` hints, not final earthwork balance output truth
 - `EarthworkBalanceOutput` and `MassHaulOutput` carry the primary analytical truth for earthwork reporting and comparison
 
 Profile consumers should not pretend to own earthwork truth.

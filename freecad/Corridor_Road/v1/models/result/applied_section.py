@@ -19,6 +19,25 @@ class AppliedSectionPoint:
 
 
 @dataclass(frozen=True)
+class AppliedSectionFrame:
+    """Evaluated station frame used to place one applied section."""
+
+    station: float
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    tangent_direction_deg: float = 0.0
+    profile_grade: float = 0.0
+    alignment_status: str = ""
+    profile_status: str = ""
+    active_alignment_element_id: str = ""
+    active_profile_segment_start_id: str = ""
+    active_profile_segment_end_id: str = ""
+    active_vertical_curve_id: str = ""
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class AppliedSectionComponentRow:
     """Minimal semantic component row inside an applied section."""
 
@@ -52,6 +71,7 @@ class AppliedSection(ResultModelBase):
     station: float = 0.0
     template_id: str = ""
     region_id: str = ""
+    frame: AppliedSectionFrame | None = None
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)

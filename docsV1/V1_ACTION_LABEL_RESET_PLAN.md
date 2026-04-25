@@ -126,7 +126,6 @@ Primary actions:
 
 - `Apply`
 - `Review Alignment`
-- `Next: Generate Stations`
 
 Secondary actions:
 
@@ -137,6 +136,8 @@ Do not show:
 
 - `Open v1 Preview`
 - `Apply + v1 Preview`
+- `Review Plan/Profile`
+- `Next: Generate Stations`
 
 ### 6.2 Stations & Profile screen
 
@@ -150,6 +151,7 @@ Primary actions:
 Secondary actions:
 
 - `FG Wizard`
+- `Edit Profile`
 - `Edit PVI`
 
 Do not show:
@@ -167,7 +169,7 @@ Primary actions:
 
 Secondary actions:
 
-- `Open Profiles`
+- `Open Profile Editor`
 
 Do not show:
 

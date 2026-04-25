@@ -59,15 +59,17 @@ class MassHaulService:
             station_values.append(station_value)
             cumulative_mass_values.append(cumulative_mass)
 
-            if cumulative_mass == 0.0 or (
-                previous_cumulative_mass < 0.0 < cumulative_mass
-                or previous_cumulative_mass > 0.0 > cumulative_mass
-            ):
+            balance_station = self._balance_station(
+                row,
+                previous_cumulative_mass=previous_cumulative_mass,
+                cumulative_mass=cumulative_mass,
+            )
+            if balance_station is not None:
                 balance_point_rows.append(
                     BalancePointRow(
                         balance_point_row_id=new_entity_id("balance_point_row"),
-                        station=station_value,
-                        value=cumulative_mass,
+                        station=balance_station,
+                        value=0.0,
                     )
                 )
 
@@ -130,3 +132,30 @@ class MassHaulService:
         if delta_value < 0.0:
             return "borrow_haul_zone"
         return "balanced_haul_zone"
+
+    def _balance_station(
+        self,
+        row: object,
+        *,
+        previous_cumulative_mass: float,
+        cumulative_mass: float,
+    ) -> float | None:
+        """Resolve an interpolated station where the mass curve crosses zero."""
+
+        if cumulative_mass == 0.0:
+            return self._row_station_value(row)
+        if not (
+            previous_cumulative_mass < 0.0 < cumulative_mass
+            or previous_cumulative_mass > 0.0 > cumulative_mass
+        ):
+            return None
+
+        station_start = getattr(row, "station_start", None)
+        station_end = getattr(row, "station_end", None)
+        if station_start is None or station_end is None:
+            return self._row_station_value(row)
+        denominator = cumulative_mass - previous_cumulative_mass
+        if abs(denominator) <= 1e-12:
+            return self._row_station_value(row)
+        ratio = (0.0 - previous_cumulative_mass) / denominator
+        return float(station_start) + ratio * (float(station_end) - float(station_start))

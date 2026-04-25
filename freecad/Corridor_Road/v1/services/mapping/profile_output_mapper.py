@@ -11,6 +11,7 @@ from ...models.output.profile_output import (
 )
 from ...models.result.earthwork_balance_model import EarthworkBalanceModel
 from ...models.source.profile_model import ProfileModel
+from ..evaluation.profile_evaluation_service import ProfileEvaluationService
 
 
 class ProfileOutputMapper:
@@ -20,6 +21,8 @@ class ProfileOutputMapper:
         self,
         profile_model: ProfileModel,
         earthwork_model: EarthworkBalanceModel | None = None,
+        *,
+        station_interval: float | None = None,
     ) -> ProfileOutput:
         """Create a normalized profile output from one profile model."""
 
@@ -28,9 +31,17 @@ class ProfileOutputMapper:
         line_rows = [
             ProfileLineRow(
                 line_row_id=f"{profile_model.profile_id}:fg",
-                kind=profile_model.profile_kind,
-                station_values=[row.station for row in ordered_controls],
-                elevation_values=[row.elevation for row in ordered_controls],
+                kind="finished_grade_line" if station_interval is not None else profile_model.profile_kind,
+                station_values=self._finished_grade_station_values(
+                    profile_model,
+                    ordered_controls,
+                    station_interval=station_interval,
+                ),
+                elevation_values=self._finished_grade_elevation_values(
+                    profile_model,
+                    ordered_controls,
+                    station_interval=station_interval,
+                ),
                 style_role="finished_grade",
                 source_ref=profile_model.profile_id,
             )
@@ -103,3 +114,62 @@ class ProfileOutputMapper:
             summary_rows=summary_rows,
             diagnostic_rows=list(profile_model.diagnostic_rows),
         )
+
+    def _finished_grade_station_values(
+        self,
+        profile_model: ProfileModel,
+        ordered_controls,
+        *,
+        station_interval: float | None,
+    ) -> list[float]:
+        if station_interval is None:
+            return [row.station for row in ordered_controls]
+        return self._sample_profile_stations(profile_model, ordered_controls, station_interval=station_interval)
+
+    def _finished_grade_elevation_values(
+        self,
+        profile_model: ProfileModel,
+        ordered_controls,
+        *,
+        station_interval: float | None,
+    ) -> list[float]:
+        if station_interval is None:
+            return [row.elevation for row in ordered_controls]
+        service = ProfileEvaluationService()
+        elevations: list[float] = []
+        for station in self._sample_profile_stations(
+            profile_model,
+            ordered_controls,
+            station_interval=station_interval,
+        ):
+            result = service.evaluate_station(profile_model, station)
+            elevations.append(float(result.elevation))
+        return elevations
+
+    @staticmethod
+    def _sample_profile_stations(
+        profile_model: ProfileModel,
+        ordered_controls,
+        *,
+        station_interval: float,
+    ) -> list[float]:
+        if not ordered_controls:
+            return []
+        try:
+            interval = float(station_interval)
+        except Exception:
+            interval = 20.0
+        if interval <= 0.0:
+            interval = 20.0
+        start_station = float(ordered_controls[0].station)
+        end_station = float(ordered_controls[-1].station)
+        stations = {round(float(row.station), 9) for row in ordered_controls}
+        for curve in list(getattr(profile_model, "vertical_curve_rows", []) or []):
+            stations.add(round(float(curve.station_start), 9))
+            stations.add(round(float(curve.station_end), 9))
+        current = start_station
+        while current <= end_station + 1e-9:
+            stations.add(round(current, 9))
+            current += interval
+        stations.add(round(end_station, 9))
+        return [float(value) for value in sorted(stations)]

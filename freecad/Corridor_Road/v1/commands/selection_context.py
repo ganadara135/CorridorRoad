@@ -50,9 +50,14 @@ def selected_alignment_profile_target(gui_module, document):
             proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
         except Exception:
             proxy_type = ""
-        if preferred_alignment is None and proxy_type == "HorizontalAlignment":
+        v1_object_type = str(getattr(obj, "V1ObjectType", "") or "")
+        if preferred_alignment is None and proxy_type in {"HorizontalAlignment", "V1Alignment"}:
             preferred_alignment = obj
-        if preferred_profile is None and proxy_type == "VerticalAlignment":
+        if preferred_alignment is None and v1_object_type == "V1Alignment":
+            preferred_alignment = obj
+        if preferred_profile is None and proxy_type in {"VerticalAlignment", "V1Profile"}:
+            preferred_profile = obj
+        if preferred_profile is None and v1_object_type == "V1Profile":
             preferred_profile = obj
         if preferred_alignment is None:
             linked_alignment = getattr(obj, "Alignment", None)

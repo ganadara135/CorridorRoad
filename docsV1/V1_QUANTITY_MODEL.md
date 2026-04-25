@@ -2,7 +2,7 @@
 
 Date: 2026-04-23
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, section area-to-volume quantity slice complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -241,6 +241,16 @@ Pavement quantity outputs should remain traceable to:
 - component identity
 - station range
 - source template or region context where relevant
+
+## 12A. Earthwork Area-to-Volume Quantity Policy
+
+Current implementation note:
+
+- section-local earthwork area quantities use `cut_area` and `fill_area` in `m2`
+- `SectionEarthworkVolumeService` converts consecutive station area pairs into `cut` and `fill` fragments in `m3`
+- the conversion uses the average-end-area method: `(area_start + area_end) / 2 * station_length`
+- generated volume fragments use `measurement_kind = average_end_area_volume`
+- these volume fragments are quantity truth for early `EarthworkBalanceService` and mass-haul integration
 
 ## 13. Region and Structure Quantity Policy
 

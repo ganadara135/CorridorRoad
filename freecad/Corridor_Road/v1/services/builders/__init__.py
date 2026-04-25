@@ -14,6 +14,7 @@ from .earthwork_balance_service import (
 )
 from .mass_haul_service import MassHaulBuildRequest, MassHaulService
 from .quantity_build_service import QuantityBuildRequest, QuantityBuildService
+from .tin_build_service import TINBuildRequest, TINBuildService, TINPointInput
 
 __all__ = [
     "AppliedSectionBuildRequest",
@@ -26,4 +27,7 @@ __all__ = [
     "MassHaulService",
     "QuantityBuildRequest",
     "QuantityBuildService",
+    "TINBuildRequest",
+    "TINBuildService",
+    "TINPointInput",
 ]

@@ -2,7 +2,7 @@
 
 Date: 2026-04-22
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, profile depth/area hints and section area-to-volume slice complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -109,6 +109,7 @@ First deliverable for v1.
 
 Core outputs:
 
+- profile-level EG/FG cut/fill depth hints
 - total cut
 - total fill
 - usable cut
@@ -117,6 +118,24 @@ Core outputs:
 - waste requirement
 - balance ratio
 - station-by-station cumulative mass values
+
+Current implementation note:
+
+- `ProfileEarthworkHintService` compares `finished_grade` and `existing_ground_line` profile rows at EG sampled stations
+- generated `ProfileEarthworkRow` rows use `profile_cut_depth`, `profile_fill_depth`, or `profile_balanced_depth`
+- `ProfileEarthworkAreaHintService` can convert those depth rows into `profile_cut_area`, `profile_fill_area`, or `profile_balanced_area`
+- the current area slice is a rectangular-equivalent estimate: `area = depth * explicit_section_width`
+- `SectionEarthworkAreaService` can compute section-level `cut_area` and `fill_area` from design and existing-ground section polylines
+- the current profile slices report depth in `m` and rectangular-equivalent area in `m2`, not final corridor volume
+- `SectionEarthworkVolumeService` converts consecutive station areas into `cut` and `fill` volume fragments using the average-end-area method
+- `EarthworkBalanceService` can consume those generated volume fragments through the existing quantity pipeline
+- `MassHaulService` builds cumulative mass values from balance rows and interpolates zero-crossing balance points inside station windows
+- Earthwork Review reports final cumulative mass plus max surplus/deficit cumulative mass for practical checking
+- Earthwork Review can hand off selected station/window context to Cross Section Viewer for local geometric cause review
+- Earthwork Review can hand off selected station/window context to Plan/Profile Review for linear cause review
+- width-based area hints are generated only when a positive section width is explicitly provided
+- Plan/Profile Review can apply the positive section width through `viewer_context.earthwork_area_width`
+- no-hit EG gaps remain absent from hint rows rather than becoming zero-depth earthwork
 
 ### 6.2 Stage 2: Mass-Haul Review
 

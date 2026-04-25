@@ -15,6 +15,7 @@ from ...models.result.quantity_model import (
     QuantityGroupingRow,
     QuantityModel,
 )
+from ..evaluation import SectionEarthworkVolumeService
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,13 @@ class QuantityBuildService:
 
         for section in request.applied_section_set.sections:
             fragment_rows.extend(self._fragment_rows_for_section(section))
+        fragment_rows.extend(
+            SectionEarthworkVolumeService().build(
+                fragment_rows,
+                station_values=self._station_values(request.applied_section_set),
+                fragment_id_prefix=f"{request.quantity_model_id}:section-earthwork-volume",
+            ).rows
+        )
 
         grouping_row = QuantityGroupingRow(
             grouping_id=f"{request.quantity_model_id}:corridor-total",
@@ -161,3 +169,8 @@ class QuantityBuildService:
         if not applied_section_set.station_rows:
             return None
         return max(row.station for row in applied_section_set.station_rows)
+
+    def _station_values(self, applied_section_set: AppliedSectionSet) -> list[float]:
+        """Return sorted station values for average-end-area volume windows."""
+
+        return sorted(float(row.station) for row in applied_section_set.station_rows)

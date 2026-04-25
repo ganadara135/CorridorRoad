@@ -1,8 +1,8 @@
 # CorridorRoad V1 Alignment Model
 
-Date: 2026-04-23
+Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, v0-style Alignment UI migrated into v1 entrypoint
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -21,6 +21,33 @@ It exists to make clear:
 - which object families belong inside the alignment subsystem
 - how station evaluation should work
 - how alignment interacts with profiles, sections, outputs, and exchange
+
+Current implementation note:
+
+- `AlignmentEvaluationService.evaluate_station()` resolves station to active element, XY, tangent direction, and offset-on-element for tangent or sampled-polyline geometry
+- `AlignmentEvaluationService.station_offset_to_xy()` provides the shared station/offset frame needed by section, TIN, and corridor consumers
+- `AlignmentStationSamplingService.sample_alignment()` and `sample_range()` generate shared evaluated station grids over an alignment range
+- `V1Alignment` FreeCAD source objects can store the minimal v1 `AlignmentModel` contract directly in document properties
+- the visible workbench Alignment entrypoint is now a single `Alignment` command backed by the v1 alignment editor
+- the single `Alignment` command creates a `V1Alignment` when one is missing and edits it when one exists
+- the v1 alignment editor now uses the v0-style PI workflow as the primary UI: sketch import, CSV import/export, presets, X/Y, radius, transition length, and geometry/criteria controls
+- `Apply` stores the PI/criteria input on `V1Alignment` and compiles it into v1 station geometry rows for downstream tools
+- PI rows with radius now compile into tangent plus sampled curve geometry, so v1 station evaluation follows a curved XY path instead of a simple PI chord
+- transition length input now compiles into approximate S-C-S sampled geometry using linear curvature ramps; full analytic clothoid objects remain planned
+- `V1AlignmentObject.execute()` now builds a FreeCAD display `Shape` from compiled v1 geometry rows so alignment edits are visible in the model view after recompute
+- `Review Alignment` now reports PI-level curve review rows with input/applied R/Ls, clamp status, approximate TS/SC/CS/ST stations, curve length, and point count
+- `Generate Stations (v1)` creates a `V1Stationing` object from `AlignmentStationSamplingService` and stores station, XY, tangent, active-element, and source-reason rows
+- `Generate Stations (v1)` includes curve/transition midpoint stations so generated stationing rows expose non-tangent alignment zones
+- `V1Stationing` stores source geometry signature, element-count metadata, active-element kind summary, curve/transition station counts, and compact station review rows
+- `V1Stationing` now builds FreeCAD tick display geometry from sampled XY/tangent rows and classifies stations as key, major, or minor
+- `V1Stationing` supports station display offset and label formats including decimal STA labels and plus-style stationing
+- `Plan/Profile Review` enriches key station rows with evaluated alignment frame fields
+- `Plan/Profile Review` prefers `V1Stationing` rows for `PlanOutput.station_rows` and compact key-station navigation when a stationing object exists
+- `Plan/Profile Review` prefers a document `V1Alignment` source object before falling back to legacy alignment adaptation
+- `Plan/Profile Review` alignment handoff now opens the single v1 `Alignment` editor for native alignment-source edits
+- `Plan/Profile Review` reports bridge diagnostics that confirm whether the active v0 `HorizontalAlignment` resolved into a v1 `AlignmentModel`, whether the paired `ProfileModel.alignment_id` matches, and whether profile stations fit the alignment range
+- `Cross Section Viewer` can use `AlignmentEvaluationService.station_offset_adapter()` for TIN section terrain sampling when an `AlignmentModel` is available
+- circular and transition curve parametric evaluation remain planned; current sampled curve support preserves downstream workflow while avoiding a false full-curve claim
 
 ## 2. Scope
 
@@ -65,12 +92,55 @@ The v1 alignment subsystem should:
 
 Recommended early v1 support:
 
-- tangent segments
-- circular curves
-- transition curves including `clothoid` / Euler spiral intent
-- station equations
-- station range queries
-- plan-geometry extraction for review and output
+- [x] tangent segments
+- [x] sampled circular curve geometry from PI radius input
+- [x] approximate sampled transition curves from PI transition length input
+- [ ] analytic `clothoid` / Euler spiral geometry objects
+- [ ] station equations
+- [x] station range queries
+- [x] sampled-polyline evaluation for imported or degraded geometry
+- [x] station range to sampled geometry
+- [ ] plan-geometry extraction through a dedicated service
+- [x] minimal plan-geometry extraction through `PlanOutputMapper`
+- [x] minimal FreeCAD source object storage through `V1Alignment`
+- [x] minimal FreeCAD source object editing through the single `Alignment` command
+- [x] v0-style PI/radius/transition/criteria input migrated into the v1 `Alignment` command
+- [x] FreeCAD display shape generation from compiled v1 alignment geometry
+- [x] PI and compiled-geometry review summaries in the v1 Alignment editor
+- [x] minimal FreeCAD stationing storage through `V1Stationing`
+- [x] station grid generation through `Generate Stations (v1)`
+- [x] v1 station tick display shape generation
+- [x] v1 station label offset, plus-format labels, and key/major/minor station classification
+
+Current editor rule:
+
+- `Alignment` opens the selected or first document `V1Alignment`
+- if no `V1Alignment` exists, the editor command creates a sample alignment so the workflow stays unblocked
+- `PI Geometry` is the primary editing tab and follows the previous v0 Alignment UI structure: sketch import, CSV import/export, presets, X, Y, radius, transition length, transition toggle, spiral segments, design speed, superelevation, side friction, and minimum criteria values
+- `Apply` stores PI rows, radius rows, transition rows, and criteria values on the `V1Alignment` source object
+- `Apply` compiles consecutive PI rows into station-based v1 geometry rows consumed by stations, profile, section, and corridor services
+- internal PI rows with radius generate tangent chunks plus sampled curve chunks between computed tangent points
+- internal PI rows with radius and transition length generate approximate sampled S-C-S chunks using curvature ramp-in, circular arc, and curvature ramp-out
+- curve setback is clamped against adjacent segment lengths to avoid invalid overlapping geometry in short test layouts
+- `Compiled v1 Geometry` is a read-only inspection tab for the station rows produced by the PI input
+- `Compiled v1 Geometry` shows element kind, station start/end, length, point count, and XY rows
+- `Review Alignment` lists PI review rows and compiled geometry rows for quick design verification
+- recompute builds a display shape from compiled geometry rows and records display point, edge, curve, and transition counts
+- endpoint radius and transition values are forced to 0
+- consecutive duplicate PI rows are rejected
+- `Review Alignment` remains an alignment-stage review action
+- the editor intentionally does not show `Review Plan/Profile` or `Next: Generate Stations` actions in the alignment stage
+
+Current stationing rule:
+
+- `V1Stationing` belongs under `02_Alignment & Profile / Stations`
+- `Generate Stations (v1)` creates a sample `V1Alignment` first when no v1 alignment exists
+- station rows store `StationValues`, `StationLabels`, `XValues`, `YValues`, `TangentDirections`, `ActiveElementIds`, `ActiveElementKinds`, and `SourceReasons`
+- station rows now also store review strings plus source alignment label, source geometry signature, active-element kind summary, tangent/curve/transition station counts, and stale-source notes when a previous stationing object was based on older alignment geometry
+- curve and transition elements contribute midpoint extra stations so `ActiveElementKinds` reliably includes `sampled_curve` or `transition_curve` when those zones exist
+- station display properties include `ShowTicks`, `MinorTickLength`, `MajorTickLength`, `MajorInterval`, `StationStartOffset`, and `StationLabelFormat`
+- station display recompute builds tick geometry normal to the evaluated tangent direction
+- Plan/Profile Review uses `V1Stationing` as the preferred station grid before falling back to ad-hoc interval sampling
 
 Deferred or later refinements may include:
 
@@ -265,13 +335,20 @@ Recommended service families:
 
 This service evaluates station-based horizontal geometry in deterministic form.
 
+Initial implementation status:
+
+- tangent and sampled-polyline elements can return `x`, `y`, `tangent_direction_deg`, `active_element_id`, `active_element_kind`, and `offset_on_element`
+- out-of-range stations return explicit status instead of silent zero coordinates
+- station/offset conversion uses positive offset to the left of the alignment tangent
+- consumers should use `station_offset_adapter()` when they need to pass station/offset sampling into TIN or section services
+
 ### 14.2 Typical queries
 
-- station to XY position
-- station to tangent direction
-- station to local frame
-- station range to sampled geometry
-- station to active element
+- [x] station to XY position
+- [x] station to tangent direction
+- [x] station to local frame
+- [x] station range to sampled geometry
+- [x] station to active element
 
 ### 14.3 Rule
 
@@ -323,6 +400,25 @@ Validation should check for:
 - coordinate or unit ambiguity
 
 Validation results should be recorded in `diagnostic_rows`.
+
+## 17.1 Focused Validation Command
+
+Preferred FreeCAD command-line location:
+
+```powershell
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_evaluation_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_station_sampling_service.py', 'r', encoding='utf-8').read())"
+```
+
+Related regression checks:
+
+```powershell
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_alignment_source_object.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_plan_profile_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 plan/profile command bridge contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_section_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 section command bridge contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_output_mappers.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 output mapper contract tests completed.')"
+```
 
 ## 18. Diagnostics
 

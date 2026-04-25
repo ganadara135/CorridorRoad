@@ -9,7 +9,15 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
 
-from ..services.evaluation import LegacyDocumentAdapter
+from ..models.output.section_output import SectionGeometryRow
+from ..models.result.tin_surface import TINSurface
+from ..services.evaluation import (
+    AlignmentEvaluationService,
+    LegacyDocumentAdapter,
+    SectionEarthworkAreaService,
+    TinSamplingService,
+    TinSectionSamplingService,
+)
 from ..services.mapping import SectionOutputMapper
 from ..ui.common import clear_ui_context, get_ui_context
 from ..ui.viewers import CrossSectionViewerTaskPanel
@@ -249,6 +257,265 @@ def _build_terrain_review_rows(
             }
         )
     return rows
+
+
+def _build_tin_section_terrain_rows(
+    *,
+    surface: TINSurface | None,
+    station_row: dict[str, object] | None,
+    station_rows: list[dict[str, object]] | None = None,
+    offsets: list[float] | None = None,
+    station_offset_to_xy=None,
+    sample_result=None,
+) -> list[dict[str, str]]:
+    """Build section terrain review rows from a TIN surface."""
+
+    if surface is None:
+        return []
+
+    station = _station_value_from_row(station_row)
+    offset_values = _terrain_offsets(offsets)
+    adapter = station_offset_to_xy or _station_offset_adapter_from_rows(station_rows)
+    if adapter is None and sample_result is None:
+        return [
+            {
+                "kind": "tin_section_adapter",
+                "label": "TIN Section Adapter",
+                "value": "missing",
+                "notes": "TIN terrain sampling requires station rows with x/y or an explicit station_offset_to_xy adapter.",
+            }
+        ]
+
+    result = sample_result or TinSectionSamplingService().sample_offsets(
+        surface=surface,
+        station=station,
+        offsets=offset_values,
+        station_offset_to_xy=adapter,
+    )
+    surface_id = str(getattr(surface, "surface_id", "") or "").strip()
+    rows: list[dict[str, str]] = [
+        {
+            "kind": "tin_section_summary",
+            "label": "TIN Section Samples",
+            "value": f"{result.hit_count}/{len(result.rows)} hit",
+            "notes": f"surface={surface_id}; status={result.status}",
+        }
+    ]
+    rows.extend(_tin_section_sample_row(row) for row in result.rows)
+    return rows
+
+
+def _resolve_terrain_review_rows(preview: dict[str, object]) -> list[dict[str, str]]:
+    """Resolve terrain rows, adding TIN section samples when available."""
+
+    base_rows = list(preview.get("terrain_rows", []) or []) or _build_terrain_review_rows(
+        applied_section=preview["applied_section"],
+        station_row=dict(preview.get("station_row", {}) or {}),
+    )
+    sample_result = preview.get("tin_section_sample_result", None)
+    tin_rows = _build_tin_section_terrain_rows(
+        surface=preview.get("tin_surface"),
+        station_row=dict(preview.get("station_row", {}) or {}),
+        station_rows=list(preview.get("station_rows", []) or preview.get("key_station_rows", []) or []),
+        offsets=_terrain_offsets_from_preview(preview),
+        station_offset_to_xy=preview.get("station_offset_to_xy", None),
+        sample_result=sample_result,
+    )
+    if not tin_rows:
+        return base_rows
+    return base_rows + tin_rows
+
+
+def _resolve_tin_section_sample_result(preview: dict[str, object]):
+    """Resolve and cache the TIN section sample result for one preview."""
+
+    existing = preview.get("tin_section_sample_result", None)
+    if existing is not None:
+        return existing
+    surface = preview.get("tin_surface", None)
+    if surface is None:
+        return None
+    adapter = (
+        preview.get("station_offset_to_xy", None)
+        or _station_offset_adapter_from_alignment(preview.get("alignment_model", None))
+        or _station_offset_adapter_from_rows(
+            list(preview.get("station_rows", []) or preview.get("key_station_rows", []) or [])
+        )
+    )
+    if adapter is None:
+        return None
+    result = TinSectionSamplingService().sample_offsets(
+        surface=surface,
+        station=_station_value_from_row(dict(preview.get("station_row", {}) or {})),
+        offsets=_terrain_offsets_from_preview(preview),
+        station_offset_to_xy=adapter,
+    )
+    preview["tin_section_sample_result"] = result
+    return result
+
+
+def _apply_tin_section_geometry(preview: dict[str, object]) -> None:
+    """Append a drawable existing-ground TIN polyline to section output."""
+
+    section_output = preview.get("section_output", None)
+    if section_output is None:
+        return
+    result = _resolve_tin_section_sample_result(preview)
+    geometry_rows = _tin_section_geometry_rows(result) if result is not None else []
+    if not geometry_rows:
+        return
+
+    existing_rows = [
+        row
+        for row in list(getattr(section_output, "geometry_rows", []) or [])
+        if str(getattr(row, "kind", "") or "") != "existing_ground_tin"
+    ]
+    section_output.geometry_rows = existing_rows + geometry_rows
+
+
+def _apply_section_earthwork_area(preview: dict[str, object]) -> None:
+    """Attach section-level cut/fill area quantities when section geometry is available."""
+
+    section_output = preview.get("section_output", None)
+    if section_output is None:
+        return
+    service = SectionEarthworkAreaService()
+    result = service.build(section_output)
+    preview["section_earthwork_area_result"] = result
+    if result.status != "ok":
+        return
+
+    quantity_kinds = service.quantity_kinds()
+    existing_rows = [
+        row
+        for row in list(getattr(section_output, "quantity_rows", []) or [])
+        if not (
+            str(getattr(row, "quantity_kind", "") or "") in quantity_kinds
+            and str(getattr(row, "component_ref", "") or "") == "section_earthwork_area"
+        )
+    ]
+    row_id_prefix = str(getattr(section_output, "section_output_id", "") or "section")
+    section_output.quantity_rows = existing_rows + service.to_section_quantity_rows(
+        result,
+        row_id_prefix=row_id_prefix,
+    )
+
+
+def _tin_section_geometry_rows(result) -> list[SectionGeometryRow]:
+    segments: list[list[object]] = []
+    current: list[object] = []
+    for row in list(getattr(result, "rows", []) or []):
+        if bool(getattr(row, "found", False)) and getattr(row, "z", None) is not None:
+            current.append(row)
+            continue
+        if current:
+            segments.append(current)
+            current = []
+    if current:
+        segments.append(current)
+
+    station = float(getattr(result, "station", 0.0) or 0.0)
+    rows = []
+    for index, segment in enumerate(segments, start=1):
+        if len(segment) < 2:
+            continue
+        rows.append(
+            SectionGeometryRow(
+                row_id=f"tin-section-terrain:{station:g}:{index}",
+                kind="existing_ground_tin",
+                x_values=[float(row.offset) for row in segment],
+                y_values=[float(row.z) for row in segment],
+                z_values=[float(row.z) for row in segment],
+                closed=False,
+                style_role="existing_ground",
+                source_ref=str(getattr(result, "surface_ref", "") or ""),
+            )
+        )
+    return rows
+
+
+def _tin_section_sample_row(row) -> dict[str, str]:
+    z_text = f"z={float(row.z):.3f}" if row.z is not None else str(row.status or "no_hit")
+    face_text = f"face={row.face_id}" if row.face_id else "face=(none)"
+    return {
+        "kind": "tin_section_sample",
+        "label": f"Offset {float(row.offset):g}",
+        "value": z_text,
+        "notes": (
+            f"x={float(row.x):.3f}, y={float(row.y):.3f}, "
+            f"{face_text}, confidence={float(row.confidence):.3f}; {row.notes}"
+        ).strip(),
+    }
+
+
+def _terrain_offsets_from_preview(preview: dict[str, object]) -> list[float] | None:
+    viewer_context = dict(preview.get("viewer_context", {}) or {})
+    for value in (
+        preview.get("terrain_offsets", None),
+        viewer_context.get("terrain_offsets", None),
+    ):
+        if value is not None:
+            return _terrain_offsets(value)
+    return None
+
+
+def _terrain_offsets(offsets) -> list[float]:
+    values = []
+    for value in list(offsets or [-20.0, -10.0, 0.0, 10.0, 20.0]):
+        try:
+            values.append(float(value))
+        except Exception:
+            continue
+    return values or [-20.0, -10.0, 0.0, 10.0, 20.0]
+
+
+def _station_value_from_row(station_row: dict[str, object] | None) -> float:
+    try:
+        return float((station_row or {}).get("station", 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _station_offset_adapter_from_rows(station_rows: list[dict[str, object]] | None):
+    rows = [
+        dict(row or {})
+        for row in list(station_rows or [])
+        if _has_station_xy(row)
+    ]
+    if not rows:
+        return None
+    try:
+        return TinSamplingService().station_offset_adapter_from_rows(rows)
+    except Exception:
+        return None
+
+
+def _station_offset_adapter_from_alignment(alignment_model):
+    if alignment_model is None:
+        return None
+    try:
+        return AlignmentEvaluationService().station_offset_adapter(alignment_model)
+    except Exception:
+        return None
+
+
+def _has_station_xy(row: dict[str, object]) -> bool:
+    return row.get("station", None) is not None and row.get("x", None) is not None and row.get("y", None) is not None
+
+
+def _resolve_document_tin_surface(document, *, gui_module=Gui) -> TINSurface | None:
+    """Resolve a document TIN surface for section terrain sampling when available."""
+
+    if document is None:
+        return None
+    try:
+        from .cmd_review_tin import build_document_tin_review
+
+        preview = build_document_tin_review(document, gui_module=gui_module)
+        surface = (preview or {}).get("tin_surface", None)
+        return surface if isinstance(surface, TINSurface) else None
+    except Exception:
+        return None
 
 
 def _build_structure_review_rows(
@@ -522,8 +789,14 @@ def build_document_section_preview(
     )
     typical_section = adapter._resolve_typical_section(project, section_set, document)
     region_plan = adapter._resolve_region_plan(project, section_set, document)
+    alignment_object = adapter._resolve_alignment_object(project, document)
+    alignment_model = adapter.build_alignment_model(
+        document,
+        preferred_alignment=alignment_object,
+    )
     viewer_station_rows = adapter.viewer_station_rows(section_set) if section_set is not None else []
     station_row = adapter.nearest_station_row(section_set, preferred_station=preferred_station)
+    tin_surface = _resolve_document_tin_surface(document)
     target_station = (
         adapter._safe_float(station_row.get("station", 0.0), 0.0)
         if station_row is not None
@@ -539,6 +812,7 @@ def build_document_section_preview(
     legacy_objects = {
         "project": project,
         "section_set": section_set,
+        "alignment": alignment_object,
         "typical_section": typical_section,
         "region_plan": region_plan,
         "corridor": getattr(project, "Corridor", None) if project is not None else None,
@@ -579,6 +853,9 @@ def build_document_section_preview(
             applied_section=applied_section,
             station_row=station_payload,
         ),
+        "alignment_model": alignment_model,
+        "tin_surface": tin_surface,
+        "station_rows": viewer_station_rows,
         "structure_rows": _build_structure_review_rows(
             viewer_context=viewer_context,
             region_plan=region_plan,
@@ -677,6 +954,20 @@ def format_section_preview(preview: dict[str, object]) -> str:
         f"Region: {applied_section.region_id or '(none)'}",
         f"Template: {applied_section.template_id or '(unresolved)'}",
     ]
+    frame = getattr(applied_section, "frame", None)
+    if frame is not None:
+        lines.append(
+            "Frame: "
+            f"x={float(getattr(frame, 'x', 0.0) or 0.0):.3f}, "
+            f"y={float(getattr(frame, 'y', 0.0) or 0.0):.3f}, "
+            f"z={float(getattr(frame, 'z', 0.0) or 0.0):.3f}"
+        )
+        lines.append(
+            "Frame Profile: "
+            f"grade={float(getattr(frame, 'profile_grade', 0.0) or 0.0):.6f}, "
+            f"alignment={getattr(frame, 'alignment_status', '')}, "
+            f"profile={getattr(frame, 'profile_status', '')}"
+        )
     state_reason = str(result_state.get("reason", "") or "").strip()
     if state_reason:
         lines.append(f"State Reason: {state_reason}")
@@ -720,6 +1011,8 @@ def show_v1_section_preview(
         explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     legacy_objects = dict(preview.get("legacy_objects", {}) or {})
+    _apply_tin_section_geometry(preview)
+    _apply_section_earthwork_area(preview)
     preview["source_inspector"] = _build_source_inspector(
         applied_section=preview["applied_section"],
         section_output=preview["section_output"],
@@ -730,10 +1023,7 @@ def show_v1_section_preview(
         structure_set=legacy_objects.get("structure_set"),
         viewer_context=viewer_context,
     )
-    preview["terrain_rows"] = list(preview.get("terrain_rows", []) or []) or _build_terrain_review_rows(
-        applied_section=preview["applied_section"],
-        station_row=dict(preview.get("station_row", {}) or {}),
-    )
+    preview["terrain_rows"] = _resolve_terrain_review_rows(preview)
     preview["structure_rows"] = list(preview.get("structure_rows", []) or []) or _build_structure_review_rows(
         viewer_context=viewer_context,
         region_plan=legacy_objects.get("region_plan"),
@@ -810,6 +1100,7 @@ def run_v1_section_view_command() -> dict[str, object]:
             "viewer_context",
             "result_state",
             "station_row",
+            "earthwork_hint_rows",
             "source",
         ):
             if key in ui_context:

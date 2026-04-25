@@ -1,8 +1,8 @@
 # CorridorRoad V1 Section Output Schema
 
-Date: 2026-04-22
+Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, section frame summary and cut/fill quantity slices complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -392,6 +392,16 @@ An ownership row should provide enough information for the viewer to identify th
 - `fill_area`
 - `component_area`
 
+Current implementation note:
+
+- `SectionOutputMapper` can promote `AppliedSection.point_rows` into a `design_section` geometry row
+- `SectionOutputMapper` can expose `AppliedSection.frame` through summary rows for frame `x/y/z`, tangent direction, profile grade, and alignment/profile status
+- TIN section sampling can attach an `existing_ground_tin` geometry row
+- `SectionEarthworkAreaService` compares `design_section` and `existing_ground_tin` polylines by offset
+- computed section earthwork rows use `cut_area` and `fill_area` quantities in `m2`
+- `QuantityBuildService` can convert consecutive station `cut_area` and `fill_area` rows into `cut` and `fill` volumes using the average-end-area method
+- the resulting volume fragments use `m3` and are consumable by `EarthworkBalanceService` and mass-haul review
+
 ## 16. Review Rows
 
 ### 16.1 Purpose
@@ -433,6 +443,12 @@ An ownership row should provide enough information for the viewer to identify th
 - `station_summary`
 - `template_summary`
 - `region_summary`
+- `frame_x`
+- `frame_y`
+- `frame_z`
+- `frame_tangent_direction`
+- `profile_grade`
+- `frame_status`
 - `terrain_summary`
 - `structure_summary`
 - `quantity_summary`

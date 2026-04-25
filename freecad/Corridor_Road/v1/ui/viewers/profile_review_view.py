@@ -66,6 +66,31 @@ class PlanProfileViewerTaskPanel:
             )
         )
 
+        layout.addWidget(QtWidgets.QLabel("Alignment/Profile Bridge Diagnostics"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Kind", "Status", "Message", "Notes"],
+                rows=self._bridge_diagnostic_rows(),
+                empty_text="No bridge diagnostic rows.",
+            )
+        )
+
+        layout.addWidget(QtWidgets.QLabel("Station Sampling Controls"))
+        station_interval_row = QtWidgets.QHBoxLayout()
+        station_interval_row.addWidget(QtWidgets.QLabel("Station Interval"))
+        self._station_interval_spin = QtWidgets.QDoubleSpinBox()
+        self._station_interval_spin.setDecimals(3)
+        self._station_interval_spin.setRange(0.001, 1000000.0)
+        self._station_interval_spin.setSingleStep(5.0)
+        self._station_interval_spin.setSuffix(" m")
+        self._station_interval_spin.setValue(self._station_interval_value())
+        station_interval_row.addWidget(self._station_interval_spin)
+        apply_station_interval_button = QtWidgets.QPushButton("Apply Station Interval")
+        apply_station_interval_button.clicked.connect(self._apply_station_interval)
+        station_interval_row.addWidget(apply_station_interval_button)
+        station_interval_row.addStretch(1)
+        layout.addLayout(station_interval_row)
+
         layout.addWidget(QtWidgets.QLabel("Key Stations"))
         self._key_station_combo = QtWidgets.QComboBox()
         for row in self._key_station_rows():
@@ -93,6 +118,24 @@ class PlanProfileViewerTaskPanel:
         station_button_row.addStretch(1)
         layout.addLayout(station_button_row)
 
+        layout.addWidget(QtWidgets.QLabel("Alignment Frame"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Station", "X", "Y", "Tangent", "Element", "Status"],
+                rows=self._alignment_frame_rows(),
+                empty_text="No evaluated alignment frame rows.",
+            )
+        )
+
+        layout.addWidget(QtWidgets.QLabel("Profile Evaluation"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Station", "Elevation", "Grade", "Segment", "Curve", "Status"],
+                rows=self._profile_eval_rows(),
+                empty_text="No evaluated profile rows.",
+            )
+        )
+
         layout.addWidget(QtWidgets.QLabel("Plan Geometry"))
         layout.addWidget(
             self._table_widget(
@@ -107,6 +150,15 @@ class PlanProfileViewerTaskPanel:
                     for row in list(getattr(self.preview.get("plan_output"), "geometry_rows", []) or [])
                 ],
                 empty_text="No plan geometry rows.",
+            )
+        )
+
+        layout.addWidget(QtWidgets.QLabel("Profile Lines"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Kind", "Points", "Station Range", "Elevation Range", "Source"],
+                rows=self._profile_line_rows(),
+                empty_text="No profile line rows.",
             )
         )
 
@@ -126,12 +178,37 @@ class PlanProfileViewerTaskPanel:
         layout.addWidget(self._profile_table)
         self._select_focus_station_row(self._profile_table)
 
+        layout.addWidget(QtWidgets.QLabel("Earthwork Area Controls"))
+        area_width_row = QtWidgets.QHBoxLayout()
+        area_width_row.addWidget(QtWidgets.QLabel("Section Width"))
+        self._earthwork_area_width_spin = QtWidgets.QDoubleSpinBox()
+        self._earthwork_area_width_spin.setDecimals(3)
+        self._earthwork_area_width_spin.setRange(0.0, 1000000.0)
+        self._earthwork_area_width_spin.setSingleStep(1.0)
+        self._earthwork_area_width_spin.setSuffix(" m")
+        try:
+            self._earthwork_area_width_spin.setSpecialValueText("not set")
+        except Exception:
+            pass
+        self._earthwork_area_width_spin.setValue(self._earthwork_area_width_value() or 0.0)
+        area_width_row.addWidget(self._earthwork_area_width_spin)
+        apply_area_width_button = QtWidgets.QPushButton("Apply Area Width")
+        apply_area_width_button.clicked.connect(self._apply_earthwork_area_width)
+        area_width_row.addWidget(apply_area_width_button)
+        area_width_row.addStretch(1)
+        layout.addLayout(area_width_row)
+
+        area_status = QtWidgets.QLabel(self._earthwork_area_hint_status_text())
+        area_status.setStyleSheet("color: #666;")
+        layout.addWidget(area_status)
+
         layout.addWidget(QtWidgets.QLabel("Earthwork Attachments"))
         layout.addWidget(
             self._table_widget(
-                headers=["From", "To", "Value", "Unit"],
+                headers=["Kind", "From", "To", "Value", "Unit"],
                 rows=[
                     [
+                        str(getattr(row, "kind", "") or ""),
                         str(getattr(row, "station_start", "") or ""),
                         str(getattr(row, "station_end", "") or ""),
                         str(getattr(row, "value", "") or ""),
@@ -149,8 +226,8 @@ class PlanProfileViewerTaskPanel:
 
         button_row = QtWidgets.QHBoxLayout()
         for label, command_name in (
-            ("Open Alignment", "CorridorRoad_EditAlignment"),
-            ("Open Profiles", "CorridorRoad_EditProfiles"),
+            ("Open Alignment Editor", "CorridorRoad_V1EditAlignment"),
+            ("Open Profile Editor", "CorridorRoad_V1EditProfile"),
             ("Open PVI", "CorridorRoad_EditPVI"),
         ):
             button = QtWidgets.QPushButton(label)
@@ -174,14 +251,32 @@ class PlanProfileViewerTaskPanel:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
 
         lines = [
+            f"Preview source: {str(self.preview.get('preview_source_kind', '') or 'unknown')}",
             f"Alignment: {getattr(alignment_model, 'label', '') or '(missing)'}",
             f"Alignment elements: {len(list(getattr(plan_output, 'geometry_rows', []) or []))}",
             f"Plan stations: {len(list(getattr(plan_output, 'station_rows', []) or []))}",
             f"Profile: {getattr(profile_model, 'label', '') or '(missing)'}",
             f"Profile controls: {len(list(getattr(profile_output, 'pvi_rows', []) or []))}",
+            f"Profile lines: {len(self._profile_line_rows())}",
             f"Earthwork attachments: {len(list(getattr(profile_output, 'earthwork_rows', []) or []))}",
             f"Key stations: {len(self._key_station_rows())}",
+            f"Station interval: {self._station_interval_value():.3f} m",
+            f"Evaluated alignment stations: {len(self._alignment_frame_rows())}",
+            f"Evaluated profile stations: {len(self._profile_eval_rows())}",
         ]
+        bridge_counts = self._bridge_diagnostic_counts()
+        lines.append(
+            "Bridge diagnostics: "
+            f"ok={bridge_counts.get('ok', 0)}, "
+            f"warning={bridge_counts.get('warning', 0)}, "
+            f"error={bridge_counts.get('error', 0)}"
+        )
+        area_width = self._earthwork_area_width_value()
+        if area_width is not None:
+            lines.append(f"Earthwork area width: {area_width:.3f} m")
+        area_status = self._earthwork_area_hint_status_text()
+        if area_status:
+            lines.append(f"Earthwork area status: {area_status}")
         focus_station_label = str(viewer_context.get("focus_station_label", "") or "").strip()
         source_panel = str(viewer_context.get("source_panel", "") or "").strip()
         selected_row = str(viewer_context.get("selected_row_label", "") or "").strip()
@@ -224,6 +319,11 @@ class PlanProfileViewerTaskPanel:
             ("Mode", "mode_summary"),
             ("Table Summary", "table_summary"),
             ("Status", "status_summary"),
+            ("Earthwork Window", "earthwork_window_summary"),
+            ("Earthwork Cut/Fill", "earthwork_cut_fill_summary"),
+            ("Haul Zone", "haul_zone_summary"),
+            ("Station Interval", "station_interval"),
+            ("Earthwork Area Width", "earthwork_area_width"),
         ]
         for label, key in mapping:
             value = str(viewer_context.get(key, "") or "").strip()
@@ -234,6 +334,27 @@ class PlanProfileViewerTaskPanel:
             if text:
                 rows.append([f"Summary {index}", text])
         return rows
+
+    def _bridge_diagnostic_rows(self) -> list[list[str]]:
+        rows = []
+        for row in list(self.preview.get("bridge_diagnostic_rows", []) or []):
+            item = dict(row or {})
+            rows.append(
+                [
+                    str(item.get("kind", "") or ""),
+                    str(item.get("status", "") or ""),
+                    str(item.get("message", "") or ""),
+                    str(item.get("notes", "") or ""),
+                ]
+            )
+        return rows
+
+    def _bridge_diagnostic_counts(self) -> dict[str, int]:
+        counts = {"ok": 0, "warning": 0, "error": 0, "not_applicable": 0}
+        for row in list(self.preview.get("bridge_diagnostic_rows", []) or []):
+            status = str(dict(row or {}).get("status", "") or "").strip()
+            counts[status] = counts.get(status, 0) + 1
+        return counts
 
     def _focus_station_value(self) -> float | None:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
@@ -247,6 +368,73 @@ class PlanProfileViewerTaskPanel:
 
     def _key_station_rows(self) -> list[dict[str, object]]:
         return [dict(row or {}) for row in list(self.preview.get("key_station_rows", []) or [])]
+
+    def _alignment_frame_rows(self) -> list[list[str]]:
+        rows = []
+        for row in self._key_station_rows():
+            status = str(row.get("alignment_eval_status", "") or "").strip()
+            if not status:
+                continue
+            rows.append(
+                [
+                    f"{float(row.get('station', 0.0) or 0.0):.3f}",
+                    self._format_optional_float(row.get("x", None)),
+                    self._format_optional_float(row.get("y", None)),
+                    self._format_optional_float(row.get("tangent_direction_deg", None)),
+                    str(row.get("active_element_id", "") or ""),
+                    status,
+                ]
+            )
+        return rows
+
+    def _profile_eval_rows(self) -> list[list[str]]:
+        rows = []
+        for row in self._key_station_rows():
+            status = str(row.get("profile_eval_status", "") or "").strip()
+            if not status:
+                continue
+            segment = str(row.get("active_profile_segment_start_id", "") or "")
+            segment_end = str(row.get("active_profile_segment_end_id", "") or "")
+            if segment and segment_end:
+                segment = f"{segment} -> {segment_end}"
+            rows.append(
+                [
+                    f"{float(row.get('station', 0.0) or 0.0):.3f}",
+                    self._format_optional_float(row.get("profile_elevation", None)),
+                    self._format_optional_float(row.get("profile_grade", None)),
+                    segment,
+                    str(row.get("active_vertical_curve_id", "") or ""),
+                    status,
+                ]
+            )
+        return rows
+
+    def _profile_line_rows(self) -> list[list[str]]:
+        rows = []
+        for row in list(getattr(self.preview.get("profile_output"), "line_rows", []) or []):
+            stations = [float(value) for value in list(getattr(row, "station_values", []) or [])]
+            elevations = [float(value) for value in list(getattr(row, "elevation_values", []) or [])]
+            if not stations or not elevations:
+                continue
+            rows.append(
+                [
+                    str(getattr(row, "kind", "") or ""),
+                    str(min(len(stations), len(elevations))),
+                    f"{min(stations):.3f} -> {max(stations):.3f}",
+                    f"{min(elevations):.3f} -> {max(elevations):.3f}",
+                    str(getattr(row, "source_ref", "") or ""),
+                ]
+            )
+        return rows
+
+    @staticmethod
+    def _format_optional_float(value) -> str:
+        try:
+            if value is None or value == "":
+                return ""
+            return f"{float(value):.3f}"
+        except Exception:
+            return ""
 
     def _current_key_station_index(self) -> int:
         rows = self._key_station_rows()
@@ -342,12 +530,150 @@ class PlanProfileViewerTaskPanel:
         if item is not None:
             table.scrollToItem(item)
 
+    def _earthwork_area_width_value(self) -> float | None:
+        candidates = [
+            self.preview.get("earthwork_area_width", None),
+            self.preview.get("profile_earthwork_area_width", None),
+        ]
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        candidates.extend(
+            [
+                viewer_context.get("earthwork_area_width", None),
+                viewer_context.get("profile_earthwork_area_width", None),
+                viewer_context.get("section_width", None),
+            ]
+        )
+        for candidate in candidates:
+            if candidate is None or candidate == "":
+                continue
+            try:
+                value = float(candidate)
+            except Exception:
+                continue
+            if value > 0.0:
+                return value
+        return None
+
+    def _station_interval_value(self) -> float:
+        candidates = [
+            self.preview.get("station_interval", None),
+            self.preview.get("plan_profile_station_interval", None),
+        ]
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        candidates.extend(
+            [
+                viewer_context.get("station_interval", None),
+                viewer_context.get("plan_profile_station_interval", None),
+            ]
+        )
+        for candidate in candidates:
+            if candidate is None or candidate == "":
+                continue
+            try:
+                value = float(candidate)
+            except Exception:
+                continue
+            if value > 0.0:
+                return value
+        return 20.0
+
+    def _apply_station_interval(self) -> None:
+        spin = getattr(self, "_station_interval_spin", None)
+        interval = float(spin.value()) if spin is not None else 20.0
+        if interval <= 0.0:
+            self._status_label.setText("Enter a positive station interval before applying.")
+            self._status_label.setStyleSheet("color: #b36b00;")
+            return
+        if Gui is None:
+            self._status_label.setText("FreeCAD GUI is not available for applying station interval.")
+            self._status_label.setStyleSheet("color: #b33;")
+            return
+
+        legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
+        alignment = legacy_objects.get("alignment")
+        profile = legacy_objects.get("profile")
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        viewer_context["station_interval"] = interval
+
+        context_payload = {
+            "source": "v1_plan_profile_station_interval",
+            "preferred_alignment_name": str(getattr(alignment, "Name", "") or "").strip(),
+            "preferred_profile_name": str(getattr(profile, "Name", "") or "").strip(),
+            "station_interval": interval,
+            "viewer_context": viewer_context,
+        }
+        focus_station = viewer_context.get("focus_station", None)
+        if focus_station is not None and focus_station != "":
+            try:
+                context_payload["preferred_station"] = float(focus_station)
+            except Exception:
+                pass
+        set_ui_context(**context_payload)
+        try:
+            Gui.Control.closeDialog()
+        except Exception:
+            pass
+        Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
+        self._status_label.setText(f"Applied station interval {interval:.3f} m.")
+        self._status_label.setStyleSheet("color: #666;")
+
+    def _earthwork_area_hint_status_text(self) -> str:
+        result = self.preview.get("profile_earthwork_area_hint_result", None)
+        if result is None:
+            if self._earthwork_area_width_value() is None:
+                return "Area hints are disabled until a positive section width is applied."
+            return ""
+        status = str(getattr(result, "status", "") or "").strip()
+        notes = str(getattr(result, "notes", "") or "").strip()
+        if status and notes:
+            return f"{status}: {notes}"
+        return status or notes
+
+    def _apply_earthwork_area_width(self) -> None:
+        spin = getattr(self, "_earthwork_area_width_spin", None)
+        width = float(spin.value()) if spin is not None else 0.0
+        if width <= 0.0:
+            self._status_label.setText("Enter a positive section width before applying earthwork area hints.")
+            self._status_label.setStyleSheet("color: #b36b00;")
+            return
+        if Gui is None:
+            self._status_label.setText("FreeCAD GUI is not available for applying earthwork area width.")
+            self._status_label.setStyleSheet("color: #b33;")
+            return
+
+        legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
+        alignment = legacy_objects.get("alignment")
+        profile = legacy_objects.get("profile")
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        viewer_context["earthwork_area_width"] = width
+
+        context_payload = {
+            "source": "v1_plan_profile_area_width",
+            "preferred_alignment_name": str(getattr(alignment, "Name", "") or "").strip(),
+            "preferred_profile_name": str(getattr(profile, "Name", "") or "").strip(),
+            "viewer_context": viewer_context,
+        }
+        focus_station = viewer_context.get("focus_station", None)
+        if focus_station is not None and focus_station != "":
+            try:
+                context_payload["preferred_station"] = float(focus_station)
+            except Exception:
+                pass
+        set_ui_context(**context_payload)
+        try:
+            Gui.Control.closeDialog()
+        except Exception:
+            pass
+        Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
+        self._status_label.setText(f"Applied earthwork area width {width:.3f} m.")
+        self._status_label.setStyleSheet("color: #666;")
+
     def _open_legacy_command(self, command_name: str) -> None:
         legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
         objects_to_select = []
-        if command_name == "CorridorRoad_EditAlignment":
+        if command_name in ("CorridorRoad_V1EditAlignment", "CorridorRoad_EditAlignment"):
             objects_to_select = [legacy_objects.get("alignment")]
-        elif command_name in ("CorridorRoad_EditProfiles", "CorridorRoad_EditPVI"):
+        elif command_name in ("CorridorRoad_V1EditProfile", "CorridorRoad_EditProfiles", "CorridorRoad_EditPVI"):
             objects_to_select = [legacy_objects.get("profile"), legacy_objects.get("alignment")]
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
         focus_station = viewer_context.get("focus_station", None)

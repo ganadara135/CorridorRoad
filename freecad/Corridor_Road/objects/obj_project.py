@@ -32,6 +32,71 @@ TREE_SURFACES = "root_surfaces"
 TREE_ANALYSIS = "root_analysis"
 TREE_REFERENCES = "root_references"
 
+V1_TREE_PROJECT_SETUP = "v1_project_setup"
+V1_TREE_SOURCE_DATA = "v1_source_data"
+V1_TREE_ALIGNMENT_PROFILE = "v1_alignment_profile"
+V1_TREE_SURFACES = "v1_surfaces"
+V1_TREE_CORRIDOR_MODEL = "v1_corridor_model"
+V1_TREE_DRAINAGE = "v1_drainage"
+V1_TREE_STRUCTURES = "v1_structures"
+V1_TREE_QUANTITIES_EARTHWORK = "v1_quantities_earthwork"
+V1_TREE_REVIEW = "v1_review"
+V1_TREE_OUTPUTS_EXCHANGE = "v1_outputs_exchange"
+V1_TREE_AI_ASSIST = "v1_ai_assist"
+
+V1_TREE_PROJECT_SETTINGS = "v1_project_settings"
+V1_TREE_COORDINATE_SYSTEM = "v1_coordinate_system"
+V1_TREE_UNITS = "v1_units"
+V1_TREE_STANDARDS = "v1_standards"
+V1_TREE_SURVEY_POINTS = "v1_survey_points"
+V1_TREE_SOURCE_FILES = "v1_source_files"
+V1_TREE_EXISTING_REFERENCES = "v1_existing_references"
+V1_TREE_ALIGNMENTS = "v1_alignments"
+V1_TREE_PROFILES = "v1_profiles"
+V1_TREE_STATIONS = "v1_stations"
+V1_TREE_SUPERELEVATION = "v1_superelevation"
+V1_TREE_EXISTING_GROUND_TIN = "v1_existing_ground_tin"
+V1_TREE_EXISTING_GROUND_TIN_SOURCE = "v1_existing_ground_tin_source"
+V1_TREE_EXISTING_GROUND_TIN_RESULT = "v1_existing_ground_tin_result"
+V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW = "v1_existing_ground_tin_mesh_preview"
+V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS = "v1_existing_ground_tin_diagnostics"
+V1_TREE_DESIGN_TIN = "v1_design_tin"
+V1_TREE_COMPARISON_TIN = "v1_comparison_tin"
+V1_TREE_ASSEMBLIES = "v1_assemblies"
+V1_TREE_REGIONS = "v1_regions"
+V1_TREE_APPLIED_SECTIONS = "v1_applied_sections"
+V1_TREE_RAMPS = "v1_ramps"
+V1_TREE_INTERSECTIONS = "v1_intersections"
+V1_TREE_OVERRIDES = "v1_overrides"
+V1_TREE_DITCHES = "v1_ditches"
+V1_TREE_CULVERTS = "v1_culverts"
+V1_TREE_INLETS = "v1_inlets"
+V1_TREE_FLOW_PATHS = "v1_flow_paths"
+V1_TREE_DRAINAGE_DIAGNOSTICS = "v1_drainage_diagnostics"
+V1_TREE_RETAINING_WALLS = "v1_retaining_walls"
+V1_TREE_BRIDGES = "v1_bridges"
+V1_TREE_BARRIERS = "v1_barriers"
+V1_TREE_STRUCTURE_INTERACTIONS = "v1_structure_interactions"
+V1_TREE_QUANTITIES = "v1_quantities"
+V1_TREE_CUT_FILL = "v1_cut_fill"
+V1_TREE_MASS_HAUL = "v1_mass_haul"
+V1_TREE_EARTHWORK_DIAGNOSTICS = "v1_earthwork_diagnostics"
+V1_TREE_PLAN_PROFILE_REVIEW = "v1_plan_profile_review"
+V1_TREE_SECTION_REVIEW = "v1_section_review"
+V1_TREE_TIN_REVIEW = "v1_tin_review"
+V1_TREE_ISSUES = "v1_issues"
+V1_TREE_BOOKMARKS = "v1_bookmarks"
+V1_TREE_SHEETS = "v1_sheets"
+V1_TREE_REPORTS = "v1_reports"
+V1_TREE_DXF = "v1_dxf"
+V1_TREE_LANDXML = "v1_landxml"
+V1_TREE_IFC = "v1_ifc"
+V1_TREE_EXCHANGE_PACKAGES = "v1_exchange_packages"
+V1_TREE_AI_SUGGESTIONS = "v1_ai_suggestions"
+V1_TREE_AI_CHECKS = "v1_ai_checks"
+V1_TREE_AI_GENERATED_ALTERNATIVES = "v1_ai_generated_alternatives"
+V1_TREE_AI_USER_DECISIONS = "v1_ai_user_decisions"
+
 ALIGNMENT_ROOT = "alignment_root"
 ALIGNMENT_HORIZONTAL = "alignment_horizontal"
 ALIGNMENT_STATIONING = "alignment_stationing"
@@ -48,6 +113,73 @@ BASE_TREE_DEFS = (
     (TREE_ALIGNMENTS, "02_Alignments", "CR_02_Alignments"),
     (TREE_SURFACES, "03_Surfaces", "CR_03_Surfaces"),
     (TREE_ANALYSIS, "04_Analysis", "CR_04_Analysis"),
+)
+V1_ROOT_TREE_DEFS = (
+    (V1_TREE_PROJECT_SETUP, "00_Project Setup", "CRV1_00_Project_Setup"),
+    (V1_TREE_SOURCE_DATA, "01_Source Data", "CRV1_01_Source_Data"),
+    (V1_TREE_ALIGNMENT_PROFILE, "02_Alignment & Profile", "CRV1_02_Alignment_Profile"),
+    (V1_TREE_SURFACES, "03_Surfaces", "CRV1_03_Surfaces"),
+    (V1_TREE_CORRIDOR_MODEL, "04_Corridor Model", "CRV1_04_Corridor_Model"),
+    (V1_TREE_DRAINAGE, "05_Drainage", "CRV1_05_Drainage"),
+    (V1_TREE_STRUCTURES, "06_Structures", "CRV1_06_Structures"),
+    (V1_TREE_QUANTITIES_EARTHWORK, "07_Quantities & Earthwork", "CRV1_07_Quantities_Earthwork"),
+    (V1_TREE_REVIEW, "08_Review", "CRV1_08_Review"),
+    (V1_TREE_OUTPUTS_EXCHANGE, "09_Outputs & Exchange", "CRV1_09_Outputs_Exchange"),
+    (V1_TREE_AI_ASSIST, "10_AI Assist", "CRV1_10_AI_Assist"),
+)
+V1_SUBTREE_DEFS = (
+    (V1_TREE_PROJECT_SETUP, V1_TREE_PROJECT_SETTINGS, "Project Settings", "CRV1_Project_Settings"),
+    (V1_TREE_PROJECT_SETUP, V1_TREE_COORDINATE_SYSTEM, "Coordinate System", "CRV1_Coordinate_System"),
+    (V1_TREE_PROJECT_SETUP, V1_TREE_UNITS, "Units", "CRV1_Units"),
+    (V1_TREE_PROJECT_SETUP, V1_TREE_STANDARDS, "Standards", "CRV1_Standards"),
+    (V1_TREE_SOURCE_DATA, V1_TREE_SURVEY_POINTS, "Survey Points", "CRV1_Survey_Points"),
+    (V1_TREE_SOURCE_DATA, V1_TREE_SOURCE_FILES, "Source Files", "CRV1_Source_Files"),
+    (V1_TREE_SOURCE_DATA, V1_TREE_EXISTING_REFERENCES, "Existing References", "CRV1_Existing_References"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_ALIGNMENTS, "Alignments", "CRV1_Alignments"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_PROFILES, "Profiles", "CRV1_Profiles"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_STATIONS, "Stations", "CRV1_Stations"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_SUPERELEVATION, "Superelevation", "CRV1_Superelevation"),
+    (V1_TREE_SURFACES, V1_TREE_EXISTING_GROUND_TIN, "Existing Ground TIN", "CRV1_Existing_Ground_TIN"),
+    (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_SOURCE, "Source", "CRV1_EG_TIN_Source"),
+    (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_RESULT, "TIN Result", "CRV1_EG_TIN_Result"),
+    (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, "Mesh Preview", "CRV1_EG_TIN_Mesh_Preview"),
+    (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS, "Diagnostics", "CRV1_EG_TIN_Diagnostics"),
+    (V1_TREE_SURFACES, V1_TREE_DESIGN_TIN, "Design TIN", "CRV1_Design_TIN"),
+    (V1_TREE_SURFACES, V1_TREE_COMPARISON_TIN, "Comparison TIN", "CRV1_Comparison_TIN"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_ASSEMBLIES, "Assemblies", "CRV1_Assemblies"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_REGIONS, "Regions", "CRV1_Regions"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_APPLIED_SECTIONS, "Applied Sections", "CRV1_Applied_Sections"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_RAMPS, "Ramps", "CRV1_Ramps"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_INTERSECTIONS, "Intersections", "CRV1_Intersections"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_OVERRIDES, "Overrides", "CRV1_Overrides"),
+    (V1_TREE_DRAINAGE, V1_TREE_DITCHES, "Ditches", "CRV1_Ditches"),
+    (V1_TREE_DRAINAGE, V1_TREE_CULVERTS, "Culverts", "CRV1_Culverts"),
+    (V1_TREE_DRAINAGE, V1_TREE_INLETS, "Inlets", "CRV1_Inlets"),
+    (V1_TREE_DRAINAGE, V1_TREE_FLOW_PATHS, "Flow Paths", "CRV1_Flow_Paths"),
+    (V1_TREE_DRAINAGE, V1_TREE_DRAINAGE_DIAGNOSTICS, "Drainage Diagnostics", "CRV1_Drainage_Diagnostics"),
+    (V1_TREE_STRUCTURES, V1_TREE_RETAINING_WALLS, "Retaining Walls", "CRV1_Retaining_Walls"),
+    (V1_TREE_STRUCTURES, V1_TREE_BRIDGES, "Bridges", "CRV1_Bridges"),
+    (V1_TREE_STRUCTURES, V1_TREE_BARRIERS, "Barriers", "CRV1_Barriers"),
+    (V1_TREE_STRUCTURES, V1_TREE_STRUCTURE_INTERACTIONS, "Structure Interactions", "CRV1_Structure_Interactions"),
+    (V1_TREE_QUANTITIES_EARTHWORK, V1_TREE_QUANTITIES, "Quantities", "CRV1_Quantities"),
+    (V1_TREE_QUANTITIES_EARTHWORK, V1_TREE_CUT_FILL, "Cut Fill", "CRV1_Cut_Fill"),
+    (V1_TREE_QUANTITIES_EARTHWORK, V1_TREE_MASS_HAUL, "Mass Haul", "CRV1_Mass_Haul"),
+    (V1_TREE_QUANTITIES_EARTHWORK, V1_TREE_EARTHWORK_DIAGNOSTICS, "Earthwork Diagnostics", "CRV1_Earthwork_Diagnostics"),
+    (V1_TREE_REVIEW, V1_TREE_PLAN_PROFILE_REVIEW, "Plan Profile Review", "CRV1_Plan_Profile_Review"),
+    (V1_TREE_REVIEW, V1_TREE_SECTION_REVIEW, "Section Review", "CRV1_Section_Review"),
+    (V1_TREE_REVIEW, V1_TREE_TIN_REVIEW, "TIN Review", "CRV1_TIN_Review"),
+    (V1_TREE_REVIEW, V1_TREE_ISSUES, "Issues", "CRV1_Issues"),
+    (V1_TREE_REVIEW, V1_TREE_BOOKMARKS, "Bookmarks", "CRV1_Bookmarks"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_SHEETS, "Sheets", "CRV1_Sheets"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_REPORTS, "Reports", "CRV1_Reports"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_DXF, "DXF", "CRV1_DXF"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_LANDXML, "LandXML", "CRV1_LandXML"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_IFC, "IFC", "CRV1_IFC"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_EXCHANGE_PACKAGES, "Exchange Packages", "CRV1_Exchange_Packages"),
+    (V1_TREE_AI_ASSIST, V1_TREE_AI_SUGGESTIONS, "Suggestions", "CRV1_AI_Suggestions"),
+    (V1_TREE_AI_ASSIST, V1_TREE_AI_CHECKS, "Checks", "CRV1_AI_Checks"),
+    (V1_TREE_AI_ASSIST, V1_TREE_AI_GENERATED_ALTERNATIVES, "Generated Alternatives", "CRV1_AI_Generated_Alternatives"),
+    (V1_TREE_AI_ASSIST, V1_TREE_AI_USER_DECISIONS, "User Decisions", "CRV1_AI_User_Decisions"),
 )
 INPUT_SUBTREE_DEFS = (
     (TREE_INPUTS_TERRAINS, "Terrains", "CR_01_Inputs_Terrains"),
@@ -414,7 +546,7 @@ def _ensure_child_folder(doc, owner, key: str, label: str, obj_name: str):
     if folder is None:
         # Label fallback for compatibility with manually created folders.
         for ch in _group_get(owner):
-            if _is_group_obj(ch) and _label(ch) == str(label):
+            if _is_group_obj(ch) and not _tree_key(ch) and _label(ch) == str(label):
                 folder = ch
                 break
     if folder is None:
@@ -536,6 +668,57 @@ def _migrate_alignment_root_links(root_alignments):
             pass
 
 
+def _legacy_tree_keys() -> set[str]:
+    return {
+        TREE_INPUTS,
+        TREE_INPUTS_TERRAINS,
+        TREE_INPUTS_SURVEY,
+        TREE_INPUTS_STRUCTURES,
+        TREE_INPUTS_REGIONS,
+        TREE_ALIGNMENTS,
+        TREE_SURFACES,
+        TREE_ANALYSIS,
+        TREE_REFERENCES,
+        ALIGNMENT_ROOT,
+        ALIGNMENT_HORIZONTAL,
+        ALIGNMENT_STATIONING,
+        ALIGNMENT_VERTICAL,
+        ALIGNMENT_CENTERLINE,
+        ALIGNMENT_ASSEMBLY,
+        ALIGNMENT_REGIONS,
+        ALIGNMENT_SECTIONS,
+        ALIGNMENT_STRUCTURE_SECTIONS,
+        ALIGNMENT_CORRIDOR,
+    }
+
+
+def _remove_empty_legacy_tree_folders(obj_project) -> None:
+    """Remove empty transition-era v0 tree folders from a v1 project tree."""
+
+    if obj_project is None:
+        return
+    doc = getattr(obj_project, "Document", None)
+    if doc is None:
+        return
+    legacy_keys = _legacy_tree_keys()
+    for folder in reversed(_iter_tree_folders(obj_project)):
+        if folder is None:
+            continue
+        if _tree_key(folder) not in legacy_keys:
+            continue
+        if _group_get(folder):
+            continue
+        owners = [obj_project] + _iter_tree_folders(obj_project)
+        for owner in owners:
+            if owner is None or owner == folder:
+                continue
+            _group_remove(owner, folder)
+        try:
+            doc.removeObject(_name(folder))
+        except Exception:
+            pass
+
+
 def ensure_project_tree(obj_project, include_references: bool = False):
     if obj_project is None:
         return {}
@@ -546,17 +729,16 @@ def ensure_project_tree(obj_project, include_references: bool = False):
     ensure_project_properties(obj_project)
 
     out = {}
-    for key, label, obj_name in BASE_TREE_DEFS:
+    for key, label, obj_name in V1_ROOT_TREE_DEFS:
         out[key] = _ensure_child_folder(doc, obj_project, key, label, obj_name)
-
-    inputs = out.get(TREE_INPUTS, None)
-    if inputs is not None:
-        for key, label, obj_name in INPUT_SUBTREE_DEFS:
-            out[key] = _ensure_child_folder(doc, inputs, key, label, obj_name)
+    for parent_key, key, label, obj_name in V1_SUBTREE_DEFS:
+        parent = out.get(parent_key, None)
+        if parent is not None:
+            out[key] = _ensure_child_folder(doc, parent, key, label, obj_name)
 
     if include_references:
-        out[TREE_REFERENCES] = _ensure_child_folder(doc, obj_project, TREE_REFERENCES, "05_References", "CR_05_References")
-    _migrate_alignment_root_links(out.get(TREE_ALIGNMENTS, None))
+        out[V1_TREE_EXISTING_REFERENCES] = out.get(V1_TREE_EXISTING_REFERENCES, None)
+    _remove_empty_legacy_tree_folders(obj_project)
     return out
 
 
@@ -615,38 +797,24 @@ def _unique_alignment_label(root_alignments, base_label: str, alignment_obj, exc
 
 
 def ensure_alignment_tree(obj_project, alignment_obj=None):
+    """Return v1 alignment/profile folders without creating legacy ALN_* branches."""
+
     tree = ensure_project_tree(obj_project, include_references=False)
-    root = tree.get(TREE_ALIGNMENTS, None)
-    doc = getattr(obj_project, "Document", None)
-    if root is None or doc is None:
-        return {}
-
-    aln_name = _alignment_name_from_obj(alignment_obj)
-    aln_label_base = f"ALN_{aln_name}"
-    aln_root = None
-
-    for ch in _group_get(root):
-        if not _is_group_obj(ch):
-            continue
-        if _tree_key(ch) != ALIGNMENT_ROOT:
-            continue
-        if _alignment_ref_matches(ch, alignment_obj):
-            aln_root = ch
-            break
-        if alignment_obj is None and _label(ch) == aln_label_base:
-            aln_root = ch
-            break
-
-    if aln_root is None:
-        aln_root = doc.addObject("App::DocumentObjectGroup", f"CR_ALN_{aln_name}")
-    aln_root.Label = _unique_alignment_label(root, aln_label_base, alignment_obj, exclude=aln_root)
-    _ensure_alignment_folder_meta(aln_root, alignment_obj, aln_name)
-    _group_add(root, aln_root)
-
-    out = {"alignment_root": aln_root}
-    for key, label, obj_name in ALIGNMENT_SUBTREE_DEFS:
-        out[key] = _ensure_child_folder(doc, aln_root, key, label, f"{obj_name}_{aln_name}")
-    return out
+    alignments = tree.get(V1_TREE_ALIGNMENTS, None)
+    profiles = tree.get(V1_TREE_PROFILES, None)
+    stations = tree.get(V1_TREE_STATIONS, None)
+    return {
+        "alignment_root": tree.get(V1_TREE_ALIGNMENT_PROFILE, None),
+        ALIGNMENT_HORIZONTAL: alignments,
+        ALIGNMENT_STATIONING: stations,
+        ALIGNMENT_VERTICAL: profiles,
+        ALIGNMENT_CENTERLINE: alignments,
+        ALIGNMENT_ASSEMBLY: tree.get(V1_TREE_ASSEMBLIES, None),
+        ALIGNMENT_REGIONS: tree.get(V1_TREE_REGIONS, None),
+        ALIGNMENT_SECTIONS: tree.get(V1_TREE_APPLIED_SECTIONS, None),
+        ALIGNMENT_STRUCTURE_SECTIONS: tree.get(V1_TREE_STRUCTURE_INTERACTIONS, None),
+        ALIGNMENT_CORRIDOR: tree.get(V1_TREE_CORRIDOR_MODEL, None),
+    }
 
 
 def _is_type(obj, proxy_types=(), name_prefixes=()):
@@ -968,6 +1136,208 @@ def _is_region_input(child):
     return _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",))
 
 
+def _is_v1_ramp(child):
+    return _is_type(child, proxy_types=("RampModel", "Ramp"), name_prefixes=("RampModel", "Ramp"))
+
+
+def _is_v1_intersection(child):
+    return _is_type(
+        child,
+        proxy_types=("IntersectionModel", "Intersection"),
+        name_prefixes=("IntersectionModel", "Intersection"),
+    )
+
+
+def _is_v1_drainage(child):
+    return _is_type(
+        child,
+        proxy_types=(
+            "DrainageModel",
+            "DitchModel",
+            "CulvertModel",
+            "InletModel",
+            "FlowPathModel",
+            "Ditch",
+            "Culvert",
+            "Inlet",
+            "FlowPath",
+        ),
+        name_prefixes=(
+            "DrainageModel",
+            "DitchModel",
+            "CulvertModel",
+            "InletModel",
+            "FlowPathModel",
+            "Ditch",
+            "Culvert",
+            "Inlet",
+            "FlowPath",
+        ),
+    )
+
+
+def _is_v1_review(child):
+    return _is_type(
+        child,
+        proxy_types=(
+            "PlanProfileReview",
+            "SectionReview",
+            "TINReview",
+            "ReviewIssue",
+            "ReviewBookmark",
+            "Issue",
+            "Bookmark",
+        ),
+        name_prefixes=(
+            "PlanProfileReview",
+            "SectionReview",
+            "TINReview",
+            "ReviewIssue",
+            "ReviewBookmark",
+            "Issue",
+            "Bookmark",
+        ),
+    )
+
+
+def _is_v1_output_exchange(child):
+    return _is_type(
+        child,
+        proxy_types=(
+            "SheetOutput",
+            "ReportOutput",
+            "DXFExport",
+            "LandXMLExport",
+            "IFCExport",
+            "ExchangePackage",
+        ),
+        name_prefixes=(
+            "SheetOutput",
+            "ReportOutput",
+            "DXFExport",
+            "LandXMLExport",
+            "IFCExport",
+            "ExchangePackage",
+        ),
+    )
+
+
+def _is_v1_ai_assist(child):
+    return _is_type(
+        child,
+        proxy_types=(
+            "AISuggestion",
+            "AICheck",
+            "AIGeneratedAlternative",
+            "AIUserDecision",
+        ),
+        name_prefixes=(
+            "AISuggestion",
+            "AICheck",
+            "AIGeneratedAlternative",
+            "AIUserDecision",
+        ),
+    )
+
+
+def resolve_v1_target_container(prj, child):
+    """Resolve the preferred v1 project-tree container for a child object."""
+
+    if prj is None or child is None or child == prj:
+        return None
+    if _is_tree_folder(child):
+        return prj
+
+    tree = ensure_project_tree(prj, include_references=False)
+    if _is_type(child, proxy_types=("V1Alignment", "HorizontalAlignment"), name_prefixes=("V1Alignment", "HorizontalAlignment")) or _looks_like_horizontal_alignment(child):
+        return tree.get(V1_TREE_ALIGNMENTS, None)
+    if _is_type(
+        child,
+        proxy_types=("V1Profile", "VerticalAlignment", "ProfileBundle", "FGDisplay"),
+        name_prefixes=("V1Profile", "VerticalAlignment", "ProfileBundle", "FinishedGradeFG"),
+    ):
+        return tree.get(V1_TREE_PROFILES, None)
+    if _is_type(child, proxy_types=("V1Stationing", "Stationing"), name_prefixes=("V1Stationing", "Stationing")):
+        return tree.get(V1_TREE_STATIONS, None)
+    if _is_type(child, proxy_types=("Superelevation", "SuperelevationModel"), name_prefixes=("Superelevation", "SuperelevationModel")):
+        return tree.get(V1_TREE_SUPERELEVATION, None)
+    if _is_v1_ramp(child):
+        return tree.get(V1_TREE_RAMPS, None)
+    if _is_v1_intersection(child):
+        return tree.get(V1_TREE_INTERSECTIONS, None)
+    if _is_v1_drainage(child):
+        if _is_type(child, proxy_types=("DitchModel", "Ditch"), name_prefixes=("DitchModel", "Ditch")):
+            return tree.get(V1_TREE_DITCHES, None)
+        if _is_type(child, proxy_types=("CulvertModel", "Culvert"), name_prefixes=("CulvertModel", "Culvert")):
+            return tree.get(V1_TREE_CULVERTS, None)
+        if _is_type(child, proxy_types=("InletModel", "Inlet"), name_prefixes=("InletModel", "Inlet")):
+            return tree.get(V1_TREE_INLETS, None)
+        if _is_type(child, proxy_types=("FlowPathModel", "FlowPath"), name_prefixes=("FlowPathModel", "FlowPath")):
+            return tree.get(V1_TREE_FLOW_PATHS, None)
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if _is_type(
+        child,
+        proxy_types=("AssemblyTemplate", "TypicalSectionTemplate"),
+        name_prefixes=("AssemblyTemplate", "TypicalSectionTemplate"),
+    ):
+        return tree.get(V1_TREE_ASSEMBLIES, None)
+    if _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",)):
+        return tree.get(V1_TREE_REGIONS, None)
+    if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
+        return tree.get(V1_TREE_APPLIED_SECTIONS, None)
+    if _is_type(child, proxy_types=(CORRIDOR_PROXY_TYPE,), name_prefixes=(CORRIDOR_NAME_PREFIX,)):
+        return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if _is_type(child, proxy_types=("StructureSet",), name_prefixes=("StructureSet",)):
+        return tree.get(V1_TREE_STRUCTURES, None)
+    if _is_v1_review(child):
+        if _is_type(child, proxy_types=("PlanProfileReview",), name_prefixes=("PlanProfileReview",)):
+            return tree.get(V1_TREE_PLAN_PROFILE_REVIEW, None)
+        if _is_type(child, proxy_types=("SectionReview",), name_prefixes=("SectionReview",)):
+            return tree.get(V1_TREE_SECTION_REVIEW, None)
+        if _is_type(child, proxy_types=("TINReview",), name_prefixes=("TINReview",)):
+            return tree.get(V1_TREE_TIN_REVIEW, None)
+        if _is_type(child, proxy_types=("ReviewIssue", "Issue"), name_prefixes=("ReviewIssue", "Issue")):
+            return tree.get(V1_TREE_ISSUES, None)
+        if _is_type(child, proxy_types=("ReviewBookmark", "Bookmark"), name_prefixes=("ReviewBookmark", "Bookmark")):
+            return tree.get(V1_TREE_BOOKMARKS, None)
+        return tree.get(V1_TREE_REVIEW, None)
+    if _is_v1_output_exchange(child):
+        if _is_type(child, proxy_types=("SheetOutput",), name_prefixes=("SheetOutput",)):
+            return tree.get(V1_TREE_SHEETS, None)
+        if _is_type(child, proxy_types=("ReportOutput",), name_prefixes=("ReportOutput",)):
+            return tree.get(V1_TREE_REPORTS, None)
+        if _is_type(child, proxy_types=("DXFExport",), name_prefixes=("DXFExport",)):
+            return tree.get(V1_TREE_DXF, None)
+        if _is_type(child, proxy_types=("LandXMLExport",), name_prefixes=("LandXMLExport",)):
+            return tree.get(V1_TREE_LANDXML, None)
+        if _is_type(child, proxy_types=("IFCExport",), name_prefixes=("IFCExport",)):
+            return tree.get(V1_TREE_IFC, None)
+        if _is_type(child, proxy_types=("ExchangePackage",), name_prefixes=("ExchangePackage",)):
+            return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+        return tree.get(V1_TREE_OUTPUTS_EXCHANGE, None)
+    if _is_v1_ai_assist(child):
+        if _is_type(child, proxy_types=("AISuggestion",), name_prefixes=("AISuggestion",)):
+            return tree.get(V1_TREE_AI_SUGGESTIONS, None)
+        if _is_type(child, proxy_types=("AICheck",), name_prefixes=("AICheck",)):
+            return tree.get(V1_TREE_AI_CHECKS, None)
+        if _is_type(child, proxy_types=("AIGeneratedAlternative",), name_prefixes=("AIGeneratedAlternative",)):
+            return tree.get(V1_TREE_AI_GENERATED_ALTERNATIVES, None)
+        if _is_type(child, proxy_types=("AIUserDecision",), name_prefixes=("AIUserDecision",)):
+            return tree.get(V1_TREE_AI_USER_DECISIONS, None)
+        return tree.get(V1_TREE_AI_ASSIST, None)
+    return None
+
+
+def route_to_v1_tree(prj, child):
+    """Add a child object to its preferred v1 project-tree container."""
+
+    folder = resolve_v1_target_container(prj, child)
+    if folder is None:
+        return None
+    _group_add(folder, child)
+    return folder
+
+
 def _is_probable_terrain_input(prj, child):
     if child is None:
         return False
@@ -1038,27 +1408,30 @@ def _resolve_target_container(prj, child, allow_references: bool = True):
 
     tree = ensure_project_tree(prj, include_references=False)
 
+    v1_target = resolve_v1_target_container(prj, child)
+    if v1_target is not None:
+        return v1_target
+
     if _is_alignment_related(child):
-        return _target_folder_for_alignment_child(prj, child)
+        return tree.get(V1_TREE_ALIGNMENT_PROFILE, None)
 
     if _is_surface(child):
-        return tree.get(TREE_SURFACES, None)
+        return tree.get(V1_TREE_SURFACES, None)
 
     if _is_analysis(child):
-        return tree.get(TREE_ANALYSIS, None)
+        return tree.get(V1_TREE_QUANTITIES_EARTHWORK, None)
 
     if _is_structure_input(child):
-        return tree.get(TREE_INPUTS_STRUCTURES, None)
+        return tree.get(V1_TREE_STRUCTURES, None)
 
     if _is_region_input(child):
-        return tree.get(TREE_INPUTS_REGIONS, None)
+        return tree.get(V1_TREE_REGIONS, None)
 
     if _is_probable_terrain_input(prj, child):
-        return tree.get(TREE_INPUTS_TERRAINS, None)
+        return tree.get(V1_TREE_SURVEY_POINTS, None)
 
     if allow_references:
-        tree = ensure_project_tree(prj, include_references=True)
-        return tree.get(TREE_REFERENCES, None)
+        return tree.get(V1_TREE_EXISTING_REFERENCES, None)
     return prj
 
 
@@ -1761,6 +2134,7 @@ class CorridorRoadProject:
             return
         _detach_from_other_tree_folders(obj_project, child, keep_owner=target)
         _group_add(target, child)
+        _remove_empty_legacy_tree_folders(obj_project)
         # Ensure non-folder objects do not remain directly under project root.
         if target != obj_project and (not _is_tree_folder(child)):
             _group_remove(obj_project, child)

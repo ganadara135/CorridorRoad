@@ -1,8 +1,8 @@
 # CorridorRoad V1 Section Model
 
-Date: 2026-04-24
+Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, applied section frame slice complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -430,6 +430,13 @@ An applied section should contain:
 - diagnostics
 - quantity fragments
 
+Current implementation note:
+
+- `AppliedSectionFrame` records the evaluated station frame for one section
+- frame fields include station, centerline `x/y`, FG `z`, tangent direction, profile grade, alignment/profile evaluation status, active alignment element, active profile segment, and active vertical curve metadata
+- `AppliedSectionService` now builds this frame from `AlignmentEvaluationService` and `ProfileEvaluationService`
+- `SectionOutputMapper` exposes frame values through `SectionSummaryRow` entries so viewers and downstream outputs can inspect the same station basis
+
 ### 13.4 Required behavioral content
 
 Applied section data should be sufficient to support:
@@ -482,6 +489,15 @@ Recommended evaluation order for one station:
 12. derive quantity fragments and diagnostics
 
 This pipeline should be implemented in a reusable section-evaluation service, not inside the viewer.
+
+Current implementation status:
+
+- [x] resolve alignment local frame through `AlignmentEvaluationService`
+- [x] resolve profile elevation and grade through `ProfileEvaluationService`
+- [x] store the combined basis in `AppliedSection.frame`
+- [ ] apply superelevation/crossfall state
+- [ ] apply full terrain/daylight terminal behavior
+- [ ] generate complete semantic section geometry from template parameters
 
 ## 16. Semantic Geometry Model
 

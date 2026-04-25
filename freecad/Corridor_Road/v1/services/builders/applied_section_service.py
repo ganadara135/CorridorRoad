@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from ...models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
+    AppliedSectionFrame,
 )
 from ...models.source.alignment_model import AlignmentModel
 from ...models.source.assembly_model import AssemblyModel, SectionTemplate
@@ -68,11 +69,11 @@ class AppliedSectionService:
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
 
-        self.alignment_service.evaluate_station(
+        alignment_result = self.alignment_service.evaluate_station(
             request.alignment,
             request.station,
         )
-        self.profile_service.evaluate_station(
+        profile_result = self.profile_service.evaluate_station(
             request.profile,
             request.station,
         )
@@ -114,6 +115,11 @@ class AppliedSectionService:
             alignment_id=request.alignment.alignment_id,
             profile_id=request.profile.profile_id,
             station=request.station,
+            frame=self._build_frame(
+                station=request.station,
+                alignment_result=alignment_result,
+                profile_result=profile_result,
+            ),
             template_id=region_result.active_template_ref,
             region_id=region_result.active_region_id,
             component_rows=component_rows,
@@ -132,6 +138,37 @@ class AppliedSectionService:
                 if ref
             ],
             diagnostic_rows=[],
+        )
+
+    @staticmethod
+    def _build_frame(
+        *,
+        station: float,
+        alignment_result,
+        profile_result,
+    ) -> AppliedSectionFrame:
+        notes = "; ".join(
+            text
+            for text in [
+                str(getattr(alignment_result, "notes", "") or "").strip(),
+                str(getattr(profile_result, "notes", "") or "").strip(),
+            ]
+            if text
+        )
+        return AppliedSectionFrame(
+            station=float(station),
+            x=float(getattr(alignment_result, "x", 0.0) or 0.0),
+            y=float(getattr(alignment_result, "y", 0.0) or 0.0),
+            z=float(getattr(profile_result, "elevation", 0.0) or 0.0),
+            tangent_direction_deg=float(getattr(alignment_result, "tangent_direction_deg", 0.0) or 0.0),
+            profile_grade=float(getattr(profile_result, "grade", 0.0) or 0.0),
+            alignment_status=str(getattr(alignment_result, "status", "") or ""),
+            profile_status=str(getattr(profile_result, "status", "") or ""),
+            active_alignment_element_id=str(getattr(alignment_result, "active_element_id", "") or ""),
+            active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
+            active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
+            active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
+            notes=notes,
         )
 
     @staticmethod

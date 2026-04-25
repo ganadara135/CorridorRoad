@@ -101,6 +101,7 @@ class EarthworkOutputMapper:
                 value=len(mass_haul_model.balance_point_rows),
             ),
         ]
+        summary_rows.extend(self._mass_curve_summary_rows(mass_haul_model))
 
         return MassHaulOutput(
             schema_version=1,
@@ -117,3 +118,35 @@ class EarthworkOutputMapper:
             summary_rows=summary_rows,
             diagnostic_rows=list(mass_haul_model.diagnostic_rows),
         )
+
+    @staticmethod
+    def _mass_curve_summary_rows(mass_haul_model: MassHaulModel) -> list[EarthworkSummaryRow]:
+        curve_rows = list(getattr(mass_haul_model, "curve_rows", []) or [])
+        if not curve_rows:
+            return []
+        values = list(getattr(curve_rows[0], "cumulative_mass_values", []) or [])
+        if not values:
+            return []
+        return [
+            EarthworkSummaryRow(
+                summary_id=f"{mass_haul_model.mass_haul_id}:final-cumulative-mass",
+                kind="final_cumulative_mass",
+                label="Final Cumulative Mass",
+                value=float(values[-1]),
+                unit="m3",
+            ),
+            EarthworkSummaryRow(
+                summary_id=f"{mass_haul_model.mass_haul_id}:max-surplus-cumulative-mass",
+                kind="max_surplus_cumulative_mass",
+                label="Max Surplus Cumulative Mass",
+                value=float(max(values)),
+                unit="m3",
+            ),
+            EarthworkSummaryRow(
+                summary_id=f"{mass_haul_model.mass_haul_id}:max-deficit-cumulative-mass",
+                kind="max_deficit_cumulative_mass",
+                label="Max Deficit Cumulative Mass",
+                value=float(min(values)),
+                unit="m3",
+            ),
+        ]

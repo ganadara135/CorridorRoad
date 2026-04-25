@@ -23,5 +23,7 @@ def test_format_earthwork_report_contains_key_summary_lines() -> None:
     assert "CorridorRoad v1 Earthwork Balance Viewer" in summary
     assert "Total cut: 120.0 m3" in summary
     assert "Total fill: 110.0 m3" in summary
+    assert "Final cumulative mass: -8.0 m3" in summary
+    assert "Max surplus/deficit: 45.0 / -8.0 m3" in summary
     assert "Key stations: 3" in summary
     assert "Focus Station: STA 0.000" in summary

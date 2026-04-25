@@ -9,12 +9,18 @@ from ...models.output.plan_output import (
     PlanSummaryRow,
 )
 from ...models.source.alignment_model import AlignmentModel
+from ..evaluation.alignment_station_sampling_service import AlignmentStationSamplingService
 
 
 class PlanOutputMapper:
     """Map alignment sources into plan output payloads."""
 
-    def map_alignment_model(self, alignment_model: AlignmentModel) -> PlanOutput:
+    def map_alignment_model(
+        self,
+        alignment_model: AlignmentModel,
+        *,
+        station_interval: float = 20.0,
+    ) -> PlanOutput:
         """Create a normalized plan output from one alignment model."""
 
         geometry_rows = [
@@ -30,17 +36,7 @@ class PlanOutputMapper:
             for element in alignment_model.geometry_sequence
         ]
 
-        station_rows = [
-            PlanStationRow(
-                station_row_id=f"{alignment_model.alignment_id}:station:{index}",
-                station=element.station_start,
-                station_label=self._format_station(element.station_start),
-                x=self._first_value(element.geometry_payload.get("x_values", []), element.station_start),
-                y=self._first_value(element.geometry_payload.get("y_values", []), 0.0),
-                kind="element_start_station",
-            )
-            for index, element in enumerate(alignment_model.geometry_sequence, start=1)
-        ]
+        station_rows = self._station_rows(alignment_model, station_interval=station_interval)
 
         summary_rows = [
             PlanSummaryRow(
@@ -91,3 +87,45 @@ class PlanOutputMapper:
         if isinstance(first_value, (int, float)):
             return float(first_value)
         return fallback
+
+    def _station_rows(
+        self,
+        alignment_model: AlignmentModel,
+        *,
+        station_interval: float = 20.0,
+    ) -> list[PlanStationRow]:
+        """Build sampled plan station rows from the shared alignment sampler."""
+
+        result = AlignmentStationSamplingService().sample_alignment(
+            alignment=alignment_model,
+            interval=station_interval,
+            extra_stations=[
+                float(element.station_start)
+                for element in list(alignment_model.geometry_sequence or [])
+            ],
+        )
+        if result.rows:
+            return [
+                PlanStationRow(
+                    station_row_id=f"{alignment_model.alignment_id}:station:{index}",
+                    station=row.station,
+                    station_label=row.station_label,
+                    x=row.x,
+                    y=row.y,
+                    kind=row.source_reason,
+                )
+                for index, row in enumerate(result.rows, start=1)
+                if row.status == "ok"
+            ]
+
+        return [
+            PlanStationRow(
+                station_row_id=f"{alignment_model.alignment_id}:station:{index}",
+                station=element.station_start,
+                station_label=self._format_station(element.station_start),
+                x=self._first_value(element.geometry_payload.get("x_values", []), element.station_start),
+                y=self._first_value(element.geometry_payload.get("y_values", []), 0.0),
+                kind="element_start_station",
+            )
+            for index, element in enumerate(alignment_model.geometry_sequence, start=1)
+        ]

@@ -5,10 +5,13 @@ from freecad.Corridor_Road.v1.models.source.alignment_model import (
 from freecad.Corridor_Road.v1.models.source.profile_model import (
     ProfileControlPoint,
     ProfileModel,
+    VerticalCurveRow,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
+    AppliedSectionFrame,
+    AppliedSectionPoint,
     AppliedSectionQuantityFragment,
 )
 from freecad.Corridor_Road.v1.models.result.earthwork_balance_model import (
@@ -61,6 +64,20 @@ def test_section_output_mapper_maps_components_and_quantities() -> None:
                 component_id="lane-1",
             )
         ],
+        point_rows=[
+            AppliedSectionPoint("p-1", -5.0, 0.0, 10.0),
+            AppliedSectionPoint("p-2", 5.0, 0.0, 10.0),
+        ],
+        frame=AppliedSectionFrame(
+            station=10.0,
+            x=1000.0,
+            y=2000.0,
+            z=12.5,
+            tangent_direction_deg=15.0,
+            profile_grade=0.025,
+            alignment_status="ok",
+            profile_status="ok",
+        ),
     )
 
     output = SectionOutputMapper().map_applied_section(applied_section)
@@ -68,6 +85,14 @@ def test_section_output_mapper_maps_components_and_quantities() -> None:
     assert output.section_output_id == "sec-1"
     assert output.component_rows[0].template_ref == "tmpl-1"
     assert output.quantity_rows[0].component_ref == "lane-1"
+    assert output.geometry_rows[0].kind == "design_section"
+    assert output.geometry_rows[0].x_values == [-5.0, 5.0]
+    assert output.geometry_rows[0].z_values == [10.0, 10.0]
+    summary_by_kind = {row.kind: row for row in output.summary_rows}
+    assert summary_by_kind["frame_x"].value == 1000.0
+    assert summary_by_kind["frame_z"].value == 12.5
+    assert summary_by_kind["profile_grade"].value == 0.025
+    assert summary_by_kind["frame_status"].value == "alignment=ok; profile=ok"
 
 
 def test_surface_output_mapper_maps_surface_rows() -> None:
@@ -182,6 +207,8 @@ def test_plan_output_mapper_maps_alignment_geometry() -> None:
     assert output.plan_output_id == "align-1"
     assert output.geometry_rows[0].x_values == [1000.0, 1050.0]
     assert output.station_rows[0].x == 1000.0
+    assert output.station_rows[-1].x == 1050.0
+    assert len(output.station_rows) == 4
 
 
 def test_profile_output_mapper_maps_control_rows_and_earthwork() -> None:
@@ -225,6 +252,42 @@ def test_profile_output_mapper_maps_control_rows_and_earthwork() -> None:
     assert output.profile_output_id == "prof-1"
     assert output.line_rows[0].station_values == [0.0, 100.0]
     assert output.earthwork_rows[0].value == 10.0
+
+
+def test_profile_output_mapper_can_sample_parabolic_finished_grade_line() -> None:
+    profile_model = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-curve",
+        alignment_id="align-1",
+        control_rows=[
+            ProfileControlPoint("pvi-0", 0.0, 10.0),
+            ProfileControlPoint("pvi-50", 50.0, 15.0),
+            ProfileControlPoint("pvi-100", 100.0, 12.5),
+        ],
+        vertical_curve_rows=[
+            VerticalCurveRow(
+                vertical_curve_id="curve-1",
+                kind="parabolic_vertical_curve",
+                station_start=40.0,
+                station_end=60.0,
+                curve_length=20.0,
+            )
+        ],
+    )
+
+    output = ProfileOutputMapper().map_profile_model(
+        profile_model,
+        station_interval=20.0,
+    )
+
+    line = output.line_rows[0]
+    station_to_elevation = dict(zip(line.station_values, line.elevation_values))
+    assert line.kind == "finished_grade_line"
+    assert 40.0 in station_to_elevation
+    assert 60.0 in station_to_elevation
+    assert abs(station_to_elevation[40.0] - 14.0) < 1e-9
+    assert abs(station_to_elevation[60.0] - 14.5) < 1e-9
 
 
 def test_exchange_output_mapper_packages_multiple_outputs() -> None:

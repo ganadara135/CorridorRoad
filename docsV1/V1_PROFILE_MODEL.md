@@ -1,8 +1,8 @@
 # CorridorRoad V1 Profile Model
 
-Date: 2026-04-23
+Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, parabolic vertical-curve evaluation complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -66,6 +66,14 @@ The relationship is:
 
 It must not duplicate horizontal geometry internally.
 
+Current implementation note:
+
+- `Plan/Profile Review` exposes bridge diagnostic rows that confirm a v0 `VerticalAlignment` became a v1 `ProfileModel`, that `ProfileModel.alignment_id` matches the active `AlignmentModel.alignment_id`, and that profile control stations fit inside the alignment station range
+- `V1Profile` document objects now provide the preferred v1-native profile source path before legacy vertical alignment fallback is used
+- the sample v1 profile command creates or reuses a `V1Alignment`, stores profile controls and vertical-curve rows on a `V1Profile`, and routes it to `02_Alignment & Profile / Profiles`
+- `Edit Profile (v1)` provides the first v1-native PVI table editor for `V1Profile.ControlStations`, `ControlElevations`, and `ControlKinds`
+- `Plan/Profile Review` now prefers `V1Alignment` plus `V1Profile` sources when both exist, then falls back to legacy adapter sources only when native v1 sources are absent
+
 ## 5. Design Goals
 
 The v1 profile subsystem should:
@@ -81,13 +89,13 @@ The v1 profile subsystem should:
 
 Recommended early v1 support:
 
-- existing ground reference profiles
+- [x] existing ground reference profiles from TIN sampling
 - finished grade profiles
 - design reference profiles
 - PVI-based authoring
 - tangent grades
 - vertical curves
-- station range queries
+- [x] station range queries through alignment station sampling
 
 Deferred or later refinements may include:
 
@@ -105,6 +113,7 @@ Recommended primary object families:
 - `VerticalCurveRow`
 - `ProfileConstraintSet`
 - `ProfileEvaluationResult`
+- `V1Profile` FreeCAD document source object
 
 ## 8. ProfileModel Root
 
@@ -134,6 +143,43 @@ Recommended primary object families:
 - `finished_grade`
 - `design_reference`
 - `temporary_candidate_profile`
+
+### 8.4 Current FreeCAD Source Object
+
+The current v1-native FreeCAD source object is `V1Profile`.
+
+It stores the durable authoring fields needed to rebuild a `ProfileModel`:
+
+- `V1ObjectType`
+- `SchemaVersion`
+- `ProjectId`
+- `ProfileId`
+- `AlignmentId`
+- `ProfileKind`
+- `ControlPointIds`
+- `ControlStations`
+- `ControlElevations`
+- `ControlKinds`
+- `VerticalCurveIds`
+- `VerticalCurveKinds`
+- `VerticalCurveStationStarts`
+- `VerticalCurveStationEnds`
+- `VerticalCurveLengths`
+- `VerticalCurveParameters`
+
+Current routing rule:
+
+- `V1Profile` belongs under `02_Alignment & Profile / Profiles`
+- if a sample profile is created without an alignment, the command creates a matching `V1Alignment` first
+- downstream review converts `V1Profile` into `ProfileModel` through the v1 object adapter before using legacy profile adapters
+
+Current editor rule:
+
+- `Edit Profile (v1)` opens the selected or first document `V1Profile`
+- if no `V1Profile` exists, the editor command creates a sample profile so the workflow stays unblocked
+- `Apply` writes sorted PVI/control rows back to the source object
+- duplicate stations are rejected before writing
+- `Apply + Review Plan/Profile` reopens the v1 Plan/Profile Review with the edited profile and focused station context
 
 ## 9. ProfileControlSequence
 
@@ -256,6 +302,12 @@ This distinction is required for:
 
 `finished_grade` and `design_reference` profiles should remain durable design sources.
 
+Current implementation note:
+
+- `ProfileTinSamplingService` samples TIN elevations along an evaluated `AlignmentModel` station grid
+- `Plan/Profile Review` can attach sampled TIN rows as `ProfileLineRow(kind="existing_ground_line")`
+- no-hit samples keep `elevation=None` and are omitted from EG line segments rather than becoming zero elevation
+
 ## 14. Evaluation Services
 
 Recommended service families:
@@ -270,12 +322,29 @@ Recommended service families:
 
 This service evaluates station-based vertical geometry in deterministic form.
 
+Current implementation status:
+
+- [x] station to FG elevation by linear interpolation between ordered profile control points
+- [x] station to tangent grade between active control points
+- [x] active profile segment metadata for downstream station traceability
+- [x] explicit `out_of_range`, `no_controls`, and `duplicate_station` statuses
+- [x] active vertical-curve row metadata when the station falls inside a declared curve range
+- [x] detailed parabolic vertical-curve elevation and grade evaluation for symmetric PVI-centered curves
+- [x] v1-native PVI source edits can update `V1Profile` and feed the same evaluation path
+
 ### 15.2 Typical queries
 
-- station to elevation
-- station to grade
-- station to active control element
-- station range to sampled profile line
+- [x] station to elevation
+- [x] station to grade
+- [x] station to active control element
+- [x] station range to sampled profile line for Plan/Profile Review output
+
+Current vertical-curve behavior:
+
+- `VerticalCurveRow.station_start` and `station_end` are treated as BVC/EVC
+- the curve is evaluated as a symmetric parabolic curve centered on a matching PVI
+- incoming and outgoing tangent grades come from the neighboring PVI control points, or explicit `grade_in` / `grade_out` where provided
+- if the PVI-centered curve cannot be resolved, evaluation falls back to linear interpolation while keeping the active curve metadata visible
 
 ### 15.3 Rule
 
@@ -293,6 +362,20 @@ This service produces sampled line data for review and output without replacing 
 - 3D profile overlay
 - profile preview tools
 - export packaging helpers
+
+Initial implementation status:
+
+- [x] sample alignment stations against TIN XY elevations
+- [x] attach EG line rows to `ProfileOutput`
+- [x] expose configurable station interval in profile review UI
+- [x] sample FG profile lines through `ProfileEvaluationService` so vertical curves affect review lines and earthwork hints
+- [ ] support full EG/FG comparison rows
+
+Current interval behavior:
+
+- default Plan/Profile Review station interval is `20.000 m`
+- the review panel can reopen itself with a user-selected interval
+- the selected interval drives `PlanOutput.station_rows`, compact key-station navigation rows, and TIN-sampled existing-ground profile rows
 
 ### 16.3 Rule
 
@@ -345,6 +428,14 @@ Recommended diagnostic fields:
 - `source_ref`
 - `message`
 - `notes`
+
+Focused bridge validation:
+
+```powershell
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_profile_editor.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_evaluation_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
+```
 
 ## 20. Identity and Provenance
 

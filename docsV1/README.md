@@ -25,6 +25,9 @@ Baseline document:
 - [V1_TIN_ENGINE_PLAN.md](./V1_TIN_ENGINE_PLAN.md)
 - [V1_TIN_DATA_SCHEMA.md](./V1_TIN_DATA_SCHEMA.md)
 - [V1_TIN_SAMPLING_CONTRACT.md](./V1_TIN_SAMPLING_CONTRACT.md)
+- [V1_TIN_CORE_IMPLEMENTATION_PLAN.md](./V1_TIN_CORE_IMPLEMENTATION_PLAN.md)
+- [V1_TIN_REVIEW_NEXT_STEP_PLAN.md](./V1_TIN_REVIEW_NEXT_STEP_PLAN.md)
+- [V1_PROJECT_TREE_REDESIGN_PLAN.md](./V1_PROJECT_TREE_REDESIGN_PLAN.md)
 - [V1_VIEWER_PLAN.md](./V1_VIEWER_PLAN.md)
 - [V1_UX_RESET_PLAN.md](./V1_UX_RESET_PLAN.md)
 - [V1_ACTION_LABEL_RESET_PLAN.md](./V1_ACTION_LABEL_RESET_PLAN.md)
@@ -64,8 +67,11 @@ Preferred review workflow:
 - start section review from the v1 `Cross Section Viewer`
 - start plan/profile review from the v1 `Plan/Profile Viewer`
 - start earthwork review from the v1 `Earthwork Viewer`
+- use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows
+- use `Generate Stations (v1)` as the first native station-grid builder after alignment edits
+- use `Edit Profile (v1)` as the first native profile-source editor for PVI station/elevation rows
 - use the existing v0 viewers as secondary support paths during transition
-- use the existing v0 editors mainly as source-authoring targets reached through v1 viewer handoff
+- use the existing v0 editors only as secondary source-authoring support where a v1-native editor is not available yet
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical
 - in the active workbench layout, keep the `Corridor` stage centered on `Build Corridor` rather than exposing low-level intermediate generators
 - in the active workbench layout, expose `Outputs & Exchange` and `AI Assist` as explicit top-level stages even before their detailed v1-native hubs are fully implemented

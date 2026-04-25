@@ -1,8 +1,8 @@
 # CorridorRoad V1 Plan Profile Review Execution Plan
 
-Date: 2026-04-23
+Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, station interval review control complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -167,6 +167,7 @@ The promoted screen must rely on:
 - optional earthwork attachment rows
 - source context payload
 - station focus payload
+- evaluated alignment frame rows from `AlignmentEvaluationService`
 
 It must not rely on:
 
@@ -218,6 +219,64 @@ The promoted review screen should be validated through:
 - handoff tests
 - same-context return tests
 - manual testing with a real document
+
+Current implementation status:
+
+- [x] key station rows are enriched with evaluated `x`, `y`, `tangent_direction_deg`, and active element metadata when an `AlignmentModel` exists
+- [x] the Plan/Profile viewer shows an `Alignment Frame` table for evaluated station rows
+- [x] the text summary reports evaluated alignment station count
+- [x] `PlanOutput.station_rows` are generated from the shared `AlignmentStationSamplingService`
+- [x] key station navigation uses the sampled station grid while keeping the visible list compact around the current station
+- [x] `ProfileOutput.line_rows` can include a TIN-sampled `existing_ground_line`
+- [x] the Plan/Profile viewer shows profile line rows, including FG and EG when available
+- [x] FG/EG profile comparison can attach `profile_cut_depth` and `profile_fill_depth` hint rows
+- [x] explicit-width profile area hints can attach `profile_cut_area` and `profile_fill_area` rows
+- [x] Plan/Profile viewer can apply `earthwork_area_width` through viewer context and reopen the v1 review
+- [x] Plan/Profile viewer can display Earthwork Review handoff context for earthwork window, cut/fill, and haul-zone summaries
+- [x] Earthwork attachment rows show their `kind` in the Plan/Profile viewer
+- [x] Preview payload reports whether it is using the active document bridge or demo fallback through `preview_source_kind`
+- [x] Plan/Profile viewer shows `Alignment/Profile Bridge Diagnostics` rows for source mode, legacy object resolution, model build status, alignment/profile ID link, and profile station range fit
+- [x] text summary reports bridge diagnostic counts so document-vs-demo and link issues are visible without inspecting raw payloads
+- [x] `ProfileEvaluationService` evaluates station-based FG elevation, grade, active segment, status, and active vertical-curve metadata
+- [x] `ProfileEvaluationService` now evaluates PVI-centered parabolic vertical curves for FG elevation and grade
+- [x] key station rows now carry both alignment frame data and profile evaluation data for the same station domain
+- [x] Plan/Profile viewer shows a `Profile Evaluation` table for station, elevation, grade, active segment, active curve, and status
+- [x] document preview now prefers native `V1Stationing` rows for `PlanOutput.station_rows` and key-station navigation when available
+- [x] document preview now prefers native `V1Alignment` source objects before legacy horizontal alignment adapters
+- [x] document preview now prefers native `V1Profile` source objects before legacy vertical alignment adapters
+- [x] sample v1 profile creation feeds Plan/Profile Review with a matched alignment/profile pair and reports an `alignment_profile_link` diagnostic status of `ok`
+- [x] Plan/Profile viewer's alignment handoff now opens the single v1 `Alignment` command for native alignment-source edits
+- [x] v1 alignment editing intentionally excludes direct `Review Plan/Profile` and `Next: Generate Stations` actions from the alignment-stage editor
+- [x] Plan/Profile viewer's profile handoff now opens `Edit Profile (v1)` for native profile-source edits
+- [x] `Edit Profile (v1)` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
+- [x] configurable station interval is available in Plan/Profile Review and feeds plan station rows, key station rows, and TIN-based EG sampling
+- [x] sampled FG profile lines now use the same profile evaluation service, so vertical curves affect Profile Lines and EG/FG hints
+- [x] `Generate Stations (v1)` creates a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
+
+Focused validation:
+
+```powershell
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_alignment_source_object.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_alignment_editor.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_stationing_source_object.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_profile_source_object.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_v1_profile_editor.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_alignment_station_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_evaluation_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_tin_sampling_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_earthwork_hint_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "exec(open(r'tests\contracts\v1\test_profile_earthwork_area_hint_service.py', 'r', encoding='utf-8').read())"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
+& "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_plan_profile_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 plan/profile command bridge contract tests completed.')"
+```
+
+Current manual interval check:
+
+1. open `Plan/Profile Review`
+2. change `Station Interval`
+3. click `Apply Station Interval`
+4. confirm the viewer reopens and the summary reports the new interval
+5. confirm plan station count and EG sampling density change when TIN is available
 
 Minimum manual scenarios:
 

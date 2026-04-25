@@ -2,7 +2,7 @@
 
 Date: 2026-04-23
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, TIN EG line and profile earthwork depth/area hint initial slices complete
 Depends on:
 
 - `docsV1/V1_PLAN_PROFILE_SHEET_PLAN.md`
@@ -138,6 +138,12 @@ Profile consumers must know whether the profile is interpreted in local station/
 - `design_reference_line`
 - `comparison_line`
 
+Current implementation note:
+
+- `finished_grade_line` is generated from `ProfileModel.control_rows`
+- `existing_ground_line` can be generated from `ProfileTinSamplingService` using a TIN surface and evaluated alignment station grid
+- gaps or no-hit TIN samples should split or omit EG line segments instead of inserting zero elevations
+
 ## 10. PVI Rows
 
 ### 10.1 Purpose
@@ -223,10 +229,24 @@ PVI rows should remain identifiable in profile outputs even if different consume
 - `waste_zone`
 - `surplus_range`
 - `deficit_range`
+- `profile_cut_depth`
+- `profile_fill_depth`
+- `profile_balanced_depth`
+- `profile_cut_area`
+- `profile_fill_area`
+- `profile_balanced_area`
 
 ### 13.4 Rule
 
 Earthwork rows included in profile outputs should be derived from normalized earthwork outputs, not re-computed inside profile renderers.
+
+Current implementation note:
+
+- early profile earthwork hints are derived by `ProfileEarthworkHintService`
+- these hint rows compare FG and EG elevations and report depth in `m`
+- early profile area hints are derived by `ProfileEarthworkAreaHintService`
+- area hint rows use `m2` and are rectangular-equivalent estimates from `depth * explicit_section_width`
+- they are not final cut/fill polygon area or volume rows
 
 ## 14. Annotation Rows
 

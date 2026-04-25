@@ -9,7 +9,11 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
 
-from ..models.result.applied_section import AppliedSection, AppliedSectionQuantityFragment
+from ..models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionFrame,
+    AppliedSectionQuantityFragment,
+)
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.result.corridor_model import CorridorModel, CorridorSamplingPolicy
 from ..services.evaluation import LegacyDocumentAdapter
@@ -251,6 +255,16 @@ def build_demo_earthwork_report(
                 label=document_label or corridor.label,
                 station=0.0,
                 region_id="region:mainline",
+                frame=AppliedSectionFrame(
+                    station=0.0,
+                    x=1000.0,
+                    y=2000.0,
+                    z=12.0,
+                    tangent_direction_deg=0.0,
+                    profile_grade=0.02,
+                    alignment_status="ok",
+                    profile_status="ok",
+                ),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:0",
@@ -276,6 +290,16 @@ def build_demo_earthwork_report(
                 label=document_label or corridor.label,
                 station=20.0,
                 region_id="region:mainline",
+                frame=AppliedSectionFrame(
+                    station=20.0,
+                    x=1020.0,
+                    y=2000.0,
+                    z=12.4,
+                    tangent_direction_deg=0.0,
+                    profile_grade=0.02,
+                    alignment_status="ok",
+                    profile_status="ok",
+                ),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:20",
@@ -301,6 +325,16 @@ def build_demo_earthwork_report(
                 label=document_label or corridor.label,
                 station=40.0,
                 region_id="region:mainline",
+                frame=AppliedSectionFrame(
+                    station=40.0,
+                    x=1040.0,
+                    y=2000.0,
+                    z=12.8,
+                    tangent_direction_deg=0.0,
+                    profile_grade=0.02,
+                    alignment_status="ok",
+                    profile_status="ok",
+                ),
             ),
         ],
     )
@@ -380,6 +414,9 @@ def format_earthwork_report(report: dict[str, object]) -> str:
         mass_haul_output.summary_rows,
         "balance_point_count",
     )
+    final_cumulative_mass = _summary_value(mass_haul_output.summary_rows, "final_cumulative_mass")
+    max_surplus_mass = _summary_value(mass_haul_output.summary_rows, "max_surplus_cumulative_mass")
+    max_deficit_mass = _summary_value(mass_haul_output.summary_rows, "max_deficit_cumulative_mass")
 
     return "\n".join(
         [
@@ -390,6 +427,8 @@ def format_earthwork_report(report: dict[str, object]) -> str:
             f"Total fill: {total_fill} m3",
             f"Mass-haul curves: {curve_count}",
             f"Balance points: {balance_point_count}",
+            f"Final cumulative mass: {final_cumulative_mass} m3",
+            f"Max surplus/deficit: {max_surplus_mass} / {max_deficit_mass} m3",
             f"Key stations: {len(list(report.get('key_station_rows', []) or []))}",
             *_focus_summary_lines(station_row, focused_balance_row, focused_haul_zone),
         ]

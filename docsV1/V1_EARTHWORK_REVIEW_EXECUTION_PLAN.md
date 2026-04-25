@@ -2,7 +2,7 @@
 
 Date: 2026-04-23
 Branch: `v1-dev`
-Status: Draft baseline
+Status: Draft baseline, mass-haul practical review and review handoff slices complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -188,6 +188,9 @@ The UI should visibly present:
 - usable cut where available
 - borrow / waste
 - balance ratio
+- final cumulative mass
+- max surplus and max deficit cumulative mass
+- mass-curve station/value rows
 - focused station or focused window
 - stale/current status
 
@@ -230,6 +233,17 @@ The promoted review screen should be validated through:
 - mass-haul summary tests
 - handoff tests to section and profile review
 - manual testing with a real document
+
+Current implementation status:
+
+- [x] Earthwork Review summary reports total cut/fill and mass-haul curve count
+- [x] mass-haul output summary includes final cumulative mass and max surplus/deficit cumulative mass
+- [x] Earthwork Review shows a mass-curve station/cumulative-mass table
+- [x] `MassHaulService` interpolates balance point station values where cumulative mass crosses zero inside a window
+- [x] Earthwork Review can hand off selected station/window context to Cross Section Viewer
+- [x] Cross Section Viewer can display earthwork window, cut/fill, and haul-zone context from the handoff payload
+- [x] Earthwork Review can hand off selected station/window context to Plan/Profile Review for linear-cause review
+- [x] Plan/Profile Review can display earthwork window, cut/fill, and haul-zone context from the handoff payload
 
 Minimum manual scenarios:
 

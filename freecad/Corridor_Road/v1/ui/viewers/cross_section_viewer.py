@@ -7,7 +7,7 @@ try:
 except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
     Gui = None
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 from ..common import run_legacy_command, set_ui_context
 
 
@@ -113,6 +113,127 @@ def build_handoff_status(preview: dict[str, object]) -> dict[str, str]:
     }
 
 
+def section_geometry_rows(preview: dict[str, object]) -> list[object]:
+    """Return drawable section geometry rows from a preview payload."""
+
+    section_output = preview.get("section_output")
+    return [
+        row
+        for row in list(getattr(section_output, "geometry_rows", []) or [])
+        if len(list(getattr(row, "x_values", []) or [])) >= 2
+        and len(list(getattr(row, "y_values", []) or [])) >= 2
+    ]
+
+
+def build_section_geometry_table_rows(preview: dict[str, object]) -> list[list[str]]:
+    """Build compact geometry rows for the section viewer."""
+
+    rows = []
+    for row in section_geometry_rows(preview):
+        x_values = [float(value) for value in list(getattr(row, "x_values", []) or [])]
+        y_values = [float(value) for value in list(getattr(row, "y_values", []) or [])]
+        if not x_values or not y_values:
+            continue
+        rows.append(
+            [
+                str(getattr(row, "kind", "") or ""),
+                str(len(x_values)),
+                f"{min(x_values):.3f} -> {max(x_values):.3f}",
+                f"{min(y_values):.3f} -> {max(y_values):.3f}",
+                str(getattr(row, "source_ref", "") or ""),
+            ]
+        )
+    return rows
+
+
+class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
+    """Tiny section polyline preview for existing-ground rows."""
+
+    def __init__(self, rows: list[object]):
+        super().__init__()
+        self.rows = list(rows or [])
+        self.setMinimumHeight(180)
+
+    def paintEvent(self, event):  # noqa: N802 - Qt override name
+        del event
+        painter = QtGui.QPainter(self)
+        try:
+            rect = self.rect()
+            painter.fillRect(rect, QtGui.QColor("#101821"))
+            drawable_rows = self._drawable_rows()
+            if not drawable_rows:
+                painter.setPen(QtGui.QColor("#d6dde5"))
+                painter.drawText(rect, int(QtCore.Qt.AlignCenter), "No section geometry rows.")
+                return
+
+            margin = 24
+            plot = rect.adjusted(margin, margin, -margin, -margin)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#385064")))
+            painter.drawRect(plot)
+
+            x_values = [point[0] for row in drawable_rows for point in row["points"]]
+            y_values = [point[1] for row in drawable_rows for point in row["points"]]
+            x_min, x_max = min(x_values), max(x_values)
+            y_min, y_max = min(y_values), max(y_values)
+            if abs(x_max - x_min) < 1e-9:
+                x_min -= 1.0
+                x_max += 1.0
+            if abs(y_max - y_min) < 1e-9:
+                y_min -= 1.0
+                y_max += 1.0
+
+            axis_pen = QtGui.QPen(QtGui.QColor("#6f7f8f"))
+            axis_pen.setWidth(1)
+            painter.setPen(axis_pen)
+            self._draw_axis_labels(painter, plot, x_min, x_max, y_min, y_max)
+
+            for row in drawable_rows:
+                pen = QtGui.QPen(QtGui.QColor(row["color"]))
+                pen.setWidth(2)
+                painter.setPen(pen)
+                scaled_points = [
+                    self._scale_point(point, plot, x_min, x_max, y_min, y_max)
+                    for point in row["points"]
+                ]
+                for index in range(len(scaled_points) - 1):
+                    painter.drawLine(scaled_points[index], scaled_points[index + 1])
+        finally:
+            painter.end()
+
+    def _drawable_rows(self) -> list[dict[str, object]]:
+        result = []
+        for row in self.rows:
+            x_values = [float(value) for value in list(getattr(row, "x_values", []) or [])]
+            y_values = [float(value) for value in list(getattr(row, "y_values", []) or [])]
+            count = min(len(x_values), len(y_values))
+            if count < 2:
+                continue
+            kind = str(getattr(row, "kind", "") or "")
+            color = "#55c7a5" if kind == "existing_ground_tin" else "#9fb5ff"
+            result.append(
+                {
+                    "kind": kind,
+                    "color": color,
+                    "points": list(zip(x_values[:count], y_values[:count])),
+                }
+            )
+        return result
+
+    @staticmethod
+    def _scale_point(point, plot, x_min: float, x_max: float, y_min: float, y_max: float):
+        x, y = point
+        px = plot.left() + ((float(x) - x_min) / (x_max - x_min)) * plot.width()
+        py = plot.bottom() - ((float(y) - y_min) / (y_max - y_min)) * plot.height()
+        return QtCore.QPointF(px, py)
+
+    @staticmethod
+    def _draw_axis_labels(painter, plot, x_min: float, x_max: float, y_min: float, y_max: float) -> None:
+        painter.drawText(plot.left(), plot.bottom() + 16, f"{x_min:.1f}")
+        painter.drawText(plot.right() - 48, plot.bottom() + 16, f"{x_max:.1f}")
+        painter.drawText(plot.left(), plot.top() - 6, f"z {y_max:.1f}")
+        painter.drawText(plot.left(), plot.bottom() - 4, f"z {y_min:.1f}")
+
+
 class CrossSectionViewerTaskPanel:
     """Minimal read-only v1 cross-section viewer task panel."""
 
@@ -157,6 +278,16 @@ class CrossSectionViewerTaskPanel:
         summary.setMinimumHeight(120)
         summary.setPlainText(self._summary_text())
         layout.addWidget(summary)
+
+        layout.addWidget(QtWidgets.QLabel("Section Geometry Preview"))
+        layout.addWidget(_SectionGeometryPreviewWidget(self._section_geometry_rows()))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Kind", "Points", "Offset Range", "Elevation Range", "Source"],
+                rows=self._section_geometry_table_rows(),
+                empty_text="No section geometry rows.",
+            )
+        )
 
         layout.addWidget(QtWidgets.QLabel("Components"))
         self._component_table = self._table_widget(
@@ -352,6 +483,7 @@ class CrossSectionViewerTaskPanel:
                 f"Key Stations: {len(self._key_station_rows())}",
                 f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
                 f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
+                f"Geometry Rows: {len(self._section_geometry_rows())}",
                 f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
                 f"Review Markers: {len(self._review_marker_rows())}",
                 f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
@@ -441,6 +573,12 @@ class CrossSectionViewerTaskPanel:
             for row in list(self.preview.get("terrain_rows", []) or [])
         ]
 
+    def _section_geometry_rows(self) -> list[object]:
+        return section_geometry_rows(self.preview)
+
+    def _section_geometry_table_rows(self) -> list[list[str]]:
+        return build_section_geometry_table_rows(self.preview)
+
     def _structure_review_rows(self) -> list[list[str]]:
         return [
             [
@@ -492,6 +630,9 @@ class CrossSectionViewerTaskPanel:
             ("Station", "station_label"),
             ("Focus Component", ""),
             ("Station Tags", "tag_summary"),
+            ("Earthwork Window", "earthwork_window_summary"),
+            ("Earthwork Cut/Fill", "earthwork_cut_fill_summary"),
+            ("Haul Zone", "haul_zone_summary"),
             ("Top Edges", "top_profile_edge_summary"),
             ("Structure Summary", "structure_summary"),
         ]
