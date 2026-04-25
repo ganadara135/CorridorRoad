@@ -6,6 +6,7 @@ from freecad.Corridor_Road.v1.commands.cmd_review_tin import (
     build_csv_tin_review,
     build_demo_tin_review,
     format_tin_review,
+    _focus_tin_preview_object,
     show_v1_tin_review,
 )
 from freecad.Corridor_Road.objects.obj_project import (
@@ -13,6 +14,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
     V1_TREE_EXISTING_GROUND_TIN_RESULT,
     V1_TREE_EXISTING_GROUND_TIN_SOURCE,
+    V1_TREE_EXISTING_REFERENCES,
     V1_TREE_SURVEY_POINTS,
     CorridorRoadProject,
     ensure_project_tree,
@@ -20,6 +22,42 @@ from freecad.Corridor_Road.objects.obj_project import (
 
 
 SAMPLE_PATH = Path("tests/samples/pointcloud_utm_realistic_hilly.csv")
+
+
+class _FakeSelection:
+    def __init__(self):
+        self.selected = []
+        self.cleared = False
+
+    def clearSelection(self):
+        self.cleared = True
+        self.selected = []
+
+    def addSelection(self, obj):
+        self.selected.append(obj)
+
+
+class _FakeView:
+    def __init__(self):
+        self.isometric = False
+        self.fit_selection = False
+
+    def viewIsometric(self):
+        self.isometric = True
+
+    def fitSelection(self):
+        self.fit_selection = True
+
+
+class _FakeActiveDocument:
+    def __init__(self):
+        self.ActiveView = _FakeView()
+
+
+class _FakeGui:
+    def __init__(self):
+        self.Selection = _FakeSelection()
+        self.ActiveDocument = _FakeActiveDocument()
 
 
 def test_build_demo_tin_review_returns_surface_and_probe_result() -> None:
@@ -152,7 +190,31 @@ def test_show_v1_tin_review_routes_mesh_preview_to_v1_tree_when_project_exists()
         mesh_preview = preview["mesh_preview"]
         folder = tree[V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW]
         names = {str(getattr(obj, "Name", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
+        existing_reference_names = _group_names(tree[V1_TREE_EXISTING_REFERENCES])
         assert mesh_preview.object_name in names
+        assert mesh_preview.object_name not in existing_reference_names
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_focus_tin_preview_selects_and_centers_mesh_preview() -> None:
+    doc = App.newDocument("TINReviewFocusPreviewTest")
+    try:
+        preview = show_v1_tin_review(
+            document=doc,
+            extra_context={"create_mesh_preview": True},
+            app_module=None,
+            gui_module=None,
+        )
+        gui = _FakeGui()
+
+        focused = _focus_tin_preview_object(doc, preview, gui_module=gui)
+
+        assert focused is True
+        assert gui.Selection.cleared is True
+        assert len(gui.Selection.selected) == 1
+        assert gui.ActiveDocument.ActiveView.isometric is True
+        assert gui.ActiveDocument.ActiveView.fit_selection is True
     finally:
         App.closeDocument(doc.Name)
 
@@ -197,6 +259,10 @@ def test_show_v1_tin_review_routes_source_result_and_diagnostics_records_to_v1_t
         assert records["surface_source"] in _group_names(tree[V1_TREE_EXISTING_GROUND_TIN_SOURCE])
         assert records["result"] in _group_names(tree[V1_TREE_EXISTING_GROUND_TIN_RESULT])
         assert records["diagnostics"] in _group_names(tree[V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS])
+        existing_reference_names = _group_names(tree[V1_TREE_EXISTING_REFERENCES])
+        assert records["surface_source"] not in existing_reference_names
+        assert records["result"] not in existing_reference_names
+        assert records["diagnostics"] not in existing_reference_names
     finally:
         App.closeDocument(doc.Name)
 

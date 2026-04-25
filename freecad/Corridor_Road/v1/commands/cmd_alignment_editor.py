@@ -78,6 +78,70 @@ ALIGNMENT_PRESETS = {
     },
 }
 
+ALIGNMENT_PRESET_PLACEMENTS = [
+    "Pattern only",
+    "Center on terrain",
+    "Center on project origin",
+]
+
+
+def alignment_preset_placement_names() -> list[str]:
+    """Return supported preset placement modes for the v1 Alignment editor."""
+
+    return list(ALIGNMENT_PRESET_PLACEMENTS)
+
+
+def alignment_preset_center(rows) -> tuple[float, float]:
+    """Return the bounding-box center of local preset PI rows."""
+
+    values = list(rows or [])
+    if not values:
+        return 0.0, 0.0
+    xs = [float(row[0]) for row in values]
+    ys = [float(row[1]) for row in values]
+    return (min(xs) + max(xs)) * 0.5, (min(ys) + max(ys)) * 0.5
+
+
+def alignment_preset_rows_for_placement(
+    rows,
+    placement: str,
+    *,
+    terrain_center: tuple[float, float] | None = None,
+    project_origin: tuple[float, float] = (0.0, 0.0),
+) -> dict[str, object]:
+    """Translate preset PI rows according to a user-selected placement mode."""
+
+    rows_in = [tuple(row) for row in list(rows or [])]
+    placement_text = str(placement or "Pattern only").strip() or "Pattern only"
+    source_x, source_y = alignment_preset_center(rows_in)
+    target = None
+    placement_used = placement_text
+
+    if placement_text == "Center on terrain":
+        if terrain_center is not None:
+            target = (float(terrain_center[0]), float(terrain_center[1]))
+            note = f"Terrain center used: X={target[0]:.3f}, Y={target[1]:.3f}"
+        else:
+            target = (float(project_origin[0]), float(project_origin[1]))
+            placement_used = "Center on project origin (fallback)"
+            note = "Terrain was not available; project origin was used instead."
+    elif placement_text == "Center on project origin":
+        target = (float(project_origin[0]), float(project_origin[1]))
+        note = f"Project origin used: X={target[0]:.3f}, Y={target[1]:.3f}"
+    else:
+        note = "Preset kept its original pattern position."
+
+    if target is None:
+        return {"rows": rows_in, "placement": placement_used, "note": note}
+
+    dx = float(target[0]) - float(source_x)
+    dy = float(target[1]) - float(source_y)
+    return {
+        "rows": [(float(x) + dx, float(y) + dy, float(radius), float(ls)) for x, y, radius, ls in rows_in],
+        "placement": placement_used,
+        "note": note,
+    }
+
 
 def alignment_element_rows(alignment) -> list[dict[str, object]]:
     """Return editable geometry rows from a V1Alignment object."""
@@ -401,10 +465,6 @@ class V1AlignmentEditorTaskPanel:
         self._tabs.addTab(self._build_compiled_tab(), "Compiled v1 Geometry")
         layout.addWidget(self._tabs, 1)
 
-        self._status_label = QtWidgets.QLabel("")
-        self._status_label.setStyleSheet("color: #9bd19b; background: #142116; padding: 6px;")
-        layout.addWidget(self._status_label)
-
         button_row = QtWidgets.QHBoxLayout()
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
@@ -432,6 +492,7 @@ class V1AlignmentEditorTaskPanel:
 
         sketch_row = QtWidgets.QHBoxLayout()
         self._sketch_combo = QtWidgets.QComboBox()
+        self._sketch_combo.setMaximumWidth(280)
         refresh_sketch_button = QtWidgets.QPushButton("Refresh")
         refresh_sketch_button.clicked.connect(self._refresh_sketches)
         load_sketch_button = QtWidgets.QPushButton("Load from Sketch")
@@ -461,16 +522,23 @@ class V1AlignmentEditorTaskPanel:
         preset_row = QtWidgets.QHBoxLayout()
         self._preset_combo = QtWidgets.QComboBox()
         self._preset_combo.addItems(list(ALIGNMENT_PRESETS.keys()))
+        self._preset_placement_combo = QtWidgets.QComboBox()
+        self._preset_placement_combo.addItems(alignment_preset_placement_names())
+        self._preset_placement_combo.setCurrentText("Center on terrain")
         self._preset_note = QtWidgets.QLabel("")
         self._preset_note.setWordWrap(True)
         load_preset_button = QtWidgets.QPushButton("Load Preset")
         load_preset_button.clicked.connect(self._load_selected_preset)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
+        self._preset_placement_combo.currentIndexChanged.connect(self._update_preset_note)
         preset_row.addWidget(QtWidgets.QLabel("Preset:"))
         preset_row.addWidget(self._preset_combo)
+        preset_row.addWidget(QtWidgets.QLabel("Placement:"))
+        preset_row.addWidget(self._preset_placement_combo)
         preset_row.addWidget(load_preset_button)
-        preset_row.addWidget(self._preset_note, 1)
+        preset_row.addStretch(1)
         layout.addLayout(preset_row)
+        layout.addWidget(self._preset_note)
 
         self._ip_table = QtWidgets.QTableWidget(0, 4)
         self._ip_table.setHorizontalHeaderLabels(["X", "Y", "Radius (m)", "Transition Ls (m)"])
@@ -672,8 +740,17 @@ class V1AlignmentEditorTaskPanel:
     def _load_selected_preset(self) -> None:
         preset = ALIGNMENT_PRESETS.get(str(self._preset_combo.currentText() or ""), {})
         rows = list(preset.get("rows", []) or [])
-        self._set_ip_rows_data(rows)
-        self._set_status("Preset loaded. Apply to compile v1 alignment geometry.", ok=True)
+        placed = alignment_preset_rows_for_placement(
+            rows,
+            self._selected_preset_placement(),
+            terrain_center=self._selected_terrain_center_for_preset(),
+            project_origin=self._project_origin_anchor(),
+        )
+        self._set_ip_rows_data(list(placed.get("rows", []) or []))
+        self._set_status(
+            f"Preset loaded ({placed.get('placement')}). {placed.get('note')} Apply to compile v1 alignment geometry.",
+            ok=True,
+        )
 
     def _refresh_sketches(self) -> None:
         self._sketches = find_sketch_objects(self.document)
@@ -783,7 +860,78 @@ class V1AlignmentEditorTaskPanel:
         if not hasattr(self, "_preset_note"):
             return
         preset = ALIGNMENT_PRESETS.get(str(self._preset_combo.currentText() or ""), {})
-        self._preset_note.setText(str(preset.get("note", "") or ""))
+        placement = self._selected_preset_placement()
+        note = str(preset.get("note", "") or "")
+        if note:
+            note = f"{note} Placement: {placement}."
+        else:
+            note = f"Preset placement: {placement}."
+        self._preset_note.setText(note)
+
+    def _selected_preset_placement(self) -> str:
+        if not hasattr(self, "_preset_placement_combo"):
+            return "Pattern only"
+        return str(self._preset_placement_combo.currentText() or "Pattern only").strip()
+
+    def _selected_terrain_center_for_preset(self) -> tuple[float, float] | None:
+        terrain = self._selected_terrain_for_preset()
+        if terrain is None:
+            return None
+        try:
+            if hasattr(terrain, "Mesh") and terrain.Mesh is not None:
+                box = terrain.Mesh.BoundBox
+            else:
+                box = terrain.Shape.BoundBox
+        except Exception:
+            return None
+        return (
+            0.5 * (float(box.XMin) + float(box.XMax)),
+            0.5 * (float(box.YMin) + float(box.YMax)),
+        )
+
+    def _selected_terrain_for_preset(self):
+        project = find_project(self.document)
+        if project is not None:
+            try:
+                terrain = getattr(project, "Terrain", None)
+                if self._is_surface_like(terrain):
+                    return terrain
+            except Exception:
+                pass
+        if Gui is not None:
+            try:
+                for obj in list(Gui.Selection.getSelection() or []):
+                    if self._is_surface_like(obj):
+                        return obj
+            except Exception:
+                pass
+        for obj in list(getattr(self.document, "Objects", []) or []):
+            if self._is_surface_like(obj):
+                return obj
+        return None
+
+    @staticmethod
+    def _is_surface_like(obj) -> bool:
+        if obj is None:
+            return False
+        try:
+            from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
+
+            return bool(_ssc.is_mesh_object(obj) or _ssc.is_shape_object(obj))
+        except Exception:
+            return False
+
+    def _project_origin_anchor(self) -> tuple[float, float]:
+        project = find_project(self.document)
+        if project is None:
+            return 0.0, 0.0
+        try:
+            return (
+                float(getattr(project, "LocalOriginX", 0.0) or 0.0),
+                float(getattr(project, "LocalOriginY", 0.0) or 0.0),
+            )
+        except Exception:
+            return 0.0, 0.0
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
@@ -819,6 +967,7 @@ class V1AlignmentEditorTaskPanel:
             return True
         except Exception as exc:
             self._set_status(str(exc), ok=False)
+            self._show_message("Alignment", f"Alignment was not applied.\n{exc}")
             return False
 
     def _show_apply_complete_message(self, compiled_count: int) -> None:
@@ -924,11 +1073,13 @@ class V1AlignmentEditorTaskPanel:
         )
 
     def _set_status(self, message: str, *, ok: bool) -> None:
-        self._status_label.setText(str(message or ""))
-        if ok:
-            self._status_label.setStyleSheet("color: #bff4bf; background: #142116; padding: 6px;")
-        else:
-            self._status_label.setStyleSheet("color: #ffd5d5; background: #321818; padding: 6px;")
+        return
+
+    def _show_message(self, title: str, message: str) -> None:
+        try:
+            QtWidgets.QMessageBox.information(self.form, title, message)
+        except Exception:
+            pass
 
 
 def run_v1_alignment_editor_command():

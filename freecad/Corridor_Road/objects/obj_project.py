@@ -1249,6 +1249,17 @@ def resolve_v1_target_container(prj, child):
         return prj
 
     tree = ensure_project_tree(prj, include_references=False)
+    record_kind = str(getattr(child, "CRRecordKind", "") or "")
+    if record_kind == "tin_source_csv":
+        return tree.get(V1_TREE_SURVEY_POINTS, None)
+    if record_kind == "tin_surface_source":
+        return tree.get(V1_TREE_EXISTING_GROUND_TIN_SOURCE, None)
+    if record_kind == "tin_surface_result":
+        return tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None)
+    if record_kind == "tin_mesh_preview":
+        return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
+    if record_kind == "tin_diagnostics":
+        return tree.get(V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS, None)
     if _is_type(child, proxy_types=("V1Alignment", "HorizontalAlignment"), name_prefixes=("V1Alignment", "HorizontalAlignment")) or _looks_like_horizontal_alignment(child):
         return tree.get(V1_TREE_ALIGNMENTS, None)
     if _is_type(
@@ -1257,7 +1268,11 @@ def resolve_v1_target_container(prj, child):
         name_prefixes=("V1Profile", "VerticalAlignment", "ProfileBundle", "FinishedGradeFG"),
     ):
         return tree.get(V1_TREE_PROFILES, None)
-    if _is_type(child, proxy_types=("V1Stationing", "Stationing"), name_prefixes=("V1Stationing", "Stationing")):
+    if _is_type(
+        child,
+        proxy_types=("V1Stationing", "Stationing", "V1StationHighlight"),
+        name_prefixes=("V1Stationing", "Stationing", "V1StationHighlight"),
+    ):
         return tree.get(V1_TREE_STATIONS, None)
     if _is_type(child, proxy_types=("Superelevation", "SuperelevationModel"), name_prefixes=("Superelevation", "SuperelevationModel")):
         return tree.get(V1_TREE_SUPERELEVATION, None)

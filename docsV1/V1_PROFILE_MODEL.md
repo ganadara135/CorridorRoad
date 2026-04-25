@@ -71,7 +71,8 @@ Current implementation note:
 - `Plan/Profile Review` exposes bridge diagnostic rows that confirm a v0 `VerticalAlignment` became a v1 `ProfileModel`, that `ProfileModel.alignment_id` matches the active `AlignmentModel.alignment_id`, and that profile control stations fit inside the alignment station range
 - `V1Profile` document objects now provide the preferred v1-native profile source path before legacy vertical alignment fallback is used
 - the sample v1 profile command creates or reuses a `V1Alignment`, stores profile controls and vertical-curve rows on a `V1Profile`, and routes it to `02_Alignment & Profile / Profiles`
-- `Edit Profile (v1)` provides the first v1-native PVI table editor for `V1Profile.ControlStations`, `ControlElevations`, and `ControlKinds`
+- `Profile` provides the first v1-native tabbed profile editor for FG PVI rows, preset data loading, CSV import/export, editable vertical curve rows, EG reference status, and station-link checks
+- `Profile` opens without immediately changing the document when no `V1Profile` exists; `Apply` creates or updates the source object and reports completion to the user
 - `Plan/Profile Review` now prefers `V1Alignment` plus `V1Profile` sources when both exist, then falls back to legacy adapter sources only when native v1 sources are absent
 
 ## 5. Design Goals
@@ -175,11 +176,28 @@ Current routing rule:
 
 Current editor rule:
 
-- `Edit Profile (v1)` opens the selected or first document `V1Profile`
-- if no `V1Profile` exists, the editor command creates a sample profile so the workflow stays unblocked
-- `Apply` writes sorted PVI/control rows back to the source object
+- `Profile` opens the selected or first document `V1Profile`
+- if no `V1Profile` exists, the editor opens from generated `V1Stationing` station rows when available and does not create document objects until `Apply`
+- if no generated `V1Stationing` rows exist, the editor leaves the PVI table empty and informs the user to run `Stations` first
+- the editor uses one task panel with `FG Profile`, `Vertical Curves`, `EG Reference`, and `Station Check` tabs
+- the Profile panel exposes `Preset Data`, `Import CSV`, and `Export CSV` actions above the tab area for v1 PVI/control rows
+- Profile CSV uses `station,elevation,kind` as the standard export schema and accepts v0-style aliases such as `STA`, `FG`, `elevation`, and `z` on import
+- repository sample CSVs for manual checks are `tests/samples/profile_v1_pvi_rolling.csv` and `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
+- `EG Reference` is an active TIN reference tab: it lists TIN-capable Mesh/Shape candidates, supports `Use Selected`, samples EG by interval over the current profile station range, and shows station, XY, EG elevation, status, face, and notes rows
+- `Station Check` is an active validation tab: it checks current profile station rows against the active `V1Alignment` range and generated `V1Stationing` rows, then reports OK/WARN/ERROR rows before review/corridor handoff
+- `Show` creates or updates a reusable framed `Profile Show Preview` sheet in the 3D View from the current editor table without writing the `V1Profile` source object; it draws distance/station along the bottom axis, elevation along the left axis, FG in orange, and TIN-sampled EG in green when a TIN surface is available
+- `Show` uses the selected `EG Reference` TIN when one is selected, otherwise it falls back to the first resolvable document terrain/TIN candidate
+- `Show` places the framed profile preview away from existing document geometry and switches the 3D View toward Front/selection focus when FreeCAD GUI view controls are available
+- in the `Vertical Curves` tab, `Add Curve` inserts a blank manual curve row; it does not infer station values
+- the `Vertical Curves.Kind` cell is a combo box; only `Parabolic` is active, while `Crest` and `Sag` show an in-progress message and revert to `Parabolic`
+- the `Vertical Curves` tab includes `Auto from PVI`, which creates symmetric parabolic curve rows centered on interior PVI controls using a user-entered default curve length and clamps curve length to nearby tangent clearance
+- `Auto from PVI` requires FG Profile station/elevation rows first; station-only rows generated from `Stations` must be completed manually or replaced through `Preset Data` / `Import CSV` before vertical curves can be generated
+- `Apply` creates the `V1Profile` when needed and writes sorted PVI/control rows back to the source object
+- `Apply` also writes sorted vertical curve rows back to `VerticalCurveIds`, `VerticalCurveKinds`, `VerticalCurveStationStarts`, `VerticalCurveStationEnds`, `VerticalCurveLengths`, and `VerticalCurveParameters`
+- vertical-curve apply validation rejects zero-length windows and overlapping curve ranges before writing to `V1Profile`
 - duplicate stations are rejected before writing
-- `Apply + Review Plan/Profile` reopens the v1 Plan/Profile Review with the edited profile and focused station context
+- `V1Profile` builds a lightweight 3D finished-grade display shape on recompute by sampling the linked `V1Alignment` and evaluated profile elevations; display diagnostics are stored in `DisplayStatus` and `DisplayPointCount`
+- `Review Plan/Profile` opens the v1 Plan/Profile Review after the profile has been applied
 
 ## 9. ProfileControlSequence
 

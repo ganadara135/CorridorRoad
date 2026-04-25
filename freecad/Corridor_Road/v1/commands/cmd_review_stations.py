@@ -148,6 +148,7 @@ def show_station_highlight(document, row: dict[str, object], *, radius: float = 
         obj.Station = float(station)
     except Exception:
         pass
+    _route_station_highlight_to_tree(document, obj)
     _style_station_highlight(obj)
     try:
         document.recompute()
@@ -224,6 +225,7 @@ class V1StationingReviewTaskPanel:
             self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         except Exception:
             pass
+        self._table.cellDoubleClicked.connect(lambda row, _col: self._locate_station_row(row))
         try:
             self._table.horizontalHeader().setStretchLastSection(True)
         except Exception:
@@ -237,9 +239,6 @@ class V1StationingReviewTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh)
         button_row.addWidget(refresh_button)
-        locate_button = QtWidgets.QPushButton("show station")
-        locate_button.clicked.connect(self._locate_selected_station)
-        button_row.addWidget(locate_button)
         button_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -317,6 +316,14 @@ class V1StationingReviewTaskPanel:
 
     def _locate_selected_station(self) -> None:
         row = self._selected_station_row()
+        self._locate_row(row)
+
+    def _locate_station_row(self, row_index: int) -> None:
+        rows = stationing_table_rows(self.stationing)
+        row = rows[int(row_index)] if 0 <= int(row_index) < len(rows) else None
+        self._locate_row(row)
+
+    def _locate_row(self, row: dict[str, object] | None) -> None:
         if row is None:
             _show_message(self.form, "Stations", "위치확인할 측점 행을 먼저 선택해 주세요.")
             return
@@ -442,6 +449,17 @@ def _style_station_highlight(obj) -> None:
         vobj.LineWidth = 6.0
         vobj.PointColor = (1.0, 0.05, 0.02)
         vobj.PointSize = 10.0
+    except Exception:
+        pass
+
+
+def _route_station_highlight_to_tree(document, obj) -> None:
+    try:
+        from freecad.Corridor_Road.objects.obj_project import find_project, route_to_v1_tree
+
+        project = find_project(document)
+        if project is not None:
+            route_to_v1_tree(project, obj)
     except Exception:
         pass
 

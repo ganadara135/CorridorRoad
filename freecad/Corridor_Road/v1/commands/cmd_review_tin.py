@@ -206,6 +206,8 @@ def show_v1_tin_review(
 
     if gui_module is not None and hasattr(gui_module, "Control"):  # pragma: no branch - GUI path only in FreeCAD.
         try:
+            _focus_tin_preview_object(document, preview, gui_module=gui_module)
+            _show_tin_complete_message(preview, gui_module=gui_module)
             gui_module.Control.showDialog(TinReviewViewerTaskPanel(preview))
         except Exception:
             try:  # pragma: no cover - GUI fallback not available in tests.
@@ -220,6 +222,76 @@ def show_v1_tin_review(
                 pass
 
     return preview
+
+
+def _focus_tin_preview_object(document, preview: dict[str, object], *, gui_module=Gui) -> bool:
+    """Select and center the generated TIN mesh preview in the active 3D view."""
+
+    if document is None or gui_module is None:
+        return False
+    mesh_preview = preview.get("mesh_preview") if isinstance(preview, dict) else None
+    object_name = str(getattr(mesh_preview, "object_name", "") or "").strip()
+    if not object_name:
+        return False
+    obj = document.getObject(object_name)
+    if obj is None:
+        return False
+    try:
+        if hasattr(gui_module, "Selection"):
+            gui_module.Selection.clearSelection()
+            gui_module.Selection.addSelection(obj)
+    except Exception:
+        pass
+    try:
+        view = gui_module.ActiveDocument.ActiveView
+        if hasattr(view, "viewIsometric"):
+            view.viewIsometric()
+    except Exception:
+        try:
+            gui_module.SendMsgToActiveView("ViewAxo")
+        except Exception:
+            pass
+    try:
+        view = gui_module.ActiveDocument.ActiveView
+        if hasattr(view, "fitSelection"):
+            view.fitSelection()
+        else:
+            gui_module.SendMsgToActiveView("ViewSelection")
+    except Exception:
+        try:
+            gui_module.SendMsgToActiveView("ViewSelection")
+        except Exception:
+            try:
+                gui_module.ActiveDocument.ActiveView.fitAll()
+            except Exception:
+                return False
+    return True
+
+
+def _show_tin_complete_message(preview: dict[str, object], *, gui_module=Gui) -> None:
+    """Show a compact completion message after PointCloud TIN generation."""
+
+    if gui_module is None:
+        return
+    try:
+        mesh_preview = preview.get("mesh_preview") if isinstance(preview, dict) else None
+        mesh_status = str(getattr(mesh_preview, "status", "") or "not created")
+        mesh_name = str(getattr(mesh_preview, "label", "") or getattr(mesh_preview, "object_name", "") or "")
+        surface = preview.get("tin_surface") if isinstance(preview, dict) else None
+        vertex_count = len(list(getattr(surface, "vertex_rows", []) or []))
+        triangle_count = len(list(getattr(surface, "triangle_rows", []) or []))
+        message = (
+            "PointCloud TIN 작업이 완료되었습니다.\n"
+            f"Mesh preview: {mesh_status}"
+            + (f"\nObject: {mesh_name}" if mesh_name else "")
+            + f"\nVertices: {vertex_count}"
+            + f"\nTriangles: {triangle_count}"
+        )
+        from freecad.Corridor_Road.qt_compat import QtWidgets
+
+        QtWidgets.QMessageBox.information(None, "PointCloud TIN", message)
+    except Exception:
+        pass
 
 
 def _should_create_mesh_preview(document, extra_context: dict[str, object] | None) -> bool:
@@ -255,12 +327,8 @@ def _route_mesh_preview_to_v1_tree(document, mesh_preview) -> None:
         folder = tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
         obj = document.getObject(object_name)
         if folder is not None and obj is not None:
-            try:
-                folder.addObject(obj)
-            except Exception:
-                children = list(getattr(folder, "Group", []) or [])
-                if obj not in children:
-                    folder.Group = children + [obj]
+            _set_string_property(obj, "CRRecordKind", "tin_mesh_preview")
+            _move_to_tree_folder(project, folder, obj)
     except Exception:
         return
 
@@ -292,10 +360,10 @@ def _route_tin_records_to_v1_tree(document, preview: dict[str, object]) -> None:
         result_record = _ensure_tin_result_record(document, preview)
         diagnostics_record = _ensure_tin_diagnostics_record(document, preview)
 
-        _add_to_tree_folder(tree.get(V1_TREE_SURVEY_POINTS, None), source_record)
-        _add_to_tree_folder(tree.get(V1_TREE_EXISTING_GROUND_TIN_SOURCE, None), surface_source_record)
-        _add_to_tree_folder(tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None), result_record)
-        _add_to_tree_folder(tree.get(V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS, None), diagnostics_record)
+        _move_to_tree_folder(project, tree.get(V1_TREE_SURVEY_POINTS, None), source_record)
+        _move_to_tree_folder(project, tree.get(V1_TREE_EXISTING_GROUND_TIN_SOURCE, None), surface_source_record)
+        _move_to_tree_folder(project, tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None), result_record)
+        _move_to_tree_folder(project, tree.get(V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS, None), diagnostics_record)
         preview["tree_records"] = {
             "source": str(getattr(source_record, "Name", "") or ""),
             "surface_source": str(getattr(surface_source_record, "Name", "") or ""),
@@ -388,6 +456,40 @@ def _add_to_tree_folder(folder, obj) -> None:
         children = list(getattr(folder, "Group", []) or [])
         if obj not in children:
             folder.Group = children + [obj]
+
+
+def _move_to_tree_folder(project, folder, obj) -> None:
+    """Move an object to one v1 tree folder, removing stale duplicate folder memberships."""
+
+    if project is None or folder is None or obj is None:
+        return
+    for owner in [project] + list(_iter_tree_folders(project)):
+        if owner is None or owner == folder or owner == obj:
+            continue
+        try:
+            owner.removeObject(obj)
+        except Exception:
+            try:
+                children = list(getattr(owner, "Group", []) or [])
+                if obj in children:
+                    owner.Group = [child for child in children if child != obj]
+            except Exception:
+                pass
+    _add_to_tree_folder(folder, obj)
+
+
+def _iter_tree_folders(root):
+    pending = list(getattr(root, "Group", []) or [])
+    seen = set()
+    while pending:
+        obj = pending.pop(0)
+        name = str(getattr(obj, "Name", "") or "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if hasattr(obj, "Group"):
+            yield obj
+            pending.extend(list(getattr(obj, "Group", []) or []))
 
 
 def _set_string_property(obj, name: str, value: str) -> None:

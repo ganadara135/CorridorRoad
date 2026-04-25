@@ -15,6 +15,7 @@ from freecad.Corridor_Road.v1.objects.obj_alignment import (
     find_v1_alignment,
 )
 from freecad.Corridor_Road.v1.objects.obj_profile import (
+    build_v1_profile_shape,
     create_sample_v1_profile,
     find_v1_profile,
     to_profile_model,
@@ -47,6 +48,24 @@ def test_create_sample_v1_profile_builds_profile_model_contract() -> None:
         assert model.alignment_id == alignment.AlignmentId
         assert len(model.control_rows) == 3
         assert len(model.vertical_curve_rows) == 1
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_profile_builds_3d_display_shape_from_alignment_and_profile() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        profile = create_sample_v1_profile(doc, project=project, alignment=alignment)
+
+        doc.recompute()
+        shape = getattr(profile, "Shape", None)
+
+        assert shape is not None
+        assert not shape.isNull()
+        assert str(getattr(profile, "DisplayStatus", "") or "") == "ok"
+        assert int(getattr(profile, "DisplayPointCount", 0) or 0) >= 2
+        assert build_v1_profile_shape(profile) is not None
     finally:
         App.closeDocument(doc.Name)
 

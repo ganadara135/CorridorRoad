@@ -6,6 +6,9 @@ from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import (
     alignment_compiled_summary_rows,
     alignment_element_rows,
     alignment_ip_rows,
+    alignment_preset_center,
+    alignment_preset_placement_names,
+    alignment_preset_rows_for_placement,
     alignment_pi_review_rows,
     apply_alignment_element_rows,
     apply_alignment_ip_rows,
@@ -253,6 +256,41 @@ def test_alignment_command_is_single_user_facing_entrypoint() -> None:
 
     assert resources["MenuText"] == "Alignment"
     assert "geometry" in resources["ToolTip"].lower()
+
+
+def test_alignment_preset_placement_can_center_rows_on_terrain() -> None:
+    rows = [
+        (0.0, 0.0, 0.0, 0.0),
+        (80.0, 0.0, 0.0, 0.0),
+        (160.0, 0.0, 0.0, 0.0),
+    ]
+
+    placed = alignment_preset_rows_for_placement(
+        rows,
+        "Center on terrain",
+        terrain_center=(1000.0, 2000.0),
+    )
+
+    assert "Center on terrain" in alignment_preset_placement_names()
+    assert alignment_preset_center(placed["rows"]) == (1000.0, 2000.0)
+    assert placed["placement"] == "Center on terrain"
+
+
+def test_alignment_preset_placement_falls_back_to_project_origin_without_terrain() -> None:
+    rows = [
+        (0.0, 0.0, 0.0, 0.0),
+        (80.0, 0.0, 0.0, 0.0),
+        (160.0, 0.0, 0.0, 0.0),
+    ]
+
+    placed = alignment_preset_rows_for_placement(
+        rows,
+        "Center on terrain",
+        project_origin=(25.0, -15.0),
+    )
+
+    assert alignment_preset_center(placed["rows"]) == (25.0, -15.0)
+    assert placed["placement"] == "Center on project origin (fallback)"
 
 
 def test_alignment_command_does_not_create_sample_alignment_on_open() -> None:

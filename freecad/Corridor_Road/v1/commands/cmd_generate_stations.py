@@ -116,7 +116,7 @@ class CmdV1GenerateStations:
 
         return {
             "Pixmap": icon_path("stations.svg"),
-            "MenuText": "Stations (v1)",
+            "MenuText": "Stations",
             "ToolTip": "Generate, review, and configure v1 station rows from the v1 alignment",
         }
 

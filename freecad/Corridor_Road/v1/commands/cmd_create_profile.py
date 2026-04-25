@@ -4,10 +4,8 @@ from __future__ import annotations
 
 try:
     import FreeCAD as App
-    import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
-    Gui = None
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -53,32 +51,3 @@ def create_v1_sample_profile(*, document=None, project=None, alignment=None):
     except Exception:
         pass
     return profile
-
-
-class CmdV1CreateProfile:
-    """Create a sample v1 profile source object."""
-
-    def GetResources(self):
-        from freecad.Corridor_Road.misc.resources import icon_path
-
-        return {
-            "Pixmap": icon_path("profiles.svg"),
-            "MenuText": "Create Profile (v1)",
-            "ToolTip": "Create a v1 Profile source object linked to the v1 alignment",
-        }
-
-    def IsActive(self):
-        return App is not None and getattr(App, "ActiveDocument", None) is not None
-
-    def Activated(self):
-        profile = create_v1_sample_profile()
-        if Gui is not None:
-            try:
-                Gui.Selection.clearSelection()
-                Gui.Selection.addSelection(profile)
-            except Exception:
-                pass
-
-
-if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
-    Gui.addCommand("CorridorRoad_V1CreateProfile", CmdV1CreateProfile())

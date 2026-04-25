@@ -60,7 +60,8 @@ It is not:
 
 Practical relationship:
 
-- existing v0 `Edit Alignment`, `Edit Profiles`, and `Edit PVI` remain source editors for now
+- v1 `Alignment` and `Profile` are the primary source editors for normal alignment/profile authoring
+- existing v0 `Edit Profiles` and `Edit PVI` are no longer exposed in the primary toolbar when the v1 profile editor is available
 - v1 `Plan/Profile Review` becomes the preferred place to inspect results after stationing/profile context exists
 - `Review Alignment` should remain a separate earlier-stage concept
 
@@ -84,7 +85,7 @@ The first promoted v1 plan/profile review screen should include:
 - profile control row inspection
 - focused station context
 - source context summary
-- handoff to `Edit Alignment`, `Edit Profiles`, and `Edit PVI`
+- handoff to v1 `Alignment` and `Profile`
 - same-context return after save/rebuild
 - current/stale result visibility
 
@@ -126,9 +127,8 @@ Completion signal:
 
 Required outcomes:
 
-- handoff to `Edit Alignment`
-- handoff to `Edit Profiles`
-- handoff to `Edit PVI`
+- handoff to v1 `Alignment`
+- handoff to `Profile`
 - same-context return after save/rebuild
 
 Completion signal:
@@ -247,11 +247,11 @@ Current implementation status:
 - [x] sample v1 profile creation feeds Plan/Profile Review with a matched alignment/profile pair and reports an `alignment_profile_link` diagnostic status of `ok`
 - [x] Plan/Profile viewer's alignment handoff now opens the single v1 `Alignment` command for native alignment-source edits
 - [x] v1 alignment editing intentionally excludes direct `Review Plan/Profile` and `Next: Generate Stations` actions from the alignment-stage editor
-- [x] Plan/Profile viewer's profile handoff now opens `Edit Profile (v1)` for native profile-source edits
-- [x] `Edit Profile (v1)` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
+- [x] Plan/Profile viewer's profile handoff now opens `Profile` for native profile-source edits
+- [x] `Profile` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
 - [x] configurable station interval is available in Plan/Profile Review and feeds plan station rows, key station rows, and TIN-based EG sampling
 - [x] sampled FG profile lines now use the same profile evaluation service, so vertical curves affect Profile Lines and EG/FG hints
-- [x] `Stations (v1)` opens a non-mutating stationing panel, and its `Apply` action creates, reviews, and configures a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
+- [x] `Stations` opens a non-mutating v1 stationing panel, and its `Apply` action creates, reviews, and configures a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
 
 Focused validation:
 
@@ -280,12 +280,11 @@ Current manual interval check:
 
 Minimum manual scenarios:
 
-1. open review from `Edit Alignment`
+1. open review from v1 `Alignment`
 2. confirm focused row and station context
-3. return to `Edit Alignment`
+3. return to v1 `Alignment`
 4. save and reopen review
-5. repeat with `Edit Profiles`
-6. repeat with `Edit PVI`
+5. repeat with `Profile`
 
 ## 12. Acceptance Criteria for Promotion
 

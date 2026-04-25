@@ -207,7 +207,7 @@ Purpose:
 Primary actions:
 
 - `Generate Stations`
-- `Edit Profile`
+- `Profile`
 - `Review Plan/Profile`
 - `Next: Assembly & Regions`
 
@@ -414,7 +414,7 @@ Examples:
 Examples:
 
 - after alignment apply: `Next: Generate Stations`
-- after station generation: `Next: Edit Profile`
+- after station generation: `Next: Profile`
 - after corridor build: `Next: Review Cross Sections`
 
 ### 10.4 Make prerequisite states visible

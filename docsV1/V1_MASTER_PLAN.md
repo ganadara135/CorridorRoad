@@ -958,7 +958,8 @@ Instead:
 
 Working classification:
 
-- keep for now: `Edit Alignment`, `Edit Profiles`, `Edit PVI`
+- keep as secondary transition support only: legacy `Edit Alignment`, `Edit Profiles`, `Edit PVI`
+- expose as primary v1 flow: `Alignment`, `Stations`, `Profile`
 - keep now, refactor later: `Typical Section`, `Region Plan`, `Structure Editor`
 - replace early with v1-native review UI: `Cross Section Viewer`, `Plan/Profile Review`, `Earthwork Balance Review`
 - build as v1-only UI: `Intersections & Ramps`, `Drainage`, `3D Review`, `AI Assist`, `Output Review`, `Exchange Review`

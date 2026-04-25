@@ -152,15 +152,19 @@ Primary actions:
 Secondary actions:
 
 - `FG Wizard`
-- `Edit Profile`
-- `Edit PVI`
+- `Profile`
+- `Preset Data`
+- `Import CSV`
+- `Export CSV`
 
 Do not show:
 
 - `Open v1 Preview`
 - `Apply + v1 Preview`
+- separate v0 `Edit Profiles` and `Edit PVI` commands in the primary station/profile toolbar
 - separate `Generate Stations` and `Review Stations` buttons when one stationing workflow panel can handle both
 - document-changing station generation on toolbar/menu click before the user presses `Apply`
+- document-changing sample profile creation on toolbar/menu click before the user presses `Apply`
 
 ### 6.3 PVI screen
 

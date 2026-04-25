@@ -94,7 +94,7 @@ def test_v1_stationing_review_command_exposes_summary_and_table_rows() -> None:
         rows = stationing_table_rows(stationing)
         resources = CmdV1GenerateStations().GetResources()
 
-        assert resources["MenuText"] == "Stations (v1)"
+        assert resources["MenuText"] == "Stations"
         assert "generate" in resources["ToolTip"].lower()
         assert "review" in resources["ToolTip"].lower()
         assert any("Click Apply" in line for line in empty_summary)
@@ -128,6 +128,8 @@ def test_v1_stationing_location_highlight_updates_single_marker() -> None:
         assert len(markers) == 1
         assert str(second.Label).startswith("Station Highlight - ")
         assert abs(float(second.Station) - float(rows[1]["station"])) < 1.0e-9
+        tree = ensure_project_tree(project, include_references=False)
+        assert second.Name in _group_names(tree[V1_TREE_STATIONS])
     finally:
         App.closeDocument(doc.Name)
 

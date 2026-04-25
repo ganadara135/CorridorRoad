@@ -4,10 +4,8 @@ from __future__ import annotations
 
 try:
     import FreeCAD as App
-    import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
-    Gui = None
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -46,36 +44,3 @@ def create_v1_sample_alignment(*, document=None, project=None):
     except Exception:
         pass
     return alignment
-
-
-class CmdV1CreateAlignment:
-    """Create a sample v1 alignment source object."""
-
-    def GetResources(self):
-        from freecad.Corridor_Road.misc.resources import icon_path
-
-        return {
-            "Pixmap": icon_path("alignment.svg"),
-            "MenuText": "Create Alignment (v1)",
-            "ToolTip": "Create a v1 Alignment source object",
-        }
-
-    def IsActive(self):
-        return App is not None and getattr(App, "ActiveDocument", None) is not None
-
-    def Activated(self):
-        alignment = create_v1_sample_alignment()
-        if Gui is not None:
-            try:
-                Gui.Selection.clearSelection()
-                Gui.Selection.addSelection(alignment)
-            except Exception:
-                pass
-            try:
-                Gui.ActiveDocument.ActiveView.fitAll()
-            except Exception:
-                pass
-
-
-if Gui is not None and hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
-    Gui.addCommand("CorridorRoad_V1CreateAlignment", CmdV1CreateAlignment())

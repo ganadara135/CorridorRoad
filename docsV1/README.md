@@ -68,10 +68,11 @@ Preferred review workflow:
 - start plan/profile review from the v1 `Plan/Profile Viewer`
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
-- use the unified `Stations (v1)` command as the first native station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`
-- use `Edit Profile (v1)` as the first native profile-source editor for PVI station/elevation rows
+- use the unified `Stations` command as the first native v1 station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`
+- use `Profile` as the first native profile-source editor for PVI station/elevation rows, preset data, and CSV import/export; opening the panel should not create sample profile data and should preload generated `Stations` rows when available
+- for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - use the existing v0 viewers as secondary support paths during transition
-- use the existing v0 editors only as secondary source-authoring support where a v1-native editor is not available yet
+- keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical
 - in the active workbench layout, keep the `Corridor` stage centered on `Build Corridor` rather than exposing low-level intermediate generators
 - in the active workbench layout, expose `Outputs & Exchange` and `AI Assist` as explicit top-level stages even before their detailed v1-native hubs are fully implemented

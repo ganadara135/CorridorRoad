@@ -36,13 +36,13 @@ Current implementation note:
 - transition length input now compiles into approximate S-C-S sampled geometry using linear curvature ramps; full analytic clothoid objects remain planned
 - `V1AlignmentObject.execute()` now builds a FreeCAD display `Shape` from compiled v1 geometry rows so alignment edits are visible in the model view after recompute
 - `Review Alignment` now reports PI-level curve review rows with input/applied R/Ls, clamp status, approximate TS/SC/CS/ST stations, curve length, and point count
-- `Stations (v1)` opens the unified stationing workflow without immediately changing the document
-- `Apply` in the `Stations (v1)` panel creates or updates a `V1Stationing` object from `AlignmentStationSamplingService` and stores station, XY, tangent, active-element, and source-reason rows
-- `Apply` in the `Stations (v1)` panel includes curve/transition midpoint stations so generated stationing rows expose non-tangent alignment zones
+- `Stations` opens the unified v1 stationing workflow without immediately changing the document
+- `Apply` in the `Stations` panel creates or updates a `V1Stationing` object from `AlignmentStationSamplingService` and stores station, XY, tangent, active-element, and source-reason rows
+- `Apply` in the `Stations` panel includes curve/transition midpoint stations so generated stationing rows expose non-tangent alignment zones
 - `V1Stationing` stores source geometry signature, element-count metadata, active-element kind summary, curve/transition station counts, and compact station review rows
 - `V1Stationing` now builds FreeCAD tick display geometry from sampled XY/tangent rows and classifies stations as key, major, or minor
 - `V1Stationing` supports station display offset and label formats including decimal STA labels and plus-style stationing
-- the `Stations (v1)` panel provides station row review/settings for key/major/minor classification, labels, element kind, tangent direction, and tick display settings
+- the `Stations` panel provides station row review/settings for key/major/minor classification, labels, element kind, tangent direction, and tick display settings
 - `Plan/Profile Review` enriches key station rows with evaluated alignment frame fields
 - `Plan/Profile Review` prefers `V1Stationing` rows for `PlanOutput.station_rows` and compact key-station navigation when a stationing object exists
 - `Plan/Profile Review` prefers a document `V1Alignment` source object before falling back to legacy alignment adaptation
@@ -110,7 +110,7 @@ Recommended early v1 support:
 - [x] FreeCAD display shape generation from compiled v1 alignment geometry
 - [x] PI and compiled-geometry review summaries in the v1 Alignment editor
 - [x] minimal FreeCAD stationing storage through `V1Stationing`
-- [x] station grid generation through the unified `Stations (v1)` command
+- [x] station grid generation through the unified `Stations` command
 - [x] v1 station tick display shape generation
 - [x] v1 station label offset, plus-format labels, and key/major/minor station classification
 - [x] v1 stationing generation/review/settings command
@@ -120,6 +120,7 @@ Current editor rule:
 - `Alignment` opens the selected or first document `V1Alignment`
 - if no `V1Alignment` exists, the editor opens without creating sample data; `Apply` creates the source object from the current PI table
 - `PI Geometry` is the primary editing tab and follows the previous v0 Alignment UI structure: sketch import, CSV import/export, presets, X, Y, radius, transition length, transition toggle, spiral segments, design speed, superelevation, side friction, and minimum criteria values
+- preset loading supports `Pattern only`, `Center on terrain`, and `Center on project origin`; `Center on terrain` uses the selected/project/document surface bounds when available and falls back to project origin when no terrain surface is found
 - `Apply` stores PI rows, radius rows, transition rows, and criteria values on the `V1Alignment` source object
 - `Apply` compiles consecutive PI rows into station-based v1 geometry rows consumed by stations, profile, section, and corridor services
 - internal PI rows with radius generate tangent chunks plus sampled curve chunks between computed tangent points
@@ -137,13 +138,13 @@ Current editor rule:
 Current stationing rule:
 
 - `V1Stationing` belongs under `02_Alignment & Profile / Stations`
-- `Stations (v1)` opens without generating stations; the panel `Apply` action creates a sample `V1Alignment` first when no v1 alignment exists
+- `Stations` opens without generating stations; the panel `Apply` action creates a sample `V1Alignment` first when no v1 alignment exists
 - station rows store `StationValues`, `StationLabels`, `XValues`, `YValues`, `TangentDirections`, `ActiveElementIds`, `ActiveElementKinds`, and `SourceReasons`
 - station rows now also store review strings plus source alignment label, source geometry signature, active-element kind summary, tangent/curve/transition station counts, and stale-source notes when a previous stationing object was based on older alignment geometry
 - curve and transition elements contribute midpoint extra stations so `ActiveElementKinds` reliably includes `sampled_curve` or `transition_curve` when those zones exist
 - station display properties include `ShowTicks`, `MinorTickLength`, `MajorTickLength`, `MajorInterval`, `StationStartOffset`, and `StationLabelFormat`
 - station display recompute builds tick geometry normal to the evaluated tangent direction
-- `Apply` in `Stations (v1)` can generate/update stations, apply label/tick settings, and refresh the station table without leaving the stationing workflow
+- `Apply` in `Stations` can generate/update stations, apply label/tick settings, and refresh the station table without leaving the stationing workflow
 - Plan/Profile Review uses `V1Stationing` as the preferred station grid before falling back to ad-hoc interval sampling
 
 Deferred or later refinements may include:

@@ -6,6 +6,10 @@ try:
     import FreeCAD as App
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
+try:
+    import Part
+except Exception:  # pragma: no cover - Part is not available in plain Python.
+    Part = None
 
 from ..models.source.profile_model import (
     ProfileControlPoint,
@@ -17,6 +21,7 @@ from .obj_alignment import (
     find_v1_alignment,
     to_alignment_model,
 )
+from ..services.evaluation import AlignmentEvaluationService, ProfileEvaluationService
 
 
 class V1ProfileObject:
@@ -30,7 +35,39 @@ class V1ProfileObject:
 
     def execute(self, obj):
         ensure_v1_profile_properties(obj)
+        try:
+            obj.Shape = build_v1_profile_shape(obj)
+        except Exception:
+            if Part is not None:
+                try:
+                    obj.Shape = Part.Shape()
+                except Exception:
+                    pass
         return
+
+
+class ViewProviderV1Profile:
+    """Simple display provider for v1 finished-grade profile geometry."""
+
+    Type = "ViewProviderV1Profile"
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        try:
+            vobj.LineColor = (0.95, 0.36, 0.14)
+            vobj.PointColor = (1.0, 0.88, 0.30)
+            vobj.LineWidth = 4.0
+            vobj.PointSize = 5.0
+        except Exception:
+            pass
+
+    def getIcon(self):
+        try:
+            from ...misc.resources import icon_path
+
+            return icon_path("profiles.svg")
+        except Exception:
+            return ""
 
 
 def ensure_v1_profile_properties(obj) -> None:
@@ -54,6 +91,10 @@ def ensure_v1_profile_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "VerticalCurveStationEnds", "Vertical Curves", "curve end stations")
     _add_property(obj, "App::PropertyFloatList", "VerticalCurveLengths", "Vertical Curves", "curve lengths")
     _add_property(obj, "App::PropertyFloatList", "VerticalCurveParameters", "Vertical Curves", "curve parameters")
+    _add_property(obj, "App::PropertyFloat", "DisplaySampleInterval", "Display", "profile display sample interval")
+    _add_property(obj, "App::PropertyInteger", "DisplayPointCount", "Display", "profile display point count")
+    _add_property(obj, "App::PropertyString", "DisplayStatus", "Display", "profile display build status")
+    _add_property(obj, "Part::PropertyPartShape", "Shape", "Display", "3D finished-grade profile display shape")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1Profile"
@@ -65,6 +106,10 @@ def ensure_v1_profile_properties(obj) -> None:
         obj.ProfileId = f"profile:{str(getattr(obj, 'Name', '') or 'v1-profile')}"
     if not str(getattr(obj, "ProfileKind", "") or ""):
         obj.ProfileKind = "finished_grade"
+    if float(getattr(obj, "DisplaySampleInterval", 0.0) or 0.0) <= 0.0:
+        obj.DisplaySampleInterval = 10.0
+    if not str(getattr(obj, "DisplayStatus", "") or ""):
+        obj.DisplayStatus = "pending"
 
 
 def create_sample_v1_profile(
@@ -89,8 +134,15 @@ def create_sample_v1_profile(
     alignment_model = to_alignment_model(alignment_obj) if alignment_obj is not None else None
     alignment_id = str(getattr(alignment_model, "alignment_id", "") or "")
 
-    obj = doc.addObject("App::FeaturePython", "V1Profile")
+    try:
+        obj = doc.addObject("Part::FeaturePython", "V1Profile")
+    except Exception:
+        obj = doc.addObject("App::FeaturePython", "V1Profile")
     V1ProfileObject(obj)
+    try:
+        ViewProviderV1Profile(obj.ViewObject)
+    except Exception:
+        pass
     obj.Label = label
     obj.ProjectId = _project_id(project)
     obj.ProfileId = f"profile:{str(getattr(obj, 'Name', '') or 'fg')}"
@@ -125,6 +177,53 @@ def create_sample_v1_profile(
     return obj
 
 
+def build_v1_profile_shape(obj):
+    """Build a 3D FG profile display shape along the linked v1 alignment."""
+
+    if Part is None or App is None:
+        return None
+    ensure_v1_profile_properties(obj)
+    profile_model = to_profile_model(obj)
+    if profile_model is None:
+        _set_display_status(obj, "no_profile", 0)
+        return Part.Shape()
+    document = getattr(obj, "Document", None)
+    alignment_obj = _find_linked_alignment(document, str(getattr(obj, "AlignmentId", "") or ""))
+    alignment_model = to_alignment_model(alignment_obj) if alignment_obj is not None else None
+    if alignment_model is None:
+        _set_display_status(obj, "no_alignment", 0)
+        return Part.Shape()
+
+    stations = _profile_display_stations(profile_model, float(getattr(obj, "DisplaySampleInterval", 10.0) or 10.0))
+    if len(stations) < 2:
+        _set_display_status(obj, "not_enough_stations", 0)
+        return Part.Shape()
+
+    alignment_service = AlignmentEvaluationService()
+    profile_service = ProfileEvaluationService()
+    points = []
+    for station in stations:
+        alignment_result = alignment_service.evaluate_station(alignment_model, float(station))
+        profile_result = profile_service.evaluate_station(profile_model, float(station))
+        if alignment_result.status != "ok" or profile_result.status != "ok":
+            continue
+        points.append(App.Vector(float(alignment_result.x), float(alignment_result.y), float(profile_result.elevation)))
+
+    if len(points) < 2:
+        _set_display_status(obj, "empty", len(points))
+        return Part.Shape()
+    try:
+        shape = Part.makePolygon(points)
+    except Exception:
+        edges = []
+        for start, end in zip(points, points[1:]):
+            if (end - start).Length > 1.0e-9:
+                edges.append(Part.makeLine(start, end))
+        shape = Part.Compound(edges) if edges else Part.Shape()
+    _set_display_status(obj, "ok", len(points))
+    return shape
+
+
 def find_v1_profile(document, preferred_profile=None):
     """Find a v1 profile object in a document, honoring an explicit preferred object."""
 
@@ -136,6 +235,50 @@ def find_v1_profile(document, preferred_profile=None):
         if _is_v1_profile(obj):
             return obj
     return None
+
+
+def _find_linked_alignment(document, alignment_id: str):
+    if document is None:
+        return None
+    target = str(alignment_id or "")
+    fallback = None
+    for obj in list(getattr(document, "Objects", []) or []):
+        if not _is_v1_alignment_object(obj):
+            continue
+        if fallback is None:
+            fallback = obj
+        if target and str(getattr(obj, "AlignmentId", "") or "") == target:
+            return obj
+    return fallback
+
+
+def _profile_display_stations(profile: ProfileModel, interval: float) -> list[float]:
+    controls = sorted(list(profile.control_rows or []), key=lambda row: float(row.station))
+    if len(controls) < 2:
+        return []
+    start = float(controls[0].station)
+    end = float(controls[-1].station)
+    step = max(0.1, float(interval or 10.0))
+    stations = {round(start, 6), round(end, 6)}
+    current = start
+    while current < end - 1.0e-9:
+        current += step
+        stations.add(round(min(current, end), 6))
+    for control in controls:
+        stations.add(round(float(control.station), 6))
+    for curve in list(profile.vertical_curve_rows or []):
+        stations.add(round(float(curve.station_start), 6))
+        stations.add(round(float(curve.station_end), 6))
+        stations.add(round(0.5 * (float(curve.station_start) + float(curve.station_end)), 6))
+    return [station for station in sorted(stations) if start - 1.0e-9 <= station <= end + 1.0e-9]
+
+
+def _set_display_status(obj, status: str, point_count: int) -> None:
+    try:
+        obj.DisplayStatus = str(status or "")
+        obj.DisplayPointCount = int(point_count or 0)
+    except Exception:
+        pass
 
 
 def to_profile_model(obj) -> ProfileModel | None:
@@ -217,6 +360,17 @@ def _is_v1_profile(obj) -> bool:
     if str(getattr(proxy, "Type", "") or "") == "V1Profile":
         return True
     return str(getattr(obj, "Name", "") or "").startswith("V1Profile")
+
+
+def _is_v1_alignment_object(obj) -> bool:
+    if obj is None:
+        return False
+    if str(getattr(obj, "V1ObjectType", "") or "") == "V1Alignment":
+        return True
+    proxy = getattr(obj, "Proxy", None)
+    if str(getattr(proxy, "Type", "") or "") == "V1Alignment":
+        return True
+    return str(getattr(obj, "Name", "") or "").startswith("V1Alignment")
 
 
 def _add_property(obj, type_name: str, name: str, group: str, doc: str) -> None:
