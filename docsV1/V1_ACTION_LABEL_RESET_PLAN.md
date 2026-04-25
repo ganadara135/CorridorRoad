@@ -138,12 +138,13 @@ Do not show:
 - `Apply + v1 Preview`
 - `Review Plan/Profile`
 - `Next: Generate Stations`
+- document-changing sample alignment creation on toolbar/menu click before the user presses `Apply`
 
 ### 6.2 Stations & Profile screen
 
 Primary actions:
 
-- `Generate Stations`
+- `Stations`
 - `Apply`
 - `Review Plan/Profile`
 - `Next: Assemblies & Regions`
@@ -158,6 +159,8 @@ Do not show:
 
 - `Open v1 Preview`
 - `Apply + v1 Preview`
+- separate `Generate Stations` and `Review Stations` buttons when one stationing workflow panel can handle both
+- document-changing station generation on toolbar/menu click before the user presses `Apply`
 
 ### 6.3 PVI screen
 

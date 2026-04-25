@@ -6,6 +6,7 @@ from .cmd_create_profile import create_v1_sample_profile
 from .cmd_generate_stations import generate_v1_stations, run_v1_generate_stations_command
 from .cmd_profile_editor import run_v1_profile_editor_command
 from .cmd_review_plan_profile import run_v1_plan_profile_preview_command
+from .cmd_review_stations import run_v1_stationing_review_command
 from .cmd_review_tin import run_v1_tin_review_command
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "run_v1_generate_stations_command",
     "run_v1_profile_editor_command",
     "run_v1_plan_profile_preview_command",
+    "run_v1_stationing_review_command",
     "run_v1_tin_review_command",
 ]

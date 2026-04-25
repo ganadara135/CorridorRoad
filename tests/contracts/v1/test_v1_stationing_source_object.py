@@ -5,8 +5,17 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_STATIONS,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.v1.commands.cmd_generate_stations import generate_v1_stations
+from freecad.Corridor_Road.v1.commands.cmd_generate_stations import (
+    CmdV1GenerateStations,
+    generate_v1_stations,
+)
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
+from freecad.Corridor_Road.v1.commands.cmd_review_stations import (
+    show_station_highlight,
+    station_highlight_shape,
+    stationing_review_summary_lines,
+    stationing_table_rows,
+)
 from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import build_document_plan_profile_preview
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_stationing import (
@@ -70,6 +79,55 @@ def test_v1_stationing_builds_tick_shape_and_station_labels() -> None:
         assert getattr(stationing, "Shape", None) is not None
         assert not stationing.Shape.isNull()
         assert build_v1_stationing_shape(stationing) is not None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_stationing_review_command_exposes_summary_and_table_rows() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=20.0)
+
+        empty_summary = stationing_review_summary_lines(None)
+        summary = stationing_review_summary_lines(stationing)
+        rows = stationing_table_rows(stationing)
+        resources = CmdV1GenerateStations().GetResources()
+
+        assert resources["MenuText"] == "Stations (v1)"
+        assert "generate" in resources["ToolTip"].lower()
+        assert "review" in resources["ToolTip"].lower()
+        assert any("Click Apply" in line for line in empty_summary)
+        assert any("Stationing:" in line for line in summary)
+        assert any("Station kind counts:" in line for line in summary)
+        assert rows
+        assert {"label", "station_kind", "station", "x", "y", "tangent", "element_kind", "reason"}.issubset(rows[0].keys())
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_stationing_location_highlight_updates_single_marker() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=20.0)
+        rows = stationing_table_rows(stationing)
+
+        shape = station_highlight_shape(rows[0], radius=4.0)
+        first = show_station_highlight(doc, rows[0], radius=4.0)
+        second = show_station_highlight(doc, rows[1], radius=4.0)
+        markers = [
+            obj
+            for obj in list(doc.Objects)
+            if str(getattr(obj, "V1ObjectType", "") or "") == "V1StationHighlight"
+        ]
+
+        assert shape is not None
+        assert not shape.isNull()
+        assert first == second
+        assert len(markers) == 1
+        assert str(second.Label).startswith("Station Highlight - ")
+        assert abs(float(second.Station) - float(rows[1]["station"])) < 1.0e-9
     finally:
         App.closeDocument(doc.Name)
 

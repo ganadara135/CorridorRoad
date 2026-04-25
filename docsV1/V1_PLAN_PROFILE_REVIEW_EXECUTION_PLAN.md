@@ -251,7 +251,7 @@ Current implementation status:
 - [x] `Edit Profile (v1)` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
 - [x] configurable station interval is available in Plan/Profile Review and feeds plan station rows, key station rows, and TIN-based EG sampling
 - [x] sampled FG profile lines now use the same profile evaluation service, so vertical curves affect Profile Lines and EG/FG hints
-- [x] `Generate Stations (v1)` creates a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
+- [x] `Stations (v1)` opens a non-mutating stationing panel, and its `Apply` action creates, reviews, and configures a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
 
 Focused validation:
 

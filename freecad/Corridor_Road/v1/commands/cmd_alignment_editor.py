@@ -14,11 +14,22 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ...misc.resources import icon_path
+from ...objects.obj_project import (
+    CorridorRoadProject,
+    ensure_project_properties,
+    ensure_project_tree,
+    find_project,
+)
+from ...objects.project_links import link_project
 from ...objects import design_standards as _ds
 from ...objects.csv_alignment_import import read_alignment_csv, write_alignment_csv
 from ...objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows
-from ..objects.obj_alignment import ensure_v1_alignment_properties, find_v1_alignment
-from .cmd_create_alignment import create_v1_sample_alignment
+from ..objects.obj_alignment import (
+    V1AlignmentObject,
+    ViewProviderV1Alignment,
+    ensure_v1_alignment_properties,
+    find_v1_alignment,
+)
 from .selection_context import selected_alignment_profile_target
 
 
@@ -303,6 +314,43 @@ def apply_alignment_ip_rows(
     return compiled
 
 
+def create_blank_v1_alignment(*, document=None, project=None, label: str = "Main Alignment"):
+    """Create an empty v1 alignment source object for Apply-time authoring."""
+
+    doc = document
+    if doc is None and App is not None:
+        doc = getattr(App, "ActiveDocument", None)
+    if doc is None:
+        raise RuntimeError("No active document is available for v1 alignment creation.")
+
+    prj = project or find_project(doc)
+    if prj is None:
+        try:
+            prj = doc.addObject("App::DocumentObjectGroupPython", "CorridorRoadProject")
+        except Exception:
+            prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+        CorridorRoadProject(prj)
+        prj.Label = "CorridorRoad Project"
+
+    ensure_project_properties(prj)
+    ensure_project_tree(prj, include_references=False)
+    try:
+        obj = doc.addObject("Part::FeaturePython", "V1Alignment")
+    except Exception:
+        obj = doc.addObject("App::FeaturePython", "V1Alignment")
+    V1AlignmentObject(obj)
+    try:
+        ViewProviderV1Alignment(obj.ViewObject)
+    except Exception:
+        pass
+    obj.Label = label
+    obj.ProjectId = str(getattr(prj, "ProjectId", "") or "corridorroad-v1")
+    obj.AlignmentId = f"alignment:{str(getattr(obj, 'Name', '') or 'main')}"
+    obj.AlignmentKind = "road_centerline"
+    link_project(prj, links={"Alignment": obj}, adopt_extra=[obj])
+    return obj
+
+
 class V1AlignmentEditorTaskPanel:
     """v1 alignment editor with the v0 IP-based workflow as the primary UI."""
 
@@ -519,8 +567,20 @@ class V1AlignmentEditorTaskPanel:
 
     def _load_ip_rows(self) -> None:
         self._ip_table.setRowCount(0)
+        if self.alignment is None:
+            self._set_default_starter_rows()
+            return
         for row in alignment_ip_rows(self.alignment):
             self._append_ip_row(row)
+
+    def _set_default_starter_rows(self) -> None:
+        preset_name = "Sample Local Alignment"
+        preset = ALIGNMENT_PRESETS.get(preset_name, {})
+        index = self._preset_combo.findText(preset_name)
+        if index >= 0:
+            self._preset_combo.setCurrentIndex(index)
+        self._set_ip_rows_data(list(preset.get("rows", []) or []))
+        self._set_status("Starter PI rows are loaded. Apply to create the v1 alignment.", ok=True)
 
     def _append_ip_row(self, row: dict[str, object]) -> None:
         row_index = self._ip_table.rowCount()
@@ -727,9 +787,13 @@ class V1AlignmentEditorTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            input_rows = self._ip_rows(allow_empty=True)
+            _normalized_ip_rows(input_rows)
+            if self.alignment is None:
+                self.alignment = create_blank_v1_alignment(document=self.document)
             compiled = apply_alignment_ip_rows(
                 self.alignment,
-                self._ip_rows(allow_empty=True),
+                input_rows,
                 use_transition_curves=bool(self._use_transition_check.isChecked()),
                 spiral_segments=int(self._spiral_segments_spin.value()),
                 design_standard=str(self._design_standard_combo.currentText() or "KDS"),
@@ -749,12 +813,23 @@ class V1AlignmentEditorTaskPanel:
             self._refresh_report()
             self._set_status(f"Applied {len(compiled)} compiled v1 geometry row(s).", ok=True)
             self._alignment_label.setText(self._alignment_summary_text())
+            self._show_apply_complete_message(len(compiled))
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
         except Exception as exc:
             self._set_status(str(exc), ok=False)
             return False
+
+    def _show_apply_complete_message(self, compiled_count: int) -> None:
+        try:
+            QtWidgets.QMessageBox.information(
+                self.form,
+                "Alignment",
+                f"Alignment has been applied successfully.\nCompiled geometry rows: {int(compiled_count)}",
+            )
+        except Exception:
+            pass
 
     def _ip_rows(self, *, allow_empty: bool) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -857,21 +932,20 @@ class V1AlignmentEditorTaskPanel:
 
 
 def run_v1_alignment_editor_command():
-    """Open the v1 alignment editor, creating a sample alignment when needed."""
+    """Open the v1 alignment editor without creating sample data on open."""
 
     if App is None or getattr(App, "ActiveDocument", None) is None:
         raise RuntimeError("No active document.")
     document = App.ActiveDocument
     preferred_alignment, _preferred_profile = selected_alignment_profile_target(Gui, document)
     alignment = find_v1_alignment(document, preferred_alignment=preferred_alignment)
-    if alignment is None:
-        alignment = create_v1_sample_alignment(document=document)
-    if Gui is not None:
-        try:
-            Gui.Selection.clearSelection()
-            Gui.Selection.addSelection(alignment)
-        except Exception:
-            pass
+    if Gui is not None and hasattr(Gui, "Control"):
+        if alignment is not None:
+            try:
+                Gui.Selection.clearSelection()
+                Gui.Selection.addSelection(alignment)
+            except Exception:
+                pass
         Gui.Control.showDialog(V1AlignmentEditorTaskPanel(alignment=alignment, document=document))
     return alignment
 

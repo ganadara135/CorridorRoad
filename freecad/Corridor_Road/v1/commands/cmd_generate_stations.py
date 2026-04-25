@@ -109,23 +109,25 @@ def run_v1_generate_stations_command():
 
 
 class CmdV1GenerateStations:
-    """Generate v1 stationing rows."""
+    """Open the unified v1 stationing generation/review panel."""
 
     def GetResources(self):
         from freecad.Corridor_Road.misc.resources import icon_path
 
         return {
             "Pixmap": icon_path("stations.svg"),
-            "MenuText": "Generate Stations (v1)",
-            "ToolTip": "Generate v1 station rows from the v1 alignment",
+            "MenuText": "Stations (v1)",
+            "ToolTip": "Generate, review, and configure v1 station rows from the v1 alignment",
         }
 
     def IsActive(self):
         return App is not None and getattr(App, "ActiveDocument", None) is not None
 
     def Activated(self):
-        stationing = run_v1_generate_stations_command()
-        if App is not None:
+        from .cmd_review_stations import run_v1_stationing_review_command
+
+        stationing = run_v1_stationing_review_command()
+        if App is not None and stationing is not None:
             try:
                 App.Console.PrintMessage(_station_generation_console_text(stationing))
             except Exception:

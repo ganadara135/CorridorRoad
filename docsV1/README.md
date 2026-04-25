@@ -67,8 +67,8 @@ Preferred review workflow:
 - start section review from the v1 `Cross Section Viewer`
 - start plan/profile review from the v1 `Plan/Profile Viewer`
 - start earthwork review from the v1 `Earthwork Viewer`
-- use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows
-- use `Generate Stations (v1)` as the first native station-grid builder after alignment edits
+- use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
+- use the unified `Stations (v1)` command as the first native station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`
 - use `Edit Profile (v1)` as the first native profile-source editor for PVI station/elevation rows
 - use the existing v0 viewers as secondary support paths during transition
 - use the existing v0 editors only as secondary source-authoring support where a v1-native editor is not available yet

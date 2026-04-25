@@ -9,9 +9,15 @@ from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import (
     alignment_pi_review_rows,
     apply_alignment_element_rows,
     apply_alignment_ip_rows,
+    create_blank_v1_alignment,
+    run_v1_alignment_editor_command,
 )
 from freecad.Corridor_Road.v1.commands.selection_context import selected_alignment_profile_target
-from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment, to_alignment_model
+from freecad.Corridor_Road.v1.objects.obj_alignment import (
+    create_sample_v1_alignment,
+    find_v1_alignment,
+    to_alignment_model,
+)
 
 
 class _Selection:
@@ -247,6 +253,37 @@ def test_alignment_command_is_single_user_facing_entrypoint() -> None:
 
     assert resources["MenuText"] == "Alignment"
     assert "geometry" in resources["ToolTip"].lower()
+
+
+def test_alignment_command_does_not_create_sample_alignment_on_open() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        result = run_v1_alignment_editor_command()
+
+        assert result is None
+        assert find_v1_alignment(doc) is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_blank_alignment_can_be_created_and_applied_from_rows() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_blank_v1_alignment(document=doc, project=project)
+        compiled = apply_alignment_ip_rows(
+            alignment,
+            [
+                {"x": 0.0, "y": 0.0, "radius": 0.0, "transition_length": 0.0},
+                {"x": 50.0, "y": 0.0, "radius": 0.0, "transition_length": 0.0},
+            ],
+        )
+
+        assert find_v1_alignment(doc) == alignment
+        assert len(alignment_ip_rows(alignment)) == 2
+        assert len(compiled) == 1
+        assert list(alignment.ElementKinds) == ["tangent"]
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_selection_context_resolves_v1_alignment_selection() -> None:
