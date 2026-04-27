@@ -293,6 +293,9 @@ Regions select which section intent applies over which station range.
 Regions may:
 
 - choose the active template
+- choose the active assembly
+- declare the primary corridor behavior for the station range
+- attach additive layers such as ditch, drainage, culvert, guardrail, ramp, or intersection influence
 - alter parameter values
 - define transition zones
 - change daylight policy
@@ -304,10 +307,13 @@ Regions may:
 Recommended precedence:
 
 1. template base definition
-2. region-applied policy
-3. explicit override rows
-4. structure interaction adjustments
-5. terrain/daylight evaluated terminal behavior
+2. region primary kind
+3. region-applied policy and layers
+4. explicit override rows
+5. structure interaction adjustments
+6. drainage interaction adjustments
+7. ramp and intersection adjustments
+8. terrain/daylight evaluated terminal behavior
 
 ## 10. Override Model
 

@@ -12,6 +12,7 @@ Baseline document:
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
+- [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md)
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md)
 - [V1_STRUCTURE_MODEL.md](./V1_STRUCTURE_MODEL.md)
@@ -73,6 +74,7 @@ Preferred review workflow:
 - use `Profile` as the first native profile-source editor for PVI station/elevation rows, preset data, and CSV import/export; opening the panel should not create sample profile data and should preload generated `Stations` rows when available
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
+- model corridor ranges through `Region` as `primary_kind + applied_layers + domain references`, so bridge, culvert, drainage, ditch, ramp, and intersection influences can overlap without becoming hidden geometry edits
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical

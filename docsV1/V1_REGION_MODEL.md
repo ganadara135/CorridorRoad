@@ -11,6 +11,10 @@ Depends on:
 - `docsV1/V1_ALIGNMENT_MODEL.md`
 - `docsV1/V1_PROFILE_MODEL.md`
 - `docsV1/V1_SUPERELEVATION_MODEL.md`
+- `docsV1/V1_DRAINAGE_MODEL.md`
+- `docsV1/V1_STRUCTURE_MODEL.md`
+- `docsV1/V1_RAMP_MODEL.md`
+- `docsV1/V1_INTERSECTION_MODEL.md`
 
 ## 1. Purpose
 
@@ -30,6 +34,7 @@ This model covers:
 - station-range assignment
 - template switching
 - region-level policy selection
+- overlapping design-context layers such as drainage, ditch, bridge, culvert, ramp, and intersection influence
 - transition-in and transition-out behavior
 - precedence and conflict handling
 - diagnostics and traceability
@@ -62,6 +67,7 @@ It changes by station because of:
 - roadside treatment changes
 - structure influence
 - drainage policy changes
+- ramp and intersection influence
 - construction-stage or design exceptions
 
 `RegionModel` is the layer that says which policy applies where.
@@ -71,7 +77,7 @@ It changes by station because of:
 The architectural distinction is:
 
 - `AssemblyModel` defines reusable section intent
-- `RegionModel` assigns and modifies that intent over station ranges
+- `RegionModel` assigns that intent over station ranges and attaches applicable design context layers
 - explicit override models handle narrow exceptions
 
 Regions should not become:
@@ -79,6 +85,28 @@ Regions should not become:
 - a second template library
 - a hidden generated-geometry editor
 - an unlimited patch bucket for every local exception
+
+## 5.1 Relationship to Structures, Drainage, Ramps, and Intersections
+
+Regions are the station-range organizer for corridor behavior.
+
+They may reference structures, drainage elements, ramp contexts, or intersection contexts, but they do not own those domain meanings.
+
+The ownership split is:
+
+- `RegionModel` owns where a corridor policy interval applies
+- `StructureModel` owns bridge, culvert, retaining wall, and structure interaction meaning
+- `DrainageModel` owns ditch, gutter, pipe, inlet, collection, and discharge meaning
+- `RampModel` owns ramp topology, merge/diverge, and ramp tie-in meaning
+- `IntersectionModel` owns at-grade junction control-area meaning
+
+A region may therefore say:
+
+- this station range is primarily a bridge region
+- this same range also has ditch and drainage layers
+- this range references one bridge structure and two drainage elements
+
+But the region must not become the hidden source model for the bridge or drainage design itself.
 
 ## 6. Relationship to Alignment, Profile, and Superelevation
 
@@ -108,9 +136,13 @@ The v1 region subsystem should:
 Recommended early v1 support:
 
 - template assignment by station range
+- primary region kind by station range
+- additive applied layers for overlapping design contexts
 - roadway-side policy switching
 - cut/fill and daylight policy selection
 - structure-sensitive range handling
+- drainage-sensitive range handling
+- ramp and intersection context references
 - transition zones between region states
 - region-boundary diagnostics
 
@@ -165,27 +197,109 @@ Each `RegionRow` represents one station-bounded policy zone.
 
 - `region_id`
 - `region_index`
-- `region_kind`
+- `primary_kind`
+- `applied_layers`
 - `station_start`
 - `station_end`
+- `assembly_ref`
+- `structure_refs`
+- `drainage_refs`
+- optional `ramp_ref`
+- optional `intersection_ref`
 - `policy_set_ref`
 - `template_ref`
 - optional `superelevation_ref`
+- `override_refs`
 - `priority`
 - `source_ref`
 - `notes`
 
 ### 11.3 Recommended kinds
 
-- `mainline_region`
-- `transition_region`
-- `structure_influence_region`
-- `daylight_control_region`
+- `normal_road`
+- `bridge`
+- `culvert`
+- `intersection`
+- `ramp`
+- `drainage`
+- `transition`
+- `structure_influence`
+- `daylight_control`
 - `temporary_candidate_region`
 
 ### 11.4 Rule
 
 Region rows must be defined in station space, not only by visual extents or 3D shapes.
+
+### 11.5 Primary Kind and Applied Layers
+
+One region should have one `primary_kind`.
+
+The `primary_kind` answers the question:
+
+- what is the dominant corridor behavior for this station range?
+
+Examples:
+
+- `normal_road`
+- `bridge`
+- `culvert`
+- `intersection`
+- `ramp`
+- `drainage`
+
+Other overlapping items should be represented as `applied_layers` and explicit references.
+
+Examples:
+
+- a bridge region with `applied_layers = ["ditch", "drainage"]`
+- a normal road region with `applied_layers = ["culvert", "guardrail"]`
+- an intersection region with `applied_layers = ["drainage", "widening"]`
+- a ramp region with `applied_layers = ["retaining_wall", "side_ditch"]`
+
+This keeps the region readable while allowing realistic overlap.
+
+### 11.6 Example: Bridge with Ditch and Drainage
+
+Recommended source shape:
+
+```json
+{
+  "region_id": "region:bridge-01",
+  "region_index": 3,
+  "primary_kind": "bridge",
+  "applied_layers": ["ditch", "drainage"],
+  "station_start": 120.0,
+  "station_end": 180.0,
+  "assembly_ref": "assembly:bridge-deck",
+  "structure_refs": ["structure:bridge-01"],
+  "drainage_refs": ["drainage:deck-drain-left", "drainage:side-ditch-right"],
+  "policy_set_ref": "region-policy:bridge-01",
+  "override_refs": ["override:bridge-shoulder-narrowing"],
+  "priority": 80,
+  "notes": "Bridge deck region with drainage and ditch treatment."
+}
+```
+
+Viewer display may compress this into one row:
+
+`STA 120.000 - 180.000 | bridge | Assembly: bridge-deck | Layers: ditch, drainage | Structures: bridge-01`
+
+### 11.7 Rule for Overlap
+
+Overlapping design meaning should be expressed inside one region when:
+
+- the station range is the same or nearly the same
+- one primary corridor behavior dominates
+- the extra items are additive layers or references
+- the user expects to edit the range as one practical work zone
+
+Separate region rows should be used when:
+
+- station ranges differ meaningfully
+- two primary behaviors compete
+- the overlap needs a different priority or transition
+- diagnostics need to isolate the behavior clearly
 
 ## 12. RegionPolicySet
 
@@ -197,10 +311,13 @@ Region rows must be defined in station space, not only by visual extents or 3D s
 
 - `policy_set_id`
 - `template_ref`
+- `assembly_ref`
 - `component_policy_rows`
 - `daylight_policy`
 - `drainage_policy`
 - `structure_policy`
+- `ramp_policy`
+- `intersection_policy`
 - `earthwork_policy`
 - `notes`
 
@@ -292,11 +409,15 @@ Constraint rows capture region-level design intent and validation context.
 Recommended evaluation precedence:
 
 1. template base definition
-2. region policy set
-3. region transition behavior
-4. explicit override rows
-5. structure interaction rules
-6. terrain and daylight evaluation
+2. region primary kind
+3. region policy set
+4. region applied layers and domain references
+5. region transition behavior
+6. explicit override rows
+7. structure interaction rules
+8. drainage interaction rules
+9. ramp and intersection interaction rules
+10. terrain and daylight evaluation
 
 This order should be documented and reused consistently across services.
 
@@ -349,9 +470,16 @@ This result object captures resolved region context for downstream consumers.
 - `resolution_id`
 - `station`
 - `active_region_id`
+- `active_primary_kind`
+- `active_applied_layers`
 - `active_policy_set_id`
 - `active_template_ref`
+- `active_assembly_ref`
 - `active_transition_ref`
+- `resolved_structure_refs`
+- `resolved_drainage_refs`
+- `resolved_ramp_ref`
+- `resolved_intersection_ref`
 - `diagnostic_rows`
 - `notes`
 
@@ -367,7 +495,11 @@ Conflict handling should detect:
 - gaps between required regions
 - conflicting transition definitions
 - template references that do not exist
+- assembly references that do not exist
+- structure or drainage references that do not exist
 - illegal policy combinations
+- multiple primary behaviors assigned to one row
+- applied layers that should be separate primary regions
 
 The system should prefer explicit diagnostics over silent winner-takes-all behavior.
 
@@ -433,7 +565,11 @@ But they must not become the new region source.
 The Viewer should be able to trace a section behavior back to:
 
 - active region
+- primary kind
+- applied layers
 - policy set
+- assembly reference
+- structure and drainage references
 - transition row
 - override source if one exists
 

@@ -260,15 +260,18 @@ Recommended evaluation pipeline:
 3. resolve ramp and intersection context where relevant
 4. resolve profile elevation
 5. resolve superelevation state
-6. resolve active region policy
-7. resolve explicit overrides
-8. resolve drainage rules and constraints
-9. resolve structure interaction
-10. sample terrain and daylight context
-11. build `AppliedSection`
-12. append to `AppliedSectionSet`
-13. derive corridor geometry packages
-14. hand off to surface, solid, quantity, and earthwork consumers
+6. resolve active region primary kind
+7. resolve region applied layers and domain references
+8. resolve active assembly/template policy
+9. resolve explicit overrides
+10. resolve drainage rules and constraints
+11. resolve structure interaction
+12. resolve ramp and intersection interaction where active
+13. sample terrain and daylight context
+14. build `AppliedSection`
+15. append to `AppliedSectionSet`
+16. derive corridor geometry packages
+17. hand off to surface, solid, quantity, and earthwork consumers
 
 This pipeline should be implemented through reusable services, not inside the viewer.
 
