@@ -3,12 +3,17 @@ from pathlib import Path
 import FreeCAD as App
 
 from freecad.Corridor_Road.v1.commands.cmd_review_tin import (
+    build_document_tin_review,
     build_csv_tin_review,
     build_demo_tin_review,
     format_tin_review,
     _focus_tin_preview_object,
+    _skip_tin_surface_candidate,
     show_v1_tin_review,
 )
+from freecad.Corridor_Road.v1.models.source import TINEditOperation
+from freecad.Corridor_Road.v1.services.editing import TINEditService
+from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
     V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
@@ -109,6 +114,21 @@ def test_show_v1_tin_review_accepts_probe_context() -> None:
     assert "Probe guidance:" in preview["summary_text"]
 
 
+def test_show_v1_tin_review_accepts_direct_tin_surface_context() -> None:
+    surface = build_demo_tin_review("Direct Review Surface")["tin_surface"]
+
+    preview = show_v1_tin_review(
+        document=None,
+        extra_context={"tin_surface": surface, "create_mesh_preview": False},
+        app_module=None,
+        gui_module=None,
+    )
+
+    assert preview["tin_surface"] is surface
+    assert preview["sample_result"].found is True
+    assert "Direct Review Surface" in preview["summary_text"]
+
+
 def test_build_csv_tin_review_uses_realistic_sample() -> None:
     preview = build_csv_tin_review(
         str(SAMPLE_PATH),
@@ -197,6 +217,35 @@ def test_show_v1_tin_review_routes_mesh_preview_to_v1_tree_when_project_exists()
         App.closeDocument(doc.Name)
 
 
+def test_show_v1_tin_review_updates_existing_mesh_preview_instead_of_duplicating() -> None:
+    doc = App.newDocument("TINReviewMeshPreviewUpdateTest")
+    try:
+        first = show_v1_tin_review(
+            document=doc,
+            extra_context={"create_mesh_preview": True},
+            app_module=None,
+            gui_module=None,
+        )
+        second = show_v1_tin_review(
+            document=doc,
+            extra_context={"create_mesh_preview": True},
+            app_module=None,
+            gui_module=None,
+        )
+
+        assert first["mesh_preview"].status == "created"
+        assert second["mesh_preview"].status == "updated"
+        assert first["mesh_preview"].object_name == second["mesh_preview"].object_name
+        preview_objects = [
+            obj
+            for obj in list(getattr(doc, "Objects", []) or [])
+            if str(getattr(obj, "CRRecordKind", "") or "") == "tin_mesh_preview"
+        ]
+        assert len(preview_objects) == 1
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_focus_tin_preview_selects_and_centers_mesh_preview() -> None:
     doc = App.newDocument("TINReviewFocusPreviewTest")
     try:
@@ -215,6 +264,53 @@ def test_focus_tin_preview_selects_and_centers_mesh_preview() -> None:
         assert len(gui.Selection.selected) == 1
         assert gui.ActiveDocument.ActiveView.isometric is True
         assert gui.ActiveDocument.ActiveView.fit_selection is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_document_tin_review_prefers_edited_tin_preview_when_nothing_is_selected() -> None:
+    doc = App.newDocument("TINReviewPrefersEditedPreviewTest")
+    try:
+        base_surface = build_demo_tin_review("Base TIN")["tin_surface"]
+        edited_surface = TINEditService().apply_operations(
+            base_surface,
+            [
+                TINEditOperation(
+                    "op:delete",
+                    "delete_triangles",
+                    parameters={"triangle_ids": ["t1"]},
+                )
+            ],
+        ).surface
+        mapper = TINMeshPreviewMapper()
+        mapper.create_or_update_preview_object(doc, base_surface, object_name="TINPreview_Base_ForPreference")
+        mapper.create_or_update_preview_object(
+            doc,
+            edited_surface,
+            object_name="TINPreview_Edited_ForPreference",
+            surface_role="edited",
+        )
+
+        preview = build_document_tin_review(doc, gui_module=_FakeGui())
+
+        assert preview is not None
+        assert preview["tin_surface"].surface_id.endswith(":edited")
+        assert preview["tin_surface"].surface_id == edited_surface.surface_id
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_tin_review_skips_tin_edit_rectangle_preview_objects() -> None:
+    doc = App.newDocument("TINReviewSkipsEditRectanglePreviewTest")
+    try:
+        obj = doc.addObject("App::FeaturePython", "CRV1_TIN_Boundary_Rectangle_Preview")
+        obj.Label = "TIN Boundary Rectangle Preview"
+        obj.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        obj.addProperty("App::PropertyString", "PreviewRole", "CorridorRoad", "")
+        obj.CRRecordKind = "tin_edit_rectangle_preview"
+        obj.PreviewRole = "boundary"
+
+        assert _skip_tin_surface_candidate(obj) is True
     finally:
         App.closeDocument(doc.Name)
 

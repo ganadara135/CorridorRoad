@@ -16,7 +16,7 @@ This document defines the next development sequence after the first usable TIN p
 
 - CSV point cloud selection
 - CSV point rows converted into `TINSurface`
-- TIN review panel opened from `PointCloud TIN`
+- TIN review/result flow opened from the unified `TIN` panel
 - XY sampling verified through `TinSamplingService`
 
 The next goal is to make the TIN review flow useful for real project checking before moving into section, drainage, and earthwork consumers.
@@ -30,7 +30,7 @@ Completed baseline:
 - `tests/samples/pointcloud_utm_realistic_hilly.csv` builds into 14,641 vertices and 28,800 triangles
 - `tests/samples/pointcloud_tin_mountain_valley_plain.csv` provides a richer terrain sample with mountains, valley, and plain areas
 - `TinSamplingService.sample_xy()` samples TIN triangles
-- `PointCloud TIN` opens a CSV file picker and passes the selected file into the v1 TIN review flow
+- the unified `TIN` panel can select a CSV/sample source and build the base TIN
 - `TIN Review` shows summary text, quality rows, provenance rows, and one XY probe
 - `TIN Review` now derives source, extents, spacing, and probe extent status from the shared review summary helper
 - `TINMeshPreviewMapper` can create a lightweight `Mesh::Feature` preview from `TINSurface` triangles when a FreeCAD document is available

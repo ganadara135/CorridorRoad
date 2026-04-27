@@ -27,6 +27,7 @@ Baseline document:
 - [V1_TIN_SAMPLING_CONTRACT.md](./V1_TIN_SAMPLING_CONTRACT.md)
 - [V1_TIN_CORE_IMPLEMENTATION_PLAN.md](./V1_TIN_CORE_IMPLEMENTATION_PLAN.md)
 - [V1_TIN_REVIEW_NEXT_STEP_PLAN.md](./V1_TIN_REVIEW_NEXT_STEP_PLAN.md)
+- [V1_TIN_EDITING_PLAN.md](./V1_TIN_EDITING_PLAN.md)
 - [V1_PROJECT_TREE_REDESIGN_PLAN.md](./V1_PROJECT_TREE_REDESIGN_PLAN.md)
 - [V1_VIEWER_PLAN.md](./V1_VIEWER_PLAN.md)
 - [V1_UX_RESET_PLAN.md](./V1_UX_RESET_PLAN.md)
@@ -71,6 +72,7 @@ Preferred review workflow:
 - use the unified `Stations` command as the first native v1 station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`
 - use `Profile` as the first native profile-source editor for PVI station/elevation rows, preset data, and CSV import/export; opening the panel should not create sample profile data and should preload generated `Stations` rows when available
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
+- before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical

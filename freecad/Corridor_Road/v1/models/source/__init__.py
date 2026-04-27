@@ -11,6 +11,7 @@ from .ramp_model import RampModel
 from .region_model import RegionModel
 from .structure_model import StructureModel
 from .superelevation_model import SuperelevationModel
+from .tin_edit_model import TINEditOperation, TINEditSet
 
 __all__ = [
     "AlignmentModel",
@@ -24,4 +25,6 @@ __all__ = [
     "RegionModel",
     "StructureModel",
     "SuperelevationModel",
+    "TINEditOperation",
+    "TINEditSet",
 ]

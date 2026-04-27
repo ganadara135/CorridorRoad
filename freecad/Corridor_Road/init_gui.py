@@ -24,7 +24,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
     def Initialize(self):
         import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_import_pointcloud_tin  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_edit_tin  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
@@ -46,7 +46,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_ProjectSetup",
         ]
         terrain_commands = [
-            "CorridorRoad_ImportPointCloudTIN",
+            "CorridorRoad_V1EditTIN",
         ]
         alignment_commands = [
             "CorridorRoad_V1EditAlignment",

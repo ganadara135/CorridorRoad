@@ -27,6 +27,7 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_vertical_curve_rows,
     run_v1_profile_editor_command,
     show_profile_preview_object,
+    _resolve_profile_preview_tin_surface,
 )
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
 from freecad.Corridor_Road.v1.commands.selection_context import selected_alignment_profile_target
@@ -73,6 +74,27 @@ def _add_existing_ground_mesh(doc):
     obj.Mesh = mesh
     obj.Label = "Existing Ground TIN"
     return obj
+
+
+def _small_tin_surface_for_profile_resolution():
+    from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINTriangle, TINVertex
+
+    return TINSurface(
+        schema_version=1,
+        project_id="test-project",
+        surface_id="tin:profile-resolution",
+        label="Profile Resolution TIN",
+        vertex_rows=[
+            TINVertex("v0", 0.0, 0.0, 10.0),
+            TINVertex("v1", 10.0, 0.0, 12.0),
+            TINVertex("v2", 10.0, 10.0, 16.0),
+            TINVertex("v3", 0.0, 10.0, 14.0),
+        ],
+        triangle_rows=[
+            TINTriangle("t0", "v0", "v1", "v2"),
+            TINTriangle("t1", "v0", "v2", "v3"),
+        ],
+    )
 
 
 def test_apply_profile_control_rows_sorts_and_updates_source_object() -> None:
@@ -492,6 +514,41 @@ def test_profile_show_preview_uses_document_mesh_for_existing_ground() -> None:
         assert int(obj.ExistingGroundPointCount) >= 2
         assert eg_obj is not None
         assert not eg_obj.Shape.isNull()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_profile_tin_resolution_prefers_edited_preview_when_available() -> None:
+    from freecad.Corridor_Road.v1.models.source import TINEditOperation
+    from freecad.Corridor_Road.v1.services.editing import TINEditService
+    from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
+
+    doc, _project = _new_project_doc()
+    try:
+        base_surface = _small_tin_surface_for_profile_resolution()
+        edited_surface = TINEditService().apply_operations(
+            base_surface,
+            [
+                TINEditOperation(
+                    "op:delete",
+                    "delete_triangles",
+                    parameters={"triangle_ids": ["t1"]},
+                )
+            ],
+        ).surface
+        mapper = TINMeshPreviewMapper()
+        mapper.create_or_update_preview_object(doc, base_surface, object_name="TINPreview_Profile_Base")
+        mapper.create_or_update_preview_object(
+            doc,
+            edited_surface,
+            object_name="TINPreview_Profile_Edited",
+            surface_role="edited",
+        )
+
+        resolved = _resolve_profile_preview_tin_surface(doc)
+
+        assert resolved is not None
+        assert resolved.surface_id == edited_surface.surface_id
     finally:
         App.closeDocument(doc.Name)
 

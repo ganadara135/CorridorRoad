@@ -35,12 +35,12 @@ Current implementation state:
 - `tests/contracts/v1/test_tin_sampling_service.py` covers the first sampling contract behavior
 - `freecad/Corridor_Road/v1/commands/cmd_review_tin.py` builds and shows the thin TIN review payload
 - `freecad/Corridor_Road/v1/ui/viewers/tin_review_view.py` provides a minimal review panel with one XY probe
-- `freecad/Corridor_Road/commands/cmd_import_pointcloud_tin.py` now enters the v1 TIN review path with a safe fallback
+- `freecad/Corridor_Road/commands/cmd_import_pointcloud_tin.py` remains as a compatibility entry point
 - `tests/contracts/v1/test_tin_review_command.py` covers the thin review command behavior
 - `freecad/Corridor_Road/v1/services/builders/tin_build_service.py` builds a first-slice `TINSurface` from CSV point input
 - `tests/samples/pointcloud_utm_realistic_hilly.csv` is used as the first real TIN build sample
 - `tests/contracts/v1/test_tin_build_service.py` verifies CSV point-cloud build counts, quality rows, and sampling compatibility
-- `CorridorRoad_ImportPointCloudTIN` now opens a CSV file picker and passes the selected file into the v1 TIN review flow
+- `CorridorRoad_V1EditTIN` is the active unified TIN entry point for CSV source build, edit, preview, and review
 
 ## 3. Core Decision
 
@@ -259,7 +259,7 @@ Acceptance criteria:
 - UX consumes TIN contracts and sampling service
 - UX does not own sampling logic
 - UX remains a review tool, not the terrain source of truth
-- PointCloud TIN opens the v1 review bridge when available
+- the active `TIN` panel opens the v1 review/result bridge when available
 
 ### 7.6 Phase F: CSV point-cloud TIN build
 
@@ -285,27 +285,27 @@ Acceptance criteria:
 - resulting `TINSurface` can be sampled through `TinSamplingService`
 - incomplete lattices fail explicitly rather than producing partial geometry
 
-### 7.7 Phase G: PointCloud TIN CSV entry point
+### 7.7 Phase G: Unified TIN CSV entry point
 
-Status: Complete for first file-picker flow
+Status: Complete for unified panel source flow
 
 Goal:
 
-- let users open a CSV point cloud through the existing `PointCloud TIN` command
+- let users build a base TIN from CSV through the active `TIN` command
 
 Tasks:
 
-- add a CSV file picker to `CorridorRoad_ImportPointCloudTIN`
+- add CSV file picker and sample CSV selection to `CorridorRoad_V1EditTIN`
 - default the picker to `tests/samples` when available
 - pass selected `csv_path` into `show_v1_tin_review()`
 - derive a stable `surface_id` from the CSV file name
-- keep cancellation safe by falling back to the existing review path
+- keep the legacy `CorridorRoad_ImportPointCloudTIN` module as compatibility code only
 
 Acceptance criteria:
 
-- selecting `pointcloud_utm_realistic_hilly.csv` opens the CSV-backed TIN review flow
-- cancellation does not crash the command
-- command bridge tests can inject a CSV path without GUI
+- selecting `pointcloud_utm_realistic_hilly.csv` builds a CSV-backed base TIN from the `TIN` panel
+- the active toolbar/menu exposes one terrain entry point: `TIN`
+- command bridge tests can still inject a CSV path without GUI
 
 ## 8. Test Command Guidance
 
@@ -355,7 +355,7 @@ Recommended immediate coding order:
 6. [x] Add station/offset adapter behavior
 7. [x] Add thin review UX only after the core passes
 8. [x] Add CSV point-cloud TIN build service for the realistic sample
-9. [x] Add PointCloud TIN CSV file-picker entry point
+9. [x] Add unified `TIN` CSV/sample source entry point
 
 ## 12. Definition of Done for First Slice
 

@@ -165,7 +165,12 @@ def show_v1_tin_review(
 
     preview = None
     csv_path = str((extra_context or {}).get("csv_path", "") or "").strip()
-    if csv_path:
+    direct_surface = (extra_context or {}).get("tin_surface", None)
+    if direct_surface is not None:
+        if probe_x is None or probe_y is None:
+            probe_x, probe_y = _surface_probe_center(direct_surface)
+        preview = build_tin_review(direct_surface, probe_x=float(probe_x), probe_y=float(probe_y))
+    if preview is None and csv_path:
         preview = build_csv_tin_review(
             csv_path,
             project_id=str((extra_context or {}).get("project_id", "") or "corridorroad-v1-csv"),
@@ -191,9 +196,10 @@ def show_v1_tin_review(
         preview = enrich_tin_review_preview(preview)
 
     if _should_create_mesh_preview(document, extra_context):
-        preview["mesh_preview"] = TINMeshPreviewMapper().create_preview_object(
+        preview["mesh_preview"] = TINMeshPreviewMapper().create_or_update_preview_object(
             document,
             preview["tin_surface"],
+            surface_role="base",
         )
         _route_mesh_preview_to_v1_tree(document, preview["mesh_preview"])
         preview = enrich_tin_review_preview(preview)
@@ -237,9 +243,24 @@ def _focus_tin_preview_object(document, preview: dict[str, object], *, gui_modul
     if obj is None:
         return False
     try:
+        if hasattr(obj, "ViewObject"):
+            obj.ViewObject.Visibility = True
+    except Exception:
+        pass
+    try:
+        if hasattr(document, "recompute"):
+            document.recompute()
+    except Exception:
+        pass
+    try:
         if hasattr(gui_module, "Selection"):
             gui_module.Selection.clearSelection()
             gui_module.Selection.addSelection(obj)
+    except Exception:
+        pass
+    try:
+        if hasattr(gui_module, "updateGui"):
+            gui_module.updateGui()
     except Exception:
         pass
     try:
@@ -257,6 +278,8 @@ def _focus_tin_preview_object(document, preview: dict[str, object], *, gui_modul
             view.fitSelection()
         else:
             gui_module.SendMsgToActiveView("ViewSelection")
+        if hasattr(gui_module, "updateGui"):
+            gui_module.updateGui()
     except Exception:
         try:
             gui_module.SendMsgToActiveView("ViewSelection")
@@ -265,11 +288,16 @@ def _focus_tin_preview_object(document, preview: dict[str, object], *, gui_modul
                 gui_module.ActiveDocument.ActiveView.fitAll()
             except Exception:
                 return False
+    try:
+        if hasattr(gui_module, "SendMsgToActiveView"):
+            gui_module.SendMsgToActiveView("ViewSelection")
+    except Exception:
+        pass
     return True
 
 
 def _show_tin_complete_message(preview: dict[str, object], *, gui_module=Gui) -> None:
-    """Show a compact completion message after PointCloud TIN generation."""
+    """Show a compact completion message after TIN generation."""
 
     if gui_module is None:
         return
@@ -281,7 +309,7 @@ def _show_tin_complete_message(preview: dict[str, object], *, gui_module=Gui) ->
         vertex_count = len(list(getattr(surface, "vertex_rows", []) or []))
         triangle_count = len(list(getattr(surface, "triangle_rows", []) or []))
         message = (
-            "PointCloud TIN 작업이 완료되었습니다.\n"
+            "TIN build has completed.\n"
             f"Mesh preview: {mesh_status}"
             + (f"\nObject: {mesh_name}" if mesh_name else "")
             + f"\nVertices: {vertex_count}"
@@ -289,7 +317,7 @@ def _show_tin_complete_message(preview: dict[str, object], *, gui_module=Gui) ->
         )
         from freecad.Corridor_Road.qt_compat import QtWidgets
 
-        QtWidgets.QMessageBox.information(None, "PointCloud TIN", message)
+        QtWidgets.QMessageBox.information(None, "TIN", message)
     except Exception:
         pass
 
@@ -308,7 +336,7 @@ def _route_mesh_preview_to_v1_tree(document, mesh_preview) -> None:
 
     if document is None or mesh_preview is None:
         return
-    if str(getattr(mesh_preview, "status", "") or "") != "created":
+    if str(getattr(mesh_preview, "status", "") or "") not in {"created", "updated"}:
         return
     object_name = str(getattr(mesh_preview, "object_name", "") or "").strip()
     if not object_name:
@@ -567,20 +595,65 @@ def _selected_surface_object(gui_module, document):
         except Exception:
             selected = []
 
-    candidates = selected + list(getattr(document, "Objects", []) or [])
-    for obj in candidates:
-        if _is_surface_like(obj):
-            return obj
+    selected_surfaces = [obj for obj in selected if _is_surface_like(obj)]
+    if selected_surfaces:
+        return sorted(selected_surfaces, key=_tin_surface_candidate_sort_key)[0]
+
+    document_surfaces = [obj for obj in list(getattr(document, "Objects", []) or []) if _is_surface_like(obj)]
+    if document_surfaces:
+        return sorted(document_surfaces, key=_tin_surface_candidate_sort_key)[0]
     return None
 
 
 def _is_surface_like(obj) -> bool:
+    if _skip_tin_surface_candidate(obj):
+        return False
     try:
         from freecad.Corridor_Road.objects import surface_sampling_core as _ssc
 
         return bool(_ssc.is_mesh_object(obj) or _ssc.is_shape_object(obj))
     except Exception:
         return False
+
+
+def _tin_surface_candidate_sort_key(obj) -> tuple[int, str]:
+    """Prefer edited TIN previews, then base TIN previews, then generic terrain."""
+
+    role = str(getattr(obj, "SurfaceRole", "") or "").lower()
+    record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+    name = str(getattr(obj, "Name", "") or "")
+    label = str(getattr(obj, "Label", "") or "")
+    if role == "edited":
+        return (0, label or name)
+    if record_kind == "tin_mesh_preview":
+        return (1, label or name)
+    return (2, label or name)
+
+
+def _skip_tin_surface_candidate(obj) -> bool:
+    if obj is None:
+        return True
+    record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+    if record_kind == "tin_edit_rectangle_preview":
+        return True
+    if record_kind.startswith("profile_show_preview"):
+        return True
+    preview_role = str(getattr(obj, "PreviewRole", "") or "").lower()
+    if preview_role in {"boundary", "void"}:
+        return True
+    name = str(getattr(obj, "Name", "") or "")
+    label = str(getattr(obj, "Label", "") or "")
+    if name.startswith(("CRV1_TIN_Boundary_Rectangle_Preview", "CRV1_TIN_Void_Rectangle_Preview")):
+        return True
+    if label.startswith(("TIN Boundary Rectangle Preview", "TIN Void Rectangle Preview")):
+        return True
+    v1_type = str(getattr(obj, "V1ObjectType", "") or "")
+    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+        return True
+    proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
+    if proxy_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+        return True
+    return False
 
 
 def _tin_surface_from_object(obj, max_triangles: int = 10000) -> TINSurface | None:
@@ -628,10 +701,11 @@ def _tin_surface_from_object(obj, max_triangles: int = 10000) -> TINSurface | No
 
     label = str(getattr(obj, "Label", "") or getattr(obj, "Name", "") or "TIN Surface")
     name = str(getattr(obj, "Name", "") or label.replace(" ", "_") or "surface")
+    surface_id = str(getattr(obj, "SurfaceId", "") or f"tin:{name}")
     return TINSurface(
         schema_version=1,
         project_id="corridorroad-v1-document",
-        surface_id=f"tin:{name}",
+        surface_id=surface_id,
         surface_kind="existing_ground_tin",
         label=label,
         vertex_rows=vertices,

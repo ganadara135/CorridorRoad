@@ -1187,7 +1187,7 @@ class V1ProfileEditorTaskPanel:
         candidates.extend(list(getattr(self.document, "Objects", []) or []))
         result = []
         seen = set()
-        for obj in candidates:
+        for obj in sorted(candidates, key=_profile_tin_candidate_sort_key):
             name = str(getattr(obj, "Name", "") or "")
             if not name or name in seen:
                 continue
@@ -2042,7 +2042,7 @@ def _resolve_profile_preview_tin_surface(document) -> TINSurface | None:
     candidates.extend(list(getattr(document, "Objects", []) or []))
 
     seen = set()
-    for obj in candidates:
+    for obj in sorted(candidates, key=_profile_tin_candidate_sort_key):
         if obj is None:
             continue
         name = str(getattr(obj, "Name", "") or "")
@@ -2080,6 +2080,22 @@ def _looks_like_tin_candidate(obj) -> bool:
         return bool(_ssc.is_mesh_object(obj) or _ssc.is_shape_object(obj))
     except Exception:
         return False
+
+
+def _profile_tin_candidate_sort_key(obj) -> tuple[int, str]:
+    try:
+        from .cmd_review_tin import _tin_surface_candidate_sort_key
+
+        return _tin_surface_candidate_sort_key(obj)
+    except Exception:
+        role = str(getattr(obj, "SurfaceRole", "") or "").lower()
+        record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+        label = str(getattr(obj, "Label", "") or getattr(obj, "Name", "") or "")
+        if role == "edited":
+            return (0, label)
+        if record_kind == "tin_mesh_preview":
+            return (1, label)
+        return (2, label)
 
 
 def _skip_profile_preview_tin_candidate(obj) -> bool:
