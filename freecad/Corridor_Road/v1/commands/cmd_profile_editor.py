@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import os
 
 try:
@@ -227,8 +228,8 @@ def build_profile_sheet_preview(
     return {
         "frame_shape": frame_shape,
         "grid_shape": grid_shape,
-        "fg_shape": _make_profile_polyline(fg_points),
-        "eg_shape": _make_profile_polyline(eg_points),
+        "fg_shape": _make_profile_polyline(fg_points, stroke_width=3.0),
+        "eg_shape": _make_profile_polyline(eg_points, stroke_width=2.8),
         "fg_point_count": len(fg_points),
         "eg_point_count": len(eg_points),
         "origin": (origin_x, origin_y, origin_z),
@@ -2166,7 +2167,7 @@ def _profile_sheet_frame_shape(
     p1 = App.Vector(origin_x + width, origin_y, origin_z)
     p2 = App.Vector(origin_x + width, origin_y, origin_z + height)
     p3 = App.Vector(origin_x, origin_y, origin_z + height)
-    return _make_profile_edges([(p0, p1), (p1, p2), (p2, p3), (p3, p0)])
+    return _make_profile_edges([(p0, p1), (p1, p2), (p2, p3), (p3, p0)], stroke_width=2.0)
 
 
 def _profile_sheet_grid_shape(
@@ -2207,7 +2208,7 @@ def _profile_sheet_grid_shape(
         }
         for elevation in elevation_ticks
     ]
-    return _make_profile_edges(edges), station_rows, elevation_rows
+    return _make_profile_edges(edges, stroke_width=1.2), station_rows, elevation_rows
 
 
 def _linear_tick_values(start: float, end: float, count: int) -> list[float]:
@@ -2217,29 +2218,65 @@ def _linear_tick_values(start: float, end: float, count: int) -> list[float]:
     return [float(start) + step * index for index in range(count)]
 
 
-def _make_profile_polyline(points):
+def _make_profile_polyline(points, *, stroke_width: float = 0.0):
     pts = list(points or [])
     if Part is None:
         return None
     if len(pts) < 2:
         return Part.Shape()
+    if float(stroke_width or 0.0) > 0.0:
+        return _make_profile_edges(list(zip(pts, pts[1:])), stroke_width=stroke_width)
     try:
         return Part.makePolygon(pts)
     except Exception:
         return _make_profile_edges(list(zip(pts, pts[1:])))
 
 
-def _make_profile_edges(edges):
+def _make_profile_edges(edges, *, stroke_width: float = 0.0):
     if Part is None:
         return None
     edge_shapes = []
     for start, end in list(edges or []):
         try:
             if (end - start).Length > 1.0e-9:
-                edge_shapes.append(Part.makeLine(start, end))
+                stroke = _make_profile_segment_stroke(start, end, stroke_width)
+                edge_shapes.append(stroke if stroke is not None else Part.makeLine(start, end))
         except Exception:
             continue
     return Part.Compound(edge_shapes) if edge_shapes else Part.Shape()
+
+
+def _make_profile_segment_stroke(start, end, stroke_width: float):
+    """Build a shallow X-Z ribbon solid so profile lines remain visible in Front view."""
+
+    width = float(stroke_width or 0.0)
+    if width <= 0.0 or Part is None:
+        return None
+    try:
+        dx = float(end.x) - float(start.x)
+        dz = float(end.z) - float(start.z)
+        length = math.hypot(dx, dz)
+        if length <= 1.0e-9:
+            return None
+        half = width * 0.5
+        nx = -dz / length * half
+        nz = dx / length * half
+        points = [
+            App.Vector(float(start.x) + nx, float(start.y), float(start.z) + nz),
+            App.Vector(float(end.x) + nx, float(end.y), float(end.z) + nz),
+            App.Vector(float(end.x) - nx, float(end.y), float(end.z) - nz),
+            App.Vector(float(start.x) - nx, float(start.y), float(start.z) - nz),
+            App.Vector(float(start.x) + nx, float(start.y), float(start.z) + nz),
+        ]
+        front_face = Part.Face(Part.makePolygon(points))
+        try:
+            depth = max(0.8, width * 0.25)
+            return front_face.extrude(App.Vector(0.0, -depth, 0.0))
+        except Exception:
+            reversed_face = Part.Face(Part.makePolygon(list(reversed(points))))
+            return Part.Compound([front_face, reversed_face])
+    except Exception:
+        return None
 
 
 def _set_preview_part_object(
@@ -2271,7 +2308,7 @@ def _style_profile_preview_object(
         return
     try:
         vobj.Visibility = True
-        vobj.DisplayMode = "Wireframe"
+        vobj.DisplayMode = "Flat Lines"
         vobj.ShapeColor = color
         vobj.LineColor = color
         vobj.PointColor = color
@@ -2279,6 +2316,11 @@ def _style_profile_preview_object(
         vobj.PointSize = max(4.0, float(line_width) + 2.0)
         if hasattr(vobj, "DrawStyle"):
             vobj.DrawStyle = "Solid"
+        if hasattr(vobj, "Lighting"):
+            try:
+                vobj.Lighting = "Two side"
+            except Exception:
+                pass
         if hasattr(vobj, "Transparency"):
             vobj.Transparency = 0
     except Exception:

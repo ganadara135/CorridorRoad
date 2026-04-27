@@ -477,7 +477,8 @@ class V1TINEditorTaskPanel:
             self._summary.setText(self._summary_text())
             self._reset_boundary_rect()
             self._reset_void_rect()
-            _focus_preview(self.document, result.get("mesh_preview"), gui_module=self.gui_module)
+            mesh_preview = result.get("mesh_preview")
+            _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
             _show_message(
                 self.form,
                 "TIN",
@@ -488,6 +489,8 @@ class V1TINEditorTaskPanel:
                     f"Triangles: {len(list(self.base_surface.triangle_rows or []))}"
                 ),
             )
+            _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
+            _focus_preview_deferred(self.document, mesh_preview, gui_module=self.gui_module)
         except Exception as exc:
             self._set_diagnostics(f"TIN source build failed:\n{exc}")
             _show_message(self.form, "TIN", f"TIN source could not be built.\n{exc}")
@@ -1848,9 +1851,20 @@ def _operation_summary(edit_result) -> str:
     return " | ".join(rows)
 
 
-def _focus_preview(document, mesh_preview, *, gui_module=Gui) -> None:
+def _focus_preview(document, mesh_preview, *, gui_module=Gui) -> bool:
     preview = {"mesh_preview": mesh_preview}
-    _focus_tin_preview_object(document, preview, gui_module=gui_module)
+    return bool(_focus_tin_preview_object(document, preview, gui_module=gui_module))
+
+
+def _focus_preview_deferred(document, mesh_preview, *, gui_module=Gui) -> None:
+    """Run one more fit pass after modal messages and GUI paint events settle."""
+
+    if gui_module is None:
+        return
+    try:
+        QtCore.QTimer.singleShot(150, lambda: _focus_preview(document, mesh_preview, gui_module=gui_module))
+    except Exception:
+        pass
 
 
 def _format_editor_result(result: dict[str, object]) -> str:

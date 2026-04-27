@@ -484,6 +484,8 @@ def test_profile_show_preview_builds_framed_sheet_objects_away_from_model() -> N
         assert doc.getObject("FinishedGradeFG_ShowPreview_Frame") is not None
         assert doc.getObject("FinishedGradeFG_ShowPreview_Grid") is not None
         assert doc.getObject("FinishedGradeFG_ShowPreview_Title") is not None
+        assert len(doc.getObject("FinishedGradeFG_ShowPreview_Frame").Shape.Faces) > 0
+        assert len(obj.Shape.Faces) > 0
         assert int(obj.DisplayPointCount) >= 2
         assert round(preview["origin"][0] + 0.5 * preview["plot_width"], 6) == 90.0
         assert preview["origin"][2] > 0.0
@@ -514,6 +516,7 @@ def test_profile_show_preview_uses_document_mesh_for_existing_ground() -> None:
         assert int(obj.ExistingGroundPointCount) >= 2
         assert eg_obj is not None
         assert not eg_obj.Shape.isNull()
+        assert len(eg_obj.Shape.Faces) > 0
     finally:
         App.closeDocument(doc.Name)
 

@@ -593,7 +593,7 @@ class V1AlignmentEditorTaskPanel:
 
         self._report = QtWidgets.QPlainTextEdit()
         self._report.setReadOnly(True)
-        self._report.setMinimumHeight(120)
+        self._report.setFixedHeight(60)
         self._report.setPlaceholderText("Criteria messages will appear after Apply.")
         layout.addWidget(self._report)
 
