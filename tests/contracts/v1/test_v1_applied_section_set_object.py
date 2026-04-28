@@ -5,7 +5,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame
+from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     create_or_update_v1_applied_section_set_object,
@@ -54,6 +54,11 @@ def _sample_set() -> AppliedSectionSet:
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 100.0, 195.5, 9.9, "fg_surface", -4.5),
+                    AppliedSectionPoint("fg:center", 100.0, 200.0, 10.0, "fg_surface", 0.0),
+                    AppliedSectionPoint("fg:left", 100.0, 205.0, 9.9, "fg_surface", 5.0),
+                ],
             ),
             AppliedSection(
                 schema_version=1,
@@ -75,6 +80,11 @@ def _sample_set() -> AppliedSectionSet:
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 120.0, 196.0, 10.9, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:center", 120.0, 200.0, 11.0, "fg_surface", 0.0),
+                    AppliedSectionPoint("fg:left", 120.0, 205.5, 10.9, "fg_surface", 5.5),
+                ],
             ),
         ],
         source_refs=["alignment:main", "profile:main", "assembly:basic-road", "regions:main"],
@@ -103,6 +113,7 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.DaylightRightWidths) == [2.5, 2.0]
         assert list(obj.DaylightLeftSlopes) == [-0.5, -0.5]
         assert list(obj.DaylightRightSlopes) == [-0.4, -0.4]
+        assert len(list(obj.PointRows)) == 6
         assert list(obj.RegionIds) == ["region:main", "region:main"]
         assert list(obj.AssemblyIds) == ["assembly:basic-road", "assembly:basic-road"]
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
@@ -131,6 +142,9 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [section.subgrade_depth for section in model.sections] == [0.25, 0.20]
         assert [section.daylight_left_width for section in model.sections] == [3.0, 3.5]
         assert [section.daylight_right_width for section in model.sections] == [2.5, 2.0]
+        assert [len(section.point_rows) for section in model.sections] == [3, 3]
+        assert model.sections[0].point_rows[0].point_role == "fg_surface"
+        assert model.sections[0].point_rows[0].lateral_offset == -4.5
         assert find_v1_applied_section_set(doc) == obj
     finally:
         App.closeDocument(doc.Name)

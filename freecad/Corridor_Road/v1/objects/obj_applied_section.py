@@ -7,7 +7,7 @@ try:
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
 
-from ..models.result.applied_section import AppliedSection, AppliedSectionFrame
+from ..models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 
 
@@ -77,6 +77,7 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "DaylightRightWidths", "Surface", "right daylight widths")
     _add_property(obj, "App::PropertyFloatList", "DaylightLeftSlopes", "Surface", "left daylight slopes")
     _add_property(obj, "App::PropertyFloatList", "DaylightRightSlopes", "Surface", "right daylight slopes")
+    _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Resolved Context", "resolved region ids")
     _add_property(obj, "App::PropertyStringList", "AssemblyIds", "Resolved Context", "resolved assembly ids")
     _add_property(obj, "App::PropertyStringList", "TemplateIds", "Resolved Context", "resolved template ids")
@@ -176,6 +177,7 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DaylightRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_width", 0.0) or 0.0) for row in station_rows]
     obj.DaylightLeftSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_left_slope", 0.0) or 0.0) for row in station_rows]
     obj.DaylightRightSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_slope", 0.0) or 0.0) for row in station_rows]
+    obj.PointRows = _point_rows(station_rows, section_by_id)
     obj.RegionIds = [str(getattr(section_by_id.get(row.applied_section_id), "region_id", "") or "") for row in station_rows]
     obj.AssemblyIds = [str(getattr(section_by_id.get(row.applied_section_id), "assembly_id", "") or "") for row in station_rows]
     obj.TemplateIds = [str(getattr(section_by_id.get(row.applied_section_id), "template_id", "") or "") for row in station_rows]
@@ -200,6 +202,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     section_ids = list(getattr(obj, "AppliedSectionIds", []) or [])
     station_rows: list[AppliedSectionStationRow] = []
     sections: list[AppliedSection] = []
+    point_rows_by_section = _parse_point_rows(getattr(obj, "PointRows", []) or [])
     for index, station in enumerate(station_values):
         section_id = _list_value(section_ids, index, f"section:{index + 1}")
         station_rows.append(
@@ -217,7 +220,10 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 applied_section_id=section_id,
                 corridor_id=str(getattr(obj, "CorridorId", "") or ""),
                 alignment_id=str(getattr(obj, "AlignmentId", "") or ""),
+                assembly_id=_list_value(getattr(obj, "AssemblyIds", []), index, ""),
                 station=float(station),
+                template_id=_list_value(getattr(obj, "TemplateIds", []), index, ""),
+                region_id=_list_value(getattr(obj, "RegionIds", []), index, ""),
                 surface_left_width=_float_value(getattr(obj, "SurfaceLeftWidths", []), index, 0.0),
                 surface_right_width=_float_value(getattr(obj, "SurfaceRightWidths", []), index, 0.0),
                 subgrade_depth=_float_value(getattr(obj, "SubgradeDepths", []), index, 0.0),
@@ -225,6 +231,12 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 daylight_right_width=_float_value(getattr(obj, "DaylightRightWidths", []), index, 0.0),
                 daylight_left_slope=_float_value(getattr(obj, "DaylightLeftSlopes", []), index, 0.0),
                 daylight_right_slope=_float_value(getattr(obj, "DaylightRightSlopes", []), index, 0.0),
+                component_rows=_component_placeholders(
+                    _integer_value(getattr(obj, "ComponentCounts", []), index, 0),
+                    _list_value(getattr(obj, "TemplateIds", []), index, ""),
+                    _list_value(getattr(obj, "RegionIds", []), index, ""),
+                ),
+                point_rows=point_rows_by_section.get(section_id, []),
                 frame=AppliedSectionFrame(
                     station=float(station),
                     x=_float_value(getattr(obj, "FrameXValues", []), index, 0.0),
@@ -285,6 +297,68 @@ def _diagnostic_rows(sections) -> list[str]:
     return output
 
 
+def _point_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+    output: list[str] = []
+    for station_row in list(station_rows or []):
+        section_id = str(getattr(station_row, "applied_section_id", "") or "")
+        section = section_by_id.get(section_id)
+        for point in list(getattr(section, "point_rows", []) or []):
+            output.append(
+                "|".join(
+                    [
+                        section_id,
+                        _escape_row_value(getattr(point, "point_id", "")),
+                        _escape_row_value(getattr(point, "point_role", "")),
+                        f"{float(getattr(point, 'lateral_offset', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'x', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'y', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'z', 0.0) or 0.0):.12g}",
+                    ]
+                )
+            )
+    return output
+
+
+def _parse_point_rows(values) -> dict[str, list[AppliedSectionPoint]]:
+    output: dict[str, list[AppliedSectionPoint]] = {}
+    for raw in list(values or []):
+        parts = str(raw or "").split("|")
+        if len(parts) < 7:
+            continue
+        section_id = _unescape_row_value(parts[0])
+        if not section_id:
+            continue
+        output.setdefault(section_id, []).append(
+            AppliedSectionPoint(
+                point_id=_unescape_row_value(parts[1]),
+                point_role=_unescape_row_value(parts[2]),
+                lateral_offset=_safe_float(parts[3]),
+                x=_safe_float(parts[4]),
+                y=_safe_float(parts[5]),
+                z=_safe_float(parts[6]),
+            )
+        )
+    for rows in output.values():
+        rows.sort(key=lambda point: (str(getattr(point, "point_role", "") or ""), float(getattr(point, "lateral_offset", 0.0) or 0.0)))
+    return output
+
+
+def _escape_row_value(value: object) -> str:
+    return str(value or "").replace("\\", "\\\\").replace("|", "\\p")
+
+
+def _unescape_row_value(value: object) -> str:
+    text = str(value or "")
+    return text.replace("\\p", "|").replace("\\\\", "\\")
+
+
+def _safe_float(value: object) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
 def _section_frame(section) -> AppliedSectionFrame:
     frame = getattr(section, "frame", None)
     if frame is not None:
@@ -329,3 +403,25 @@ def _float_value(values, index: int, default: float = 0.0) -> float:
         return float(values_list[index]) if index < len(values_list) else float(default)
     except Exception:
         return float(default)
+
+
+def _integer_value(values, index: int, default: int = 0) -> int:
+    try:
+        values_list = list(values or [])
+        return int(values_list[index]) if index < len(values_list) else int(default)
+    except Exception:
+        return int(default)
+
+
+def _component_placeholders(count: int, template_id: str, region_id: str) -> list[AppliedSectionComponentRow]:
+    rows = []
+    for index in range(max(int(count or 0), 0)):
+        rows.append(
+            AppliedSectionComponentRow(
+                component_id=f"component:{index + 1}",
+                kind="component",
+                source_template_id=str(template_id or ""),
+                region_id=str(region_id or ""),
+            )
+        )
+    return rows

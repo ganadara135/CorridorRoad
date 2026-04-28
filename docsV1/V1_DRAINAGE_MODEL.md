@@ -78,6 +78,10 @@ The architectural distinction is:
 
 Drainage may influence section and profile decisions, but it should remain an explicit model instead of hidden metadata.
 
+Ditch cross-section shape parameters used by Assembly and Applied Section evaluation are defined in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+
+Drainage intent such as collection, discharge, and low-point policy remains owned by `DrainageModel`.
+
 ## 6. Design Goals
 
 The v1 drainage subsystem should:

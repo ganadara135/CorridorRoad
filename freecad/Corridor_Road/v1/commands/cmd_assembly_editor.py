@@ -117,8 +117,8 @@ ASSEMBLY_PRESETS = {
             ("lane:right", "lane", "right", 3.5, -0.02, 0.25, "asphalt", "Right travel lane"),
             ("shoulder:left", "shoulder", "left", 1.8, -0.04, 0.20, "aggregate", "Left shoulder"),
             ("shoulder:right", "shoulder", "right", 1.8, -0.04, 0.20, "aggregate", "Right shoulder"),
-            ("ditch:left", "ditch", "left", 1.2, -0.02, 0.0, "earth", "Left roadside ditch placeholder"),
-            ("ditch:right", "ditch", "right", 1.2, -0.02, 0.0, "earth", "Right roadside ditch placeholder"),
+            ("ditch:left", "ditch", "left", 1.8, -0.02, 0.0, "earth", "Left trapezoid roadside ditch", {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0}),
+            ("ditch:right", "ditch", "right", 1.8, -0.02, 0.0, "earth", "Right trapezoid roadside ditch", {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0}),
             ("side_slope:left", "side_slope", "left", 6.0, -0.33, 0.0, "earth", "Left slope face to terrain"),
             ("side_slope:right", "side_slope", "right", 6.0, -0.33, 0.0, "earth", "Right slope face to terrain"),
         ],
@@ -321,9 +321,9 @@ class V1AssemblyEditorTaskPanel:
         layout.addWidget(self._preset_note)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
 
-        self._table = QtWidgets.QTableWidget(0, 9)
+        self._table = QtWidgets.QTableWidget(0, 10)
         self._table.setHorizontalHeaderLabels(
-            ["Component ID", "Kind", "Side", "Width", "Slope", "Thickness", "Material", "Enabled", "Notes"]
+            ["Component ID", "Kind", "Side", "Width", "Slope", "Thickness", "Material", "Enabled", "Parameters", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -421,6 +421,7 @@ class V1AssemblyEditorTaskPanel:
             _format_float(row.thickness),
             row.material,
             "1" if row.enabled else "0",
+            _join_parameters(row.parameters),
             row.notes,
         ]
         for col, value in enumerate(values):
@@ -544,7 +545,8 @@ class V1AssemblyEditorTaskPanel:
                     thickness=_required_float(_item_text(self._table, row_index, 5) or "0", f"Row {row_index + 1} thickness"),
                     material=_item_text(self._table, row_index, 6),
                     enabled=(_item_text(self._table, row_index, 7) != "0"),
-                    notes=_item_text(self._table, row_index, 8),
+                    parameters=_split_parameters(_item_text(self._table, row_index, 8)),
+                    notes=_item_text(self._table, row_index, 9),
                 )
             )
         return rows
@@ -596,7 +598,8 @@ def _validate_assembly_model(model: AssemblyModel) -> list[str]:
 def _preset_components(preset: dict) -> list[TemplateComponent]:
     rows = []
     for index, row in enumerate(list(preset.get("components", []) or []), start=1):
-        component_id, kind, side, width, slope, thickness, material, notes = row
+        component_id, kind, side, width, slope, thickness, material, notes = row[:8]
+        parameters = row[8] if len(row) > 8 else {}
         rows.append(
             TemplateComponent(
                 component_id=str(component_id),
@@ -607,6 +610,7 @@ def _preset_components(preset: dict) -> list[TemplateComponent]:
                 slope=float(slope),
                 thickness=float(thickness),
                 material=str(material),
+                parameters=dict(parameters or {}),
                 notes=str(notes),
             )
         )
@@ -817,6 +821,22 @@ def _item_text(table, row: int, col: int) -> str:
 
 def _format_float(value: float) -> str:
     return f"{float(value):.3f}"
+
+
+def _join_parameters(parameters: dict[str, object]) -> str:
+    return ";".join(f"{key}={value}" for key, value in sorted(dict(parameters or {}).items()) if str(key).strip())
+
+
+def _split_parameters(value: object) -> dict[str, str]:
+    output: dict[str, str] = {}
+    for token in str(value or "").split(";"):
+        if "=" not in token:
+            continue
+        key, raw = token.split("=", 1)
+        key = key.strip()
+        if key:
+            output[key] = raw.strip()
+    return output
 
 
 def _project_id(project) -> str:

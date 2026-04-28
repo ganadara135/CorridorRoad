@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 
 from ...models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
     AppliedSectionFrame,
+    AppliedSectionPoint,
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...common.diagnostics import DiagnosticMessage
@@ -47,6 +49,7 @@ class AppliedSectionBuildRequest:
     override_model: OverrideModel
     station: float
     applied_section_id: str
+    assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
 
 
@@ -63,6 +66,7 @@ class AppliedSectionSetBuildRequest:
     override_model: OverrideModel
     stations: list[float]
     applied_section_set_id: str
+    assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
 
 
@@ -99,6 +103,11 @@ class AppliedSectionService:
             request.region_model,
             request.station,
         )
+        assembly = self._resolve_assembly_model(
+            request.assembly,
+            request.assembly_models,
+            assembly_ref=region_context.assembly_ref,
+        )
         override_result = self.override_service.resolve_station(
             request.override_model,
             request.station,
@@ -110,21 +119,26 @@ class AppliedSectionService:
         ) if request.structure_model is not None else None
 
         template_id = self._resolve_template_id(
-            request.assembly,
+            assembly,
             assembly_ref=region_context.assembly_ref,
             template_ref=region_context.template_ref,
         )
         template = self._find_template(
-            request.assembly,
+            assembly,
             template_id,
         )
         diagnostics = self._build_diagnostics(
-            request.assembly,
+            assembly,
             assembly_ref=region_context.assembly_ref,
             template_id=template_id,
             template=template,
         )
 
+        frame = self._build_frame(
+            station=request.station,
+            alignment_result=alignment_result,
+            profile_result=profile_result,
+        )
         component_rows = self._build_component_rows(
             template,
             region_id=region_context.region_id,
@@ -141,6 +155,13 @@ class AppliedSectionService:
         left_width, right_width = self._surface_widths(template)
         subgrade_depth = self._subgrade_depth(template)
         daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
+        point_rows = self._build_point_rows(
+            template,
+            frame=frame,
+            surface_left_width=left_width,
+            surface_right_width=right_width,
+            subgrade_depth=subgrade_depth,
+        )
 
         return AppliedSection(
             schema_version=1,
@@ -149,13 +170,9 @@ class AppliedSectionService:
             corridor_id=request.corridor_id,
             alignment_id=request.alignment.alignment_id,
             profile_id=request.profile.profile_id,
-            assembly_id=request.assembly.assembly_id,
+            assembly_id=assembly.assembly_id,
             station=request.station,
-            frame=self._build_frame(
-                station=request.station,
-                alignment_result=alignment_result,
-                profile_result=profile_result,
-            ),
+            frame=frame,
             template_id=template_id,
             region_id=region_context.region_id,
             component_rows=component_rows,
@@ -166,13 +183,14 @@ class AppliedSectionService:
             daylight_right_width=daylight_right_width,
             daylight_left_slope=daylight_left_slope,
             daylight_right_slope=daylight_right_slope,
+            point_rows=point_rows,
             label=f"STA {request.station:g}",
             source_refs=[
                 ref
                 for ref in [
                     request.alignment.alignment_id,
                     request.profile.profile_id,
-                    request.assembly.assembly_id,
+                    assembly.assembly_id,
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
                     request.structure_model.structure_model_id
@@ -183,6 +201,25 @@ class AppliedSectionService:
             ],
             diagnostic_rows=diagnostics,
         )
+
+    @staticmethod
+    def _resolve_assembly_model(
+        fallback: AssemblyModel,
+        assembly_models: list[AssemblyModel],
+        *,
+        assembly_ref: str,
+    ) -> AssemblyModel:
+        requested = str(assembly_ref or "").strip()
+        candidates = [model for model in list(assembly_models or []) if model is not None]
+        if fallback is not None:
+            fallback_id = str(getattr(fallback, "assembly_id", "") or "").strip()
+            if fallback_id and all(str(getattr(model, "assembly_id", "") or "").strip() != fallback_id for model in candidates):
+                candidates.insert(0, fallback)
+        if requested:
+            for model in candidates:
+                if str(getattr(model, "assembly_id", "") or "").strip() == requested:
+                    return model
+        return fallback
 
     @staticmethod
     def _build_frame(
@@ -297,6 +334,11 @@ class AppliedSectionService:
                 kind=component.kind,
                 source_template_id=template.template_id,
                 region_id=region_id,
+                side=str(getattr(component, "side", "") or "center"),
+                width=max(float(getattr(component, "width", 0.0) or 0.0), 0.0),
+                slope=float(getattr(component, "slope", 0.0) or 0.0),
+                thickness=max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0),
+                material=str(getattr(component, "material", "") or ""),
                 override_ids=list(override_ids),
                 structure_ids=list(structure_ids),
             )
@@ -411,6 +453,55 @@ class AppliedSectionService:
             _average(right_slopes),
         )
 
+    @staticmethod
+    def _build_point_rows(
+        template: SectionTemplate | None,
+        *,
+        frame: AppliedSectionFrame,
+        surface_left_width: float,
+        surface_right_width: float,
+        subgrade_depth: float,
+    ) -> list[AppliedSectionPoint]:
+        """Resolve first-slice FG, subgrade, and ditch section points from enabled components."""
+
+        fg_points = _surface_section_offsets(template, frame=frame)
+        if not fg_points:
+            return []
+        output: list[AppliedSectionPoint] = []
+        for index, (offset, x, y, z) in enumerate(fg_points):
+            output.append(
+                AppliedSectionPoint(
+                    point_id=f"fg:{index + 1}",
+                    x=x,
+                    y=y,
+                    z=z,
+                    point_role="fg_surface",
+                    lateral_offset=offset,
+                )
+            )
+        depth = max(float(subgrade_depth or 0.0), 0.0)
+        if depth > 0.0:
+            for index, (offset, x, y, z) in enumerate(fg_points):
+                output.append(
+                    AppliedSectionPoint(
+                        point_id=f"subgrade:{index + 1}",
+                        x=x,
+                        y=y,
+                        z=z - depth,
+                        point_role="subgrade_surface",
+                        lateral_offset=offset,
+                    )
+                )
+        output.extend(
+            _ditch_section_points(
+                template,
+                frame=frame,
+                surface_left_width=surface_left_width,
+                surface_right_width=surface_right_width,
+            )
+        )
+        return output
+
 
 class AppliedSectionSetService:
     """Build an ordered AppliedSectionSet from station rows and source models."""
@@ -433,6 +524,7 @@ class AppliedSectionSetService:
                     alignment=request.alignment,
                     profile=request.profile,
                     assembly=request.assembly,
+                    assembly_models=list(request.assembly_models or []),
                     region_model=request.region_model,
                     override_model=request.override_model,
                     station=station,
@@ -462,7 +554,10 @@ class AppliedSectionSetService:
                 for ref in [
                     request.alignment.alignment_id,
                     request.profile.profile_id,
-                    request.assembly.assembly_id,
+                    *[
+                        str(getattr(assembly, "assembly_id", "") or "")
+                        for assembly in _unique_assembly_models([request.assembly] + list(request.assembly_models or []))
+                    ],
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
                 ]
@@ -481,6 +576,299 @@ def _unique_refs(values: list[str]) -> list[str]:
         seen.add(text)
         output.append(text)
     return output
+
+
+def _unique_assembly_models(values: list[AssemblyModel]) -> list[AssemblyModel]:
+    output: list[AssemblyModel] = []
+    seen = set()
+    for model in list(values or []):
+        if model is None:
+            continue
+        assembly_id = str(getattr(model, "assembly_id", "") or "").strip()
+        key = assembly_id or str(id(model))
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(model)
+    return output
+
+
+def _surface_section_offsets(
+    template: SectionTemplate | None,
+    *,
+    frame: AppliedSectionFrame,
+) -> list[tuple[float, float, float, float]]:
+    """Return ordered FG points as lateral offset and world xyz tuples."""
+
+    if template is None:
+        return []
+    fg_kinds = {
+        "lane",
+        "shoulder",
+        "median",
+        "curb",
+        "gutter",
+        "sidewalk",
+        "bike_lane",
+        "green_strip",
+    }
+    left_points = [(0.0, float(getattr(frame, "z", 0.0) or 0.0))]
+    right_points = [(0.0, float(getattr(frame, "z", 0.0) or 0.0))]
+    center_half_width = 0.0
+    center_z = float(getattr(frame, "z", 0.0) or 0.0)
+    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        if str(getattr(component, "kind", "") or "") not in fg_kinds:
+            continue
+        width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+        if width <= 0.0:
+            continue
+        side = str(getattr(component, "side", "") or "center")
+        slope = float(getattr(component, "slope", 0.0) or 0.0)
+        if side == "left":
+            _append_offset_point(left_points, width, slope)
+        elif side == "right":
+            _append_offset_point(right_points, width, slope)
+        elif side == "both":
+            _append_offset_point(left_points, width, slope)
+            _append_offset_point(right_points, width, slope)
+        else:
+            half_width = width * 0.5
+            center_half_width = max(center_half_width, half_width)
+            center_z = float(getattr(frame, "z", 0.0) or 0.0) + slope * half_width
+
+    offset_rows: dict[float, float] = {0.0: float(getattr(frame, "z", 0.0) or 0.0)}
+    if center_half_width > 0.0:
+        offset_rows[-center_half_width] = center_z
+        offset_rows[center_half_width] = center_z
+    for offset, z in left_points[1:]:
+        offset_rows[float(offset)] = float(z)
+    for offset, z in right_points[1:]:
+        offset_rows[-float(offset)] = float(z)
+    if len(offset_rows) < 2:
+        return []
+
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    return [
+        (
+            offset,
+            base_x + normal_x * offset,
+            base_y + normal_y * offset,
+            z,
+        )
+        for offset, z in sorted(offset_rows.items(), key=lambda item: item[0])
+    ]
+
+
+def _append_offset_point(points: list[tuple[float, float]], width: float, slope: float) -> None:
+    last_offset, last_z = points[-1]
+    points.append((last_offset + float(width), last_z + float(slope) * float(width)))
+
+
+def _ditch_section_points(
+    template: SectionTemplate | None,
+    *,
+    frame: AppliedSectionFrame,
+    surface_left_width: float,
+    surface_right_width: float,
+) -> list[AppliedSectionPoint]:
+    """Return first-slice ditch surface strip points outside FG edges."""
+
+    if template is None:
+        return []
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    base_z = float(getattr(frame, "z", 0.0) or 0.0)
+    left_width = max(float(surface_left_width or 0.0), 0.0)
+    right_width = max(float(surface_right_width or 0.0), 0.0)
+    rows: list[tuple[float, float, str]] = []
+    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        if str(getattr(component, "kind", "") or "") != "ditch":
+            continue
+        side = str(getattr(component, "side", "") or "center")
+        local_profile = _ditch_local_profile(component)
+        if not local_profile:
+            continue
+        if side in {"left", "both", "center"}:
+            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=left_width, direction=1.0, side_label="left"))
+        if side in {"right", "both", "center"}:
+            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=-right_width, direction=-1.0, side_label="right"))
+    output: list[AppliedSectionPoint] = []
+    for index, (offset, z_delta, role) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"ditch:{role}:{index + 1}",
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=base_z + z_delta,
+                point_role="ditch_surface",
+                lateral_offset=offset,
+            )
+        )
+    return output
+
+
+def _ditch_local_profile(component) -> list[tuple[float, float, str]]:
+    """Return local outward distance, z delta, and semantic role for one ditch component."""
+
+    params = dict(getattr(component, "parameters", {}) or {})
+    shape = str(params.get("shape", "") or "").strip().lower().replace("-", "_")
+    width = max(_parameter_float(params, "top_width", _component_width(component)), 0.0)
+    if not shape:
+        fallback_width = _component_width(component)
+        if fallback_width <= 0.0:
+            return []
+        slope = float(getattr(component, "slope", 0.0) or 0.0)
+        return [
+            (0.0, 0.0, "inner_edge"),
+            (fallback_width, slope * fallback_width, "outer_edge"),
+        ]
+    if shape == "trapezoid":
+        return _trapezoid_ditch_profile(component, params, width)
+    if shape == "v":
+        return _v_ditch_profile(params, width)
+    if shape in {"rectangular", "u"}:
+        return _rectangular_ditch_profile(params, width, shape=shape)
+    if shape == "l":
+        return _l_ditch_profile(params, width)
+    if shape == "custom_polyline":
+        return _custom_ditch_profile(params)
+    return []
+
+
+def _trapezoid_ditch_profile(component, params: dict[str, object], top_width: float) -> list[tuple[float, float, str]]:
+    depth = max(_parameter_float(params, "depth", 0.0), 0.0)
+    if depth <= 0.0:
+        return _ditch_local_profile_without_shape(component)
+    bottom_width = max(_parameter_float(params, "bottom_width", max(top_width * 0.4, 0.0)), 0.0)
+    inner_run = _run_from_slope(params, "inner_slope", depth)
+    outer_run = _run_from_slope(params, "outer_slope", depth)
+    if top_width <= 0.0:
+        top_width = inner_run + bottom_width + outer_run
+    if inner_run + bottom_width > top_width:
+        inner_run = max(top_width - bottom_width, 0.0) * 0.5
+    outer_pos = max(top_width, inner_run + bottom_width)
+    return [
+        (0.0, 0.0, "inner_edge"),
+        (inner_run, -depth, "bottom_inner"),
+        (inner_run + bottom_width, -depth, "bottom_outer"),
+        (outer_pos, 0.0, "outer_edge"),
+    ]
+
+
+def _v_ditch_profile(params: dict[str, object], top_width: float) -> list[tuple[float, float, str]]:
+    depth = max(_parameter_float(params, "depth", 0.0), 0.0)
+    if depth <= 0.0 or top_width <= 0.0:
+        return []
+    invert_offset = _parameter_float(params, "invert_offset", top_width * 0.5)
+    invert_offset = min(max(invert_offset, 0.0), top_width)
+    return [
+        (0.0, 0.0, "inner_edge"),
+        (invert_offset, -depth, "invert"),
+        (top_width, 0.0, "outer_edge"),
+    ]
+
+
+def _rectangular_ditch_profile(params: dict[str, object], top_width: float, *, shape: str) -> list[tuple[float, float, str]]:
+    depth = max(_parameter_float(params, "depth", 0.0), 0.0)
+    bottom_width = max(_parameter_float(params, "bottom_width", top_width), 0.0)
+    if depth <= 0.0 or bottom_width <= 0.0:
+        return []
+    return [
+        (0.0, 0.0, "inner_edge"),
+        (0.0, -depth, "wall_bottom_inner" if shape == "u" else "bottom_inner"),
+        (bottom_width, -depth, "wall_bottom_outer" if shape == "u" else "bottom_outer"),
+        (bottom_width, 0.0, "outer_edge"),
+    ]
+
+
+def _l_ditch_profile(params: dict[str, object], top_width: float) -> list[tuple[float, float, str]]:
+    depth = max(_parameter_float(params, "depth", 0.0), 0.0)
+    bottom_width = max(_parameter_float(params, "bottom_width", top_width), 0.0)
+    if depth <= 0.0 or bottom_width <= 0.0:
+        return []
+    wall_side = str(params.get("wall_side", "inner") or "inner").strip().lower()
+    if wall_side in {"outer", "right"}:
+        open_run = max(top_width - bottom_width, 0.0)
+        return [
+            (0.0, 0.0, "inner_edge"),
+            (open_run, -depth, "bottom_inner"),
+            (open_run + bottom_width, -depth, "wall_bottom"),
+            (open_run + bottom_width, 0.0, "wall_top"),
+        ]
+    outer_pos = max(top_width, bottom_width)
+    return [
+        (0.0, 0.0, "wall_top"),
+        (0.0, -depth, "wall_bottom"),
+        (bottom_width, -depth, "bottom_outer"),
+        (outer_pos, 0.0, "outer_edge"),
+    ]
+
+
+def _custom_ditch_profile(params: dict[str, object]) -> list[tuple[float, float, str]]:
+    raw = str(params.get("section_points", "") or "")
+    rows: list[tuple[float, float, str]] = []
+    for index, token in enumerate(raw.replace(";", "|").split("|"), start=1):
+        parts = [part.strip() for part in token.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            rows.append((float(parts[0]), float(parts[1]), parts[2] if len(parts) > 2 and parts[2] else f"custom_{index}"))
+        except Exception:
+            continue
+    return rows
+
+
+def _ditch_local_profile_without_shape(component) -> list[tuple[float, float, str]]:
+    width = _component_width(component)
+    if width <= 0.0:
+        return []
+    slope = float(getattr(component, "slope", 0.0) or 0.0)
+    return [
+        (0.0, 0.0, "inner_edge"),
+        (width, slope * width, "outer_edge"),
+    ]
+
+
+def _oriented_ditch_rows(
+    local_profile: list[tuple[float, float, str]],
+    *,
+    edge_offset: float,
+    direction: float,
+    side_label: str,
+) -> list[tuple[float, float, str]]:
+    rows = []
+    for local_offset, z_delta, role in local_profile:
+        rows.append((float(edge_offset) + float(direction) * float(local_offset), float(z_delta), f"{side_label}:{role}"))
+    return rows
+
+
+def _component_width(component) -> float:
+    return max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+
+
+def _parameter_float(params: dict[str, object], key: str, default: float = 0.0) -> float:
+    try:
+        return float(params.get(key, default))
+    except Exception:
+        return float(default)
+
+
+def _run_from_slope(params: dict[str, object], key: str, depth: float) -> float:
+    slope = abs(_parameter_float(params, key, 0.0))
+    if slope <= 1.0e-9:
+        return 0.0
+    return max(float(depth) / slope, 0.0)
 
 
 def _unique_stations(values: list[float]) -> list[float]:

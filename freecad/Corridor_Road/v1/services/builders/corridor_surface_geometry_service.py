@@ -35,6 +35,7 @@ class CorridorSurfaceGeometryService:
             label_prefix="Design Surface",
             z_offset_resolver=lambda _section: 0.0,
             triangle_kind="corridor_design_strip",
+            point_role="fg_surface",
         )
 
     def build_subgrade_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
@@ -46,6 +47,20 @@ class CorridorSurfaceGeometryService:
             label_prefix="Subgrade Surface",
             z_offset_resolver=lambda section: -max(float(getattr(section, "subgrade_depth", 0.0) or 0.0), 0.0),
             triangle_kind="corridor_subgrade_strip",
+            point_role="subgrade_surface",
+        )
+
+    def build_drainage_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
+        """Build first-slice ditch/drainage grading strips from AppliedSection point rows."""
+
+        return self._build_surface_ribbon(
+            request,
+            surface_kind="drainage_surface",
+            label_prefix="Drainage Surface",
+            z_offset_resolver=lambda _section: 0.0,
+            triangle_kind="corridor_drainage_strip",
+            point_role="ditch_surface",
+            allow_width_fallback=False,
         )
 
     def build_daylight_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
@@ -66,6 +81,8 @@ class CorridorSurfaceGeometryService:
         eg_intersection_count = 0
         eg_outer_edge_sample_count = 0
         fallback_count = 0
+        no_existing_ground_count = 0
+        no_eg_hit_count = 0
 
         for index, frame in enumerate(frame_rows):
             angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
@@ -95,6 +112,8 @@ class CorridorSurfaceGeometryService:
                 eg_intersection_count += 1 if outer.intersected else 0
                 eg_outer_edge_sample_count += 1 if outer.status == "sampled_outer_edge" else 0
                 fallback_count += 1 if not outer.sampled else 0
+                no_existing_ground_count += 1 if outer.status == "fallback:no_existing_ground_tin" else 0
+                no_eg_hit_count += 1 if outer.status == "fallback:no_eg_hit_in_search_width" else 0
                 vertices.extend(
                     [
                         TINVertex(f"v{index}:left:inner", inner_x, inner_y, z),
@@ -127,6 +146,8 @@ class CorridorSurfaceGeometryService:
                 eg_intersection_count += 1 if outer.intersected else 0
                 eg_outer_edge_sample_count += 1 if outer.status == "sampled_outer_edge" else 0
                 fallback_count += 1 if not outer.sampled else 0
+                no_existing_ground_count += 1 if outer.status == "fallback:no_existing_ground_tin" else 0
+                no_eg_hit_count += 1 if outer.status == "fallback:no_eg_hit_in_search_width" else 0
                 vertices.extend(
                     [
                         TINVertex(f"v{index}:right:inner", inner_x, inner_y, z),
@@ -185,6 +206,8 @@ class CorridorSurfaceGeometryService:
                 TINQualityRow(f"{request.surface_id}:eg_intersection_count", "eg_intersection_count", eg_intersection_count, "count"),
                 TINQualityRow(f"{request.surface_id}:eg_outer_edge_sample_count", "eg_outer_edge_sample_count", eg_outer_edge_sample_count, "count"),
                 TINQualityRow(f"{request.surface_id}:slope_face_fallback_count", "slope_face_fallback_count", fallback_count, "count"),
+                TINQualityRow(f"{request.surface_id}:slope_face_no_existing_ground_count", "slope_face_no_existing_ground_count", no_existing_ground_count, "count"),
+                TINQualityRow(f"{request.surface_id}:slope_face_no_eg_hit_count", "slope_face_no_eg_hit_count", no_eg_hit_count, "count"),
                 TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
                 TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
             ],
@@ -206,6 +229,8 @@ class CorridorSurfaceGeometryService:
         label_prefix: str,
         z_offset_resolver,
         triangle_kind: str,
+        point_role: str = "",
+        allow_width_fallback: bool = True,
     ) -> TINSurface:
         """Build a two-edge ribbon from applied-section frames."""
 
@@ -214,9 +239,22 @@ class CorridorSurfaceGeometryService:
             raise ValueError("At least two applied-section frames are required to build a corridor surface.")
 
         fallback_half_width = max(float(request.fallback_half_width or 0.0), 0.1)
+        sections = _section_rows(request.applied_section_set)
+        point_grid = _section_point_grid(sections, point_role=point_role)
+        if point_grid:
+            return _build_surface_from_point_grid(
+                request,
+                sections=sections,
+                point_grid=point_grid,
+                surface_kind=surface_kind,
+                label_prefix=label_prefix,
+                triangle_kind=triangle_kind,
+            )
+        if not allow_width_fallback:
+            raise ValueError(f"No {surface_kind} section point rows are available.")
+
         vertices: list[TINVertex] = []
         triangles: list[TINTriangle] = []
-        sections = _section_rows(request.applied_section_set)
         width_rows = _surface_width_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
         for index, frame in enumerate(frame_rows):
             section = sections[index]
@@ -292,6 +330,75 @@ class CorridorSurfaceGeometryService:
         )
 
 
+def _build_surface_from_point_grid(
+    request: CorridorDesignSurfaceGeometryRequest,
+    *,
+    sections: list[object],
+    point_grid: list[list[object]],
+    surface_kind: str,
+    label_prefix: str,
+    triangle_kind: str,
+) -> TINSurface:
+    vertices: list[TINVertex] = []
+    triangles: list[TINTriangle] = []
+    for section_index, points in enumerate(point_grid):
+        section = sections[section_index]
+        for point_index, point in enumerate(points):
+            vertices.append(
+                TINVertex(
+                    vertex_id=f"v{section_index}:p{point_index}",
+                    x=float(getattr(point, "x", 0.0) or 0.0),
+                    y=float(getattr(point, "y", 0.0) or 0.0),
+                    z=float(getattr(point, "z", 0.0) or 0.0),
+                    source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                )
+            )
+    for section_index in range(len(point_grid) - 1):
+        for point_index in range(len(point_grid[section_index]) - 1):
+            p00 = f"v{section_index}:p{point_index}"
+            p01 = f"v{section_index}:p{point_index + 1}"
+            p10 = f"v{section_index + 1}:p{point_index}"
+            p11 = f"v{section_index + 1}:p{point_index + 1}"
+            triangles.append(TINTriangle(f"span:{section_index}:p{point_index}:a", p00, p01, p11, triangle_kind=triangle_kind))
+            triangles.append(TINTriangle(f"span:{section_index}:p{point_index}:b", p00, p11, p10, triangle_kind=triangle_kind))
+
+    z_values = [vertex.z for vertex in vertices]
+    left_values = [max(float(getattr(point, "lateral_offset", 0.0) or 0.0) for point in points) for points in point_grid]
+    right_values = [abs(min(float(getattr(point, "lateral_offset", 0.0) or 0.0) for point in points)) for points in point_grid]
+    return TINSurface(
+        schema_version=1,
+        project_id=request.project_id,
+        surface_id=request.surface_id,
+        surface_kind=surface_kind,
+        label=f"{label_prefix} - {request.corridor.corridor_id}",
+        source_refs=[
+            str(getattr(request.corridor, "corridor_id", "") or ""),
+            str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+        ],
+        vertex_rows=vertices,
+        triangle_rows=triangles,
+        boundary_refs=[f"{request.surface_id}:section-point-boundary"],
+        quality_rows=[
+            TINQualityRow(f"{request.surface_id}:station_count", "station_count", len(point_grid), "count"),
+            TINQualityRow(f"{request.surface_id}:section_point_count", "section_point_count", len(point_grid[0]), "count"),
+            TINQualityRow(f"{request.surface_id}:left_width_min", "left_width_min", min(left_values), "m"),
+            TINQualityRow(f"{request.surface_id}:left_width_max", "left_width_max", max(left_values), "m"),
+            TINQualityRow(f"{request.surface_id}:right_width_min", "right_width_min", min(right_values), "m"),
+            TINQualityRow(f"{request.surface_id}:right_width_max", "right_width_max", max(right_values), "m"),
+            TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
+            TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
+        ],
+        provenance_rows=[
+            TINProvenanceRow(
+                provenance_id=f"{request.surface_id}:provenance:applied-section-points",
+                source_kind="applied_section_points",
+                source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+                notes=f"Corridor {surface_kind} TIN built from evaluated AppliedSection point rows.",
+            )
+        ],
+    )
+
+
 def _frame_rows(applied_section_set: AppliedSectionSet) -> list[object]:
     return [getattr(section, "frame", None) for section in _section_rows(applied_section_set) if getattr(section, "frame", None) is not None]
 
@@ -305,6 +412,29 @@ def _section_rows(applied_section_set: AppliedSectionSet) -> list[object]:
         if section is not None and getattr(section, "frame", None) is not None:
             output.append(section)
     return output
+
+
+def _section_point_grid(sections: list[object], *, point_role: str) -> list[list[object]]:
+    if not point_role:
+        return []
+    grid: list[list[object]] = []
+    reference_offsets: list[float] | None = None
+    for section in list(sections or []):
+        rows = [
+            point
+            for point in list(getattr(section, "point_rows", []) or [])
+            if str(getattr(point, "point_role", "") or "") == point_role
+        ]
+        rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+        if len(rows) < 2:
+            return []
+        offsets = [round(float(getattr(point, "lateral_offset", 0.0) or 0.0), 6) for point in rows]
+        if reference_offsets is None:
+            reference_offsets = offsets
+        elif offsets != reference_offsets:
+            return []
+        grid.append(rows)
+    return grid if len(grid) >= 2 else []
 
 
 def _surface_width_rows(applied_section_set: AppliedSectionSet, *, fallback_half_width: float) -> list[tuple[float, float]]:

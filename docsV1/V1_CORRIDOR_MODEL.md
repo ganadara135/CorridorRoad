@@ -238,8 +238,28 @@ It records:
 
 It also creates the initial corridor-derived `V1SurfaceModel` result with design, subgrade, and daylight surface rows.
 
+If the `AppliedSectionSet` contains ditch surface point rows, it also creates a conditional drainage surface row and preview.
+
+When `AppliedSectionSet` contains persisted FG or subgrade point rows, the design and subgrade previews should use those rows as component-boundary-aware TIN input.
+
+If point rows are missing, the current implementation may fall back to the older left/right ribbon preview.
+
 It also creates a generated `Corridor 3D Centerline` preview from ordered `AppliedSectionSet` station frames.
 This preview is presentation geometry and should be rebuilt from the applied-section result, not edited as source intent.
+
+The `Build Corridor` task panel should expose a compact review table for generated presentation outputs:
+
+- `3D Centerline`
+- `Design Surface`
+- `Subgrade Surface`
+- `Slope Face Surface`
+- `Drainage Surface`
+
+The table should show whether each output exists, its object label, vertex count, triangle or point count, role, and diagnostic notes.
+
+For slope-face outputs, diagnostic notes should distinguish missing EG TIN fallback from no-hit fallback inside the configured search width.
+
+Double-clicking a row, or using `Show Selected`, should select and fit the related 3D object.
 
 It does not generate final corridor solids.
 

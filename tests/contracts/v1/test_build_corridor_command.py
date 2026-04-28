@@ -5,10 +5,12 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     apply_v1_corridor_model,
     build_document_corridor_model,
     build_document_corridor_surface_model,
+    corridor_build_review_rows,
     document_has_v1_applied_sections,
+    show_corridor_build_review_object,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
-from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame
+from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
@@ -135,6 +137,56 @@ def _sample_sections_with_centerline_curve() -> AppliedSectionSet:
     )
 
 
+def _sample_sections_with_ditch_points() -> AppliedSectionSet:
+    return AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:ditch",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:20", 20.0, "section:20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                station=0.0,
+                frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -5.2, 9.8, "ditch_surface", -5.2),
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -4.0, 10.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("ditch:left-edge", 0.0, 5.0, 10.0, "ditch_surface", 5.0),
+                    AppliedSectionPoint("ditch:left-flow", 0.0, 6.2, 9.8, "ditch_surface", 6.2),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:20",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                station=20.0,
+                frame=AppliedSectionFrame(station=20.0, x=20.0, y=0.0, z=11.0, tangent_direction_deg=0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-flow", 20.0, -5.2, 10.8, "ditch_surface", -5.2),
+                    AppliedSectionPoint("ditch:right-edge", 20.0, -4.0, 11.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("ditch:left-edge", 20.0, 5.0, 11.0, "ditch_surface", 5.0),
+                    AppliedSectionPoint("ditch:left-flow", 20.0, 6.2, 10.8, "ditch_surface", 6.2),
+                ],
+            ),
+        ],
+    )
+
+
 def test_build_document_corridor_model_uses_applied_sections() -> None:
     doc, project = _new_project_doc()
     try:
@@ -208,12 +260,69 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(daylight_preview.EGIntersectionCount) == 0
         assert int(daylight_preview.EGTieInHitCount) == 0
         assert int(daylight_preview.SlopeFaceFallbackCount) == 4
+        assert int(daylight_preview.SlopeFaceNoExistingGroundCount) == 4
+        assert int(daylight_preview.SlopeFaceNoEGHitCount) == 0
         assert "fallbacks: 4" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "no EG TIN: 4" in daylight_preview.SlopeFaceDiagnosticSummary
         fallback_markers = doc.getObject("ReviewIssueSlopeFaceFallbackMarkers")
         assert fallback_markers is not None
         assert fallback_markers.V1ObjectType == "ReviewIssue"
         assert fallback_markers.IssueKind == "slope_face_tie_in"
         assert int(fallback_markers.MarkerCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        missing_rows = corridor_build_review_rows(doc)
+        assert [row["status"] for row in missing_rows] == ["missing", "missing", "missing", "missing", "missing"]
+
+        apply_v1_corridor_model(document=doc, project=project)
+        rows = corridor_build_review_rows(doc)
+
+        assert [row["role"] for row in rows] == ["centerline", "design", "subgrade", "daylight", "drainage"]
+        assert [row["status"] for row in rows] == ["ready", "ready", "ready", "ready", "missing"]
+        assert rows[0]["triangle_or_point_count"] == 2
+        assert rows[1]["vertex_count"] == 4
+        assert rows[1]["triangle_or_point_count"] == 2
+        assert "fallbacks: 4" in str(rows[3]["notes"])
+        assert "no EG TIN: 4" in str(rows[3]["notes"])
+
+        shown = show_corridor_build_review_object(doc, 1)
+        assert shown.Name == "V1CorridorDesignSurfacePreview"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exist() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        surface_obj = find_v1_surface_model(doc)
+        assert surface_obj is not None
+        assert list(surface_obj.SurfaceKinds) == [
+            "design_surface",
+            "subgrade_surface",
+            "daylight_surface",
+            "drainage_surface",
+        ]
+        drainage_preview = doc.getObject("V1CorridorDrainageSurfacePreview")
+        assert drainage_preview is not None
+        assert drainage_preview.CRRecordKind == "v1_corridor_surface_preview"
+        assert drainage_preview.SurfaceRole == "drainage"
+        assert drainage_preview.SurfaceKind == "drainage_surface"
+        assert int(drainage_preview.VertexCount) == 8
+        assert int(drainage_preview.TriangleCount) == 6
+        rows = corridor_build_review_rows(doc)
+        assert rows[4]["status"] == "ready"
+        assert rows[4]["vertex_count"] == 8
     finally:
         App.closeDocument(doc.Name)
 

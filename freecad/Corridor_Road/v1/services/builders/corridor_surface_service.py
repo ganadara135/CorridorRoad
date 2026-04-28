@@ -37,6 +37,7 @@ class CorridorSurfaceService:
         design_surface_id = f"{request.corridor.corridor_id}:design"
         subgrade_surface_id = f"{request.corridor.corridor_id}:subgrade"
         daylight_surface_id = f"{request.corridor.corridor_id}:daylight"
+        drainage_surface_id = f"{request.corridor.corridor_id}:drainage"
 
         surface_rows = [
             SurfaceRow(
@@ -60,6 +61,16 @@ class CorridorSurfaceService:
                 parent_surface_ref=design_surface_id,
             ),
         ]
+        if _has_point_role(request.applied_section_set, "ditch_surface"):
+            surface_rows.append(
+                SurfaceRow(
+                    surface_id=drainage_surface_id,
+                    surface_kind="drainage_surface",
+                    tin_ref=f"{drainage_surface_id}:tin",
+                    status=status,
+                    parent_surface_ref=design_surface_id,
+                )
+            )
 
         build_relation_rows = [
             SurfaceBuildRelation(
@@ -87,6 +98,19 @@ class CorridorSurfaceService:
                 operation_summary="Derived as child surface of design surface skeleton.",
             ),
         ]
+        if _has_point_role(request.applied_section_set, "ditch_surface"):
+            build_relation_rows.append(
+                SurfaceBuildRelation(
+                    build_relation_id=f"{request.surface_model_id}:drainage-build",
+                    surface_ref=drainage_surface_id,
+                    relation_kind="corridor_build",
+                    input_refs=[
+                        request.corridor.corridor_id,
+                        request.applied_section_set.applied_section_set_id,
+                    ],
+                    operation_summary="Built from AppliedSection ditch_surface point rows.",
+                )
+            )
 
         return SurfaceModel(
             schema_version=1,
@@ -102,3 +126,11 @@ class CorridorSurfaceService:
             build_relation_rows=build_relation_rows,
             comparison_rows=[],
         )
+
+
+def _has_point_role(applied_section_set: AppliedSectionSet, point_role: str) -> bool:
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        for point in list(getattr(section, "point_rows", []) or []):
+            if str(getattr(point, "point_role", "") or "") == point_role:
+                return True
+    return False

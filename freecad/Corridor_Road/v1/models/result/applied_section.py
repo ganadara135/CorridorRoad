@@ -16,6 +16,7 @@ class AppliedSectionPoint:
     y: float
     z: float
     point_role: str = "section_point"
+    lateral_offset: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,11 @@ class AppliedSectionComponentRow:
     kind: str
     source_template_id: str = ""
     region_id: str = ""
+    side: str = "center"
+    width: float = 0.0
+    slope: float = 0.0
+    thickness: float = 0.0
+    material: str = ""
     override_ids: list[str] = field(default_factory=list)
     structure_ids: list[str] = field(default_factory=list)
 

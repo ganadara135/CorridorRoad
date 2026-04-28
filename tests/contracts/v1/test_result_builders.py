@@ -2,6 +2,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
     AppliedSectionFrame,
+    AppliedSectionPoint,
     AppliedSectionQuantityFragment,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import (
@@ -133,11 +134,186 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     assert result.template_id == "tmpl-1"
     assert len(result.component_rows) == 3
     assert result.component_rows[0].source_template_id == "tmpl-1"
+    assert result.component_rows[0].side == "right"
+    assert result.component_rows[0].width == 3.5
+    assert result.component_rows[0].thickness == 0.25
     assert result.frame is not None
     assert result.surface_right_width == 5.0
     assert result.subgrade_depth == 0.25
     assert result.daylight_right_width == 4.0
     assert result.daylight_right_slope == -0.5
+    assert [point.point_role for point in result.point_rows].count("fg_surface") >= 2
+    assert [point.point_role for point in result.point_rows].count("subgrade_surface") >= 2
+    assert min(point.lateral_offset for point in result.point_rows if point.point_role == "fg_surface") < 0.0
+
+
+def test_applied_section_service_builds_ditch_surface_points_from_ditch_components() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-ditch",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-ditch",
+        alignment_id="align-ditch",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-ditch",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-ditch",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-left", "lane", side="left", width=3.5),
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
+                    TemplateComponent("ditch-left", "ditch", side="left", width=1.2, slope=-0.05),
+                    TemplateComponent("ditch-right", "ditch", side="right", width=1.0, slope=-0.04),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-ditch",
+        alignment_id="align-ditch",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-ditch",
+        alignment_id="align-ditch",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-ditch",
+        )
+    )
+
+    ditch_points = [point for point in result.point_rows if point.point_role == "ditch_surface"]
+    assert [round(point.lateral_offset, 1) for point in ditch_points] == [-4.5, -3.5, 3.5, 4.7]
+    assert min(point.z for point in ditch_points) < result.frame.z
+
+
+def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-ditch-shapes",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-ditch-shapes",
+        alignment_id="align-ditch-shapes",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-ditch-shapes",
+        alignment_id="align-ditch-shapes",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-shapes")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-ditch-shapes",
+        alignment_id="align-ditch-shapes",
+    )
+    cases = [
+        (
+            "trapezoid",
+            {"shape": "trapezoid", "top_width": 4.0, "bottom_width": 1.0, "depth": 1.0, "inner_slope": 1.0, "outer_slope": 1.0},
+            [3.5, 4.5, 5.5, 7.5],
+        ),
+        (
+            "u",
+            {"shape": "u", "bottom_width": 1.2, "depth": 0.8, "wall_thickness": 0.15},
+            [3.5, 3.5, 4.7, 4.7],
+        ),
+        (
+            "l",
+            {"shape": "l", "top_width": 2.0, "bottom_width": 1.0, "depth": 0.6, "wall_side": "outer"},
+            [3.5, 4.5, 5.5, 5.5],
+        ),
+        (
+            "rectangular",
+            {"shape": "rectangular", "bottom_width": 1.4, "depth": 0.7},
+            [3.5, 3.5, 4.9, 4.9],
+        ),
+        (
+            "v",
+            {"shape": "v", "top_width": 2.0, "depth": 0.9, "invert_offset": 0.75},
+            [3.5, 4.25, 5.5],
+        ),
+    ]
+    for shape_name, parameters, expected_offsets in cases:
+        assembly = AssemblyModel(
+            schema_version=1,
+            project_id="proj-1",
+            assembly_id=f"asm-{shape_name}",
+            template_rows=[
+                SectionTemplate(
+                    template_id="tmpl-ditch-shapes",
+                    template_kind="roadway",
+                    component_rows=[
+                        TemplateComponent("lane-left", "lane", side="left", width=3.5),
+                        TemplateComponent("lane-right", "lane", side="right", width=3.5),
+                        TemplateComponent(f"ditch-{shape_name}", "ditch", side="left", width=float(parameters.get("top_width", 1.2) or 1.2), parameters=parameters),
+                    ],
+                )
+            ],
+        )
+
+        result = AppliedSectionService().build(
+            AppliedSectionBuildRequest(
+                project_id="proj-1",
+                corridor_id="cor-1",
+                alignment=alignment,
+                profile=profile,
+                assembly=assembly,
+                region_model=region_model,
+                override_model=override_model,
+                station=10.0,
+                applied_section_id=f"sec-{shape_name}",
+            )
+        )
+
+        ditch_points = [point for point in result.point_rows if point.point_role == "ditch_surface"]
+        assert [round(point.lateral_offset, 2) for point in ditch_points] == expected_offsets
+        assert min(point.z for point in ditch_points) < result.frame.z
 
 
 def test_applied_section_service_uses_region_assembly_ref_active_template() -> None:
@@ -373,6 +549,96 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
     assert result.sections[0].component_rows[0].component_id == "lane-1"
 
 
+def test_applied_section_set_service_selects_region_specific_assembly_model() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-multi-assembly",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="tangent-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+                length=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="profile-multi-assembly",
+        alignment_id="align-multi-assembly",
+        control_rows=[
+            ProfileControlPoint("pvi-0", 0.0, 10.0),
+            ProfileControlPoint("pvi-100", 100.0, 12.0),
+        ],
+    )
+    road = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:road",
+        active_template_id="template:road",
+        template_rows=[
+            SectionTemplate(
+                template_id="template:road",
+                template_kind="roadway",
+                component_rows=[TemplateComponent("lane-road", "lane", side="right", width=3.5)],
+            )
+        ],
+    )
+    bridge = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:bridge",
+        active_template_id="template:bridge",
+        template_rows=[
+            SectionTemplate(
+                template_id="template:bridge",
+                template_kind="bridge_deck",
+                component_rows=[TemplateComponent("deck-interface", "structure_interface", side="center", width=10.0)],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:multi-assembly",
+        alignment_id="align-multi-assembly",
+        region_rows=[
+            RegionRow("region:road", 0.0, 50.0, assembly_ref="assembly:road"),
+            RegionRow("region:bridge", 50.0, 100.0, primary_kind="bridge", assembly_ref="assembly:bridge"),
+        ],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="overrides:none",
+        alignment_id="align-multi-assembly",
+    )
+
+    result = AppliedSectionSetService().build(
+        AppliedSectionSetBuildRequest(
+            project_id="proj-1",
+            corridor_id="corridor:main",
+            alignment=alignment,
+            profile=profile,
+            assembly=road,
+            assembly_models=[road, bridge],
+            region_model=region_model,
+            override_model=override_model,
+            stations=[25.0, 75.0],
+            applied_section_set_id="sections:multi-assembly",
+        )
+    )
+
+    assert [section.assembly_id for section in result.sections] == ["assembly:road", "assembly:bridge"]
+    assert [section.template_id for section in result.sections] == ["template:road", "template:bridge"]
+    assert result.sections[1].component_rows[0].component_id == "deck-interface"
+    assert "assembly:bridge" in result.source_refs
+
+
 def test_applied_section_service_attaches_alignment_profile_frame() -> None:
     alignment = AlignmentModel(
         schema_version=1,
@@ -503,6 +769,55 @@ def test_corridor_surface_service_builds_surface_family_rows() -> None:
     assert len(result.surface_rows) == 3
     assert result.surface_rows[0].surface_kind == "design_surface"
     assert result.build_relation_rows[0].relation_kind == "corridor_build"
+
+
+def test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        sampling_policy=CorridorSamplingPolicy(
+            sampling_policy_id="sp-1",
+            station_interval=10.0,
+        ),
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-ditch",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        station_rows=[AppliedSectionStationRow("sta-1", 0.0, "sec-1")],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                frame=AppliedSectionFrame(station=0.0),
+                point_rows=[AppliedSectionPoint("ditch:1", 0.0, 0.0, 0.0, "ditch_surface", 0.0)],
+            )
+        ],
+    )
+
+    result = CorridorSurfaceService().build(
+        CorridorSurfaceBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_model_id="surf-1",
+        )
+    )
+
+    assert [row.surface_kind for row in result.surface_rows] == [
+        "design_surface",
+        "subgrade_surface",
+        "daylight_surface",
+        "drainage_surface",
+    ]
+    assert result.surface_rows[3].parent_surface_ref == "cor-1:design"
+    assert result.build_relation_rows[3].operation_summary == "Built from AppliedSection ditch_surface point rows."
 
 
 def test_corridor_surface_geometry_service_builds_design_surface_ribbon() -> None:
@@ -649,6 +964,138 @@ def test_corridor_surface_geometry_service_builds_subgrade_surface_below_design(
     assert len(result.triangle_rows) == 2
     assert min(vertex.z for vertex in result.vertex_rows) == 9.75
     assert max(vertex.z for vertex in result.vertex_rows) == 10.7
+
+
+def test_corridor_surface_geometry_service_builds_surface_from_applied_section_points() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        sampling_policy=CorridorSamplingPolicy(
+            sampling_policy_id="sp-1",
+            station_interval=10.0,
+        ),
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 0.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 10.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:r", 0.0, -4.0, 9.9, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:c", 0.0, 0.0, 10.0, "fg_surface", 0.0),
+                    AppliedSectionPoint("fg:l", 0.0, 5.0, 9.8, "fg_surface", 5.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 11.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:r", 10.0, -4.0, 10.9, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:c", 10.0, 0.0, 11.0, "fg_surface", 0.0),
+                    AppliedSectionPoint("fg:l", 10.0, 5.0, 10.8, "fg_surface", 5.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_design_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-1:design",
+        )
+    )
+
+    assert len(result.vertex_rows) == 6
+    assert len(result.triangle_rows) == 4
+    assert result.boundary_refs == ["cor-1:design:section-point-boundary"]
+    assert result.provenance_rows[0].source_kind == "applied_section_points"
+    assert result.quality_rows[1].kind == "section_point_count"
+    assert result.quality_rows[1].value == 3
+
+
+def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_points() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        sampling_policy=CorridorSamplingPolicy(
+            sampling_policy_id="sp-1",
+            station_interval=10.0,
+        ),
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-ditch",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 0.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 10.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:r-flow", 0.0, -4.5, 9.8, "ditch_surface", -4.5),
+                    AppliedSectionPoint("ditch:r-edge", 0.0, -3.5, 10.0, "ditch_surface", -3.5),
+                    AppliedSectionPoint("ditch:l-edge", 0.0, 3.5, 10.0, "ditch_surface", 3.5),
+                    AppliedSectionPoint("ditch:l-flow", 0.0, 4.7, 9.8, "ditch_surface", 4.7),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.5, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:r-flow", 10.0, -4.5, 10.3, "ditch_surface", -4.5),
+                    AppliedSectionPoint("ditch:r-edge", 10.0, -3.5, 10.5, "ditch_surface", -3.5),
+                    AppliedSectionPoint("ditch:l-edge", 10.0, 3.5, 10.5, "ditch_surface", 3.5),
+                    AppliedSectionPoint("ditch:l-flow", 10.0, 4.7, 10.3, "ditch_surface", 4.7),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_drainage_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-1:drainage",
+        )
+    )
+
+    assert result.surface_kind == "drainage_surface"
+    assert len(result.vertex_rows) == 8
+    assert len(result.triangle_rows) == 6
+    assert result.provenance_rows[0].source_kind == "applied_section_points"
+    assert result.quality_rows[1].kind == "section_point_count"
+    assert result.quality_rows[1].value == 4
 
 
 def test_corridor_surface_geometry_service_builds_daylight_surface_from_side_slopes() -> None:
@@ -804,6 +1251,8 @@ def test_corridor_surface_geometry_service_ties_daylight_outer_points_to_existin
     assert quality["eg_tie_in_miss_count"] == 0
     assert quality["eg_outer_edge_sample_count"] == 4
     assert quality["slope_face_fallback_count"] == 0
+    assert quality["slope_face_no_existing_ground_count"] == 0
+    assert quality["slope_face_no_eg_hit_count"] == 0
 
 
 def test_corridor_surface_geometry_service_resolves_actual_slope_face_intersections() -> None:
@@ -893,6 +1342,8 @@ def test_corridor_surface_geometry_service_resolves_actual_slope_face_intersecti
     assert quality["eg_intersection_count"] == 4
     assert quality["eg_outer_edge_sample_count"] == 0
     assert quality["slope_face_fallback_count"] == 0
+    assert quality["slope_face_no_existing_ground_count"] == 0
+    assert quality["slope_face_no_eg_hit_count"] == 0
 
 
 def test_corridor_model_service_builds_from_applied_section_set() -> None:

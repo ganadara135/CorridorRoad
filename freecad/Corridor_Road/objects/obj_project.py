@@ -1262,6 +1262,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
+    if record_kind == "v1_applied_section_show_preview":
+        return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":

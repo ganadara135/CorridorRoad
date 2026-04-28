@@ -254,6 +254,10 @@ Recommended type-specific parameters:
 - `BenchWidth`
 - `BenchDrop`
 
+For `ditch` components, use `docsV1/V1_DITCH_SHAPE_CONTRACT.md` as the shape-specific parameter contract.
+
+The first-slice implementation may use simple `width` and `slope`, but U-shaped, L-shaped, trapezoidal, rectangular, and V-shaped ditches require explicit `parameters`.
+
 ### 7.1 Parameter semantics rule
 
 The meaning of a parameter must be tied to the component kind.
@@ -448,6 +452,8 @@ Current implementation note:
 - frame fields include station, centerline `x/y`, FG `z`, tangent direction, profile grade, alignment/profile evaluation status, active alignment element, active profile segment, and active vertical curve metadata
 - `AppliedSectionService` now builds this frame from `AlignmentEvaluationService` and `ProfileEvaluationService`
 - `V1AppliedSectionSet` now persists enough frame coordinates for downstream corridor surface preview generation
+- `AppliedSectionService` now emits first-slice `AppliedSectionPoint` rows for FG and subgrade surface points from enabled Assembly components
+- `V1AppliedSectionSet` persists those point rows so Corridor Build can rebuild multi-point surface TINs without re-reading UI state
 - `SectionOutputMapper` exposes frame values through `SectionSummaryRow` entries so viewers and downstream outputs can inspect the same station basis
 
 ### 13.4 Required behavioral content
@@ -476,7 +482,10 @@ Current implementation note:
 - `V1AppliedSectionSet` persists those left/right surface widths with the station frame so corridor surface preview can rebuild without re-reading UI state
 - `V1AppliedSectionSet` also persists `subgrade_depth` so subgrade preview can rebuild from result data
 - `V1AppliedSectionSet` also persists slope-face width/slope policy so the daylight/tie-in preview can rebuild from result data
-- ditch components are intentionally not folded into the finished-grade width; they belong to later drainage surface handling
+- `V1AppliedSectionSet` also persists first-slice FG and subgrade point rows for component-boundary-aware corridor surface generation
+- ditch components are intentionally not folded into the finished-grade width
+- `AppliedSectionService` emits first-slice `ditch_surface` point rows from enabled ditch components so Corridor Build can create a separate drainage surface
+- `AppliedSectionService` derives `ditch_surface` points from shape-specific ditch parameters when `shape` is `trapezoid`, `u`, `l`, `rectangular`, or `v`
 
 ## 14. AppliedSectionSet Structure
 
@@ -492,6 +501,10 @@ The initial v1 `Applied Sections` command builds this result from:
 - `AssemblyModel`
 - `RegionModel`
 
+When multiple v1 `AssemblyModel` source objects exist, the command should pass all available Assembly sources to the evaluator.
+
+Each station should use the Assembly matching the resolved `RegionRow.assembly_ref`.
+
 Opening the command panel should not mutate the document.
 
 Clicking `Apply` creates or updates a `V1AppliedSectionSet` result object under:
@@ -499,6 +512,28 @@ Clicking `Apply` creates or updates a `V1AppliedSectionSet` result object under:
 - `04_Corridor Model / Applied Sections`
 
 This command does not generate corridor solids.
+
+The command panel should show a station-wise review table after refresh or apply.
+
+The review table should expose:
+
+- station and evaluated frame coordinates
+- resolved region, assembly, and template ids
+- left/right surface widths
+- component count
+- diagnostic status
+
+This makes the Alignment/Profile/Assembly/Region handoff visible before Corridor Build.
+
+Double-clicking a review-table row should create or update an `Applied Section Preview` in the 3D View.
+
+The preview is generated from the selected `AppliedSection`.
+
+When persisted point rows are available, the preview should show FG and subgrade section point rows plus first-slice slope-face segments.
+
+If point rows are not available, the preview may fall back to the older resolved-width section line.
+
+It is a review artifact, not an editable source object.
 
 ### 14.2 Responsibilities
 
@@ -542,6 +577,13 @@ Current implementation status:
 - [x] resolve alignment local frame through `AlignmentEvaluationService`
 - [x] resolve profile elevation and grade through `ProfileEvaluationService`
 - [x] store the combined basis in `AppliedSection.frame`
+- [x] resolve station-specific Assembly source from Region `assembly_ref` when multiple Assembly models exist
+- [x] generate first-slice FG and subgrade `AppliedSectionPoint` rows from Assembly component widths and slopes
+- [x] generate first-slice ditch `AppliedSectionPoint` rows as `ditch_surface` rows instead of folding ditch into FG width
+- [x] derive shape-aware ditch `ditch_surface` rows from `TemplateComponent.parameters`
+- [x] persist and restore Applied Section point rows through the `V1AppliedSectionSet` result object
+- [x] show a compact Applied Sections review table in the command panel
+- [x] show a selected Applied Section row as a 3D review preview using point rows when available
 - [ ] apply superelevation/crossfall state
 - [ ] apply full terrain/daylight terminal behavior
 - [ ] generate complete semantic section geometry from template parameters

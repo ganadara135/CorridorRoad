@@ -55,6 +55,7 @@ def _sample_assembly_model() -> AssemblyModel:
                         width=1.2,
                         slope=-0.03,
                         target_ref="drainage:side-ditch-right",
+                        parameters={"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.4},
                         enabled=False,
                     ),
                 ],
@@ -80,6 +81,7 @@ def test_create_or_update_v1_assembly_model_object_routes_to_assemblies_tree() -
         assert obj.ComponentCount == 2
         assert list(obj.ComponentKinds) == ["lane", "ditch"]
         assert list(obj.ComponentEnabledValues) == [1, 0]
+        assert "shape=trapezoid" in list(obj.ComponentParameterRows)[1]
         assert obj.Name in _group_names(tree[V1_TREE_ASSEMBLIES])
     finally:
         App.closeDocument(doc.Name)
@@ -104,6 +106,8 @@ def test_v1_assembly_model_object_roundtrips_to_source_model() -> None:
         assert model.template_rows[0].component_rows[1].kind == "ditch"
         assert model.template_rows[0].component_rows[1].enabled is False
         assert model.template_rows[0].component_rows[1].target_ref == "drainage:side-ditch-right"
+        assert model.template_rows[0].component_rows[1].parameters["shape"] == "trapezoid"
+        assert model.template_rows[0].component_rows[1].parameters["bottom_width"] == "0.6"
     finally:
         App.closeDocument(doc.Name)
 

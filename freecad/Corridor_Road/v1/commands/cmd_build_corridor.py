@@ -27,6 +27,15 @@ from ..services.builders import (
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
 
 
+CORRIDOR_BUILD_REVIEW_OBJECTS = (
+    ("centerline", "3D Centerline", "V1CorridorCenterline3DPreview"),
+    ("design", "Design Surface", "V1CorridorDesignSurfacePreview"),
+    ("subgrade", "Subgrade Surface", "V1CorridorSubgradeSurfacePreview"),
+    ("daylight", "Slope Face Surface", "V1CorridorDaylightSurfacePreview"),
+    ("drainage", "Drainage Surface", "V1CorridorDrainageSurfacePreview"),
+)
+
+
 def document_has_v1_applied_sections(document=None) -> bool:
     """Return True when a document has a v1 AppliedSectionSet result."""
 
@@ -131,10 +140,43 @@ def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None,
             corridor_model=corridor_model,
             surface_model=surface_model,
         )
+        create_corridor_drainage_surface_preview(
+            document=doc,
+            project=prj,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
     try:
         doc.recompute()
     except Exception:
         pass
+    return obj
+
+
+def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
+    """Return display-ready Build Corridor result rows from document preview objects."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows: list[dict[str, object]] = []
+    for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+        obj = doc.getObject(object_name) if doc is not None else None
+        rows.append(_corridor_build_review_row(role, title, object_name, obj))
+    return rows
+
+
+def show_corridor_build_review_object(document=None, row_index: int = 0):
+    """Select and fit one Build Corridor review object by review-table row index."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_build_review_rows(doc)
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Build Corridor review row index is out of range.")
+    row = rows[row_index]
+    object_name = str(row.get("object_name", "") or "")
+    obj = doc.getObject(object_name) if doc is not None and object_name else None
+    if obj is None:
+        raise RuntimeError(f"{row.get('result', 'Result')} has not been built yet.")
+    _select_and_fit_object(obj)
     return obj
 
 
@@ -363,6 +405,60 @@ def create_corridor_daylight_surface_preview(
     return preview_obj
 
 
+def create_corridor_drainage_surface_preview(
+    *,
+    document=None,
+    project=None,
+    corridor_model=None,
+    surface_model=None,
+):
+    """Create or update the first ditch/drainage mesh preview for a corridor."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None or corridor_model is None or surface_model is None:
+        return None
+    applied_obj = find_v1_applied_section_set(doc)
+    applied_section_set = to_applied_section_set(applied_obj)
+    if applied_section_set is None:
+        return None
+    surface_id = _surface_id(surface_model, "drainage_surface")
+    if not surface_id:
+        _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
+        return None
+    try:
+        tin_surface = CorridorSurfaceGeometryService().build_drainage_surface(
+            CorridorDesignSurfaceGeometryRequest(
+                project_id=_project_id(project or find_project(doc)),
+                corridor=corridor_model,
+                applied_section_set=applied_section_set,
+                surface_id=surface_id,
+            )
+        )
+    except Exception:
+        _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
+        return None
+    result = TINMeshPreviewMapper().create_or_update_preview_object(
+        doc,
+        tin_surface,
+        object_name="V1CorridorDrainageSurfacePreview",
+        label_prefix="Corridor Drainage Surface",
+        surface_role="drainage",
+    )
+    preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
+    if preview_obj is not None:
+        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
+        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
+        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(doc), preview_obj)
+        except Exception:
+            pass
+    return preview_obj
+
+
 def run_v1_build_corridor_command():
     """Open the v1 Build Corridor panel."""
 
@@ -414,6 +510,27 @@ class V1BuildCorridorTaskPanel:
         self._summary.setReadOnly(True)
         self._summary.setFixedHeight(150)
         layout.addWidget(self._summary)
+        self._review_table = QtWidgets.QTableWidget(0, 7)
+        self._review_table.setHorizontalHeaderLabels(
+            [
+                "Result",
+                "Status",
+                "Object",
+                "Vertices",
+                "Triangles/Points",
+                "Role",
+                "Notes",
+            ]
+        )
+        self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        try:
+            self._review_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._review_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_review_row(row_index))
+        layout.addWidget(self._review_table, 1)
         row = QtWidgets.QHBoxLayout()
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
@@ -421,6 +538,9 @@ class V1BuildCorridorTaskPanel:
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         row.addWidget(apply_button)
+        show_button = QtWidgets.QPushButton("Show Selected")
+        show_button.clicked.connect(self._show_selected_row)
+        row.addWidget(show_button)
         row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -433,6 +553,7 @@ class V1BuildCorridorTaskPanel:
         applied = to_applied_section_set(applied_obj)
         if applied is None:
             self._summary.setPlainText("Applied Sections: missing\nRun Applied Sections before Build Corridor.")
+            self._set_review_rows(corridor_build_review_rows(self.document))
             return
         self._summary.setPlainText(
             "\n".join(
@@ -445,6 +566,7 @@ class V1BuildCorridorTaskPanel:
                 ]
             )
         )
+        self._set_review_rows(corridor_build_review_rows(self.document))
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
@@ -454,6 +576,7 @@ class V1BuildCorridorTaskPanel:
             surface_count = int(getattr(surface_obj, "SurfaceCount", 0) or 0) if surface_obj is not None else 0
             message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
+            self._set_review_rows(corridor_build_review_rows(self.document))
             _show_message(self.form, "Build Corridor", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -462,6 +585,39 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(f"CorridorModel was not built:\n{exc}")
             _show_message(self.form, "Build Corridor", f"CorridorModel was not built.\n{exc}")
             return False
+
+    def _set_review_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_review_table"):
+            return
+        self._review_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._review_table.rowCount()
+            self._review_table.insertRow(row_index)
+            values = [
+                str(row.get("result", "") or ""),
+                str(row.get("status", "") or ""),
+                str(row.get("object_label", "") or row.get("object_name", "") or ""),
+                str(row.get("vertex_count", "") or ""),
+                str(row.get("triangle_or_point_count", "") or ""),
+                str(row.get("role", "") or ""),
+                str(row.get("notes", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                self._review_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(value))
+
+    def _show_selected_row(self) -> None:
+        rows = self._review_table.selectionModel().selectedRows() if hasattr(self, "_review_table") else []
+        if not rows:
+            _show_message(self.form, "Build Corridor", "Select one review row first.")
+            return
+        self._show_review_row(int(rows[0].row()))
+
+    def _show_review_row(self, row_index: int) -> None:
+        try:
+            obj = show_corridor_build_review_object(self.document, int(row_index))
+            self._summary.setPlainText(f"Review object shown.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Review object was not shown.\n{exc}")
 
 
 def _project_id(project) -> str:
@@ -473,6 +629,49 @@ def _surface_id(surface_model, surface_kind: str) -> str:
         if str(getattr(row, "surface_kind", "") or "") == surface_kind:
             return str(getattr(row, "surface_id", "") or "")
     return ""
+
+
+def _corridor_build_review_row(role: str, title: str, object_name: str, obj) -> dict[str, object]:
+    if obj is None:
+        return {
+            "role": role,
+            "result": title,
+            "object_name": object_name,
+            "object_label": "",
+            "status": "missing",
+            "vertex_count": "",
+            "triangle_or_point_count": "",
+            "notes": "Not built yet.",
+        }
+    if role == "centerline":
+        point_count = int(getattr(obj, "PointCount", 0) or 0)
+        curve_kind = str(getattr(obj, "DisplayCurveKind", "") or "")
+        return {
+            "role": role,
+            "result": title,
+            "object_name": str(getattr(obj, "Name", "") or object_name),
+            "object_label": str(getattr(obj, "Label", "") or object_name),
+            "status": "ready",
+            "vertex_count": "",
+            "triangle_or_point_count": point_count,
+            "notes": f"Curve: {curve_kind or 'unknown'}",
+        }
+    vertex_count = int(getattr(obj, "VertexCount", 0) or 0)
+    triangle_count = int(getattr(obj, "TriangleCount", 0) or 0)
+    notes = str(getattr(obj, "SlopeFaceDiagnosticSummary", "") or "")
+    if not notes:
+        surface_kind = str(getattr(obj, "SurfaceKind", "") or "")
+        notes = f"Surface kind: {surface_kind or 'unknown'}"
+    return {
+        "role": role,
+        "result": title,
+        "object_name": str(getattr(obj, "Name", "") or object_name),
+        "object_label": str(getattr(obj, "Label", "") or object_name),
+        "status": "ready" if vertex_count > 0 and triangle_count > 0 else "empty",
+        "vertex_count": vertex_count,
+        "triangle_or_point_count": triangle_count,
+        "notes": notes,
+    }
 
 
 def _set_preview_property(obj, name: str, value: str) -> None:
@@ -498,6 +697,15 @@ def _set_preview_float_property(obj, name: str, value: float) -> None:
         if not hasattr(obj, name):
             obj.addProperty("App::PropertyFloat", name, "CorridorRoad", name)
         setattr(obj, name, float(value or 0.0))
+    except Exception:
+        pass
+
+
+def _remove_preview_object(document, object_name: str) -> None:
+    try:
+        obj = document.getObject(object_name)
+        if obj is not None:
+            document.removeObject(obj.Name)
     except Exception:
         pass
 
@@ -541,6 +749,35 @@ def _same_centerline_point(left, right, tolerance: float = 1.0e-7) -> bool:
         return False
 
 
+def _select_and_fit_object(obj) -> None:
+    if Gui is None or obj is None:
+        return
+    try:
+        if hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+    except Exception:
+        pass
+    try:
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+    except Exception:
+        pass
+    try:
+        view = Gui.ActiveDocument.ActiveView
+        if hasattr(view, "fitSelection"):
+            view.fitSelection()
+        else:
+            Gui.SendMsgToActiveView("ViewSelection")
+    except Exception:
+        try:
+            Gui.SendMsgToActiveView("ViewSelection")
+        except Exception:
+            try:
+                Gui.SendMsgToActiveView("ViewFit")
+            except Exception:
+                pass
+
+
 def _make_centerline_shape(points, part_module):
     if len(points) < 2:
         return part_module.Shape(), "empty"
@@ -569,10 +806,14 @@ def _attach_surface_quality_properties(obj, surface) -> None:
     _set_preview_integer_property(obj, "EGIntersectionCount", int(float(quality.get("eg_intersection_count", 0) or 0)))
     _set_preview_integer_property(obj, "EGOuterEdgeSampleCount", int(float(quality.get("eg_outer_edge_sample_count", 0) or 0)))
     _set_preview_integer_property(obj, "SlopeFaceFallbackCount", int(float(quality.get("slope_face_fallback_count", 0) or 0)))
+    _set_preview_integer_property(obj, "SlopeFaceNoExistingGroundCount", int(float(quality.get("slope_face_no_existing_ground_count", 0) or 0)))
+    _set_preview_integer_property(obj, "SlopeFaceNoEGHitCount", int(float(quality.get("slope_face_no_eg_hit_count", 0) or 0)))
     summary = (
         f"EG intersections: {int(float(quality.get('eg_intersection_count', 0) or 0))}, "
         f"outer-edge samples: {int(float(quality.get('eg_outer_edge_sample_count', 0) or 0))}, "
         f"fallbacks: {int(float(quality.get('slope_face_fallback_count', 0) or 0))}, "
+        f"no EG TIN: {int(float(quality.get('slope_face_no_existing_ground_count', 0) or 0))}, "
+        f"no EG hit: {int(float(quality.get('slope_face_no_eg_hit_count', 0) or 0))}, "
         f"hits: {int(float(quality.get('eg_tie_in_hit_count', 0) or 0))}, "
         f"misses: {int(float(quality.get('eg_tie_in_miss_count', 0) or 0))}"
     )
@@ -776,10 +1017,10 @@ def _skip_corridor_existing_ground_candidate(obj) -> bool:
     if record_kind.startswith("profile_show_preview"):
         return True
     surface_role = str(getattr(obj, "SurfaceRole", "") or "").lower()
-    if surface_role in {"design", "subgrade", "daylight"}:
+    if surface_role in {"design", "subgrade", "daylight", "drainage"}:
         return True
     surface_kind = str(getattr(obj, "SurfaceKind", "") or "").lower()
-    if surface_kind in {"design_surface", "subgrade_surface", "daylight_surface"}:
+    if surface_kind in {"design_surface", "subgrade_surface", "daylight_surface", "drainage_surface"}:
         return True
     v1_type = str(getattr(obj, "V1ObjectType", "") or "")
     if v1_type in {"V1Alignment", "V1Profile", "V1Stationing", "V1CorridorModel", "V1SurfaceModel", "ReviewIssue"}:

@@ -85,6 +85,16 @@ Applied sections and corridor solids are downstream results.
 - `enabled`
 - `notes`
 
+For `kind = "ditch"`, shape-specific intent should be stored in `parameters`.
+
+The governing shape contract is `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+
+Recommended `parameters["shape"]` values include `trapezoid`, `u`, `l`, `rectangular`, `v`, and `custom_polyline`.
+
+The current Assembly editor preserves component parameters through a raw `Parameters` column using `key=value;key=value` text.
+
+A later editor refinement should replace this with shape-aware controls for ditch components.
+
 ## Relationships
 
 `RegionRow.assembly_ref` should reference `AssemblyModel.assembly_id`.
@@ -101,7 +111,9 @@ If a Region references an Assembly id that does not exist in the document, valid
 
 If `RegionRow.template_ref` is blank and `RegionRow.assembly_ref` matches the provided `AssemblyModel.assembly_id`, the builder should use `AssemblyModel.active_template_id`.
 
-If `RegionRow.assembly_ref` points to a different Assembly than the one provided to the builder, the builder should emit diagnostics instead of silently applying the wrong Assembly.
+If multiple `AssemblyModel` sources exist in the document, Applied Section generation should select the model matching `RegionRow.assembly_ref`.
+
+If `RegionRow.assembly_ref` cannot be matched to any available Assembly source, the builder should emit diagnostics instead of silently applying the wrong Assembly.
 
 ## Diagnostics
 
@@ -124,6 +136,8 @@ Available first-slice presets:
 - `Divided Road`
 - `Bridge Interface`
 - `Drainage Ditch Road`
+
+`Drainage Ditch Road` uses trapezoid ditch parameters as the first shape-aware ditch preset.
 
 Loading a preset only fills the editable Assembly table.
 

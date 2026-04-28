@@ -53,6 +53,11 @@ def test_assembly_presets_offer_multiple_practical_templates() -> None:
         assert urban.active_template_id == "template:urban-curb-gutter"
         assert "gutter" in [component.kind for component in components]
         assert "sidewalk" in [component.kind for component in components]
+        drainage = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project)
+        ditch_components = [component for component in drainage.template_rows[0].component_rows if component.kind == "ditch"]
+        assert ditch_components
+        assert {component.parameters.get("shape") for component in ditch_components} == {"trapezoid"}
+        assert ditch_components[0].parameters["bottom_width"] == 0.6
     finally:
         App.closeDocument(doc.Name)
 

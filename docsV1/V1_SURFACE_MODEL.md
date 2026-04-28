@@ -125,6 +125,8 @@ Use surface representation for:
 - drainage grading surfaces where the result is terrain-like, such as ditch flowline influence, swale grading, or channel side grading
 - TIN preview and review meshes derived from normalized surface data
 
+Ditch drainage surfaces should derive from the point roles and shape rules in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+
 Do not use surface representation as the durable model for:
 
 - closed pavement bodies with physical thickness
@@ -212,6 +214,7 @@ Each `SurfaceRow` represents one meaningful surface result.
 - `design_surface`
 - `subgrade_surface`
 - `daylight_surface`
+- `drainage_surface`
 - `comparison_surface`
 - `volume_support_surface`
 - `clipped_export_surface`
@@ -340,11 +343,16 @@ Current implementation status:
 - [x] build first-slice design-surface ribbon mesh preview from applied-section frames
 - [x] drive first-slice design-surface preview width from Assembly-derived left/right applied-section widths
 - [x] build first-slice subgrade-surface ribbon mesh preview from Assembly-derived subgrade depth
+- [x] build design and subgrade TIN previews from persisted `AppliedSectionPoint` rows when component-boundary point rows are available
+- [x] add conditional `drainage_surface` rows when `AppliedSectionSet` contains ditch surface point rows
+- [x] build first-slice drainage/ditch TIN previews from persisted `ditch_surface` point rows
 - [x] build first-slice slope-face strip preview from Assembly-derived side-slope width and slope
 - [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
 - [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
-- [ ] build full design, subgrade, and daylight TIN geometry from section points
+- [x] split slope-face fallback diagnostics into missing EG TIN and no EG hit within search width
+- [x] expose Build Corridor output review rows for centerline, design surface, subgrade surface, slope-face surface, and drainage surface previews
+- [ ] build full design, subgrade, and daylight TIN geometry from complete semantic section points
 - [ ] add clipped review/export surface variants
 
 ## 16. SurfaceResolutionResult
