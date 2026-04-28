@@ -2,7 +2,7 @@
 
 Date: 2026-04-27
 Branch: `v1-dev`
-Status: Draft implementation plan
+Status: Phase R1/R2/R3/R4/R5 initial handoff slice complete
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -52,11 +52,13 @@ Completed upstream work:
 
 Missing implementation:
 
-- no native `RegionModel` source model yet
-- no region validation service yet
-- no region resolution service yet
-- no native Region task panel yet
-- no downstream corridor consumer for resolved region context yet
+- native `RegionModel` source model exists and now supports primary kind, applied layers, and domain references
+- region validation service exists for station ranges, ids, kind warnings, and overlap diagnostics
+- region resolution service exists for active station, range overlap, and boundary queries
+- durable v1 Region source object bridge exists and routes to `04_Corridor Model / Regions`
+- native Region task panel exists for source-row authoring
+- downstream handoff summaries exist for future AppliedSection and Corridor services
+- no full corridor consumer has been implemented yet
 
 ## 4. Implementation Boundary
 
@@ -284,76 +286,99 @@ Region objects should not be placed under legacy v0 `Regions001` style container
 
 Tasks:
 
-- [ ] create `RegionModel`, `RegionRow`, `RegionPolicySet`, and diagnostic dataclasses
-- [ ] export source model from `models/source/__init__.py`
-- [ ] add model contract tests
+- [x] create `RegionModel`, `RegionRow`, `RegionPolicySet`, and diagnostic dataclasses
+- [x] export source model from `models/source/__init__.py`
+- [x] add model contract tests
 
 Acceptance criteria:
 
-- [ ] a bridge region with ditch and drainage layers can be represented
-- [ ] list fields round-trip as lists, not comma-only strings
-- [ ] empty optional references stay explicit
+- [x] a bridge region with ditch and drainage layers can be represented
+- [x] list fields round-trip as lists, not comma-only strings
+- [x] empty optional references stay explicit
 
 ### Phase R2: Validation and Resolution Services
 
 Tasks:
 
-- [ ] implement region validation service
-- [ ] implement active station resolution
-- [ ] implement overlap diagnostics
-- [ ] add focused service tests
+- [x] implement region validation service
+- [x] implement active station resolution
+- [x] implement overlap diagnostics
+- [x] add focused service tests
 
 Acceptance criteria:
 
-- [ ] a station inside one region resolves deterministically
-- [ ] overlapping regions resolve by priority
-- [ ] equal-priority overlap emits a warning
-- [ ] invalid station ranges emit errors
+- [x] a station inside one region resolves deterministically
+- [x] overlapping regions resolve by priority
+- [x] equal-priority overlap emits a warning
+- [x] invalid station ranges emit errors
 
 ### Phase R3: FreeCAD Source Object Bridge
 
 Tasks:
 
-- [ ] create or update a durable v1 Region source object
-- [ ] store station, kind, layer, reference, and priority rows as object properties
-- [ ] route the object to the v1 project tree
-- [ ] keep source fields readable by tests and future corridor services
+- [x] create or update a durable v1 Region source object
+- [x] store station, kind, layer, reference, and priority rows as object properties
+- [x] route the object to the v1 project tree
+- [x] keep source fields readable by tests and future corridor services
 
 Acceptance criteria:
 
-- [ ] Apply creates one region source object
-- [ ] repeated Apply updates the same object
-- [ ] tree placement is under the v1 Corridor Model area
+- [x] Apply creates one region source object
+- [x] repeated Apply updates the same object
+- [x] tree placement is under the v1 Corridor Model area
 
 ### Phase R4: Region Editor MVP
 
 Tasks:
 
-- [ ] add native `Regions` command
-- [ ] add table editor with starter rows
-- [ ] make opening non-destructive
-- [ ] add Validate and Apply actions
-- [ ] add command contract tests
+- [x] add native `Regions` command
+- [x] add table editor with starter rows
+- [x] make opening non-destructive
+- [x] add Validate and Apply actions
+- [x] add command contract tests
 
 Acceptance criteria:
 
-- [ ] user can create a normal road region
-- [ ] user can create a bridge region with drainage and ditch layers
-- [ ] user can apply without creating corridor geometry
-- [ ] validation messages are visible before Apply
+- [x] user can create a normal road region
+- [x] user can create a bridge region with drainage and ditch layers
+- [x] user can apply without creating corridor geometry
+- [x] validation messages are visible before Apply
 
 ### Phase R5: Downstream Handoff
 
 Tasks:
 
-- [ ] expose `RegionResolutionService` for future AppliedSection and Corridor services
-- [ ] add a small handoff summary helper for viewers
-- [ ] document how Assembly and Structure editors should reference Region rows
+- [x] expose `RegionResolutionService` for future AppliedSection and Corridor services
+- [x] add a small handoff summary helper for viewers
+- [x] document how Assembly and Structure editors should reference Region rows
 
 Acceptance criteria:
 
-- [ ] a future corridor service can ask for resolved region context at a station
-- [ ] viewer summaries can show primary kind, layers, assembly, structure, and drainage references
+- [x] a future corridor service can ask for resolved region context at a station
+- [x] viewer summaries can show primary kind, layers, assembly, structure, and drainage references
+
+## 13.1 Downstream Handoff Contract
+
+Future corridor, section, assembly, structure, drainage, ramp, and intersection services should consume Region state through `RegionResolutionService.resolve_handoff`.
+
+Do not read Region editor table widgets as source truth.
+
+Do not infer bridge, ramp, drainage, or intersection behavior from free-form notes.
+
+Use these Region fields as downstream references:
+
+- `primary_kind` selects the dominant station-range control mode.
+- `applied_layers` adds non-exclusive context such as `ditch`, `drainage`, `guardrail`, or `widening`.
+- `assembly_ref` points to the Assembly source to apply at the station.
+- `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
+- `structure_refs` points to bridge, culvert, retaining wall, or other Structure sources.
+- `drainage_refs` points to Drainage elements or collection/discharge context.
+- `ramp_ref` and `intersection_ref` point to Ramp and Intersection sources when the Region is tied to those domains.
+- `override_refs` points to station-specific or component-specific overrides.
+
+Viewer and review tools should use `RegionContextSummary.to_review_items`.
+
+The summary helper is read-only. It exposes resolved context but does not mutate Region source rows.
 
 ## 14. Manual QA Flow
 
@@ -391,12 +416,12 @@ Pause and realign if:
 
 ## 16. Recommended Next Coding Slice
 
-Implement Phase R1 and R2 first.
+Phase R1, R2, R3, R4, and the initial R5 handoff slice are complete.
 
-The first code change should add:
+The next code change should begin the Assembly source/editor slice:
 
-- `freecad/Corridor_Road/v1/models/source/region_model.py`
-- `freecad/Corridor_Road/v1/services/evaluation/region_resolution_service.py`
-- `tests/contracts/v1/test_region_resolution_service.py`
+- define v1 `AssemblyModel` source rows around lanes, shoulders, side slopes, and layer components
+- add an Assembly editor MVP that stores source rows only
+- connect Region `assembly_ref` to Assembly lookup without generating corridor geometry yet
 
-This gives us the source contract and deterministic resolver before any UI decisions harden.
+This lets Region rows point to real Assembly sources before corridor generation begins.

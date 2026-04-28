@@ -11,7 +11,7 @@ from .profile_earthwork_hint_service import ProfileEarthworkHintService
 from .profile_tin_sampling_service import ProfileTinSamplingService
 from .profile_evaluation_service import ProfileEvaluationService, ProfileStationResult
 from .ramp_evaluation_service import RampEvaluationService
-from .region_resolution_service import RegionResolutionService
+from .region_resolution_service import RegionResolutionService, RegionValidationService
 from .section_earthwork_area_service import SectionEarthworkAreaService
 from .section_earthwork_volume_service import SectionEarthworkVolumeService
 from .structure_interaction_service import StructureInteractionService
@@ -33,6 +33,7 @@ __all__ = [
     "ProfileStationResult",
     "RampEvaluationService",
     "RegionResolutionService",
+    "RegionValidationService",
     "SectionEarthworkAreaService",
     "SectionEarthworkVolumeService",
     "StructureInteractionService",

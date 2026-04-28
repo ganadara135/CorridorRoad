@@ -11,6 +11,7 @@ Baseline document:
 - [V1_INTERSECTION_MODEL.md](./V1_INTERSECTION_MODEL.md)
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
+- [V1_ASSEMBLY_MODEL.md](./V1_ASSEMBLY_MODEL.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
 - [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md)
@@ -75,6 +76,10 @@ Preferred review workflow:
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - model corridor ranges through `Region` as `primary_kind + applied_layers + domain references`, so bridge, culvert, drainage, ditch, ramp, and intersection influences can overlap without becoming hidden geometry edits
+- use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
+- use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
+- use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
+- treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical

@@ -68,10 +68,14 @@ class AppliedSection(ResultModelBase):
     corridor_id: str = ""
     alignment_id: str = ""
     profile_id: str = ""
+    assembly_id: str = ""
     station: float = 0.0
     template_id: str = ""
     region_id: str = ""
     frame: AppliedSectionFrame | None = None
+    surface_left_width: float = 0.0
+    surface_right_width: float = 0.0
+    subgrade_depth: float = 0.0
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)

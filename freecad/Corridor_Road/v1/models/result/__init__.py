@@ -6,6 +6,7 @@ from .corridor_model import CorridorModel
 from .earthwork_balance_model import EarthworkBalanceModel
 from .mass_haul_model import MassHaulModel
 from .quantity_model import QuantityModel
+from .region_context import RegionContextReviewItem, RegionContextSummary
 from .surface_model import SurfaceModel
 from .tin_surface import TINSurface
 
@@ -17,6 +18,8 @@ __all__ = [
     "EarthworkBalanceModel",
     "MassHaulModel",
     "QuantityModel",
+    "RegionContextReviewItem",
+    "RegionContextSummary",
     "SurfaceModel",
     "TINSurface",
 ]

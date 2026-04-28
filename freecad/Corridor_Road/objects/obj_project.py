@@ -1119,8 +1119,8 @@ def _is_alignment_related(child):
 def _is_surface(child):
     return _is_type(
         child,
-        proxy_types=("DesignGradingSurface", "DesignTerrain"),
-        name_prefixes=("DesignGradingSurface", "DesignTerrain"),
+        proxy_types=("DesignGradingSurface", "DesignTerrain", "V1SurfaceModel", "SurfaceModel"),
+        name_prefixes=("DesignGradingSurface", "DesignTerrain", "V1SurfaceModel", "SurfaceModel"),
     )
 
 
@@ -1256,6 +1256,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_SOURCE, None)
     if record_kind == "tin_surface_result":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None)
+    if record_kind == "v1_corridor_surface_preview":
+        return tree.get(V1_TREE_DESIGN_TIN, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":
@@ -1292,14 +1294,22 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_DRAINAGE, None)
     if _is_type(
         child,
-        proxy_types=("AssemblyTemplate", "TypicalSectionTemplate"),
-        name_prefixes=("AssemblyTemplate", "TypicalSectionTemplate"),
+        proxy_types=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
+        name_prefixes=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
     ):
         return tree.get(V1_TREE_ASSEMBLIES, None)
-    if _is_type(child, proxy_types=("RegionPlan",), name_prefixes=("RegionPlan",)):
+    if _is_type(child, proxy_types=("V1RegionModel", "RegionModel", "RegionPlan"), name_prefixes=("V1RegionModel", "RegionModel", "RegionPlan")):
         return tree.get(V1_TREE_REGIONS, None)
-    if _is_type(child, proxy_types=("SectionSet", "SectionSlice"), name_prefixes=("SectionSet", "SectionSlice")):
+    if _is_type(
+        child,
+        proxy_types=("V1AppliedSectionSet", "AppliedSectionSet", "SectionSet", "SectionSlice"),
+        name_prefixes=("V1AppliedSectionSet", "AppliedSectionSet", "SectionSet", "SectionSlice"),
+    ):
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
+    if _is_type(child, proxy_types=("V1CorridorModel", "CorridorModel"), name_prefixes=("V1CorridorModel", "CorridorModel")):
+        return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if _is_type(child, proxy_types=("V1SurfaceModel", "SurfaceModel"), name_prefixes=("V1SurfaceModel", "SurfaceModel")):
+        return tree.get(V1_TREE_DESIGN_TIN, None)
     if _is_type(child, proxy_types=(CORRIDOR_PROXY_TYPE,), name_prefixes=(CORRIDOR_NAME_PREFIX,)):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if _is_type(child, proxy_types=("StructureSet",), name_prefixes=("StructureSet",)):

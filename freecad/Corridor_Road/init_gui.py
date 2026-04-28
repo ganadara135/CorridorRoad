@@ -29,12 +29,15 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_typical_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_structures  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_regions  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_region_editor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_corridor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401
@@ -57,11 +60,12 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_ReviewPlanProfile",
         ]
         assembly_region_commands = [
-            "CorridorRoad_EditTypicalSection",
-            "CorridorRoad_EditRegions",
+            "CorridorRoad_V1EditAssembly",
+            "CorridorRoad_V1EditRegions",
             "CorridorRoad_EditStructures",
         ]
         corridor_commands = [
+            "CorridorRoad_V1AppliedSections",
             "CorridorRoad_GenerateCorridor",
         ]
         review_commands = [

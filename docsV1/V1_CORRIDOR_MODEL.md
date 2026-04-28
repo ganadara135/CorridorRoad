@@ -216,6 +216,26 @@ The evaluated corridor should be reproducible from the same source models plus t
 
 `AppliedSectionSet` is the central corridor result family.
 
+The initial v1 `Build Corridor` path consumes an existing `V1AppliedSectionSet` and creates or updates a `V1CorridorModel` result object.
+
+This first path is orchestration-first and surface-first.
+
+It records:
+
+- corridor id
+- alignment id
+- applied section set reference
+- region model reference
+- station rows
+- sampling policy
+- corridor-derived surface build reference
+
+It also creates the initial corridor-derived `V1SurfaceModel` result with design, subgrade, and daylight surface rows.
+
+It does not generate final corridor solids.
+
+If no `V1AppliedSectionSet` exists, the current workbench command may fall back to the legacy corridor task panel during transition.
+
 ### 11.2 Corridor responsibility
 
 `CorridorModel` is responsible for orchestrating the creation and ordered ownership of:
@@ -308,6 +328,16 @@ This result family captures surfaces generated from corridor evaluation.
 - `DaylightTIN`
 - corridor-derived comparison surfaces
 
+Surface outputs are the preferred first corridor-build target in early v1.
+
+They should cover terrain-like corridor results such as:
+
+- finished grade surface
+- subgrade surface
+- daylight and tie-in surface
+- corridor clipping and comparison surfaces
+- drainage grading surfaces where the result behaves like terrain
+
 ### 14.3 Rule
 
 Surface build results must remain traceable to corridor inputs and station results.
@@ -327,9 +357,19 @@ This result family captures solid or layered geometry generated from corridor ev
 - component-based solid groups
 - structure-adjacent corridor cutouts where supported
 
+Solid outputs should be reserved for physical or export-oriented component bodies such as:
+
+- pavement layers with material thickness
+- curbs, gutters, barriers, guardrails, medians, and retaining walls
+- bridge decks, girders, abutments, piers, and approach slabs
+- culvert barrels, headwalls, wing walls, pipes, inlets, and manholes
+- IFC or quantity bodies where closed volume and component identity matter
+
 ### 15.3 Rule
 
 Solid build results are engineering derivatives and export helpers, not durable source authoring objects.
+
+They should generally follow surface and applied-section evaluation, except for independent structure or drainage objects that are authored as source models and then linked back into the corridor.
 
 ## 16. Surface and Solid Build Services
 
@@ -341,6 +381,28 @@ Recommended service families:
 - `CorridorNetworkContextService`
 
 These services should consume `AppliedSectionSet` and normalized terrain context rather than recomputing source logic independently.
+
+### 16.1 Build order rule
+
+The practical v1 build order is:
+
+1. generate `AppliedSectionSet`
+2. create or update `CorridorModel`
+3. build corridor-derived surface results
+4. build solid/component outputs only where physical body identity is required
+
+This keeps the first corridor result lightweight and reviewable while leaving detailed solids for pavement, structures, drainage assets, quantities, and exchange.
+
+Current implementation status:
+
+- [x] create `V1CorridorModel` from `V1AppliedSectionSet`
+- [x] preserve surface build references on `V1CorridorModel`
+- [x] create initial `V1SurfaceModel` with design, subgrade, and daylight rows during `Build Corridor`
+- [x] create first-slice corridor design-surface mesh preview under `03_Surfaces / Design TIN`
+- [x] use Assembly-derived left/right applied-section widths for the first-slice design-surface preview
+- [x] create first-slice corridor subgrade-surface mesh preview from Assembly-derived subgrade depth
+- [ ] generate actual corridor TIN geometry for those rows
+- [ ] generate physical solid/component bodies
 
 ## 17. Corridor and Quantity Relationship
 

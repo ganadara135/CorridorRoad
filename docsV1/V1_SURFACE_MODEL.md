@@ -103,6 +103,52 @@ Deferred or later refinements may include:
 - staged-construction surface sets
 - more advanced material-specific analysis surfaces
 
+### 7.1 Surface vs Solid representation boundary
+
+`SurfaceModel` represents open, terrain-like, TIN-based result surfaces.
+
+Use surface representation for:
+
+- existing ground TIN and normalized survey terrain
+- finished grade design surface
+- subgrade surface
+- daylight and tie-in surfaces
+- cut/fill comparison surfaces
+- clipped review, export, and analysis surfaces
+- temporary grading and intermediate construction surfaces
+- drainage grading surfaces where the result is terrain-like, such as ditch flowline influence, swale grading, or channel side grading
+- TIN preview and review meshes derived from normalized surface data
+
+Do not use surface representation as the durable model for:
+
+- closed pavement bodies with physical thickness
+- curbs, gutters, barriers, guardrails, walls, pipes, culverts, inlets, manholes, bridge members, or other component bodies
+- IFC-style physical elements that need material, volume, and component identity
+- quantity solids where a closed volume is the main deliverable
+
+### 7.2 Solid representation boundary
+
+Solid representation belongs to physical component outputs with thickness, material, volume, or explicit asset identity.
+
+Use solid representation for:
+
+- pavement layer bodies when material thickness and volume matter
+- curb, gutter, barrier, guardrail, median, and retaining-wall bodies
+- bridge deck, girder, abutment, pier, bearing, and approach-slab bodies
+- culvert barrels, headwalls, wing walls, pipes, inlets, manholes, and drainage structures
+- structure-adjacent corridor cutouts where a closed volume is required
+- IFC/export bodies where downstream consumers expect physical components
+- construction or quantity bodies where closed volume is the required result
+
+### 7.3 Non-overlap rule
+
+Surface and solid outputs may be derived from the same `AppliedSectionSet`, but they must not replace each other.
+
+- A surface is an open height field or TIN-family result.
+- A solid is a closed or component-like body with thickness, material, volume, or asset identity.
+- Viewer meshes generated from either one are presentation artifacts, not source truth.
+- Editing must return to source models, replayable TIN edits, region rules, assembly rules, or explicit overrides rather than mutating generated surface or solid display geometry.
+
 ## 8. Surface Object Families
 
 Recommended primary object families:
@@ -279,6 +325,17 @@ Recommended service families:
 - `SurfaceComparisonService`
 
 These services should reuse TIN contracts and corridor semantics rather than inventing display-driven shortcuts.
+
+Current implementation status:
+
+- [x] define `SurfaceModel`, `SurfaceRow`, and `SurfaceBuildRelation`
+- [x] build an initial corridor-derived surface family through `CorridorSurfaceService`
+- [x] persist `V1SurfaceModel` under `03_Surfaces / Design TIN`
+- [x] build first-slice design-surface ribbon mesh preview from applied-section frames
+- [x] drive first-slice design-surface preview width from Assembly-derived left/right applied-section widths
+- [x] build first-slice subgrade-surface ribbon mesh preview from Assembly-derived subgrade depth
+- [ ] build full design, subgrade, and daylight TIN geometry from section points
+- [ ] add clipped review/export surface variants
 
 ## 16. SurfaceResolutionResult
 

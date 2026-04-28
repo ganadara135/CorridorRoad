@@ -441,6 +441,7 @@ Current implementation note:
 - `AppliedSectionFrame` records the evaluated station frame for one section
 - frame fields include station, centerline `x/y`, FG `z`, tangent direction, profile grade, alignment/profile evaluation status, active alignment element, active profile segment, and active vertical curve metadata
 - `AppliedSectionService` now builds this frame from `AlignmentEvaluationService` and `ProfileEvaluationService`
+- `V1AppliedSectionSet` now persists enough frame coordinates for downstream corridor surface preview generation
 - `SectionOutputMapper` exposes frame values through `SectionSummaryRow` entries so viewers and downstream outputs can inspect the same station basis
 
 ### 13.4 Required behavioral content
@@ -453,11 +454,43 @@ Applied section data should be sufficient to support:
 - earthwork balance
 - quantity computation
 
+### 13.5 Surface and solid contribution rule
+
+`AppliedSection` may contribute to both surface and solid outputs, but it should not collapse them into one geometry type.
+
+- terrain-like station points and daylight edges contribute to `SurfaceModel` and TIN-family outputs
+- pavement layers, curbs, gutters, walls, structures, and drainage components contribute to later solid or component-body outputs when thickness, material, volume, or asset identity matters
+- generated wires, meshes, or solids remain derived outputs and must not become the place where section intent is edited
+
+Current implementation note:
+
+- `AppliedSectionService` resolves first-slice left/right design-surface widths from enabled Assembly components such as lanes, shoulders, medians, curbs, gutters, sidewalks, bike lanes, and green strips
+- `AppliedSectionService` resolves first-slice `subgrade_depth` from the maximum enabled Assembly component thickness for pavement-like components
+- `V1AppliedSectionSet` persists those left/right surface widths with the station frame so corridor surface preview can rebuild without re-reading UI state
+- `V1AppliedSectionSet` also persists `subgrade_depth` so subgrade preview can rebuild from result data
+- side slope and ditch components are intentionally not folded into the finished-grade width; they belong to later daylight/drainage surface handling
+
 ## 14. AppliedSectionSet Structure
 
 ### 14.1 Role
 
 `AppliedSectionSet` is the ordered collection of station results for a corridor or analysis range.
+
+The initial v1 `Applied Sections` command builds this result from:
+
+- `AlignmentModel`
+- `ProfileModel`
+- generated `Stations`
+- `AssemblyModel`
+- `RegionModel`
+
+Opening the command panel should not mutate the document.
+
+Clicking `Apply` creates or updates a `V1AppliedSectionSet` result object under:
+
+- `04_Corridor Model / Applied Sections`
+
+This command does not generate corridor solids.
 
 ### 14.2 Responsibilities
 

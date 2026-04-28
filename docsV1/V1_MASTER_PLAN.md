@@ -145,6 +145,12 @@ The same source model should drive:
 - LandXML export
 - IFC export
 
+Representation rule:
+
+- surface outputs are for terrain-like, open TIN or mesh results such as existing ground, finished grade, subgrade, daylight, clipping, and comparison surfaces
+- solid outputs are for physical component bodies with thickness, material, volume, or asset identity such as pavement layers, curbs, gutters, walls, bridge elements, culverts, pipes, and IFC/export bodies
+- generated viewer meshes, surfaces, and solids are outputs; durable design intent remains in source models and replayable result contracts
+
 ### 5.5 Explanation before automation
 
 AI support must explain:

@@ -16,6 +16,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
+    V1_TREE_DESIGN_TIN,
     V1_TREE_EXISTING_GROUND_TIN,
     V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
     V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
@@ -133,9 +134,14 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
         cases = [
             ("RampModel", V1_TREE_RAMPS),
             ("IntersectionModel", V1_TREE_INTERSECTIONS),
+            ("V1AssemblyModel", V1_TREE_ASSEMBLIES),
             ("AssemblyTemplate", V1_TREE_ASSEMBLIES),
+            ("V1RegionModel", V1_TREE_REGIONS),
             ("RegionPlan", V1_TREE_REGIONS),
+            ("V1AppliedSectionSet", V1_TREE_APPLIED_SECTIONS),
             ("SectionSet", V1_TREE_APPLIED_SECTIONS),
+            ("V1CorridorModel", V1_TREE_CORRIDOR_MODEL),
+            ("V1SurfaceModel", V1_TREE_DESIGN_TIN),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)
