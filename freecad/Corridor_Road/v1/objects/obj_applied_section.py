@@ -73,6 +73,10 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "SurfaceLeftWidths", "Surface", "left design surface widths")
     _add_property(obj, "App::PropertyFloatList", "SurfaceRightWidths", "Surface", "right design surface widths")
     _add_property(obj, "App::PropertyFloatList", "SubgradeDepths", "Surface", "subgrade depths")
+    _add_property(obj, "App::PropertyFloatList", "DaylightLeftWidths", "Surface", "left daylight widths")
+    _add_property(obj, "App::PropertyFloatList", "DaylightRightWidths", "Surface", "right daylight widths")
+    _add_property(obj, "App::PropertyFloatList", "DaylightLeftSlopes", "Surface", "left daylight slopes")
+    _add_property(obj, "App::PropertyFloatList", "DaylightRightSlopes", "Surface", "right daylight slopes")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Resolved Context", "resolved region ids")
     _add_property(obj, "App::PropertyStringList", "AssemblyIds", "Resolved Context", "resolved assembly ids")
     _add_property(obj, "App::PropertyStringList", "TemplateIds", "Resolved Context", "resolved template ids")
@@ -168,6 +172,10 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.SurfaceLeftWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_left_width", 0.0) or 0.0) for row in station_rows]
     obj.SurfaceRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_right_width", 0.0) or 0.0) for row in station_rows]
     obj.SubgradeDepths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "subgrade_depth", 0.0) or 0.0) for row in station_rows]
+    obj.DaylightLeftWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_left_width", 0.0) or 0.0) for row in station_rows]
+    obj.DaylightRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_width", 0.0) or 0.0) for row in station_rows]
+    obj.DaylightLeftSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_left_slope", 0.0) or 0.0) for row in station_rows]
+    obj.DaylightRightSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_slope", 0.0) or 0.0) for row in station_rows]
     obj.RegionIds = [str(getattr(section_by_id.get(row.applied_section_id), "region_id", "") or "") for row in station_rows]
     obj.AssemblyIds = [str(getattr(section_by_id.get(row.applied_section_id), "assembly_id", "") or "") for row in station_rows]
     obj.TemplateIds = [str(getattr(section_by_id.get(row.applied_section_id), "template_id", "") or "") for row in station_rows]
@@ -213,6 +221,10 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 surface_left_width=_float_value(getattr(obj, "SurfaceLeftWidths", []), index, 0.0),
                 surface_right_width=_float_value(getattr(obj, "SurfaceRightWidths", []), index, 0.0),
                 subgrade_depth=_float_value(getattr(obj, "SubgradeDepths", []), index, 0.0),
+                daylight_left_width=_float_value(getattr(obj, "DaylightLeftWidths", []), index, 0.0),
+                daylight_right_width=_float_value(getattr(obj, "DaylightRightWidths", []), index, 0.0),
+                daylight_left_slope=_float_value(getattr(obj, "DaylightLeftSlopes", []), index, 0.0),
+                daylight_right_slope=_float_value(getattr(obj, "DaylightRightSlopes", []), index, 0.0),
                 frame=AppliedSectionFrame(
                     station=float(station),
                     x=_float_value(getattr(obj, "FrameXValues", []), index, 0.0),

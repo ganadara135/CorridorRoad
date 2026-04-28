@@ -107,6 +107,12 @@ def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None,
     obj = create_or_update_v1_corridor_model_object(document=doc, project=prj, corridor_model=corridor_model)
     if surface_model is not None:
         create_or_update_v1_surface_model_object(document=doc, project=prj, surface_model=surface_model)
+        create_corridor_centerline_3d_preview(
+            document=doc,
+            project=prj,
+            corridor_model=corridor_model,
+            applied_section_set_ref=str(getattr(corridor_model, "applied_section_set_ref", "") or ""),
+        )
         create_corridor_design_surface_preview(
             document=doc,
             project=prj,
@@ -119,8 +125,81 @@ def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None,
             corridor_model=corridor_model,
             surface_model=surface_model,
         )
+        create_corridor_daylight_surface_preview(
+            document=doc,
+            project=prj,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
     try:
         doc.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def create_corridor_centerline_3d_preview(
+    *,
+    document=None,
+    project=None,
+    corridor_model=None,
+    applied_section_set_ref: str = "",
+):
+    """Create or update a spline-based 3D centerline preview from AppliedSection frames."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None or corridor_model is None:
+        return None
+    applied_obj = find_v1_applied_section_set(doc)
+    applied_section_set = to_applied_section_set(applied_obj)
+    if applied_section_set is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+
+    points, stations = _centerline_points_from_applied_sections(applied_section_set, AppModule)
+    if len(points) < 2:
+        return None
+    shape, curve_kind = _make_centerline_shape(points, Part)
+    obj = doc.getObject("V1CorridorCenterline3DPreview")
+    if obj is None:
+        obj = doc.addObject("Part::Feature", "V1CorridorCenterline3DPreview")
+    try:
+        obj.Shape = shape
+        obj.Label = "Corridor 3D Centerline"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_corridor_centerline_preview")
+    _set_preview_property(obj, "V1ObjectType", "V1CorridorCenterlinePreview")
+    _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+    _set_preview_property(
+        obj,
+        "AppliedSectionSetId",
+        str(applied_section_set_ref or getattr(applied_section_set, "applied_section_set_id", "") or ""),
+    )
+    _set_preview_property(obj, "DisplayCurveKind", curve_kind)
+    _set_preview_integer_property(obj, "PointCount", len(points))
+    if stations:
+        _set_preview_float_property(obj, "StationStart", min(stations))
+        _set_preview_float_property(obj, "StationEnd", max(stations))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.LineColor = (0.0, 0.85, 1.0)
+            vobj.PointColor = (0.0, 0.85, 1.0)
+            vobj.ShapeColor = (0.0, 0.85, 1.0)
+            vobj.LineWidth = 5.0
+            vobj.PointSize = 6.0
+    except Exception:
+        pass
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(project or find_project(doc), obj)
     except Exception:
         pass
     return obj
@@ -223,6 +302,64 @@ def create_corridor_subgrade_surface_preview(
             route_to_v1_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
+    return preview_obj
+
+
+def create_corridor_daylight_surface_preview(
+    *,
+    document=None,
+    project=None,
+    corridor_model=None,
+    surface_model=None,
+):
+    """Create or update the first slope-face mesh preview for a corridor."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None or corridor_model is None or surface_model is None:
+        return None
+    applied_obj = find_v1_applied_section_set(doc)
+    applied_section_set = to_applied_section_set(applied_obj)
+    if applied_section_set is None:
+        return None
+    surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
+    try:
+        tin_surface = CorridorSurfaceGeometryService().build_daylight_surface(
+            CorridorDesignSurfaceGeometryRequest(
+                project_id=_project_id(project or find_project(doc)),
+                corridor=corridor_model,
+                applied_section_set=applied_section_set,
+                surface_id=surface_id,
+                existing_ground_surface=_resolve_corridor_existing_ground_tin_surface(doc),
+            )
+        )
+    except Exception:
+        return None
+    result = TINMeshPreviewMapper().create_or_update_preview_object(
+        doc,
+        tin_surface,
+        object_name="V1CorridorDaylightSurfacePreview",
+        label_prefix="Corridor Slope Face Surface",
+        surface_role="daylight",
+    )
+    preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
+    if preview_obj is not None:
+        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
+        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
+        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        _attach_surface_quality_properties(preview_obj, tin_surface)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(doc), preview_obj)
+        except Exception:
+            pass
+        _create_slope_face_diagnostic_markers(
+            document=doc,
+            project=project or find_project(doc),
+            surface=tin_surface,
+            corridor_model=corridor_model,
+        )
     return preview_obj
 
 
@@ -345,6 +482,320 @@ def _set_preview_property(obj, name: str, value: str) -> None:
         setattr(obj, name, str(value or ""))
     except Exception:
         pass
+
+
+def _set_preview_integer_property(obj, name: str, value: int) -> None:
+    try:
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyInteger", name, "CorridorRoad", name)
+        setattr(obj, name, int(value or 0))
+    except Exception:
+        pass
+
+
+def _set_preview_float_property(obj, name: str, value: float) -> None:
+    try:
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyFloat", name, "CorridorRoad", name)
+        setattr(obj, name, float(value or 0.0))
+    except Exception:
+        pass
+
+
+def _centerline_points_from_applied_sections(applied_section_set, app_module):
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
+    rows = sorted(
+        list(getattr(applied_section_set, "station_rows", []) or []),
+        key=lambda row: float(getattr(row, "station", 0.0) or 0.0),
+    )
+    points = []
+    stations = []
+    for row in rows:
+        section = sections.get(str(getattr(row, "applied_section_id", "") or ""))
+        frame = getattr(section, "frame", None) if section is not None else None
+        if frame is None:
+            continue
+        try:
+            point = app_module.Vector(float(frame.x), float(frame.y), float(frame.z))
+            station = float(getattr(frame, "station", getattr(row, "station", 0.0)) or 0.0)
+        except Exception:
+            continue
+        if points and _same_centerline_point(points[-1], point):
+            continue
+        points.append(point)
+        stations.append(station)
+    return points, stations
+
+
+def _same_centerline_point(left, right, tolerance: float = 1.0e-7) -> bool:
+    try:
+        return (
+            abs(float(left.x) - float(right.x)) <= tolerance
+            and abs(float(left.y) - float(right.y)) <= tolerance
+            and abs(float(left.z) - float(right.z)) <= tolerance
+        )
+    except Exception:
+        return False
+
+
+def _make_centerline_shape(points, part_module):
+    if len(points) < 2:
+        return part_module.Shape(), "empty"
+    if len(points) == 2:
+        return part_module.makeLine(points[0], points[1]), "line"
+    try:
+        curve = part_module.BSplineCurve()
+        curve.interpolate(points)
+        return curve.toShape(), "spline"
+    except Exception:
+        edges = []
+        for idx in range(len(points) - 1):
+            try:
+                edges.append(part_module.makeLine(points[idx], points[idx + 1]))
+            except Exception:
+                pass
+        if not edges:
+            return part_module.Shape(), "empty"
+        return part_module.makeCompound(edges), "polyline_fallback"
+
+
+def _attach_surface_quality_properties(obj, surface) -> None:
+    quality = {str(getattr(row, "kind", "") or ""): getattr(row, "value", 0) for row in list(getattr(surface, "quality_rows", []) or [])}
+    _set_preview_integer_property(obj, "EGTieInHitCount", int(float(quality.get("eg_tie_in_hit_count", 0) or 0)))
+    _set_preview_integer_property(obj, "EGTieInMissCount", int(float(quality.get("eg_tie_in_miss_count", 0) or 0)))
+    _set_preview_integer_property(obj, "EGIntersectionCount", int(float(quality.get("eg_intersection_count", 0) or 0)))
+    _set_preview_integer_property(obj, "EGOuterEdgeSampleCount", int(float(quality.get("eg_outer_edge_sample_count", 0) or 0)))
+    _set_preview_integer_property(obj, "SlopeFaceFallbackCount", int(float(quality.get("slope_face_fallback_count", 0) or 0)))
+    summary = (
+        f"EG intersections: {int(float(quality.get('eg_intersection_count', 0) or 0))}, "
+        f"outer-edge samples: {int(float(quality.get('eg_outer_edge_sample_count', 0) or 0))}, "
+        f"fallbacks: {int(float(quality.get('slope_face_fallback_count', 0) or 0))}, "
+        f"hits: {int(float(quality.get('eg_tie_in_hit_count', 0) or 0))}, "
+        f"misses: {int(float(quality.get('eg_tie_in_miss_count', 0) or 0))}"
+    )
+    _set_preview_property(obj, "SlopeFaceDiagnosticSummary", summary)
+
+
+def _create_slope_face_diagnostic_markers(*, document=None, project=None, surface=None, corridor_model=None):
+    """Create visible 3D markers for slope-face EG tie-in states."""
+
+    if document is None or surface is None:
+        return []
+    status_points = _slope_face_status_points(surface)
+    if not status_points:
+        _remove_slope_face_diagnostic_markers(document)
+        return []
+    marker_specs = [
+        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face EG Intersections", (0.10, 0.85, 0.25)),
+        ("sampled_outer_edge", "ReviewIssueSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", (1.00, 0.72, 0.10)),
+        ("fallback", "ReviewIssueSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", (1.00, 0.18, 0.12)),
+    ]
+    radius = _marker_radius([point for points in status_points.values() for point in points])
+    created = []
+    for status_key, object_name, label, color in marker_specs:
+        points = status_points.get(status_key, [])
+        obj = _create_marker_compound(
+            document=document,
+            object_name=object_name,
+            label=label,
+            points=points,
+            radius=radius,
+            color=color,
+            surface=surface,
+            corridor_model=corridor_model,
+        )
+        if obj is not None:
+            created.append(obj)
+            try:
+                from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+                route_to_v1_tree(project or find_project(document), obj)
+            except Exception:
+                pass
+    return created
+
+
+def _remove_slope_face_diagnostic_markers(document) -> None:
+    for name in (
+        "ReviewIssueSlopeFaceIntersectionMarkers",
+        "ReviewIssueSlopeFaceSampledEdgeMarkers",
+        "ReviewIssueSlopeFaceFallbackMarkers",
+    ):
+        try:
+            obj = document.getObject(name)
+            if obj is not None:
+                document.removeObject(obj.Name)
+        except Exception:
+            pass
+
+
+def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, float]]]:
+    points: dict[str, list[tuple[float, float, float]]] = {
+        "intersection": [],
+        "sampled_outer_edge": [],
+        "fallback": [],
+    }
+    for vertex in list(getattr(surface, "vertex_rows", []) or []):
+        vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+        if not vertex_id.endswith(":outer"):
+            continue
+        status = str(getattr(vertex, "notes", "") or "")
+        if status == "intersection":
+            key = "intersection"
+        elif status == "sampled_outer_edge":
+            key = "sampled_outer_edge"
+        else:
+            key = "fallback"
+        points[key].append((float(vertex.x), float(vertex.y), float(vertex.z)))
+    return points
+
+
+def _create_marker_compound(
+    *,
+    document,
+    object_name: str,
+    label: str,
+    points: list[tuple[float, float, float]],
+    radius: float,
+    color: tuple[float, float, float],
+    surface,
+    corridor_model,
+):
+    try:
+        import Part
+        import FreeCAD as AppModule
+    except Exception:
+        return None
+    obj = document.getObject(object_name)
+    if not points:
+        if obj is not None:
+            try:
+                document.removeObject(obj.Name)
+            except Exception:
+                pass
+        return None
+    shapes = []
+    for x, y, z in points:
+        try:
+            shapes.append(Part.makeSphere(float(radius), AppModule.Vector(float(x), float(y), float(z))))
+        except Exception:
+            pass
+    if not shapes:
+        return None
+    if obj is None:
+        obj = document.addObject("Part::Feature", object_name)
+    try:
+        obj.Shape = Part.makeCompound(shapes)
+        obj.Label = label
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "slope_face_tie_in")
+    _set_preview_property(obj, "SurfaceId", str(getattr(surface, "surface_id", "") or ""))
+    _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+    _set_preview_integer_property(obj, "MarkerCount", len(points))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.ShapeColor = color
+            vobj.PointColor = color
+            vobj.LineColor = color
+            vobj.Transparency = 0
+    except Exception:
+        pass
+    return obj
+
+
+def _marker_radius(points: list[tuple[float, float, float]]) -> float:
+    if not points:
+        return 0.5
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    zs = [point[2] for point in points]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+    return max(0.15, min(2.0, float(span or 1.0) * 0.015))
+
+
+def _resolve_corridor_existing_ground_tin_surface(document):
+    """Resolve an EG TIN for corridor slope-face tie-in without selecting corridor previews."""
+
+    if document is None:
+        return None
+    try:
+        from .cmd_review_tin import _tin_surface_candidate_sort_key, _tin_surface_from_object
+        from ..models.result.tin_surface import TINSurface
+    except Exception:
+        return None
+
+    candidates = []
+    if Gui is not None:
+        try:
+            candidates.extend(list(Gui.Selection.getSelection() or []))
+        except Exception:
+            pass
+    project = find_project(document)
+    if project is not None:
+        try:
+            terrain = getattr(project, "Terrain", None)
+            if terrain is not None:
+                candidates.append(terrain)
+        except Exception:
+            pass
+    candidates.extend(list(getattr(document, "Objects", []) or []))
+
+    seen = set()
+    for obj in sorted(candidates, key=_tin_surface_candidate_sort_key):
+        name = str(getattr(obj, "Name", "") or "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if _skip_corridor_existing_ground_candidate(obj):
+            continue
+        try:
+            surface = _tin_surface_from_object(obj, max_triangles=250000)
+        except Exception:
+            surface = None
+        if isinstance(surface, TINSurface):
+            return surface
+    return None
+
+
+def _skip_corridor_existing_ground_candidate(obj) -> bool:
+    if obj is None:
+        return True
+    record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+    if record_kind == "v1_corridor_surface_preview":
+        return True
+    if record_kind == "v1_review_issue":
+        return True
+    if record_kind.startswith("profile_show_preview"):
+        return True
+    surface_role = str(getattr(obj, "SurfaceRole", "") or "").lower()
+    if surface_role in {"design", "subgrade", "daylight"}:
+        return True
+    surface_kind = str(getattr(obj, "SurfaceKind", "") or "").lower()
+    if surface_kind in {"design_surface", "subgrade_surface", "daylight_surface"}:
+        return True
+    v1_type = str(getattr(obj, "V1ObjectType", "") or "")
+    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing", "V1CorridorModel", "V1SurfaceModel", "ReviewIssue"}:
+        return True
+    preview_role = str(getattr(obj, "PreviewRole", "") or "").lower()
+    if preview_role in {"boundary", "void"}:
+        return True
+    name = str(getattr(obj, "Name", "") or "")
+    label = str(getattr(obj, "Label", "") or "")
+    if name.startswith("ReviewIssue"):
+        return True
+    if name.startswith(("CRV1_TIN_Boundary_Rectangle_Preview", "CRV1_TIN_Void_Rectangle_Preview")):
+        return True
+    if label.startswith(("TIN Boundary Rectangle Preview", "TIN Void Rectangle Preview")):
+        return True
+    return False
 
 
 def _show_message(parent, title: str, message: str) -> None:

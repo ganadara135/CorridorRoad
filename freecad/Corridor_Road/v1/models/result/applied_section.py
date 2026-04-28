@@ -76,6 +76,10 @@ class AppliedSection(ResultModelBase):
     surface_left_width: float = 0.0
     surface_right_width: float = 0.0
     subgrade_depth: float = 0.0
+    daylight_left_width: float = 0.0
+    daylight_right_width: float = 0.0
+    daylight_left_slope: float = 0.0
+    daylight_right_slope: float = 0.0
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)

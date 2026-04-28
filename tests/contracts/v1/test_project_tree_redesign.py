@@ -141,6 +141,7 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
             ("V1AppliedSectionSet", V1_TREE_APPLIED_SECTIONS),
             ("SectionSet", V1_TREE_APPLIED_SECTIONS),
             ("V1CorridorModel", V1_TREE_CORRIDOR_MODEL),
+            ("V1CorridorCenterlinePreview", V1_TREE_CORRIDOR_MODEL),
             ("V1SurfaceModel", V1_TREE_DESIGN_TIN),
         ]
         for object_name, key in cases:

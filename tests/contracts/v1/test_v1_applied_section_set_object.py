@@ -47,6 +47,10 @@ def _sample_set() -> AppliedSectionSet:
                 surface_left_width=5.0,
                 surface_right_width=4.5,
                 subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=2.5,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.4,
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
@@ -64,6 +68,10 @@ def _sample_set() -> AppliedSectionSet:
                 surface_left_width=5.5,
                 surface_right_width=4.0,
                 subgrade_depth=0.20,
+                daylight_left_width=3.5,
+                daylight_right_width=2.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.4,
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
@@ -91,6 +99,10 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.SurfaceLeftWidths) == [5.0, 5.5]
         assert list(obj.SurfaceRightWidths) == [4.5, 4.0]
         assert list(obj.SubgradeDepths) == [0.25, 0.20]
+        assert list(obj.DaylightLeftWidths) == [3.0, 3.5]
+        assert list(obj.DaylightRightWidths) == [2.5, 2.0]
+        assert list(obj.DaylightLeftSlopes) == [-0.5, -0.5]
+        assert list(obj.DaylightRightSlopes) == [-0.4, -0.4]
         assert list(obj.RegionIds) == ["region:main", "region:main"]
         assert list(obj.AssemblyIds) == ["assembly:basic-road", "assembly:basic-road"]
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
@@ -117,6 +129,8 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [section.surface_left_width for section in model.sections] == [5.0, 5.5]
         assert [section.surface_right_width for section in model.sections] == [4.5, 4.0]
         assert [section.subgrade_depth for section in model.sections] == [0.25, 0.20]
+        assert [section.daylight_left_width for section in model.sections] == [3.0, 3.5]
+        assert [section.daylight_right_width for section in model.sections] == [2.5, 2.0]
         assert find_v1_applied_section_set(doc) == obj
     finally:
         App.closeDocument(doc.Name)

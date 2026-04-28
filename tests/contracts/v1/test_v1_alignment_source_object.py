@@ -58,9 +58,10 @@ def test_create_sample_v1_alignment_builds_display_shape() -> None:
         assert shape is not None
         assert not shape.isNull()
         assert int(alignment.CompiledPointCount) == 7
-        assert int(alignment.CompiledEdgeCount) == 4
+        assert int(alignment.CompiledEdgeCount) == 1
         assert int(alignment.CompiledCurveElementCount) == 1
         assert int(alignment.CompiledTransitionElementCount) == 0
+        assert "BSpline" in type(shape.Edges[0].Curve).__name__
         assert build_v1_alignment_shape(alignment) is not None
     finally:
         App.closeDocument(doc.Name)

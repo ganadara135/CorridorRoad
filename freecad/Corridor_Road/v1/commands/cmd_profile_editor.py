@@ -2103,14 +2103,18 @@ def _skip_profile_preview_tin_candidate(obj) -> bool:
     name = str(getattr(obj, "Name", "") or "")
     if name.startswith("FinishedGradeFG_ShowPreview"):
         return True
+    if name.startswith("ReviewIssue"):
+        return True
     v1_type = str(getattr(obj, "V1ObjectType", "") or "")
-    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing", "ReviewIssue"}:
         return True
     record_kind = str(getattr(obj, "CRRecordKind", "") or "")
+    if record_kind == "v1_review_issue":
+        return True
     if record_kind.startswith("profile_show_preview"):
         return True
     proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
-    if proxy_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+    if proxy_type in {"V1Alignment", "V1Profile", "V1Stationing", "ReviewIssue"}:
         return True
     return False
 
@@ -2224,12 +2228,63 @@ def _make_profile_polyline(points, *, stroke_width: float = 0.0):
         return None
     if len(pts) < 2:
         return Part.Shape()
+    spline_shape = _make_profile_spline(pts)
     if float(stroke_width or 0.0) > 0.0:
-        return _make_profile_edges(list(zip(pts, pts[1:])), stroke_width=stroke_width)
+        return _make_profile_stroked_curve(spline_shape, pts, stroke_width=stroke_width)
+    if spline_shape is not None:
+        return spline_shape
     try:
         return Part.makePolygon(pts)
     except Exception:
         return _make_profile_edges(list(zip(pts, pts[1:])))
+
+
+def _make_profile_spline(points):
+    pts = _profile_unique_points(points)
+    if Part is None or len(pts) < 2:
+        return None
+    if len(pts) == 2:
+        try:
+            return Part.makeLine(pts[0], pts[1])
+        except Exception:
+            return None
+    try:
+        curve = Part.BSplineCurve()
+        curve.interpolate(pts)
+        return curve.toShape()
+    except Exception:
+        return None
+
+
+def _make_profile_stroked_curve(spline_shape, fallback_points, *, stroke_width: float):
+    points = _profile_curve_sample_points(spline_shape, fallback_points)
+    return _make_profile_edges(list(zip(points, points[1:])), stroke_width=stroke_width)
+
+
+def _profile_curve_sample_points(shape, fallback_points, *, sample_count: int = 96):
+    fallback = _profile_unique_points(fallback_points)
+    edge = None
+    try:
+        edges = list(getattr(shape, "Edges", []) or [])
+        edge = edges[0] if edges else None
+    except Exception:
+        edge = None
+    if edge is None:
+        return fallback
+    try:
+        points = list(edge.discretize(Number=max(2, int(sample_count))) or [])
+        return _profile_unique_points(points) or fallback
+    except Exception:
+        return fallback
+
+
+def _profile_unique_points(points):
+    clean = []
+    for point in list(points or []):
+        if clean and (point - clean[-1]).Length <= 1.0e-9:
+            continue
+        clean.append(point)
+    return clean
 
 
 def _make_profile_edges(edges, *, stroke_width: float = 0.0):

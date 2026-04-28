@@ -140,6 +140,7 @@ class AppliedSectionService:
         )
         left_width, right_width = self._surface_widths(template)
         subgrade_depth = self._subgrade_depth(template)
+        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
 
         return AppliedSection(
             schema_version=1,
@@ -161,6 +162,10 @@ class AppliedSectionService:
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
+            daylight_left_width=daylight_left_width,
+            daylight_right_width=daylight_right_width,
+            daylight_left_slope=daylight_left_slope,
+            daylight_right_slope=daylight_right_slope,
             label=f"STA {request.station:g}",
             source_refs=[
                 ref
@@ -365,6 +370,47 @@ class AppliedSectionService:
                 depths.append(thickness)
         return max(depths) if depths else 0.0
 
+    @staticmethod
+    def _daylight_policy(template: SectionTemplate | None) -> tuple[float, float, float, float]:
+        """Resolve first-slice daylight widths and slopes from side-slope components."""
+
+        if template is None:
+            return 0.0, 0.0, 0.0, 0.0
+        left_width = 0.0
+        right_width = 0.0
+        left_slopes: list[float] = []
+        right_slopes: list[float] = []
+        for component in list(template.component_rows or []):
+            if not bool(getattr(component, "enabled", True)):
+                continue
+            if str(getattr(component, "kind", "") or "") != "side_slope":
+                continue
+            width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+            slope = float(getattr(component, "slope", 0.0) or 0.0)
+            side = str(getattr(component, "side", "") or "center")
+            if side == "left":
+                left_width += width
+                left_slopes.append(slope)
+            elif side == "right":
+                right_width += width
+                right_slopes.append(slope)
+            elif side == "both":
+                left_width += width
+                right_width += width
+                left_slopes.append(slope)
+                right_slopes.append(slope)
+            else:
+                left_width += width * 0.5
+                right_width += width * 0.5
+                left_slopes.append(slope)
+                right_slopes.append(slope)
+        return (
+            left_width,
+            right_width,
+            _average(left_slopes),
+            _average(right_slopes),
+        )
+
 
 class AppliedSectionSetService:
     """Build an ordered AppliedSectionSet from station rows and source models."""
@@ -447,3 +493,8 @@ def _unique_stations(values: list[float]) -> list[float]:
         seen.add(key)
         output.append(value)
     return output
+
+
+def _average(values: list[float]) -> float:
+    numbers = [float(value) for value in list(values or [])]
+    return sum(numbers) / len(numbers) if numbers else 0.0

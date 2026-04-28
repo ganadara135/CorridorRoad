@@ -1,9 +1,12 @@
 import FreeCAD as App
 
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import V1_TREE_ASSEMBLIES, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     CmdV1AssemblyEditor,
+    assembly_preset_model_from_document,
+    assembly_preset_names,
     apply_v1_assembly_model,
+    show_assembly_preview_object,
     starter_assembly_model_from_document,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
@@ -36,6 +39,24 @@ def test_starter_assembly_model_builds_basic_road_components() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_assembly_presets_offer_multiple_practical_templates() -> None:
+    doc, project = _new_project_doc()
+    try:
+        names = assembly_preset_names()
+
+        assert "Basic Road" in names
+        assert "Urban Curb & Gutter" in names
+        assert "Bridge Interface" in names
+        urban = assembly_preset_model_from_document("Urban Curb & Gutter", doc, project=project)
+        components = urban.template_rows[0].component_rows
+        assert urban.assembly_id == "assembly:urban-curb-gutter"
+        assert urban.active_template_id == "template:urban-curb-gutter"
+        assert "gutter" in [component.kind for component in components]
+        assert "sidewalk" in [component.kind for component in components]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_apply_v1_assembly_model_creates_source_object() -> None:
     doc, project = _new_project_doc()
     try:
@@ -53,11 +74,35 @@ def test_apply_v1_assembly_model_creates_source_object() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_show_assembly_preview_object_creates_front_view_cross_section() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        model = starter_assembly_model_from_document(doc, project=project)
+
+        obj = show_assembly_preview_object(doc, model)
+
+        assert obj is not None
+        assert obj.CRRecordKind == "v1_assembly_show_preview"
+        assert obj.V1ObjectType == "V1AssemblyShowPreview"
+        assert obj.AssemblyId == "assembly:basic-road"
+        assert int(obj.ComponentCount) == 6
+        assert obj.Shape.BoundBox.XLength > 0.0
+        assert obj.Shape.BoundBox.ZLength > 0.0
+        assert obj.Name in _group_names(tree[V1_TREE_ASSEMBLIES])
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_assembly_editor_command_resources_are_v1_assembly() -> None:
     resources = CmdV1AssemblyEditor().GetResources()
 
     assert resources["MenuText"] == "Assembly"
     assert "v1" in resources["ToolTip"]
+
+
+def _group_names(folder) -> set[str]:
+    return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}
 
 
 if __name__ == "__main__":

@@ -196,6 +196,12 @@ Recommended high-level categories:
 - daylight-related terminal behavior
 - structure-aware modifiers
 
+Terminology note:
+
+- `side_slope` means the engineered slope face between the design edge and the surrounding terrain.
+- `daylight` means the terminal condition where that slope face ties into existing ground.
+- In Korean practice, the user-facing design object is the slope face; internally some v1 contracts still use `daylight` for the terrain tie-in family.
+
 ### 6.4 Recommended component kinds
 
 Initial practical kinds may include:
@@ -466,9 +472,11 @@ Current implementation note:
 
 - `AppliedSectionService` resolves first-slice left/right design-surface widths from enabled Assembly components such as lanes, shoulders, medians, curbs, gutters, sidewalks, bike lanes, and green strips
 - `AppliedSectionService` resolves first-slice `subgrade_depth` from the maximum enabled Assembly component thickness for pavement-like components
+- `AppliedSectionService` resolves first-slice daylight widths and slopes from enabled `side_slope` Assembly components
 - `V1AppliedSectionSet` persists those left/right surface widths with the station frame so corridor surface preview can rebuild without re-reading UI state
 - `V1AppliedSectionSet` also persists `subgrade_depth` so subgrade preview can rebuild from result data
-- side slope and ditch components are intentionally not folded into the finished-grade width; they belong to later daylight/drainage surface handling
+- `V1AppliedSectionSet` also persists slope-face width/slope policy so the daylight/tie-in preview can rebuild from result data
+- ditch components are intentionally not folded into the finished-grade width; they belong to later drainage surface handling
 
 ## 14. AppliedSectionSet Structure
 

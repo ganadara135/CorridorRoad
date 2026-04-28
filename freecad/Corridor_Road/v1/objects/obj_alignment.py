@@ -225,6 +225,7 @@ def build_v1_alignment_shape(obj):
         return None
     ensure_v1_alignment_properties(obj)
     edges = []
+    display_points = []
     point_count = 0
     curve_count = 0
     transition_count = 0
@@ -242,10 +243,11 @@ def build_v1_alignment_shape(obj):
         y_values = _csv_float_row(y_rows[index]) if index < len(y_rows) else []
         points = _xy_points(x_values, y_values)
         point_count += len(points)
-        for start, end in zip(points, points[1:]):
-            if (end - start).Length <= 1.0e-9:
-                continue
-            edges.append(Part.makeLine(start, end))
+        display_points = _append_unique_points(display_points, points)
+
+    edge = _display_edge_from_points(display_points)
+    if edge is not None:
+        edges.append(edge)
 
     try:
         obj.CompiledPointCount = int(point_count)
@@ -362,6 +364,51 @@ def _xy_points(x_values: list[float], y_values: list[float]):
         except Exception:
             continue
     return points
+
+
+def _append_unique_points(existing, points):
+    output = list(existing or [])
+    for point in list(points or []):
+        if output and (point - output[-1]).Length <= 1.0e-9:
+            continue
+        output.append(point)
+    return output
+
+
+def _display_edge_from_points(points):
+    clean = _append_unique_points([], points)
+    if len(clean) < 2 or Part is None:
+        return None
+    if len(clean) == 2:
+        try:
+            return Part.makeLine(clean[0], clean[1])
+        except Exception:
+            return None
+    try:
+        curve = Part.BSplineCurve()
+        curve.interpolate(clean)
+        return curve.toShape()
+    except Exception:
+        return _polyline_compound_edge(clean)
+
+
+def _polyline_compound_edge(points):
+    edges = []
+    for start, end in zip(list(points or []), list(points or [])[1:]):
+        try:
+            if (end - start).Length <= 1.0e-9:
+                continue
+            edges.append(Part.makeLine(start, end))
+        except Exception:
+            continue
+    if not edges:
+        return None
+    if len(edges) == 1:
+        return edges[0]
+    try:
+        return Part.Compound(edges)
+    except Exception:
+        return edges[0]
 
 
 def _project_id(project) -> str:

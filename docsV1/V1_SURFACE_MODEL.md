@@ -84,6 +84,12 @@ Typical corridor-derived surface families include:
 - `DaylightTIN`
 - corridor-derived comparison or clipped surfaces
 
+Terminology note:
+
+- The practical design object is the slope face.
+- `DaylightTIN` is the v1 surface family name for slope-face terrain tie-in output.
+- Early geometry may show a slope-face strip; later geometry should resolve the real slope-face daylight line against existing ground.
+
 `SurfaceModel` is where those results become explicit, grouped, and traceable.
 
 ## 7. Surface Scope in v1
@@ -334,6 +340,10 @@ Current implementation status:
 - [x] build first-slice design-surface ribbon mesh preview from applied-section frames
 - [x] drive first-slice design-surface preview width from Assembly-derived left/right applied-section widths
 - [x] build first-slice subgrade-surface ribbon mesh preview from Assembly-derived subgrade depth
+- [x] build first-slice slope-face strip preview from Assembly-derived side-slope width and slope
+- [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
+- [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
+- [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
 - [ ] build full design, subgrade, and daylight TIN geometry from section points
 - [ ] add clipped review/export surface variants
 

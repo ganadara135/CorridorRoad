@@ -220,6 +220,12 @@ The initial v1 `Build Corridor` path consumes an existing `V1AppliedSectionSet` 
 
 This first path is orchestration-first and surface-first.
 
+Terminology note:
+
+- The user-facing roadside earthwork element is the slope face.
+- The internal `daylight_surface` result family represents that slope-face surface and its terrain tie-in behavior.
+- A later refinement should search the actual slope-face intersection with existing ground, rather than only sampling a fixed outer edge.
+
 It records:
 
 - corridor id
@@ -231,6 +237,9 @@ It records:
 - corridor-derived surface build reference
 
 It also creates the initial corridor-derived `V1SurfaceModel` result with design, subgrade, and daylight surface rows.
+
+It also creates a generated `Corridor 3D Centerline` preview from ordered `AppliedSectionSet` station frames.
+This preview is presentation geometry and should be rebuilt from the applied-section result, not edited as source intent.
 
 It does not generate final corridor solids.
 
@@ -401,6 +410,11 @@ Current implementation status:
 - [x] create first-slice corridor design-surface mesh preview under `03_Surfaces / Design TIN`
 - [x] use Assembly-derived left/right applied-section widths for the first-slice design-surface preview
 - [x] create first-slice corridor subgrade-surface mesh preview from Assembly-derived subgrade depth
+- [x] create first-slice corridor slope-face mesh preview from Assembly-derived side-slope policy
+- [x] create spline-based corridor 3D centerline preview from `AppliedSectionSet` frames during `Build Corridor`
+- [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
+- [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
+- [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
 - [ ] generate actual corridor TIN geometry for those rows
 - [ ] generate physical solid/component bodies
 

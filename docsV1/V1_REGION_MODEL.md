@@ -301,6 +301,24 @@ Separate region rows should be used when:
 - the overlap needs a different priority or transition
 - diagnostics need to isolate the behavior clearly
 
+### 11.8 Preset Data
+
+The Regions editor should use selectable preset data instead of a single starter-only command.
+
+Available first-slice presets:
+
+- `Basic Road`
+- `Bridge Segment`
+- `Intersection Zone`
+- `Ramp Tie-In`
+- `Drainage Control`
+
+Loading a preset only fills the editable Region table.
+
+Preset rows should scale to the current station range from v1 Stations or Alignment length.
+
+It does not create Applied Sections, Corridor surfaces, solids, or viewer-only geometry.
+
 ## 12. RegionPolicySet
 
 ### 12.1 Purpose

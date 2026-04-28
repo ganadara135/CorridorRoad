@@ -113,6 +113,34 @@ The first editor-level validation checks:
 - component ids are present and unique within the template
 - component width is not negative
 
+## Preset Data
+
+The Assembly editor should use selectable preset data instead of a single starter-only command.
+
+Available first-slice presets:
+
+- `Basic Road`
+- `Urban Curb & Gutter`
+- `Divided Road`
+- `Bridge Interface`
+- `Drainage Ditch Road`
+
+Loading a preset only fills the editable Assembly table.
+
+It does not create Applied Sections, Corridor surfaces, solids, or viewer-only geometry.
+
+## Preview
+
+The Assembly editor may provide a `Show` action.
+
+`Show` reads the current editable table values and creates a generated `Assembly Show Preview` cross-section in the 3D View.
+
+The preview should be shown in Front view.
+
+It is presentation geometry only.
+
+It should be rebuilt from Assembly source rows and must not become an editable design source.
+
 ## Non-goals
 
 The Assembly editor does not build corridor solids.
@@ -124,14 +152,16 @@ The Assembly source object does not replace Region, Structure, Drainage, Ramp, o
 ## Initial Workflow
 
 1. Open `Assembly`.
-2. Click `Load Starter Assembly`.
-3. Edit component rows.
-4. Click `Validate`.
-5. Click `Apply`.
-6. Open `Regions`.
-7. Select the resulting `assembly_id` in the Region `Assembly` column.
-8. Click `Validate`.
-9. Click `Apply`.
+2. Select an Assembly preset.
+3. Click `Load Preset`.
+4. Edit component rows.
+5. Click `Show` to review the cross-section line when needed.
+6. Click `Validate`.
+7. Click `Apply`.
+8. Open `Regions`.
+9. Select the resulting `assembly_id` in the Region `Assembly` column.
+10. Click `Validate`.
+11. Click `Apply`.
 
 Expected tree location:
 

@@ -636,6 +636,8 @@ def _skip_tin_surface_candidate(obj) -> bool:
     record_kind = str(getattr(obj, "CRRecordKind", "") or "")
     if record_kind == "tin_edit_rectangle_preview":
         return True
+    if record_kind == "v1_review_issue":
+        return True
     if record_kind.startswith("profile_show_preview"):
         return True
     preview_role = str(getattr(obj, "PreviewRole", "") or "").lower()
@@ -643,15 +645,17 @@ def _skip_tin_surface_candidate(obj) -> bool:
         return True
     name = str(getattr(obj, "Name", "") or "")
     label = str(getattr(obj, "Label", "") or "")
+    if name.startswith("ReviewIssue"):
+        return True
     if name.startswith(("CRV1_TIN_Boundary_Rectangle_Preview", "CRV1_TIN_Void_Rectangle_Preview")):
         return True
     if label.startswith(("TIN Boundary Rectangle Preview", "TIN Void Rectangle Preview")):
         return True
     v1_type = str(getattr(obj, "V1ObjectType", "") or "")
-    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+    if v1_type in {"V1Alignment", "V1Profile", "V1Stationing", "ReviewIssue"}:
         return True
     proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
-    if proxy_type in {"V1Alignment", "V1Profile", "V1Stationing"}:
+    if proxy_type in {"V1Alignment", "V1Profile", "V1Stationing", "ReviewIssue"}:
         return True
     return False
 

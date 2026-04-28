@@ -9,6 +9,8 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
     apply_v1_region_model,
     region_assembly_reference_warnings,
+    region_preset_model_from_document,
+    region_preset_names,
     starter_region_model_from_document,
 )
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
@@ -42,6 +44,29 @@ def test_starter_region_model_uses_generated_station_range() -> None:
         assert model.region_rows[0].station_end == max(stations)
         assert model.region_rows[0].priority == 10
         assert model.alignment_id == alignment.AlignmentId
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_presets_offer_multiple_practical_region_sets() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
+        names = region_preset_names()
+
+        assert "Basic Road" in names
+        assert "Bridge Segment" in names
+        assert "Drainage Control" in names
+        model = region_preset_model_from_document("Bridge Segment", doc, project=project, alignment=alignment)
+
+        stations = list(stationing.StationValues)
+        assert len(model.region_rows) == 3
+        assert [row.primary_kind for row in model.region_rows] == ["normal_road", "bridge", "normal_road"]
+        assert model.region_rows[0].station_start == min(stations)
+        assert model.region_rows[-1].station_end == max(stations)
+        assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
+        assert model.region_rows[1].drainage_refs == ["drainage:deck-drain"]
     finally:
         App.closeDocument(doc.Name)
 

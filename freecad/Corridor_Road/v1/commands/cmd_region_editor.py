@@ -33,36 +33,224 @@ from ..services.evaluation.region_resolution_service import RegionValidationServ
 REGION_KIND_CHOICES = list(REGION_PRIMARY_KINDS)
 
 
+REGION_PRESETS = {
+    "Basic Road": {
+        "note": "Single normal-road region across the available station range.",
+        "rows": [
+            {
+                "id": "region:normal-01",
+                "kind": "normal_road",
+                "start": 0.0,
+                "end": 1.0,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Preset normal road region.",
+            }
+        ],
+    },
+    "Bridge Segment": {
+        "note": "Normal approach regions with one bridge work zone in the middle.",
+        "rows": [
+            {
+                "id": "region:normal-before",
+                "kind": "normal_road",
+                "start": 0.0,
+                "end": 0.35,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Approach road before bridge.",
+            },
+            {
+                "id": "region:bridge-01",
+                "kind": "bridge",
+                "start": 0.35,
+                "end": 0.65,
+                "layers": ["drainage"],
+                "structures": ["structure:bridge-01"],
+                "drainage": ["drainage:deck-drain"],
+                "priority": 80,
+                "notes": "Bridge region with deck drainage layer.",
+            },
+            {
+                "id": "region:normal-after",
+                "kind": "normal_road",
+                "start": 0.65,
+                "end": 1.0,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Approach road after bridge.",
+            },
+        ],
+    },
+    "Intersection Zone": {
+        "note": "Normal road with a central intersection control zone and drainage layer.",
+        "rows": [
+            {
+                "id": "region:normal-before",
+                "kind": "normal_road",
+                "start": 0.0,
+                "end": 0.40,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Mainline before intersection.",
+            },
+            {
+                "id": "region:intersection-01",
+                "kind": "intersection",
+                "start": 0.40,
+                "end": 0.60,
+                "layers": ["drainage", "widening"],
+                "structures": [],
+                "drainage": ["drainage:intersection-inlets"],
+                "priority": 70,
+                "notes": "At-grade intersection influence zone.",
+            },
+            {
+                "id": "region:normal-after",
+                "kind": "normal_road",
+                "start": 0.60,
+                "end": 1.0,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Mainline after intersection.",
+            },
+        ],
+    },
+    "Ramp Tie-In": {
+        "note": "Normal road with ramp influence, retaining/drainage layers, and transition zones.",
+        "rows": [
+            {
+                "id": "region:transition-in",
+                "kind": "transition",
+                "start": 0.0,
+                "end": 0.25,
+                "layers": ["widening"],
+                "structures": [],
+                "drainage": [],
+                "priority": 30,
+                "notes": "Ramp approach transition.",
+            },
+            {
+                "id": "region:ramp-01",
+                "kind": "ramp",
+                "start": 0.25,
+                "end": 0.75,
+                "layers": ["drainage", "retaining_wall"],
+                "structures": ["structure:retaining-wall-01"],
+                "drainage": ["drainage:ramp-ditch"],
+                "priority": 75,
+                "notes": "Ramp merge/diverge work zone.",
+            },
+            {
+                "id": "region:transition-out",
+                "kind": "transition",
+                "start": 0.75,
+                "end": 1.0,
+                "layers": ["widening"],
+                "structures": [],
+                "drainage": [],
+                "priority": 30,
+                "notes": "Ramp departure transition.",
+            },
+        ],
+    },
+    "Drainage Control": {
+        "note": "Normal road split by a drainage-control zone with ditch and culvert references.",
+        "rows": [
+            {
+                "id": "region:normal-before",
+                "kind": "normal_road",
+                "start": 0.0,
+                "end": 0.30,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Normal road before drainage control.",
+            },
+            {
+                "id": "region:drainage-01",
+                "kind": "drainage",
+                "start": 0.30,
+                "end": 0.70,
+                "layers": ["ditch", "culvert"],
+                "structures": ["structure:culvert-01"],
+                "drainage": ["drainage:side-ditch-left", "drainage:culvert-01"],
+                "priority": 65,
+                "notes": "Drainage and culvert control region.",
+            },
+            {
+                "id": "region:normal-after",
+                "kind": "normal_road",
+                "start": 0.70,
+                "end": 1.0,
+                "layers": [],
+                "structures": [],
+                "drainage": [],
+                "priority": 10,
+                "notes": "Normal road after drainage control.",
+            },
+        ],
+    },
+}
+
+
+def region_preset_names() -> list[str]:
+    """Return available v1 Region preset names."""
+
+    return list(REGION_PRESETS.keys())
+
+
 def starter_region_model_from_document(document=None, *, project=None, alignment=None) -> RegionModel:
     """Build one non-destructive starter RegionModel from station/alignment extent."""
+
+    return region_preset_model_from_document("Basic Road", document=document, project=project, alignment=alignment)
+
+
+def region_preset_model_from_document(
+    preset_name: str,
+    document=None,
+    *,
+    project=None,
+    alignment=None,
+) -> RegionModel:
+    """Build a non-destructive RegionModel from a named station-range preset."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    preset = REGION_PRESETS.get(str(preset_name or "").strip())
+    if preset is None:
+        raise ValueError(f"Unknown Region preset: {preset_name}")
     prj = project or find_project(doc)
     alignment_obj = alignment or find_v1_alignment(doc)
     station_start, station_end = _document_station_range(doc, alignment_obj)
     alignment_id = str(getattr(alignment_obj, "AlignmentId", "") or "")
     assembly_ref, template_ref = _preferred_assembly_and_template_refs(doc)
+    rows = _preset_region_rows(
+        preset,
+        station_start=station_start,
+        station_end=station_end,
+        assembly_ref=assembly_ref,
+        template_ref=template_ref,
+    )
     return RegionModel(
         schema_version=1,
         project_id=_project_id(prj),
         region_model_id="regions:main",
         alignment_id=alignment_id,
         label="Regions",
-        region_rows=[
-            RegionRow(
-                region_id="region:normal-01",
-                region_index=1,
-                primary_kind="normal_road",
-                station_start=station_start,
-                station_end=station_end,
-                assembly_ref=assembly_ref,
-                template_ref=template_ref,
-                priority=10,
-                notes="Starter normal road region.",
-            )
-        ],
+        region_rows=rows,
     )
 
 
@@ -153,6 +341,22 @@ class V1RegionEditorTaskPanel:
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        preset_row = QtWidgets.QHBoxLayout()
+        preset_row.addWidget(QtWidgets.QLabel("Preset:"))
+        self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo.addItems(region_preset_names())
+        preset_row.addWidget(self._preset_combo)
+        load_preset_button = QtWidgets.QPushButton("Load Preset")
+        load_preset_button.clicked.connect(self._load_selected_preset)
+        preset_row.addWidget(load_preset_button)
+        preset_row.addStretch(1)
+        layout.addLayout(preset_row)
+
+        self._preset_note = QtWidgets.QLabel("")
+        self._preset_note.setWordWrap(True)
+        layout.addWidget(self._preset_note)
+        self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
+
         self._table = QtWidgets.QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
             ["Start STA", "End STA", "Primary Kind", "Layers", "Assembly", "Structures", "Drainage", "Priority", "Notes"]
@@ -180,9 +384,6 @@ class V1RegionEditorTaskPanel:
         sort_button = QtWidgets.QPushButton("Sort by Station")
         sort_button.clicked.connect(self._sort_rows)
         edit_row.addWidget(sort_button)
-        starter_button = QtWidgets.QPushButton("Load Starter Regions")
-        starter_button.clicked.connect(self._load_starter_rows)
-        edit_row.addWidget(starter_button)
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
 
@@ -204,6 +405,7 @@ class V1RegionEditorTaskPanel:
         close_button.clicked.connect(self.reject)
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
+        self._update_preset_note()
         return widget
 
     def _load_existing_rows(self) -> None:
@@ -213,13 +415,20 @@ class V1RegionEditorTaskPanel:
         self._replace_rows(model.region_rows)
         self._set_status(f"Loaded {len(model.region_rows)} Region row(s) from {self.region_obj.Label}.")
 
-    def _load_starter_rows(self) -> None:
+    def _load_selected_preset(self) -> None:
         try:
-            model = starter_region_model_from_document(self.document)
+            preset_name = str(self._preset_combo.currentText() or "Basic Road")
+            model = region_preset_model_from_document(preset_name, document=self.document)
             self._replace_rows(model.region_rows)
-            self._set_status("Starter Region row loaded. Apply when ready.")
+            self._set_status(f"Region preset loaded: {preset_name}. Apply when ready.")
         except Exception as exc:
-            self._set_status(f"Starter Regions were not loaded:\n{exc}")
+            self._set_status(f"Region preset was not loaded:\n{exc}")
+
+    def _update_preset_note(self) -> None:
+        if not hasattr(self, "_preset_note"):
+            return
+        preset = REGION_PRESETS.get(str(self._preset_combo.currentText() or ""), {})
+        self._preset_note.setText(str(preset.get("note", "") or ""))
 
     def _replace_rows(self, rows: list[RegionRow]) -> None:
         self._table.setRowCount(0)
@@ -406,6 +615,45 @@ def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs:
         if assembly_ref and assembly_ref not in known:
             warnings.append(f"WARNING: {row.region_id} references missing assembly_ref {assembly_ref}.")
     return warnings
+
+
+def _preset_region_rows(
+    preset: dict,
+    *,
+    station_start: float,
+    station_end: float,
+    assembly_ref: str,
+    template_ref: str,
+) -> list[RegionRow]:
+    span = max(float(station_end) - float(station_start), 0.0)
+    if span <= 0.0:
+        span = 100.0
+        station_end = float(station_start) + span
+    rows: list[RegionRow] = []
+    for index, spec in enumerate(list(preset.get("rows", []) or []), start=1):
+        start_ratio = max(0.0, min(1.0, float(spec.get("start", 0.0) or 0.0)))
+        end_ratio = max(0.0, min(1.0, float(spec.get("end", 1.0) or 1.0)))
+        start_sta = float(station_start) + span * start_ratio
+        end_sta = float(station_start) + span * end_ratio
+        if end_sta < start_sta:
+            start_sta, end_sta = end_sta, start_sta
+        rows.append(
+            RegionRow(
+                region_id=str(spec.get("id", "") or f"region:{index}"),
+                region_index=index,
+                primary_kind=str(spec.get("kind", "") or "normal_road"),
+                applied_layers=list(spec.get("layers", []) or []),
+                station_start=start_sta,
+                station_end=end_sta,
+                assembly_ref=str(spec.get("assembly_ref", "") or assembly_ref or ""),
+                template_ref=str(spec.get("template_ref", "") or template_ref or ""),
+                structure_refs=list(spec.get("structures", []) or []),
+                drainage_refs=list(spec.get("drainage", []) or []),
+                priority=int(spec.get("priority", 10) or 10),
+                notes=str(spec.get("notes", "") or ""),
+            )
+        )
+    return rows
 
 
 def _format_validation_result(result, region_model: RegionModel | None = None, assembly_refs: list[str] | None = None) -> str:

@@ -1258,6 +1258,10 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None)
     if record_kind == "v1_corridor_surface_preview":
         return tree.get(V1_TREE_DESIGN_TIN, None)
+    if record_kind == "v1_corridor_centerline_preview":
+        return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if record_kind == "v1_assembly_show_preview":
+        return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":
@@ -1306,7 +1310,11 @@ def resolve_v1_target_container(prj, child):
         name_prefixes=("V1AppliedSectionSet", "AppliedSectionSet", "SectionSet", "SectionSlice"),
     ):
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
-    if _is_type(child, proxy_types=("V1CorridorModel", "CorridorModel"), name_prefixes=("V1CorridorModel", "CorridorModel")):
+    if _is_type(
+        child,
+        proxy_types=("V1CorridorModel", "CorridorModel", "V1CorridorCenterlinePreview"),
+        name_prefixes=("V1CorridorModel", "CorridorModel", "V1CorridorCenterlinePreview"),
+    ):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if _is_type(child, proxy_types=("V1SurfaceModel", "SurfaceModel"), name_prefixes=("V1SurfaceModel", "SurfaceModel")):
         return tree.get(V1_TREE_DESIGN_TIN, None)

@@ -27,6 +27,7 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_vertical_curve_rows,
     run_v1_profile_editor_command,
     show_profile_preview_object,
+    _make_profile_polyline,
     _resolve_profile_preview_tin_surface,
 )
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import apply_alignment_ip_rows
@@ -492,6 +493,21 @@ def test_profile_show_preview_builds_framed_sheet_objects_away_from_model() -> N
         assert preview["plot_height"] > 0.0
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_profile_show_wire_uses_spline_for_unstroked_profile_line() -> None:
+    points = [
+        App.Vector(0.0, 0.0, 0.0),
+        App.Vector(20.0, 0.0, 5.0),
+        App.Vector(40.0, 0.0, 2.0),
+        App.Vector(60.0, 0.0, 8.0),
+    ]
+
+    shape = _make_profile_polyline(points, stroke_width=0.0)
+
+    assert shape is not None
+    assert len(shape.Edges) == 1
+    assert "BSpline" in type(shape.Edges[0].Curve).__name__
 
 
 def test_profile_show_preview_uses_document_mesh_for_existing_ground() -> None:

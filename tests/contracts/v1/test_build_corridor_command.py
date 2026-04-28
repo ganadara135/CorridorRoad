@@ -45,6 +45,10 @@ def _sample_sections() -> AppliedSectionSet:
                 surface_left_width=5.0,
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=3.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.5,
             ),
             AppliedSection(
                 schema_version=1,
@@ -57,6 +61,75 @@ def _sample_sections() -> AppliedSectionSet:
                 surface_left_width=5.0,
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=3.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.5,
+            ),
+        ],
+    )
+
+
+def _sample_sections_with_centerline_curve() -> AppliedSectionSet:
+    return AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:curved",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:20", 20.0, "section:20"),
+            AppliedSectionStationRow("station:40", 40.0, "section:40"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                station=0.0,
+                frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=3.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.5,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:20",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                station=20.0,
+                frame=AppliedSectionFrame(station=20.0, x=20.0, y=4.0, z=11.0, tangent_direction_deg=10.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=3.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.5,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:40",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                station=40.0,
+                frame=AppliedSectionFrame(station=40.0, x=40.0, y=0.0, z=12.0, tangent_direction_deg=0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                subgrade_depth=0.25,
+                daylight_left_width=3.0,
+                daylight_right_width=3.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.5,
             ),
         ],
     )
@@ -116,11 +189,49 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert preview.CRRecordKind == "v1_corridor_surface_preview"
         assert int(preview.VertexCount) == 4
         assert int(preview.TriangleCount) == 2
+        centerline = doc.getObject("V1CorridorCenterline3DPreview")
+        assert centerline is not None
+        assert centerline.CRRecordKind == "v1_corridor_centerline_preview"
+        assert centerline.V1ObjectType == "V1CorridorCenterlinePreview"
+        assert centerline.DisplayCurveKind == "line"
+        assert int(centerline.PointCount) == 2
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
         assert subgrade_preview is not None
         assert subgrade_preview.CRRecordKind == "v1_corridor_surface_preview"
         assert int(subgrade_preview.VertexCount) == 4
         assert int(subgrade_preview.TriangleCount) == 2
+        daylight_preview = doc.getObject("V1CorridorDaylightSurfacePreview")
+        assert daylight_preview is not None
+        assert daylight_preview.CRRecordKind == "v1_corridor_surface_preview"
+        assert int(daylight_preview.VertexCount) == 8
+        assert int(daylight_preview.TriangleCount) == 4
+        assert int(daylight_preview.EGIntersectionCount) == 0
+        assert int(daylight_preview.EGTieInHitCount) == 0
+        assert int(daylight_preview.SlopeFaceFallbackCount) == 4
+        assert "fallbacks: 4" in daylight_preview.SlopeFaceDiagnosticSummary
+        fallback_markers = doc.getObject("ReviewIssueSlopeFaceFallbackMarkers")
+        assert fallback_markers is not None
+        assert fallback_markers.V1ObjectType == "ReviewIssue"
+        assert fallback_markers.IssueKind == "slope_face_tie_in"
+        assert int(fallback_markers.MarkerCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_creates_spline_centerline_preview() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_centerline_curve())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        centerline = doc.getObject("V1CorridorCenterline3DPreview")
+        assert centerline is not None
+        assert centerline.DisplayCurveKind == "spline"
+        assert int(centerline.PointCount) == 3
+        shape = centerline.Shape
+        assert len(shape.Edges) == 1
+        assert "BSpline" in type(shape.Edges[0].Curve).__name__
     finally:
         App.closeDocument(doc.Name)
 

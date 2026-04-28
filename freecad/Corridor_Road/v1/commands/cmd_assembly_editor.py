@@ -5,9 +5,11 @@ from __future__ import annotations
 try:
     import FreeCAD as App
     import FreeCADGui as Gui
+    import Part
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
     Gui = None
+    Part = None
 
 from freecad.Corridor_Road.misc.resources import icon_path
 from freecad.Corridor_Road.qt_compat import QtWidgets
@@ -33,37 +35,143 @@ from ..objects.obj_assembly import (
 )
 
 
+ASSEMBLY_PRESETS = {
+    "Basic Road": {
+        "assembly_id": "assembly:basic-road",
+        "template_id": "template:basic-road",
+        "label": "Basic Road Assembly",
+        "template_label": "Basic Road",
+        "note": "Two-lane rural starter with shoulders and earth side slopes.",
+        "components": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.25, "asphalt", "Left travel lane"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.25, "asphalt", "Right travel lane"),
+            ("shoulder:left", "shoulder", "left", 1.5, -0.04, 0.20, "aggregate", "Left shoulder"),
+            ("shoulder:right", "shoulder", "right", 1.5, -0.04, 0.20, "aggregate", "Right shoulder"),
+            ("side_slope:left", "side_slope", "left", 4.0, -0.5, 0.0, "earth", "Left slope face"),
+            ("side_slope:right", "side_slope", "right", 4.0, -0.5, 0.0, "earth", "Right slope face"),
+        ],
+    },
+    "Urban Curb & Gutter": {
+        "assembly_id": "assembly:urban-curb-gutter",
+        "template_id": "template:urban-curb-gutter",
+        "label": "Urban Curb & Gutter Assembly",
+        "template_label": "Urban Curb & Gutter",
+        "note": "Urban road with lanes, gutters, curbs, sidewalks, and shallow grading strips.",
+        "components": [
+            ("lane:left", "lane", "left", 3.25, -0.02, 0.28, "asphalt", "Left urban lane"),
+            ("lane:right", "lane", "right", 3.25, -0.02, 0.28, "asphalt", "Right urban lane"),
+            ("gutter:left", "gutter", "left", 0.45, -0.03, 0.18, "concrete", "Left gutter pan"),
+            ("gutter:right", "gutter", "right", 0.45, -0.03, 0.18, "concrete", "Right gutter pan"),
+            ("curb:left", "curb", "left", 0.20, 0.0, 0.30, "concrete", "Left curb"),
+            ("curb:right", "curb", "right", 0.20, 0.0, 0.30, "concrete", "Right curb"),
+            ("sidewalk:left", "sidewalk", "left", 1.8, -0.015, 0.12, "concrete", "Left sidewalk"),
+            ("sidewalk:right", "sidewalk", "right", 1.8, -0.015, 0.12, "concrete", "Right sidewalk"),
+            ("green_strip:left", "green_strip", "left", 1.0, -0.03, 0.0, "landscape", "Left verge"),
+            ("green_strip:right", "green_strip", "right", 1.0, -0.03, 0.0, "landscape", "Right verge"),
+        ],
+    },
+    "Divided Road": {
+        "assembly_id": "assembly:divided-road",
+        "template_id": "template:divided-road",
+        "label": "Divided Road Assembly",
+        "template_label": "Divided Road",
+        "note": "Four-lane divided road with center median, shoulders, barriers, and side slopes.",
+        "components": [
+            ("median:center", "median", "center", 3.0, 0.0, 0.18, "landscape", "Raised or depressed median allowance"),
+            ("lane:left-1", "lane", "left", 3.5, -0.02, 0.30, "asphalt", "Inner left lane"),
+            ("lane:left-2", "lane", "left", 3.5, -0.02, 0.30, "asphalt", "Outer left lane"),
+            ("lane:right-1", "lane", "right", 3.5, -0.02, 0.30, "asphalt", "Inner right lane"),
+            ("lane:right-2", "lane", "right", 3.5, -0.02, 0.30, "asphalt", "Outer right lane"),
+            ("shoulder:left", "shoulder", "left", 2.5, -0.04, 0.22, "aggregate", "Left outside shoulder"),
+            ("shoulder:right", "shoulder", "right", 2.5, -0.04, 0.22, "aggregate", "Right outside shoulder"),
+            ("barrier:left", "barrier", "left", 0.4, 0.0, 0.0, "concrete", "Left roadside barrier placeholder"),
+            ("barrier:right", "barrier", "right", 0.4, 0.0, 0.0, "concrete", "Right roadside barrier placeholder"),
+            ("side_slope:left", "side_slope", "left", 5.0, -0.4, 0.0, "earth", "Left slope face"),
+            ("side_slope:right", "side_slope", "right", 5.0, -0.4, 0.0, "earth", "Right slope face"),
+        ],
+    },
+    "Bridge Interface": {
+        "assembly_id": "assembly:bridge-interface",
+        "template_id": "template:bridge-interface",
+        "label": "Bridge Interface Assembly",
+        "template_label": "Bridge Interface",
+        "note": "Road deck handoff with barriers and structure-interface placeholders; slope faces are intentionally omitted.",
+        "components": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.22, "asphalt", "Left bridge lane wearing surface"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.22, "asphalt", "Right bridge lane wearing surface"),
+            ("shoulder:left", "shoulder", "left", 1.2, -0.02, 0.18, "asphalt", "Left bridge shoulder"),
+            ("shoulder:right", "shoulder", "right", 1.2, -0.02, 0.18, "asphalt", "Right bridge shoulder"),
+            ("barrier:left", "barrier", "left", 0.45, 0.0, 0.0, "concrete", "Left bridge barrier placeholder"),
+            ("barrier:right", "barrier", "right", 0.45, 0.0, 0.0, "concrete", "Right bridge barrier placeholder"),
+            ("structure_interface:deck", "structure_interface", "center", 0.0, 0.0, 0.0, "structure", "Bridge deck structure handoff"),
+        ],
+    },
+    "Drainage Ditch Road": {
+        "assembly_id": "assembly:drainage-ditch-road",
+        "template_id": "template:drainage-ditch-road",
+        "label": "Drainage Ditch Road Assembly",
+        "template_label": "Drainage Ditch Road",
+        "note": "Rural road with shoulders, ditch components, and wider side-slope grading.",
+        "components": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.25, "asphalt", "Left travel lane"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.25, "asphalt", "Right travel lane"),
+            ("shoulder:left", "shoulder", "left", 1.8, -0.04, 0.20, "aggregate", "Left shoulder"),
+            ("shoulder:right", "shoulder", "right", 1.8, -0.04, 0.20, "aggregate", "Right shoulder"),
+            ("ditch:left", "ditch", "left", 1.2, -0.02, 0.0, "earth", "Left roadside ditch placeholder"),
+            ("ditch:right", "ditch", "right", 1.2, -0.02, 0.0, "earth", "Right roadside ditch placeholder"),
+            ("side_slope:left", "side_slope", "left", 6.0, -0.33, 0.0, "earth", "Left slope face to terrain"),
+            ("side_slope:right", "side_slope", "right", 6.0, -0.33, 0.0, "earth", "Right slope face to terrain"),
+        ],
+    },
+}
+
+
+def assembly_preset_names() -> list[str]:
+    """Return available v1 Assembly preset names."""
+
+    return list(ASSEMBLY_PRESETS.keys())
+
+
 def starter_assembly_model_from_document(document=None, *, project=None, alignment=None) -> AssemblyModel:
     """Build one non-destructive starter AssemblyModel."""
+
+    return assembly_preset_model_from_document("Basic Road", document=document, project=project, alignment=alignment)
+
+
+def assembly_preset_model_from_document(
+    preset_name: str,
+    document=None,
+    *,
+    project=None,
+    alignment=None,
+) -> AssemblyModel:
+    """Build a non-destructive AssemblyModel from a named preset."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    preset = ASSEMBLY_PRESETS.get(str(preset_name or "").strip())
+    if preset is None:
+        raise ValueError(f"Unknown Assembly preset: {preset_name}")
     prj = project or find_project(doc)
     alignment_obj = alignment or find_v1_alignment(doc)
     alignment_id = str(getattr(alignment_obj, "AlignmentId", "") or "")
+    template_id = str(preset.get("template_id", "") or "template:assembly")
     return AssemblyModel(
         schema_version=1,
         project_id=_project_id(prj),
-        assembly_id="assembly:basic-road",
+        assembly_id=str(preset.get("assembly_id", "") or "assembly:main"),
         alignment_id=alignment_id,
-        active_template_id="template:basic-road",
-        label="Basic Road Assembly",
+        active_template_id=template_id,
+        label=str(preset.get("label", "") or str(preset_name or "Assembly")),
         template_rows=[
             SectionTemplate(
-                template_id="template:basic-road",
+                template_id=template_id,
                 template_kind="roadway",
                 template_index=1,
-                label="Basic Road",
-                component_rows=[
-                    TemplateComponent("lane:left", "lane", 1, "left", 3.5, -0.02, 0.25, "asphalt"),
-                    TemplateComponent("lane:right", "lane", 2, "right", 3.5, -0.02, 0.25, "asphalt"),
-                    TemplateComponent("shoulder:left", "shoulder", 3, "left", 1.5, -0.04, 0.20, "aggregate"),
-                    TemplateComponent("shoulder:right", "shoulder", 4, "right", 1.5, -0.04, 0.20, "aggregate"),
-                    TemplateComponent("side_slope:left", "side_slope", 5, "left", 4.0, -0.5, 0.0, "earth"),
-                    TemplateComponent("side_slope:right", "side_slope", 6, "right", 4.0, -0.5, 0.0, "earth"),
-                ],
-                notes="Starter road assembly; edit before corridor generation.",
+                label=str(preset.get("template_label", "") or template_id),
+                component_rows=_preset_components(preset),
+                notes=str(preset.get("note", "") or "Assembly preset; edit before corridor generation."),
             )
         ],
     )
@@ -97,6 +205,40 @@ def apply_v1_assembly_model(
     )
     try:
         doc.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def show_assembly_preview_object(document, assembly_model: AssemblyModel):
+    """Create or update a Front-view Assembly cross-section preview from source rows."""
+
+    if document is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Assembly preview.")
+    template = assembly_model.template_rows[0] if list(getattr(assembly_model, "template_rows", []) or []) else None
+    if template is None:
+        raise ValueError("Assembly preview requires at least one SectionTemplate.")
+    points = _assembly_preview_points(template)
+    if len(points) < 2:
+        raise ValueError("Assembly preview requires at least one enabled component with width.")
+    shape = _make_assembly_preview_shape(points, stroke_width=_assembly_preview_stroke_width(points))
+    obj = document.getObject("V1AssemblyShowPreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1AssemblyShowPreview")
+    obj.Label = "Assembly Show Preview"
+    obj.Shape = shape
+    _set_preview_string_property(obj, "CRRecordKind", "v1_assembly_show_preview")
+    _set_preview_string_property(obj, "V1ObjectType", "V1AssemblyShowPreview")
+    _set_preview_string_property(obj, "AssemblyId", str(getattr(assembly_model, "assembly_id", "") or ""))
+    _set_preview_string_property(obj, "TemplateId", str(getattr(template, "template_id", "") or ""))
+    _set_preview_integer_property(obj, "ComponentCount", len([row for row in template.component_rows if row.enabled]))
+    _style_assembly_preview_object(obj)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(document), obj)
     except Exception:
         pass
     return obj
@@ -163,6 +305,22 @@ class V1AssemblyEditorTaskPanel:
         meta_row.addWidget(self._template_id)
         layout.addLayout(meta_row)
 
+        preset_row = QtWidgets.QHBoxLayout()
+        preset_row.addWidget(QtWidgets.QLabel("Preset:"))
+        self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo.addItems(assembly_preset_names())
+        preset_row.addWidget(self._preset_combo)
+        load_preset_button = QtWidgets.QPushButton("Load Preset")
+        load_preset_button.clicked.connect(self._load_selected_preset)
+        preset_row.addWidget(load_preset_button)
+        preset_row.addStretch(1)
+        layout.addLayout(preset_row)
+
+        self._preset_note = QtWidgets.QLabel("")
+        self._preset_note.setWordWrap(True)
+        layout.addWidget(self._preset_note)
+        self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
+
         self._table = QtWidgets.QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
             ["Component ID", "Kind", "Side", "Width", "Slope", "Thickness", "Material", "Enabled", "Notes"]
@@ -187,9 +345,6 @@ class V1AssemblyEditorTaskPanel:
         delete_button = QtWidgets.QPushButton("Delete Selected")
         delete_button.clicked.connect(self._delete_selected_rows)
         edit_row.addWidget(delete_button)
-        starter_button = QtWidgets.QPushButton("Load Starter Assembly")
-        starter_button.clicked.connect(self._load_starter_rows)
-        edit_row.addWidget(starter_button)
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
 
@@ -203,6 +358,9 @@ class V1AssemblyEditorTaskPanel:
         validate_button = QtWidgets.QPushButton("Validate")
         validate_button.clicked.connect(self._validate)
         action_row.addWidget(validate_button)
+        show_button = QtWidgets.QPushButton("Show")
+        show_button.clicked.connect(self._show_current_assembly)
+        action_row.addWidget(show_button)
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
@@ -211,6 +369,7 @@ class V1AssemblyEditorTaskPanel:
         close_button.clicked.connect(self.reject)
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
+        self._update_preset_note()
         return widget
 
     def _load_existing_rows(self) -> None:
@@ -220,12 +379,19 @@ class V1AssemblyEditorTaskPanel:
         self._replace_model(model)
         self._set_status(f"Loaded {sum(len(t.component_rows) for t in model.template_rows)} component row(s).")
 
-    def _load_starter_rows(self) -> None:
+    def _load_selected_preset(self) -> None:
         try:
-            self._replace_model(starter_assembly_model_from_document(self.document))
-            self._set_status("Starter Assembly loaded. Apply when ready.")
+            preset_name = str(self._preset_combo.currentText() or "Basic Road")
+            self._replace_model(assembly_preset_model_from_document(preset_name, document=self.document))
+            self._set_status(f"Assembly preset loaded: {preset_name}. Apply when ready.")
         except Exception as exc:
-            self._set_status(f"Starter Assembly was not loaded:\n{exc}")
+            self._set_status(f"Assembly preset was not loaded:\n{exc}")
+
+    def _update_preset_note(self) -> None:
+        if not hasattr(self, "_preset_note"):
+            return
+        preset = ASSEMBLY_PRESETS.get(str(self._preset_combo.currentText() or ""), {})
+        self._preset_note.setText(str(preset.get("note", "") or ""))
 
     def _replace_model(self, model: AssemblyModel) -> None:
         self._assembly_id.setText(model.assembly_id or "assembly:basic-road")
@@ -295,6 +461,34 @@ class V1AssemblyEditorTaskPanel:
             self._set_status("\n".join(messages) if messages else "Validation status: ok")
         except Exception as exc:
             self._set_status(f"Assembly validation failed:\n{exc}")
+
+    def _show_current_assembly(self) -> None:
+        try:
+            model = self._model_from_table()
+            messages = _validate_assembly_model(model)
+            if any(message.startswith("ERROR") for message in messages):
+                self._set_status("\n".join(messages))
+                _show_message(self.form, "Assembly", "Assembly preview was not shown because validation has errors.")
+                return
+            preview = show_assembly_preview_object(self.document, model)
+            try:
+                self.document.recompute()
+            except Exception:
+                pass
+            if Gui is not None:
+                try:
+                    Gui.Selection.clearSelection()
+                    Gui.Selection.addSelection(preview)
+                except Exception:
+                    pass
+                _show_front_fit_selection()
+            self._set_status(
+                ("\n".join(messages) if messages else "Validation status: ok")
+                + f"\n\nAssembly preview shown: {preview.Label}"
+            )
+        except Exception as exc:
+            self._set_status(f"Assembly preview was not shown:\n{exc}")
+            _show_message(self.form, "Assembly", f"Assembly preview was not shown.\n{exc}")
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
@@ -397,6 +591,213 @@ def _validate_assembly_model(model: AssemblyModel) -> list[str]:
     if not messages:
         messages.append("Validation status: ok")
     return messages
+
+
+def _preset_components(preset: dict) -> list[TemplateComponent]:
+    rows = []
+    for index, row in enumerate(list(preset.get("components", []) or []), start=1):
+        component_id, kind, side, width, slope, thickness, material, notes = row
+        rows.append(
+            TemplateComponent(
+                component_id=str(component_id),
+                kind=str(kind),
+                component_index=index,
+                side=str(side),
+                width=float(width),
+                slope=float(slope),
+                thickness=float(thickness),
+                material=str(material),
+                notes=str(notes),
+            )
+        )
+    return rows
+
+
+def _assembly_preview_points(template: SectionTemplate):
+    center_width = sum(
+        max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+        for component in list(getattr(template, "component_rows", []) or [])
+        if bool(getattr(component, "enabled", True)) and str(getattr(component, "side", "") or "") == "center"
+    )
+    center_left = -center_width * 0.5
+    center_right = center_width * 0.5
+    left_points = _assembly_side_points(template, side="left", start_x=center_left, direction=-1.0)
+    right_points = _assembly_side_points(template, side="right", start_x=center_right, direction=1.0)
+    points = list(reversed(left_points))
+    if center_width > 1.0e-9:
+        points.append(App.Vector(center_right, 0.0, 0.0))
+    points.extend(right_points[1:])
+    return _unique_preview_points(points)
+
+
+def _assembly_side_points(template: SectionTemplate, *, side: str, start_x: float, direction: float):
+    x = float(start_x)
+    z = 0.0
+    points = [App.Vector(x, 0.0, z)]
+    for component in list(getattr(template, "component_rows", []) or []):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        component_side = str(getattr(component, "side", "") or "center")
+        if component_side not in {side, "both"}:
+            continue
+        width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        slope = float(getattr(component, "slope", 0.0) or 0.0)
+        x += float(direction) * width
+        z += slope * width
+        points.append(App.Vector(x, 0.0, z))
+    return points
+
+
+def _unique_preview_points(points):
+    output = []
+    for point in list(points or []):
+        if output and _same_preview_point(output[-1], point):
+            continue
+        output.append(point)
+    return output
+
+
+def _same_preview_point(left, right, tolerance: float = 1.0e-7) -> bool:
+    try:
+        return (
+            abs(float(left.x) - float(right.x)) <= tolerance
+            and abs(float(left.y) - float(right.y)) <= tolerance
+            and abs(float(left.z) - float(right.z)) <= tolerance
+        )
+    except Exception:
+        return False
+
+
+def _make_assembly_preview_shape(points, *, stroke_width: float):
+    shapes = []
+    for start, end in zip(points, points[1:]):
+        try:
+            if (end - start).Length <= 1.0e-9:
+                continue
+            stroke = _make_assembly_segment_stroke(start, end, stroke_width)
+            shapes.append(stroke if stroke is not None else Part.makeLine(start, end))
+        except Exception:
+            pass
+    return Part.Compound(shapes) if shapes else Part.Shape()
+
+
+def _make_assembly_segment_stroke(start, end, stroke_width: float):
+    width = float(stroke_width or 0.0)
+    if width <= 0.0 or Part is None:
+        return None
+    try:
+        dx = float(end.x) - float(start.x)
+        dz = float(end.z) - float(start.z)
+        length = (dx * dx + dz * dz) ** 0.5
+        if length <= 1.0e-9:
+            return None
+        half = width * 0.5
+        nx = -dz / length * half
+        nz = dx / length * half
+        points = [
+            App.Vector(float(start.x) + nx, float(start.y), float(start.z) + nz),
+            App.Vector(float(end.x) + nx, float(end.y), float(end.z) + nz),
+            App.Vector(float(end.x) - nx, float(end.y), float(end.z) - nz),
+            App.Vector(float(start.x) - nx, float(start.y), float(start.z) - nz),
+            App.Vector(float(start.x) + nx, float(start.y), float(start.z) + nz),
+        ]
+        face = Part.Face(Part.makePolygon(points))
+        return face.extrude(App.Vector(0.0, -max(0.05, width * 0.25), 0.0))
+    except Exception:
+        return None
+
+
+def _assembly_preview_stroke_width(points) -> float:
+    if not points:
+        return 0.08
+    min_x = min(float(point.x) for point in points)
+    max_x = max(float(point.x) for point in points)
+    min_z = min(float(point.z) for point in points)
+    max_z = max(float(point.z) for point in points)
+    span = max(max_x - min_x, max_z - min_z, 1.0)
+    return max(0.05, min(0.25, span * 0.012))
+
+
+def _style_assembly_preview_object(obj) -> None:
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None:
+        return
+    try:
+        vobj.Visibility = True
+        vobj.DisplayMode = "Flat Lines"
+        vobj.ShapeColor = (1.0, 0.62, 0.12)
+        vobj.LineColor = (1.0, 0.62, 0.12)
+        vobj.PointColor = (1.0, 0.62, 0.12)
+        vobj.LineWidth = 6.0
+        vobj.PointSize = 8.0
+        if hasattr(vobj, "DrawStyle"):
+            vobj.DrawStyle = "Solid"
+        if hasattr(vobj, "Lighting"):
+            try:
+                vobj.Lighting = "Two side"
+            except Exception:
+                pass
+        if hasattr(vobj, "Transparency"):
+            vobj.Transparency = 0
+    except Exception:
+        pass
+
+
+def _set_preview_string_property(obj, name: str, value: str) -> None:
+    try:
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyString", name, "CorridorRoad", name)
+        setattr(obj, name, str(value or ""))
+    except Exception:
+        pass
+
+
+def _set_preview_integer_property(obj, name: str, value: int) -> None:
+    try:
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyInteger", name, "CorridorRoad", name)
+        setattr(obj, name, int(value or 0))
+    except Exception:
+        pass
+
+
+def _show_front_fit_selection() -> None:
+    if Gui is None:
+        return
+    try:
+        if hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+    except Exception:
+        pass
+    try:
+        view = Gui.ActiveDocument.ActiveView
+        if hasattr(view, "viewFront"):
+            view.viewFront()
+        else:
+            Gui.SendMsgToActiveView("ViewFront")
+    except Exception:
+        try:
+            Gui.SendMsgToActiveView("ViewFront")
+        except Exception:
+            pass
+    try:
+        if hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+        view = Gui.ActiveDocument.ActiveView
+        if hasattr(view, "fitSelection"):
+            view.fitSelection()
+        else:
+            Gui.SendMsgToActiveView("ViewSelection")
+    except Exception:
+        try:
+            Gui.SendMsgToActiveView("ViewSelection")
+        except Exception:
+            try:
+                Gui.SendMsgToActiveView("ViewFit")
+            except Exception:
+                pass
 
 
 def _required_float(value: object, label: str) -> float:
