@@ -241,6 +241,7 @@ def _apply_tin_existing_ground_profile(preview: dict[str, object], *, interval: 
     """Attach an existing-ground line row sampled from TIN when available."""
 
     alignment_model = preview.get("alignment_model", None)
+    plan_output = preview.get("plan_output", None)
     profile_output = preview.get("profile_output", None)
     surface = preview.get("tin_surface", None)
     if alignment_model is None or profile_output is None or not isinstance(surface, TINSurface):
@@ -250,6 +251,11 @@ def _apply_tin_existing_ground_profile(preview: dict[str, object], *, interval: 
         float(row.get("station", 0.0) or 0.0)
         for row in list(preview.get("key_station_rows", []) or [])
     ]
+    for row in list(getattr(plan_output, "station_rows", []) or []):
+        try:
+            extra_stations.append(float(getattr(row, "station", 0.0) or 0.0))
+        except Exception:
+            continue
     result = ProfileTinSamplingService().sample_alignment(
         alignment=alignment_model,
         surface=surface,
@@ -884,7 +890,7 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
     viewer_context = dict(preview.get("viewer_context", {}) or {})
 
     lines = [
-        "CorridorRoad v1 Plan/Profile Viewer",
+        "CorridorRoad v1 Plan/Profile Connection Review",
         f"Preview source: {str(preview.get('preview_source_kind', '') or 'unknown')}",
         f"Alignment: {getattr(alignment_model, 'label', '') or '(missing)'}",
         f"Alignment elements: {len(list(getattr(plan_output, 'geometry_rows', []) or []))}",
@@ -924,6 +930,14 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
     area_status = str(getattr(area_result, "status", "") or "").strip()
     if area_status and (area_width is not None or area_status == "ok"):
         lines.append(f"Earthwork area status: {area_status}")
+    eg_result = preview.get("profile_tin_sample_result", None)
+    if eg_result is not None:
+        eg_rows = list(getattr(eg_result, "rows", []) or [])
+        lines.append(
+            "EG sampling: "
+            f"{str(getattr(eg_result, 'status', '') or 'unknown')} "
+            f"({int(getattr(eg_result, 'hit_count', 0) or 0)}/{len(eg_rows)} hits)"
+        )
     evaluated_station_count = sum(
         1
         for row in list(preview.get("key_station_rows", []) or [])
@@ -1011,7 +1025,7 @@ def show_v1_plan_profile_preview(
 
                 QtGui.QMessageBox.information(
                     None,
-                    "CorridorRoad v1 Plan/Profile Viewer",
+                    "CorridorRoad v1 Plan/Profile Connection Review",
                     summary_text,
                 )
             except Exception:
@@ -1083,8 +1097,8 @@ class CmdV1ReviewPlanProfile:
 
         return {
             "Pixmap": icon_path("alignment.svg"),
-            "MenuText": "Plan/Profile Review (v1)",
-            "ToolTip": "Run the v1 plan/profile viewer pipeline",
+            "MenuText": "Plan/Profile Connection Review",
+            "ToolTip": "Review Alignment, Stations, Profile, and TIN EG connectivity on one station grid",
         }
 
     def IsActive(self):

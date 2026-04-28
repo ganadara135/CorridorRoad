@@ -3,9 +3,11 @@ import Mesh
 import os
 import tempfile
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     CmdV1ProfileEditor,
+    V1ProfileEditorTaskPanel,
     apply_profile_control_rows,
     apply_profile_vertical_curve_rows,
     build_profile_sheet_preview,
@@ -21,6 +23,7 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_control_rows,
     profile_preset_names,
     profile_preset_rows,
+    profile_random_elevation_rows,
     profile_rows_from_stationing,
     profile_station_check_rows,
     profile_station_check_lines,
@@ -140,6 +143,41 @@ def test_apply_profile_control_rows_rejects_duplicate_stations() -> None:
             assert False, "duplicate station should raise"
         except ValueError as exc:
             assert "Duplicate station" in str(exc)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_profile_random_elevation_rows_fill_station_rows() -> None:
+    rows = profile_random_elevation_rows(
+        [
+            {"station": 0.0, "kind": "grade_break"},
+            {"station": 80.0, "kind": "pvi"},
+            {"station": 160.0, "kind": "grade_break"},
+        ],
+        seed=42,
+    )
+
+    assert [row["station"] for row in rows] == [0.0, 80.0, 160.0]
+    assert [row["kind"] for row in rows] == ["grade_break", "pvi", "grade_break"]
+    assert all(isinstance(row["elevation"], float) for row in rows)
+    assert len({row["elevation"] for row in rows}) > 1
+
+
+def test_profile_editor_random_elevation_button_fills_table_rows() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        profile = create_sample_v1_profile(doc, project=project, alignment=alignment)
+        panel = V1ProfileEditorTaskPanel(profile=profile, document=doc, preferred_alignment=alignment)
+
+        buttons = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
+        panel._apply_random_elevations()
+        rows = panel._table_rows(allow_empty=False)
+
+        assert "Random Elevation" in buttons
+        assert len(rows) == len(list(profile.ControlStations))
+        assert all(row["elevation"] is not None for row in rows)
+        assert len({row["elevation"] for row in rows}) > 1
     finally:
         App.closeDocument(doc.Name)
 

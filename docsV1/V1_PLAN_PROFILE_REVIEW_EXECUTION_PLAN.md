@@ -13,6 +13,7 @@ Depends on:
 - `docsV1/V1_IMPLEMENTATION_PHASE_PLAN.md`
 - `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
 - `docsV1/V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md`
+- `docsV1/V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md`
 
 ## 1. Purpose
 
@@ -31,7 +32,7 @@ The goal is to create one coherent v1 continuity and readiness review surface fo
 
 - horizontal alignment review
 - profile review
-- station-focused context review after stationing exists
+- full station-grid connection review after stationing exists
 - editor handoff and same-context return
 - issue detection and rebuild verification
 
@@ -89,6 +90,7 @@ The first promoted v1 plan/profile review screen should include:
 - profile summary
 - plan geometry row inspection
 - profile control row inspection
+- full station connection table
 - focused station context
 - source context summary
 - handoff to v1 `Alignment` and `Profile`
@@ -111,6 +113,7 @@ Required outcomes:
 - v1 review command opens reliably
 - `PlanOutput` and `ProfileOutput` render in a readable review panel
 - station focus appears in summary and row selection
+- the full station grid is visible as the main connection review dataset
 - missing-stationing state is explicit when prerequisites are absent
 
 Completion signal:
@@ -124,6 +127,8 @@ Required outcomes:
 - focused station is visible
 - selected row context is visible
 - row highlighting follows station focus where practical
+- quick navigation stations are treated as shortcuts only; the full station grid stays in `Station Connection`
+- users can switch between all station rows and issue-only station rows
 
 Completion signal:
 
@@ -207,7 +212,7 @@ During transition:
 - keep the v1 plan/profile review command as a standalone entry
 - keep editor connections only as temporary implementation support
 - use the v1 review screen as the preferred post-edit verification target
-- expose a main `Plan/Profile Viewer` review command that opens the v1 viewer first
+- expose a main `Plan/Profile Connection Review` command that opens the v1 connection review first
 - use source editors as authoring tools, not as the normal review center
 
 Longer term:
@@ -233,7 +238,7 @@ Current implementation status:
 - [x] the text summary reports evaluated alignment station count
 - [x] `PlanOutput.station_rows` are generated from the shared `AlignmentStationSamplingService`
 - [x] key station navigation uses the sampled station grid while keeping the visible list compact around the current station
-- [x] key station navigation is labeled as `Review Navigation Stations` and each row explains why it was included
+- [x] key station navigation is labeled as `Quick Navigation Stations` and each row explains why it was included
 - [x] `ProfileOutput.line_rows` can include a TIN-sampled `existing_ground_line`
 - [x] the Plan/Profile viewer shows profile line rows, including FG and EG when available
 - [x] FG/EG profile comparison can attach `profile_cut_depth` and `profile_fill_depth` hint rows
@@ -245,9 +250,18 @@ Current implementation status:
 - [x] Plan/Profile viewer shows `Alignment/Profile Bridge Diagnostics` rows for source mode, legacy object resolution, model build status, alignment/profile ID link, and profile station range fit
 - [x] text summary reports bridge diagnostic counts so document-vs-demo and link issues are visible without inspecting raw payloads
 - [x] Plan/Profile viewer hides diagnostic detail tables when all bridge diagnostics are ok or not applicable
-- [x] Plan/Profile viewer shows a compact `Review Readiness` table only when required inputs are missing or not evaluated, including Alignment, Stations, Profile, Profile Controls, Review Navigation Stations, and Profile Lines
+- [x] Plan/Profile viewer shows a compact `Review Readiness` table only when required inputs are missing or not evaluated, including Alignment, Stations, Profile, Profile Controls, Quick Navigation Stations, and Profile Lines
 - [x] Plan/Profile viewer hides earthwork area controls and attachment tables unless earthwork handoff/context exists
 - [x] Plan/Profile viewer groups detailed review tables into `Evaluation`, `Geometry`, `Profile Controls`, and context-specific `Earthwork` tabs
+- [x] Plan/Profile viewer now includes a full station-grid `Station Connection` table for Alignment XY, Profile FG, and TIN EG connectivity; key stations remain navigation shortcuts only
+- [x] user-facing title, menu text, summary header, and handoff text now say `Plan/Profile Connection Review`
+- [x] Plan/Profile viewer now shows a `Source Link Summary` for Alignment, Stations, Profile, and TIN source identity, range/count, and link status
+- [x] `Station Connection` rows now use status-based colors with dark-mode readable foreground text
+- [x] Plan/Profile viewer now provides an `Open Stations` handoff to the unified v1 `Stations` command
+- [x] `Connection Diagnostics` now separates `Source Links`, `Alignment`, `Stations`, `Profile / FG`, `TIN / EG`, and `FG-EG` findings with next actions
+- [x] `Connection Diagnostics` rows now support double-click handoff to the likely source panel: Alignment, Stations, Profile, or TIN
+- [x] TIN EG sampling now includes the full `PlanOutput.station_rows` grid, so `Station Connection` can report EG hits and `FG-EG` deltas on the same station domain
+- [x] Plan/Profile summaries now report EG sampling status and hit counts when a TIN reference is available
 - [x] `ProfileEvaluationService` evaluates station-based FG elevation, grade, active segment, status, and active vertical-curve metadata
 - [x] `ProfileEvaluationService` now evaluates PVI-centered parabolic vertical curves for FG elevation and grade
 - [x] key station rows now carry both alignment frame data and profile evaluation data for the same station domain

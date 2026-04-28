@@ -1,6 +1,7 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import (
+    CmdV1ReviewPlanProfile,
     build_demo_plan_profile_preview,
     format_plan_profile_preview,
     resolve_station_interval,
@@ -94,13 +95,20 @@ def test_format_plan_profile_preview_includes_key_counts() -> None:
 
     text = format_plan_profile_preview(preview)
 
-    assert "CorridorRoad v1 Plan/Profile Viewer" in text
+    assert "CorridorRoad v1 Plan/Profile Connection Review" in text
     assert "Alignment elements: 2" in text
     assert "Profile controls: 3" in text
     assert "Evaluated alignment stations: 4" in text
     assert "Evaluated profile stations: 4" in text
     assert "Preview source: demo" in text
     assert "Bridge diagnostics:" in text
+
+
+def test_plan_profile_command_resources_use_connection_review_label() -> None:
+    resources = CmdV1ReviewPlanProfile().GetResources()
+
+    assert resources["MenuText"] == "Plan/Profile Connection Review"
+    assert "Alignment, Stations, Profile, and TIN EG connectivity" in resources["ToolTip"]
 
 
 def test_show_v1_plan_profile_preview_returns_preview_without_gui() -> None:
@@ -163,6 +171,29 @@ def test_show_v1_plan_profile_preview_adds_tin_existing_ground_line() -> None:
     assert preview["profile_tin_sample_result"].hit_count >= 2
 
 
+def test_plan_profile_connection_rows_use_full_station_grid_for_eg_sampling() -> None:
+    preview = show_v1_plan_profile_preview(
+        document=None,
+        extra_context={
+            "tin_surface": _demo_tin_surface(),
+            "station_interval": 30.0,
+        },
+        app_module=None,
+        gui_module=None,
+    )
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = preview
+
+    rows = panel._station_connection_rows()
+    issue_rows = panel._station_connection_table_rows(issues_only=True)
+
+    assert len(rows) == len(preview["plan_output"].station_rows)
+    assert all(row["eg_status"] == "ok" for row in rows)
+    assert all("delta_fg_eg" in row for row in rows)
+    assert issue_rows == []
+    assert "EG sampling: ok" in format_plan_profile_preview(preview)
+
+
 def test_show_v1_plan_profile_preview_adds_profile_earthwork_hints() -> None:
     preview = show_v1_plan_profile_preview(
         document=None,
@@ -214,7 +245,7 @@ def test_show_v1_plan_profile_preview_accepts_area_width_from_viewer_context() -
         extra_context={
             "tin_surface": _demo_tin_surface(),
             "viewer_context": {
-                "source_panel": "Plan/Profile Viewer",
+                "source_panel": "Plan/Profile Connection Review",
                 "earthwork_area_width": 14.0,
             },
         },
@@ -263,6 +294,145 @@ def test_plan_profile_viewer_reports_missing_review_readiness_inputs() -> None:
     assert ["Profile", "missing", "Open Profile and create or import the v1 profile source."] in rows
 
 
+def test_plan_profile_viewer_builds_full_station_connection_rows() -> None:
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = build_demo_plan_profile_preview("Demo Corridor")
+
+    rows = panel._station_connection_rows()
+    table_rows = panel._station_connection_table_rows()
+
+    assert len(rows) == len(panel.preview["plan_output"].station_rows)
+    assert len(rows) > len(panel._key_station_rows())
+    assert rows[0]["station"] == 0.0
+    assert rows[0]["alignment_status"] == "ok"
+    assert rows[0]["profile_status"] == "ok"
+    assert rows[0]["eg_status"] == "no_tin"
+    assert table_rows[0][0] == "0.000"
+    assert table_rows[0][3] == "ok"
+    assert table_rows[0][6] == "ok"
+
+
+def test_plan_profile_viewer_station_connection_issue_filter_reports_no_tin_rows() -> None:
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = build_demo_plan_profile_preview("Demo Corridor")
+
+    all_rows = panel._station_connection_table_rows()
+    issue_rows = panel._station_connection_table_rows(issues_only=True)
+
+    assert all_rows
+    assert issue_rows == all_rows
+
+
+def test_plan_profile_station_connection_row_colors_reflect_status_severity() -> None:
+    assert PlanProfileViewerTaskPanel._station_connection_row_color(["ok", "ok", "ok"]) == (220, 245, 224)
+    assert PlanProfileViewerTaskPanel._station_connection_row_color(["ok", "ok", "no_tin"]) == (255, 241, 205)
+    assert PlanProfileViewerTaskPanel._station_connection_row_color(["missing", "ok", "ok"]) == (255, 220, 220)
+
+
+def test_plan_profile_station_connection_styles_are_readable_on_dark_mode() -> None:
+    panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
+
+    item = panel._connection_table.item(0, 0)
+    background = item.background().color()
+    foreground = item.foreground().color()
+
+    assert (background.red(), background.green(), background.blue()) == (255, 241, 205)
+    assert (foreground.red(), foreground.green(), foreground.blue()) == (20, 20, 20)
+    assert "QTableWidget::item { color: #141414; }" in panel._connection_table.styleSheet()
+    assert "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }" in panel._connection_table.styleSheet()
+
+
+def test_plan_profile_source_link_summary_reports_source_ids_and_ranges() -> None:
+    preview = show_v1_plan_profile_preview(
+        document=None,
+        extra_context={
+            "tin_surface": _demo_tin_surface(),
+        },
+        app_module=None,
+        gui_module=None,
+    )
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = preview
+
+    rows = {row[0]: row for row in panel._source_link_rows()}
+
+    assert rows["Alignment"][2] == "alignment:v1-demo"
+    assert rows["Alignment"][3] == "0.000 -> 80.000 | elements 2"
+    assert rows["Stations"][3] == "0.000 -> 80.000 | rows 5"
+    assert rows["Profile"][2] == "profile:v1-demo"
+    assert rows["Profile"][3] == "0.000 -> 80.000 | controls 3"
+    assert rows["TIN"][2] == "tin:profile-review-eg"
+    assert rows["TIN"][3] == "vertices 4 | triangles 2"
+    assert rows["TIN"][4] == "linked"
+
+
+def test_plan_profile_connection_diagnostics_split_by_source_area() -> None:
+    preview = show_v1_plan_profile_preview(
+        document=None,
+        extra_context={
+            "tin_surface": _demo_tin_surface(),
+        },
+        app_module=None,
+        gui_module=None,
+    )
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = preview
+
+    rows = {row[0]: row for row in panel._connection_diagnostic_rows()}
+
+    assert rows["Source Links"][1] == "warning"
+    assert "preview_source" in rows["Source Links"][2]
+    assert rows["Alignment"][1] == "ok"
+    assert rows["Stations"][1] == "ok"
+    assert rows["Profile / FG"][1] == "ok"
+    assert rows["TIN / EG"][1] == "ok"
+    assert rows["FG-EG"][1] == "ok"
+    assert "max abs delta" in rows["FG-EG"][2]
+
+
+def test_plan_profile_connection_diagnostics_report_missing_tin_area() -> None:
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = build_demo_plan_profile_preview("Demo Corridor")
+
+    rows = {row[0]: row for row in panel._connection_diagnostic_rows()}
+
+    assert rows["TIN / EG"][1] == "warning"
+    assert "No TIN source is linked" in rows["TIN / EG"][2]
+    assert rows["FG-EG"][1] == "not_applicable"
+    assert "no TIN is linked" in rows["FG-EG"][2]
+
+
+def test_plan_profile_diagnostic_area_commands_open_source_panels() -> None:
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("Alignment") == "CorridorRoad_V1EditAlignment"
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("Source Links") == "CorridorRoad_V1EditAlignment"
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("Stations") == "CorridorRoad_V1GenerateStations"
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("Profile / FG") == "CorridorRoad_V1EditProfile"
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("TIN / EG") == "CorridorRoad_V1EditTIN"
+    assert PlanProfileViewerTaskPanel._diagnostic_area_command("FG-EG", status="not_applicable") == "CorridorRoad_V1EditTIN"
+
+
+def test_plan_profile_diagnostic_row_double_click_opens_tin_panel() -> None:
+    clear_ui_context()
+    fake_gui = _FakeGui()
+    original_gui = profile_review_view.Gui
+    profile_review_view.Gui = fake_gui
+    panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
+    try:
+        rows = [
+            row_index
+            for row_index in range(panel._connection_diagnostics_table.rowCount())
+            if panel._connection_diagnostics_table.item(row_index, 0).text() == "TIN / EG"
+        ]
+        panel._open_diagnostic_table_row(panel._connection_diagnostics_table.item(rows[0], 0))
+    finally:
+        profile_review_view.Gui = original_gui
+
+    context = get_ui_context()
+    assert fake_gui.Control.closed is True
+    assert fake_gui.ran == [("CorridorRoad_V1EditTIN", 0)]
+    assert context["source"] == "v1_plan_profile_viewer"
+
+
 def test_plan_profile_viewer_uses_tabs_for_review_detail_sections() -> None:
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
@@ -279,9 +449,17 @@ def test_plan_profile_navigation_station_labels_explain_selection_reason() -> No
     buttons = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
     labels = [label.text() for label in panel.form.findChildren(QtWidgets.QLabel)]
 
+    assert panel.form.windowTitle() == "CorridorRoad v1 - Plan/Profile Connection Review"
+    assert any(text == "Plan/Profile Connection Review" for text in labels)
     assert "Current review focus station" in label
     assert {"Focus Previous", "Focus Selected", "Focus Next"}.issubset(buttons)
-    assert any("Focus buttons reopen this review" in text for text in labels)
+    assert "Open Stations" in buttons
+    assert any("Focus buttons reopen this connection review" in text for text in labels)
+    assert any("Primary connection review table" in text for text in labels)
+    assert any(text == "Quick Navigation Stations" for text in labels)
+    assert any("Shortcut list only" in text for text in labels)
+    assert any("Station Connection table above for the full station grid" in text for text in labels)
+    assert any("Double-click a diagnostic row" in text for text in labels)
     assert any("Double-click an Alignment Frame or Profile Evaluation row" in text for text in labels)
     assert any("Double-click a Profile Control row" in text for text in labels)
     assert any("Double-click a Plan Geometry or Profile Lines row" in text for text in labels)
@@ -321,6 +499,25 @@ def test_plan_profile_open_alignment_editor_does_not_touch_deleted_status_label(
     context = get_ui_context()
     assert fake_gui.Control.closed is True
     assert fake_gui.ran == [("CorridorRoad_V1EditAlignment", 0)]
+    assert context["source"] == "v1_plan_profile_viewer"
+
+
+def test_plan_profile_open_stations_handoff_runs_unified_station_command() -> None:
+    clear_ui_context()
+    fake_gui = _FakeGui()
+    original_gui = profile_review_view.Gui
+    profile_review_view.Gui = fake_gui
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = build_demo_plan_profile_preview("Demo Corridor")
+    panel._status_label = _DeletingStatusLabel(fake_gui.Control)
+    try:
+        panel._open_legacy_command("CorridorRoad_V1GenerateStations")
+    finally:
+        profile_review_view.Gui = original_gui
+
+    context = get_ui_context()
+    assert fake_gui.Control.closed is True
+    assert fake_gui.ran == [("CorridorRoad_V1GenerateStations", 0)]
     assert context["source"] == "v1_plan_profile_viewer"
 
 

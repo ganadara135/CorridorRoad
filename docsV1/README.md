@@ -39,6 +39,7 @@ Baseline document:
 - [V1_REVIEW_VIEWER_ROLE_DECISION.md](./V1_REVIEW_VIEWER_ROLE_DECISION.md)
 - [V1_CROSS_SECTION_2D_VIEWER_DESIGN.md](./V1_CROSS_SECTION_2D_VIEWER_DESIGN.md)
 - [V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md](./V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md)
+- [V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md](./V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md)
 - [V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md](./V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md)
 - [V1_REVIEW_WORKFLOW_STAGE_MAP.md](./V1_REVIEW_WORKFLOW_STAGE_MAP.md)
 - [V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md](./V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md)
@@ -74,7 +75,7 @@ Rules:
 Preferred review workflow:
 
 - start section review from the v1 `Cross Section Viewer`
-- start plan/profile review from the v1 `Plan/Profile Viewer`
+- start plan/profile connection review from the v1 `Plan/Profile Connection Review`
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
 - use the unified `Stations` command as the first native v1 station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`

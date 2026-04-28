@@ -76,22 +76,28 @@ Supporting tabs may include:
 - Does Alignment connect correctly to Stations?
 - Does Profile connect correctly to the same station domain?
 - Are EG and FG profile references available and sampled correctly?
-- Are station intervals, key stations, and focused station context understandable?
+- Are station intervals, full station rows, issue rows, key stations, and focused station context understandable?
 - Are alignment/profile source links valid before section and corridor review?
 
 It is not the main detailed section review screen.
 
 It should be treated as a continuity and readiness review between `Profile` and `Cross Section Viewer`.
 
+`Key stations` are navigation aids only.
+
+The main review dataset should be the full station-grid connection state.
+
 ## 6. Plan/Profile Viewer UI Direction
 
 Recommended layout:
 
 1. Readiness and source-link summary
-2. Focused station and station interval controls
-3. Alignment/profile continuity tables
-4. Profile line and EG/FG sampling diagnostics
-5. Handoff to `Alignment`, `Stations`, and `Profile`
+2. Source link summary
+3. Full station connection table
+4. Issue-focused diagnostics
+5. Focused station and station interval controls
+6. Profile line and EG/FG sampling diagnostics
+7. Handoff to `Alignment`, `Stations`, and `Profile`
 
 It may show profile graphics, but it should not try to replace:
 

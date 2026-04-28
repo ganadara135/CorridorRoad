@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import math
 import os
+import random
 
 try:
     import FreeCAD as App
@@ -333,6 +334,55 @@ def profile_rows_from_stationing(stationing) -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def profile_random_elevation_rows(
+    rows: list[dict[str, object]],
+    *,
+    seed: int | None = None,
+) -> list[dict[str, object]]:
+    """Fill profile rows with smooth random elevations based on station values."""
+
+    source_rows = [dict(row or {}) for row in list(rows or [])]
+    if not source_rows:
+        return []
+    station_values = []
+    for index, row in enumerate(source_rows, start=1):
+        station = _optional_float(row.get("station", None))
+        if station is None:
+            raise ValueError(f"Row {index} station must be a number before generating random elevations.")
+        station_values.append(float(station))
+
+    rng = random.Random(seed)
+    start = min(station_values)
+    end = max(station_values)
+    span = max(1.0, end - start)
+    base = rng.uniform(24.0, 34.0)
+    trend = rng.uniform(-7.0, 7.0)
+    wave_a = rng.uniform(2.0, 6.0)
+    wave_b = rng.uniform(0.5, 2.5)
+    phase_a = rng.uniform(0.0, math.tau)
+    phase_b = rng.uniform(0.0, math.tau)
+
+    generated = []
+    for row, station in zip(source_rows, station_values):
+        t = (station - start) / span
+        elevation = (
+            base
+            + trend * (t - 0.5)
+            + wave_a * math.sin((math.tau * t) + phase_a)
+            + wave_b * math.sin((math.tau * 2.3 * t) + phase_b)
+            + rng.uniform(-1.25, 1.25)
+        )
+        generated.append(
+            {
+                "control_point_id": row.get("control_point_id", ""),
+                "station": station,
+                "elevation": round(float(elevation), 3),
+                "kind": str(row.get("kind", "") or "pvi"),
+            }
+        )
+    return generated
 
 
 def apply_profile_control_rows(profile, rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -925,6 +975,9 @@ class V1ProfileEditorTaskPanel:
         export_button = QtWidgets.QPushButton("Export CSV")
         export_button.clicked.connect(self._export_profile_csv)
         data_row.addWidget(export_button)
+        random_button = QtWidgets.QPushButton("Random Elevation")
+        random_button.clicked.connect(self._apply_random_elevations)
+        data_row.addWidget(random_button)
         data_row.addStretch(1)
         layout.addLayout(data_row)
 
@@ -1434,6 +1487,19 @@ class V1ProfileEditorTaskPanel:
             self._set_status(str(exc), ok=False)
             self._show_message("Profile", f"Profile CSV export failed.\n{exc}")
 
+    def _apply_random_elevations(self) -> None:
+        try:
+            rows = profile_random_elevation_rows(self._table_station_kind_rows())
+            if not rows:
+                self._set_status("No station rows are available for random elevation generation.", ok=False)
+                self._show_message("Profile", "No station rows are available.\nGenerate Stations first, then reopen Profile.")
+                return
+            self._replace_table_rows(rows)
+            self._set_status(f"Random elevations generated for {len(rows)} station row(s). Apply when ready.", ok=True)
+        except Exception as exc:
+            self._set_status(str(exc), ok=False)
+            self._show_message("Profile", f"Random elevations were not generated.\n{exc}")
+
     def _add_row(self) -> None:
         rows = self._table_rows(allow_empty=False)
         if rows:
@@ -1687,6 +1753,22 @@ class V1ProfileEditorTaskPanel:
                     "control_point_id": _existing_control_id(self.profile, row_index),
                     "station": _required_float(station_text, f"Row {row_index + 1} station"),
                     "elevation": _required_float(elevation_text, f"Row {row_index + 1} elevation"),
+                    "kind": kind_text.strip() or "pvi",
+                }
+            )
+        return rows
+
+    def _table_station_kind_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for row_index in range(self._table.rowCount()):
+            station_text = self._item_text(row_index, 0)
+            kind_text = self._item_text(row_index, 2) or "pvi"
+            if not station_text:
+                continue
+            rows.append(
+                {
+                    "control_point_id": _existing_control_id(self.profile, row_index),
+                    "station": _required_float(station_text, f"Row {row_index + 1} station"),
                     "kind": kind_text.strip() or "pvi",
                 }
             )

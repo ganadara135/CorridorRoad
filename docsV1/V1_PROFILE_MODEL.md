@@ -180,7 +180,8 @@ Current editor rule:
 - if no `V1Profile` exists, the editor opens from generated `V1Stationing` station rows when available and does not create document objects until `Apply`
 - if no generated `V1Stationing` rows exist, the editor leaves the PVI table empty and informs the user to run `Stations` first
 - the editor uses one task panel with `FG Profile`, `Vertical Curves`, `EG Reference`, and `Station Check` tabs
-- the Profile panel exposes `Preset Data`, `Import CSV`, and `Export CSV` actions above the tab area for v1 PVI/control rows
+- the Profile panel exposes `Preset Data`, `Import CSV`, `Export CSV`, and `Random Elevation` actions above the tab area for v1 PVI/control rows
+- `Random Elevation` fills the current station rows with smooth temporary FG elevations so station-generated profile rows can be tested before final design values are entered
 - Profile CSV uses `station,elevation,kind` as the standard export schema and accepts v0-style aliases such as `STA`, `FG`, `elevation`, and `z` on import
 - repository sample CSVs for manual checks are `tests/samples/profile_v1_pvi_rolling.csv` and `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - `EG Reference` is an active TIN reference tab: it lists TIN-capable Mesh/Shape candidates, supports `Use Selected`, samples EG by interval over the current profile station range, and shows station, XY, EG elevation, status, face, and notes rows

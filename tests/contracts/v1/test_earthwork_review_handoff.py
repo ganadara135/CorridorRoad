@@ -116,7 +116,7 @@ def test_earthwork_viewer_opens_plan_profile_with_context() -> None:
     assert context["source"] == "v1_earthwork_to_plan_profile"
     assert context["preferred_station"] == 20.0
     assert context["viewer_context"]["earthwork_window_summary"] == "0.000 -> 20.000"
-    assert "Plan/Profile Viewer" in panel._status_label.text
+    assert "Plan/Profile Connection Review" in panel._status_label.text
 
 
 if __name__ == "__main__":

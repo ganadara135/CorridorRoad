@@ -61,7 +61,7 @@ def build_plan_profile_handoff_context(
     *,
     station_row: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Build the v1 Plan/Profile Viewer context for one earthwork focus."""
+    """Build the v1 Plan/Profile Connection Review context for one earthwork focus."""
 
     payload_row = _station_payload(report, station_row=station_row)
     station_value = float(payload_row.get("station", 0.0) or 0.0)
@@ -543,7 +543,7 @@ class EarthworkViewerTaskPanel:
         context_payload = build_plan_profile_handoff_context(self.report, station_row=row)
         set_ui_context(**context_payload)
         station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
-        self._set_status_safely(f"Opening Plan/Profile Viewer for {station_label}.", ok=True)
+        self._set_status_safely(f"Opening Plan/Profile Connection Review for {station_label}.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
