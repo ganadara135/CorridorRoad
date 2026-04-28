@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 try:
+    import FreeCAD as App
     import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
+    App = None
     Gui = None
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
@@ -56,24 +58,39 @@ class PlanProfileViewerTaskPanel:
         summary.setPlainText(self._summary_text())
         layout.addWidget(summary)
 
-        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
-        layout.addWidget(QtWidgets.QLabel("Viewer Context"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Field", "Value"],
-                rows=self._viewer_context_rows(viewer_context),
-                empty_text="No viewer context rows.",
+        readiness_rows = self._review_readiness_rows()
+        if readiness_rows:
+            layout.addWidget(QtWidgets.QLabel("Review Readiness"))
+            layout.addWidget(
+                self._table_widget(
+                    headers=["Stage", "Status", "Next Action"],
+                    rows=readiness_rows,
+                    empty_text="Review context is ready.",
+                )
             )
-        )
 
-        layout.addWidget(QtWidgets.QLabel("Alignment/Profile Bridge Diagnostics"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Kind", "Status", "Message", "Notes"],
-                rows=self._bridge_diagnostic_rows(),
-                empty_text="No bridge diagnostic rows.",
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        viewer_context_rows = self._viewer_context_rows(viewer_context)
+        if viewer_context_rows:
+            layout.addWidget(QtWidgets.QLabel("Viewer Context"))
+            layout.addWidget(
+                self._table_widget(
+                    headers=["Field", "Value"],
+                    rows=viewer_context_rows,
+                    empty_text="No viewer context rows.",
+                )
             )
-        )
+
+        bridge_issue_rows = self._bridge_diagnostic_rows(issues_only=True)
+        if bridge_issue_rows:
+            layout.addWidget(QtWidgets.QLabel("Alignment/Profile Diagnostics"))
+            layout.addWidget(
+                self._table_widget(
+                    headers=["Kind", "Status", "Message", "Notes"],
+                    rows=bridge_issue_rows,
+                    empty_text="No diagnostic issue rows.",
+                )
+            )
 
         layout.addWidget(QtWidgets.QLabel("Station Sampling Controls"))
         station_interval_row = QtWidgets.QHBoxLayout()
@@ -91,134 +108,155 @@ class PlanProfileViewerTaskPanel:
         station_interval_row.addStretch(1)
         layout.addLayout(station_interval_row)
 
-        layout.addWidget(QtWidgets.QLabel("Key Stations"))
+        layout.addWidget(QtWidgets.QLabel("Review Navigation Stations"))
+        navigation_hint = QtWidgets.QLabel(
+            "Compact list for review movement: start/end stations, the current focus, and nearby stations. "
+            "Use Focus buttons to reopen this viewer centered on another station."
+        )
+        navigation_hint.setWordWrap(True)
+        navigation_hint.setStyleSheet("color: #666;")
+        layout.addWidget(navigation_hint)
         self._key_station_combo = QtWidgets.QComboBox()
         for row in self._key_station_rows():
-            label = str(row.get("label", "") or f"STA {float(row.get('station', 0.0) or 0.0):.3f}")
-            navigation_kind = str(row.get("navigation_kind", "") or "").strip()
-            if bool(row.get("is_current", False)):
-                label = f"{label} [current]"
-            elif navigation_kind:
-                label = f"{label} [{navigation_kind}]"
-            self._key_station_combo.addItem(label, row)
+            self._key_station_combo.addItem(self._key_station_combo_label(row), row)
         if self._key_station_combo.count() > 0:
             self._key_station_combo.setCurrentIndex(self._current_key_station_index())
         layout.addWidget(self._key_station_combo)
 
         station_button_row = QtWidgets.QHBoxLayout()
-        prev_button = QtWidgets.QPushButton("Prev")
+        prev_button = QtWidgets.QPushButton("Focus Previous")
         prev_button.clicked.connect(lambda: self._open_adjacent_station(-1))
         station_button_row.addWidget(prev_button)
-        open_station_button = QtWidgets.QPushButton("Open Selected Station")
+        open_station_button = QtWidgets.QPushButton("Focus Selected")
         open_station_button.clicked.connect(self._open_selected_station)
         station_button_row.addWidget(open_station_button)
-        next_button = QtWidgets.QPushButton("Next")
+        next_button = QtWidgets.QPushButton("Focus Next")
         next_button.clicked.connect(lambda: self._open_adjacent_station(1))
         station_button_row.addWidget(next_button)
         station_button_row.addStretch(1)
         layout.addLayout(station_button_row)
-
-        layout.addWidget(QtWidgets.QLabel("Alignment Frame"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Station", "X", "Y", "Tangent", "Element", "Status"],
-                rows=self._alignment_frame_rows(),
-                empty_text="No evaluated alignment frame rows.",
-            )
+        focus_hint = QtWidgets.QLabel(
+            "Focus buttons reopen this review centered on another navigation station. "
+            "They do not edit Alignment, Profile, or Stations."
         )
+        focus_hint.setWordWrap(True)
+        focus_hint.setStyleSheet("color: #666;")
+        layout.addWidget(focus_hint)
 
-        layout.addWidget(QtWidgets.QLabel("Profile Evaluation"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Station", "Elevation", "Grade", "Segment", "Curve", "Status"],
-                rows=self._profile_eval_rows(),
-                empty_text="No evaluated profile rows.",
-            )
+        tabs = QtWidgets.QTabWidget()
+
+        evaluation_tab = QtWidgets.QWidget()
+        evaluation_layout = QtWidgets.QVBoxLayout(evaluation_tab)
+        evaluation_hint = QtWidgets.QLabel(
+            "Double-click an Alignment Frame or Profile Evaluation row to highlight that station in the 3D View."
         )
-
-        layout.addWidget(QtWidgets.QLabel("Plan Geometry"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Kind", "Start", "End", "Points"],
-                rows=[
-                    [
-                        str(getattr(row, "kind", "") or ""),
-                        str(self._station_start(row)),
-                        str(self._station_end(row)),
-                        str(len(list(getattr(row, "x_values", []) or []))),
-                    ]
-                    for row in list(getattr(self.preview.get("plan_output"), "geometry_rows", []) or [])
-                ],
-                empty_text="No plan geometry rows.",
-            )
+        evaluation_hint.setWordWrap(True)
+        evaluation_hint.setStyleSheet("color: #666;")
+        evaluation_layout.addWidget(evaluation_hint)
+        evaluation_layout.addWidget(QtWidgets.QLabel("Alignment Frame"))
+        self._alignment_frame_table = self._table_widget(
+            headers=["Station", "X", "Y", "Tangent", "Element", "Status"],
+            rows=self._alignment_frame_rows(),
+            empty_text="No evaluated alignment frame rows.",
         )
-
-        layout.addWidget(QtWidgets.QLabel("Profile Lines"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Kind", "Points", "Station Range", "Elevation Range", "Source"],
-                rows=self._profile_line_rows(),
-                empty_text="No profile line rows.",
-            )
+        evaluation_layout.addWidget(self._alignment_frame_table)
+        self._connect_station_highlight_table(self._alignment_frame_table)
+        evaluation_layout.addWidget(QtWidgets.QLabel("Profile Evaluation"))
+        self._profile_eval_table = self._table_widget(
+            headers=["Station", "Elevation", "Grade", "Segment", "Curve", "Status"],
+            rows=self._profile_eval_rows(),
+            empty_text="No evaluated profile rows.",
         )
+        evaluation_layout.addWidget(self._profile_eval_table)
+        self._connect_station_highlight_table(self._profile_eval_table)
+        tabs.addTab(evaluation_tab, "Evaluation")
 
-        layout.addWidget(QtWidgets.QLabel("Profile Controls"))
+        geometry_tab = QtWidgets.QWidget()
+        geometry_layout = QtWidgets.QVBoxLayout(geometry_tab)
+        geometry_hint = QtWidgets.QLabel(
+            "Double-click a Plan Geometry or Profile Lines row to highlight the start station of that range in the 3D View."
+        )
+        geometry_hint.setWordWrap(True)
+        geometry_hint.setStyleSheet("color: #666;")
+        geometry_layout.addWidget(geometry_hint)
+        geometry_layout.addWidget(QtWidgets.QLabel("Plan Geometry"))
+        self._plan_geometry_table = self._table_widget(
+            headers=["Kind", "Start", "End", "Points"],
+            rows=self._plan_geometry_rows(),
+            empty_text="No plan geometry rows.",
+        )
+        geometry_layout.addWidget(self._plan_geometry_table)
+        self._connect_range_start_highlight_table(self._plan_geometry_table, station_column=1)
+        geometry_layout.addWidget(QtWidgets.QLabel("Profile Lines"))
+        self._profile_lines_table = self._table_widget(
+            headers=["Kind", "Points", "Station Range", "Elevation Range", "Source"],
+            rows=self._profile_line_rows(),
+            empty_text="No profile line rows.",
+        )
+        geometry_layout.addWidget(self._profile_lines_table)
+        self._connect_range_start_highlight_table(self._profile_lines_table, station_column=2)
+        tabs.addTab(geometry_tab, "Geometry")
+
+        controls_tab = QtWidgets.QWidget()
+        controls_layout = QtWidgets.QVBoxLayout(controls_tab)
+        controls_hint = QtWidgets.QLabel(
+            "Double-click a Profile Control row to highlight the nearest review station in the 3D View."
+        )
+        controls_hint.setWordWrap(True)
+        controls_hint.setStyleSheet("color: #666;")
+        controls_layout.addWidget(controls_hint)
+        controls_layout.addWidget(QtWidgets.QLabel("Profile Controls"))
         self._profile_table = self._table_widget(
             headers=["Station", "Elevation", "Label"],
-            rows=[
-                [
-                    str(getattr(row, "station", "") or ""),
-                    str(getattr(row, "elevation", "") or ""),
-                    str(getattr(row, "label", "") or ""),
-                ]
-                for row in list(getattr(self.preview.get("profile_output"), "pvi_rows", []) or [])
-            ],
+            rows=self._profile_control_rows(),
             empty_text="No profile control rows.",
         )
-        layout.addWidget(self._profile_table)
+        controls_layout.addWidget(self._profile_table)
         self._select_focus_station_row(self._profile_table)
+        self._connect_station_highlight_table(self._profile_table)
+        tabs.addTab(controls_tab, "Profile Controls")
 
-        layout.addWidget(QtWidgets.QLabel("Earthwork Area Controls"))
-        area_width_row = QtWidgets.QHBoxLayout()
-        area_width_row.addWidget(QtWidgets.QLabel("Section Width"))
-        self._earthwork_area_width_spin = QtWidgets.QDoubleSpinBox()
-        self._earthwork_area_width_spin.setDecimals(3)
-        self._earthwork_area_width_spin.setRange(0.0, 1000000.0)
-        self._earthwork_area_width_spin.setSingleStep(1.0)
-        self._earthwork_area_width_spin.setSuffix(" m")
-        try:
-            self._earthwork_area_width_spin.setSpecialValueText("not set")
-        except Exception:
-            pass
-        self._earthwork_area_width_spin.setValue(self._earthwork_area_width_value() or 0.0)
-        area_width_row.addWidget(self._earthwork_area_width_spin)
-        apply_area_width_button = QtWidgets.QPushButton("Apply Area Width")
-        apply_area_width_button.clicked.connect(self._apply_earthwork_area_width)
-        area_width_row.addWidget(apply_area_width_button)
-        area_width_row.addStretch(1)
-        layout.addLayout(area_width_row)
+        if self._should_show_earthwork_section():
+            earthwork_tab = QtWidgets.QWidget()
+            earthwork_layout = QtWidgets.QVBoxLayout(earthwork_tab)
+            earthwork_layout.addWidget(QtWidgets.QLabel("Earthwork Context"))
+            area_width_row = QtWidgets.QHBoxLayout()
+            area_width_row.addWidget(QtWidgets.QLabel("Section Width"))
+            self._earthwork_area_width_spin = QtWidgets.QDoubleSpinBox()
+            self._earthwork_area_width_spin.setDecimals(3)
+            self._earthwork_area_width_spin.setRange(0.0, 1000000.0)
+            self._earthwork_area_width_spin.setSingleStep(1.0)
+            self._earthwork_area_width_spin.setSuffix(" m")
+            try:
+                self._earthwork_area_width_spin.setSpecialValueText("not set")
+            except Exception:
+                pass
+            self._earthwork_area_width_spin.setValue(self._earthwork_area_width_value() or 0.0)
+            area_width_row.addWidget(self._earthwork_area_width_spin)
+            apply_area_width_button = QtWidgets.QPushButton("Apply Area Width")
+            apply_area_width_button.clicked.connect(self._apply_earthwork_area_width)
+            area_width_row.addWidget(apply_area_width_button)
+            area_width_row.addStretch(1)
+            earthwork_layout.addLayout(area_width_row)
 
-        area_status = QtWidgets.QLabel(self._earthwork_area_hint_status_text())
-        area_status.setStyleSheet("color: #666;")
-        layout.addWidget(area_status)
+            area_status = QtWidgets.QLabel(self._earthwork_area_hint_status_text())
+            area_status.setStyleSheet("color: #666;")
+            earthwork_layout.addWidget(area_status)
 
-        layout.addWidget(QtWidgets.QLabel("Earthwork Attachments"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Kind", "From", "To", "Value", "Unit"],
-                rows=[
-                    [
-                        str(getattr(row, "kind", "") or ""),
-                        str(getattr(row, "station_start", "") or ""),
-                        str(getattr(row, "station_end", "") or ""),
-                        str(getattr(row, "value", "") or ""),
-                        str(getattr(row, "unit", "") or ""),
-                    ]
-                    for row in list(getattr(self.preview.get("profile_output"), "earthwork_rows", []) or [])
-                ],
-                empty_text="No attached earthwork rows.",
-            )
-        )
+            attachment_rows = self._earthwork_attachment_rows()
+            if attachment_rows:
+                earthwork_layout.addWidget(QtWidgets.QLabel("Earthwork Attachments"))
+                earthwork_layout.addWidget(
+                    self._table_widget(
+                        headers=["Kind", "From", "To", "Value", "Unit"],
+                        rows=attachment_rows,
+                        empty_text="No attached earthwork rows.",
+                    )
+                )
+            earthwork_layout.addStretch(1)
+            tabs.addTab(earthwork_tab, "Earthwork")
+
+        layout.addWidget(tabs, 1)
 
         self._status_label = QtWidgets.QLabel("")
         self._status_label.setStyleSheet("color: #666;")
@@ -228,7 +266,6 @@ class PlanProfileViewerTaskPanel:
         for label, command_name in (
             ("Open Alignment Editor", "CorridorRoad_V1EditAlignment"),
             ("Open Profile Editor", "CorridorRoad_V1EditProfile"),
-            ("Open PVI", "CorridorRoad_EditPVI"),
         ):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(
@@ -288,6 +325,77 @@ class PlanProfileViewerTaskPanel:
             lines.append(f"Selected Row: {selected_row}")
         return "\n".join(lines)
 
+    def _review_readiness_rows(self) -> list[list[str]]:
+        alignment_model = self.preview.get("alignment_model")
+        profile_model = self.preview.get("profile_model")
+        plan_output = self.preview.get("plan_output")
+        profile_output = self.preview.get("profile_output")
+        rows: list[list[str]] = []
+
+        if alignment_model is None:
+            rows.append(
+                [
+                    "Alignment",
+                    "missing",
+                    "Open Alignment Editor and create or import the v1 alignment source.",
+                ]
+            )
+        elif not list(getattr(plan_output, "geometry_rows", []) or []):
+            rows.append(
+                [
+                    "Alignment Geometry",
+                    "not evaluated",
+                    "Apply Alignment again so review geometry can be regenerated.",
+                ]
+            )
+
+        station_rows = list(getattr(plan_output, "station_rows", []) or [])
+        if not station_rows:
+            rows.append(
+                [
+                    "Stations",
+                    "missing",
+                    "Open Stations and apply station sampling for the active alignment.",
+                ]
+            )
+
+        if profile_model is None:
+            rows.append(
+                [
+                    "Profile",
+                    "missing",
+                    "Open Profile and create or import the v1 profile source.",
+                ]
+            )
+        elif not list(getattr(profile_output, "pvi_rows", []) or []):
+            rows.append(
+                [
+                    "Profile Controls",
+                    "missing",
+                    "Open Profile and apply PVI or preset profile control rows.",
+                ]
+            )
+
+        if station_rows and not self._key_station_rows():
+            rows.append(
+                [
+                    "Review Navigation Stations",
+                    "missing",
+                    "Reopen Plan/Profile Review or adjust the station interval.",
+                ]
+            )
+
+        if profile_model is not None and not self._profile_line_rows():
+            rows.append(
+                [
+                    "Profile Lines",
+                    "not evaluated",
+                    "Apply Profile again so FG/EG review lines can be regenerated.",
+                ]
+            )
+
+        return rows
+
     def _focus_badge_text(self) -> str:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
         focus_station_label = str(viewer_context.get("focus_station_label", "") or "").strip()
@@ -335,14 +443,17 @@ class PlanProfileViewerTaskPanel:
                 rows.append([f"Summary {index}", text])
         return rows
 
-    def _bridge_diagnostic_rows(self) -> list[list[str]]:
+    def _bridge_diagnostic_rows(self, *, issues_only: bool = False) -> list[list[str]]:
         rows = []
         for row in list(self.preview.get("bridge_diagnostic_rows", []) or []):
             item = dict(row or {})
+            status = str(item.get("status", "") or "").strip()
+            if issues_only and status in {"", "ok", "not_applicable"}:
+                continue
             rows.append(
                 [
                     str(item.get("kind", "") or ""),
-                    str(item.get("status", "") or ""),
+                    status,
                     str(item.get("message", "") or ""),
                     str(item.get("notes", "") or ""),
                 ]
@@ -368,6 +479,29 @@ class PlanProfileViewerTaskPanel:
 
     def _key_station_rows(self) -> list[dict[str, object]]:
         return [dict(row or {}) for row in list(self.preview.get("key_station_rows", []) or [])]
+
+    def _key_station_combo_label(self, row: dict[str, object]) -> str:
+        station = float(row.get("station", 0.0) or 0.0)
+        label = str(row.get("label", "") or f"STA {station:.3f}")
+        reason = str(row.get("navigation_reason", "") or "").strip()
+        if not reason:
+            reason = self._navigation_reason_from_kind(
+                str(row.get("navigation_kind", "") or ""),
+                is_current=bool(row.get("is_current", False)),
+            )
+        return f"{label} - {reason}" if reason else label
+
+    @staticmethod
+    def _navigation_reason_from_kind(navigation_kind: str, *, is_current: bool = False) -> str:
+        if is_current:
+            return "Current review focus station"
+        return {
+            "first": "Start of sampled station range",
+            "last": "End of sampled station range",
+            "previous": "Nearby station before the current focus",
+            "next": "Nearby station after the current focus",
+            "current": "Current review focus station",
+        }.get(str(navigation_kind or "").strip(), "Review navigation station")
 
     def _alignment_frame_rows(self) -> list[list[str]]:
         rows = []
@@ -409,6 +543,17 @@ class PlanProfileViewerTaskPanel:
             )
         return rows
 
+    def _plan_geometry_rows(self) -> list[list[str]]:
+        return [
+            [
+                str(getattr(row, "kind", "") or ""),
+                str(self._station_start(row)),
+                str(self._station_end(row)),
+                str(len(list(getattr(row, "x_values", []) or []))),
+            ]
+            for row in list(getattr(self.preview.get("plan_output"), "geometry_rows", []) or [])
+        ]
+
     def _profile_line_rows(self) -> list[list[str]]:
         rows = []
         for row in list(getattr(self.preview.get("profile_output"), "line_rows", []) or []):
@@ -426,6 +571,16 @@ class PlanProfileViewerTaskPanel:
                 ]
             )
         return rows
+
+    def _profile_control_rows(self) -> list[list[str]]:
+        return [
+            [
+                str(getattr(row, "station", "") or ""),
+                str(getattr(row, "elevation", "") or ""),
+                str(getattr(row, "label", "") or ""),
+            ]
+            for row in list(getattr(self.preview.get("profile_output"), "pvi_rows", []) or [])
+        ]
 
     @staticmethod
     def _format_optional_float(value) -> str:
@@ -495,13 +650,12 @@ class PlanProfileViewerTaskPanel:
             "viewer_context": viewer_context,
         }
         set_ui_context(**context_payload)
+        self._set_status_safely(f"Opening {station_label} in v1 viewer.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
-        self._status_label.setText(f"Opened {station_label} in v1 viewer.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _select_focus_station_row(self, table) -> None:
         if not hasattr(table, "rowCount"):
@@ -609,13 +763,12 @@ class PlanProfileViewerTaskPanel:
             except Exception:
                 pass
         set_ui_context(**context_payload)
+        self._set_status_safely(f"Applying station interval {interval:.3f} m.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
-        self._status_label.setText(f"Applied station interval {interval:.3f} m.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _earthwork_area_hint_status_text(self) -> str:
         result = self.preview.get("profile_earthwork_area_hint_result", None)
@@ -628,6 +781,40 @@ class PlanProfileViewerTaskPanel:
         if status and notes:
             return f"{status}: {notes}"
         return status or notes
+
+    def _earthwork_attachment_rows(self) -> list[list[str]]:
+        return [
+            [
+                str(getattr(row, "kind", "") or ""),
+                str(getattr(row, "station_start", "") or ""),
+                str(getattr(row, "station_end", "") or ""),
+                str(getattr(row, "value", "") or ""),
+                str(getattr(row, "unit", "") or ""),
+            ]
+            for row in list(getattr(self.preview.get("profile_output"), "earthwork_rows", []) or [])
+        ]
+
+    def _should_show_earthwork_section(self) -> bool:
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        source_panel = str(viewer_context.get("source_panel", "") or "").strip().lower()
+        if "earthwork" in source_panel:
+            return True
+        if self._earthwork_area_width_value() is not None:
+            return True
+        if self._earthwork_attachment_rows():
+            return True
+        return False
+
+    def _set_status_safely(self, text: str, *, ok: bool = True) -> None:
+        label = getattr(self, "_status_label", None)
+        if label is None:
+            return
+        try:
+            label.setText(str(text or ""))
+            label.setStyleSheet("color: #666;" if ok else "color: #b33;")
+        except RuntimeError:
+            # The task panel can be destroyed while reopening the viewer.
+            pass
 
     def _apply_earthwork_area_width(self) -> None:
         spin = getattr(self, "_earthwork_area_width_spin", None)
@@ -660,13 +847,12 @@ class PlanProfileViewerTaskPanel:
             except Exception:
                 pass
         set_ui_context(**context_payload)
+        self._set_status_safely(f"Applying earthwork area width {width:.3f} m.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
-        self._status_label.setText(f"Applied earthwork area width {width:.3f} m.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _open_legacy_command(self, command_name: str) -> None:
         legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
@@ -686,6 +872,7 @@ class PlanProfileViewerTaskPanel:
             pass
         if focus_station_label:
             station_row["label"] = focus_station_label
+        self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,
             gui_module=Gui,
@@ -700,23 +887,161 @@ class PlanProfileViewerTaskPanel:
                 },
             },
         )
-        self._status_label.setText(message)
         if not success:
+            self._set_status_safely(message, ok=False)
+
+    def _connect_station_highlight_table(self, table) -> None:
+        if not hasattr(table, "itemDoubleClicked"):
+            return
+        try:
+            table.itemDoubleClicked.connect(lambda item: self._highlight_table_station(item))
+        except Exception:
+            pass
+
+    def _connect_range_start_highlight_table(self, table, *, station_column: int) -> None:
+        if not hasattr(table, "itemDoubleClicked"):
+            return
+        try:
+            table.itemDoubleClicked.connect(
+                lambda item, column=int(station_column): self._highlight_table_range_start(item, column)
+            )
+        except Exception:
+            pass
+
+    def _highlight_table_range_start(self, item, station_column: int) -> None:
+        row_index = int(item.row()) if item is not None and hasattr(item, "row") else -1
+        table = item.tableWidget() if item is not None and hasattr(item, "tableWidget") else None
+        station_value = self._range_start_station_from_table_row(table, row_index, station_column)
+        if station_value is None:
+            self._status_label.setText("No station range start is available for this row.")
+            self._status_label.setStyleSheet("color: #b36b00;")
+            return
+        self._highlight_station_value(station_value)
+
+    def _highlight_table_station(self, item) -> None:
+        row_index = int(item.row()) if item is not None and hasattr(item, "row") else -1
+        table = item.tableWidget() if item is not None and hasattr(item, "tableWidget") else None
+        station_value = self._station_value_from_table_row(table, row_index)
+        if station_value is None:
+            self._status_label.setText("No station value is available for this row.")
+            self._status_label.setStyleSheet("color: #b36b00;")
+            return
+        self._highlight_station_value(station_value)
+
+    def _highlight_station_value(self, station_value: float) -> None:
+        row = self._station_highlight_row(station_value)
+        if row is None:
+            self._status_label.setText(f"Could not resolve station {float(station_value):.3f} for 3D highlight.")
+            self._status_label.setStyleSheet("color: #b36b00;")
+            return
+        document = getattr(App, "ActiveDocument", None) if App is not None else None
+        if document is None:
+            self._status_label.setText("No active document is available for station highlight.")
             self._status_label.setStyleSheet("color: #b33;")
-        else:
+            return
+        try:
+            from ...commands.cmd_review_stations import show_station_highlight
+
+            highlight = show_station_highlight(document, row)
+            if Gui is not None and highlight is not None:
+                try:
+                    Gui.Selection.clearSelection()
+                    Gui.Selection.addSelection(highlight)
+                except Exception:
+                    pass
+                try:
+                    view = Gui.ActiveDocument.ActiveView
+                    view.fitAll()
+                except Exception:
+                    pass
+            self._status_label.setText(f"Highlighted {row.get('label', f'STA {float(station_value):.3f}')} in 3D View.")
             self._status_label.setStyleSheet("color: #666;")
+        except Exception as exc:
+            self._status_label.setText(f"Station highlight failed: {exc}")
+            self._status_label.setStyleSheet("color: #b33;")
+
+    def _station_highlight_row(self, station_value: float) -> dict[str, object] | None:
+        try:
+            target = float(station_value)
+        except Exception:
+            return None
+        best_row = None
+        best_delta = None
+        for row in self._key_station_rows():
+            try:
+                delta = abs(float(row.get("station", 0.0) or 0.0) - target)
+            except Exception:
+                continue
+            if best_delta is None or delta < best_delta:
+                best_delta = delta
+                best_row = row
+        if best_row is None:
+            return None
+        return {
+            "station": float(best_row.get("station", target) or target),
+            "label": str(best_row.get("label", "") or f"STA {target:.3f}"),
+            "x": float(best_row.get("x", 0.0) or 0.0),
+            "y": float(best_row.get("y", 0.0) or 0.0),
+            "tangent": float(best_row.get("tangent_direction_deg", best_row.get("tangent", 0.0)) or 0.0),
+        }
+
+    @staticmethod
+    def _station_value_from_table_row(table, row_index: int) -> float | None:
+        if table is None or row_index < 0 or not hasattr(table, "item"):
+            return None
+        item = table.item(int(row_index), 0)
+        if item is None:
+            return None
+        try:
+            return float(str(item.text() or "").strip())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _range_start_station_from_table_row(table, row_index: int, station_column: int) -> float | None:
+        if table is None or row_index < 0 or not hasattr(table, "item"):
+            return None
+        item = table.item(int(row_index), int(station_column))
+        if item is None:
+            return None
+        text = str(item.text() or "").strip()
+        if "->" in text:
+            text = text.split("->", 1)[0].strip()
+        try:
+            return float(text)
+        except Exception:
+            return None
 
     def _station_start(self, row) -> object:
-        x_values = list(getattr(row, "x_values", []) or [])
-        if not x_values:
+        value = getattr(row, "station_start", None)
+        if value is not None:
+            return value
+        element = self._alignment_element_for_geometry_row(row)
+        if element is None:
             return ""
-        return x_values[0]
+        return getattr(element, "station_start", "")
 
     def _station_end(self, row) -> object:
-        x_values = list(getattr(row, "x_values", []) or [])
-        if not x_values:
+        value = getattr(row, "station_end", None)
+        if value is not None:
+            return value
+        element = self._alignment_element_for_geometry_row(row)
+        if element is None:
             return ""
-        return x_values[-1]
+        return getattr(element, "station_end", "")
+
+    def _alignment_element_for_geometry_row(self, row):
+        alignment_model = self.preview.get("alignment_model")
+        candidates = {
+            str(getattr(row, "source_ref", "") or "").strip(),
+            str(getattr(row, "row_id", "") or "").strip(),
+        }
+        candidates.discard("")
+        for element in list(getattr(alignment_model, "geometry_sequence", []) or []):
+            element_id = str(getattr(element, "element_id", "") or "").strip()
+            if element_id in candidates:
+                return element
+        return None
 
     def _table_widget(
         self,

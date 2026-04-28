@@ -11,6 +11,8 @@ Depends on:
 - `docsV1/V1_EARTHWORK_BALANCE_PLAN.md`
 - `docsV1/V1_EARTHWORK_OUTPUT_SCHEMA.md`
 - `docsV1/V1_IMPLEMENTATION_PHASE_PLAN.md`
+- `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
+- `docsV1/V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md`
 
 ## 1. Purpose
 
@@ -28,6 +30,7 @@ It exists to define:
 The goal is to create one coherent earthwork review surface that helps users inspect:
 
 - total cut/fill state
+- cut/fill aggregation across many stations and station ranges
 - surplus and deficit zones
 - balance ratio
 - cumulative mass-haul behavior

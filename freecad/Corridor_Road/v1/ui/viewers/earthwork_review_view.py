@@ -522,14 +522,13 @@ class EarthworkViewerTaskPanel:
 
         context_payload = build_section_handoff_context(self.report, station_row=row)
         set_ui_context(**context_payload)
+        station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
+        self._set_status_safely(f"Opening Cross Section Viewer for {station_label}.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ViewSections", 0)
-        station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
-        self._status_label.setText(f"Opened Cross Section Viewer for {station_label}.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _open_plan_profile_row(self, row: dict[str, object] | None) -> None:
         if row is None:
@@ -543,14 +542,13 @@ class EarthworkViewerTaskPanel:
 
         context_payload = build_plan_profile_handoff_context(self.report, station_row=row)
         set_ui_context(**context_payload)
+        station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
+        self._set_status_safely(f"Opening Plan/Profile Viewer for {station_label}.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
-        station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
-        self._status_label.setText(f"Opened Plan/Profile Viewer for {station_label}.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _open_legacy_command(self, command_name: str) -> None:
         legacy_objects = dict(self.report.get("legacy_objects", {}) or {})
@@ -559,6 +557,7 @@ class EarthworkViewerTaskPanel:
             objects_to_select = [legacy_objects.get("alignment")]
         elif command_name in ("CorridorRoad_V1EditProfile", "CorridorRoad_EditProfiles", "CorridorRoad_EditPVI"):
             objects_to_select = [legacy_objects.get("profile"), legacy_objects.get("alignment")]
+        self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,
             gui_module=Gui,
@@ -573,11 +572,18 @@ class EarthworkViewerTaskPanel:
                 },
             },
         )
-        self._status_label.setText(message)
         if not success:
-            self._status_label.setStyleSheet("color: #b33;")
-        else:
-            self._status_label.setStyleSheet("color: #666;")
+            self._set_status_safely(message, ok=False)
+
+    def _set_status_safely(self, text: str, *, ok: bool = True) -> None:
+        label = getattr(self, "_status_label", None)
+        if label is None:
+            return
+        try:
+            label.setText(str(text or ""))
+            label.setStyleSheet("color: #666;" if ok else "color: #b33;")
+        except RuntimeError:
+            pass
 
     def _summary_value(self, summary_rows: list[object], kind: str) -> object:
         for row in summary_rows:

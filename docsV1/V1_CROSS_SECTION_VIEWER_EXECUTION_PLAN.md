@@ -11,6 +11,8 @@ Depends on:
 - `docsV1/V1_REVIEW_STAGE_SPLIT_PLAN.md`
 - `docsV1/V1_SECTION_OUTPUT_SCHEMA.md`
 - `docsV1/V1_IMPLEMENTATION_PHASE_PLAN.md`
+- `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
+- `docsV1/V1_CROSS_SECTION_2D_VIEWER_DESIGN.md`
 
 ## 1. Purpose
 
@@ -35,6 +37,10 @@ The goal is to promote the v1 cross-section review path into the main review exp
 - rebuild verification
 - terrain and structure interaction review
 - section-linked earthwork context
+
+The main user-facing experience should be a detailed 2D section view by station.
+
+Tables, diagnostics, source inspector rows, and corridor result rows are supporting panels.
 
 ## 3. Definition of Promotion
 
@@ -230,6 +236,12 @@ The promoted viewer should be validated through:
 - focused component tests
 - smoke tests for opening the v1 viewer command
 - manual review of at least one real corridor document
+
+Current implementation notes:
+
+- [x] Cross Section Viewer can show Build Corridor result rows for `3D Centerline`, `Design Surface`, `Subgrade Surface`, `Slope Face Surface`, and `Drainage Surface` when corridor preview objects are available
+- [x] Cross Section Viewer summary reports corridor build result readiness so missing corridor surfaces are visible during station-level section review
+- [x] Cross Section Viewer can double-click a corridor build result row to select and fit the related 3D preview object
 
 Minimum manual scenarios:
 

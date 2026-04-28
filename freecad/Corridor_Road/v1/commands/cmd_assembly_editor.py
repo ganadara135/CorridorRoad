@@ -33,6 +33,55 @@ from ..objects.obj_assembly import (
     find_v1_assembly_model,
     to_assembly_model,
 )
+from ..services.builders.applied_section_service import (
+    ditch_component_local_profile,
+    ditch_material_policy,
+    ditch_component_validation_messages,
+)
+
+
+DITCH_SHAPES = ("trapezoid", "u", "l", "rectangular", "v", "custom_polyline")
+DITCH_PARAMETER_KEYS = (
+    "shape",
+    "top_width",
+    "bottom_width",
+    "depth",
+    "inner_slope",
+    "outer_slope",
+    "invert_offset",
+    "wall_thickness",
+    "lining_thickness",
+    "wall_side",
+    "section_points",
+)
+DITCH_PARAMETER_FIELDS = (
+    ("top_width", "Top width"),
+    ("bottom_width", "Bottom width"),
+    ("depth", "Depth"),
+    ("inner_slope", "Inner slope"),
+    ("outer_slope", "Outer slope"),
+    ("invert_offset", "Invert offset"),
+    ("wall_thickness", "Wall thickness"),
+    ("lining_thickness", "Lining thickness"),
+    ("wall_side", "Wall side"),
+    ("section_points", "Section points"),
+)
+DITCH_SHAPE_FIELDS = {
+    "trapezoid": ("top_width", "bottom_width", "depth", "inner_slope", "outer_slope"),
+    "u": ("bottom_width", "depth", "wall_thickness", "lining_thickness"),
+    "l": ("top_width", "bottom_width", "depth", "wall_thickness", "wall_side", "lining_thickness"),
+    "rectangular": ("bottom_width", "depth", "wall_thickness", "lining_thickness"),
+    "v": ("top_width", "depth", "invert_offset", "inner_slope", "outer_slope"),
+    "custom_polyline": ("section_points",),
+}
+DITCH_SHAPE_DEFAULTS = {
+    "trapezoid": {"top_width": "1.800", "bottom_width": "0.600", "depth": "0.450", "inner_slope": "1.500", "outer_slope": "2.000"},
+    "u": {"bottom_width": "0.600", "depth": "0.500", "wall_thickness": "0.150", "lining_thickness": "0.120"},
+    "l": {"top_width": "1.000", "bottom_width": "0.700", "depth": "0.450", "wall_thickness": "0.150", "wall_side": "inner"},
+    "rectangular": {"bottom_width": "0.800", "depth": "0.500", "wall_thickness": "0.150", "lining_thickness": "0.120"},
+    "v": {"top_width": "1.600", "depth": "0.400", "invert_offset": "0.800", "inner_slope": "2.000", "outer_slope": "2.000"},
+    "custom_polyline": {"section_points": "0,0,inner_edge;0.5,-0.4,invert;1.0,0,outer_edge"},
+}
 
 
 ASSEMBLY_PRESETS = {
@@ -348,6 +397,57 @@ class V1AssemblyEditorTaskPanel:
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
 
+        self._ditch_group = QtWidgets.QGroupBox("Ditch Parameters")
+        ditch_layout = QtWidgets.QVBoxLayout(self._ditch_group)
+        ditch_hint = QtWidgets.QLabel(
+            "Select a ditch row, edit shape parameters, then apply them back to the Parameters column."
+        )
+        ditch_hint.setWordWrap(True)
+        ditch_layout.addWidget(ditch_hint)
+        ditch_shape_row = QtWidgets.QHBoxLayout()
+        ditch_shape_row.addWidget(QtWidgets.QLabel("Shape:"))
+        self._ditch_shape_combo = QtWidgets.QComboBox()
+        self._ditch_shape_combo.addItems(list(DITCH_SHAPES))
+        self._ditch_shape_combo.currentIndexChanged.connect(self._update_ditch_shape_controls)
+        ditch_shape_row.addWidget(self._ditch_shape_combo)
+        load_ditch_button = QtWidgets.QPushButton("Load Selected Ditch")
+        load_ditch_button.clicked.connect(self._load_ditch_parameters_from_selection)
+        ditch_shape_row.addWidget(load_ditch_button)
+        default_ditch_button = QtWidgets.QPushButton("Load Shape Defaults")
+        default_ditch_button.clicked.connect(self._load_ditch_shape_defaults)
+        ditch_shape_row.addWidget(default_ditch_button)
+        apply_ditch_button = QtWidgets.QPushButton("Apply Ditch Parameters")
+        apply_ditch_button.clicked.connect(self._apply_ditch_parameters_to_selection)
+        ditch_shape_row.addWidget(apply_ditch_button)
+        ditch_shape_row.addStretch(1)
+        ditch_layout.addLayout(ditch_shape_row)
+        self._ditch_shape_note = QtWidgets.QLabel("")
+        self._ditch_shape_note.setWordWrap(True)
+        ditch_layout.addWidget(self._ditch_shape_note)
+        self._ditch_shape_diagram = QtWidgets.QLabel("")
+        self._ditch_shape_diagram.setWordWrap(False)
+        self._ditch_shape_diagram.setStyleSheet(
+            "font-family: Consolas, monospace; background: #20242b; color: #dce8f2; padding: 6px;"
+        )
+        ditch_layout.addWidget(self._ditch_shape_diagram)
+        ditch_form = QtWidgets.QGridLayout()
+        self._ditch_fields = {}
+        self._ditch_field_labels = {}
+        for index, (key, label) in enumerate(DITCH_PARAMETER_FIELDS):
+            edit = QtWidgets.QLineEdit()
+            edit.setPlaceholderText(_ditch_parameter_placeholder(key))
+            self._ditch_fields[key] = edit
+            label_widget = QtWidgets.QLabel(f"{label}:")
+            self._ditch_field_labels[key] = label_widget
+            row_index = index // 2
+            col_index = (index % 2) * 2
+            ditch_form.addWidget(label_widget, row_index, col_index)
+            ditch_form.addWidget(edit, row_index, col_index + 1)
+        ditch_layout.addLayout(ditch_form)
+        layout.addWidget(self._ditch_group)
+        self._table.itemSelectionChanged.connect(self._load_ditch_parameters_from_selection)
+        self._update_ditch_shape_controls()
+
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
         self._status.setFixedHeight(70)
@@ -454,6 +554,103 @@ class V1AssemblyEditorTaskPanel:
         for row_index in rows:
             self._table.removeRow(row_index)
         self._set_status(f"Deleted {len(rows)} component row(s).")
+
+    def _load_ditch_parameters_from_selection(self) -> None:
+        row_index = self._selected_row_index()
+        if row_index < 0 or not hasattr(self, "_ditch_fields"):
+            return
+        if _item_text(self._table, row_index, 1) != "ditch":
+            self._clear_ditch_parameter_fields()
+            return
+        params = _split_parameters(_item_text(self._table, row_index, 8))
+        shape = str(params.get("shape", "") or "trapezoid").strip().lower().replace("-", "_")
+        self._ditch_shape_combo.setCurrentText(shape if shape in DITCH_SHAPES else "trapezoid")
+        for key, _label in DITCH_PARAMETER_FIELDS:
+            self._ditch_fields[key].setText(str(params.get(key, "") or ""))
+        self._update_ditch_shape_controls()
+
+    def _update_ditch_shape_controls(self, *_args) -> None:
+        if not hasattr(self, "_ditch_fields"):
+            return
+        shape = str(self._ditch_shape_combo.currentText() or "trapezoid").strip().lower().replace("-", "_")
+        material = self._selected_ditch_material()
+        visible_keys = set(_ditch_effective_field_keys(shape, material))
+        for key, field in self._ditch_fields.items():
+            visible = key in visible_keys
+            field.setVisible(visible)
+            label = self._ditch_field_labels.get(key)
+            if label is not None:
+                label.setVisible(visible)
+        if hasattr(self, "_ditch_shape_note"):
+            self._ditch_shape_note.setText(
+                _ditch_shape_note(shape) + "\n" + _ditch_material_note(material, shape)
+            )
+        if hasattr(self, "_ditch_shape_diagram"):
+            self._ditch_shape_diagram.setText(_ditch_shape_diagram(shape))
+
+    def _load_ditch_shape_defaults(self) -> None:
+        if not hasattr(self, "_ditch_fields"):
+            return
+        shape = str(self._ditch_shape_combo.currentText() or "trapezoid").strip().lower().replace("-", "_")
+        for field in self._ditch_fields.values():
+            field.clear()
+        for key, value in _ditch_shape_defaults(shape).items():
+            if key in self._ditch_fields:
+                self._ditch_fields[key].setText(str(value))
+        self._update_ditch_shape_controls()
+        self._set_status(f"Loaded {shape} ditch defaults. Apply them to the selected ditch row when ready.")
+
+    def _apply_ditch_parameters_to_selection(self) -> None:
+        row_index = self._selected_row_index()
+        if row_index < 0:
+            self._set_status("Select a ditch component row before applying ditch parameters.")
+            return
+        if _item_text(self._table, row_index, 1) != "ditch":
+            self._set_status("Selected component is not a ditch. Change Kind to ditch first.")
+            return
+        existing = _split_parameters(_item_text(self._table, row_index, 8))
+        params = _merge_ditch_parameters(existing, self._ditch_editor_parameters())
+        item = self._table.item(row_index, 8)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            self._table.setItem(row_index, 8, item)
+        item.setText(_join_parameters(params))
+        try:
+            messages = _validate_assembly_model(self._model_from_table())
+        except Exception as exc:
+            self._set_status(f"Ditch parameters were applied, but validation failed:\n{exc}")
+            return
+        self._set_status(
+            "Ditch parameters applied to the selected row.\n"
+            + ("\n".join(messages) if messages else "Validation status: ok")
+        )
+
+    def _ditch_editor_parameters(self) -> dict[str, str]:
+        shape = str(self._ditch_shape_combo.currentText() or "trapezoid")
+        params = {"shape": shape}
+        for key in _ditch_effective_field_keys(shape, self._selected_ditch_material()):
+            value = str(self._ditch_fields[key].text() or "").strip()
+            if value:
+                params[key] = value
+        return params
+
+    def _clear_ditch_parameter_fields(self) -> None:
+        self._ditch_shape_combo.setCurrentText("trapezoid")
+        for field in self._ditch_fields.values():
+            field.clear()
+        self._update_ditch_shape_controls()
+
+    def _selected_row_index(self) -> int:
+        rows = sorted({item.row() for item in list(self._table.selectedItems() or [])})
+        if rows:
+            return rows[0]
+        return int(self._table.currentRow())
+
+    def _selected_ditch_material(self) -> str:
+        row_index = self._selected_row_index()
+        if row_index >= 0 and _item_text(self._table, row_index, 1) == "ditch":
+            return _item_text(self._table, row_index, 6)
+        return ""
 
     def _validate(self) -> None:
         try:
@@ -590,6 +787,8 @@ def _validate_assembly_model(model: AssemblyModel) -> list[str]:
             component_ids.add(component.component_id)
             if component.width < 0.0:
                 messages.append(f"ERROR: component {component.component_id} width must not be negative.")
+            for message in ditch_component_validation_messages(component):
+                messages.append(f"WARN: {message}")
     if not messages:
         messages.append("Validation status: ok")
     return messages
@@ -644,6 +843,9 @@ def _assembly_side_points(template: SectionTemplate, *, side: str, start_x: floa
         component_side = str(getattr(component, "side", "") or "center")
         if component_side not in {side, "both"}:
             continue
+        if str(getattr(component, "kind", "") or "") == "ditch":
+            x, z = _append_ditch_preview_points(points, component, base_x=x, base_z=z, direction=direction)
+            continue
         width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
         if width <= 1.0e-9:
             continue
@@ -652,6 +854,19 @@ def _assembly_side_points(template: SectionTemplate, *, side: str, start_x: floa
         z += slope * width
         points.append(App.Vector(x, 0.0, z))
     return points
+
+
+def _append_ditch_preview_points(points, component, *, base_x: float, base_z: float, direction: float) -> tuple[float, float]:
+    profile = ditch_component_local_profile(component)
+    if not profile:
+        return float(base_x), float(base_z)
+    last_x = float(base_x)
+    last_z = float(base_z)
+    for local_offset, z_delta, _role in profile[1:]:
+        last_x = float(base_x) + float(direction) * float(local_offset)
+        last_z = float(base_z) + float(z_delta)
+        points.append(App.Vector(last_x, 0.0, last_z))
+    return last_x, last_z
 
 
 def _unique_preview_points(points):
@@ -827,6 +1042,43 @@ def _join_parameters(parameters: dict[str, object]) -> str:
     return ";".join(f"{key}={value}" for key, value in sorted(dict(parameters or {}).items()) if str(key).strip())
 
 
+def _merge_ditch_parameters(existing: dict[str, object], edited: dict[str, object]) -> dict[str, object]:
+    output = {
+        str(key): value
+        for key, value in dict(existing or {}).items()
+        if str(key).strip() and str(key).strip() not in DITCH_PARAMETER_KEYS
+    }
+    for key in DITCH_PARAMETER_KEYS:
+        value = edited.get(key, "")
+        if str(value).strip():
+            output[key] = str(value).strip()
+    return output
+
+
+def _ditch_visible_field_keys(shape: str) -> tuple[str, ...]:
+    key = str(shape or "trapezoid").strip().lower().replace("-", "_")
+    return tuple(DITCH_SHAPE_FIELDS.get(key, DITCH_SHAPE_FIELDS["trapezoid"]))
+
+
+def _ditch_effective_field_keys(shape: str, material: object = "") -> tuple[str, ...]:
+    keys = list(_ditch_visible_field_keys(shape))
+    policy = ditch_material_policy(material)
+    additions: list[str] = []
+    if policy == "lined":
+        additions.append("lining_thickness")
+    if policy == "structural" and str(shape or "").strip().lower().replace("-", "_") in {"u", "l", "rectangular"}:
+        additions.extend(["wall_thickness", "lining_thickness"])
+    for key in additions:
+        if key not in keys:
+            keys.append(key)
+    return tuple(key for key, _label in DITCH_PARAMETER_FIELDS if key in set(keys))
+
+
+def _ditch_shape_defaults(shape: str) -> dict[str, str]:
+    key = str(shape or "trapezoid").strip().lower().replace("-", "_")
+    return dict(DITCH_SHAPE_DEFAULTS.get(key, DITCH_SHAPE_DEFAULTS["trapezoid"]))
+
+
 def _split_parameters(value: object) -> dict[str, str]:
     output: dict[str, str] = {}
     for token in str(value or "").split(";"):
@@ -837,6 +1089,87 @@ def _split_parameters(value: object) -> dict[str, str]:
         if key:
             output[key] = raw.strip()
     return output
+
+
+def _ditch_shape_note(shape: str) -> str:
+    return {
+        "trapezoid": "Trapezoid uses depth, bottom width, and side-slope runs to form an earth ditch.",
+        "u": "U shape is represented as a rectangular lined channel approximation for this first slice.",
+        "l": "L shape uses one wall side plus an open bottom/run side. wall_side should be inner or outer.",
+        "rectangular": "Rectangular uses vertical sides and bottom width; wall and lining thickness are metadata for now.",
+        "v": "V shape uses top width, depth, and invert offset. Leave invert offset centered for a symmetric V.",
+        "custom_polyline": "Custom polyline uses section_points as offset,z,role tokens separated by semicolons.",
+    }.get(str(shape or "").strip().lower().replace("-", "_"), "")
+
+
+def _ditch_material_note(material: object, shape: str) -> str:
+    policy = ditch_material_policy(material)
+    if policy == "structural":
+        if str(shape or "").strip().lower().replace("-", "_") in {"u", "l", "rectangular"}:
+            return "Material policy: structural. wall_thickness is required for future solid/component-body handoff."
+        return "Material policy: structural. Consider a U/L/rectangular shape when a physical channel body is intended."
+    if policy == "lined":
+        return "Material policy: lined surface. lining_thickness should be defined for quantity and review."
+    if policy == "earth":
+        return "Material policy: earth grading. This should normally remain a drainage_surface output."
+    if policy == "unspecified":
+        return "Material policy: unspecified. Use material such as earth, concrete, precast, riprap, or grass."
+    return "Material policy: general. Add explicit material if this ditch needs quantity or structure handoff."
+
+
+def _ditch_shape_diagram(shape: str) -> str:
+    return {
+        "trapezoid": (
+            "inner edge           outer edge\n"
+            "    \\               /\n"
+            "     \\__ bottom ___/\n"
+            "       depth"
+        ),
+        "u": (
+            "wall              wall\n"
+            " |                |\n"
+            " |____ bottom ____|\n"
+            "       depth"
+        ),
+        "l": (
+            "wall side\n"
+            " |____ bottom ____\\\n"
+            " |                 \\\n"
+            "       open side"
+        ),
+        "rectangular": (
+            "vertical side   vertical side\n"
+            " |              |\n"
+            " |___ bottom ___|\n"
+            "       depth"
+        ),
+        "v": (
+            "inner edge       outer edge\n"
+            "    \\           /\n"
+            "     \\ invert /\n"
+            "       depth"
+        ),
+        "custom_polyline": (
+            "section_points:\n"
+            "  offset,z,role; offset,z,role\n"
+            "  0,0,edge; 0.5,-0.4,invert; 1,0,edge"
+        ),
+    }.get(str(shape or "").strip().lower().replace("-", "_"), "")
+
+
+def _ditch_parameter_placeholder(key: str) -> str:
+    return {
+        "top_width": "e.g. 2.000",
+        "bottom_width": "e.g. 0.600",
+        "depth": "e.g. 0.450",
+        "inner_slope": "run per depth, e.g. 1.5",
+        "outer_slope": "run per depth, e.g. 2.0",
+        "invert_offset": "V-shape invert offset",
+        "wall_thickness": "concrete wall thickness",
+        "lining_thickness": "lining thickness",
+        "wall_side": "inner or outer",
+        "section_points": "0,0,edge;0.5,-0.4,invert",
+    }.get(str(key), "")
 
 
 def _project_id(project) -> str:

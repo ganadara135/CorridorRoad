@@ -316,6 +316,88 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
         assert min(point.z for point in ditch_points) < result.frame.z
 
 
+def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-ditch-validation",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-ditch-validation",
+        alignment_id="align-ditch-validation",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-ditch-validation",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-ditch-validation",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-left", "lane", side="left", width=3.5),
+                    TemplateComponent(
+                        "ditch-left",
+                        "ditch",
+                        side="left",
+                        width=1.2,
+                        parameters={"shape": "trapezoid", "bottom_width": 0.5},
+                    ),
+                    TemplateComponent(
+                        "ditch-right",
+                        "ditch",
+                        side="right",
+                        width=1.2,
+                        parameters={"shape": "box"},
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-ditch-validation",
+        alignment_id="align-ditch-validation",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-validation")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-ditch-validation",
+        alignment_id="align-ditch-validation",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-ditch-validation",
+        )
+    )
+
+    messages = [row.message for row in result.diagnostic_rows if row.kind == "ditch_shape_parameter"]
+    assert any("missing required parameter depth" in message for message in messages)
+    assert any("unsupported shape 'box'" in message for message in messages)
+
+
 def test_applied_section_service_uses_region_assembly_ref_active_template() -> None:
     alignment = AlignmentModel(
         schema_version=1,

@@ -1,3 +1,5 @@
+import FreeCAD as App
+
 from freecad.Corridor_Road.v1.commands.cmd_view_sections import (
     build_demo_section_preview,
     format_section_preview,
@@ -14,10 +16,14 @@ from freecad.Corridor_Road.v1.models.source.alignment_model import (
     AlignmentModel,
 )
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
+    build_corridor_result_review_table_rows,
+    build_corridor_result_status,
     build_section_geometry_table_rows,
     build_handoff_status,
     build_handoff_target_rows,
+    corridor_result_object_name_for_row,
     section_geometry_rows,
+    show_corridor_result_object_from_preview,
 )
 
 
@@ -26,6 +32,36 @@ class _StateObject:
         self.Label = label
         self.Status = status
         self.NeedsRecompute = needs_recompute
+
+
+class _FakeSelection:
+    def __init__(self) -> None:
+        self.cleared = False
+        self.selected = []
+
+    def clearSelection(self) -> None:
+        self.cleared = True
+        self.selected.clear()
+
+    def addSelection(self, obj) -> None:
+        self.selected.append(obj)
+
+
+class _FakeView:
+    def __init__(self) -> None:
+        self.fit_selection = False
+
+    def fitSelection(self) -> None:
+        self.fit_selection = True
+
+
+class _FakeGui:
+    def __init__(self) -> None:
+        self.Selection = _FakeSelection()
+        self.ActiveDocument = type("_ActiveDocument", (), {"ActiveView": _FakeView()})()
+
+    def updateGui(self) -> None:
+        pass
 
 
 def _square_tin_surface() -> TINSurface:
@@ -97,6 +133,75 @@ def test_format_section_preview_contains_key_summary_lines() -> None:
     assert "Frame: x=1000.000, y=2000.000, z=12.000" in summary
     assert "Frame Profile: grade=0.020000, alignment=ok, profile=ok" in summary
     assert "Earthwork" not in summary
+    assert "Corridor Results: not available" in summary
+
+
+def test_show_v1_section_preview_includes_corridor_build_result_rows() -> None:
+    corridor_rows = [
+        {
+            "role": "centerline",
+            "result": "3D Centerline",
+            "object_label": "Corridor 3D Centerline",
+            "status": "ready",
+            "vertex_count": "",
+            "triangle_or_point_count": 3,
+            "notes": "Curve: spline",
+        },
+        {
+            "role": "design",
+            "result": "Design Surface",
+            "object_label": "Corridor Design Surface",
+            "status": "missing",
+            "vertex_count": "",
+            "triangle_or_point_count": "",
+            "notes": "Not built yet.",
+        },
+    ]
+    preview = show_v1_section_preview(
+        document=None,
+        extra_context={"corridor_review_rows": corridor_rows},
+        app_module=None,
+        gui_module=None,
+    )
+
+    table_rows = build_corridor_result_review_table_rows(preview)
+    status = build_corridor_result_status(preview)
+    summary = format_section_preview(preview)
+
+    assert table_rows[0] == ["3D Centerline", "ready", "Corridor 3D Centerline", "", "3", "centerline", "Curve: spline"]
+    assert status["ready_count"] == 1
+    assert status["total_count"] == 2
+    assert "Design Surface" in status["missing"]
+    assert "Corridor Results: 1/2 ready" in summary
+
+
+def test_show_corridor_result_object_from_preview_selects_and_fits_object() -> None:
+    doc = App.newDocument("CrossSectionCorridorResultFocusTest")
+    try:
+        target = doc.addObject("App::FeaturePython", "V1CorridorDesignSurfacePreview")
+        target.Label = "Corridor Design Surface"
+        preview = {
+            "corridor_review_rows": [
+                {
+                    "role": "design",
+                    "result": "Design Surface",
+                    "object_name": "V1CorridorDesignSurfacePreview",
+                    "object_label": "Corridor Design Surface",
+                    "status": "ready",
+                }
+            ]
+        }
+        gui = _FakeGui()
+
+        shown = show_corridor_result_object_from_preview(preview, 0, document=doc, gui_module=gui)
+
+        assert corridor_result_object_name_for_row(preview, 0) == "V1CorridorDesignSurfacePreview"
+        assert shown == target
+        assert gui.Selection.cleared is True
+        assert gui.Selection.selected == [target]
+        assert gui.ActiveDocument.ActiveView.fit_selection is True
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_show_v1_section_preview_keeps_key_station_rows() -> None:

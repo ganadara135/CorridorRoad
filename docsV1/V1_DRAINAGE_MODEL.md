@@ -313,6 +313,7 @@ Recommended early diagnostics include:
 - drainage element overlapping incompatible policy rows
 - culvert reference with missing structure context
 - imported drainage reference with ambiguous ownership
+- ditch component shape parameters that cannot produce a reliable drainage surface
 
 ## 19. Non-goals
 

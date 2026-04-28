@@ -21,6 +21,7 @@ from ..services.evaluation import (
 from ..services.mapping import SectionOutputMapper
 from ..ui.common import clear_ui_context, get_ui_context
 from ..ui.viewers import CrossSectionViewerTaskPanel
+from ..ui.viewers.cross_section_viewer import build_corridor_result_status
 from .selection_context import selected_section_target
 from .cmd_earthwork_balance import build_demo_earthwork_report
 
@@ -684,6 +685,19 @@ def _build_review_marker_rows(
     ]
 
 
+def _build_corridor_review_rows(document) -> list[dict[str, object]]:
+    """Resolve Build Corridor preview-object rows for the section viewer."""
+
+    if document is None:
+        return []
+    try:
+        from .cmd_build_corridor import corridor_build_review_rows
+
+        return list(corridor_build_review_rows(document) or [])
+    except Exception:
+        return []
+
+
 def _build_diagnostic_review_rows(
     *,
     section_output,
@@ -862,6 +876,7 @@ def build_document_section_preview(
         ),
         "earthwork_hint_rows": earthwork_hint_rows,
         "review_marker_rows": review_marker_rows,
+        "corridor_review_rows": _build_corridor_review_rows(document),
         "diagnostic_rows": diagnostic_rows,
         "key_station_rows": _build_key_station_rows(
             viewer_station_rows,
@@ -914,6 +929,7 @@ def build_demo_section_preview(document_label: str = "") -> dict[str, object]:
         "review_marker_rows": _build_review_marker_rows(
             station_row={"station": applied_section.station, "label": f"STA {applied_section.station:.3f}"},
         ),
+        "corridor_review_rows": [],
         "diagnostic_rows": [
             {
                 "severity": "info",
@@ -971,6 +987,10 @@ def format_section_preview(preview: dict[str, object]) -> str:
     state_reason = str(result_state.get("reason", "") or "").strip()
     if state_reason:
         lines.append(f"State Reason: {state_reason}")
+    corridor_status = build_corridor_result_status(preview)
+    corridor_text = str(corridor_status.get("text", "") or "").strip()
+    if corridor_text:
+        lines.append(corridor_text)
     if focused_label:
         lines.append(f"Focus Component: {focused_label}")
     return "\n".join(lines)
@@ -1040,6 +1060,8 @@ def show_v1_section_preview(
             station_row=dict(preview.get("station_row", {}) or {}),
             viewer_context=viewer_context,
         )
+    if "corridor_review_rows" not in preview:
+        preview["corridor_review_rows"] = _build_corridor_review_rows(active_document)
     preview["diagnostic_rows"] = list(preview.get("diagnostic_rows", []) or []) or _build_diagnostic_review_rows(
         section_output=preview["section_output"],
         viewer_context=viewer_context,

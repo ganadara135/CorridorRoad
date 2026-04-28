@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 try:
+    import FreeCAD as App
     import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
+    App = None
     Gui = None
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
@@ -111,6 +113,93 @@ def build_handoff_status(preview: dict[str, object]) -> dict[str, str]:
         "text": text,
         "style": style,
     }
+
+
+def build_corridor_result_review_table_rows(preview: dict[str, object]) -> list[list[str]]:
+    """Build compact corridor-build result rows for section review."""
+
+    rows = []
+    for row in list(preview.get("corridor_review_rows", []) or []):
+        item = dict(row or {})
+        rows.append(
+            [
+                str(item.get("result", "") or ""),
+                str(item.get("status", "") or ""),
+                str(item.get("object_label", "") or item.get("object_name", "") or ""),
+                str(item.get("vertex_count", "") or ""),
+                str(item.get("triangle_or_point_count", "") or ""),
+                str(item.get("role", "") or ""),
+                str(item.get("notes", "") or ""),
+            ]
+        )
+    return rows
+
+
+def build_corridor_result_status(preview: dict[str, object]) -> dict[str, object]:
+    """Summarize whether corridor build outputs are available for section review."""
+
+    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    if not rows:
+        return {
+            "state": "not_available",
+            "text": "Corridor Results: not available",
+            "ready_count": 0,
+            "total_count": 0,
+            "missing": [],
+        }
+    ready_count = sum(1 for row in rows if str(row.get("status", "") or "") == "ready")
+    missing = [
+        str(row.get("result", "") or row.get("role", "") or "").strip()
+        for row in rows
+        if str(row.get("status", "") or "") != "ready"
+    ]
+    missing = [label for label in missing if label]
+    state = "ready" if ready_count == len(rows) else "partial"
+    text = f"Corridor Results: {ready_count}/{len(rows)} ready"
+    if missing:
+        text = f"{text} | Missing={', '.join(missing)}"
+    return {
+        "state": state,
+        "text": text,
+        "ready_count": ready_count,
+        "total_count": len(rows),
+        "missing": missing,
+    }
+
+
+def corridor_result_object_name_for_row(preview: dict[str, object], row_index: int) -> str:
+    """Return the document object name behind one corridor-build result row."""
+
+    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Corridor result row index is out of range.")
+    row = rows[int(row_index)]
+    object_name = str(row.get("object_name", "") or "").strip()
+    if object_name:
+        return object_name
+    return str(row.get("object_label", "") or "").strip()
+
+
+def show_corridor_result_object_from_preview(
+    preview: dict[str, object],
+    row_index: int,
+    *,
+    document=None,
+    gui_module=None,
+):
+    """Select and fit the 3D object referenced by one corridor result row."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document is available for corridor result focus.")
+    object_name = corridor_result_object_name_for_row(preview, int(row_index))
+    if not object_name:
+        raise RuntimeError("Selected corridor result row has no target object.")
+    obj = doc.getObject(object_name)
+    if obj is None:
+        raise RuntimeError(f"Corridor result object `{object_name}` was not found.")
+    _select_and_fit_object(obj, gui_module=Gui if gui_module is None else gui_module)
+    return obj
 
 
 def section_geometry_rows(preview: dict[str, object]) -> list[object]:
@@ -332,6 +421,15 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
+        layout.addWidget(QtWidgets.QLabel("Corridor Build Results"))
+        self._corridor_result_table = self._table_widget(
+            headers=["Result", "Status", "Object", "Vertices", "Triangles/Points", "Role", "Notes"],
+            rows=self._corridor_result_review_rows(),
+            empty_text="No corridor build result rows.",
+        )
+        layout.addWidget(self._corridor_result_table)
+        self._connect_corridor_result_table(self._corridor_result_table)
+
         layout.addWidget(QtWidgets.QLabel("Key Stations"))
         self._key_station_combo = QtWidgets.QComboBox()
         for row in self._key_station_rows():
@@ -484,6 +582,7 @@ class CrossSectionViewerTaskPanel:
                 f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
                 f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
                 f"Geometry Rows: {len(self._section_geometry_rows())}",
+                str(self._corridor_result_status().get("text", "")),
                 f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
                 f"Review Markers: {len(self._review_marker_rows())}",
                 f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
@@ -561,6 +660,28 @@ class CrossSectionViewerTaskPanel:
             if value not in (None, ""):
                 rows.append([label, str(value)])
         return rows
+
+    def _corridor_result_review_rows(self) -> list[list[str]]:
+        return build_corridor_result_review_table_rows(self.preview)
+
+    def _corridor_result_status(self) -> dict[str, object]:
+        return build_corridor_result_status(self.preview)
+
+    def _connect_corridor_result_table(self, table) -> None:
+        if not hasattr(table, "cellDoubleClicked"):
+            return
+        try:
+            table.cellDoubleClicked.connect(lambda row_index, _column: self._show_corridor_result_row(row_index))
+        except Exception:
+            pass
+
+    def _show_corridor_result_row(self, row_index: int) -> None:
+        try:
+            obj = show_corridor_result_object_from_preview(self.preview, int(row_index))
+            label = str(getattr(obj, "Label", "") or getattr(obj, "Name", "") or "")
+            self._set_status_safely(f"Focused corridor result: {label}", ok=True)
+        except Exception as exc:
+            self._set_status_safely(f"Corridor result was not shown: {exc}", ok=False)
 
     def _terrain_review_rows(self) -> list[list[str]]:
         return [
@@ -723,13 +844,12 @@ class CrossSectionViewerTaskPanel:
             "viewer_context": dict(self.preview.get("viewer_context", {}) or {}),
         }
         set_ui_context(**context_payload)
+        self._set_status_safely(f"Opening {station_label or station_value} in v1 viewer.", ok=True)
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1ViewSections", 0)
-        self._status_label.setText(f"Opened {station_label or station_value} in v1 viewer.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _focused_component(self) -> dict[str, object]:
         return dict(dict(self.preview.get("viewer_context", {}) or {}).get("focused_component", {}) or {})
@@ -787,6 +907,7 @@ class CrossSectionViewerTaskPanel:
             objects_to_select = [legacy_objects.get("region_plan")]
         elif command_name == "CorridorRoad_EditStructures":
             objects_to_select = [legacy_objects.get("section_set")]
+        self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,
             gui_module=Gui,
@@ -801,11 +922,18 @@ class CrossSectionViewerTaskPanel:
                 },
             },
         )
-        self._status_label.setText(message)
         if not success:
-            self._status_label.setStyleSheet("color: #b33;")
-        else:
-            self._status_label.setStyleSheet("color: #666;")
+            self._set_status_safely(message, ok=False)
+
+    def _set_status_safely(self, text: str, *, ok: bool = True) -> None:
+        label = getattr(self, "_status_label", None)
+        if label is None:
+            return
+        try:
+            label.setText(str(text or ""))
+            label.setStyleSheet("color: #666;" if ok else "color: #b33;")
+        except RuntimeError:
+            pass
 
     def _table_widget(
         self,
@@ -838,6 +966,36 @@ class CrossSectionViewerTaskPanel:
             pass
         table.setMinimumHeight(140)
         return table
+
+
+def _select_and_fit_object(obj, *, gui_module=None) -> None:
+    gui = Gui if gui_module is None else gui_module
+    if gui is None or obj is None:
+        return
+    try:
+        if hasattr(gui, "updateGui"):
+            gui.updateGui()
+    except Exception:
+        pass
+    try:
+        gui.Selection.clearSelection()
+        gui.Selection.addSelection(obj)
+    except Exception:
+        pass
+    try:
+        view = gui.ActiveDocument.ActiveView
+        if hasattr(view, "fitSelection"):
+            view.fitSelection()
+        else:
+            gui.SendMsgToActiveView("ViewSelection")
+    except Exception:
+        try:
+            gui.SendMsgToActiveView("ViewSelection")
+        except Exception:
+            try:
+                gui.SendMsgToActiveView("ViewFit")
+            except Exception:
+                pass
 
 
 CrossSectionPreviewTaskPanel = CrossSectionViewerTaskPanel

@@ -7,6 +7,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     build_document_corridor_surface_model,
     corridor_build_review_rows,
     document_has_v1_applied_sections,
+    preferred_corridor_build_review_row_index,
     show_corridor_build_review_object,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
@@ -291,11 +292,24 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         assert rows[1]["triangle_or_point_count"] == 2
         assert "fallbacks: 4" in str(rows[3]["notes"])
         assert "no EG TIN: 4" in str(rows[3]["notes"])
+        assert preferred_corridor_build_review_row_index(rows) == 1
 
         shown = show_corridor_build_review_object(doc, 1)
         assert shown.Name == "V1CorridorDesignSurfacePreview"
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_preferred_corridor_build_review_row_index_prefers_ready_design_surface() -> None:
+    rows = [
+        {"role": "centerline", "status": "ready"},
+        {"role": "design", "status": "ready"},
+        {"role": "subgrade", "status": "ready"},
+    ]
+
+    assert preferred_corridor_build_review_row_index(rows) == 1
+    assert preferred_corridor_build_review_row_index(rows, preferred_role="subgrade") == 2
+    assert preferred_corridor_build_review_row_index([{"role": "design", "status": "missing"}]) is None
 
 
 def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exist() -> None:

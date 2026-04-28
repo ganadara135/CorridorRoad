@@ -435,6 +435,7 @@ Current implementation status:
 - [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
 - [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
+- [x] Build Corridor review table can select/fit generated preview objects and now auto-focuses the ready Design Surface after Apply when available
 - [ ] generate actual corridor TIN geometry for those rows
 - [ ] generate physical solid/component bodies
 

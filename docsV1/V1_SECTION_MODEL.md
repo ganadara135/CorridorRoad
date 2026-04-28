@@ -486,6 +486,7 @@ Current implementation note:
 - ditch components are intentionally not folded into the finished-grade width
 - `AppliedSectionService` emits first-slice `ditch_surface` point rows from enabled ditch components so Corridor Build can create a separate drainage surface
 - `AppliedSectionService` derives `ditch_surface` points from shape-specific ditch parameters when `shape` is `trapezoid`, `u`, `l`, `rectangular`, or `v`
+- `AppliedSectionService` emits warnings when supported ditch shapes are missing required parameters or use unsupported shape names
 
 ## 14. AppliedSectionSet Structure
 
@@ -581,6 +582,7 @@ Current implementation status:
 - [x] generate first-slice FG and subgrade `AppliedSectionPoint` rows from Assembly component widths and slopes
 - [x] generate first-slice ditch `AppliedSectionPoint` rows as `ditch_surface` rows instead of folding ditch into FG width
 - [x] derive shape-aware ditch `ditch_surface` rows from `TemplateComponent.parameters`
+- [x] report first-slice diagnostics for invalid or incomplete ditch shape parameters
 - [x] persist and restore Applied Section point rows through the `V1AppliedSectionSet` result object
 - [x] show a compact Applied Sections review table in the command panel
 - [x] show a selected Applied Section row as a 3D review preview using point rows when available

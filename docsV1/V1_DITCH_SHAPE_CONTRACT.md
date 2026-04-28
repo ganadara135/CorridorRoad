@@ -176,9 +176,9 @@ Recommended point id role names:
 - `ditch:wall_bottom`
 - `ditch:lining_outer`
 
-The current first-slice implementation only emits simple `ditch_surface` strip points from `width` and `slope`.
+The current first-slice implementation emits shape-aware `ditch_surface` points for supported shapes.
 
-The next implementation should replace that simple strip with shape-aware points while keeping the same `ditch_surface` output contract.
+If `shape` is missing, it still emits the simple `width` and `slope` fallback strip for backward-compatible starter assemblies.
 
 ## 9. Surface vs Solid Rule
 
@@ -219,8 +219,13 @@ Validation should not silently convert a structural ditch into an earth grading 
 - [x] parse shape-specific ditch parameters from `TemplateComponent.parameters`
 - [x] generate shape-aware ditch point roles for trapezoid, U, L, rectangular, and V shapes
 - [x] preserve ditch shape parameters through the Assembly source object and a raw Assembly editor Parameters column
-- [ ] add a structured parameter editor for ditch shape parameters
-- [ ] add drainage diagnostics for invalid or incomplete ditch shapes
+- [x] add first-slice Assembly validation and Applied Section diagnostics for invalid or incomplete ditch shapes
+- [x] add a first-slice structured Assembly helper for common ditch shape parameters
+- [x] filter Assembly helper fields and defaults by selected ditch shape
+- [x] show compact visual shape diagrams in the Assembly ditch helper
+- [x] add first-slice material policy hints and validation for lined or structural ditch materials
+- [x] use shape-aware ditch interpretation in the Assembly `Show` preview
+- [ ] add full material-specific quantity and component-body controls for ditch shape parameters
 - [ ] generate future solid/component bodies for structural ditch shapes
 
 ## 12. Non-goals

@@ -315,6 +315,8 @@ class AppliedSectionService:
                     message=f"Resolved template {template_id} was not found in Assembly {assembly_id}.",
                 )
             )
+        if template is not None:
+            diagnostics.extend(_ditch_shape_diagnostics(template))
         return diagnostics
 
     @staticmethod
@@ -744,6 +746,130 @@ def _ditch_local_profile(component) -> list[tuple[float, float, str]]:
     if shape == "custom_polyline":
         return _custom_ditch_profile(params)
     return []
+
+
+def ditch_component_local_profile(component) -> list[tuple[float, float, str]]:
+    """Return the local ditch profile used by viewers and section builders."""
+
+    return _ditch_local_profile(component)
+
+
+def ditch_component_validation_messages(component) -> list[str]:
+    """Return user-facing validation messages for one ditch component."""
+
+    if str(getattr(component, "kind", "") or "") != "ditch":
+        return []
+    params = dict(getattr(component, "parameters", {}) or {})
+    shape = str(params.get("shape", "") or "").strip().lower().replace("-", "_")
+    component_id = str(getattr(component, "component_id", "") or "ditch")
+    material_policy = ditch_material_policy(getattr(component, "material", ""))
+    messages: list[str] = []
+    if not shape:
+        return messages
+    if shape not in {"trapezoid", "u", "l", "rectangular", "v", "custom_polyline"}:
+        return [f"ditch component {component_id} uses unsupported shape '{shape}'."]
+
+    def require_positive(key: str) -> None:
+        if key not in params or str(params.get(key, "") or "").strip() == "":
+            messages.append(f"ditch component {component_id} missing required parameter {key}.")
+            return
+        try:
+            value = float(params.get(key))
+        except Exception:
+            messages.append(f"ditch component {component_id} parameter {key} must be numeric.")
+            return
+        if value <= 0.0:
+            messages.append(f"ditch component {component_id} parameter {key} must be greater than zero.")
+
+    def validate_positive_if_present(key: str) -> None:
+        if key not in params or str(params.get(key, "") or "").strip() == "":
+            return
+        try:
+            value = float(params.get(key))
+        except Exception:
+            messages.append(f"ditch component {component_id} parameter {key} must be numeric.")
+            return
+        if value < 0.0:
+            messages.append(f"ditch component {component_id} parameter {key} must not be negative.")
+
+    if shape == "trapezoid":
+        require_positive("depth")
+        require_positive("bottom_width")
+        validate_positive_if_present("top_width")
+        validate_positive_if_present("inner_slope")
+        validate_positive_if_present("outer_slope")
+    elif shape in {"u", "l", "rectangular"}:
+        require_positive("depth")
+        require_positive("bottom_width")
+        validate_positive_if_present("top_width")
+        validate_positive_if_present("wall_thickness")
+        validate_positive_if_present("lining_thickness")
+        if shape == "l":
+            wall_side = str(params.get("wall_side", "inner") or "inner").strip().lower()
+            if wall_side not in {"inner", "outer", "left", "right"}:
+                messages.append(
+                    f"ditch component {component_id} parameter wall_side must be inner or outer."
+                )
+    elif shape == "v":
+        require_positive("depth")
+        if _component_width(component) <= 0.0 and _parameter_float(params, "top_width", 0.0) <= 0.0:
+            messages.append(
+                f"ditch component {component_id} requires positive width or top_width for V shape."
+            )
+        validate_positive_if_present("top_width")
+        validate_positive_if_present("invert_offset")
+    elif shape == "custom_polyline":
+        points = _custom_ditch_profile(params)
+        if len(points) < 2:
+            messages.append(
+                f"ditch component {component_id} custom_polyline requires at least two section_points."
+            )
+    if material_policy == "structural" and shape in {"u", "l", "rectangular"}:
+        if _parameter_float(params, "wall_thickness", 0.0) <= 0.0:
+            messages.append(
+                f"ditch component {component_id} uses structural material and requires wall_thickness."
+            )
+    if material_policy == "lined" and shape in {"trapezoid", "v", "rectangular"}:
+        if _parameter_float(params, "lining_thickness", 0.0) <= 0.0:
+            messages.append(
+                f"ditch component {component_id} uses lined material and should define lining_thickness."
+            )
+    return messages
+
+
+def ditch_material_policy(material: object) -> str:
+    """Classify ditch material for first-slice validation and editor hints."""
+
+    text = str(material or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not text:
+        return "unspecified"
+    structural_tokens = ("concrete", "precast", "cast_in_place", "reinforced", "rc", "masonry", "stone")
+    if any(token in text for token in structural_tokens):
+        return "structural"
+    lined_tokens = ("lined", "lining", "riprap", "gabion", "shotcrete")
+    if any(token in text for token in lined_tokens):
+        return "lined"
+    earth_tokens = ("earth", "soil", "grass", "vegetated", "natural")
+    if any(token in text for token in earth_tokens):
+        return "earth"
+    return "general"
+
+
+def _ditch_shape_diagnostics(template: SectionTemplate) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    for component in list(getattr(template, "component_rows", []) or []):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        for message in ditch_component_validation_messages(component):
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="warning",
+                    kind="ditch_shape_parameter",
+                    message=message,
+                    notes=f"template_id={template.template_id}",
+                )
+            )
+    return diagnostics
 
 
 def _trapezoid_ditch_profile(component, params: dict[str, object], top_width: float) -> list[tuple[float, float, str]]:

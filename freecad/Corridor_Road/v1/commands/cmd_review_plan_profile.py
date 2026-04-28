@@ -101,12 +101,30 @@ def _build_key_station_rows(
                 "station": station_value,
                 "label": label or f"STA {station_value:.3f}",
                 "navigation_kind": navigation_kind,
+                "navigation_reason": _key_station_navigation_reason(
+                    navigation_kind,
+                    is_current=bool(row_index == current_index),
+                ),
                 "is_current": bool(row_index == current_index),
                 "navigation_order": output_index,
             }
         )
     enriched = _enrich_key_station_rows_with_alignment_frame(result, alignment_model)
     return _enrich_key_station_rows_with_profile_frame(enriched, profile_model)
+
+
+def _key_station_navigation_reason(navigation_kind: str, *, is_current: bool = False) -> str:
+    """Return a user-facing reason for one compact review navigation station."""
+
+    if is_current:
+        return "Current review focus station"
+    return {
+        "first": "Start of sampled station range",
+        "last": "End of sampled station range",
+        "previous": "Nearby station before the current focus",
+        "next": "Nearby station after the current focus",
+        "current": "Current review focus station",
+    }.get(str(navigation_kind or "").strip(), "Review navigation station")
 
 
 def _enrich_key_station_rows_with_alignment_frame(

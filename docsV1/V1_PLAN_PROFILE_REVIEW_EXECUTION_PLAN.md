@@ -11,6 +11,8 @@ Depends on:
 - `docsV1/V1_PLAN_OUTPUT_SCHEMA.md`
 - `docsV1/V1_PROFILE_OUTPUT_SCHEMA.md`
 - `docsV1/V1_IMPLEMENTATION_PHASE_PLAN.md`
+- `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
+- `docsV1/V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md`
 
 ## 1. Purpose
 
@@ -25,7 +27,7 @@ It exists to define:
 
 ## 2. Product Goal
 
-The goal is to create one coherent v1 review surface for:
+The goal is to create one coherent v1 continuity and readiness review surface for:
 
 - horizontal alignment review
 - profile review
@@ -34,6 +36,10 @@ The goal is to create one coherent v1 review surface for:
 - issue detection and rebuild verification
 
 This screen should become the preferred place to inspect rebuilt stationing/profile results, while source editors continue to handle durable source editing during transition.
+
+It should not compete with `Cross Section Viewer`.
+
+`Cross Section Viewer` owns detailed station-by-station 2D section review.
 
 ## 3. Definition of Promotion
 
@@ -227,6 +233,7 @@ Current implementation status:
 - [x] the text summary reports evaluated alignment station count
 - [x] `PlanOutput.station_rows` are generated from the shared `AlignmentStationSamplingService`
 - [x] key station navigation uses the sampled station grid while keeping the visible list compact around the current station
+- [x] key station navigation is labeled as `Review Navigation Stations` and each row explains why it was included
 - [x] `ProfileOutput.line_rows` can include a TIN-sampled `existing_ground_line`
 - [x] the Plan/Profile viewer shows profile line rows, including FG and EG when available
 - [x] FG/EG profile comparison can attach `profile_cut_depth` and `profile_fill_depth` hint rows
@@ -237,10 +244,20 @@ Current implementation status:
 - [x] Preview payload reports whether it is using the active document bridge or demo fallback through `preview_source_kind`
 - [x] Plan/Profile viewer shows `Alignment/Profile Bridge Diagnostics` rows for source mode, legacy object resolution, model build status, alignment/profile ID link, and profile station range fit
 - [x] text summary reports bridge diagnostic counts so document-vs-demo and link issues are visible without inspecting raw payloads
+- [x] Plan/Profile viewer hides diagnostic detail tables when all bridge diagnostics are ok or not applicable
+- [x] Plan/Profile viewer shows a compact `Review Readiness` table only when required inputs are missing or not evaluated, including Alignment, Stations, Profile, Profile Controls, Review Navigation Stations, and Profile Lines
+- [x] Plan/Profile viewer hides earthwork area controls and attachment tables unless earthwork handoff/context exists
+- [x] Plan/Profile viewer groups detailed review tables into `Evaluation`, `Geometry`, `Profile Controls`, and context-specific `Earthwork` tabs
 - [x] `ProfileEvaluationService` evaluates station-based FG elevation, grade, active segment, status, and active vertical-curve metadata
 - [x] `ProfileEvaluationService` now evaluates PVI-centered parabolic vertical curves for FG elevation and grade
 - [x] key station rows now carry both alignment frame data and profile evaluation data for the same station domain
 - [x] Plan/Profile viewer shows a `Profile Evaluation` table for station, elevation, grade, active segment, active curve, and status
+- [x] Plan/Profile viewer can double-click Evaluation rows to create or update the shared 3D `Station Highlight` marker
+- [x] Plan/Profile navigation buttons are labeled as focus actions: `Focus Previous`, `Focus Selected`, and `Focus Next`
+- [x] Plan/Profile viewer explains that Focus buttons reopen the review without editing source data
+- [x] Evaluation tab explains that double-clicking a row highlights the station in the 3D View
+- [x] Profile Controls tab can double-click PVI/control rows to highlight the nearest review station in the 3D View
+- [x] Geometry tab can double-click Plan Geometry or Profile Lines rows to highlight the start station of that range in the 3D View
 - [x] document preview now prefers native `V1Stationing` rows for `PlanOutput.station_rows` and key-station navigation when available
 - [x] document preview now prefers native `V1Alignment` source objects before legacy horizontal alignment adapters
 - [x] document preview now prefers native `V1Profile` source objects before legacy vertical alignment adapters
@@ -248,6 +265,7 @@ Current implementation status:
 - [x] Plan/Profile viewer's alignment handoff now opens the single v1 `Alignment` command for native alignment-source edits
 - [x] v1 alignment editing intentionally excludes direct `Review Plan/Profile` and `Next: Generate Stations` actions from the alignment-stage editor
 - [x] Plan/Profile viewer's profile handoff now opens `Profile` for native profile-source edits
+- [x] Plan/Profile viewer no longer exposes the legacy v0 `Open PVI` handoff button
 - [x] `Profile` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
 - [x] configurable station interval is available in Plan/Profile Review and feeds plan station rows, key station rows, and TIN-based EG sampling
 - [x] sampled FG profile lines now use the same profile evaluation service, so vertical curves affect Profile Lines and EG/FG hints

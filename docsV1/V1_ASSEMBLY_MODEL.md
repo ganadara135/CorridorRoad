@@ -93,7 +93,19 @@ Recommended `parameters["shape"]` values include `trapezoid`, `u`, `l`, `rectang
 
 The current Assembly editor preserves component parameters through a raw `Parameters` column using `key=value;key=value` text.
 
-A later editor refinement should replace this with shape-aware controls for ditch components.
+It also provides a first-slice `Ditch Parameters` helper panel.
+
+The helper panel reads the selected `ditch` row, edits common shape parameters, and writes them back to the raw `Parameters` column.
+
+It shows only the fields that are relevant to the selected ditch shape and can load starter defaults for common shapes.
+
+It also shows a compact shape diagram so users can understand the selected cross-section before applying it.
+
+It reads the selected component `material` and shows material-specific guidance.
+
+Lined materials expose `lining_thickness`.
+
+Structural materials such as concrete or precast require `wall_thickness` for U, L, and rectangular ditches.
 
 ## Relationships
 
@@ -124,6 +136,11 @@ The first editor-level validation checks:
 - template id exists
 - component ids are present and unique within the template
 - component width is not negative
+- ditch `shape` values are supported
+- required ditch shape parameters such as `depth` and `bottom_width` are present and numeric
+- `custom_polyline` ditch definitions provide at least two section points
+- structural ditch materials provide wall thickness where the selected shape needs a future component body
+- lined ditch materials provide lining thickness for quantity and review
 
 ## Preset Data
 
@@ -148,6 +165,8 @@ It does not create Applied Sections, Corridor surfaces, solids, or viewer-only g
 The Assembly editor may provide a `Show` action.
 
 `Show` reads the current editable table values and creates a generated `Assembly Show Preview` cross-section in the 3D View.
+
+For `ditch` components, `Show` should use the same shape-aware ditch profile interpretation as Applied Section generation.
 
 The preview should be shown in Front view.
 

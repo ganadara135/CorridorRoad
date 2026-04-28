@@ -180,6 +180,27 @@ def show_corridor_build_review_object(document=None, row_index: int = 0):
     return obj
 
 
+def preferred_corridor_build_review_row_index(
+    rows: list[dict[str, object]],
+    *,
+    preferred_role: str = "design",
+) -> int | None:
+    """Return the best review row index to focus after a corridor build."""
+
+    ready_rows = [
+        (index, row)
+        for index, row in enumerate(list(rows or []))
+        if str(row.get("status", "") or "") == "ready"
+    ]
+    if not ready_rows:
+        return None
+    preferred = str(preferred_role or "").strip()
+    for index, row in ready_rows:
+        if str(row.get("role", "") or "") == preferred:
+            return index
+    return ready_rows[0][0]
+
+
 def create_corridor_centerline_3d_preview(
     *,
     document=None,
@@ -576,7 +597,13 @@ class V1BuildCorridorTaskPanel:
             surface_count = int(getattr(surface_obj, "SurfaceCount", 0) or 0) if surface_obj is not None else 0
             message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
-            self._set_review_rows(corridor_build_review_rows(self.document))
+            review_rows = corridor_build_review_rows(self.document)
+            self._set_review_rows(review_rows)
+            focused = self._show_preferred_review_row(review_rows)
+            if focused:
+                self._summary.setPlainText(
+                    message + f"\nObject: {obj.Label}\nFocused: {getattr(focused, 'Label', getattr(focused, 'Name', ''))}"
+                )
             _show_message(self.form, "Build Corridor", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -604,6 +631,13 @@ class V1BuildCorridorTaskPanel:
             ]
             for col, value in enumerate(values):
                 self._review_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(value))
+            self._apply_review_row_style(row_index, str(row.get("status", "") or ""))
+        preferred_index = preferred_corridor_build_review_row_index(list(rows or []))
+        if preferred_index is not None:
+            try:
+                self._review_table.selectRow(int(preferred_index))
+            except Exception:
+                pass
 
     def _show_selected_row(self) -> None:
         rows = self._review_table.selectionModel().selectedRows() if hasattr(self, "_review_table") else []
@@ -618,6 +652,36 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(f"Review object shown.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
         except Exception as exc:
             _show_message(self.form, "Build Corridor", f"Review object was not shown.\n{exc}")
+
+    def _show_preferred_review_row(self, rows: list[dict[str, object]]):
+        row_index = preferred_corridor_build_review_row_index(rows)
+        if row_index is None:
+            return None
+        try:
+            return show_corridor_build_review_object(self.document, int(row_index))
+        except Exception:
+            return None
+
+    def _apply_review_row_style(self, row_index: int, status: str) -> None:
+        status = str(status or "").strip()
+        colors = {
+            "ready": (220, 245, 224),
+            "missing": (238, 238, 238),
+            "empty": (255, 241, 205),
+        }
+        color = colors.get(status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            for column_index in range(int(self._review_table.columnCount())):
+                item = self._review_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+        except Exception:
+            pass
 
 
 def _project_id(project) -> str:

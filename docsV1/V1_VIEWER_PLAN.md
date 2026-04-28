@@ -12,6 +12,7 @@ Depends on:
 - `docsV1/V1_INTERSECTION_MODEL.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
 - `docsV1/V1_OUTPUT_STRATEGY.md`
+- `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
 
 ## 1. Purpose
 
@@ -28,6 +29,13 @@ Its job is to clarify:
 ## 2. Core Direction
 
 In v1, `Cross Section Viewer` stays and becomes stronger.
+
+The active role split is recorded in `V1_REVIEW_VIEWER_ROLE_DECISION.md`.
+
+The practical rule is:
+
+- `Cross Section Viewer` is the station-by-station 2D section review screen
+- `Plan/Profile Viewer` is the upstream alignment, stationing, profile, and EG/FG continuity review screen
 
 However, it is explicitly a:
 
