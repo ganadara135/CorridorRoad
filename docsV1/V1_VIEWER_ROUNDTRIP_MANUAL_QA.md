@@ -65,13 +65,13 @@ Important interpretation note:
    - the window title uses `Viewer`
    - `Current Focus` is visible
    - `Result State` is visible
-   - `Key Stations` is visible
+   - `Station Navigation` is visible
    - `Source Inspector` is visible
    - if `Built from demo section viewer payload.` is shown, record that separately and do not mark real-document data review as passed
 
 ### 4.2 Station navigation
 
-1. select a different station in `Key Stations`
+1. select a different station in `Station Navigation`
 2. click `Open Selected Station`
 3. verify:
    - the viewer reopens
@@ -116,11 +116,11 @@ Pass condition:
    - the window title uses `Viewer`
    - `Current Focus` is visible
    - `Viewer Context` is visible
-   - `Key Stations` is visible
+   - `Station Navigation` is visible
 
 ### 5.2 Station navigation
 
-1. choose another key station
+1. choose another station
 2. click `Open Selected Station`
 3. verify:
    - the viewer reopens
@@ -164,12 +164,12 @@ Verify:
 2. verify:
    - the window title uses `Viewer`
    - `Current Focus` is visible
-   - `Key Stations` is visible
+   - `Station Navigation` is visible
    - `Focused Window` appears in the summary when data exists
 
 ### 6.2 Station navigation
 
-1. move to another key station
+1. move to another station
 2. click `Open Selected Station`
 3. verify:
    - the viewer reopens
@@ -195,7 +195,7 @@ From the opened editor, use the available return action and verify:
 
 - a v1 viewer opens again
 - if the flow returns through `Plan/Profile Viewer`, the station is still understandable
-- if the user reopens `Earthwork Viewer`, the same station can be found again through `Key Stations`
+- if the user reopens `Earthwork Viewer`, the same station can be found again through `Station Navigation`
 
 ## 7. Failure Signals
 
@@ -204,7 +204,7 @@ Mark the scenario as failed if any of the following happens:
 - station changes unexpectedly after return
 - a different source object opens than the one implied by the viewer
 - `Current Focus` and actual selected row disagree
-- `Key Stations` opens the same station repeatedly when a different station was selected
+- `Station Navigation` opens the same station repeatedly when a different station was selected
 - handoff opens the correct editor but loses all usable context
 - return path depends on the old review screen to recover context
 

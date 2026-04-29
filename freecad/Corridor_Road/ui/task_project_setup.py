@@ -81,6 +81,11 @@ class ProjectSetupTaskPanel:
         self.sp_custom_linear_scale.setRange(1e-9, 1.0e9)
         self.sp_custom_linear_scale.setDecimals(9)
         self.sp_custom_linear_scale.setValue(1.0)
+        self.sp_tin_max_triangles = QtWidgets.QSpinBox()
+        self.sp_tin_max_triangles.setRange(1000, 10000000)
+        self.sp_tin_max_triangles.setSingleStep(10000)
+        self.sp_tin_max_triangles.setValue(250000)
+        self.sp_tin_max_triangles.setSuffix(" triangles")
         self.lbl_unit_policy_info = QtWidgets.QLabel("")
         self.lbl_unit_policy_info.setWordWrap(True)
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
@@ -90,6 +95,7 @@ class ProjectSetupTaskPanel:
         fs.addRow("Default Import Unit:", self.cmb_linear_import)
         fs.addRow("Default Export Unit:", self.cmb_linear_export)
         fs.addRow("Custom Unit Scale:", self.sp_custom_linear_scale)
+        fs.addRow("TIN Conversion Limit:", self.sp_tin_max_triangles)
         fs.addRow("", self.lbl_unit_policy_info)
         fs.addRow(self.btn_refresh)
         root.addWidget(gb_src)
@@ -378,6 +384,9 @@ class ProjectSetupTaskPanel:
             self._set_combo_text(self.cmb_linear_import, str(unit_settings.get("import", "m")), "m")
             self._set_combo_text(self.cmb_linear_export, str(unit_settings.get("export", "m")), "m")
             self.sp_custom_linear_scale.setValue(float(unit_settings.get("custom_scale", 1.0)))
+            self.sp_tin_max_triangles.setValue(
+                max(1000, int(getattr(prj, "TINConversionMaxTriangles", 250000) or 250000))
+            )
             workflow = str(getattr(prj, "CoordinateWorkflow", "") or "").strip()
             if workflow not in _COORD_WORKFLOW_VALUES:
                 workflow = self._recommended_workflow_from_epsg(str(getattr(prj, "CRSEPSG", "") or ""))
@@ -470,6 +479,7 @@ class ProjectSetupTaskPanel:
             prj.LinearUnitImportDefault = self._current_linear_import_unit()
             prj.LinearUnitExportDefault = self._current_linear_export_unit()
             prj.CustomLinearUnitScale = float(self.sp_custom_linear_scale.value())
+            prj.TINConversionMaxTriangles = int(self.sp_tin_max_triangles.value())
             workflow = str(self.cmb_coord_workflow.currentText() or "").strip()
             if workflow not in _COORD_WORKFLOW_VALUES:
                 workflow = self._recommended_workflow_from_epsg(prj.CRSEPSG)
@@ -496,7 +506,8 @@ class ProjectSetupTaskPanel:
             self.lbl_result.setText(
                 f"Applied: Display='{prj.LinearUnitDisplay}', Import='{prj.LinearUnitImportDefault}', Export='{prj.LinearUnitExportDefault}', "
                 f"CustomScale={float(prj.CustomLinearUnitScale):.9f}, Standard='{prj.DesignStandard}', EPSG='{prj.CRSEPSG}', "
-                f"Workflow='{prj.CoordinateWorkflow}', NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
+                f"Workflow='{prj.CoordinateWorkflow}', TINLimit={int(prj.TINConversionMaxTriangles)}, "
+                f"NorthRot={float(prj.NorthRotationDeg):.6f}, Locked={bool(prj.CoordSetupLocked)}"
             )
             QtWidgets.QMessageBox.information(
                 None,

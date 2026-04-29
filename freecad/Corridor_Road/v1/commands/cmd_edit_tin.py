@@ -19,7 +19,12 @@ from ..models.source import TINEditOperation
 from ..services.editing import TINEditService
 from ..services.evaluation import TinSamplingService
 from ..services.mapping import TINMeshPreviewMapper
-from .cmd_review_tin import _focus_tin_preview_object, _selected_surface_object, _tin_surface_from_object
+from .cmd_review_tin import (
+    _focus_tin_preview_object,
+    _selected_surface_object,
+    _tin_surface_from_object,
+    resolve_document_tin_max_triangles,
+)
 
 
 def apply_tin_editor_operations(
@@ -72,7 +77,8 @@ def run_v1_tin_editor_command(*, document=None, gui_module=Gui):
     if document is None:
         raise RuntimeError("No active document.")
     source_obj = _selected_surface_object(gui_module, document)
-    base_surface = _tin_surface_from_object(source_obj, max_triangles=250000) if source_obj is not None else None
+    max_triangles = resolve_document_tin_max_triangles(document, surface_obj=source_obj)
+    base_surface = _tin_surface_from_object(source_obj, max_triangles=max_triangles) if source_obj is not None else None
     if gui_module is not None and hasattr(gui_module, "Control"):
         gui_module.Control.showDialog(
             V1TINEditorTaskPanel(

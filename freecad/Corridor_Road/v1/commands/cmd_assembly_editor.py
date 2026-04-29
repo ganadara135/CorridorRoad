@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     Part = None
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -305,12 +305,33 @@ def run_v1_assembly_editor_command():
     return find_v1_assembly_model(document)
 
 
+class _AssemblyCellWidgetEventFilter(QtCore.QObject):
+    """Keep row selection anchored when embedded cell widgets receive mouse/focus events."""
+
+    def __init__(self, panel):
+        super().__init__()
+        self._panel = panel
+
+    def eventFilter(self, obj, event):  # noqa: N802 - Qt API name
+        try:
+            if event.type() in (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.FocusIn):
+                row_index = int(obj.property("AssemblyTableRow"))
+                column_index = int(obj.property("AssemblyTableColumn"))
+                self._panel._lock_component_row(row_index, column_index)
+        except Exception:
+            pass
+        return False
+
+
 class V1AssemblyEditorTaskPanel:
     """Table-based v1 Assembly source editor."""
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.assembly_obj = find_v1_assembly_model(self.document)
+        self._locked_component_row = -1
+        self._restoring_component_selection = False
+        self._cell_widget_event_filter = _AssemblyCellWidgetEventFilter(self)
         self.form = self._build_ui()
         self._load_existing_rows()
 
@@ -376,6 +397,11 @@ class V1AssemblyEditorTaskPanel:
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._table.setMouseTracking(False)
+        try:
+            self._table.viewport().setMouseTracking(False)
+        except Exception:
+            pass
         self._table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
@@ -442,7 +468,8 @@ class V1AssemblyEditorTaskPanel:
             ditch_form.addWidget(edit, row_index, col_index + 1)
         ditch_layout.addLayout(ditch_form)
         layout.addWidget(self._ditch_group)
-        self._table.itemSelectionChanged.connect(self._load_ditch_parameters_from_selection)
+        self._table.cellPressed.connect(self._lock_component_row)
+        self._table.itemSelectionChanged.connect(self._restore_or_load_component_selection)
         self._update_ditch_shape_controls()
 
         self._status = QtWidgets.QPlainTextEdit()
@@ -495,8 +522,10 @@ class V1AssemblyEditorTaskPanel:
         template = model.template_rows[0] if model.template_rows else SectionTemplate("template:basic-road", "roadway")
         self._template_id.setText(template.template_id)
         self._table.setRowCount(0)
+        self._locked_component_row = -1
         for row in template.component_rows:
             self._append_row(row)
+        self._refresh_cell_widget_row_properties()
 
     def _append_row(self, row: TemplateComponent | None = None) -> None:
         row = row or TemplateComponent(
@@ -526,16 +555,19 @@ class V1AssemblyEditorTaskPanel:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(list(ASSEMBLY_COMPONENT_KINDS))
                 combo.setCurrentText(str(value) if str(value) in ASSEMBLY_COMPONENT_KINDS else "lane")
+                self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(list(ASSEMBLY_COMPONENT_SIDES))
                 combo.setCurrentText(str(value) if str(value) in ASSEMBLY_COMPONENT_SIDES else "center")
+                self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             elif col == 7:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(["1", "0"])
                 combo.setCurrentText(str(value))
+                self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             else:
                 self._table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
@@ -550,7 +582,63 @@ class V1AssemblyEditorTaskPanel:
             rows = [self._table.currentRow()]
         for row_index in rows:
             self._table.removeRow(row_index)
+        self._locked_component_row = -1
+        self._refresh_cell_widget_row_properties()
         self._set_status(f"Deleted {len(rows)} component row(s).")
+
+    def _prepare_cell_widget(self, widget, row_index: int, column_index: int) -> None:
+        try:
+            widget.setProperty("AssemblyTableRow", int(row_index))
+            widget.setProperty("AssemblyTableColumn", int(column_index))
+            widget.installEventFilter(self._cell_widget_event_filter)
+        except Exception:
+            pass
+
+    def _refresh_cell_widget_row_properties(self) -> None:
+        try:
+            for row_index in range(self._table.rowCount()):
+                for column_index in range(self._table.columnCount()):
+                    widget = self._table.cellWidget(row_index, column_index)
+                    if widget is not None:
+                        widget.setProperty("AssemblyTableRow", int(row_index))
+                        widget.setProperty("AssemblyTableColumn", int(column_index))
+        except Exception:
+            pass
+
+    def _lock_component_row(self, row_index: int, column_index: int = 0) -> None:
+        if row_index < 0 or row_index >= self._table.rowCount():
+            return
+        self._locked_component_row = int(row_index)
+        self._select_component_row(row_index, column_index)
+        self._load_ditch_parameters_from_selection()
+
+    def _select_component_row(self, row_index: int, column_index: int = 0) -> None:
+        if row_index < 0 or row_index >= self._table.rowCount():
+            return
+        column = max(0, min(int(column_index), max(0, self._table.columnCount() - 1)))
+        self._restoring_component_selection = True
+        try:
+            self._table.setCurrentCell(int(row_index), column)
+            self._table.selectRow(int(row_index))
+        finally:
+            self._restoring_component_selection = False
+
+    def _restore_or_load_component_selection(self) -> None:
+        if self._restoring_component_selection:
+            return
+        locked = self._valid_locked_component_row()
+        if locked >= 0:
+            selected = self._selected_row_index_from_table()
+            if selected >= 0 and selected != locked:
+                self._select_component_row(locked)
+                return
+        self._load_ditch_parameters_from_selection()
+
+    def _valid_locked_component_row(self) -> int:
+        row_index = int(getattr(self, "_locked_component_row", -1) or -1)
+        if 0 <= row_index < self._table.rowCount():
+            return row_index
+        return -1
 
     def _load_ditch_parameters_from_selection(self) -> None:
         row_index = self._selected_row_index()
@@ -639,6 +727,12 @@ class V1AssemblyEditorTaskPanel:
         self._update_ditch_shape_controls()
 
     def _selected_row_index(self) -> int:
+        locked = self._valid_locked_component_row()
+        if locked >= 0:
+            return locked
+        return self._selected_row_index_from_table()
+
+    def _selected_row_index_from_table(self) -> int:
         rows = sorted({item.row() for item in list(self._table.selectedItems() or [])})
         if rows:
             return rows[0]

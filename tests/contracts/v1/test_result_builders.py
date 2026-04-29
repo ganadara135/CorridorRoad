@@ -1247,6 +1247,90 @@ def test_corridor_surface_geometry_service_builds_daylight_surface_from_side_slo
     assert max(vertex.z for vertex in result.vertex_rows) == 11.0
 
 
+def test_corridor_surface_geometry_service_starts_daylight_from_ditch_outer_edges() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-ditch-daylight",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        sampling_policy=CorridorSamplingPolicy(
+            sampling_policy_id="sp-1",
+            station_interval=10.0,
+        ),
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-ditch-daylight",
+        corridor_id="cor-ditch-daylight",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 0.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 10.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                daylight_left_width=3.0,
+                daylight_right_width=2.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.4,
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 0.0, -4.0, 10.0, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:left", 0.0, 5.0, 10.0, "fg_surface", 5.0),
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -5.2, 9.7, "ditch_surface", -5.2),
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -4.0, 10.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("ditch:left-edge", 0.0, 5.0, 10.0, "ditch_surface", 5.0),
+                    AppliedSectionPoint("ditch:left-flow", 0.0, 6.2, 9.7, "ditch_surface", 6.2),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 11.0, 0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                daylight_left_width=3.0,
+                daylight_right_width=2.0,
+                daylight_left_slope=-0.5,
+                daylight_right_slope=-0.4,
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 10.0, -4.0, 11.0, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:left", 10.0, 5.0, 11.0, "fg_surface", 5.0),
+                    AppliedSectionPoint("ditch:right-flow", 10.0, -5.2, 10.7, "ditch_surface", -5.2),
+                    AppliedSectionPoint("ditch:right-edge", 10.0, -4.0, 11.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("ditch:left-edge", 10.0, 5.0, 11.0, "ditch_surface", 5.0),
+                    AppliedSectionPoint("ditch:left-flow", 10.0, 6.2, 10.7, "ditch_surface", 6.2),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-ditch-daylight:daylight",
+        )
+    )
+
+    vertices = result.vertex_map()
+    assert abs(vertices["v0:left:inner"].y - 6.2) < 1e-9
+    assert abs(vertices["v0:right:inner"].y - -5.2) < 1e-9
+    assert abs(vertices["v0:left:inner"].z - 9.7) < 1e-9
+    assert abs(vertices["v0:right:inner"].z - 9.7) < 1e-9
+    assert abs(vertices["v0:left:outer"].y - 9.2) < 1e-9
+    assert abs(vertices["v0:right:outer"].y - -7.2) < 1e-9
+
+
 def test_corridor_surface_geometry_service_ties_daylight_outer_points_to_existing_ground() -> None:
     corridor = CorridorModel(
         schema_version=1,

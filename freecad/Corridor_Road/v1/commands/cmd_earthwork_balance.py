@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
 
 from ..models.result.applied_section import (
     AppliedSection,
+    AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionQuantityFragment,
 )
@@ -31,12 +32,12 @@ from ..ui.viewers import EarthworkViewerTaskPanel
 from .selection_context import selected_section_target
 
 
-def _build_key_station_rows(
+def _build_navigation_station_rows(
     station_values: list[tuple[float, str]] | None,
     *,
     current_station: float | None,
 ) -> list[dict[str, object]]:
-    """Build a compact station-navigation payload for the earthwork viewer."""
+    """Build the full station-navigation payload for the earthwork viewer."""
 
     raw_rows = []
     for station, label in list(station_values or []):
@@ -65,35 +66,14 @@ def _build_key_station_rows(
             key=lambda idx: abs(unique_rows[idx][0] - float(current_station)),
         )
 
-    candidate_indexes = {
-        0,
-        max(0, current_index - 2),
-        max(0, current_index - 1),
-        current_index,
-        min(len(unique_rows) - 1, current_index + 1),
-        min(len(unique_rows) - 1, current_index + 2),
-        len(unique_rows) - 1,
-    }
-
     result = []
-    for output_index, row_index in enumerate(sorted(candidate_indexes)):
+    for output_index, row_index in enumerate(range(len(unique_rows))):
         station_value, label = unique_rows[row_index]
-        if row_index == 0:
-            navigation_kind = "first"
-        elif row_index == len(unique_rows) - 1:
-            navigation_kind = "last"
-        elif row_index == current_index:
-            navigation_kind = "current"
-        elif row_index < current_index:
-            navigation_kind = "previous"
-        else:
-            navigation_kind = "next"
         result.append(
             {
                 "index": row_index,
                 "station": station_value,
                 "label": label or f"STA {station_value:.3f}",
-                "navigation_kind": navigation_kind,
                 "is_current": bool(row_index == current_index),
                 "navigation_order": output_index,
             }
@@ -188,7 +168,7 @@ def build_document_earthwork_report(
         "station_row": station_row,
         "focused_balance_row": focused_balance_row,
         "focused_haul_zone": focused_haul_zone,
-        "key_station_rows": _build_key_station_rows(
+        "station_rows": _build_navigation_station_rows(
             station_values,
             current_station=focus_station,
         ),
@@ -265,6 +245,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
+                component_rows=_demo_section_components(),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:0",
@@ -300,6 +281,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
+                component_rows=_demo_section_components(),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:20",
@@ -335,6 +317,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
+                component_rows=_demo_section_components(),
             ),
         ],
     )
@@ -385,7 +368,7 @@ def build_demo_earthwork_report(
         "station_row": {"station": focus_station, "label": f"STA {focus_station:.3f}"},
         "focused_balance_row": focused_balance_row,
         "focused_haul_zone": focused_haul_zone,
-        "key_station_rows": _build_key_station_rows(
+        "station_rows": _build_navigation_station_rows(
             [
                 (0.0, "STA 0.000"),
                 (20.0, "STA 20.000"),
@@ -395,6 +378,21 @@ def build_demo_earthwork_report(
         ),
         "legacy_objects": {},
     }
+
+
+def _demo_section_components() -> list[AppliedSectionComponentRow]:
+    """Return a practical section template for demo/recovery previews."""
+
+    return [
+        AppliedSectionComponentRow("lane:left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+        AppliedSectionComponentRow("lane:right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+        AppliedSectionComponentRow("shoulder:left", "shoulder", side="left", width=1.5, slope=-0.04, thickness=0.20),
+        AppliedSectionComponentRow("shoulder:right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+        AppliedSectionComponentRow("ditch:left", "ditch", side="left", width=2.4, slope=-0.08),
+        AppliedSectionComponentRow("ditch:right", "ditch", side="right", width=2.4, slope=-0.08),
+        AppliedSectionComponentRow("daylight:left", "side_slope", side="left", width=8.0, slope=0.33),
+        AppliedSectionComponentRow("daylight:right", "side_slope", side="right", width=8.0, slope=0.33),
+    ]
 
 
 def format_earthwork_report(report: dict[str, object]) -> str:
@@ -429,7 +427,7 @@ def format_earthwork_report(report: dict[str, object]) -> str:
             f"Balance points: {balance_point_count}",
             f"Final cumulative mass: {final_cumulative_mass} m3",
             f"Max surplus/deficit: {max_surplus_mass} / {max_deficit_mass} m3",
-            f"Key stations: {len(list(report.get('key_station_rows', []) or []))}",
+            f"Navigation stations: {len(list(report.get('station_rows', []) or []))}",
             *_focus_summary_lines(station_row, focused_balance_row, focused_haul_zone),
         ]
     )

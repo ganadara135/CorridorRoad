@@ -41,6 +41,30 @@ class LegacyPreviewBundle:
     earthwork_model: EarthworkBalanceModel | None = None
 
 
+def _row_get(row: dict[str, object], *keys: str, default=None):
+    """Return a case-tolerant value from a legacy row dictionary."""
+
+    data = dict(row or {})
+    for key in keys:
+        if key in data:
+            return data.get(key)
+    lower_map = {str(key).strip().lower(): value for key, value in data.items()}
+    for key in keys:
+        normalized = str(key).strip().lower()
+        if normalized in lower_map:
+            return lower_map[normalized]
+    return default
+
+
+def _component_slope(row: dict[str, object], safe_float) -> float:
+    """Resolve legacy component slope as elevation change per metre."""
+
+    if _row_get(row, "Slope", "slope", default=None) is not None:
+        return safe_float(_row_get(row, "Slope", "slope", default=0.0), 0.0)
+    percent = safe_float(_row_get(row, "CrossSlopePct", "crossSlopePct", "cross_slope_pct", default=0.0), 0.0)
+    return -float(percent) / 100.0
+
+
 class LegacyDocumentAdapter:
     """Adapt a legacy FreeCAD document into minimal v1 preview models."""
 
@@ -266,6 +290,9 @@ class LegacyDocumentAdapter:
         """Build a minimal applied-section set from legacy section and template objects."""
 
         station_values = self._station_values(section_set)
+        stationing_values = self._v1_station_values(getattr(section_set, "Document", None))
+        if len(stationing_values) > len(station_values):
+            station_values = stationing_values
         if not station_values:
             station_values = [0.0]
 
@@ -281,13 +308,21 @@ class LegacyDocumentAdapter:
             region_id = self._region_id_at_station(region_plan, station)
             applied_components = [
                 AppliedSectionComponentRow(
-                    component_id=str(row.get("Id", f"component-{row_index}")),
-                    kind=str(row.get("Type", "component")),
+                    component_id=str(_row_get(row, "Id", "id", "component_id", default=f"component-{row_index}")),
+                    kind=str(_row_get(row, "Type", "type", "Kind", "kind", default="component")),
                     source_template_id=template_id,
                     region_id=region_id,
+                    side=str(_row_get(row, "Side", "side", default="center") or "center").strip().lower(),
+                    width=max(0.0, self._safe_float(_row_get(row, "Width", "width", default=0.0), 0.0)),
+                    slope=_component_slope(row, self._safe_float),
+                    thickness=max(
+                        0.0,
+                        self._safe_float(_row_get(row, "Thickness", "thickness", "Height", "height", default=0.0), 0.0),
+                    ),
+                    material=str(_row_get(row, "Material", "material", default="") or ""),
                 )
                 for row_index, row in enumerate(component_rows, start=1)
-                if bool(row.get("Enabled", True))
+                if bool(_row_get(row, "Enabled", "enabled", default=True))
             ]
             quantity_rows = [
                 AppliedSectionQuantityFragment(
@@ -702,6 +737,9 @@ class LegacyDocumentAdapter:
     def viewer_station_rows(self, section_set) -> list[dict[str, object]]:
         """Resolve viewer-oriented station rows from a legacy SectionSet."""
 
+        v1_rows = self._v1_station_viewer_rows(getattr(section_set, "Document", None))
+        if v1_rows:
+            return v1_rows
         try:
             from freecad.Corridor_Road.objects.obj_section_set import SectionSet
 
@@ -715,6 +753,34 @@ class LegacyDocumentAdapter:
                 }
                 for index, station in enumerate(self._station_values(section_set))
             ]
+
+    def _v1_station_values(self, document) -> list[float]:
+        rows = self._v1_station_viewer_rows(document)
+        values = []
+        for row in rows:
+            try:
+                values.append(float(row.get("station", 0.0) or 0.0))
+            except Exception:
+                pass
+        return values
+
+    def _v1_station_viewer_rows(self, document) -> list[dict[str, object]]:
+        try:
+            from freecad.Corridor_Road.v1.objects.obj_stationing import find_v1_stationing, station_value_rows
+
+            stationing = find_v1_stationing(document)
+            rows = []
+            for index, (station, label) in enumerate(station_value_rows(stationing)):
+                rows.append(
+                    {
+                        "index": index,
+                        "station": float(station),
+                        "label": str(label or f"STA {float(station):.3f}"),
+                    }
+                )
+            return rows
+        except Exception:
+            return []
 
     def nearest_station_row(
         self,

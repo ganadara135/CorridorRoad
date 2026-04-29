@@ -6,6 +6,7 @@ Status: Active implementation checklist, refreshed after viewer promotion work
 Depends on:
 
 - `docsV1/V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md`
+- `docsV1/V1_CROSS_SECTION_2D_MANUAL_QA.md`
 - `docsV1/V1_VIEWER_PLAN.md`
 - `docsV1/V1_SECTION_OUTPUT_SCHEMA.md`
 
@@ -44,14 +45,14 @@ Current implementation entry points:
 - [x] viewer source rows are shown
 - [x] focused source-row selection is supported
 - [x] add dedicated `Source Inspector` section instead of only mixed context tables
-- [ ] show explicit source owner fields:
+- [x] show explicit source owner fields:
   - `Template`
   - `Region`
   - `Structure`
   - `Section Set`
 - [x] show selected component id, kind, side, and ownership in one compact panel
-- [ ] show unresolved ownership state explicitly when source tracing is incomplete
-- [ ] add source-inspector-specific contract tests
+- [x] show unresolved ownership state explicitly when source tracing is incomplete
+- [x] add source-inspector-specific contract tests
 
 ## 5. Milestone C: Editor Handoff and Return
 
@@ -74,8 +75,28 @@ Current implementation entry points:
 - [x] render structure interaction rows in the main viewer UI
 - [x] render diagnostic rows as first-class review content
 - [x] attach earthwork hint rows where available
-- [x] add `next/previous key station` navigation controls
+- [x] add `Previous/Next` navigation controls using full station rows
 - [x] add bookmark or issue marker placeholder state in the viewer
+
+## 6A. Milestone D2: Drawing-Style 2D Section Preview
+
+- [x] define v1 `CrossSectionDrawingPayload`
+- [x] generate drawing payload from `AppliedSectionSet`
+- [x] map `AppliedSectionPoint` rows into offset/elevation section geometry
+- [x] generate FG drawing line from station-local applied section data
+- [x] generate subgrade drawing line from station-local applied section data
+- [x] generate ditch/drainage drawing spans from `ditch_surface` points
+- [x] generate slope-face drawing spans from daylight policy/result rows
+- [x] generate component label rows from v1 component or point roles
+- [x] generate value rows for component dimensions when available
+- [x] generate lower-band dimension rows for total width and component widths
+- [x] port v0-style label collision/placement rules into v1 drawing payload rendering
+- [x] render the 2D drawing in a dominant canvas area
+- [x] keep `Show dimensions` behavior
+- [x] keep dark-mode readable drawing colors
+- [x] add contract tests for geometry rows, label rows, and dimension rows
+- [x] add manual QA procedure against v0-style expected section drawing behavior
+- [ ] execute manual QA against v0-style expected section drawing behavior on a real document
 
 ## 7. Command and Workflow Promotion
 
@@ -100,18 +121,15 @@ Current implementation entry points:
 
 Recommended next implementation order:
 
-1. complete explicit source owner fields for `Template / Region / Structure / Section Set`
-2. show unresolved ownership state explicitly in `Source Inspector`
-3. add source-inspector-specific contract tests
-4. attach earthwork hint rows where available
-5. add bookmark or issue marker placeholder state in the viewer
-6. update workflow docs so v1 viewer is the recommended first review path
+1. execute manual QA against v0-style expected section drawing behavior on a real document
+2. verify structure handoff selects linked `StructureSet` consistently in real documents
+3. add explicit return-state tests for `viewer -> editor -> viewer`
 
 ## 10. Promotion Gate
 
 The viewer should be treated as ready for default-path promotion when all of the following are true:
 
-- [ ] source inspector is explicit and readable
+- [x] source inspector is explicit and readable
 - [ ] terrain/structure/diagnostic review data is visible
 - [ ] handoff and return are stable on real documents
 - [ ] stale/current state is visible

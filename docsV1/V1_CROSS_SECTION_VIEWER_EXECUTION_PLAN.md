@@ -13,6 +13,7 @@ Depends on:
 - `docsV1/V1_IMPLEMENTATION_PHASE_PLAN.md`
 - `docsV1/V1_REVIEW_VIEWER_ROLE_DECISION.md`
 - `docsV1/V1_CROSS_SECTION_2D_VIEWER_DESIGN.md`
+- `docsV1/V1_CROSS_SECTION_2D_MANUAL_QA.md`
 
 ## 1. Purpose
 
@@ -69,7 +70,7 @@ Practical product rule:
 The first promoted v1 viewer should include:
 
 - current station section display
-- station label and key station navigation
+- station label and full station navigation
 - component table
 - quantity summary table
 - viewer context summary
@@ -78,6 +79,20 @@ The first promoted v1 viewer should include:
 - handoff to `Typical Section`, `Region`, and `Structure` editors
 - same-context return after save/rebuild
 - visible stale/current state
+
+The current station section display should be a drawing-style 2D section preview.
+
+It should preserve the visual expectations of the v0 `Cross Section Viewer`:
+
+- section shape is drawn as a review drawing, not only as rows or a tiny plot
+- component labels and values appear on or near section spans
+- dimensions appear in a lower drawing band
+- ditch, slope, subgrade, drainage, FG, and EG have distinct visual treatment
+- labels and dimension text should use placement rules rather than ad-hoc fixed positions
+
+The first promoted v1 viewer should reuse the v0 viewer as a visual reference only.
+
+It should consume v1 payloads derived from `AppliedSectionSet`, `SectionOutput`, and corridor review rows.
 
 The first promoted viewer does not yet need:
 
@@ -156,12 +171,16 @@ Completion signal:
 Recommended implementation order:
 
 1. stabilize v1 section preview command and task panel
-2. improve current-section payload rendering and selection behavior
-3. complete source inspector baseline
-4. complete editor handoff and same-context return
-5. attach terrain, structure, and earthwork context
-6. expose v1 viewer as the preferred review command
-7. demote the existing v0 viewer to bridge/support status
+2. define a v1 `CrossSectionDrawingPayload` contract
+3. map `AppliedSectionSet` station rows into drawing geometry, labels, and dimensions
+4. port or reuse v0 drawing-rule placement concepts for label and dimension layout
+5. replace small preview rendering with dominant drawing-style section canvas
+6. improve current-section payload rendering and selection behavior
+7. complete source inspector baseline
+8. complete editor handoff and same-context return
+9. attach terrain, structure, and earthwork context
+10. expose v1 viewer as the preferred review command
+11. demote the existing v0 viewer to bridge/support status
 
 ## 8. Data Contract Requirements
 
@@ -242,6 +261,18 @@ Current implementation notes:
 - [x] Cross Section Viewer can show Build Corridor result rows for `3D Centerline`, `Design Surface`, `Subgrade Surface`, `Slope Face Surface`, and `Drainage Surface` when corridor preview objects are available
 - [x] Cross Section Viewer summary reports corridor build result readiness so missing corridor surfaces are visible during station-level section review
 - [x] Cross Section Viewer can double-click a corridor build result row to select and fit the related 3D preview object
+- [x] Cross Section Viewer has a v1 `CrossSectionDrawingPayload` contract for drawing-style section geometry
+- [x] Cross Section drawing payload can be generated from v1 `AppliedSectionSet`
+- [x] Cross Section drawing payload includes label/value rows and lower-band dimension rows
+- [x] Cross Section Viewer renders v1 `CrossSectionDrawingPayload` in the 2D canvas
+- [x] Cross Section Viewer shows component labels and values directly in the 2D drawing
+- [x] Cross Section Viewer shows lower-band dimension annotations from v1 drawing payload rows
+- [x] Cross Section Viewer shows ditch, slope-face, subgrade, drainage, FG, and EG with distinct drawing styles
+- [x] Cross Section Viewer shows explicit source-owner rows for `Section Set`, `Template`, `Region`, and `Structure`
+- [x] Cross Section Viewer distinguishes `resolved`, `source_ref`, and `unresolved` source-owner states
+- [x] Cross Section Viewer applies screen-space text layout to reduce label and dimension overlap
+- [x] Cross Section 2D v0-style manual QA procedure is documented
+- [ ] Cross Section 2D v0-style manual QA has passed on a real document
 
 Minimum manual scenarios:
 

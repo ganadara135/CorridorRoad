@@ -26,6 +26,48 @@ from ..services.mapping import (
 from ..ui.viewers import TinReviewViewerTaskPanel
 
 
+DOCUMENT_TIN_DEFAULT_MAX_TRIANGLES = 250000
+DOCUMENT_TIN_MIN_MAX_TRIANGLES = 1000
+DOCUMENT_TIN_HARD_MAX_TRIANGLES = 10000000
+
+
+def resolve_document_tin_max_triangles(
+    document=None,
+    *,
+    surface_obj=None,
+    default: int = DOCUMENT_TIN_DEFAULT_MAX_TRIANGLES,
+) -> int:
+    """Return the project-configured document TIN conversion triangle limit."""
+
+    doc = document
+    if doc is None and surface_obj is not None:
+        try:
+            doc = getattr(surface_obj, "Document", None)
+        except Exception:
+            doc = None
+    if doc is None and App is not None:
+        doc = getattr(App, "ActiveDocument", None)
+
+    value = default
+    if doc is not None:
+        try:
+            from freecad.Corridor_Road.objects.obj_project import find_project, ensure_project_properties
+
+            project = find_project(doc)
+            if project is not None:
+                ensure_project_properties(project)
+                value = getattr(project, "TINConversionMaxTriangles", default)
+        except Exception:
+            value = default
+    try:
+        return max(
+            DOCUMENT_TIN_MIN_MAX_TRIANGLES,
+            min(DOCUMENT_TIN_HARD_MAX_TRIANGLES, int(value or default)),
+        )
+    except Exception:
+        return int(default)
+
+
 def build_demo_tin_review(
     document_label: str = "",
     *,
@@ -125,7 +167,10 @@ def build_document_tin_review(
     if surface_obj is None:
         return None
 
-    surface = _tin_surface_from_object(surface_obj)
+    surface = _tin_surface_from_object(
+        surface_obj,
+        max_triangles=resolve_document_tin_max_triangles(document, surface_obj=surface_obj),
+    )
     if surface is None:
         return None
 

@@ -1829,6 +1829,18 @@ def ensure_project_properties(obj):
     if not hasattr(obj, "AutoApplyCoordinateRecommendations"):
         obj.addProperty("App::PropertyBool", "AutoApplyCoordinateRecommendations", "CoordinateSystem", "Use coordinate workflow as task-panel default")
         obj.AutoApplyCoordinateRecommendations = True
+    if not hasattr(obj, "TINConversionMaxTriangles"):
+        obj.addProperty(
+            "App::PropertyInteger",
+            "TINConversionMaxTriangles",
+            "TIN",
+            "Maximum triangles converted from a document mesh/shape for v1 TIN review and EG sampling",
+        )
+        obj.TINConversionMaxTriangles = 250000
+    try:
+        obj.TINConversionMaxTriangles = max(1000, int(getattr(obj, "TINConversionMaxTriangles", 250000) or 250000))
+    except Exception:
+        obj.TINConversionMaxTriangles = 250000
 
     _ensure_hidden_link_property(obj, "Terrain", "CorridorRoad", "Link to EG terrain object")
     _ensure_hidden_link_property(obj, "Alignment", "CorridorRoad", "Link to horizontal alignment object")

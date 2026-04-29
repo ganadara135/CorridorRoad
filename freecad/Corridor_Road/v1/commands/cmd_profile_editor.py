@@ -2144,9 +2144,12 @@ def _tin_surface_from_candidate(obj) -> TINSurface | None:
     if obj is None or _skip_profile_preview_tin_candidate(obj):
         return None
     try:
-        from .cmd_review_tin import _tin_surface_from_object
+        from .cmd_review_tin import _tin_surface_from_object, resolve_document_tin_max_triangles
 
-        surface = _tin_surface_from_object(obj, max_triangles=250000)
+        surface = _tin_surface_from_object(
+            obj,
+            max_triangles=resolve_document_tin_max_triangles(surface_obj=obj),
+        )
     except Exception:
         surface = None
     return surface if isinstance(surface, TINSurface) else None

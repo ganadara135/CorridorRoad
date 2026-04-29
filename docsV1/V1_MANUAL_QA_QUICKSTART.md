@@ -7,6 +7,7 @@ Depends on:
 
 - `docsV1/V1_MAIN_REVIEW_COMMAND_MANUAL_RECORD.md`
 - `docsV1/V1_REAL_DOCUMENT_VIEWER_CHECKLIST.md`
+- `docsV1/V1_CROSS_SECTION_2D_MANUAL_QA.md`
 - `docsV1/V1_VIEWER_ROUNDTRIP_MANUAL_QA.md`
 - `scripts/launch_v1_manual_review.ps1`
 
@@ -42,6 +43,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\launch_v1_manual_review.ps1 -
 2. Run `CorridorRoad_ViewCrossSection`.
 3. Confirm the v1 `Cross Section Viewer` opens first.
    - if it says `Built from demo section viewer payload.`, count that as command routing success only, not as a real-document review pass
+   - if checking section drawing quality, follow `V1_CROSS_SECTION_2D_MANUAL_QA.md`
 4. Run `CorridorRoad_ReviewPlanProfile`.
 5. Confirm the v1 `Plan/Profile Viewer` opens first.
 6. Run `CorridorRoad_GenerateCutFillCalc`.

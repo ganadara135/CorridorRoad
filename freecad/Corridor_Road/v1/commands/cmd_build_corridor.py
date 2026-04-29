@@ -2190,7 +2190,11 @@ def _resolve_corridor_existing_ground_tin_surface(document):
     if document is None:
         return None
     try:
-        from .cmd_review_tin import _tin_surface_candidate_sort_key, _tin_surface_from_object
+        from .cmd_review_tin import (
+            _tin_surface_candidate_sort_key,
+            _tin_surface_from_object,
+            resolve_document_tin_max_triangles,
+        )
         from ..models.result.tin_surface import TINSurface
     except Exception:
         return None
@@ -2220,7 +2224,10 @@ def _resolve_corridor_existing_ground_tin_surface(document):
         if _skip_corridor_existing_ground_candidate(obj):
             continue
         try:
-            surface = _tin_surface_from_object(obj, max_triangles=250000)
+            surface = _tin_surface_from_object(
+                obj,
+                max_triangles=resolve_document_tin_max_triangles(document, surface_obj=obj),
+            )
         except Exception:
             surface = None
         if isinstance(surface, TINSurface):

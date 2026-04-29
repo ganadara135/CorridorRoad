@@ -33,6 +33,24 @@ def _demo_tin_surface() -> TINSurface:
     )
 
 
+def _local_tin_surface() -> TINSurface:
+    return TINSurface(
+        schema_version=1,
+        project_id="test-project",
+        surface_id="tin:local-profile-review-eg",
+        vertex_rows=[
+            TINVertex("v0", 0.0, 0.0, 100.0),
+            TINVertex("v1", 10.0, 0.0, 101.0),
+            TINVertex("v2", 10.0, 10.0, 102.0),
+            TINVertex("v3", 0.0, 10.0, 103.0),
+        ],
+        triangle_rows=[
+            TINTriangle("t0", "v0", "v1", "v2"),
+            TINTriangle("t1", "v0", "v2", "v3"),
+        ],
+    )
+
+
 class _FakeControl:
     def __init__(self) -> None:
         self.closed = False
@@ -74,15 +92,15 @@ def test_build_demo_plan_profile_preview_returns_outputs() -> None:
     assert len(preview["plan_output"].geometry_rows) == 2
     assert len(preview["profile_output"].pvi_rows) == 3
     assert len(preview["plan_output"].station_rows) == 5
-    assert len(preview["key_station_rows"]) == len(preview["plan_output"].station_rows)
-    assert preview["key_station_rows"][0]["is_current"] is True
-    assert preview["key_station_rows"][0]["alignment_eval_status"] == "ok"
-    assert preview["key_station_rows"][0]["x"] == 1000.0
-    assert preview["key_station_rows"][0]["y"] == 2000.0
-    assert preview["key_station_rows"][0]["profile_eval_status"] == "ok"
-    assert preview["key_station_rows"][0]["profile_elevation"] == 12.0
-    assert "profile_grade" in preview["key_station_rows"][0]
-    assert preview["key_station_rows"][0]["navigation_reason"] == "Current review focus station"
+    assert len(preview["station_rows"]) == len(preview["plan_output"].station_rows)
+    assert preview["station_rows"][0]["is_current"] is True
+    assert preview["station_rows"][0]["alignment_eval_status"] == "ok"
+    assert preview["station_rows"][0]["x"] == 1000.0
+    assert preview["station_rows"][0]["y"] == 2000.0
+    assert preview["station_rows"][0]["profile_eval_status"] == "ok"
+    assert preview["station_rows"][0]["profile_elevation"] == 12.0
+    assert "profile_grade" in preview["station_rows"][0]
+    assert preview["station_rows"][0]["navigation_reason"] == "Current review focus station"
     assert preview["preview_source_kind"] == "demo"
     assert any(
         row["kind"] == "alignment_profile_link" and row["status"] == "ok"
@@ -117,7 +135,7 @@ def test_show_v1_plan_profile_preview_returns_preview_without_gui() -> None:
 
     assert preview["plan_output"] is not None
     assert preview["profile_output"] is not None
-    assert len(preview["key_station_rows"]) == len(preview["plan_output"].station_rows)
+    assert len(preview["station_rows"]) == len(preview["plan_output"].station_rows)
     assert preview["preview_source_kind"] == "demo"
     assert preview["bridge_diagnostic_rows"]
 
@@ -133,7 +151,7 @@ def test_show_v1_plan_profile_preview_accepts_station_interval() -> None:
     assert preview["station_interval"] == 10.0
     assert preview["viewer_context"]["station_interval"] == 10.0
     assert preview["plan_output"].station_rows[1].station == 10.0
-    assert preview["key_station_rows"][1]["station"] == 10.0
+    assert preview["station_rows"][1]["station"] == 10.0
     assert "Station interval:" not in format_plan_profile_preview(preview)
 
 
@@ -285,7 +303,7 @@ def test_plan_profile_viewer_reports_missing_review_readiness_inputs() -> None:
         "profile_model": None,
         "plan_output": None,
         "profile_output": None,
-        "key_station_rows": [],
+        "station_rows": [],
     }
 
     rows = panel._review_readiness_rows()
@@ -305,7 +323,7 @@ def test_plan_profile_viewer_builds_full_station_connection_rows() -> None:
     profile_eval_rows = panel._profile_eval_rows()
 
     assert len(rows) == len(panel.preview["plan_output"].station_rows)
-    assert len(rows) == len(panel._key_station_rows())
+    assert len(rows) == len(panel._navigation_station_rows())
     assert len(alignment_frame_rows) == len(panel.preview["plan_output"].station_rows)
     assert len(profile_eval_rows) == len(panel.preview["plan_output"].station_rows)
     assert rows[0]["station"] == 0.0
@@ -367,7 +385,7 @@ def test_plan_profile_source_link_summary_reports_source_ids_and_ranges() -> Non
     assert rows["Profile"][2] == "profile:v1-demo"
     assert rows["Profile"][3] == "0.000 -> 80.000 | controls 3"
     assert rows["TIN"][2] == "tin:profile-review-eg"
-    assert rows["TIN"][3] == "vertices 4 | triangles 2"
+    assert rows["TIN"][3] == "vertices 4 | triangles 2 | X 1000.000 -> 1080.000 | Y 2000.000 -> 2040.000"
     assert rows["TIN"][4] == "linked"
 
 
@@ -405,6 +423,29 @@ def test_plan_profile_connection_diagnostics_report_missing_tin_area() -> None:
     assert "No TIN source is linked" in rows["TIN / EG"][2]
     assert rows["FG-EG"][1] == "not_applicable"
     assert "no TIN is linked" in rows["FG-EG"][2]
+
+
+def test_plan_profile_connection_diagnostics_explain_tin_extent_mismatch() -> None:
+    preview = show_v1_plan_profile_preview(
+        document=None,
+        extra_context={
+            "tin_surface": _local_tin_surface(),
+        },
+        app_module=None,
+        gui_module=None,
+    )
+    panel = PlanProfileViewerTaskPanel.__new__(PlanProfileViewerTaskPanel)
+    panel.preview = preview
+
+    rows = {row[0]: row for row in panel._connection_diagnostic_rows()}
+    station_rows = panel._station_connection_rows()
+
+    assert rows["TIN / EG"][1] == "error"
+    assert "Station XY extent" in rows["TIN / EG"][2]
+    assert "outside TIN extent" in rows["TIN / EG"][2]
+    assert "CSV World/Local import" in rows["TIN / EG"][3]
+    assert all(row["eg_status"] == "no_hit" for row in station_rows)
+    assert "outside TIN extent" in station_rows[0]["notes"]
 
 
 def test_plan_profile_diagnostic_area_commands_open_source_panels() -> None:
@@ -450,7 +491,7 @@ def test_plan_profile_viewer_uses_tabs_for_review_detail_sections() -> None:
 def test_plan_profile_navigation_station_labels_explain_selection_reason() -> None:
     panel = PlanProfileViewerTaskPanel(build_demo_plan_profile_preview("Demo Corridor"))
 
-    label = panel._key_station_combo.itemText(0)
+    label = panel._station_combo.itemText(0)
     buttons = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
     labels = [label.text() for label in panel.form.findChildren(QtWidgets.QLabel)]
 
@@ -461,7 +502,7 @@ def test_plan_profile_navigation_station_labels_explain_selection_reason() -> No
     assert "Open Stations" in buttons
     assert any("Focus buttons reopen this connection review" in text for text in labels)
     assert any("Primary connection review table" in text for text in labels)
-    assert any(text == "Quick Navigation Stations" for text in labels)
+    assert any(text == "Station Navigation" for text in labels)
     assert any("Full station list for moving the review focus" in text for text in labels)
     assert any("Double-click a diagnostic row" in text for text in labels)
     assert any("Double-click an Alignment Frame or Profile Evaluation row" in text for text in labels)

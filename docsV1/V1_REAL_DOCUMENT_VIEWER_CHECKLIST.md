@@ -6,6 +6,7 @@ Status: Active manual validation checklist
 Depends on:
 
 - `docsV1/V1_VIEWER_ROUNDTRIP_MANUAL_QA.md`
+- `docsV1/V1_CROSS_SECTION_2D_MANUAL_QA.md`
 - `docsV1/V1_UX_RESET_PLAN.md`
 - `docsV1/V1_MAIN_REVIEW_COMMAND_MANUAL_RECORD.md`
 
@@ -39,8 +40,15 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [ ] `Current Focus` is visible
 - [ ] `Result State` is visible
 - [ ] viewer is not limited to `demo section viewer payload`
+- [ ] 2D section drawing is visually dominant and readable
+- [ ] FG, EG when available, subgrade, ditch, and slope-face styles are distinguishable
+- [ ] component labels are visible near the relevant section spans
+- [ ] dimension annotations are visible in the lower drawing band
+- [ ] label and dimension overlap is acceptable in normal panel size
 - [ ] `Source Inspector` is visible
-- [ ] `Key Stations` works
+- [ ] `Source Inspector` shows `Section Set`, `Template`, `Region`, and `Structure` owner rows
+- [ ] unresolved source owners are visible when source tracing is incomplete
+- [ ] `Station Navigation` shows the full station list
 - [ ] moving to another station changes the focus as expected
 - [ ] `Open Typical Section` opens the correct existing v0 editor
 - [ ] `Open Regions` opens the correct existing v0 editor
@@ -53,7 +61,7 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [ ] title uses `Viewer`
 - [ ] `Current Focus` is visible
 - [ ] `Viewer Context` is visible
-- [ ] `Key Stations` works
+- [ ] `Station Navigation` shows the full station list
 - [ ] moving to another station changes the focus as expected
 - [ ] `Profile Controls` row emphasis matches the focus station
 - [ ] `Open Alignment` opens the correct existing v0 editor
@@ -66,7 +74,7 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [ ] opens directly
 - [ ] title uses `Viewer`
 - [ ] `Current Focus` is visible
-- [ ] `Key Stations` works
+- [ ] `Station Navigation` shows the full station list
 - [ ] moving to another station changes the focus as expected
 - [ ] `Focused Window` changes when appropriate
 - [ ] `Open Alignment` opens the correct existing v0 editor

@@ -9,9 +9,11 @@ from freecad.Corridor_Road.v1.commands.cmd_review_tin import (
     format_tin_review,
     _focus_tin_preview_object,
     _skip_tin_surface_candidate,
+    resolve_document_tin_max_triangles,
     show_v1_tin_review,
 )
 from freecad.Corridor_Road.v1.models.source import TINEditOperation
+from freecad.Corridor_Road.v1.services.builders import TINBuildService
 from freecad.Corridor_Road.v1.services.editing import TINEditService
 from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
 from freecad.Corridor_Road.objects.obj_project import (
@@ -22,11 +24,13 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_REFERENCES,
     V1_TREE_SURVEY_POINTS,
     CorridorRoadProject,
+    ensure_project_properties,
     ensure_project_tree,
 )
 
 
 SAMPLE_PATH = Path("tests/samples/pointcloud_utm_realistic_hilly.csv")
+MOUNTAIN_VALLEY_PLAIN_SAMPLE_PATH = Path("tests/samples/pointcloud_tin_mountain_valley_plain.csv")
 
 
 class _FakeSelection:
@@ -296,6 +300,48 @@ def test_document_tin_review_prefers_edited_tin_preview_when_nothing_is_selected
         assert preview is not None
         assert preview["tin_surface"].surface_id.endswith(":edited")
         assert preview["tin_surface"].surface_id == edited_surface.surface_id
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_document_tin_review_does_not_truncate_large_tin_preview_mesh() -> None:
+    doc = App.newDocument("TINReviewFullMeshExtentTest")
+    try:
+        surface = TINBuildService().build_from_csv(
+            MOUNTAIN_VALLEY_PLAIN_SAMPLE_PATH,
+            project_id="test-project",
+            surface_id="tin:mountain-valley-plain",
+        )
+        TINMeshPreviewMapper().create_preview_object(doc, surface)
+
+        preview = build_document_tin_review(doc, gui_module=_FakeGui())
+        review_surface = preview["tin_surface"]
+        y_values = [float(row.y) for row in review_surface.vertex_rows]
+
+        assert len(review_surface.triangle_rows) == len(surface.triangle_rows)
+        assert max(y_values) >= 4168800.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_document_tin_review_uses_project_tin_conversion_limit() -> None:
+    doc = App.newDocument("TINReviewProjectLimitTest")
+    try:
+        project = doc.addObject("App::FeaturePython", "CorridorRoadProject")
+        CorridorRoadProject(project)
+        ensure_project_properties(project)
+        project.TINConversionMaxTriangles = 12000
+        surface = TINBuildService().build_from_csv(
+            MOUNTAIN_VALLEY_PLAIN_SAMPLE_PATH,
+            project_id="test-project",
+            surface_id="tin:mountain-valley-plain",
+        )
+        TINMeshPreviewMapper().create_preview_object(doc, surface)
+
+        preview = build_document_tin_review(doc, gui_module=_FakeGui())
+
+        assert resolve_document_tin_max_triangles(doc) == 12000
+        assert len(preview["tin_surface"].triangle_rows) == 12000
     finally:
         App.closeDocument(doc.Name)
 

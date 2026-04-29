@@ -454,6 +454,7 @@ Current implementation status:
 - [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, and Drainage
 - [x] add previous/next navigation for Slope Face issue marker review
 - [x] add station-level Drainage diagnostics for `ditch_surface` source point coverage
+- [x] start slope-face/daylight surfaces from the outermost built Assembly edge, including `ditch_surface` points, instead of only the FG/shoulder edge
 - [x] add Drainage diagnostic row marker focus in the 3D View
 - [x] organize Build Corridor review UI into task-focused tabs
 - [x] expose Applied Sections review summaries for component mix, ditch rows, slope-face policy, and diagnostics before `Build Corridor`

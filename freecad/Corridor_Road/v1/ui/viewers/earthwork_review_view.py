@@ -245,19 +245,16 @@ class EarthworkViewerTaskPanel:
         summary.setPlainText(self._summary_text())
         layout.addWidget(summary)
 
-        layout.addWidget(QtWidgets.QLabel("Key Stations"))
-        self._key_station_combo = QtWidgets.QComboBox()
-        for row in self._key_station_rows():
+        layout.addWidget(QtWidgets.QLabel("Station Navigation"))
+        self._station_combo = QtWidgets.QComboBox()
+        for row in self._navigation_station_rows():
             label = str(row.get("label", "") or f"STA {float(row.get('station', 0.0) or 0.0):.3f}")
-            navigation_kind = str(row.get("navigation_kind", "") or "").strip()
             if bool(row.get("is_current", False)):
                 label = f"{label} [current]"
-            elif navigation_kind:
-                label = f"{label} [{navigation_kind}]"
-            self._key_station_combo.addItem(label, row)
-        if self._key_station_combo.count() > 0:
-            self._key_station_combo.setCurrentIndex(self._current_key_station_index())
-        layout.addWidget(self._key_station_combo)
+            self._station_combo.addItem(label, row)
+        if self._station_combo.count() > 0:
+            self._station_combo.setCurrentIndex(self._current_station_index())
+        layout.addWidget(self._station_combo)
 
         station_button_row = QtWidgets.QHBoxLayout()
         prev_button = QtWidgets.QPushButton("Prev")
@@ -379,7 +376,7 @@ class EarthworkViewerTaskPanel:
             f"Balance points: {balance_point_count}",
             f"Final cumulative mass: {final_cumulative_mass} m3",
             f"Max surplus/deficit: {max_surplus_mass} / {max_deficit_mass} m3",
-            f"Key stations: {len(self._key_station_rows())}",
+            f"Navigation stations: {len(self._navigation_station_rows())}",
         ]
         if station_row:
             lines.append(f"Focus Station: {station_row.get('label', '')}")
@@ -425,11 +422,11 @@ class EarthworkViewerTaskPanel:
             "font-weight: bold;"
         )
 
-    def _key_station_rows(self) -> list[dict[str, object]]:
-        return [dict(row or {}) for row in list(self.report.get("key_station_rows", []) or [])]
+    def _navigation_station_rows(self) -> list[dict[str, object]]:
+        return [dict(row or {}) for row in list(self.report.get("station_rows", []) or [])]
 
-    def _current_key_station_index(self) -> int:
-        rows = self._key_station_rows()
+    def _current_station_index(self) -> int:
+        rows = self._navigation_station_rows()
         for index, row in enumerate(rows):
             if bool(row.get("is_current", False)):
                 return index
@@ -450,34 +447,34 @@ class EarthworkViewerTaskPanel:
                 )
         return rows
 
-    def _selected_key_station_row(self) -> dict[str, object] | None:
-        combo = getattr(self, "_key_station_combo", None)
+    def _selected_station_row(self) -> dict[str, object] | None:
+        combo = getattr(self, "_station_combo", None)
         if combo is None or combo.count() <= 0:
-            rows = self._key_station_rows()
-            return dict(rows[self._current_key_station_index()]) if rows else None
+            rows = self._navigation_station_rows()
+            return dict(rows[self._current_station_index()]) if rows else None
         data = combo.currentData()
         if isinstance(data, dict):
             return dict(data)
-        rows = self._key_station_rows()
+        rows = self._navigation_station_rows()
         index = max(0, min(combo.currentIndex(), len(rows) - 1))
         return dict(rows[index]) if rows else None
 
     def _open_selected_station(self) -> None:
-        self._open_station_row(self._selected_key_station_row())
+        self._open_station_row(self._selected_station_row())
 
     def _open_selected_cross_section(self) -> None:
-        self._open_cross_section_row(self._selected_key_station_row())
+        self._open_cross_section_row(self._selected_station_row())
 
     def _open_selected_plan_profile(self) -> None:
-        self._open_plan_profile_row(self._selected_key_station_row())
+        self._open_plan_profile_row(self._selected_station_row())
 
     def _open_adjacent_station(self, delta: int) -> None:
-        rows = self._key_station_rows()
+        rows = self._navigation_station_rows()
         if not rows:
-            self._status_label.setText("No key station rows are available.")
+            self._status_label.setText("No station rows are available.")
             self._status_label.setStyleSheet("color: #b36b00;")
             return
-        current_index = self._current_key_station_index()
+        current_index = self._current_station_index()
         target_index = max(0, min(current_index + int(delta), len(rows) - 1))
         self._open_station_row(rows[target_index])
 

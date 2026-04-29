@@ -1,5 +1,6 @@
 """Mapping services for CorridorRoad v1."""
 
+from .cross_section_drawing_mapper import CrossSectionDrawingMapper
 from .earthwork_output_mapper import EarthworkOutputMapper
 from .exchange_output_mapper import ExchangeOutputMapper, ExchangePackageRequest
 from .plan_output_mapper import PlanOutputMapper
@@ -11,6 +12,7 @@ from .tin_mesh_preview_mapper import TINMeshPreviewMapper, TINMeshPreviewResult
 from .tin_review_summary import enrich_tin_review_preview, format_tin_review_summary
 
 __all__ = [
+    "CrossSectionDrawingMapper",
     "EarthworkOutputMapper",
     "ExchangeOutputMapper",
     "ExchangePackageRequest",

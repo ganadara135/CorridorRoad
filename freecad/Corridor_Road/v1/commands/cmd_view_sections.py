@@ -19,6 +19,7 @@ from ..services.evaluation import (
     TinSectionSamplingService,
 )
 from ..services.mapping import SectionOutputMapper
+from ..services.mapping.cross_section_drawing_mapper import CrossSectionDrawingMapper
 from ..ui.common import clear_ui_context, get_ui_context
 from ..ui.viewers import CrossSectionViewerTaskPanel
 from ..ui.viewers.cross_section_viewer import build_corridor_result_status
@@ -178,22 +179,28 @@ def _build_source_inspector(
     component_id = focused_id or str(getattr(selected_component, "component_id", "") or "").strip()
     component_kind = focused_kind or str(getattr(selected_component, "kind", "") or "").strip()
     component_side = focused_side or str(focused.get("scope", "") or "").strip()
+    section_set_label = str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip()
     owner_template = str(getattr(applied_section, "template_id", "") or "").strip()
     owner_region = str(getattr(applied_section, "region_id", "") or "").strip()
-    section_set_label = str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip()
-    template_label = str(getattr(typical_section, "Label", "") or getattr(typical_section, "Name", "") or owner_template).strip()
-    region_label = str(getattr(region_plan, "Label", "") or getattr(region_plan, "Name", "") or owner_region).strip()
+    template_object_label = str(getattr(typical_section, "Label", "") or getattr(typical_section, "Name", "") or "").strip()
+    region_object_label = str(getattr(region_plan, "Label", "") or getattr(region_plan, "Name", "") or "").strip()
     structure_label = str(getattr(structure_set, "Label", "") or getattr(structure_set, "Name", "") or "").strip()
+    template_label = template_object_label or owner_template
+    region_label = region_object_label or owner_region
     owner_structure = structure_label or str(viewer_context.get("structure_summary", "") or "").strip()
+    section_set_status = _source_owner_status(object_label=section_set_label, source_ref="")
+    template_status = _source_owner_status(object_label=template_object_label, source_ref=owner_template)
+    region_status = _source_owner_status(object_label=region_object_label, source_ref=owner_region)
+    structure_status = _source_owner_status(object_label=structure_label, source_ref=owner_structure)
 
     unresolved_fields = []
-    if not section_set_label:
+    if section_set_status == "unresolved":
         unresolved_fields.append("section_set")
-    if not template_label and not owner_template:
+    if template_status == "unresolved":
         unresolved_fields.append("template")
-    if not region_label and not owner_region:
+    if region_status == "unresolved":
         unresolved_fields.append("region")
-    if not owner_structure:
+    if structure_status == "unresolved":
         unresolved_fields.append("structure")
 
     if len(unresolved_fields) == 0:
@@ -206,9 +213,17 @@ def _build_source_inspector(
     return {
         "station_label": str((station_row or {}).get("label", "") or "").strip(),
         "section_set_label": section_set_label,
+        "section_set_status": section_set_status,
         "template_label": template_label,
+        "template_object_label": template_object_label,
+        "template_source_ref": owner_template,
+        "template_status": template_status,
         "region_label": region_label,
+        "region_object_label": region_object_label,
+        "region_source_ref": owner_region,
+        "region_status": region_status,
         "structure_label": structure_label,
+        "structure_status": structure_status,
         "component_id": component_id,
         "component_kind": component_kind,
         "component_side": component_side,
@@ -220,6 +235,16 @@ def _build_source_inspector(
         "component_count": int(len(list(getattr(section_output, "component_rows", []) or []))),
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
     }
+
+
+def _source_owner_status(*, object_label: str, source_ref: str) -> str:
+    """Classify how strongly one source owner is resolved."""
+
+    if str(object_label or "").strip():
+        return "resolved"
+    if str(source_ref or "").strip():
+        return "source_ref"
+    return "unresolved"
 
 
 def _build_terrain_review_rows(
@@ -317,7 +342,7 @@ def _resolve_terrain_review_rows(preview: dict[str, object]) -> list[dict[str, s
     tin_rows = _build_tin_section_terrain_rows(
         surface=preview.get("tin_surface"),
         station_row=dict(preview.get("station_row", {}) or {}),
-        station_rows=list(preview.get("station_rows", []) or preview.get("key_station_rows", []) or []),
+        station_rows=list(preview.get("station_rows", []) or []),
         offsets=_terrain_offsets_from_preview(preview),
         station_offset_to_xy=preview.get("station_offset_to_xy", None),
         sample_result=sample_result,
@@ -340,7 +365,7 @@ def _resolve_tin_section_sample_result(preview: dict[str, object]):
         preview.get("station_offset_to_xy", None)
         or _station_offset_adapter_from_alignment(preview.get("alignment_model", None))
         or _station_offset_adapter_from_rows(
-            list(preview.get("station_rows", []) or preview.get("key_station_rows", []) or [])
+            list(preview.get("station_rows", []) or [])
         )
     )
     if adapter is None:
@@ -730,55 +755,6 @@ def _build_diagnostic_review_rows(
     return rows
 
 
-def _build_key_station_rows(
-    station_rows: list[dict[str, object]] | None,
-    *,
-    current_station: float | None,
-) -> list[dict[str, object]]:
-    """Build a compact key-station navigation payload around one current station."""
-
-    rows = [dict(row or {}) for row in list(station_rows or [])]
-    if not rows:
-        return []
-
-    if current_station is None:
-        current_index = 0
-    else:
-        current_index = min(
-            range(len(rows)),
-            key=lambda idx: abs(float(rows[idx].get("station", 0.0) or 0.0) - float(current_station)),
-        )
-
-    candidate_indexes = {
-        0,
-        max(0, current_index - 2),
-        max(0, current_index - 1),
-        current_index,
-        min(len(rows) - 1, current_index + 1),
-        min(len(rows) - 1, current_index + 2),
-        len(rows) - 1,
-    }
-
-    result = []
-    for output_index, row_index in enumerate(sorted(candidate_indexes)):
-        row = dict(rows[row_index])
-        row["index"] = row_index
-        row["is_current"] = bool(row_index == current_index)
-        if row_index == 0:
-            row["navigation_kind"] = "first"
-        elif row_index == len(rows) - 1:
-            row["navigation_kind"] = "last"
-        elif row_index == current_index:
-            row["navigation_kind"] = "current"
-        elif row_index < current_index:
-            row["navigation_kind"] = "previous"
-        else:
-            row["navigation_kind"] = "next"
-        row["navigation_order"] = output_index
-        result.append(row)
-    return result
-
-
 def build_document_section_preview(
     document,
     *,
@@ -821,6 +797,10 @@ def build_document_section_preview(
         key=lambda row: abs(float(row.station) - float(target_station)),
     )
     section_output = SectionOutputMapper().map_applied_section(applied_section)
+    drawing_payload = CrossSectionDrawingMapper().map_applied_section_set(
+        bundle.applied_section_set,
+        station=target_station,
+    )
     station_payload = station_row or {"station": applied_section.station, "label": f"STA {applied_section.station:.3f}"}
     viewer_context = {}
     legacy_objects = {
@@ -847,8 +827,10 @@ def build_document_section_preview(
         viewer_context=viewer_context,
     )
     return {
+        "applied_section_set": bundle.applied_section_set,
         "applied_section": applied_section,
         "section_output": section_output,
+        "drawing_payload": drawing_payload,
         "station_row": station_payload,
         "result_state": _resolve_result_state(
             diagnostic_rows=diagnostic_rows,
@@ -878,10 +860,6 @@ def build_document_section_preview(
         "review_marker_rows": review_marker_rows,
         "corridor_review_rows": _build_corridor_review_rows(document),
         "diagnostic_rows": diagnostic_rows,
-        "key_station_rows": _build_key_station_rows(
-            viewer_station_rows,
-            current_station=target_station,
-        ),
         "legacy_objects": legacy_objects,
     }
 
@@ -892,10 +870,13 @@ def build_demo_section_preview(document_label: str = "") -> dict[str, object]:
     report = build_demo_earthwork_report(document_label=document_label)
     applied_section = report["applied_section_set"].sections[0]
     section_output = SectionOutputMapper().map_applied_section(applied_section)
+    drawing_payload = CrossSectionDrawingMapper().map_applied_section_set(report["applied_section_set"], station=applied_section.station)
 
     return {
+        "applied_section_set": report["applied_section_set"],
         "applied_section": applied_section,
         "section_output": section_output,
+        "drawing_payload": drawing_payload,
         "station_row": {"station": applied_section.station, "label": f"STA {applied_section.station:.3f}"},
         "result_state": _build_result_state(
             state="current",
@@ -938,10 +919,10 @@ def build_demo_section_preview(document_label: str = "") -> dict[str, object]:
                 "notes": "",
             }
         ],
-        "key_station_rows": [
-            {"index": 0, "station": 0.0, "label": "STA 0.000", "navigation_kind": "current", "is_current": True},
-            {"index": 1, "station": 20.0, "label": "STA 20.000", "navigation_kind": "next", "is_current": False},
-            {"index": 2, "station": 40.0, "label": "STA 40.000", "navigation_kind": "last", "is_current": False},
+        "station_rows": [
+            {"index": 0, "station": 0.0, "label": "STA 0.000", "is_current": True},
+            {"index": 1, "station": 20.0, "label": "STA 20.000", "is_current": False},
+            {"index": 2, "station": 40.0, "label": "STA 40.000", "is_current": False},
         ],
         "legacy_objects": {},
     }
@@ -959,6 +940,9 @@ def format_section_preview(preview: dict[str, object]) -> str:
     focused_label = str(focused.get("label", "") or "").strip()
     result_state = dict(preview.get("result_state", {}) or {})
     state_text = str(result_state.get("state", "unknown") or "unknown").strip()
+    drawing_payload = preview.get("drawing_payload")
+    source_inspector = dict(preview.get("source_inspector", {}) or {})
+    ownership_status = str(source_inspector.get("ownership_status", "unknown") or "unknown").strip()
 
     lines = [
         "CorridorRoad v1 Cross Section Viewer",
@@ -967,9 +951,20 @@ def format_section_preview(preview: dict[str, object]) -> str:
         f"Station Label: {station_label}",
         f"Components: {len(section_output.component_rows)}",
         f"Quantities: {len(section_output.quantity_rows)}",
+        f"Drawing Geometry: {len(list(getattr(drawing_payload, 'geometry_rows', []) or []))}",
+        f"Drawing Labels: {len(list(getattr(drawing_payload, 'label_rows', []) or []))}",
+        f"Drawing Dimensions: {len(list(getattr(drawing_payload, 'dimension_rows', []) or []))}",
+        f"Source Ownership: {ownership_status}",
         f"Region: {applied_section.region_id or '(none)'}",
         f"Template: {applied_section.template_id or '(unresolved)'}",
     ]
+    unresolved_fields = [
+        str(value)
+        for value in list(source_inspector.get("unresolved_fields", []) or [])
+        if str(value or "").strip()
+    ]
+    if unresolved_fields:
+        lines.append(f"Unresolved Source Owners: {', '.join(unresolved_fields)}")
     frame = getattr(applied_section, "frame", None)
     if frame is not None:
         lines.append(
@@ -1029,6 +1024,7 @@ def show_v1_section_preview(
     if extra_context:
         preview.update(dict(extra_context))
         explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
+        _retarget_preview_to_station(preview)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     legacy_objects = dict(preview.get("legacy_objects", {}) or {})
     _apply_tin_section_geometry(preview)
@@ -1066,12 +1062,17 @@ def show_v1_section_preview(
         section_output=preview["section_output"],
         viewer_context=viewer_context,
     )
-    preview["key_station_rows"] = list(preview.get("key_station_rows", []) or [])
+    preview["station_rows"] = list(preview.get("station_rows", []) or [])
     preview["result_state"] = _resolve_result_state(
         explicit_result_state=dict(preview.get("result_state", {}) or {}),
         diagnostic_rows=list(preview.get("diagnostic_rows", []) or []),
         legacy_objects=legacy_objects,
     )
+    if "drawing_payload" not in preview:
+        try:
+            preview["drawing_payload"] = CrossSectionDrawingMapper().map_applied_section(preview["applied_section"])
+        except Exception:
+            pass
     summary_text = format_section_preview(preview)
 
     if app is not None:
@@ -1093,6 +1094,24 @@ def show_v1_section_preview(
                 pass
 
     return preview
+
+
+def _retarget_preview_to_station(preview: dict[str, object]) -> None:
+    """Rebuild station-owned payload fields after navigation changes station_row."""
+
+    section_set = preview.get("applied_section_set", None)
+    sections = list(getattr(section_set, "sections", []) or [])
+    if not sections:
+        return
+    station_row = dict(preview.get("station_row", {}) or {})
+    try:
+        target_station = float(station_row.get("station", getattr(preview.get("applied_section"), "station", 0.0)) or 0.0)
+    except Exception:
+        target_station = float(getattr(preview.get("applied_section"), "station", 0.0) or 0.0)
+    section = min(sections, key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station))
+    preview["applied_section"] = section
+    preview["section_output"] = SectionOutputMapper().map_applied_section(section)
+    preview["drawing_payload"] = CrossSectionDrawingMapper().map_applied_section_set(section_set, station=target_station)
 
 
 def run_v1_section_view_command() -> dict[str, object]:

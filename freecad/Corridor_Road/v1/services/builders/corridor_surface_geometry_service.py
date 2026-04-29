@@ -71,7 +71,7 @@ class CorridorSurfaceGeometryService:
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor slope-face surface.")
         fallback_half_width = max(float(request.fallback_half_width or 0.0), 0.1)
-        width_rows = _surface_width_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
+        edge_rows = _daylight_inner_edge_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
         daylight_rows = _daylight_rows(request.applied_section_set)
         sampling_service = TinSamplingService()
         vertices: list[TINVertex] = []
@@ -91,17 +91,18 @@ class CorridorSurfaceGeometryService:
             x = float(getattr(frame, "x", 0.0) or 0.0)
             y = float(getattr(frame, "y", 0.0) or 0.0)
             z = float(getattr(frame, "z", 0.0) or 0.0)
-            left_width, right_width = width_rows[index]
+            left_edge, right_edge = edge_rows[index]
             left_daylight_width, right_daylight_width, left_slope, right_slope = daylight_rows[index]
             if left_daylight_width > 0.0:
-                inner_x = x + nx * left_width
-                inner_y = y + ny * left_width
+                inner_x = x + nx * left_edge[0]
+                inner_y = y + ny * left_edge[0]
+                inner_z = left_edge[1]
                 outer = _resolve_slope_face_outer_point(
                     sampling_service=sampling_service,
                     surface=request.existing_ground_surface,
                     edge_x=inner_x,
                     edge_y=inner_y,
-                    edge_z=z,
+                    edge_z=inner_z,
                     normal_x=nx,
                     normal_y=ny,
                     max_width=left_daylight_width,
@@ -116,7 +117,7 @@ class CorridorSurfaceGeometryService:
                 no_eg_hit_count += 1 if outer.status == "fallback:no_eg_hit_in_search_width" else 0
                 vertices.extend(
                     [
-                        TINVertex(f"v{index}:left:inner", inner_x, inner_y, z),
+                        TINVertex(f"v{index}:left:inner", inner_x, inner_y, inner_z),
                         TINVertex(
                             f"v{index}:left:outer",
                             outer.x,
@@ -128,14 +129,15 @@ class CorridorSurfaceGeometryService:
                     ]
                 )
             if right_daylight_width > 0.0:
-                inner_x = x - nx * right_width
-                inner_y = y - ny * right_width
+                inner_x = x + nx * right_edge[0]
+                inner_y = y + ny * right_edge[0]
+                inner_z = right_edge[1]
                 outer = _resolve_slope_face_outer_point(
                     sampling_service=sampling_service,
                     surface=request.existing_ground_surface,
                     edge_x=inner_x,
                     edge_y=inner_y,
-                    edge_z=z,
+                    edge_z=inner_z,
                     normal_x=-nx,
                     normal_y=-ny,
                     max_width=right_daylight_width,
@@ -150,7 +152,7 @@ class CorridorSurfaceGeometryService:
                 no_eg_hit_count += 1 if outer.status == "fallback:no_eg_hit_in_search_width" else 0
                 vertices.extend(
                     [
-                        TINVertex(f"v{index}:right:inner", inner_x, inner_y, z),
+                        TINVertex(f"v{index}:right:inner", inner_x, inner_y, inner_z),
                         TINVertex(
                             f"v{index}:right:outer",
                             outer.x,
@@ -452,6 +454,56 @@ def _surface_width_rows(applied_section_set: AppliedSectionSet, *, fallback_half
                 right_width = left_width
         widths.append((max(left_width, 0.1), max(right_width, 0.1)))
     return widths
+
+
+def _daylight_inner_edge_rows(
+    applied_section_set: AppliedSectionSet,
+    *,
+    fallback_half_width: float,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """Return left/right slope-face start offsets and elevations.
+
+    The slope face starts at the outermost built section edge. Ditch/drainage
+    points are separate from FG, but they are still part of the Assembly
+    terminal geometry and must move the slope-face start outward.
+    """
+
+    rows: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for section in _section_rows(applied_section_set):
+        frame = getattr(section, "frame", None)
+        frame_z = float(getattr(frame, "z", 0.0) or 0.0)
+        left_width, right_width = _surface_width_rows_for_section(
+            section,
+            fallback_half_width=fallback_half_width,
+        )
+        left_edge = (left_width, frame_z)
+        right_edge = (-right_width, frame_z)
+        for point in list(getattr(section, "point_rows", []) or []):
+            role = str(getattr(point, "point_role", "") or "")
+            if role not in {"fg_surface", "ditch_surface"}:
+                continue
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+            z = float(getattr(point, "z", frame_z) or frame_z)
+            if offset > left_edge[0] or (abs(offset - left_edge[0]) <= 1.0e-9 and z > left_edge[1]):
+                left_edge = (offset, z)
+            if offset < right_edge[0] or (abs(offset - right_edge[0]) <= 1.0e-9 and z > right_edge[1]):
+                right_edge = (offset, z)
+        rows.append((left_edge, right_edge))
+    return rows
+
+
+def _surface_width_rows_for_section(section, *, fallback_half_width: float) -> tuple[float, float]:
+    left_width = float(getattr(section, "surface_left_width", 0.0) or 0.0)
+    right_width = float(getattr(section, "surface_right_width", 0.0) or 0.0)
+    if left_width <= 0.0 and right_width <= 0.0:
+        left_width = fallback_half_width
+        right_width = fallback_half_width
+    else:
+        if left_width <= 0.0:
+            left_width = right_width
+        if right_width <= 0.0:
+            right_width = left_width
+    return max(left_width, 0.1), max(right_width, 0.1)
 
 
 def _daylight_rows(applied_section_set: AppliedSectionSet) -> list[tuple[float, float, float, float]]:

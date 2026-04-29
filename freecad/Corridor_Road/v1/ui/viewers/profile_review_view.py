@@ -9,7 +9,7 @@ except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
     App = None
     Gui = None
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from ..common import run_legacy_command, set_ui_context
 
 
@@ -120,19 +120,19 @@ class PlanProfileViewerTaskPanel:
         layout.addLayout(self._connection_table_slot)
         self._refresh_connection_table()
 
-        layout.addWidget(QtWidgets.QLabel("Quick Navigation Stations"))
+        layout.addWidget(QtWidgets.QLabel("Station Navigation"))
         navigation_hint = QtWidgets.QLabel(
             "Full station list for moving the review focus. Selecting a station reopens this review centered on that station."
         )
         navigation_hint.setWordWrap(True)
         navigation_hint.setStyleSheet("color: #666;")
         layout.addWidget(navigation_hint)
-        self._key_station_combo = QtWidgets.QComboBox()
-        for row in self._key_station_rows():
-            self._key_station_combo.addItem(self._key_station_combo_label(row), row)
-        if self._key_station_combo.count() > 0:
-            self._key_station_combo.setCurrentIndex(self._current_key_station_index())
-        layout.addWidget(self._key_station_combo)
+        self._station_combo = QtWidgets.QComboBox()
+        for row in self._navigation_station_rows():
+            self._station_combo.addItem(self._station_combo_label(row), row)
+        if self._station_combo.count() > 0:
+            self._station_combo.setCurrentIndex(self._current_station_index())
+        layout.addWidget(self._station_combo)
 
         station_button_row = QtWidgets.QHBoxLayout()
         prev_button = QtWidgets.QPushButton("Focus Previous")
@@ -308,7 +308,7 @@ class PlanProfileViewerTaskPanel:
             f"Profile controls: {len(list(getattr(profile_output, 'pvi_rows', []) or []))}",
             f"Profile lines: {len(self._profile_line_rows())}",
             f"Earthwork attachments: {len(list(getattr(profile_output, 'earthwork_rows', []) or []))}",
-            f"Navigation stations: {len(self._key_station_rows())}",
+            f"Navigation stations: {len(self._navigation_station_rows())}",
             f"Evaluated alignment stations: {len(self._alignment_frame_rows())}",
             f"Evaluated profile stations: {len(self._profile_eval_rows())}",
         ]
@@ -395,10 +395,10 @@ class PlanProfileViewerTaskPanel:
                 ]
             )
 
-        if station_rows and not self._key_station_rows():
+        if station_rows and not self._navigation_station_rows():
             rows.append(
                 [
-                    "Quick Navigation Stations",
+                    "Station Navigation",
                     "missing",
                     "Reopen Plan/Profile Review after Stations are generated.",
                 ]
@@ -570,7 +570,9 @@ class PlanProfileViewerTaskPanel:
             return ""
         vertices = len(list(getattr(tin_surface, "vertex_rows", []) or []))
         triangles = len(list(getattr(tin_surface, "triangle_rows", []) or []))
-        return f"vertices {vertices} | triangles {triangles}"
+        extent = PlanProfileViewerTaskPanel._tin_xy_extent(tin_surface)
+        extent_text = f" | {PlanProfileViewerTaskPanel._format_xy_extent(extent)}" if extent is not None else ""
+        return f"vertices {vertices} | triangles {triangles}{extent_text}"
 
     def _connection_diagnostic_rows(self) -> list[list[str]]:
         station_connection_rows = self._station_connection_rows()
@@ -688,7 +690,8 @@ class PlanProfileViewerTaskPanel:
         ]
 
     def _tin_connection_diagnostic_row(self, rows: list[dict[str, object]]) -> list[str]:
-        if self.preview.get("tin_surface") is None:
+        tin_surface = self.preview.get("tin_surface")
+        if tin_surface is None:
             return [
                 "TIN / EG",
                 "warning",
@@ -711,12 +714,122 @@ class PlanProfileViewerTaskPanel:
                 "No action required.",
             ]
         status = "error" if len(bad_rows) == len(rows) else "warning"
+        finding_suffix, next_action = self._tin_eg_failure_hint(rows, tin_surface)
         return [
             "TIN / EG",
             status,
-            f"{len(bad_rows)} of {len(rows)} station row(s) did not produce EG elevations.",
-            "Open TIN and inspect boundary, voids, or station range coverage.",
+            f"{len(bad_rows)} of {len(rows)} station row(s) did not produce EG elevations. {finding_suffix}",
+            next_action,
         ]
+
+    @classmethod
+    def _tin_eg_failure_hint(cls, rows: list[dict[str, object]], tin_surface) -> tuple[str, str]:
+        station_extent = cls._rows_xy_extent(rows)
+        tin_extent = cls._tin_xy_extent(tin_surface)
+        if station_extent is None:
+            return (
+                "Station XY values are unavailable.",
+                "Regenerate Stations or reopen Alignment to restore evaluated station XY values.",
+            )
+        if tin_extent is None:
+            return (
+                "TIN has no usable XY vertex extent.",
+                "Rebuild the TIN and confirm the source CSV created vertices and triangles.",
+            )
+
+        station_text = cls._format_xy_extent(station_extent)
+        tin_text = cls._format_xy_extent(tin_extent)
+        if not cls._xy_extents_overlap(station_extent, tin_extent):
+            return (
+                f"Station XY extent ({station_text}) is outside TIN extent ({tin_text}).",
+                "Check Project Setup coordinate mode, CSV World/Local import, or select a TIN covering the alignment.",
+            )
+        return (
+            f"Station XY extent ({station_text}) overlaps TIN extent ({tin_text}), but samples still no-hit.",
+            "Open TIN Editor and inspect boundary clips, voids, triangle gaps, or edited coverage around the station line.",
+        )
+
+    @staticmethod
+    def _tin_xy_extent(tin_surface) -> dict[str, float] | None:
+        vertices = list(getattr(tin_surface, "vertex_rows", []) or [])
+        x_values = []
+        y_values = []
+        for vertex in vertices:
+            x_value = PlanProfileViewerTaskPanel._finite_float(getattr(vertex, "x", None))
+            y_value = PlanProfileViewerTaskPanel._finite_float(getattr(vertex, "y", None))
+            if x_value is None or y_value is None:
+                continue
+            x_values.append(x_value)
+            y_values.append(y_value)
+        if not x_values or not y_values:
+            return None
+        return {
+            "x_min": min(x_values),
+            "x_max": max(x_values),
+            "y_min": min(y_values),
+            "y_max": max(y_values),
+        }
+
+    @staticmethod
+    def _rows_xy_extent(rows: list[dict[str, object]]) -> dict[str, float] | None:
+        x_values = []
+        y_values = []
+        for row in list(rows or []):
+            x_value = PlanProfileViewerTaskPanel._finite_float(row.get("x", None))
+            y_value = PlanProfileViewerTaskPanel._finite_float(row.get("y", None))
+            if x_value is None or y_value is None:
+                continue
+            x_values.append(x_value)
+            y_values.append(y_value)
+        if not x_values or not y_values:
+            return None
+        return {
+            "x_min": min(x_values),
+            "x_max": max(x_values),
+            "y_min": min(y_values),
+            "y_max": max(y_values),
+        }
+
+    @staticmethod
+    def _format_xy_extent(extent: dict[str, float] | None) -> str:
+        if extent is None:
+            return "XY extent unavailable"
+        return (
+            f"X {extent['x_min']:.3f} -> {extent['x_max']:.3f} | "
+            f"Y {extent['y_min']:.3f} -> {extent['y_max']:.3f}"
+        )
+
+    @staticmethod
+    def _xy_extents_overlap(a: dict[str, float], b: dict[str, float]) -> bool:
+        return (
+            a["x_min"] <= b["x_max"]
+            and a["x_max"] >= b["x_min"]
+            and a["y_min"] <= b["y_max"]
+            and a["y_max"] >= b["y_min"]
+        )
+
+    @staticmethod
+    def _point_inside_xy_extent(x_value: object, y_value: object, extent: dict[str, float] | None) -> bool:
+        if extent is None:
+            return False
+        x_float = PlanProfileViewerTaskPanel._finite_float(x_value)
+        y_float = PlanProfileViewerTaskPanel._finite_float(y_value)
+        if x_float is None or y_float is None:
+            return False
+        return (
+            extent["x_min"] <= x_float <= extent["x_max"]
+            and extent["y_min"] <= y_float <= extent["y_max"]
+        )
+
+    @staticmethod
+    def _finite_float(value: object) -> float | None:
+        try:
+            result = float(value)
+        except Exception:
+            return None
+        if result != result or result in (float("inf"), float("-inf")):
+            return None
+        return result
 
     def _fg_eg_connection_diagnostic_row(self, rows: list[dict[str, object]]) -> list[str]:
         if self.preview.get("tin_surface") is None:
@@ -785,8 +898,8 @@ class PlanProfileViewerTaskPanel:
         except Exception:
             return None
 
-    def _key_station_rows(self) -> list[dict[str, object]]:
-        return [dict(row or {}) for row in list(self.preview.get("key_station_rows", []) or [])]
+    def _navigation_station_rows(self) -> list[dict[str, object]]:
+        return [dict(row or {}) for row in list(self.preview.get("station_rows", []) or [])]
 
     def _station_connection_table_rows(self, *, issues_only: bool = False) -> list[list[str]]:
         rows = []
@@ -828,7 +941,7 @@ class PlanProfileViewerTaskPanel:
                 }
             )
         if not stations:
-            for row in self._key_station_rows():
+            for row in self._navigation_station_rows():
                 try:
                     station = float(row.get("station", 0.0) or 0.0)
                 except Exception:
@@ -847,6 +960,7 @@ class PlanProfileViewerTaskPanel:
         alignment_service = self._alignment_eval_service()
         profile_service = self._profile_eval_service()
         eg_rows = self._eg_sample_rows_by_station()
+        tin_extent = self._tin_xy_extent(self.preview.get("tin_surface", None))
 
         result = []
         seen = set()
@@ -903,6 +1017,8 @@ class PlanProfileViewerTaskPanel:
                 item["eg_elevation"] = getattr(eg_row, "elevation", None)
                 if item["eg_status"] != "ok":
                     notes.append(str(getattr(eg_row, "notes", "") or "EG sample did not hit TIN."))
+                    if not self._point_inside_xy_extent(item.get("x", None), item.get("y", None), tin_extent):
+                        notes.append(f"Station XY is outside TIN extent ({self._format_xy_extent(tin_extent)}).")
             elif self.preview.get("tin_surface", None) is None:
                 item["eg_status"] = "no_tin"
                 notes.append("EG TIN not available.")
@@ -1059,7 +1175,7 @@ class PlanProfileViewerTaskPanel:
         except Exception:
             return ""
 
-    def _key_station_combo_label(self, row: dict[str, object]) -> str:
+    def _station_combo_label(self, row: dict[str, object]) -> str:
         station = float(row.get("station", 0.0) or 0.0)
         label = str(row.get("label", "") or f"STA {station:.3f}")
         reason = str(row.get("navigation_reason", "") or "").strip()
@@ -1084,7 +1200,7 @@ class PlanProfileViewerTaskPanel:
 
     def _alignment_frame_rows(self) -> list[list[str]]:
         rows = []
-        for row in self._key_station_rows():
+        for row in self._navigation_station_rows():
             status = str(row.get("alignment_eval_status", "") or "").strip()
             if not status:
                 continue
@@ -1102,7 +1218,7 @@ class PlanProfileViewerTaskPanel:
 
     def _profile_eval_rows(self) -> list[list[str]]:
         rows = []
-        for row in self._key_station_rows():
+        for row in self._navigation_station_rows():
             status = str(row.get("profile_eval_status", "") or "").strip()
             if not status:
                 continue
@@ -1170,35 +1286,35 @@ class PlanProfileViewerTaskPanel:
         except Exception:
             return ""
 
-    def _current_key_station_index(self) -> int:
-        rows = self._key_station_rows()
+    def _current_station_index(self) -> int:
+        rows = self._navigation_station_rows()
         for index, row in enumerate(rows):
             if bool(row.get("is_current", False)):
                 return index
         return 0
 
-    def _selected_key_station_row(self) -> dict[str, object] | None:
-        combo = getattr(self, "_key_station_combo", None)
+    def _selected_station_row(self) -> dict[str, object] | None:
+        combo = getattr(self, "_station_combo", None)
         if combo is None or combo.count() <= 0:
-            rows = self._key_station_rows()
-            return dict(rows[self._current_key_station_index()]) if rows else None
+            rows = self._navigation_station_rows()
+            return dict(rows[self._current_station_index()]) if rows else None
         data = combo.currentData()
         if isinstance(data, dict):
             return dict(data)
-        rows = self._key_station_rows()
+        rows = self._navigation_station_rows()
         index = max(0, min(combo.currentIndex(), len(rows) - 1))
         return dict(rows[index]) if rows else None
 
     def _open_selected_station(self) -> None:
-        self._open_station_row(self._selected_key_station_row())
+        self._open_station_row(self._selected_station_row())
 
     def _open_adjacent_station(self, delta: int) -> None:
-        rows = self._key_station_rows()
+        rows = self._navigation_station_rows()
         if not rows:
             self._status_label.setText("No navigation station rows are available.")
             self._status_label.setStyleSheet("color: #b36b00;")
             return
-        current_index = self._current_key_station_index()
+        current_index = self._current_station_index()
         target_index = max(0, min(current_index + int(delta), len(rows) - 1))
         self._open_station_row(rows[target_index])
 
@@ -1525,7 +1641,7 @@ class PlanProfileViewerTaskPanel:
             return None
         best_row = None
         best_delta = None
-        for row in self._key_station_rows():
+        for row in self._navigation_station_rows():
             try:
                 delta = abs(float(row.get("station", 0.0) or 0.0) - target)
             except Exception:
@@ -1620,6 +1736,10 @@ class PlanProfileViewerTaskPanel:
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         table.setAlternatingRowColors(True)
+        table.setWordWrap(False)
+        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        table.setTextElideMode(QtCore.Qt.ElideRight)
 
         for row_index, row_values in enumerate(rows):
             for col_index, value in enumerate(row_values):
@@ -1627,11 +1747,27 @@ class PlanProfileViewerTaskPanel:
 
         header = table.horizontalHeader()
         try:
-            header.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            header.setStretchLastSection(False)
+            header.setSectionsMovable(False)
+            header.setMinimumSectionSize(60)
+            table.resizeColumnsToContents()
+            self._apply_reasonable_table_widths(table)
         except Exception:
             pass
         table.setMinimumHeight(120)
         return table
+
+    @staticmethod
+    def _apply_reasonable_table_widths(table) -> None:
+        """Keep initial widths readable while allowing user drag-resize and horizontal scroll."""
+
+        try:
+            for column_index in range(int(table.columnCount())):
+                current = int(table.columnWidth(column_index))
+                table.setColumnWidth(column_index, max(80, min(current + 18, 420)))
+        except Exception:
+            pass
 
 
 PlanProfilePreviewTaskPanel = PlanProfileViewerTaskPanel

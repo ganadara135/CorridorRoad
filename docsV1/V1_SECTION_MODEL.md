@@ -485,6 +485,7 @@ Current implementation note:
 - `V1AppliedSectionSet` also persists first-slice FG and subgrade point rows for component-boundary-aware corridor surface generation
 - ditch components are intentionally not folded into the finished-grade width
 - `AppliedSectionService` emits first-slice `ditch_surface` point rows from enabled ditch components so Corridor Build can create a separate drainage surface
+- slope-face/daylight generation should treat `ditch_surface` outer points as built Assembly terminal edges, so side slopes start beyond the ditch instead of at the shoulder/FG edge
 - `AppliedSectionService` derives `ditch_surface` points from shape-specific ditch parameters when `shape` is `trapezoid`, `u`, `l`, `rectangular`, or `v`
 - `AppliedSectionService` emits warnings when supported ditch shapes are missing required parameters or use unsupported shape names
 

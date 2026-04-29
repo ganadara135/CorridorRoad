@@ -16,12 +16,19 @@ from freecad.Corridor_Road.v1.models.source.alignment_model import (
     AlignmentModel,
 )
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
+    build_cross_section_drawing_dimension_table_rows,
+    build_cross_section_drawing_geometry_table_rows,
+    build_cross_section_drawing_label_table_rows,
     build_corridor_result_review_table_rows,
     build_corridor_result_status,
     build_section_geometry_table_rows,
+    build_source_inspector_detail_rows,
+    build_source_inspector_owner_rows,
     build_handoff_status,
     build_handoff_target_rows,
     corridor_result_object_name_for_row,
+    CrossSectionViewerTaskPanel,
+    plan_cross_section_text_layout,
     section_geometry_rows,
     show_corridor_result_object_from_preview,
 )
@@ -110,16 +117,21 @@ def test_build_demo_section_preview_returns_section_output() -> None:
     assert preview["section_output"].section_output_id == "section:0"
     assert preview["section_output"].station == 0.0
     assert preview["result_state"]["state"] == "current"
-    assert preview["source_inspector"]["component_count"] == 0
+    assert preview["source_inspector"]["component_count"] == 8
     assert preview["terrain_rows"][0]["label"] == "Terrain Source"
     assert preview["structure_rows"][0]["label"] == "Structure Summary"
     assert preview["earthwork_hint_rows"][0]["label"] == "Earthwork Window"
     assert preview["review_marker_rows"][0]["label"] == "Bookmark Slot"
     assert preview["diagnostic_rows"][0]["severity"] == "info"
-    assert len(preview["key_station_rows"]) == 3
-    assert preview["key_station_rows"][0]["is_current"] is True
+    assert len(preview["station_rows"]) == 3
+    assert preview["station_rows"][0]["is_current"] is True
+    assert "key_station_rows" not in preview
     assert preview["source_inspector"]["ownership_status"] == "partial"
     assert "section_set" in preview["source_inspector"]["unresolved_fields"]
+    assert preview["drawing_payload"].station == 0.0
+    assert preview["drawing_payload"].geometry_rows
+    assert preview["drawing_payload"].label_rows
+    assert preview["drawing_payload"].dimension_rows
 
 
 def test_format_section_preview_contains_key_summary_lines() -> None:
@@ -130,6 +142,10 @@ def test_format_section_preview_contains_key_summary_lines() -> None:
     assert "Station: 0.0" in summary
     assert "Station Label: STA 0.000" in summary
     assert "Quantities: 2" in summary
+    assert "Drawing Geometry:" in summary
+    assert "Drawing Labels:" in summary
+    assert "Drawing Dimensions:" in summary
+    assert "Source Ownership:" in summary
     assert "Frame: x=1000.000, y=2000.000, z=12.000" in summary
     assert "Frame Profile: grade=0.020000, alignment=ok, profile=ok" in summary
     assert "Earthwork" not in summary
@@ -204,17 +220,80 @@ def test_show_corridor_result_object_from_preview_selects_and_fits_object() -> N
         App.closeDocument(doc.Name)
 
 
-def test_show_v1_section_preview_keeps_key_station_rows() -> None:
+def test_show_v1_section_preview_keeps_station_rows() -> None:
     preview = show_v1_section_preview(document=None, app_module=None, gui_module=None)
 
-    assert len(preview["key_station_rows"]) == 3
-    assert any(bool(row.get("is_current", False)) for row in preview["key_station_rows"])
+    assert len(preview["station_rows"]) == 3
+    assert any(bool(row.get("is_current", False)) for row in preview["station_rows"])
+    assert "key_station_rows" not in preview
+
+
+def test_cross_section_viewer_navigation_uses_station_rows_only() -> None:
+    panel = CrossSectionViewerTaskPanel.__new__(CrossSectionViewerTaskPanel)
+    panel.preview = {
+        "station_row": {"station": 20.0, "label": "STA 20.000"},
+        "station_rows": [
+            {"station": 0.0, "label": "STA 0.000"},
+            {"station": 20.0, "label": "STA 20.000"},
+            {"station": 40.0, "label": "STA 40.000"},
+            {"station": 60.0, "label": "STA 60.000"},
+        ],
+    }
+
+    rows = panel._navigation_station_rows()
+
+    assert len(rows) == 4
+    assert panel._current_station_index() == 1
+    assert rows[1]["is_current"] is True
+
+
+def test_show_v1_section_preview_retargets_drawing_payload_from_station_row() -> None:
+    preview = show_v1_section_preview(
+        document=None,
+        extra_context={"station_row": {"station": 40.0, "label": "STA 40.000"}},
+        app_module=None,
+        gui_module=None,
+    )
+
+    assert preview["applied_section"].station == 40.0
+    assert preview["section_output"].station == 40.0
+    assert preview["drawing_payload"].station == 40.0
+    assert preview["drawing_payload"].station_label == "STA 40.000"
 
 
 def test_show_v1_section_preview_returns_preview_without_gui() -> None:
     preview = show_v1_section_preview(document=None, app_module=None, gui_module=None)
 
     assert preview["section_output"].section_output_id == "section:0"
+
+
+def test_show_v1_section_preview_includes_drawing_payload_rows() -> None:
+    preview = show_v1_section_preview(document=None, app_module=None, gui_module=None)
+
+    geometry_rows = build_cross_section_drawing_geometry_table_rows(preview)
+    label_rows = build_cross_section_drawing_label_table_rows(preview)
+    dimension_rows = build_cross_section_drawing_dimension_table_rows(preview)
+
+    assert any(row[0] == "fg" for row in geometry_rows)
+    assert any(row[0] == "CL" for row in label_rows)
+    assert any(row[0] == "overall_width" for row in dimension_rows)
+
+
+def test_cross_section_text_layout_moves_overlapping_labels() -> None:
+    rows = plan_cross_section_text_layout(
+        [
+            {"order": 0, "text": "FG", "x": 100.0, "y": 100.0, "width": 42.0, "height": 12.0},
+            {"order": 1, "text": "Subgrade", "x": 104.0, "y": 102.0, "width": 60.0, "height": 12.0},
+        ],
+        min_gap=2.0,
+        vertical_step=14.0,
+        bounds=(0.0, 0.0, 300.0, 220.0),
+    )
+
+    assert len(rows) == 2
+    assert rows[0]["lane"] == 0
+    assert rows[1]["lane"] > 0
+    assert rows[0]["y"] != rows[1]["y"]
 
 
 def test_show_v1_section_preview_merges_extra_context() -> None:
@@ -264,6 +343,11 @@ def test_show_v1_section_preview_resolves_source_inspector_owner_fields() -> Non
     assert inspector["owner_structure"] == "Structure Set A"
     assert inspector["ownership_status"] == "resolved"
     assert inspector["unresolved_fields"] == []
+    owner_rows = build_source_inspector_owner_rows(preview)
+    assert ["Section Set", "resolved", "SectionSet A", "-", "Object resolved. Section station/result container used by this viewer."] in owner_rows
+    assert any(row[0] == "Template" and row[1] == "resolved" and row[2] == "Typical Section A" for row in owner_rows)
+    assert any(row[0] == "Region" and row[1] == "resolved" and row[2] == "Region Plan A" for row in owner_rows)
+    assert any(row[0] == "Structure" and row[1] == "resolved" and row[2] == "Structure Set A" for row in owner_rows)
 
 
 def test_show_v1_section_preview_marks_unresolved_ownership_fields() -> None:
@@ -272,6 +356,11 @@ def test_show_v1_section_preview_marks_unresolved_ownership_fields() -> None:
     inspector = preview["source_inspector"]
     assert inspector["ownership_status"] in ("partial", "unresolved")
     assert "section_set" in inspector["unresolved_fields"]
+    owner_rows = build_source_inspector_owner_rows(preview)
+    detail_rows = build_source_inspector_detail_rows(preview)
+    assert any(row[0] == "Section Set" and row[1] == "unresolved" for row in owner_rows)
+    assert any(row[0] == "Template" and row[1] in ("resolved", "source_ref") for row in owner_rows)
+    assert any(row[0] == "Unresolved Fields" and "section_set" in row[1] for row in detail_rows)
 
 
 def test_format_section_preview_includes_focus_component_line() -> None:

@@ -30,6 +30,21 @@ Tables support the drawing.
 
 Tables do not replace the drawing.
 
+The v1 viewer should preserve the successful v0 drawing-style experience:
+
+- section geometry is presented like a 2D engineering section drawing, not as a small chart
+- component labels and values are drawn on or near their owning section spans
+- width, depth, and overall section dimensions are shown as dimension annotations
+- the lower dimension band remains part of the review contract
+- label/value rows should use drawing-rule placement to avoid clutter
+- exportable drawing payloads should remain possible after the v1 payload contract stabilizes
+
+The v1 reset changes the data ownership, not the expected visual language.
+
+The v0 viewer can be used as the visual behavior reference.
+
+The v1 viewer must not reuse v0 `SectionSet` as source truth for new behavior.
+
 ## 4. Main User Questions
 
 The viewer should answer:
@@ -83,6 +98,11 @@ Station navigation bar:
 - shows elevation on the vertical axis
 - supports auto-scale to visible section geometry
 - uses distinct styles for FG, EG, subgrade, ditch, drainage, and structure context
+- draws a centerline reference marker
+- draws component labels and values at component span midpoints when available
+- draws dimension guides in a lower band
+- uses collision-aware placement for labels and dimension text
+- keeps labels readable in dark mode
 
 Lower detail tabs:
 
@@ -105,6 +125,20 @@ Initial style:
 - structure influence: amber or gray marker region
 
 The style should remain readable in dark mode.
+
+Drawing annotation requirements:
+
+- `lane`, `shoulder`, `ditch`, `slope`, `subgrade`, and drainage labels should be readable without opening tables
+- component value rows should appear near their component labels when there is enough room
+- ditch annotations should include shape-specific dimensions when available, such as bottom width and depth
+- slope annotations should show side and slope meaning, not only generic linework
+- daylight markers should be visually distinct from ordinary component labels
+- the overall section width dimension should be available in the lower band
+- component width dimensions should remain visible when `Show dimensions` is enabled
+
+The first v1 implementation may start with FG, subgrade, ditch, and slope-face annotations from `AppliedSectionSet`.
+
+EG/TIN terrain annotation can be layered after the v1 section drawing payload is stable.
 
 ## 8. User Actions
 
@@ -143,10 +177,34 @@ The 2D viewer does not generate final sheets.
 
 ## 11. Implementation Milestones
 
-1. Rename navigation controls to match v1 review language.
-2. Replace the small preview widget with a dominant 2D section canvas.
-3. Move supporting tables into tabs.
-4. Add dark-mode-readable FG/EG/layer styles.
-5. Add offset/elevation axes and scale labels.
-6. Add missing-data empty states.
-7. Validate against a real corridor build document.
+1. Define `CrossSectionDrawingPayload` from v1 `AppliedSectionSet`.
+2. Map station-local `AppliedSectionPoint` rows into offset/elevation drawing geometry.
+3. Generate drawing spans for FG, subgrade, ditch, drainage, and slope-face review.
+4. Generate label rows and dimension rows from the drawing spans.
+5. Reuse v0-style drawing-rule placement for labels, values, and lower-band dimensions.
+6. Replace the small preview widget with a dominant 2D section canvas.
+7. Move supporting tables into tabs.
+8. Add dark-mode-readable FG/EG/layer styles.
+9. Add offset/elevation axes and scale labels.
+10. Add missing-data empty states.
+11. Layer EG/TIN section sampling after v1 section geometry is stable.
+12. Validate against a real corridor build document.
+
+## 12. V0 Behavior To Preserve
+
+The following v0 viewer behaviors should be treated as visual requirements for v1:
+
+- large `QGraphicsView`-based 2D drawing canvas
+- pan and zoom behavior
+- station selector and previous/next navigation
+- `Show dimensions`
+- component labels and values drawn in the section drawing
+- lower-band dimension strategy
+- SVG/PNG export path after the payload stabilizes
+- focused component highlighting
+- daylight marker labeling
+- structure overlay capability as a later layer
+
+These behaviors should be reconnected to v1 payloads.
+
+They should not cause new v1 code to depend on v0 source objects as authoritative design state.

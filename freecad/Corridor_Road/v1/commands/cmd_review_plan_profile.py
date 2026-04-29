@@ -36,7 +36,7 @@ from .selection_context import selected_alignment_profile_target
 DEFAULT_STATION_INTERVAL = 20.0
 
 
-def _build_key_station_rows(
+def _build_navigation_station_rows(
     station_values: list[tuple[float, str]] | None,
     *,
     current_station: float | None,
@@ -91,7 +91,7 @@ def _build_key_station_rows(
                 "station": station_value,
                 "label": label or f"STA {station_value:.3f}",
                 "navigation_kind": navigation_kind,
-                "navigation_reason": _key_station_navigation_reason(
+                "navigation_reason": _station_navigation_reason(
                     navigation_kind,
                     is_current=bool(row_index == current_index),
                 ),
@@ -99,11 +99,11 @@ def _build_key_station_rows(
                 "navigation_order": output_index,
             }
         )
-    enriched = _enrich_key_station_rows_with_alignment_frame(result, alignment_model)
-    return _enrich_key_station_rows_with_profile_frame(enriched, profile_model)
+    enriched = _enrich_station_rows_with_alignment_frame(result, alignment_model)
+    return _enrich_station_rows_with_profile_frame(enriched, profile_model)
 
 
-def _key_station_navigation_reason(navigation_kind: str, *, is_current: bool = False) -> str:
+def _station_navigation_reason(navigation_kind: str, *, is_current: bool = False) -> str:
     """Return a user-facing reason for one review navigation station."""
 
     if is_current:
@@ -117,7 +117,7 @@ def _key_station_navigation_reason(navigation_kind: str, *, is_current: bool = F
     }.get(str(navigation_kind or "").strip(), "Review navigation station")
 
 
-def _enrich_key_station_rows_with_alignment_frame(
+def _enrich_station_rows_with_alignment_frame(
     rows: list[dict[str, object]],
     alignment_model: AlignmentModel | None,
 ) -> list[dict[str, object]]:
@@ -146,7 +146,7 @@ def _enrich_key_station_rows_with_alignment_frame(
     return enriched_rows
 
 
-def _enrich_key_station_rows_with_profile_frame(
+def _enrich_station_rows_with_profile_frame(
     rows: list[dict[str, object]],
     profile_model: ProfileModel | None,
 ) -> list[dict[str, object]]:
@@ -239,7 +239,7 @@ def _apply_tin_existing_ground_profile(preview: dict[str, object], *, interval: 
 
     extra_stations = [
         float(row.get("station", 0.0) or 0.0)
-        for row in list(preview.get("key_station_rows", []) or [])
+        for row in list(preview.get("station_rows", []) or [])
     ]
     for row in list(getattr(plan_output, "station_rows", []) or []):
         try:
@@ -756,7 +756,7 @@ def build_document_plan_profile_preview(
         "earthwork_model": earthwork_model,
         "tin_surface": tin_surface,
         "station_interval": float(station_interval),
-        "key_station_rows": _build_key_station_rows(
+        "station_rows": _build_navigation_station_rows(
             station_values,
             current_station=current_station,
             alignment_model=alignment_model,
@@ -853,7 +853,7 @@ def build_demo_plan_profile_preview(
         "plan_output": plan_output,
         "profile_output": profile_output,
         "earthwork_model": None,
-        "key_station_rows": _build_key_station_rows(
+        "station_rows": _build_navigation_station_rows(
             _station_values_from_alignment_sampling(
                 alignment_model,
                 interval=station_interval,
@@ -889,7 +889,7 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
         f"Profile controls: {len(list(getattr(profile_output, 'pvi_rows', []) or []))}",
         f"Profile lines: {len(list(getattr(profile_output, 'line_rows', []) or []))}",
         f"Earthwork attachments: {len(list(getattr(profile_output, 'earthwork_rows', []) or []))}",
-        f"Navigation stations: {len(list(preview.get('key_station_rows', []) or []))}",
+        f"Navigation stations: {len(list(preview.get('station_rows', []) or []))}",
     ]
     bridge_counts = _bridge_diagnostic_counts(preview)
     if bridge_counts:
@@ -929,14 +929,14 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
         )
     evaluated_station_count = sum(
         1
-        for row in list(preview.get("key_station_rows", []) or [])
+        for row in list(preview.get("station_rows", []) or [])
         if str(row.get("alignment_eval_status", "") or "") == "ok"
     )
     if evaluated_station_count:
         lines.append(f"Evaluated alignment stations: {evaluated_station_count}")
     evaluated_profile_station_count = sum(
         1
-        for row in list(preview.get("key_station_rows", []) or [])
+        for row in list(preview.get("station_rows", []) or [])
         if str(row.get("profile_eval_status", "") or "") == "ok"
     )
     if evaluated_profile_station_count:
@@ -995,7 +995,7 @@ def show_v1_plan_profile_preview(
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     viewer_context["station_interval"] = station_interval
     preview["viewer_context"] = viewer_context
-    preview["key_station_rows"] = list(preview.get("key_station_rows", []) or [])
+    preview["station_rows"] = list(preview.get("station_rows", []) or [])
     preview["bridge_diagnostic_rows"] = build_alignment_profile_bridge_diagnostics(preview)
     _apply_tin_existing_ground_profile(preview, interval=station_interval)
     _apply_profile_earthwork_hints(preview)
