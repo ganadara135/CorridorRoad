@@ -62,13 +62,12 @@ Recommended early workflow:
 
 1. Open `TIN`.
 2. Use the `Source` tab to select a point-cloud CSV or sample CSV.
-3. Click `Build TIN` to create the base TIN and focus it in the 3D View.
-4. Review summary, extents, and diagnostics.
-5. Add edit operations such as boundary, void, delete triangles, or elevation fixes.
-6. Click `Apply` to rebuild the edited TIN result.
-7. Click `Show Preview` to refresh and focus the edited mesh preview.
-8. Click `Review Result` to inspect the current edited TIN result without creating duplicate review geometry.
-9. Profile `EG Reference` uses the edited TIN result when selected.
+3. Review summary, extents, and diagnostics.
+4. Add edit operations such as boundary, void, delete triangles, or elevation fixes.
+5. Click `Apply` to create or update the base TIN when needed, apply the current edit settings, and focus the edited result in the 3D View.
+6. Click `Show Preview` to refresh and focus the edited mesh preview without opening review diagnostics.
+7. Click `Review Result` to inspect the current edited TIN result without creating duplicate review geometry.
+8. Profile `EG Reference` uses the edited TIN result when selected.
 
 ## 6. MVP Editing Tools
 
@@ -244,7 +243,7 @@ Recommended bottom actions:
 
 Opening the panel should not modify the document.
 
-`Apply` should rebuild the edited result and show a completion message.
+`Apply` is the single write action. It should build or replace the source TIN only when the selected CSV source changes, apply the current edit settings, refresh the edited result, focus the 3D preview, and show a completion message.
 
 `Show Preview` should rebuild the current preview state and focus the mesh preview.
 
@@ -312,7 +311,7 @@ Tasks:
 - [x] add `Source` tab for point-cloud CSV and sample CSV base TIN creation
 - [x] provide tabs for boundary, void, triangle deletion, vertex overrides, and diagnostics
 - [x] make opening non-destructive
-- [x] make `Apply` the only write action
+- [x] make `Apply` the only write action by merging source build and edit apply behavior
 - [x] register only the unified `TIN` command in the `Survey & Surface` workflow group
 - [x] keep legacy PointCloud TIN command available as compatibility code but remove it from the active toolbar/menu flow
 - [x] add full-extent and two-corner 3D pick workflow for rectangular boundary clipping

@@ -2,7 +2,7 @@
 
 Date: 2026-04-25
 Branch: `v1-dev`
-Status: Draft baseline, station interval review control complete
+Status: Draft baseline, station connection review controls active
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
@@ -233,12 +233,12 @@ The promoted review screen should be validated through:
 
 Current implementation status:
 
-- [x] key station rows are enriched with evaluated `x`, `y`, `tangent_direction_deg`, and active element metadata when an `AlignmentModel` exists
+- [x] navigation station rows are enriched with evaluated `x`, `y`, `tangent_direction_deg`, and active element metadata when an `AlignmentModel` exists
 - [x] the Plan/Profile viewer shows an `Alignment Frame` table for evaluated station rows
 - [x] the text summary reports evaluated alignment station count
 - [x] `PlanOutput.station_rows` are generated from the shared `AlignmentStationSamplingService`
-- [x] key station navigation uses the sampled station grid while keeping the visible list compact around the current station
-- [x] key station navigation is labeled as `Quick Navigation Stations` and each row explains why it was included
+- [x] `Quick Navigation Stations` now exposes the full station grid instead of a compact key-station subset
+- [x] each navigation row explains whether it is the current focus, start/end station, or another station in relation to the focus
 - [x] `ProfileOutput.line_rows` can include a TIN-sampled `existing_ground_line`
 - [x] the Plan/Profile viewer shows profile line rows, including FG and EG when available
 - [x] FG/EG profile comparison can attach `profile_cut_depth` and `profile_fill_depth` hint rows
@@ -253,7 +253,7 @@ Current implementation status:
 - [x] Plan/Profile viewer shows a compact `Review Readiness` table only when required inputs are missing or not evaluated, including Alignment, Stations, Profile, Profile Controls, Quick Navigation Stations, and Profile Lines
 - [x] Plan/Profile viewer hides earthwork area controls and attachment tables unless earthwork handoff/context exists
 - [x] Plan/Profile viewer groups detailed review tables into `Evaluation`, `Geometry`, `Profile Controls`, and context-specific `Earthwork` tabs
-- [x] Plan/Profile viewer now includes a full station-grid `Station Connection` table for Alignment XY, Profile FG, and TIN EG connectivity; key stations remain navigation shortcuts only
+- [x] Plan/Profile viewer now includes a full station-grid `Station Connection` table for Alignment XY, Profile FG, and TIN EG connectivity
 - [x] user-facing title, menu text, summary header, and handoff text now say `Plan/Profile Connection Review`
 - [x] Plan/Profile viewer now shows a `Source Link Summary` for Alignment, Stations, Profile, and TIN source identity, range/count, and link status
 - [x] `Station Connection` rows now use status-based colors with dark-mode readable foreground text
@@ -264,7 +264,7 @@ Current implementation status:
 - [x] Plan/Profile summaries now report EG sampling status and hit counts when a TIN reference is available
 - [x] `ProfileEvaluationService` evaluates station-based FG elevation, grade, active segment, status, and active vertical-curve metadata
 - [x] `ProfileEvaluationService` now evaluates PVI-centered parabolic vertical curves for FG elevation and grade
-- [x] key station rows now carry both alignment frame data and profile evaluation data for the same station domain
+- [x] navigation station rows now carry both alignment frame data and profile evaluation data for the full station domain
 - [x] Plan/Profile viewer shows a `Profile Evaluation` table for station, elevation, grade, active segment, active curve, and status
 - [x] Plan/Profile viewer can double-click Evaluation rows to create or update the shared 3D `Station Highlight` marker
 - [x] Plan/Profile navigation buttons are labeled as focus actions: `Focus Previous`, `Focus Selected`, and `Focus Next`
@@ -281,7 +281,7 @@ Current implementation status:
 - [x] Plan/Profile viewer's profile handoff now opens `Profile` for native profile-source edits
 - [x] Plan/Profile viewer no longer exposes the legacy v0 `Open PVI` handoff button
 - [x] `Profile` can apply edited PVI rows and reopen Plan/Profile Review with focused station context
-- [x] configurable station interval is available in Plan/Profile Review and feeds plan station rows, key station rows, and TIN-based EG sampling
+- [x] Plan/Profile Review no longer exposes the temporary station-interval override; review follows the generated station context instead
 - [x] sampled FG profile lines now use the same profile evaluation service, so vertical curves affect Profile Lines and EG/FG hints
 - [x] `Stations` opens a non-mutating v1 stationing panel, and its `Apply` action creates, reviews, and configures a routed `V1Stationing` object under `02_Alignment & Profile / Stations`
 
@@ -301,14 +301,6 @@ Focused validation:
 & "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_alignment_profile_bridge_diagnostics.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 alignment/profile bridge diagnostics contract tests completed.')"
 & "D:\Program Files\FreeCAD 1.0\bin\FreeCADCmd.exe" -c "ns={}; exec(open(r'tests\contracts\v1\test_plan_profile_command_bridge.py', 'r', encoding='utf-8').read(), ns); [fn() for name, fn in sorted(ns.items()) if name.startswith('test_') and callable(fn)]; print('[PASS] v1 plan/profile command bridge contract tests completed.')"
 ```
-
-Current manual interval check:
-
-1. open `Plan/Profile Review`
-2. change `Station Interval`
-3. click `Apply Station Interval`
-4. confirm the viewer reopens and the summary reports the new interval
-5. confirm plan station count and EG sampling density change when TIN is available
 
 Minimum manual scenarios:
 

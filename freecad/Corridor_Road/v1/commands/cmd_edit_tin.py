@@ -106,6 +106,8 @@ def build_tin_source_from_csv(
             "csv_path": csv_path,
             "surface_id": _surface_id_from_csv(csv_path),
             "create_mesh_preview": True,
+            "doc_or_project": document,
+            "input_coords": "auto",
         },
         app_module=app_module,
         gui_module=None,
@@ -129,6 +131,7 @@ class V1TINEditorTaskPanel:
         self.gui_module = gui_module
         self.source_obj = source_obj
         self.base_surface = base_surface
+        self._source_csv_path = ""
         self._triangle_pick_observer = None
         self._triangle_pick_active = False
         self._triangle_pick_timer = None
@@ -155,7 +158,7 @@ class V1TINEditorTaskPanel:
         return 0
 
     def accept(self):
-        return self._apply(close_after=True)
+        return self._build_tin(close_after=True)
 
     def reject(self):
         self._stop_triangle_pick_mode(silent=True)
@@ -195,9 +198,9 @@ class V1TINEditorTaskPanel:
         layout.addWidget(self._tabs, 1)
 
         button_row = QtWidgets.QHBoxLayout()
-        apply_button = QtWidgets.QPushButton("Apply")
-        apply_button.clicked.connect(lambda: self._apply(close_after=False))
-        button_row.addWidget(apply_button)
+        build_button = QtWidgets.QPushButton("Apply")
+        build_button.clicked.connect(lambda: self._build_tin(close_after=False))
+        button_row.addWidget(build_button)
         show_button = QtWidgets.QPushButton("Show Preview")
         show_button.clicked.connect(self._show_preview)
         button_row.addWidget(show_button)
@@ -242,14 +245,6 @@ class V1TINEditorTaskPanel:
         sample_widget.setLayout(sample_row)
         layout.addRow("Sample:", sample_widget)
 
-        action_row = QtWidgets.QHBoxLayout()
-        build_button = QtWidgets.QPushButton("Build TIN")
-        build_button.clicked.connect(self._build_source_tin)
-        action_row.addWidget(build_button)
-        action_row.addStretch(1)
-        action_widget = QtWidgets.QWidget()
-        action_widget.setLayout(action_row)
-        layout.addRow(action_widget)
         return tab
 
     def _build_boundary_tab(self):
@@ -390,6 +385,43 @@ class V1TINEditorTaskPanel:
         layout.addWidget(self._diagnostics)
         return tab
 
+    def _build_tin(self, *, close_after: bool = False) -> bool:
+        try:
+            source_result = None
+            csv_path = str(self._source_csv_text.text() or "").strip()
+            if csv_path and (self.base_surface is None or csv_path != self._source_csv_path):
+                source_result = self._build_source_tin(show_completion=False, focus_preview=False)
+            result = self._apply_current_editor_state(focus_preview=True)
+            edit_result = result["edit_result"]
+            mesh_preview = result.get("mesh_preview")
+            source_text = ""
+            if source_result is not None:
+                source_surface = source_result.get("tin_surface")
+                source_text = (
+                    f"Base surface: {getattr(source_surface, 'surface_id', '')}\n"
+                    f"Base vertices: {len(list(getattr(source_surface, 'vertex_rows', []) or []))}\n"
+                    f"Base triangles: {len(list(getattr(source_surface, 'triangle_rows', []) or []))}\n"
+                )
+            _show_message(
+                self.form,
+                "TIN",
+                (
+                    "TIN settings have been applied.\n"
+                    f"{source_text}"
+                    f"Preview: {getattr(mesh_preview, 'object_name', '')}\n"
+                    f"Result triangles: {len(list(result['edited_surface'].triangle_rows or []))}\n"
+                    f"Removed triangles: {edit_result.removed_triangle_count}\n"
+                    f"Changed vertices: {edit_result.changed_vertex_count}"
+                ),
+            )
+            if close_after and self.gui_module is not None:
+                self.gui_module.Control.closeDialog()
+            return True
+        except Exception as exc:
+            self._set_diagnostics(f"TIN build failed:\n{exc}")
+            _show_message(self.form, "TIN", f"TIN was not built.\n{exc}")
+            return False
+
     def _apply(self, *, close_after: bool = False, show_completion: bool = True) -> bool:
         try:
             result = self._apply_current_editor_state(focus_preview=True)
@@ -461,7 +493,7 @@ class V1TINEditorTaskPanel:
         if path:
             self._source_csv_text.setText(path)
 
-    def _build_source_tin(self) -> None:
+    def _build_source_tin(self, *, show_completion: bool = True, focus_preview: bool = True) -> dict[str, object]:
         try:
             csv_path = str(self._source_csv_text.text() or "").strip()
             if not csv_path:
@@ -472,28 +504,35 @@ class V1TINEditorTaskPanel:
                 app_module=App,
             )
             self.base_surface = result["tin_surface"]
+            self._source_csv_path = csv_path
             self.source_obj = result.get("source_obj", None)
             self._last_result = None
             self._summary.setText(self._summary_text())
             self._reset_boundary_rect()
             self._reset_void_rect()
             mesh_preview = result.get("mesh_preview")
-            _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
-            _show_message(
-                self.form,
-                "TIN",
-                (
-                    "TIN source has been built.\n"
-                    f"Surface: {self.base_surface.surface_id}\n"
-                    f"Vertices: {len(list(self.base_surface.vertex_rows or []))}\n"
-                    f"Triangles: {len(list(self.base_surface.triangle_rows or []))}"
-                ),
-            )
-            _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
-            _focus_preview_deferred(self.document, mesh_preview, gui_module=self.gui_module)
+            if focus_preview:
+                _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
+            if show_completion:
+                _show_message(
+                    self.form,
+                    "TIN",
+                    (
+                        "TIN source has been built.\n"
+                        f"Surface: {self.base_surface.surface_id}\n"
+                        f"Vertices: {len(list(self.base_surface.vertex_rows or []))}\n"
+                        f"Triangles: {len(list(self.base_surface.triangle_rows or []))}"
+                    ),
+                )
+            if focus_preview:
+                _focus_preview(self.document, mesh_preview, gui_module=self.gui_module)
+                _focus_preview_deferred(self.document, mesh_preview, gui_module=self.gui_module)
+            return result
         except Exception as exc:
             self._set_diagnostics(f"TIN source build failed:\n{exc}")
-            _show_message(self.form, "TIN", f"TIN source could not be built.\n{exc}")
+            if show_completion:
+                _show_message(self.form, "TIN", f"TIN source could not be built.\n{exc}")
+            raise
 
     def _apply_current_editor_state(self, *, focus_preview: bool) -> dict[str, object]:
         if self.base_surface is None:

@@ -45,7 +45,6 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_ai_assist  # noqa: F401
 
         project_commands = [
-            "CorridorRoad_NewProject",
             "CorridorRoad_ProjectSetup",
         ]
         terrain_commands = [

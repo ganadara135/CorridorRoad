@@ -68,6 +68,29 @@ _CSV_UNIT_KEYS = (
     "unit",
     "units",
 )
+_CSV_COORD_INPUT_KEYS = (
+    "input",
+    "inputcoords",
+    "inputcoord",
+    "sourcecoords",
+    "sourcecoord",
+    "coords",
+    "coordinateinput",
+)
+_CSV_COORD_MODEL_KEYS = (
+    "model",
+    "modelcoords",
+    "modelcoord",
+    "coordinatemodel",
+)
+_CSV_COORD_WORKFLOW_KEYS = (
+    "workflow",
+    "coordinateworkflow",
+)
+_CSV_COORD_EPSG_KEYS = (
+    "epsg",
+    "crsepsg",
+)
 
 
 def _parse_float(token):
@@ -111,6 +134,15 @@ def _normalize_linear_unit_token(token: str) -> str:
     return ""
 
 
+def _normalize_coord_token(token: str) -> str:
+    value = str(token or "").strip().lower()
+    if value in ("world", "world-first", "e", "n", "e/n", "en", "easting", "northing", "easting/northing"):
+        return "World"
+    if value in ("local", "local-first", "x", "y", "x/y", "xy"):
+        return "Local"
+    return ""
+
+
 def _parse_metadata_from_comment_line(line: str):
     txt = str(line or "").strip()
     if not txt.startswith(_COMMENT_PREFIX):
@@ -130,6 +162,18 @@ def _parse_metadata_from_comment_line(line: str):
             token = _normalize_linear_unit_token(value)
             if token:
                 meta["linear_unit"] = token
+        elif norm_key in _CSV_COORD_INPUT_KEYS:
+            token = _normalize_coord_token(value)
+            if token:
+                meta["coordinate_input"] = token
+        elif norm_key in _CSV_COORD_MODEL_KEYS:
+            token = _normalize_coord_token(value)
+            if token:
+                meta["coordinate_model"] = token
+        elif norm_key in _CSV_COORD_WORKFLOW_KEYS:
+            meta["coordinate_workflow"] = str(value or "").strip()
+        elif norm_key in _CSV_COORD_EPSG_KEYS:
+            meta["crs_epsg"] = str(value or "").strip()
     return meta
 
 
@@ -522,6 +566,8 @@ def write_alignment_csv(
     doc_or_project=None,
     linear_unit: str = "",
     include_unit_metadata: bool = True,
+    coordinate_metadata=None,
+    include_coordinate_metadata: bool = True,
 ):
     if str(path or "").strip() == "":
         raise ValueError("CSV file path is empty.")
@@ -537,9 +583,11 @@ def write_alignment_csv(
     resolved_linear_unit = _resolve_linear_unit(doc_or_project, {}, unit=linear_unit, use_default="export")
     written = 0
     with open(path, "w", encoding=enc, newline="") as f:
-        w = csv.writer(f, delimiter=delim)
         if include_unit_metadata:
-            w.writerow([f"# CorridorRoadUnits,linear={resolved_linear_unit}"])
+            f.write(f"# CorridorRoadUnits,linear={resolved_linear_unit}\n")
+        if include_coordinate_metadata and coordinate_metadata:
+            f.write(f"{_format_coordinate_metadata(coordinate_metadata)}\n")
+        w = csv.writer(f, delimiter=delim)
         if include_header:
             w.writerow([str(x_header), str(y_header), "Radius", "TransitionLs"])
         for row in list(rows or []):
@@ -573,4 +621,30 @@ def write_alignment_csv(
         "header": bool(include_header),
         "linear_unit": resolved_linear_unit,
         "unit_metadata": bool(include_unit_metadata),
+        "coordinate_metadata": dict(coordinate_metadata or {}),
     }
+
+
+def _format_coordinate_metadata(metadata) -> str:
+    values = dict(metadata or {})
+    ordered_keys = (
+        "input",
+        "model",
+        "workflow",
+        "epsg",
+        "project_origin_e",
+        "project_origin_n",
+        "project_origin_z",
+        "local_origin_x",
+        "local_origin_y",
+        "local_origin_z",
+        "north_rotation_deg",
+    )
+    parts = ["# CorridorRoadCoords"]
+    for key in ordered_keys:
+        if key not in values:
+            continue
+        value = str(values.get(key, "") or "").strip()
+        if value:
+            parts.append(f"{key}={value}")
+    return ",".join(parts)

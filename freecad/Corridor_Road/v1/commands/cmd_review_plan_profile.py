@@ -43,7 +43,7 @@ def _build_key_station_rows(
     alignment_model: AlignmentModel | None = None,
     profile_model: ProfileModel | None = None,
 ) -> list[dict[str, object]]:
-    """Build a compact station-navigation payload for the plan/profile viewer."""
+    """Build the station-navigation payload for the plan/profile viewer."""
 
     raw_rows = []
     for station, label in list(station_values or []):
@@ -72,18 +72,8 @@ def _build_key_station_rows(
             key=lambda idx: abs(unique_rows[idx][0] - float(current_station)),
         )
 
-    candidate_indexes = {
-        0,
-        max(0, current_index - 2),
-        max(0, current_index - 1),
-        current_index,
-        min(len(unique_rows) - 1, current_index + 1),
-        min(len(unique_rows) - 1, current_index + 2),
-        len(unique_rows) - 1,
-    }
-
     result = []
-    for output_index, row_index in enumerate(sorted(candidate_indexes)):
+    for output_index, row_index in enumerate(range(len(unique_rows))):
         station_value, label = unique_rows[row_index]
         if row_index == 0:
             navigation_kind = "first"
@@ -114,15 +104,15 @@ def _build_key_station_rows(
 
 
 def _key_station_navigation_reason(navigation_kind: str, *, is_current: bool = False) -> str:
-    """Return a user-facing reason for one compact review navigation station."""
+    """Return a user-facing reason for one review navigation station."""
 
     if is_current:
         return "Current review focus station"
     return {
-        "first": "Start of sampled station range",
-        "last": "End of sampled station range",
-        "previous": "Nearby station before the current focus",
-        "next": "Nearby station after the current focus",
+        "first": "Start of station range",
+        "last": "End of station range",
+        "previous": "Station before the current focus",
+        "next": "Station after the current focus",
         "current": "Current review focus station",
     }.get(str(navigation_kind or "").strip(), "Review navigation station")
 
@@ -899,8 +889,7 @@ def format_plan_profile_preview(preview: dict[str, object]) -> str:
         f"Profile controls: {len(list(getattr(profile_output, 'pvi_rows', []) or []))}",
         f"Profile lines: {len(list(getattr(profile_output, 'line_rows', []) or []))}",
         f"Earthwork attachments: {len(list(getattr(profile_output, 'earthwork_rows', []) or []))}",
-        f"Key stations: {len(list(preview.get('key_station_rows', []) or []))}",
-        f"Station interval: {resolve_station_interval(preview):.3f} m",
+        f"Navigation stations: {len(list(preview.get('key_station_rows', []) or []))}",
     ]
     bridge_counts = _bridge_diagnostic_counts(preview)
     if bridge_counts:

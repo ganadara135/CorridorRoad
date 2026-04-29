@@ -1,8 +1,11 @@
 import FreeCAD as App
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_alignment_editor import (
     CmdV1AlignmentEditor,
+    V1AlignmentEditorTaskPanel,
     alignment_compiled_summary_rows,
     alignment_element_rows,
     alignment_ip_rows,
@@ -138,6 +141,42 @@ def test_apply_alignment_ip_rows_stores_v0_style_inputs_and_compiles_v1_geometry
         assert model is not None
         assert len(model.geometry_sequence) == 3
         assert len(model.geometry_sequence[1].geometry_payload["y_values"]) > 3
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_alignment_editor_reads_design_standard_from_project_setup_without_editor_combo() -> None:
+    doc, project = _new_project_doc()
+    try:
+        project.DesignStandard = "AASHTO"
+        alignment = create_sample_v1_alignment(doc, project=project)
+        alignment.CriteriaStandard = "KDS"
+        panel = V1AlignmentEditorTaskPanel(alignment=alignment, document=doc)
+        standard_combos = [
+            combo
+            for combo in panel.form.findChildren(QtWidgets.QComboBox)
+            if [combo.itemText(index) for index in range(combo.count())] == list(_ds.SUPPORTED_STANDARDS)
+        ]
+
+        assert standard_combos == []
+        assert panel._project_design_standard() == "AASHTO"
+        assert "AASHTO (from Project Setup" in panel._design_standard_label.text()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_alignment_editor_apply_snapshots_project_design_standard() -> None:
+    doc, project = _new_project_doc()
+    try:
+        project.DesignStandard = "AASHTO"
+        alignment = create_sample_v1_alignment(doc, project=project)
+        alignment.CriteriaStandard = "KDS"
+        panel = V1AlignmentEditorTaskPanel(alignment=alignment, document=doc)
+        panel._show_apply_complete_message = lambda _count: None
+
+        assert panel._apply(close_after=False) is True
+        assert alignment.CriteriaStandard == "AASHTO"
+        assert "last applied" not in panel._design_standard_label.text()
     finally:
         App.closeDocument(doc.Name)
 

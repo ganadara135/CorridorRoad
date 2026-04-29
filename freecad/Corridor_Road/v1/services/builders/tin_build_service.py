@@ -13,6 +13,7 @@ from ...models.result.tin_surface import (
     TINTriangle,
     TINVertex,
 )
+from ..coordinates import point_rows_to_local
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,17 @@ class TINBuildRequest:
     surface_kind: str = "existing_ground_tin"
     label: str = ""
     source_ref: str = ""
+    input_coords: str = "Local"
+    model_coords: str = "Local"
+    coordinate_workflow: str = "Local-first"
+    crs_epsg: str = ""
+    project_origin_e: float = 0.0
+    project_origin_n: float = 0.0
+    project_origin_z: float = 0.0
+    local_origin_x: float = 0.0
+    local_origin_y: float = 0.0
+    local_origin_z: float = 0.0
+    north_rotation_deg: float = 0.0
 
 
 class TINBuildService:
@@ -91,6 +103,33 @@ class TINBuildService:
                 triangles.append(TINTriangle(f"{cell_id}:b", v00, v11, v01))
 
         z_values = [point.z for point in point_map.values()]
+        quality_rows = self._quality_rows(
+            request.surface_id,
+            x_values=x_values,
+            y_values=y_values,
+            z_values=z_values,
+            vertex_count=len(vertices),
+            triangle_count=len(triangles),
+        ) + self._coordinate_quality_rows(request)
+        provenance_rows = [
+            TINProvenanceRow(
+                provenance_id=f"{request.surface_id}:provenance:points",
+                source_kind="point_lattice",
+                source_ref=request.source_ref,
+                notes="Built from complete point lattice; each grid cell is split into two TIN triangles.",
+            )
+        ]
+        provenance_rows.append(
+            TINProvenanceRow(
+                provenance_id=f"{request.surface_id}:provenance:coordinates",
+                source_kind="coordinate_import",
+                source_ref=request.source_ref,
+                notes=(
+                    f"Input coordinates={request.input_coords}; model coordinates={request.model_coords}; "
+                    f"workflow={request.coordinate_workflow}; EPSG={request.crs_epsg or 'N/A'}."
+                ),
+            )
+        )
         return TINSurface(
             schema_version=1,
             project_id=request.project_id,
@@ -101,22 +140,8 @@ class TINBuildService:
             vertex_rows=vertices,
             triangle_rows=triangles,
             boundary_refs=[f"{request.surface_id}:grid-boundary"],
-            quality_rows=self._quality_rows(
-                request.surface_id,
-                x_values=x_values,
-                y_values=y_values,
-                z_values=z_values,
-                vertex_count=len(vertices),
-                triangle_count=len(triangles),
-            ),
-            provenance_rows=[
-                TINProvenanceRow(
-                    provenance_id=f"{request.surface_id}:provenance:points",
-                    source_kind="point_lattice",
-                    source_ref=request.source_ref,
-                    notes="Built from complete point lattice; each grid cell is split into two TIN triangles.",
-                )
-            ],
+            quality_rows=quality_rows,
+            provenance_rows=provenance_rows,
         )
 
     def build_from_csv(
@@ -130,16 +155,18 @@ class TINBuildService:
         x_column: str = "easting",
         y_column: str = "northing",
         z_column: str = "elevation",
+        doc_or_project=None,
+        input_coords: str = "auto",
     ) -> TINSurface:
         """Build a TIN surface from a CSV point cloud file."""
 
         csv_path = Path(path)
-        points: list[TINPointInput] = []
+        raw_points: list[TINPointInput] = []
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for index, row in enumerate(reader):
                 try:
-                    points.append(
+                    raw_points.append(
                         TINPointInput(
                             point_id=f"{csv_path.name}:row:{index + 2}",
                             x=float(row[x_column]),
@@ -152,14 +179,37 @@ class TINBuildService:
                 except Exception as exc:
                     raise ValueError(f"Invalid TIN point row at CSV line {index + 2}: {exc}") from exc
 
+        converted_points = []
+        converted_rows, policy = point_rows_to_local(doc_or_project, raw_points, input_coords=input_coords)
+        for raw_point, x, y, z in converted_rows:
+            converted_points.append(
+                TINPointInput(
+                    point_id=str(raw_point.point_id),
+                    x=float(x),
+                    y=float(y),
+                    z=float(z),
+                )
+            )
+
         return self.build_from_points(
             TINBuildRequest(
                 project_id=project_id,
                 surface_id=surface_id,
                 surface_kind=surface_kind,
                 label=label or csv_path.stem,
-                point_rows=points,
+                point_rows=converted_points,
                 source_ref=str(csv_path),
+                input_coords=policy.input_coords,
+                model_coords=policy.model_coords,
+                coordinate_workflow=policy.workflow,
+                crs_epsg=policy.epsg,
+                project_origin_e=policy.project_origin_e,
+                project_origin_n=policy.project_origin_n,
+                project_origin_z=policy.project_origin_z,
+                local_origin_x=policy.local_origin_x,
+                local_origin_y=policy.local_origin_y,
+                local_origin_z=policy.local_origin_z,
+                north_rotation_deg=policy.north_rotation_deg,
             )
         )
 
@@ -203,6 +253,22 @@ class TINBuildService:
             TINQualityRow(f"{surface_id}:quality:z-max", "z_max", max(z_values), "model_length"),
             TINQualityRow(f"{surface_id}:quality:x-spacing", "x_spacing", x_spacing, "model_length"),
             TINQualityRow(f"{surface_id}:quality:y-spacing", "y_spacing", y_spacing, "model_length"),
+        ]
+
+    @staticmethod
+    def _coordinate_quality_rows(request: TINBuildRequest) -> list[TINQualityRow]:
+        return [
+            TINQualityRow(f"{request.surface_id}:coord:input", "coordinate_input", request.input_coords, ""),
+            TINQualityRow(f"{request.surface_id}:coord:model", "coordinate_model", request.model_coords, ""),
+            TINQualityRow(f"{request.surface_id}:coord:workflow", "coordinate_workflow", request.coordinate_workflow, ""),
+            TINQualityRow(f"{request.surface_id}:coord:epsg", "crs_epsg", request.crs_epsg, ""),
+            TINQualityRow(f"{request.surface_id}:coord:project-origin-e", "project_origin_e", request.project_origin_e, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:project-origin-n", "project_origin_n", request.project_origin_n, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:project-origin-z", "project_origin_z", request.project_origin_z, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:local-origin-x", "local_origin_x", request.local_origin_x, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:local-origin-y", "local_origin_y", request.local_origin_y, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:local-origin-z", "local_origin_z", request.local_origin_z, "m"),
+            TINQualityRow(f"{request.surface_id}:coord:north-rotation", "north_rotation_deg", request.north_rotation_deg, "deg"),
         ]
 
     @staticmethod

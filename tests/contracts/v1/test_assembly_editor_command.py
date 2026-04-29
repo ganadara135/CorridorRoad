@@ -4,6 +4,7 @@ from freecad.Corridor_Road.objects.obj_project import V1_TREE_ASSEMBLIES, Corrid
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     CmdV1AssemblyEditor,
     _assembly_preview_points,
+    _ditch_component_note,
     _ditch_effective_field_keys,
     _ditch_material_note,
     _ditch_shape_diagram,
@@ -128,6 +129,20 @@ def test_ditch_shape_helpers_limit_visible_fields_and_defaults() -> None:
     assert "bottom" in _ditch_shape_diagram("trapezoid")
     assert "section_points" in _ditch_shape_diagram("custom_polyline")
     assert "structural" in _ditch_material_note("concrete", "u")
+
+
+def test_ditch_component_note_reflects_shape_material_and_parameters() -> None:
+    note = _ditch_component_note(
+        side="right",
+        material="concrete",
+        parameters={"shape": "u", "bottom_width": "0.700", "depth": "0.500", "wall_thickness": "0.150"},
+    )
+
+    assert "Right U-shaped ditch" in note
+    assert "bottom_width=0.700" in note
+    assert "depth=0.500" in note
+    assert "material=concrete" in note
+    assert "policy=structural" in note
 
 
 def test_apply_v1_assembly_model_creates_source_object() -> None:

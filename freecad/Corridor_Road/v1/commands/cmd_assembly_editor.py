@@ -410,9 +410,6 @@ class V1AssemblyEditorTaskPanel:
         self._ditch_shape_combo.addItems(list(DITCH_SHAPES))
         self._ditch_shape_combo.currentIndexChanged.connect(self._update_ditch_shape_controls)
         ditch_shape_row.addWidget(self._ditch_shape_combo)
-        load_ditch_button = QtWidgets.QPushButton("Load Selected Ditch")
-        load_ditch_button.clicked.connect(self._load_ditch_parameters_from_selection)
-        ditch_shape_row.addWidget(load_ditch_button)
         default_ditch_button = QtWidgets.QPushButton("Load Shape Defaults")
         default_ditch_button.clicked.connect(self._load_ditch_shape_defaults)
         ditch_shape_row.addWidget(default_ditch_button)
@@ -615,6 +612,7 @@ class V1AssemblyEditorTaskPanel:
             item = QtWidgets.QTableWidgetItem("")
             self._table.setItem(row_index, 8, item)
         item.setText(_join_parameters(params))
+        self._update_ditch_note_for_row(row_index)
         try:
             messages = _validate_assembly_model(self._model_from_table())
         except Exception as exc:
@@ -690,6 +688,7 @@ class V1AssemblyEditorTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            self._refresh_ditch_notes()
             model = self._model_from_table()
             messages = _validate_assembly_model(model)
             if any(message.startswith("ERROR") for message in messages):
@@ -750,6 +749,20 @@ class V1AssemblyEditorTaskPanel:
 
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
+
+    def _refresh_ditch_notes(self) -> None:
+        for row_index in range(self._table.rowCount()):
+            self._update_ditch_note_for_row(row_index)
+
+    def _update_ditch_note_for_row(self, row_index: int) -> None:
+        if row_index < 0 or _item_text(self._table, row_index, 1) != "ditch":
+            return
+        note = _ditch_component_note(
+            side=_item_text(self._table, row_index, 2),
+            material=_item_text(self._table, row_index, 6),
+            parameters=_split_parameters(_item_text(self._table, row_index, 8)),
+        )
+        _set_table_item_text(self._table, row_index, 9, note)
 
 
 class CmdV1AssemblyEditor:
@@ -1034,6 +1047,14 @@ def _item_text(table, row: int, col: int) -> str:
     return str(item.text() if item is not None else "").strip()
 
 
+def _set_table_item_text(table, row: int, col: int, value: object) -> None:
+    item = table.item(row, col)
+    if item is None:
+        item = QtWidgets.QTableWidgetItem("")
+        table.setItem(row, col, item)
+    item.setText(str(value or ""))
+
+
 def _format_float(value: float) -> str:
     return f"{float(value):.3f}"
 
@@ -1115,6 +1136,44 @@ def _ditch_material_note(material: object, shape: str) -> str:
     if policy == "unspecified":
         return "Material policy: unspecified. Use material such as earth, concrete, precast, riprap, or grass."
     return "Material policy: general. Add explicit material if this ditch needs quantity or structure handoff."
+
+
+def _ditch_component_note(*, side: object, material: object, parameters: dict[str, object]) -> str:
+    params = dict(parameters or {})
+    shape = str(params.get("shape", "") or "trapezoid").strip().lower().replace("-", "_")
+    side_text = str(side or "").strip().title() or "Ditch"
+    material_text = str(material or "").strip()
+    parts = [f"{side_text} {_ditch_shape_label(shape)} ditch"]
+    dimensions = _ditch_note_dimensions(shape, params)
+    if dimensions:
+        parts.append(dimensions)
+    policy = ditch_material_policy(material)
+    if material_text:
+        parts.append(f"material={material_text}")
+    if policy in {"earth", "lined", "structural"}:
+        parts.append(f"policy={policy}")
+    return "; ".join(parts)
+
+
+def _ditch_shape_label(shape: object) -> str:
+    return {
+        "trapezoid": "trapezoid",
+        "u": "U-shaped",
+        "l": "L-shaped",
+        "rectangular": "rectangular",
+        "v": "V-shaped",
+        "custom_polyline": "custom-polyline",
+    }.get(str(shape or "").strip().lower().replace("-", "_"), str(shape or "trapezoid"))
+
+
+def _ditch_note_dimensions(shape: object, parameters: dict[str, object]) -> str:
+    keys = _ditch_visible_field_keys(str(shape or "trapezoid"))
+    values = []
+    for key in keys:
+        value = str(dict(parameters or {}).get(key, "") or "").strip()
+        if value:
+            values.append(f"{key}={value}")
+    return ", ".join(values)
 
 
 def _ditch_shape_diagram(shape: str) -> str:

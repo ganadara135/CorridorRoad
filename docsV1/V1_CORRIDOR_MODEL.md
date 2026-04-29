@@ -259,7 +259,19 @@ The table should show whether each output exists, its object label, vertex count
 
 For slope-face outputs, diagnostic notes should distinguish missing EG TIN fallback from no-hit fallback inside the configured search width.
 
-Double-clicking a row, or using `Show Selected`, should select and fit the related 3D object.
+The guided review order should be:
+
+- `1. Centerline`
+- `2. Design Surface`
+- `3. Slope Face Issues`
+- `4. Drainage`
+
+Double-clicking a row, or using `Focus Selected`, should select and fit the related 3D object.
+The panel should also provide visibility controls so reviewers can show, hide, or focus corridor preview layers without rebuilding.
+Slope-face issue review should support previous/next issue navigation so reviewers can walk the station-side problem list.
+Drainage review should show station-level `ditch_surface` point readiness, including point count and left/right side coverage.
+Double-clicking a Drainage diagnostic row should create or focus a station-level review marker in the 3D View.
+Build Corridor review UI should be organized into tabs for `Guided Review`, `Results`, `Slope Issues`, `Drainage`, and `Visibility`.
 
 It does not generate final corridor solids.
 
@@ -435,6 +447,17 @@ Current implementation status:
 - [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
 - [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
+- [x] expose slope-face fallback/no-hit station-side summaries such as `STA 0.000 L no EG TIN` in Build Corridor review notes
+- [x] expose Slope Face issue rows in Build Corridor so station, side, reason, status, and row-specific 3D marker handoff are reviewable
+- [x] apply role-specific preview styling for Design, Subgrade, Slope Face, Drainage, and 3D Centerline review objects
+- [x] add Build Corridor preview visibility controls for layer-style show/hide review
+- [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, and Drainage
+- [x] add previous/next navigation for Slope Face issue marker review
+- [x] add station-level Drainage diagnostics for `ditch_surface` source point coverage
+- [x] add Drainage diagnostic row marker focus in the 3D View
+- [x] organize Build Corridor review UI into task-focused tabs
+- [x] expose Applied Sections review summaries for component mix, ditch rows, slope-face policy, and diagnostics before `Build Corridor`
+- [x] expose Applied Sections source summary and diagnostics directly in each `Build Corridor` review row
 - [x] Build Corridor review table can select/fit generated preview objects and now auto-focuses the ready Design Surface after Apply when available
 - [ ] generate actual corridor TIN geometry for those rows
 - [ ] generate physical solid/component bodies

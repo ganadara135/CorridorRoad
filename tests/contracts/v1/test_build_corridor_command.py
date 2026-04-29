@@ -5,11 +5,26 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     apply_v1_corridor_model,
     build_document_corridor_model,
     build_document_corridor_surface_model,
+    corridor_applied_sections_review_summary,
+    corridor_build_guided_review_steps,
     corridor_build_review_rows,
+    corridor_build_review_row_color,
+    corridor_centerline_preview_style,
+    corridor_drainage_review_rows,
+    corridor_drainage_review_summary,
+    corridor_slope_face_issue_rows,
     document_has_v1_applied_sections,
+    focus_adjacent_corridor_slope_face_issue,
+    focus_corridor_build_guided_review_step,
+    focus_corridor_drainage_review_row,
+    focus_corridor_slope_face_issue,
     preferred_corridor_build_review_row_index,
+    set_all_corridor_build_preview_visibility,
+    set_corridor_build_preview_visibility,
     show_corridor_build_review_object,
+    show_corridor_slope_face_issue_marker,
 )
+from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
@@ -265,11 +280,30 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(daylight_preview.SlopeFaceNoEGHitCount) == 0
         assert "fallbacks: 4" in daylight_preview.SlopeFaceDiagnosticSummary
         assert "no EG TIN: 4" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "STA 0.000 L no EG TIN" in daylight_preview.SlopeFaceIssueStations
+        assert "STA 20.000 R no EG TIN" in daylight_preview.SlopeFaceIssueStations
+        assert len(list(daylight_preview.SlopeFaceIssueRows)) == 4
+        issue_rows = corridor_slope_face_issue_rows(doc)
+        assert issue_rows[0]["station_label"] == "STA 0.000"
+        assert issue_rows[0]["side"] == "L"
+        assert issue_rows[0]["reason"] == "no EG TIN"
+        assert issue_rows[0]["marker_object"] == "ReviewIssueSlopeFaceIssue001L"
+        assert issue_rows[-1]["station_label"] == "STA 20.000"
+        assert issue_rows[-1]["side"] == "R"
         fallback_markers = doc.getObject("ReviewIssueSlopeFaceFallbackMarkers")
         assert fallback_markers is not None
         assert fallback_markers.V1ObjectType == "ReviewIssue"
         assert fallback_markers.IssueKind == "slope_face_tie_in"
         assert int(fallback_markers.MarkerCount) == 4
+        first_issue_marker = doc.getObject("ReviewIssueSlopeFaceIssue001L")
+        assert first_issue_marker is not None
+        assert first_issue_marker.V1ObjectType == "ReviewIssue"
+        assert first_issue_marker.IssueStation == "STA 0.000"
+        assert first_issue_marker.IssueSide == "L"
+        assert first_issue_marker.IssueReason == "no EG TIN"
+        assert int(first_issue_marker.MarkerCount) == 1
+        shown_marker = show_corridor_slope_face_issue_marker(doc, 0)
+        assert shown_marker.Name == "ReviewIssueSlopeFaceIssue001L"
     finally:
         App.closeDocument(doc.Name)
 
@@ -281,6 +315,8 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
 
         missing_rows = corridor_build_review_rows(doc)
         assert [row["status"] for row in missing_rows] == ["missing", "missing", "missing", "missing", "missing"]
+        assert "2 STA" in str(missing_rows[0]["applied_section_summary"])
+        assert missing_rows[0]["applied_section_diagnostics"] == "ok"
 
         apply_v1_corridor_model(document=doc, project=project)
         rows = corridor_build_review_rows(doc)
@@ -290,12 +326,85 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         assert rows[0]["triangle_or_point_count"] == 2
         assert rows[1]["vertex_count"] == 4
         assert rows[1]["triangle_or_point_count"] == 2
+        assert "2 STA" in str(rows[1]["applied_section_summary"])
+        assert rows[1]["applied_section_diagnostics"] == "ok"
         assert "fallbacks: 4" in str(rows[3]["notes"])
         assert "no EG TIN: 4" in str(rows[3]["notes"])
+        assert "STA 0.000 L no EG TIN" in str(rows[3]["notes"])
+        assert "STA 20.000 R no EG TIN" in str(rows[3]["notes"])
         assert preferred_corridor_build_review_row_index(rows) == 1
 
         shown = show_corridor_build_review_object(doc, 1)
         assert shown.Name == "V1CorridorDesignSurfacePreview"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_applied_sections_review_summary_tracks_source_context() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
+
+        summary = corridor_applied_sections_review_summary(doc)
+
+        assert summary["status"] == "ok"
+        assert summary["station_count"] == 2
+        assert summary["diagnostic_count"] == 0
+        assert summary["ditch_point_count"] == 8
+        assert summary["slope_face_count"] == 0
+        assert "2 STA" in summary["summary"]
+        assert "ditch_pts:8" in summary["summary"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_drainage_review_rows_track_ditch_surface_points() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
+
+        rows = corridor_drainage_review_rows(doc)
+        summary = corridor_drainage_review_summary(doc)
+
+        assert [row["status"] for row in rows] == ["ready", "ready"]
+        assert rows[0]["station"] == 0.0
+        assert rows[0]["ditch_point_count"] == 4
+        assert rows[0]["left_count"] == 2
+        assert rows[0]["right_count"] == 2
+        assert rows[0]["marker_object"] == "ReviewIssueDrainageStation001"
+        assert rows[0]["x"] == "0.000000"
+        assert rows[0]["y"] == "0.500000"
+        assert rows[0]["z"] == "9.900000"
+        assert summary["status"] == "ready"
+        assert summary["ditch_point_count"] == 8
+        assert summary["missing_count"] == 0
+        marker = focus_corridor_drainage_review_row(doc, 0)
+        assert marker.Name == "ReviewIssueDrainageStation001"
+        assert marker.V1ObjectType == "ReviewIssue"
+        assert marker.IssueKind == "drainage_diagnostic"
+        assert marker.IssueStation == "0.000"
+        assert marker.IssueStatus == "ready"
+        assert int(marker.MarkerCount) == 1
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        rows = corridor_drainage_review_rows(doc)
+        summary = corridor_drainage_review_summary(doc)
+        steps = corridor_build_guided_review_steps(doc)
+
+        assert [row["status"] for row in rows] == ["missing", "missing"]
+        assert "No ditch_surface" in str(rows[0]["notes"])
+        assert summary["status"] == "missing"
+        assert summary["missing_count"] == 2
+        assert steps[3]["step_id"] == "drainage"
+        assert steps[3]["status"] == "missing"
+        assert "without ditch_surface" in str(steps[3]["notes"])
     finally:
         App.closeDocument(doc.Name)
 
@@ -310,6 +419,141 @@ def test_preferred_corridor_build_review_row_index_prefers_ready_design_surface(
     assert preferred_corridor_build_review_row_index(rows) == 1
     assert preferred_corridor_build_review_row_index(rows, preferred_role="subgrade") == 2
     assert preferred_corridor_build_review_row_index([{"role": "design", "status": "missing"}]) is None
+
+
+def test_corridor_build_review_row_colors_are_dark_theme_readable() -> None:
+    assert corridor_build_review_row_color("ready") == (220, 245, 224)
+    assert corridor_build_review_row_color("missing") == (238, 238, 238)
+    assert corridor_build_review_row_color("empty") == (255, 241, 205)
+    assert corridor_build_review_row_color("unknown") is None
+
+
+def test_corridor_preview_styles_are_role_specific() -> None:
+    design = tin_mesh_preview_style("design")
+    subgrade = tin_mesh_preview_style("subgrade")
+    daylight = tin_mesh_preview_style("daylight")
+    drainage = tin_mesh_preview_style("drainage")
+    base = tin_mesh_preview_style("unknown")
+
+    assert design["shape_color"] == (1.00, 0.56, 0.12)
+    assert subgrade["transparency"] > design["transparency"]
+    assert daylight["shape_color"] != design["shape_color"]
+    assert drainage["line_width"] > daylight["line_width"]
+    assert base == tin_mesh_preview_style("base")
+    assert corridor_centerline_preview_style()["line_width"] == 5.0
+
+
+def test_corridor_preview_visibility_helpers_target_roles_and_markers() -> None:
+    class FakeView:
+        def __init__(self):
+            self.Visibility = True
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.ViewObject = FakeView()
+
+    class FakeDocument:
+        def __init__(self):
+            self.Objects = [
+                FakeObject("V1CorridorCenterline3DPreview"),
+                FakeObject("V1CorridorDesignSurfacePreview"),
+                FakeObject("V1CorridorSubgradeSurfacePreview"),
+                FakeObject("V1CorridorDaylightSurfacePreview"),
+                FakeObject("ReviewIssueSlopeFaceIssue001L"),
+                FakeObject("ReviewIssueDrainageStation001"),
+            ]
+
+        def getObject(self, name):
+            for obj in self.Objects:
+                if obj.Name == name:
+                    return obj
+            return None
+
+    doc = FakeDocument()
+
+    design = set_corridor_build_preview_visibility(doc, "design", False)
+    assert design.Name == "V1CorridorDesignSurfacePreview"
+    assert design.ViewObject.Visibility is False
+    assert set_corridor_build_preview_visibility(doc, "drainage", False) is None
+
+    changed = set_all_corridor_build_preview_visibility(doc, True, include_issue_markers=True)
+    assert changed == 6
+    assert all(obj.ViewObject.Visibility is True for obj in doc.Objects)
+
+
+def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
+    class FakeView:
+        def __init__(self):
+            self.Visibility = True
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.Label = name
+            self.VertexCount = 4
+            self.TriangleCount = 2
+            self.PointCount = 2
+            self.DisplayCurveKind = "line"
+            self.ViewObject = FakeView()
+
+    class FakeDocument:
+        def __init__(self):
+            self.Objects = [
+                FakeObject("V1CorridorCenterline3DPreview"),
+                FakeObject("V1CorridorDesignSurfacePreview"),
+                FakeObject("V1CorridorSubgradeSurfacePreview"),
+                FakeObject("V1CorridorDaylightSurfacePreview"),
+                FakeObject("ReviewIssueSlopeFaceIssue001L"),
+                FakeObject("ReviewIssueSlopeFaceIssue002R"),
+            ]
+            daylight = self.getObject("V1CorridorDaylightSurfacePreview")
+            daylight.SlopeFaceIssueRows = [
+                "station_label=STA 0.000;station_index=0;side=L;reason=no EG TIN;status=fallback:no_existing_ground_tin;marker_object=ReviewIssueSlopeFaceIssue001L",
+                "station_label=STA 20.000;station_index=1;side=R;reason=no EG TIN;status=fallback:no_existing_ground_tin;marker_object=ReviewIssueSlopeFaceIssue002R",
+            ]
+            for obj in self.Objects:
+                if obj.Name.startswith("V1Corridor"):
+                    obj.CRRecordKind = "v1_corridor_surface_preview"
+                if obj.Name == "V1CorridorCenterline3DPreview":
+                    obj.CRRecordKind = "v1_corridor_centerline_preview"
+
+        def getObject(self, name):
+            for obj in self.Objects:
+                if obj.Name == name:
+                    return obj
+            return None
+
+    doc = FakeDocument()
+
+    steps = corridor_build_guided_review_steps(doc)
+    assert [step["step_id"] for step in steps] == ["centerline", "design", "slope_issues", "drainage"]
+    assert steps[2]["status"] == "warn"
+    assert steps[2]["focus"] == "First issue marker"
+
+    focused = focus_corridor_build_guided_review_step(doc, "design")
+    assert focused.Name == "V1CorridorDesignSurfacePreview"
+    assert doc.getObject("V1CorridorCenterline3DPreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorDesignSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is False
+
+    focused = focus_corridor_build_guided_review_step(doc, "slope_issues")
+    assert focused.Name == "ReviewIssueSlopeFaceIssue001L"
+    assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is True
+    assert doc.getObject("ReviewIssueSlopeFaceIssue001L").ViewObject.Visibility is True
+
+    focused = focus_corridor_slope_face_issue(doc, 1)
+    assert focused.Name == "ReviewIssueSlopeFaceIssue002R"
+    assert doc.getObject("V1CorridorDesignSurfacePreview").ViewObject.Visibility is False
+    assert doc.getObject("V1CorridorDaylightSurfacePreview").ViewObject.Visibility is True
+
+    index, focused = focus_adjacent_corridor_slope_face_issue(doc, current_index=1, direction=1)
+    assert index == 0
+    assert focused.Name == "ReviewIssueSlopeFaceIssue001L"
+
+    index, focused = focus_adjacent_corridor_slope_face_issue(doc, current_index=0, direction=-1)
+    assert index == 1
+    assert focused.Name == "ReviewIssueSlopeFaceIssue002R"
 
 
 def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exist() -> None:

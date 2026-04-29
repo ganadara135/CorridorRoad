@@ -40,6 +40,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_SOURCE_DATA,
     V1_TREE_STATIONS,
     V1_TREE_STRUCTURES,
+    V1_TREE_SUPERELEVATION,
     V1_TREE_SURFACES,
     V1_TREE_SURVEY_POINTS,
     V1_TREE_TIN_REVIEW,
@@ -80,6 +81,37 @@ def test_ensure_project_tree_creates_v1_root_groups() -> None:
         ):
             assert key in tree
             assert tree[key] is not None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_alignment_profile_tree_orders_stations_before_profiles() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        labels = [str(getattr(obj, "Label", "") or "") for obj in list(getattr(tree[V1_TREE_ALIGNMENT_PROFILE], "Group", []) or [])]
+
+        assert labels[:4] == ["Alignments", "Stations", "Profiles", "Superelevation"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_ensure_project_tree_repairs_existing_alignment_profile_folder_order() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        root = tree[V1_TREE_ALIGNMENT_PROFILE]
+        root.Group = [
+            tree[V1_TREE_ALIGNMENTS],
+            tree[V1_TREE_PROFILES],
+            tree[V1_TREE_STATIONS],
+            tree[V1_TREE_SUPERELEVATION],
+        ]
+
+        ensure_project_tree(project, include_references=False)
+
+        labels = [str(getattr(obj, "Label", "") or "") for obj in list(getattr(root, "Group", []) or [])]
+        assert labels[:4] == ["Alignments", "Stations", "Profiles", "Superelevation"]
     finally:
         App.closeDocument(doc.Name)
 

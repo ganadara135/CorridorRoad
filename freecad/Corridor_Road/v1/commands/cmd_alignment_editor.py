@@ -19,11 +19,13 @@ from ...objects.obj_project import (
     ensure_project_properties,
     ensure_project_tree,
     find_project,
+    get_design_standard,
 )
 from ...objects.project_links import link_project
 from ...objects import design_standards as _ds
 from ...objects.csv_alignment_import import read_alignment_csv, write_alignment_csv
 from ...objects.sketch_alignment_import import find_sketch_objects, sketch_to_alignment_rows
+from ..services.coordinates import alignment_rows_from_local, alignment_rows_to_local
 from ..objects.obj_alignment import (
     V1AlignmentObject,
     ViewProviderV1Alignment,
@@ -512,11 +514,17 @@ class V1AlignmentEditorTaskPanel:
         load_csv_button.clicked.connect(self._load_from_csv)
         save_csv_button = QtWidgets.QPushButton("Save CSV")
         save_csv_button.clicked.connect(self._save_csv)
+        self._csv_export_coords_combo = QtWidgets.QComboBox()
+        self._csv_export_coords_combo.addItem("Project default", "project")
+        self._csv_export_coords_combo.addItem("World E/N", "world")
+        self._csv_export_coords_combo.addItem("Local X/Y", "local")
         csv_row.addWidget(QtWidgets.QLabel("CSV:"))
         csv_row.addWidget(self._csv_path, 1)
         csv_row.addWidget(browse_csv_button)
         csv_row.addWidget(load_csv_button)
         csv_row.addWidget(save_csv_button)
+        csv_row.addWidget(QtWidgets.QLabel("Export coords:"))
+        csv_row.addWidget(self._csv_export_coords_combo)
         layout.addLayout(csv_row)
 
         preset_row = QtWidgets.QHBoxLayout()
@@ -571,8 +579,8 @@ class V1AlignmentEditorTaskPanel:
         self._spiral_segments_spin = QtWidgets.QSpinBox()
         self._spiral_segments_spin.setRange(4, 128)
         self._spiral_segments_spin.setValue(16)
-        self._design_standard_combo = QtWidgets.QComboBox()
-        self._design_standard_combo.addItems(list(_ds.SUPPORTED_STANDARDS))
+        self._design_standard_label = QtWidgets.QLabel("")
+        self._design_standard_label.setWordWrap(True)
         self._design_speed_spin = self._double_spin(0.0, 300.0, 60.0, 1, " km/h")
         self._superelevation_spin = self._double_spin(0.0, 20.0, 8.0, 2, " %")
         self._side_friction_spin = self._double_spin(0.01, 0.40, 0.15, 3, "")
@@ -581,7 +589,7 @@ class V1AlignmentEditorTaskPanel:
         self._min_tangent_spin = self._double_spin(0.0, 100000.0, 20.0, 3, " m")
         self._min_transition_spin = self._double_spin(0.0, 100000.0, 20.0, 3, " m")
         form.addRow(self._use_transition_check)
-        form.addRow("Design standard:", self._design_standard_combo)
+        form.addRow("Design standard:", self._design_standard_label)
         form.addRow("Spiral segments:", self._spiral_segments_spin)
         form.addRow("Design speed:", self._design_speed_spin)
         form.addRow("Superelevation e:", self._superelevation_spin)
@@ -690,14 +698,12 @@ class V1AlignmentEditorTaskPanel:
     def _load_criteria(self) -> None:
         alignment = self.alignment
         if alignment is None:
+            self._refresh_design_standard_label()
             return
         ensure_v1_alignment_properties(alignment)
         self._use_transition_check.setChecked(bool(getattr(alignment, "UseTransitionCurves", True)))
         self._spiral_segments_spin.setValue(int(getattr(alignment, "SpiralSegments", 16) or 16))
-        standard = _ds.normalize_standard(str(getattr(alignment, "CriteriaStandard", "KDS") or "KDS"))
-        index = self._design_standard_combo.findText(standard)
-        if index >= 0:
-            self._design_standard_combo.setCurrentIndex(index)
+        self._refresh_design_standard_label()
         self._design_speed_spin.setValue(float(getattr(alignment, "DesignSpeedKph", 60.0) or 60.0))
         self._superelevation_spin.setValue(float(getattr(alignment, "SuperelevationPct", 8.0) or 8.0))
         self._side_friction_spin.setValue(float(getattr(alignment, "SideFriction", 0.15) or 0.15))
@@ -806,10 +812,19 @@ class V1AlignmentEditorTaskPanel:
                 enforce_endpoints=True,
             )
             rows = list(info.get("rows", []) or [])
+            metadata = dict(info.get("metadata", {}) or {})
+            rows, coord_policy = alignment_rows_to_local(
+                self.document,
+                rows,
+                input_coords=str(metadata.get("coordinate_input", "") or "auto"),
+            )
             if len(rows) < 2:
                 raise ValueError("CSV must provide at least 2 valid rows.")
             self._set_ip_rows_data(rows)
-            self._set_status(f"Loaded {len(rows)} PI row(s) from CSV. Apply when ready.", ok=True)
+            self._set_status(
+                f"Loaded {len(rows)} PI row(s) from CSV. {coord_policy.summary()}. Apply when ready.",
+                ok=True,
+            )
         except Exception as exc:
             self._set_status(f"CSV import failed: {exc}", ok=False)
 
@@ -838,11 +853,34 @@ class V1AlignmentEditorTaskPanel:
                 )
                 for row in rows
             ]
-            info = write_alignment_csv(path, export_rows, doc_or_project=self.document)
+            export_rows, coord_policy = alignment_rows_from_local(
+                self.document,
+                export_rows,
+                output_coords=self._selected_csv_export_coords(),
+            )
+            x_header = "E" if coord_policy.output_coords == "World" else "X"
+            y_header = "N" if coord_policy.output_coords == "World" else "Y"
+            info = write_alignment_csv(
+                path,
+                export_rows,
+                x_header=x_header,
+                y_header=y_header,
+                doc_or_project=self.document,
+                coordinate_metadata=coord_policy.metadata(),
+            )
             self._csv_path.setText(str(path))
-            self._set_status(f"Saved {int(info.get('written', len(export_rows)))} PI row(s) to CSV.", ok=True)
+            self._set_status(
+                f"Saved {int(info.get('written', len(export_rows)))} PI row(s) to CSV. {coord_policy.summary()}.",
+                ok=True,
+            )
         except Exception as exc:
             self._set_status(f"CSV export failed: {exc}", ok=False)
+
+    def _selected_csv_export_coords(self) -> str:
+        if not hasattr(self, "_csv_export_coords_combo"):
+            return "project"
+        value = self._csv_export_coords_combo.currentData()
+        return str(value or "project")
 
     def _set_ip_rows_data(self, rows) -> None:
         self._ip_table.setRowCount(0)
@@ -944,7 +982,7 @@ class V1AlignmentEditorTaskPanel:
                 input_rows,
                 use_transition_curves=bool(self._use_transition_check.isChecked()),
                 spiral_segments=int(self._spiral_segments_spin.value()),
-                design_standard=str(self._design_standard_combo.currentText() or "KDS"),
+                design_standard=self._project_design_standard(),
                 design_speed_kph=float(self._design_speed_spin.value()),
                 superelevation_pct=float(self._superelevation_spin.value()),
                 side_friction=float(self._side_friction_spin.value()),
@@ -959,6 +997,7 @@ class V1AlignmentEditorTaskPanel:
                     pass
             self._load_element_rows()
             self._refresh_report()
+            self._refresh_design_standard_label()
             self._set_status(f"Applied {len(compiled)} compiled v1 geometry row(s).", ok=True)
             self._alignment_label.setText(self._alignment_summary_text())
             self._show_apply_complete_message(len(compiled))
@@ -1071,6 +1110,25 @@ class V1AlignmentEditorTaskPanel:
             f"Alignment: {str(getattr(self.alignment, 'Label', '') or getattr(self.alignment, 'Name', '') or '')} | "
             f"AlignmentId: {str(getattr(self.alignment, 'AlignmentId', '') or '')}"
         )
+
+    def _project_design_standard(self) -> str:
+        return get_design_standard(find_project(self.document) or self.document, default=_ds.DEFAULT_STANDARD)
+
+    def _refresh_design_standard_label(self) -> None:
+        if not hasattr(self, "_design_standard_label"):
+            return
+        project_standard = self._project_design_standard()
+        applied_standard = ""
+        if self.alignment is not None:
+            applied_standard = _ds.normalize_standard(
+                str(getattr(self.alignment, "CriteriaStandard", "") or project_standard),
+                default=project_standard,
+            )
+        if applied_standard and applied_standard != project_standard:
+            text = f"{project_standard} (from Project Setup; last applied: {applied_standard})"
+        else:
+            text = f"{project_standard} (from Project Setup)"
+        self._design_standard_label.setText(text)
 
     def _set_status(self, message: str, *, ok: bool) -> None:
         return

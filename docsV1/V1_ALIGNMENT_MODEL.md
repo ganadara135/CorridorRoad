@@ -120,6 +120,7 @@ Current editor rule:
 - `Alignment` opens the selected or first document `V1Alignment`
 - if no `V1Alignment` exists, the editor opens without creating sample data; `Apply` creates the source object from the current PI table
 - `PI Geometry` is the primary editing tab and follows the previous v0 Alignment UI structure: sketch import, CSV import/export, presets, X, Y, radius, transition length, transition toggle, spiral segments, design speed, superelevation, side friction, and minimum criteria values
+- Design Standard is owned by `Project Setup`; the Alignment editor only displays the project standard and stores it as the applied `CriteriaStandard` snapshot when the alignment is applied
 - preset loading supports `Pattern only`, `Center on terrain`, and `Center on project origin`; `Center on terrain` uses the selected/project/document surface bounds when available and falls back to project origin when no terrain surface is found
 - `Apply` stores PI rows, radius rows, transition rows, and criteria values on the `V1Alignment` source object
 - `Apply` compiles consecutive PI rows into station-based v1 geometry rows consumed by stations, profile, section, and corridor services

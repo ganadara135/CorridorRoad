@@ -23,6 +23,7 @@ Baseline document:
 - [V1_QUANTITY_OUTPUT_SCHEMA.md](./V1_QUANTITY_OUTPUT_SCHEMA.md)
 - [V1_EARTHWORK_OUTPUT_SCHEMA.md](./V1_EARTHWORK_OUTPUT_SCHEMA.md)
 - [V1_SURFACE_OUTPUT_SCHEMA.md](./V1_SURFACE_OUTPUT_SCHEMA.md)
+- [V1_COORDINATE_IMPORT_POLICY.md](./V1_COORDINATE_IMPORT_POLICY.md)
 - [V1_CORRIDOR_MODEL.md](./V1_CORRIDOR_MODEL.md)
 - [V1_SECTION_MODEL.md](./V1_SECTION_MODEL.md)
 - [V1_TIN_ENGINE_PLAN.md](./V1_TIN_ENGINE_PLAN.md)
@@ -78,8 +79,10 @@ Preferred review workflow:
 - start plan/profile connection review from the v1 `Plan/Profile Connection Review`
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
+- keep Design Standard editing in `New/Project Setup`; Alignment displays the project standard and applies it as a criteria snapshot
 - use the unified `Stations` command as the first native v1 station-grid builder and review/settings surface after alignment edits; opening the panel should not alter the document until `Apply`
 - use `Profile` as the first native profile-source editor for PVI station/elevation rows, preset data, and CSV import/export; opening the panel should not create sample profile data and should preload generated `Stations` rows when available
+- treat external TIN and Alignment CSV coordinates through `V1_COORDINATE_IMPORT_POLICY.md`: World-first CSV input converts to Local model coordinates, Local-first input is stored directly, and CSV export should expose Project default / World / Local coordinate choices where practical
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - model corridor ranges through `Region` as `primary_kind + applied_layers + domain references`, so bridge, culvert, drainage, ditch, ramp, and intersection influences can overlap without becoming hidden geometry edits

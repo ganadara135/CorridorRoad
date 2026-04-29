@@ -34,6 +34,26 @@ CORRIDOR_BUILD_REVIEW_OBJECTS = (
     ("daylight", "Slope Face Surface", "V1CorridorDaylightSurfacePreview"),
     ("drainage", "Drainage Surface", "V1CorridorDrainageSurfacePreview"),
 )
+CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
+    ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
+    ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
+    ("slope_issues", "3. Slope Face Issues", ("daylight",), "Check daylight tie-in fallbacks and EG hits."),
+    ("drainage", "4. Drainage", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
+)
+
+CORRIDOR_BUILD_REVIEW_ROW_COLORS = {
+    "ready": (220, 245, 224),
+    "missing": (238, 238, 238),
+    "empty": (255, 241, 205),
+}
+CORRIDOR_BUILD_REVIEW_TEXT_COLOR = (20, 20, 20)
+CORRIDOR_CENTERLINE_PREVIEW_STYLE = {
+    "shape_color": (0.00, 0.85, 1.00),
+    "line_color": (0.00, 0.85, 1.00),
+    "point_color": (0.00, 0.85, 1.00),
+    "line_width": 5.0,
+    "point_size": 6.0,
+}
 
 
 def document_has_v1_applied_sections(document=None) -> bool:
@@ -157,11 +177,194 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
     """Return display-ready Build Corridor result rows from document preview objects."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied_summary = corridor_applied_sections_review_summary(doc)
     rows: list[dict[str, object]] = []
     for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
         obj = doc.getObject(object_name) if doc is not None else None
-        rows.append(_corridor_build_review_row(role, title, object_name, obj))
+        rows.append(
+            _with_applied_section_review_summary(
+                _corridor_build_review_row(role, title, object_name, obj),
+                applied_summary,
+            )
+        )
     return rows
+
+
+def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
+    """Return station-side slope-face issue rows from the corridor daylight preview."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = doc.getObject("V1CorridorDaylightSurfacePreview") if doc is not None else None
+    if obj is None:
+        return []
+    rows: list[dict[str, str]] = []
+    for text in list(getattr(obj, "SlopeFaceIssueRows", []) or []):
+        row = _parse_slope_face_issue_row_text(str(text or ""))
+        if row:
+            rows.append(row)
+    if not rows:
+        rows = _parse_slope_face_issue_summary_text(str(getattr(obj, "SlopeFaceIssueStations", "") or ""))
+    return rows
+
+
+def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]:
+    """Return ordered guided-review rows for the Build Corridor panel."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    review_by_role = {str(row.get("role", "") or ""): row for row in corridor_build_review_rows(doc)}
+    issue_count = len(corridor_slope_face_issue_rows(doc))
+    rows: list[dict[str, object]] = []
+    for step_id, title, roles, default_notes in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
+        if step_id == "slope_issues":
+            daylight = review_by_role.get("daylight", {})
+            base_status = str(daylight.get("status", "missing") or "missing")
+            status = "warn" if base_status == "ready" and issue_count else base_status
+            notes = f"{issue_count} slope-face issue(s) to review." if issue_count else "No slope-face issue rows."
+            focus = "First issue marker" if issue_count else "Slope Face Surface"
+        else:
+            primary_role = str(list(roles)[-1] if roles else "")
+            source = review_by_role.get(primary_role, {})
+            status = str(source.get("status", "missing") or "missing")
+            notes = default_notes if status == "ready" else str(source.get("notes", "") or "Not built yet.")
+            focus = str(source.get("result", title) or title)
+            if step_id == "drainage":
+                drainage = corridor_drainage_review_summary(doc)
+                status = str(drainage.get("status", status) or status)
+                notes = str(drainage.get("notes", notes) or notes)
+                focus = "Drainage Surface" if source.get("status") == "ready" else "Drainage Diagnostics"
+        rows.append(
+            {
+                "step_id": step_id,
+                "title": title,
+                "roles": list(roles),
+                "status": status,
+                "focus": focus,
+                "notes": notes,
+            }
+        )
+    return rows
+
+
+def corridor_drainage_review_rows(document=None) -> list[dict[str, object]]:
+    """Return station-level drainage source diagnostics from Applied Sections."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return [
+            {
+                "station": "",
+                "section_id": "",
+                "status": "missing",
+                "ditch_point_count": 0,
+                "left_count": 0,
+                "right_count": 0,
+                "notes": "Applied Sections are required before drainage review.",
+            }
+        ]
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied, "sections", []) or [])
+    }
+    output: list[dict[str, object]] = []
+    for row in sorted(list(getattr(applied, "station_rows", []) or []), key=lambda item: float(getattr(item, "station", 0.0) or 0.0)):
+        section_id = str(getattr(row, "applied_section_id", "") or "")
+        section = sections.get(section_id)
+        station = float(getattr(row, "station", 0.0) or 0.0)
+        if section is None:
+            output.append(
+                {
+                    "station": station,
+                    "section_id": section_id,
+                    "status": "missing",
+                    "ditch_point_count": 0,
+                    "left_count": 0,
+                    "right_count": 0,
+                    "marker_object": _drainage_review_marker_name(len(output)),
+                    "x": "",
+                    "y": "",
+                    "z": "",
+                    "notes": "Applied section row is missing.",
+                }
+            )
+            continue
+        ditch_points = [
+            point
+            for point in list(getattr(section, "point_rows", []) or [])
+            if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+        ]
+        left_count = sum(1 for point in ditch_points if _drainage_point_side(point) == "L")
+        right_count = sum(1 for point in ditch_points if _drainage_point_side(point) == "R")
+        if not ditch_points:
+            status = "missing"
+            notes = "No ditch_surface point rows from Assembly/Applied Sections."
+        elif left_count and right_count:
+            status = "ready"
+            notes = "Left and right ditch surface points available."
+        else:
+            status = "warn"
+            notes = "Only one side has ditch surface points."
+        marker_point = _drainage_review_marker_point(section, ditch_points)
+        output.append(
+            {
+                "station": station,
+                "section_id": section_id,
+                "status": status,
+                "ditch_point_count": len(ditch_points),
+                "left_count": left_count,
+                "right_count": right_count,
+                "marker_object": _drainage_review_marker_name(len(output)),
+                "x": f"{marker_point[0]:.6f}",
+                "y": f"{marker_point[1]:.6f}",
+                "z": f"{marker_point[2]:.6f}",
+                "notes": notes,
+            }
+        )
+    if not output:
+        return [
+            {
+                "station": "",
+                "section_id": "",
+                "status": "missing",
+                "ditch_point_count": 0,
+                "left_count": 0,
+                "right_count": 0,
+                "notes": "No Applied Section station rows.",
+            }
+        ]
+    return output
+
+
+def corridor_drainage_review_summary(document=None) -> dict[str, object]:
+    """Return a compact drainage readiness summary for Build Corridor review."""
+
+    rows = corridor_drainage_review_rows(document)
+    real_rows = [row for row in rows if row.get("station") != ""]
+    ready = sum(1 for row in real_rows if row.get("status") == "ready")
+    warn = sum(1 for row in real_rows if row.get("status") == "warn")
+    missing = sum(1 for row in real_rows if row.get("status") == "missing")
+    point_count = sum(int(row.get("ditch_point_count", 0) or 0) for row in real_rows)
+    if not real_rows:
+        status = "missing"
+        notes = str(rows[0].get("notes", "No drainage rows.") if rows else "No drainage rows.")
+    elif missing:
+        status = "missing"
+        notes = f"{missing} station(s) without ditch_surface points."
+    elif warn:
+        status = "warn"
+        notes = f"{warn} station(s) have one-sided ditch points."
+    else:
+        status = "ready"
+        notes = "Drainage source points available at all reviewed stations."
+    return {
+        "status": status,
+        "station_count": len(real_rows),
+        "ready_count": ready,
+        "warn_count": warn,
+        "missing_count": missing,
+        "ditch_point_count": point_count,
+        "notes": notes,
+    }
 
 
 def show_corridor_build_review_object(document=None, row_index: int = 0):
@@ -178,6 +381,129 @@ def show_corridor_build_review_object(document=None, row_index: int = 0):
         raise RuntimeError(f"{row.get('result', 'Result')} has not been built yet.")
     _select_and_fit_object(obj)
     return obj
+
+
+def focus_corridor_build_guided_review_step(document=None, step_id: str = "centerline"):
+    """Focus one guided review step and isolate its relevant preview layers."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    step = _corridor_build_guided_review_step(step_id)
+    if doc is None or step is None:
+        raise RuntimeError(f"Guided review step was not found: {step_id}")
+    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    for role in list(step[2] or []):
+        set_corridor_build_preview_visibility(doc, role, True)
+    if step[0] == "slope_issues":
+        issue_markers = _corridor_build_issue_marker_objects(doc)
+        for marker in issue_markers:
+            _set_object_visibility(marker, True)
+        issues = corridor_slope_face_issue_rows(doc)
+        if issues:
+            return show_corridor_slope_face_issue_marker(doc, 0)
+        daylight = _corridor_build_preview_object(doc, "daylight")
+        if daylight is not None:
+            _select_and_fit_object(daylight)
+            return daylight
+    focus_role = str(list(step[2])[-1] if step[2] else "")
+    obj = _corridor_build_preview_object(doc, focus_role)
+    if obj is None:
+        raise RuntimeError(f"Guided review target has not been built: {step[1]}")
+    _select_and_fit_object(obj)
+    return obj
+
+
+def show_corridor_slope_face_issue_marker(document=None, row_index: int = 0):
+    """Select and fit the 3D marker object related to one slope-face issue row."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_slope_face_issue_rows(doc)
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Slope Face issue row index is out of range.")
+    row = rows[row_index]
+    object_name = str(row.get("marker_object", "") or "ReviewIssueSlopeFaceFallbackMarkers")
+    obj = doc.getObject(object_name) if doc is not None and object_name else None
+    if obj is None:
+        raise RuntimeError(f"Slope Face marker object was not found: {object_name}")
+    _select_and_fit_object(obj)
+    return obj
+
+
+def focus_corridor_slope_face_issue(document=None, row_index: int = 0):
+    """Focus one slope-face issue with the daylight surface and issue markers visible."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_slope_face_issue_rows(doc)
+    if not rows:
+        raise RuntimeError("No Slope Face issue rows are available.")
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Slope Face issue row index is out of range.")
+    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    set_corridor_build_preview_visibility(doc, "daylight", True)
+    for marker in _corridor_build_issue_marker_objects(doc):
+        _set_object_visibility(marker, True)
+    return show_corridor_slope_face_issue_marker(doc, row_index)
+
+
+def focus_adjacent_corridor_slope_face_issue(document=None, current_index: int = -1, direction: int = 1):
+    """Focus the previous or next slope-face issue and return its index and marker object."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_slope_face_issue_rows(doc)
+    if not rows:
+        raise RuntimeError("No Slope Face issue rows are available.")
+    step = 1 if int(direction or 0) >= 0 else -1
+    if current_index < 0 or current_index >= len(rows):
+        target_index = 0 if step > 0 else len(rows) - 1
+    else:
+        target_index = (int(current_index) + step) % len(rows)
+    return target_index, focus_corridor_slope_face_issue(doc, target_index)
+
+
+def focus_corridor_drainage_review_row(document=None, row_index: int = 0):
+    """Create/select a marker for one drainage diagnostic row."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_drainage_review_rows(doc)
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Drainage diagnostic row index is out of range.")
+    row = rows[row_index]
+    marker_name = str(row.get("marker_object", "") or _drainage_review_marker_name(row_index))
+    obj = _create_drainage_review_marker(document=doc, row=row, object_name=marker_name)
+    if obj is None:
+        raise RuntimeError("Drainage diagnostic marker was not created.")
+    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    set_corridor_build_preview_visibility(doc, "drainage", True)
+    _set_object_visibility(obj, True)
+    _select_and_fit_object(obj)
+    return obj
+
+
+def set_corridor_build_preview_visibility(document=None, role: str = "", visible: bool = True):
+    """Set visibility for one Build Corridor preview object by result role."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = _corridor_build_preview_object(doc, role)
+    if obj is None:
+        return None
+    _set_object_visibility(obj, bool(visible))
+    return obj
+
+
+def set_all_corridor_build_preview_visibility(document=None, visible: bool = True, *, include_issue_markers: bool = True) -> int:
+    """Set visibility for all Build Corridor preview objects and optional issue markers."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return 0
+    changed = 0
+    for role, _title, _object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+        if set_corridor_build_preview_visibility(doc, role, visible) is not None:
+            changed += 1
+    if include_issue_markers:
+        for obj in _corridor_build_issue_marker_objects(doc):
+            _set_object_visibility(obj, bool(visible))
+            changed += 1
+    return changed
 
 
 def preferred_corridor_build_review_row_index(
@@ -199,6 +525,12 @@ def preferred_corridor_build_review_row_index(
         if str(row.get("role", "") or "") == preferred:
             return index
     return ready_rows[0][0]
+
+
+def corridor_centerline_preview_style() -> dict[str, object]:
+    """Return the visual style policy for the v1 corridor 3D centerline."""
+
+    return dict(CORRIDOR_CENTERLINE_PREVIEW_STYLE)
 
 
 def create_corridor_centerline_3d_preview(
@@ -251,12 +583,13 @@ def create_corridor_centerline_3d_preview(
     try:
         vobj = getattr(obj, "ViewObject", None)
         if vobj is not None:
+            style = corridor_centerline_preview_style()
             vobj.Visibility = True
-            vobj.LineColor = (0.0, 0.85, 1.0)
-            vobj.PointColor = (0.0, 0.85, 1.0)
-            vobj.ShapeColor = (0.0, 0.85, 1.0)
-            vobj.LineWidth = 5.0
-            vobj.PointSize = 6.0
+            vobj.LineColor = style["line_color"]
+            vobj.PointColor = style["point_color"]
+            vobj.ShapeColor = style["shape_color"]
+            vobj.LineWidth = float(style["line_width"])
+            vobj.PointSize = float(style["point_size"])
     except Exception:
         pass
     try:
@@ -410,7 +743,7 @@ def create_corridor_daylight_surface_preview(
         _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceId", surface_id)
-        _attach_surface_quality_properties(preview_obj, tin_surface)
+        _attach_surface_quality_properties(preview_obj, tin_surface, applied_section_set=applied_section_set)
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -422,6 +755,7 @@ def create_corridor_daylight_surface_preview(
             project=project or find_project(doc),
             surface=tin_surface,
             corridor_model=corridor_model,
+            applied_section_set=applied_section_set,
         )
     return preview_obj
 
@@ -531,7 +865,47 @@ class V1BuildCorridorTaskPanel:
         self._summary.setReadOnly(True)
         self._summary.setFixedHeight(150)
         layout.addWidget(self._summary)
-        self._review_table = QtWidgets.QTableWidget(0, 7)
+        tabs = QtWidgets.QTabWidget()
+        guided_tab = QtWidgets.QWidget()
+        guided_layout = QtWidgets.QVBoxLayout(guided_tab)
+        guided_layout.setContentsMargins(8, 8, 8, 8)
+        results_tab = QtWidgets.QWidget()
+        results_layout = QtWidgets.QVBoxLayout(results_tab)
+        results_layout.setContentsMargins(8, 8, 8, 8)
+        issues_tab = QtWidgets.QWidget()
+        issues_layout = QtWidgets.QVBoxLayout(issues_tab)
+        issues_layout.setContentsMargins(8, 8, 8, 8)
+        drainage_tab = QtWidgets.QWidget()
+        drainage_layout = QtWidgets.QVBoxLayout(drainage_tab)
+        drainage_layout.setContentsMargins(8, 8, 8, 8)
+        visibility_tab = QtWidgets.QWidget()
+        visibility_layout = QtWidgets.QVBoxLayout(visibility_tab)
+        visibility_layout.setContentsMargins(8, 8, 8, 8)
+        tabs.addTab(guided_tab, "Guided Review")
+        tabs.addTab(results_tab, "Results")
+        tabs.addTab(issues_tab, "Slope Issues")
+        tabs.addTab(drainage_tab, "Drainage")
+        tabs.addTab(visibility_tab, "Visibility")
+        layout.addWidget(tabs, 1)
+        guided_label = QtWidgets.QLabel("Guided Review")
+        guided_label.setToolTip("Follow the practical corridor check order and focus the related 3D preview layer.")
+        guided_layout.addWidget(guided_label)
+        self._guided_table = QtWidgets.QTableWidget(0, 4)
+        self._guided_table.setHorizontalHeaderLabels(["Step", "Status", "Focus", "Notes"])
+        self._guided_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._guided_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._guided_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._guided_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._guided_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._guided_table.cellDoubleClicked.connect(lambda row_index, _col: self._focus_guided_review_row(row_index))
+        guided_layout.addWidget(self._guided_table, 1)
+        self._review_table = QtWidgets.QTableWidget(0, 9)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "Result",
@@ -540,18 +914,83 @@ class V1BuildCorridorTaskPanel:
                 "Vertices",
                 "Triangles/Points",
                 "Role",
+                "Applied Sections",
+                "Applied Diagnostics",
                 "Notes",
             ]
         )
         self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._review_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
         try:
             self._review_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
         self._review_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_review_row(row_index))
-        layout.addWidget(self._review_table, 1)
+        results_layout.addWidget(self._review_table, 1)
+        issue_label = QtWidgets.QLabel("Slope Face Issues")
+        issue_label.setToolTip("Double-click an issue row to select and fit the related 3D review marker.")
+        issues_layout.addWidget(issue_label)
+        self._slope_issue_table = QtWidgets.QTableWidget(0, 5)
+        self._slope_issue_table.setHorizontalHeaderLabels(["Station", "Side", "Reason", "Status", "Marker"])
+        self._slope_issue_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._slope_issue_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._slope_issue_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._slope_issue_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._slope_issue_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._slope_issue_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_slope_face_issue_row(row_index))
+        issues_layout.addWidget(self._slope_issue_table, 1)
+        issue_nav_row = QtWidgets.QHBoxLayout()
+        previous_issue_button = QtWidgets.QPushButton("Previous Issue")
+        previous_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(-1))
+        issue_nav_row.addWidget(previous_issue_button)
+        next_issue_button = QtWidgets.QPushButton("Next Issue")
+        next_issue_button.clicked.connect(lambda: self._focus_adjacent_slope_face_issue(1))
+        issue_nav_row.addWidget(next_issue_button)
+        issue_nav_row.addStretch(1)
+        issues_layout.addLayout(issue_nav_row)
+        drainage_label = QtWidgets.QLabel("Drainage Diagnostics")
+        drainage_label.setToolTip("Station-level ditch_surface point diagnostics from Applied Sections.")
+        drainage_layout.addWidget(drainage_label)
+        self._drainage_table = QtWidgets.QTableWidget(0, 6)
+        self._drainage_table.setHorizontalHeaderLabels(["Station", "Status", "Points", "Left", "Right", "Notes"])
+        self._drainage_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._drainage_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._drainage_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._drainage_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._drainage_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._drainage_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_drainage_review_row(row_index))
+        drainage_layout.addWidget(self._drainage_table, 1)
+        visibility_label = QtWidgets.QLabel("Preview Visibility")
+        visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
+        visibility_layout.addWidget(visibility_label)
+        visibility_row = QtWidgets.QHBoxLayout()
+        self._visibility_checks = {}
+        for role, title, _object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+            check = QtWidgets.QCheckBox(title)
+            check.setChecked(True)
+            check.toggled.connect(lambda checked, role=role: self._set_preview_visibility(role, checked))
+            self._visibility_checks[role] = check
+            visibility_row.addWidget(check)
+        visibility_row.addStretch(1)
+        visibility_layout.addLayout(visibility_row)
+        visibility_layout.addStretch(1)
         row = QtWidgets.QHBoxLayout()
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
@@ -559,9 +998,15 @@ class V1BuildCorridorTaskPanel:
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         row.addWidget(apply_button)
-        show_button = QtWidgets.QPushButton("Show Selected")
-        show_button.clicked.connect(self._show_selected_row)
-        row.addWidget(show_button)
+        focus_button = QtWidgets.QPushButton("Focus Selected")
+        focus_button.clicked.connect(self._show_selected_row)
+        row.addWidget(focus_button)
+        show_all_button = QtWidgets.QPushButton("Show All")
+        show_all_button.clicked.connect(lambda: self._set_all_preview_visibility(True))
+        row.addWidget(show_all_button)
+        hide_all_button = QtWidgets.QPushButton("Hide All")
+        hide_all_button.clicked.connect(lambda: self._set_all_preview_visibility(False))
+        row.addWidget(hide_all_button)
         row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -574,20 +1019,29 @@ class V1BuildCorridorTaskPanel:
         applied = to_applied_section_set(applied_obj)
         if applied is None:
             self._summary.setPlainText("Applied Sections: missing\nRun Applied Sections before Build Corridor.")
+            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(corridor_build_review_rows(self.document))
+            self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             return
+        applied_summary = corridor_applied_sections_review_summary(self.document)
         self._summary.setPlainText(
             "\n".join(
                 [
                     f"Applied Sections: {applied.applied_section_set_id}",
                     f"Stations: {len(applied.station_rows)}",
                     f"Alignment: {applied.alignment_id}",
+                    f"Source Review: {applied_summary.get('summary', '')}",
+                    f"Source Diagnostics: {applied_summary.get('diagnostics', '')}",
                     "",
                     "Click Apply to create or update the v1 CorridorModel.",
                 ]
             )
         )
+        self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
         self._set_review_rows(corridor_build_review_rows(self.document))
+        self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+        self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
@@ -598,7 +1052,10 @@ class V1BuildCorridorTaskPanel:
             message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             review_rows = corridor_build_review_rows(self.document)
+            self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(review_rows)
+            self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             focused = self._show_preferred_review_row(review_rows)
             if focused:
                 self._summary.setPlainText(
@@ -612,6 +1069,31 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(f"CorridorModel was not built:\n{exc}")
             _show_message(self.form, "Build Corridor", f"CorridorModel was not built.\n{exc}")
             return False
+
+    def _set_guided_review_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_guided_table"):
+            return
+        self._guided_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._guided_table.rowCount()
+            self._guided_table.insertRow(row_index)
+            values = [
+                str(row.get("title", "") or ""),
+                str(row.get("status", "") or ""),
+                str(row.get("focus", "") or ""),
+                str(row.get("notes", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(32, str(row.get("step_id", "") or ""))
+                self._guided_table.setItem(row_index, col, item)
+            self._apply_guided_row_style(row_index, str(row.get("status", "") or ""))
+        if self._guided_table.rowCount() > 0:
+            try:
+                self._guided_table.selectRow(0)
+            except Exception:
+                pass
 
     def _set_review_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_review_table"):
@@ -627,6 +1109,8 @@ class V1BuildCorridorTaskPanel:
                 str(row.get("vertex_count", "") or ""),
                 str(row.get("triangle_or_point_count", "") or ""),
                 str(row.get("role", "") or ""),
+                str(row.get("applied_section_summary", "") or ""),
+                str(row.get("applied_section_diagnostics", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
             for col, value in enumerate(values):
@@ -638,6 +1122,137 @@ class V1BuildCorridorTaskPanel:
                 self._review_table.selectRow(int(preferred_index))
             except Exception:
                 pass
+        self._sync_visibility_checks()
+
+    def _set_slope_face_issue_rows(self, rows: list[dict[str, str]]) -> None:
+        if not hasattr(self, "_slope_issue_table"):
+            return
+        self._slope_issue_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._slope_issue_table.rowCount()
+            self._slope_issue_table.insertRow(row_index)
+            values = [
+                str(row.get("station_label", "") or ""),
+                str(row.get("side", "") or ""),
+                str(row.get("reason", "") or ""),
+                str(row.get("status", "") or ""),
+                str(row.get("marker_object", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                self._slope_issue_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(value))
+            self._apply_slope_issue_row_style(row_index)
+        if self._slope_issue_table.rowCount() > 0:
+            try:
+                self._slope_issue_table.selectRow(0)
+            except Exception:
+                pass
+
+    def _set_drainage_review_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_drainage_table"):
+            return
+        self._drainage_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._drainage_table.rowCount()
+            self._drainage_table.insertRow(row_index)
+            station = row.get("station", "")
+            station_text = "" if station == "" else f"{float(station):.3f}"
+            values = [
+                station_text,
+                str(row.get("status", "") or ""),
+                str(row.get("ditch_point_count", "") or "0"),
+                str(row.get("left_count", "") or "0"),
+                str(row.get("right_count", "") or "0"),
+                str(row.get("notes", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(32, str(row.get("marker_object", "") or ""))
+                self._drainage_table.setItem(row_index, col, item)
+            self._apply_drainage_row_style(row_index, str(row.get("status", "") or ""))
+
+    def _show_drainage_review_row(self, row_index: int) -> None:
+        try:
+            rows = corridor_drainage_review_rows(self.document)
+            row = rows[int(row_index)]
+            obj = focus_corridor_drainage_review_row(self.document, int(row_index))
+            self._sync_visibility_checks()
+            try:
+                self._drainage_table.selectRow(int(row_index))
+            except Exception:
+                pass
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Drainage diagnostic marker shown.",
+                        f"Station: {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Station: n/a",
+                        f"Status: {row.get('status', '')}",
+                        f"Points: {row.get('ditch_point_count', 0)}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Drainage diagnostic marker was not shown.\n{exc}")
+
+    def _show_slope_face_issue_row(self, row_index: int) -> None:
+        try:
+            issue_rows = corridor_slope_face_issue_rows(self.document)
+            issue = issue_rows[int(row_index)]
+            obj = focus_corridor_slope_face_issue(self.document, int(row_index))
+            self._sync_visibility_checks()
+            try:
+                self._slope_issue_table.selectRow(int(row_index))
+            except Exception:
+                pass
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Slope Face issue marker shown.",
+                        f"Station: {issue.get('station_label', '')}",
+                        f"Side: {issue.get('side', '')}",
+                        f"Reason: {issue.get('reason', '')}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Slope Face issue was not shown.\n{exc}")
+
+    def _focus_adjacent_slope_face_issue(self, direction: int) -> None:
+        try:
+            current_index = self._selected_slope_face_issue_row_index()
+            target_index, obj = focus_adjacent_corridor_slope_face_issue(
+                self.document,
+                current_index=current_index,
+                direction=direction,
+            )
+            issue = corridor_slope_face_issue_rows(self.document)[target_index]
+            self._sync_visibility_checks()
+            try:
+                self._slope_issue_table.selectRow(int(target_index))
+            except Exception:
+                pass
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Slope Face issue marker shown.",
+                        f"Issue: {target_index + 1} / {len(corridor_slope_face_issue_rows(self.document))}",
+                        f"Station: {issue.get('station_label', '')}",
+                        f"Side: {issue.get('side', '')}",
+                        f"Reason: {issue.get('reason', '')}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Slope Face issue was not shown.\n{exc}")
+
+    def _selected_slope_face_issue_row_index(self) -> int:
+        rows = self._slope_issue_table.selectionModel().selectedRows() if hasattr(self, "_slope_issue_table") else []
+        if not rows:
+            return -1
+        return int(rows[0].row())
 
     def _show_selected_row(self) -> None:
         rows = self._review_table.selectionModel().selectedRows() if hasattr(self, "_review_table") else []
@@ -653,6 +1268,48 @@ class V1BuildCorridorTaskPanel:
         except Exception as exc:
             _show_message(self.form, "Build Corridor", f"Review object was not shown.\n{exc}")
 
+    def _focus_guided_review_row(self, row_index: int) -> None:
+        try:
+            item = self._guided_table.item(int(row_index), 0)
+            step_id = str(item.data(32) if item is not None else "")
+            obj = focus_corridor_build_guided_review_step(self.document, step_id)
+            self._sync_visibility_checks()
+            self._summary.setPlainText(
+                f"Guided review step focused.\nStep: {step_id}\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}"
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Guided review step was not focused.\n{exc}")
+
+    def _set_preview_visibility(self, role: str, visible: bool) -> None:
+        obj = set_corridor_build_preview_visibility(self.document, role, visible)
+        if obj is None:
+            return
+        state = "shown" if visible else "hidden"
+        self._summary.setPlainText(f"Preview {state}.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
+
+    def _set_all_preview_visibility(self, visible: bool) -> None:
+        count = set_all_corridor_build_preview_visibility(self.document, visible, include_issue_markers=True)
+        self._sync_visibility_checks()
+        state = "shown" if visible else "hidden"
+        self._summary.setPlainText(f"Corridor previews {state}.\nObjects updated: {count}")
+
+    def _sync_visibility_checks(self) -> None:
+        if not hasattr(self, "_visibility_checks"):
+            return
+        for role, check in dict(self._visibility_checks).items():
+            obj = _corridor_build_preview_object(self.document, role)
+            enabled = obj is not None
+            visible = _object_visibility(obj) if obj is not None else False
+            try:
+                check.blockSignals(True)
+                check.setEnabled(enabled)
+                check.setChecked(bool(visible))
+            finally:
+                try:
+                    check.blockSignals(False)
+                except Exception:
+                    pass
+
     def _show_preferred_review_row(self, rows: list[dict[str, object]]):
         row_index = preferred_corridor_build_review_row_index(rows)
         if row_index is None:
@@ -663,29 +1320,223 @@ class V1BuildCorridorTaskPanel:
             return None
 
     def _apply_review_row_style(self, row_index: int, status: str) -> None:
-        status = str(status or "").strip()
-        colors = {
-            "ready": (220, 245, 224),
-            "missing": (238, 238, 238),
-            "empty": (255, 241, 205),
-        }
-        color = colors.get(status)
+        color = corridor_build_review_row_color(status)
         if color is None:
             return
         try:
             from freecad.Corridor_Road.qt_compat import QtGui
 
             brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
             for column_index in range(int(self._review_table.columnCount())):
                 item = self._review_table.item(int(row_index), column_index)
                 if item is not None:
                     item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
+    def _apply_guided_row_style(self, row_index: int, status: str) -> None:
+        color = corridor_build_review_row_color("empty" if str(status or "") == "warn" else status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._guided_table.columnCount())):
+                item = self._guided_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
+    def _apply_slope_issue_row_style(self, row_index: int) -> None:
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_ROW_COLORS["empty"]))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._slope_issue_table.columnCount())):
+                item = self._slope_issue_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
+    def _apply_drainage_row_style(self, row_index: int, status: str) -> None:
+        color = corridor_build_review_row_color("empty" if str(status or "") == "warn" else status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._drainage_table.columnCount())):
+                item = self._drainage_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
         except Exception:
             pass
 
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
+
+
+def corridor_build_review_row_color(status: object) -> tuple[int, int, int] | None:
+    """Return the dark-theme-readable review-row background color for a status."""
+
+    return CORRIDOR_BUILD_REVIEW_ROW_COLORS.get(str(status or "").strip())
+
+
+def corridor_applied_sections_review_summary(document=None) -> dict[str, object]:
+    """Summarize Applied Sections as the source context for Build Corridor rows."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return {
+            "status": "missing",
+            "summary": "Applied Sections: missing",
+            "diagnostics": "Run Applied Sections before Build Corridor.",
+            "station_count": 0,
+            "diagnostic_count": 0,
+        }
+    station_rows = list(getattr(applied, "station_rows", []) or [])
+    sections = list(getattr(applied, "sections", []) or [])
+    stations = []
+    for row in station_rows:
+        try:
+            stations.append(float(getattr(row, "station", 0.0) or 0.0))
+        except Exception:
+            pass
+    diagnostic_count = sum(len(list(getattr(section, "diagnostic_rows", []) or [])) for section in sections)
+    ditch_point_count = sum(
+        1
+        for section in sections
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+    )
+    slope_face_count = sum(
+        1
+        for section in sections
+        if float(getattr(section, "daylight_left_width", 0.0) or 0.0) > 0.0
+        or float(getattr(section, "daylight_right_width", 0.0) or 0.0) > 0.0
+    )
+    region_count = len({str(getattr(section, "region_id", "") or "") for section in sections if str(getattr(section, "region_id", "") or "")})
+    assembly_count = len({str(getattr(section, "assembly_id", "") or "") for section in sections if str(getattr(section, "assembly_id", "") or "")})
+    station_range = f"{min(stations):.3f}->{max(stations):.3f}" if stations else "no stations"
+    summary = (
+        f"{len(station_rows)} STA | {station_range} | "
+        f"regions:{region_count} | assemblies:{assembly_count} | "
+        f"ditch_pts:{ditch_point_count} | slope_rows:{slope_face_count}"
+    )
+    diagnostics = f"{diagnostic_count} diagnostic(s)" if diagnostic_count else "ok"
+    return {
+        "status": "warn" if diagnostic_count else "ok",
+        "summary": summary,
+        "diagnostics": diagnostics,
+        "station_count": len(station_rows),
+        "station_range": station_range,
+        "diagnostic_count": diagnostic_count,
+        "ditch_point_count": ditch_point_count,
+        "slope_face_count": slope_face_count,
+        "region_count": region_count,
+        "assembly_count": assembly_count,
+    }
+
+
+def _drainage_point_side(point) -> str:
+    point_id = str(getattr(point, "point_id", "") or "").lower()
+    lateral = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+    if "left" in point_id:
+        return "L"
+    if "right" in point_id:
+        return "R"
+    if lateral > 0.0:
+        return "L"
+    if lateral < 0.0:
+        return "R"
+    return ""
+
+
+def _drainage_review_marker_point(section, ditch_points: list[object]) -> tuple[float, float, float]:
+    points = list(ditch_points or [])
+    if points:
+        return (
+            sum(float(getattr(point, "x", 0.0) or 0.0) for point in points) / len(points),
+            sum(float(getattr(point, "y", 0.0) or 0.0) for point in points) / len(points),
+            sum(float(getattr(point, "z", 0.0) or 0.0) for point in points) / len(points),
+        )
+    frame = getattr(section, "frame", None)
+    if frame is not None:
+        return (
+            float(getattr(frame, "x", 0.0) or 0.0),
+            float(getattr(frame, "y", 0.0) or 0.0),
+            float(getattr(frame, "z", 0.0) or 0.0),
+        )
+    return (0.0, 0.0, 0.0)
+
+
+def _drainage_review_marker_name(row_index: int) -> str:
+    return f"ReviewIssueDrainageStation{max(0, int(row_index)) + 1:03d}"
+
+
+def _create_drainage_review_marker(*, document=None, row: dict[str, object] | None = None, object_name: str = ""):
+    if document is None or row is None:
+        return None
+    try:
+        point = (
+            float(row.get("x", 0.0) or 0.0),
+            float(row.get("y", 0.0) or 0.0),
+            float(row.get("z", 0.0) or 0.0),
+        )
+    except Exception:
+        point = (0.0, 0.0, 0.0)
+    name = object_name or str(row.get("marker_object", "") or "ReviewIssueDrainageStation001")
+    status = str(row.get("status", "") or "")
+    color = {
+        "ready": (0.05, 0.65, 1.00),
+        "warn": (1.00, 0.72, 0.10),
+        "missing": (1.00, 0.16, 0.12),
+    }.get(status, (0.05, 0.65, 1.00))
+    obj = _create_marker_compound(
+        document=document,
+        object_name=name,
+        label=f"Drainage Diagnostic - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Diagnostic",
+        points=[point],
+        radius=0.8,
+        color=color,
+        surface=None,
+        corridor_model=None,
+    )
+    if obj is None:
+        return None
+    _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
+    _set_preview_property(obj, "IssueStation", "" if row.get("station", "") == "" else f"{float(row.get('station', 0.0) or 0.0):.3f}")
+    _set_preview_property(obj, "IssueStatus", status)
+    _set_preview_property(obj, "IssueReason", str(row.get("notes", "") or ""))
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _with_applied_section_review_summary(row: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+    output = dict(row or {})
+    output["applied_section_summary"] = str(summary.get("summary", "") or "")
+    output["applied_section_diagnostics"] = str(summary.get("diagnostics", "") or "")
+    output["applied_section_status"] = str(summary.get("status", "") or "")
+    return output
 
 
 def _surface_id(surface_model, surface_kind: str) -> str:
@@ -723,6 +1574,9 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj) -> 
     vertex_count = int(getattr(obj, "VertexCount", 0) or 0)
     triangle_count = int(getattr(obj, "TriangleCount", 0) or 0)
     notes = str(getattr(obj, "SlopeFaceDiagnosticSummary", "") or "")
+    issue_stations = str(getattr(obj, "SlopeFaceIssueStations", "") or "")
+    if notes and issue_stations:
+        notes = f"{notes} | issues: {issue_stations}"
     if not notes:
         surface_kind = str(getattr(obj, "SurfaceKind", "") or "")
         notes = f"Surface kind: {surface_kind or 'unknown'}"
@@ -752,6 +1606,15 @@ def _set_preview_integer_property(obj, name: str, value: int) -> None:
         if not hasattr(obj, name):
             obj.addProperty("App::PropertyInteger", name, "CorridorRoad", name)
         setattr(obj, name, int(value or 0))
+    except Exception:
+        pass
+
+
+def _set_preview_string_list_property(obj, name: str, values: list[str]) -> None:
+    try:
+        if not hasattr(obj, name):
+            obj.addProperty("App::PropertyStringList", name, "CorridorRoad", name)
+        setattr(obj, name, [str(value or "") for value in list(values or [])])
     except Exception:
         pass
 
@@ -842,6 +1705,62 @@ def _select_and_fit_object(obj) -> None:
                 pass
 
 
+def _corridor_build_preview_object(document, role: str):
+    if document is None:
+        return None
+    role_text = str(role or "").strip()
+    for candidate_role, _title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+        if candidate_role != role_text:
+            continue
+        try:
+            return document.getObject(object_name)
+        except Exception:
+            return None
+    return None
+
+
+def _corridor_build_guided_review_step(step_id: str):
+    step_text = str(step_id or "").strip()
+    for step in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
+        if step[0] == step_text:
+            return step
+    return None
+
+
+def _corridor_build_issue_marker_objects(document) -> list[object]:
+    if document is None:
+        return []
+    markers = []
+    for obj in list(getattr(document, "Objects", []) or []):
+        name = str(getattr(obj, "Name", "") or "")
+        if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
+            markers.append(obj)
+    return markers
+
+
+def _set_object_visibility(obj, visible: bool) -> None:
+    if obj is None:
+        return
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = bool(visible)
+    except Exception:
+        pass
+
+
+def _object_visibility(obj) -> bool:
+    if obj is None:
+        return False
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            return bool(getattr(vobj, "Visibility", False))
+    except Exception:
+        pass
+    return False
+
+
 def _make_centerline_shape(points, part_module):
     if len(points) < 2:
         return part_module.Shape(), "empty"
@@ -863,7 +1782,7 @@ def _make_centerline_shape(points, part_module):
         return part_module.makeCompound(edges), "polyline_fallback"
 
 
-def _attach_surface_quality_properties(obj, surface) -> None:
+def _attach_surface_quality_properties(obj, surface, *, applied_section_set=None) -> None:
     quality = {str(getattr(row, "kind", "") or ""): getattr(row, "value", 0) for row in list(getattr(surface, "quality_rows", []) or [])}
     _set_preview_integer_property(obj, "EGTieInHitCount", int(float(quality.get("eg_tie_in_hit_count", 0) or 0)))
     _set_preview_integer_property(obj, "EGTieInMissCount", int(float(quality.get("eg_tie_in_miss_count", 0) or 0)))
@@ -882,9 +1801,23 @@ def _attach_surface_quality_properties(obj, surface) -> None:
         f"misses: {int(float(quality.get('eg_tie_in_miss_count', 0) or 0))}"
     )
     _set_preview_property(obj, "SlopeFaceDiagnosticSummary", summary)
+    issue_rows = _slope_face_issue_station_rows(surface, applied_section_set)
+    _set_preview_property(obj, "SlopeFaceIssueStations", _slope_face_issue_station_summary_from_rows(issue_rows))
+    _set_preview_string_list_property(
+        obj,
+        "SlopeFaceIssueRows",
+        [_serialize_slope_face_issue_row(row) for row in issue_rows],
+    )
 
 
-def _create_slope_face_diagnostic_markers(*, document=None, project=None, surface=None, corridor_model=None):
+def _create_slope_face_diagnostic_markers(
+    *,
+    document=None,
+    project=None,
+    surface=None,
+    corridor_model=None,
+    applied_section_set=None,
+):
     """Create visible 3D markers for slope-face EG tie-in states."""
 
     if document is None or surface is None:
@@ -920,6 +1853,16 @@ def _create_slope_face_diagnostic_markers(*, document=None, project=None, surfac
                 route_to_v1_tree(project or find_project(document), obj)
             except Exception:
                 pass
+    created.extend(
+        _create_slope_face_individual_issue_markers(
+            document=document,
+            project=project,
+            surface=surface,
+            corridor_model=corridor_model,
+            applied_section_set=applied_section_set,
+            radius=radius,
+        )
+    )
     return created
 
 
@@ -935,6 +1878,69 @@ def _remove_slope_face_diagnostic_markers(document) -> None:
                 document.removeObject(obj.Name)
         except Exception:
             pass
+    _remove_slope_face_individual_issue_markers(document)
+
+
+def _remove_slope_face_individual_issue_markers(document) -> None:
+    if document is None:
+        return
+    for obj in list(getattr(document, "Objects", []) or []):
+        name = str(getattr(obj, "Name", "") or "")
+        if not name.startswith("ReviewIssueSlopeFaceIssue"):
+            continue
+        try:
+            document.removeObject(obj.Name)
+        except Exception:
+            pass
+
+
+def _create_slope_face_individual_issue_markers(
+    *,
+    document=None,
+    project=None,
+    surface=None,
+    corridor_model=None,
+    applied_section_set=None,
+    radius: float = 0.5,
+):
+    """Create one small marker object for each station-side slope-face issue."""
+
+    if document is None or surface is None:
+        return []
+    _remove_slope_face_individual_issue_markers(document)
+    rows = _slope_face_issue_station_rows(surface, applied_section_set)
+    created = []
+    for row in rows:
+        try:
+            point = (float(row.get("x", 0.0) or 0.0), float(row.get("y", 0.0) or 0.0), float(row.get("z", 0.0) or 0.0))
+        except Exception:
+            continue
+        object_name = str(row.get("marker_object", "") or "")
+        if not object_name:
+            continue
+        obj = _create_marker_compound(
+            document=document,
+            object_name=object_name,
+            label=f"Slope Face Issue - {row.get('station_label', '')} {row.get('side', '')}",
+            points=[point],
+            radius=max(float(radius or 0.5) * 1.6, 0.3),
+            color=(1.00, 0.02, 0.02),
+            surface=surface,
+            corridor_model=corridor_model,
+        )
+        if obj is None:
+            continue
+        _set_preview_property(obj, "IssueStation", str(row.get("station_label", "") or ""))
+        _set_preview_property(obj, "IssueSide", str(row.get("side", "") or ""))
+        _set_preview_property(obj, "IssueReason", str(row.get("reason", "") or ""))
+        created.append(obj)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(document), obj)
+        except Exception:
+            pass
+    return created
 
 
 def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, float]]]:
@@ -956,6 +1962,158 @@ def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, flo
             key = "fallback"
         points[key].append((float(vertex.x), float(vertex.y), float(vertex.z)))
     return points
+
+
+def _slope_face_issue_station_summary(surface, applied_section_set=None, *, max_items: int = 8) -> str:
+    """Return compact station/side list for slope-face fallback conditions."""
+
+    return _slope_face_issue_station_summary_from_rows(
+        _slope_face_issue_station_rows(surface, applied_section_set),
+        max_items=max_items,
+    )
+
+
+def _slope_face_issue_station_rows(surface, applied_section_set=None) -> list[dict[str, str]]:
+    """Return row-level slope-face fallback issues tied to station and side."""
+
+    station_labels = _slope_face_station_labels(applied_section_set)
+    rows: list[dict[str, str]] = []
+    for vertex in list(getattr(surface, "vertex_rows", []) or []):
+        vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+        if not vertex_id.endswith(":outer"):
+            continue
+        status = str(getattr(vertex, "notes", "") or "").strip()
+        if not status.startswith("fallback"):
+            continue
+        parsed = _parse_slope_face_vertex_id(vertex_id)
+        if parsed is None:
+            continue
+        index, side = parsed
+        station_label = station_labels[index] if 0 <= index < len(station_labels) else f"row {index + 1}"
+        reason = {
+            "fallback:no_existing_ground_tin": "no EG TIN",
+            "fallback:no_eg_hit_in_search_width": "no EG hit",
+        }.get(status, status.replace("fallback:", ""))
+        marker_object = _slope_face_issue_marker_name(index, side)
+        rows.append(
+            {
+                "station_label": station_label,
+                "station_index": str(index),
+                "side": side.upper(),
+                "reason": reason,
+                "status": status,
+                "marker_object": marker_object,
+                "x": f"{float(getattr(vertex, 'x', 0.0) or 0.0):.6f}",
+                "y": f"{float(getattr(vertex, 'y', 0.0) or 0.0):.6f}",
+                "z": f"{float(getattr(vertex, 'z', 0.0) or 0.0):.6f}",
+            }
+        )
+    return rows
+
+
+def _slope_face_issue_station_summary_from_rows(rows: list[dict[str, str]], *, max_items: int = 8) -> str:
+    items = [
+        f"{row.get('station_label', '')} {row.get('side', '')} {row.get('reason', '')}".strip()
+        for row in list(rows or [])
+    ]
+    if not items:
+        return ""
+    clipped = items[: max(1, int(max_items))]
+    if len(items) > len(clipped):
+        clipped.append(f"+{len(items) - len(clipped)} more")
+    return "; ".join(clipped)
+
+
+def _serialize_slope_face_issue_row(row: dict[str, str]) -> str:
+    keys = ("station_label", "station_index", "side", "reason", "status", "marker_object", "x", "y", "z")
+    return ";".join(f"{key}={_escape_issue_row_value(row.get(key, ''))}" for key in keys)
+
+
+def _parse_slope_face_issue_row_text(text: str) -> dict[str, str]:
+    row: dict[str, str] = {}
+    for part in str(text or "").split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = str(key or "").strip()
+        if not key:
+            continue
+        row[key] = _unescape_issue_row_value(value)
+    return row
+
+
+def _parse_slope_face_issue_summary_text(text: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for part in str(text or "").split(";"):
+        tokens = str(part or "").strip().split()
+        if len(tokens) < 5 or tokens[0] != "STA":
+            continue
+        station_label = " ".join(tokens[0:2])
+        side = tokens[2].upper()
+        if side not in {"L", "R"}:
+            continue
+        rows.append(
+            {
+                "station_label": station_label,
+                "station_index": "",
+                "side": side,
+                "reason": " ".join(tokens[3:]),
+                "status": "fallback",
+                "marker_object": "ReviewIssueSlopeFaceFallbackMarkers",
+            }
+        )
+    return rows
+
+
+def _slope_face_issue_marker_name(station_index: int, side: str) -> str:
+    side_text = str(side or "").strip().upper()
+    if side_text not in {"L", "R"}:
+        side_text = "X"
+    return f"ReviewIssueSlopeFaceIssue{max(0, int(station_index)) + 1:03d}{side_text}"
+
+
+def _escape_issue_row_value(value: object) -> str:
+    return str(value or "").replace("%", "%25").replace(";", "%3B").replace("=", "%3D")
+
+
+def _unescape_issue_row_value(value: object) -> str:
+    return str(value or "").replace("%3D", "=").replace("%3B", ";").replace("%25", "%")
+
+
+def _slope_face_station_labels(applied_section_set=None) -> list[str]:
+    if applied_section_set is None:
+        return []
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
+    labels: list[str] = []
+    for row in list(getattr(applied_section_set, "station_rows", []) or []):
+        section = sections.get(str(getattr(row, "applied_section_id", "") or ""))
+        if section is None or getattr(section, "frame", None) is None:
+            continue
+        try:
+            station = float(getattr(row, "station", getattr(section, "station", 0.0)) or 0.0)
+        except Exception:
+            continue
+        labels.append(f"STA {station:.3f}")
+    return labels
+
+
+def _parse_slope_face_vertex_id(vertex_id: str) -> tuple[int, str] | None:
+    parts = str(vertex_id or "").split(":")
+    if len(parts) < 3:
+        return None
+    if not parts[0].startswith("v"):
+        return None
+    try:
+        index = int(parts[0][1:])
+    except Exception:
+        return None
+    side = str(parts[1] or "").strip().lower()
+    if side not in {"left", "right"}:
+        return None
+    return index, "L" if side == "left" else "R"
 
 
 def _create_marker_compound(

@@ -161,9 +161,9 @@ Purpose:
 
 Primary actions:
 
-- `New Project`
+- `New/Project Setup`
 - `Open Project`
-- `Project Settings`
+- `Project Settings` through the same setup entry point
 
 ### 6.2 Survey & Surface
 

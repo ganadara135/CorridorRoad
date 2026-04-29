@@ -108,7 +108,7 @@ class PlanProfileViewerTaskPanel:
         layout.addWidget(QtWidgets.QLabel("Station Connection"))
         connection_hint = QtWidgets.QLabel(
             "Primary connection review table: checks every station row against Alignment XY, "
-            "Profile FG, and TIN EG on the same station domain. Key stations below are navigation shortcuts only."
+            "Profile FG, and TIN EG on the same station domain."
         )
         connection_hint.setWordWrap(True)
         connection_hint.setStyleSheet("color: #666;")
@@ -120,26 +120,9 @@ class PlanProfileViewerTaskPanel:
         layout.addLayout(self._connection_table_slot)
         self._refresh_connection_table()
 
-        layout.addWidget(QtWidgets.QLabel("Station Sampling Controls"))
-        station_interval_row = QtWidgets.QHBoxLayout()
-        station_interval_row.addWidget(QtWidgets.QLabel("Station Interval"))
-        self._station_interval_spin = QtWidgets.QDoubleSpinBox()
-        self._station_interval_spin.setDecimals(3)
-        self._station_interval_spin.setRange(0.001, 1000000.0)
-        self._station_interval_spin.setSingleStep(5.0)
-        self._station_interval_spin.setSuffix(" m")
-        self._station_interval_spin.setValue(self._station_interval_value())
-        station_interval_row.addWidget(self._station_interval_spin)
-        apply_station_interval_button = QtWidgets.QPushButton("Apply Station Interval")
-        apply_station_interval_button.clicked.connect(self._apply_station_interval)
-        station_interval_row.addWidget(apply_station_interval_button)
-        station_interval_row.addStretch(1)
-        layout.addLayout(station_interval_row)
-
         layout.addWidget(QtWidgets.QLabel("Quick Navigation Stations"))
         navigation_hint = QtWidgets.QLabel(
-            "Shortcut list only: start/end stations, the current focus, nearby stations, and issue stations. "
-            "Use the Station Connection table above for the full station grid."
+            "Full station list for moving the review focus. Selecting a station reopens this review centered on that station."
         )
         navigation_hint.setWordWrap(True)
         navigation_hint.setStyleSheet("color: #666;")
@@ -325,8 +308,7 @@ class PlanProfileViewerTaskPanel:
             f"Profile controls: {len(list(getattr(profile_output, 'pvi_rows', []) or []))}",
             f"Profile lines: {len(self._profile_line_rows())}",
             f"Earthwork attachments: {len(list(getattr(profile_output, 'earthwork_rows', []) or []))}",
-            f"Key stations: {len(self._key_station_rows())}",
-            f"Station interval: {self._station_interval_value():.3f} m",
+            f"Navigation stations: {len(self._key_station_rows())}",
             f"Evaluated alignment stations: {len(self._alignment_frame_rows())}",
             f"Evaluated profile stations: {len(self._profile_eval_rows())}",
         ]
@@ -418,7 +400,7 @@ class PlanProfileViewerTaskPanel:
                 [
                     "Quick Navigation Stations",
                     "missing",
-                    "Reopen Plan/Profile Review or adjust the station interval.",
+                    "Reopen Plan/Profile Review after Stations are generated.",
                 ]
             )
 
@@ -467,7 +449,6 @@ class PlanProfileViewerTaskPanel:
             ("Earthwork Window", "earthwork_window_summary"),
             ("Earthwork Cut/Fill", "earthwork_cut_fill_summary"),
             ("Haul Zone", "haul_zone_summary"),
-            ("Station Interval", "station_interval"),
             ("Earthwork Area Width", "earthwork_area_width"),
         ]
         for label, key in mapping:
@@ -672,7 +653,7 @@ class PlanProfileViewerTaskPanel:
             "Stations",
             "ok",
             self._station_rows_range_text(station_rows),
-            "Use Station Interval only if a different review density is needed.",
+            "Use the Station Connection table above for full station-grid review.",
         ]
 
     def _profile_connection_diagnostic_row(self, rows: list[dict[str, object]]) -> list[str]:
@@ -1094,10 +1075,10 @@ class PlanProfileViewerTaskPanel:
         if is_current:
             return "Current review focus station"
         return {
-            "first": "Start of sampled station range",
-            "last": "End of sampled station range",
-            "previous": "Nearby station before the current focus",
-            "next": "Nearby station after the current focus",
+            "first": "Start of station range",
+            "last": "End of station range",
+            "previous": "Station before the current focus",
+            "next": "Station after the current focus",
             "current": "Current review focus station",
         }.get(str(navigation_kind or "").strip(), "Review navigation station")
 
@@ -1214,7 +1195,7 @@ class PlanProfileViewerTaskPanel:
     def _open_adjacent_station(self, delta: int) -> None:
         rows = self._key_station_rows()
         if not rows:
-            self._status_label.setText("No key station rows are available.")
+            self._status_label.setText("No navigation station rows are available.")
             self._status_label.setStyleSheet("color: #b36b00;")
             return
         current_index = self._current_key_station_index()
@@ -1305,68 +1286,6 @@ class PlanProfileViewerTaskPanel:
             if value > 0.0:
                 return value
         return None
-
-    def _station_interval_value(self) -> float:
-        candidates = [
-            self.preview.get("station_interval", None),
-            self.preview.get("plan_profile_station_interval", None),
-        ]
-        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
-        candidates.extend(
-            [
-                viewer_context.get("station_interval", None),
-                viewer_context.get("plan_profile_station_interval", None),
-            ]
-        )
-        for candidate in candidates:
-            if candidate is None or candidate == "":
-                continue
-            try:
-                value = float(candidate)
-            except Exception:
-                continue
-            if value > 0.0:
-                return value
-        return 20.0
-
-    def _apply_station_interval(self) -> None:
-        spin = getattr(self, "_station_interval_spin", None)
-        interval = float(spin.value()) if spin is not None else 20.0
-        if interval <= 0.0:
-            self._status_label.setText("Enter a positive station interval before applying.")
-            self._status_label.setStyleSheet("color: #b36b00;")
-            return
-        if Gui is None:
-            self._status_label.setText("FreeCAD GUI is not available for applying station interval.")
-            self._status_label.setStyleSheet("color: #b33;")
-            return
-
-        legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
-        alignment = legacy_objects.get("alignment")
-        profile = legacy_objects.get("profile")
-        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
-        viewer_context["station_interval"] = interval
-
-        context_payload = {
-            "source": "v1_plan_profile_station_interval",
-            "preferred_alignment_name": str(getattr(alignment, "Name", "") or "").strip(),
-            "preferred_profile_name": str(getattr(profile, "Name", "") or "").strip(),
-            "station_interval": interval,
-            "viewer_context": viewer_context,
-        }
-        focus_station = viewer_context.get("focus_station", None)
-        if focus_station is not None and focus_station != "":
-            try:
-                context_payload["preferred_station"] = float(focus_station)
-            except Exception:
-                pass
-        set_ui_context(**context_payload)
-        self._set_status_safely(f"Applying station interval {interval:.3f} m.", ok=True)
-        try:
-            Gui.Control.closeDialog()
-        except Exception:
-            pass
-        Gui.runCommand("CorridorRoad_V1ReviewPlanProfile", 0)
 
     def _earthwork_area_hint_status_text(self) -> str:
         result = self.preview.get("profile_earthwork_area_hint_result", None)

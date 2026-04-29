@@ -26,9 +26,9 @@ It sits between profile authoring and detailed section/corridor review.
 
 It does not replace the detailed 2D `Cross Section Viewer`.
 
-`Key stations` are navigation aids only.
+`Quick Navigation Stations` is a full station-list focus control.
 
-They are not sufficient as the main review dataset.
+It should not be limited to key stations only.
 
 The main UX should be a full station-grid connection review.
 
@@ -88,7 +88,7 @@ Evaluation tabs:
 
 It should show:
 
-- station count and station interval
+- station count
 - alignment range and active station frame
 - full station-grid connection status
 - grouped connection diagnostics with next actions
@@ -111,10 +111,9 @@ It should not become:
 
 Required first actions:
 
-- change station interval
 - show all station rows
 - show issue station rows only
-- use `Quick Navigation Stations` only as shortcuts, not as the full station list
+- use `Quick Navigation Stations` to move focus across the full station list
 - double-click diagnostic rows to open the likely source panel
 - focus another review station
 - inspect alignment/profile/EG status
@@ -145,8 +144,8 @@ Diagnostics should explain:
 ## 11. Implementation Milestones
 
 1. [x] Make the title and help text explicitly say continuity/readiness review.
-2. Add a full station connection table as the main review dataset.
-3. Keep key stations as navigation only.
+2. [x] Add a full station connection table as the main review dataset.
+3. [x] Expand Quick Navigation Stations, Alignment Frame, and Profile Evaluation to the full station grid.
 4. [x] Add Source Link Summary for Alignment, Stations, Profile, and TIN.
 5. [x] Add grouped Connection Diagnostics for source links, stationing, Alignment, Profile/FG, TIN/EG, and FG-EG.
 6. [x] Add diagnostic-row handoff to Alignment, Stations, Profile, and TIN source panels.

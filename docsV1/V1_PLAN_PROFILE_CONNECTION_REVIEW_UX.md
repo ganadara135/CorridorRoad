@@ -31,20 +31,19 @@ It should show whether:
 - EG values sample correctly from TIN
 - source links are real v1 document objects, not fallback/demo context
 
-`Key stations` are navigation aids only.
+`Quick Navigation Stations` should expose the full station grid for focus movement.
 
-They are not the main review dataset.
+It should not be limited to a compact key-station subset.
 
 ## 3. Main UX Problem
 
-A compact key-station list is useful for movement, but it hides important problems:
+A compact key-station list hides important problems:
 
 - missing station rows between key stations
 - profile range gaps
 - EG no-hit zones
 - sudden FG grade changes
-- alignment frame errors away from selected key stations
-- station interval mismatch
+- alignment frame errors away from previously compact navigation stations
 - source object mismatch between Alignment, Stations, and Profile
 
 The viewer must expose the full station-grid connection state.
@@ -137,21 +136,20 @@ The table should support:
 
 ## 9. Quick Navigation Stations Role
 
-`Quick Navigation Stations` should remain, but only as a navigation shortcut.
+`Quick Navigation Stations` should remain as a focus-navigation control.
 
-It is not a full station list.
+It should show the full station list.
 
-The full station grid belongs in the `Station Connection` table.
+The `Station Connection` table remains the main diagnostic grid.
 
-They should include:
+The navigation list should include:
 
-- start station
-- end station
-- current station
-- nearby stations
-- issue stations
+- every generated station row
+- start and end station labels
+- current focus station label
+- station labels that preserve station order
 
-They should not be the only visible station review rows.
+It should not hide intermediate station rows from navigation.
 
 ## 10. Connection Diagnostics
 
@@ -195,7 +193,6 @@ Recommended tabs:
 Required actions:
 
 - refresh/rebuild review
-- change station interval
 - show all rows
 - show issue rows only
 - focus selected station
@@ -232,7 +229,8 @@ The viewer should explain missing prerequisites:
 8. [x] Add diagnostic-row handoff to source panels.
 9. [x] Rename key-station navigation UI to `Quick Navigation Stations`.
 10. [x] Rename UX text to emphasize connection review.
-11. Validate with a real TIN + Alignment, Stations, Profile, and TIN document.
+11. [x] Expand `Quick Navigation Stations`, `Alignment Frame`, and `Profile Evaluation` to the full station grid.
+12. Validate with a real TIN + Alignment, Stations, Profile, and TIN document.
 
 ## 15. Non-Goals
 

@@ -4,6 +4,7 @@ from freecad.Corridor_Road.objects.obj_project import V1_TREE_APPLIED_SECTIONS, 
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import assembly_preset_model_from_document, starter_assembly_model_from_document
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     CmdV1AppliedSections,
+    applied_section_review_row_color,
     applied_section_review_rows,
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -68,7 +69,44 @@ def test_applied_section_review_rows_summarize_station_context() -> None:
         assert rows[0]["surface_left_width"] > 0.0
         assert rows[0]["surface_right_width"] > 0.0
         assert rows[0]["component_count"] == 6
+        assert rows[0]["component_summary"] == "lane:2, shoulder:2, side_slope:2"
+        assert rows[0]["slope_face_summary"]
+        assert rows[0]["diagnostic_summary"] == ""
         assert rows[0]["status"] == "ok"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_applied_section_review_rows_expose_ditch_context() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
+        assembly_model = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        first = region_model.region_rows[0]
+        region_model.region_rows[0] = type(first)(
+            region_id=first.region_id,
+            region_index=first.region_index,
+            primary_kind=first.primary_kind,
+            station_start=first.station_start,
+            station_end=first.station_end,
+            applied_layers=["ditch", "drainage"],
+            assembly_ref="assembly:drainage-ditch-road",
+            template_ref="template:drainage-ditch-road",
+            priority=first.priority,
+        )
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        result = build_document_applied_section_set(doc, project=project)
+        rows = applied_section_review_rows(result)
+
+        assert "ditch:2" in rows[0]["component_summary"]
+        assert "components:2" in rows[0]["ditch_summary"]
+        assert "points:" in rows[0]["ditch_summary"]
+        assert rows[0]["slope_face_summary"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -179,6 +217,13 @@ def test_applied_sections_command_resources_are_v1() -> None:
 
     assert resources["MenuText"] == "Applied Sections"
     assert "v1" in resources["ToolTip"]
+
+
+def test_applied_section_review_row_colors_are_dark_theme_readable() -> None:
+    assert applied_section_review_row_color("ok") == (220, 245, 224)
+    assert applied_section_review_row_color("warn") == (255, 241, 205)
+    assert applied_section_review_row_color("missing") == (255, 220, 220)
+    assert applied_section_review_row_color("unknown") is None
 
 
 def _group_names(folder) -> set[str]:

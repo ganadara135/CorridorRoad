@@ -74,7 +74,7 @@ def test_build_demo_plan_profile_preview_returns_outputs() -> None:
     assert len(preview["plan_output"].geometry_rows) == 2
     assert len(preview["profile_output"].pvi_rows) == 3
     assert len(preview["plan_output"].station_rows) == 5
-    assert len(preview["key_station_rows"]) == 4
+    assert len(preview["key_station_rows"]) == len(preview["plan_output"].station_rows)
     assert preview["key_station_rows"][0]["is_current"] is True
     assert preview["key_station_rows"][0]["alignment_eval_status"] == "ok"
     assert preview["key_station_rows"][0]["x"] == 1000.0
@@ -98,8 +98,9 @@ def test_format_plan_profile_preview_includes_key_counts() -> None:
     assert "CorridorRoad v1 Plan/Profile Connection Review" in text
     assert "Alignment elements: 2" in text
     assert "Profile controls: 3" in text
-    assert "Evaluated alignment stations: 4" in text
-    assert "Evaluated profile stations: 4" in text
+    assert "Navigation stations: 5" in text
+    assert "Evaluated alignment stations: 5" in text
+    assert "Evaluated profile stations: 5" in text
     assert "Preview source: demo" in text
     assert "Bridge diagnostics:" in text
 
@@ -116,7 +117,7 @@ def test_show_v1_plan_profile_preview_returns_preview_without_gui() -> None:
 
     assert preview["plan_output"] is not None
     assert preview["profile_output"] is not None
-    assert len(preview["key_station_rows"]) == 4
+    assert len(preview["key_station_rows"]) == len(preview["plan_output"].station_rows)
     assert preview["preview_source_kind"] == "demo"
     assert preview["bridge_diagnostic_rows"]
 
@@ -133,7 +134,7 @@ def test_show_v1_plan_profile_preview_accepts_station_interval() -> None:
     assert preview["viewer_context"]["station_interval"] == 10.0
     assert preview["plan_output"].station_rows[1].station == 10.0
     assert preview["key_station_rows"][1]["station"] == 10.0
-    assert "Station interval: 10.000 m" in format_plan_profile_preview(preview)
+    assert "Station interval:" not in format_plan_profile_preview(preview)
 
 
 def test_resolve_station_interval_accepts_viewer_context() -> None:
@@ -300,9 +301,13 @@ def test_plan_profile_viewer_builds_full_station_connection_rows() -> None:
 
     rows = panel._station_connection_rows()
     table_rows = panel._station_connection_table_rows()
+    alignment_frame_rows = panel._alignment_frame_rows()
+    profile_eval_rows = panel._profile_eval_rows()
 
     assert len(rows) == len(panel.preview["plan_output"].station_rows)
-    assert len(rows) > len(panel._key_station_rows())
+    assert len(rows) == len(panel._key_station_rows())
+    assert len(alignment_frame_rows) == len(panel.preview["plan_output"].station_rows)
+    assert len(profile_eval_rows) == len(panel.preview["plan_output"].station_rows)
     assert rows[0]["station"] == 0.0
     assert rows[0]["alignment_status"] == "ok"
     assert rows[0]["profile_status"] == "ok"
@@ -457,8 +462,7 @@ def test_plan_profile_navigation_station_labels_explain_selection_reason() -> No
     assert any("Focus buttons reopen this connection review" in text for text in labels)
     assert any("Primary connection review table" in text for text in labels)
     assert any(text == "Quick Navigation Stations" for text in labels)
-    assert any("Shortcut list only" in text for text in labels)
-    assert any("Station Connection table above for the full station grid" in text for text in labels)
+    assert any("Full station list for moving the review focus" in text for text in labels)
     assert any("Double-click a diagnostic row" in text for text in labels)
     assert any("Double-click an Alignment Frame or Profile Evaluation row" in text for text in labels)
     assert any("Double-click a Profile Control row" in text for text in labels)

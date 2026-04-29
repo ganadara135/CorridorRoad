@@ -95,6 +95,8 @@ def build_csv_tin_review(
     surface_id: str = "tin:csv",
     probe_x: float | None = None,
     probe_y: float | None = None,
+    doc_or_project=None,
+    input_coords: str = "auto",
 ) -> dict[str, object]:
     """Build a review payload from a CSV point-cloud TIN source."""
 
@@ -102,6 +104,8 @@ def build_csv_tin_review(
         path,
         project_id=project_id,
         surface_id=surface_id,
+        doc_or_project=doc_or_project,
+        input_coords=input_coords,
     )
     if probe_x is None or probe_y is None:
         probe_x, probe_y = _surface_probe_center(surface)
@@ -177,6 +181,8 @@ def show_v1_tin_review(
             surface_id=str((extra_context or {}).get("surface_id", "") or "tin:csv"),
             probe_x=probe_x,
             probe_y=probe_y,
+            doc_or_project=(extra_context or {}).get("doc_or_project", None) or document,
+            input_coords=str((extra_context or {}).get("input_coords", "") or "auto"),
         )
     if preview is None and document is not None:
         preview = build_document_tin_review(
@@ -435,6 +441,7 @@ def _ensure_tin_result_record(document, preview: dict[str, object]):
     _set_string_property(obj, "CRRecordKind", "tin_surface_result")
     _set_string_property(obj, "SurfaceId", surface_id)
     _set_string_property(obj, "SurfaceKind", str(getattr(surface, "surface_kind", "") or ""))
+    _set_tin_coordinate_metadata(obj, surface)
     _set_integer_property(obj, "VertexCount", len(list(getattr(surface, "vertex_rows", []) or [])))
     _set_integer_property(obj, "TriangleCount", len(list(getattr(surface, "triangle_rows", []) or [])))
     return obj
@@ -545,6 +552,31 @@ def _set_float_property(obj, name: str, value) -> None:
         setattr(obj, name, float(value))
     except Exception:
         setattr(obj, name, 0.0)
+
+
+def _set_tin_coordinate_metadata(obj, surface) -> None:
+    values = {}
+    for row in list(getattr(surface, "quality_rows", []) or []):
+        kind = str(getattr(row, "kind", "") or "")
+        if kind:
+            values[kind] = getattr(row, "value", "")
+    for prop_name, key in (
+        ("SourceCoords", "coordinate_input"),
+        ("ModelCoords", "coordinate_model"),
+        ("CoordinateWorkflow", "coordinate_workflow"),
+        ("CRSEPSG", "crs_epsg"),
+    ):
+        _set_string_property(obj, prop_name, str(values.get(key, "") or ""))
+    for prop_name, key in (
+        ("ProjectOriginE", "project_origin_e"),
+        ("ProjectOriginN", "project_origin_n"),
+        ("ProjectOriginZ", "project_origin_z"),
+        ("LocalOriginX", "local_origin_x"),
+        ("LocalOriginY", "local_origin_y"),
+        ("LocalOriginZ", "local_origin_z"),
+        ("NorthRotationDeg", "north_rotation_deg"),
+    ):
+        _set_float_property(obj, prop_name, values.get(key, 0.0))
 
 
 def _safe_name_token(value: str) -> str:

@@ -1,6 +1,7 @@
 import FreeCAD as App
 import Mesh
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_DIAGNOSTICS,
     V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW,
@@ -8,8 +9,10 @@ from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
+from freecad.Corridor_Road.v1.commands import cmd_edit_tin
 from freecad.Corridor_Road.v1.commands.cmd_edit_tin import (
     CmdV1TINEditor,
+    V1TINEditorTaskPanel,
     _TINFacePickObserver,
     _rect_from_xy_points,
     _remove_rect_previews,
@@ -202,8 +205,40 @@ def test_build_tin_source_from_csv_creates_base_preview_for_editor_source_tab() 
         assert preview.status == "created"
         assert source_obj is not None
         assert source_obj.SurfaceRole == "base"
+        assert source_obj.SourceCoords == "Local"
+        assert source_obj.ModelCoords == "Local"
         assert preview.object_name in preview_names
     finally:
+        App.closeDocument(doc.Name)
+
+
+def test_tin_editor_uses_apply_as_single_write_button() -> None:
+    doc, _project, _tree = _new_project_doc()
+    try:
+        panel = V1TINEditorTaskPanel(document=doc, base_surface=_small_surface(), gui_module=None)
+        buttons = [button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)]
+
+        assert buttons.count("Apply") == 1
+        assert "Build TIN" not in buttons
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_tin_editor_apply_applies_current_editor_state_without_rebuilding_source() -> None:
+    doc, _project, _tree = _new_project_doc()
+    original_show_message = cmd_edit_tin._show_message
+    cmd_edit_tin._show_message = lambda *args, **kwargs: None
+    try:
+        panel = V1TINEditorTaskPanel(document=doc, base_surface=_small_surface(), gui_module=None)
+        panel._triangle_delete_text.setText("t1")
+
+        assert panel._build_tin(close_after=False) is True
+
+        assert panel._last_result is not None
+        assert panel._last_result["edit_result"].removed_triangle_count == 1
+        assert [triangle.triangle_id for triangle in panel._last_result["edited_surface"].triangle_rows] == ["t0"]
+    finally:
+        cmd_edit_tin._show_message = original_show_message
         App.closeDocument(doc.Name)
 
 

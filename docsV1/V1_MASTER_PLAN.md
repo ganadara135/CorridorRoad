@@ -928,7 +928,7 @@ No AI-generated design state should become the accepted project state without ex
 
 Recommended top-level command flow:
 
-1. `New Project`
+1. `New/Project Setup`
 2. `Import Survey / TIN`
 3. `Alignment Network`
 4. `Profiles & Superelevation`

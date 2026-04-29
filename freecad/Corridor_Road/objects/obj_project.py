@@ -136,8 +136,8 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_SOURCE_DATA, V1_TREE_SOURCE_FILES, "Source Files", "CRV1_Source_Files"),
     (V1_TREE_SOURCE_DATA, V1_TREE_EXISTING_REFERENCES, "Existing References", "CRV1_Existing_References"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_ALIGNMENTS, "Alignments", "CRV1_Alignments"),
-    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_PROFILES, "Profiles", "CRV1_Profiles"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_STATIONS, "Stations", "CRV1_Stations"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_PROFILES, "Profiles", "CRV1_Profiles"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_SUPERELEVATION, "Superelevation", "CRV1_Superelevation"),
     (V1_TREE_SURFACES, V1_TREE_EXISTING_GROUND_TIN, "Existing Ground TIN", "CRV1_Existing_Ground_TIN"),
     (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_SOURCE, "Source", "CRV1_EG_TIN_Source"),
@@ -463,6 +463,26 @@ def _group_remove(owner, child):
     _group_set(owner, [o for o in cur if o != child])
 
 
+def _reorder_children_by_tree_keys(owner, ordered_keys) -> None:
+    if owner is None:
+        return
+    children = _group_get(owner)
+    if not children:
+        return
+    key_order = {str(key): index for index, key in enumerate(list(ordered_keys or []))}
+    keyed = []
+    others = []
+    for index, child in enumerate(children):
+        key = _tree_key(child)
+        if key in key_order:
+            keyed.append((key_order[key], index, child))
+        else:
+            others.append(child)
+    ordered = [child for _order, _index, child in sorted(keyed, key=lambda row: (row[0], row[1]))] + others
+    if ordered != children:
+        _group_set(owner, ordered)
+
+
 def _prune_root_nonfolders(prj):
     if prj is None:
         return
@@ -731,10 +751,16 @@ def ensure_project_tree(obj_project, include_references: bool = False):
     out = {}
     for key, label, obj_name in V1_ROOT_TREE_DEFS:
         out[key] = _ensure_child_folder(doc, obj_project, key, label, obj_name)
+    _reorder_children_by_tree_keys(obj_project, [key for key, _label, _obj_name in V1_ROOT_TREE_DEFS])
     for parent_key, key, label, obj_name in V1_SUBTREE_DEFS:
         parent = out.get(parent_key, None)
         if parent is not None:
             out[key] = _ensure_child_folder(doc, parent, key, label, obj_name)
+    for parent_key in dict.fromkeys(parent_key for parent_key, _key, _label, _obj_name in V1_SUBTREE_DEFS):
+        parent = out.get(parent_key, None)
+        if parent is not None:
+            ordered_keys = [key for pkey, key, _label, _obj_name in V1_SUBTREE_DEFS if pkey == parent_key]
+            _reorder_children_by_tree_keys(parent, ordered_keys)
 
     if include_references:
         out[V1_TREE_EXISTING_REFERENCES] = out.get(V1_TREE_EXISTING_REFERENCES, None)

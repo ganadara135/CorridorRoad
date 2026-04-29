@@ -584,7 +584,7 @@ Current implementation status:
 - [x] derive shape-aware ditch `ditch_surface` rows from `TemplateComponent.parameters`
 - [x] report first-slice diagnostics for invalid or incomplete ditch shape parameters
 - [x] persist and restore Applied Section point rows through the `V1AppliedSectionSet` result object
-- [x] show a compact Applied Sections review table in the command panel
+- [x] show an Applied Sections review table with station frame, Region, Assembly, Template, component, ditch, slope-face, and diagnostic summaries
 - [x] show a selected Applied Section row as a 3D review preview using point rows when available
 - [ ] apply superelevation/crossfall state
 - [ ] apply full terrain/daylight terminal behavior

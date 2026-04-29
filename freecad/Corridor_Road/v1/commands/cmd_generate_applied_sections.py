@@ -36,6 +36,14 @@ from ..objects.obj_stationing import find_v1_stationing
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 
 
+APPLIED_SECTION_REVIEW_ROW_COLORS = {
+    "ok": (220, 245, 224),
+    "warn": (255, 241, 205),
+    "missing": (255, 220, 220),
+}
+APPLIED_SECTION_REVIEW_TEXT_COLOR = (20, 20, 20)
+
+
 def build_document_applied_section_set(document=None, *, project=None, corridor_id: str = "corridor:main"):
     """Build an AppliedSectionSet result from the active v1 source objects."""
 
@@ -141,6 +149,10 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         frame = getattr(section, "frame", None) if section is not None else None
         diagnostic_count = len(list(getattr(section, "diagnostic_rows", []) or [])) if section is not None else 1
         component_count = len(list(getattr(section, "component_rows", []) or [])) if section is not None else 0
+        component_summary = _component_summary(section)
+        ditch_summary = _ditch_review_summary(section)
+        slope_face_summary = _slope_face_review_summary(section)
+        diagnostic_summary = _diagnostic_summary(section) if section is not None else "Missing AppliedSection result."
         output.append(
             {
                 "station": float(getattr(station_row, "station", 0.0) or 0.0),
@@ -157,7 +169,11 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
                 "daylight_left_width": float(getattr(section, "daylight_left_width", 0.0) or 0.0) if section is not None else 0.0,
                 "daylight_right_width": float(getattr(section, "daylight_right_width", 0.0) or 0.0) if section is not None else 0.0,
                 "component_count": component_count,
+                "component_summary": component_summary,
+                "ditch_summary": ditch_summary,
+                "slope_face_summary": slope_face_summary,
                 "diagnostic_count": diagnostic_count,
+                "diagnostic_summary": diagnostic_summary,
                 "status": "warn" if diagnostic_count else "ok",
             }
         )
@@ -292,7 +308,7 @@ class V1AppliedSectionsTaskPanel:
         self._summary.setFixedHeight(160)
         layout.addWidget(self._summary)
 
-        self._review_table = QtWidgets.QTableWidget(0, 10)
+        self._review_table = QtWidgets.QTableWidget(0, 13)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "STA",
@@ -304,12 +320,19 @@ class V1AppliedSectionsTaskPanel:
                 "Template",
                 "L/R Width",
                 "Components",
+                "Ditch",
+                "Slope Face",
+                "Diagnostics",
                 "Status",
             ]
         )
         self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._review_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
         try:
             self._review_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
@@ -394,11 +417,15 @@ class V1AppliedSectionsTaskPanel:
                 str(row.get("assembly_id", "") or ""),
                 str(row.get("template_id", "") or ""),
                 f"{_format_float(row.get('surface_left_width', 0.0))} / {_format_float(row.get('surface_right_width', 0.0))}",
-                str(int(row.get("component_count", 0) or 0)),
+                str(row.get("component_summary", "") or str(int(row.get("component_count", 0) or 0))),
+                str(row.get("ditch_summary", "") or ""),
+                str(row.get("slope_face_summary", "") or ""),
+                str(row.get("diagnostic_summary", "") or ""),
                 _review_status_text(row),
             ]
             for col, value in enumerate(values):
                 self._review_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(str(value)))
+            self._apply_review_row_style(row_index, str(row.get("status", "") or ""))
 
     def _show_review_row(self, row_index: int) -> None:
         try:
@@ -420,6 +447,23 @@ class V1AppliedSectionsTaskPanel:
         except Exception as exc:
             self._summary.setPlainText(f"Applied Section preview was not shown:\n{exc}")
             _show_message(self.form, "Applied Sections", f"Applied Section preview was not shown.\n{exc}")
+
+    def _apply_review_row_style(self, row_index: int, status: str) -> None:
+        color = applied_section_review_row_color(status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*APPLIED_SECTION_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._review_table.columnCount())):
+                item = self._review_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
 
 
 class CmdV1AppliedSections:
@@ -469,6 +513,77 @@ def _review_status_text(row: dict[str, object]) -> str:
     if diagnostics:
         return f"WARN ({diagnostics})"
     return "OK"
+
+
+def applied_section_review_row_color(status: object) -> tuple[int, int, int] | None:
+    """Return dark-theme-readable Applied Sections review-row background color."""
+
+    return APPLIED_SECTION_REVIEW_ROW_COLORS.get(str(status or "").strip())
+
+
+def _component_summary(section) -> str:
+    component_rows = list(getattr(section, "component_rows", []) or []) if section is not None else []
+    if not component_rows:
+        return ""
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for component in component_rows:
+        kind = str(getattr(component, "kind", "") or "component").strip() or "component"
+        if kind not in counts:
+            order.append(kind)
+            counts[kind] = 0
+        counts[kind] += 1
+    return ", ".join(f"{kind}:{counts[kind]}" for kind in order)
+
+
+def _ditch_review_summary(section) -> str:
+    if section is None:
+        return ""
+    component_rows = list(getattr(section, "component_rows", []) or [])
+    point_rows = list(getattr(section, "point_rows", []) or [])
+    ditch_components = [row for row in component_rows if str(getattr(row, "kind", "") or "") == "ditch"]
+    ditch_points = [row for row in point_rows if str(getattr(row, "point_role", "") or "") == "ditch_surface"]
+    if not ditch_components and not ditch_points:
+        return ""
+    parts = []
+    if ditch_components:
+        sides = sorted({str(getattr(row, "side", "") or "").strip() for row in ditch_components if str(getattr(row, "side", "") or "").strip()})
+        side_text = f" ({'/'.join(sides)})" if sides else ""
+        parts.append(f"components:{len(ditch_components)}{side_text}")
+    if ditch_points:
+        parts.append(f"points:{len(ditch_points)}")
+    return " | ".join(parts)
+
+
+def _slope_face_review_summary(section) -> str:
+    if section is None:
+        return ""
+    left_width = float(getattr(section, "daylight_left_width", 0.0) or 0.0)
+    right_width = float(getattr(section, "daylight_right_width", 0.0) or 0.0)
+    left_slope = float(getattr(section, "daylight_left_slope", 0.0) or 0.0)
+    right_slope = float(getattr(section, "daylight_right_slope", 0.0) or 0.0)
+    parts = []
+    if left_width > 0.0:
+        parts.append(f"L {_format_float(left_width)} @ {_format_float(left_slope)}")
+    if right_width > 0.0:
+        parts.append(f"R {_format_float(right_width)} @ {_format_float(right_slope)}")
+    return " / ".join(parts)
+
+
+def _diagnostic_summary(section) -> str:
+    rows = list(getattr(section, "diagnostic_rows", []) or [])
+    if not rows:
+        return ""
+    values = []
+    for row in rows[:2]:
+        severity = str(getattr(row, "severity", "") or "").strip()
+        kind = str(getattr(row, "kind", "") or "").strip()
+        message = str(getattr(row, "message", "") or "").strip()
+        label = ":".join(part for part in [severity, kind] if part)
+        values.append(f"{label} {message}".strip())
+    if len(rows) > 2:
+        values.append(f"+{len(rows) - 2} more")
+    return " | ".join(values)
 
 
 def _applied_section_preview_polylines(section, frame):
