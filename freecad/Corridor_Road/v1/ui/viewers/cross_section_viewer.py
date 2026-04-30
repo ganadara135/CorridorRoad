@@ -204,6 +204,104 @@ def show_corridor_result_object_from_preview(
     return obj
 
 
+def station_focus_point_from_preview(
+    preview: dict[str, object],
+    station_row: dict[str, object] | None = None,
+) -> tuple[float, float, float]:
+    """Return the best 3D focus point for one selected section station."""
+
+    row = dict(station_row or preview.get("station_row", {}) or {})
+    try:
+        station = float(row.get("station", 0.0) or 0.0)
+    except Exception:
+        station = 0.0
+    section = _nearest_applied_section(preview, station)
+    frame = getattr(section, "frame", None)
+    if frame is not None:
+        return (
+            float(getattr(frame, "x", 0.0) or 0.0),
+            float(getattr(frame, "y", 0.0) or 0.0),
+            float(getattr(frame, "z", 0.0) or 0.0),
+        )
+    return (
+        _safe_float(row.get("x", 0.0), 0.0),
+        _safe_float(row.get("y", 0.0), 0.0),
+        _safe_float(row.get("z", row.get("profile_elevation", 0.0)), 0.0),
+    )
+
+
+def show_station_focus_from_preview(
+    preview: dict[str, object],
+    station_row: dict[str, object] | None = None,
+    *,
+    document=None,
+    gui_module=None,
+):
+    """Create or update a 3D station focus marker, then select and fit it."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document is available for station focus.")
+    point = station_focus_point_from_preview(preview, station_row)
+    row = dict(station_row or preview.get("station_row", {}) or {})
+    label = str(row.get("label", "") or f"STA {_safe_float(row.get('station', 0.0), 0.0):.3f}")
+    marker = _create_or_update_station_focus_marker(doc, point, label)
+    _select_and_fit_object(marker, gui_module=Gui if gui_module is None else gui_module)
+    return marker
+
+
+def _nearest_applied_section(preview: dict[str, object], station: float):
+    section_set = preview.get("applied_section_set", None)
+    sections = list(getattr(section_set, "sections", []) or [])
+    if sections:
+        return min(
+            sections,
+            key=lambda section: abs(float(getattr(section, "station", 0.0) or 0.0) - float(station)),
+        )
+    return preview.get("applied_section", None)
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _create_or_update_station_focus_marker(doc, point: tuple[float, float, float], label: str):
+    try:
+        import Part
+    except Exception as exc:  # pragma: no cover - Part is provided by FreeCAD in normal use.
+        raise RuntimeError("FreeCAD Part workbench is required for station focus.") from exc
+
+    vector_type = getattr(App, "Vector", None) if App is not None else None
+    if vector_type is None:
+        raise RuntimeError("FreeCAD Vector is required for station focus.")
+    x, y, z = (float(point[0]), float(point[1]), float(point[2]))
+    size = 2.0
+    lines = [
+        Part.makeLine(vector_type(x - size, y, z), vector_type(x + size, y, z)),
+        Part.makeLine(vector_type(x, y - size, z), vector_type(x, y + size, z)),
+        Part.makeLine(vector_type(x, y, z - size), vector_type(x, y, z + size)),
+    ]
+    marker = doc.getObject("V1CrossSectionStationFocus")
+    if marker is None:
+        marker = doc.addObject("Part::Feature", "V1CrossSectionStationFocus")
+    marker.Label = f"Cross Section Focus - {label}"
+    marker.Shape = Part.makeCompound(lines)
+    try:
+        marker.ViewObject.ShapeColor = (1.0, 0.45, 0.0)
+        marker.ViewObject.LineWidth = 4.0
+        marker.ViewObject.Visibility = True
+    except Exception:
+        pass
+    try:
+        doc.recompute()
+    except Exception:
+        pass
+    return marker
+
+
 def section_geometry_rows(preview: dict[str, object]) -> list[object]:
     """Return drawable section geometry rows from a preview payload."""
 
@@ -506,7 +604,11 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
         super().__init__()
         self.rows = list(rows or [])
         self.drawing_payload = drawing_payload
+        self._view_bounds = None
+        self._last_auto_bounds = None
         self.setMinimumHeight(520)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.setMouseTracking(True)
 
     def paintEvent(self, event):  # noqa: N802 - Qt override name
         del event
@@ -522,32 +624,13 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
                 painter.drawText(rect, int(QtCore.Qt.AlignCenter), "No section geometry rows.")
                 return
 
-            plot = rect.adjusted(64, 104, -64, -142)
+            plot = self._plot_rect()
             painter.fillRect(plot, QtGui.QColor("#0c1923"))
             painter.setPen(QtGui.QPen(QtGui.QColor("#496577")))
             painter.drawRect(plot)
             self._draw_station_title(painter, rect)
 
-            x_values = [point[0] for row in drawable_rows for point in row["points"]]
-            y_values = [point[1] for row in drawable_rows for point in row["points"]]
-            x_values.extend(self._label_offsets())
-            y_values.extend(self._label_elevations())
-            x_values.extend(self._dimension_offsets())
-            y_values.extend(self._dimension_elevations())
-            x_min, x_max = min(x_values), max(x_values)
-            y_min, y_max = min(y_values), max(y_values)
-            if abs(x_max - x_min) < 1e-9:
-                x_min -= 4.0
-                x_max += 4.0
-            x_pad = max(0.5, (x_max - x_min) * 0.04)
-            x_min -= x_pad
-            x_max += x_pad
-            if abs(y_max - y_min) < 1e-9:
-                y_min -= max(1.0, (x_max - x_min) * 0.03)
-                y_max += max(1.0, (x_max - x_min) * 0.03)
-            y_pad = max(0.6, (y_max - y_min) * 0.20)
-            y_min -= y_pad
-            y_max += y_pad
+            x_min, x_max, y_min, y_max = self._current_view_bounds(drawable_rows)
 
             axis_pen = QtGui.QPen(QtGui.QColor("#6f7f8f"))
             axis_pen.setWidth(1)
@@ -574,6 +657,98 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             self._draw_overall_banner(painter, rect)
         finally:
             painter.end()
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt override name
+        delta = 0
+        try:
+            delta = int(event.angleDelta().y())
+        except Exception:
+            try:
+                delta = int(event.delta())
+            except Exception:
+                delta = 0
+        if delta == 0:
+            return
+        drawable_rows = self._drawable_rows()
+        if not drawable_rows:
+            return
+        plot = self._plot_rect()
+        point = self._event_position(event)
+        bounds = self._view_bounds or self._current_view_bounds(drawable_rows)
+        factor = 0.80 if delta > 0 else 1.25
+        self._view_bounds = self._zoom_bounds(bounds, point, plot, factor)
+        try:
+            event.accept()
+        except Exception:
+            pass
+        self.update()
+
+    def mouseDoubleClickEvent(self, event):  # noqa: N802 - Qt override name
+        del event
+        self._view_bounds = None
+        self.update()
+
+    def _plot_rect(self):
+        return self.rect().adjusted(64, 104, -64, -142)
+
+    def _current_view_bounds(self, drawable_rows: list[dict[str, object]]) -> tuple[float, float, float, float]:
+        auto_bounds = self._auto_view_bounds(drawable_rows)
+        self._last_auto_bounds = auto_bounds
+        return tuple(self._view_bounds or auto_bounds)
+
+    def _auto_view_bounds(self, drawable_rows: list[dict[str, object]]) -> tuple[float, float, float, float]:
+        x_values = [point[0] for row in drawable_rows for point in row["points"]]
+        y_values = [point[1] for row in drawable_rows for point in row["points"]]
+        x_values.extend(self._label_offsets())
+        y_values.extend(self._label_elevations())
+        x_values.extend(self._dimension_offsets())
+        y_values.extend(self._dimension_elevations())
+        x_min, x_max = min(x_values), max(x_values)
+        y_min, y_max = min(y_values), max(y_values)
+        if abs(x_max - x_min) < 1e-9:
+            x_min -= 4.0
+            x_max += 4.0
+        x_pad = max(0.5, (x_max - x_min) * 0.04)
+        x_min -= x_pad
+        x_max += x_pad
+        if abs(y_max - y_min) < 1e-9:
+            y_min -= max(1.0, (x_max - x_min) * 0.03)
+            y_max += max(1.0, (x_max - x_min) * 0.03)
+        y_pad = max(0.6, (y_max - y_min) * 0.20)
+        y_min -= y_pad
+        y_max += y_pad
+        return float(x_min), float(x_max), float(y_min), float(y_max)
+
+    @staticmethod
+    def _event_position(event):
+        try:
+            return event.position()
+        except Exception:
+            return event.pos()
+
+    @staticmethod
+    def _zoom_bounds(bounds, point, plot, factor: float) -> tuple[float, float, float, float]:
+        x_min, x_max, y_min, y_max = [float(value) for value in bounds]
+        width = max(1.0e-9, x_max - x_min)
+        height = max(1.0e-9, y_max - y_min)
+        plot_width = max(1.0, float(plot.width()))
+        plot_height = max(1.0, float(plot.height()))
+        screen_x = min(max(float(point.x()), float(plot.left())), float(plot.right()))
+        screen_y = min(max(float(point.y()), float(plot.top())), float(plot.bottom()))
+        ratio_x = (screen_x - float(plot.left())) / plot_width
+        ratio_y = (float(plot.bottom()) - screen_y) / plot_height
+        data_x = x_min + ratio_x * width
+        data_y = y_min + ratio_y * height
+        next_width = max(1.0e-6, width * max(0.05, float(factor)))
+        next_height = max(1.0e-6, height * max(0.05, float(factor)))
+        next_x_min = data_x - ratio_x * next_width
+        next_y_min = data_y - ratio_y * next_height
+        return (
+            next_x_min,
+            next_x_min + next_width,
+            next_y_min,
+            next_y_min + next_height,
+        )
 
     def _drawable_rows(self) -> list[dict[str, object]]:
         drawing_rows = self._drawing_geometry_rows()
@@ -1171,7 +1346,7 @@ class CrossSectionViewerTaskPanel:
         next_button = QtWidgets.QPushButton("Next")
         next_button.clicked.connect(lambda: self._open_adjacent_station(1))
         station_button_row.addWidget(next_button)
-        fit_button = QtWidgets.QPushButton("Fit Drawing")
+        fit_button = QtWidgets.QPushButton("Fit Station")
         fit_button.clicked.connect(self._fit_drawing_preview)
         station_button_row.addWidget(fit_button)
         station_button_row.addStretch(1)
@@ -1519,13 +1694,16 @@ class CrossSectionViewerTaskPanel:
         self._open_station_row(rows[target_index])
 
     def _fit_drawing_preview(self) -> None:
-        widget = getattr(self, "_drawing_preview_widget", None)
-        if widget is not None:
-            try:
-                widget.update()
-            except RuntimeError:
-                pass
-        self._set_status_safely("Drawing preview fit refreshed.", ok=True)
+        row = self._selected_station_row()
+        if row is None:
+            self._set_status_safely("No station row is available for 3D focus.", ok=False)
+            return
+        try:
+            marker = show_station_focus_from_preview(self.preview, row)
+            label = str(getattr(marker, "Label", "") or getattr(marker, "Name", "") or "")
+            self._set_status_safely(f"Focused station in 3D View: {label}", ok=True)
+        except Exception as exc:
+            self._set_status_safely(f"Station was not shown in 3D View: {exc}", ok=False)
 
     def _open_station_row(self, row: dict[str, object] | None) -> None:
         if row is None:

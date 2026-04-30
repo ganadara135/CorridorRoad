@@ -84,10 +84,10 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 
 ## 6. Common Focus Rules
 
-- [ ] the displayed focus station matches the actual selected station
-- [ ] the focused row/table emphasis matches the focus station
+- [x] the displayed focus station matches the actual selected station
+- [x] the focused row/table emphasis matches the focus station
 - [ ] no silent station drift happened during viewer roundtrip
-- [ ] no wrong source object was opened during handoff
+- [x] no wrong source object was opened during handoff
 
 ## 7. Promotion Signal
 

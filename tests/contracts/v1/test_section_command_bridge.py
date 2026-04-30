@@ -9,6 +9,7 @@ from freecad.Corridor_Road.v1.models.result import TINSurface
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
+    AppliedSectionFrame,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionSet,
@@ -37,9 +38,12 @@ from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_handoff_target_rows,
     corridor_result_object_name_for_row,
     CrossSectionViewerTaskPanel,
+    _SectionGeometryPreviewWidget,
     plan_cross_section_text_layout,
     section_geometry_rows,
     show_corridor_result_object_from_preview,
+    show_station_focus_from_preview,
+    station_focus_point_from_preview,
 )
 
 
@@ -69,6 +73,44 @@ class _FakeView:
 
     def fitSelection(self) -> None:
         self.fit_selection = True
+
+
+class _FakePoint:
+    def __init__(self, x: float, y: float) -> None:
+        self._x = float(x)
+        self._y = float(y)
+
+    def x(self) -> float:
+        return self._x
+
+    def y(self) -> float:
+        return self._y
+
+
+class _FakeRect:
+    def __init__(self, left: float, top: float, width: float, height: float) -> None:
+        self._left = float(left)
+        self._top = float(top)
+        self._width = float(width)
+        self._height = float(height)
+
+    def left(self) -> float:
+        return self._left
+
+    def right(self) -> float:
+        return self._left + self._width
+
+    def top(self) -> float:
+        return self._top
+
+    def bottom(self) -> float:
+        return self._top + self._height
+
+    def width(self) -> float:
+        return self._width
+
+    def height(self) -> float:
+        return self._height
 
 
 class _FakeGui:
@@ -254,6 +296,87 @@ def test_cross_section_viewer_navigation_uses_station_rows_only() -> None:
     assert len(rows) == 4
     assert panel._current_station_index() == 1
     assert rows[1]["is_current"] is True
+
+
+def test_station_focus_uses_selected_applied_section_frame() -> None:
+    preview = {
+        "station_row": {"station": 20.0, "label": "STA 20.000"},
+        "applied_section_set": AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:focus",
+            station_rows=[
+                AppliedSectionStationRow("station:0", 0.0, "section:0"),
+                AppliedSectionStationRow("station:20", 20.0, "section:20"),
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:0",
+                    station=0.0,
+                    frame=AppliedSectionFrame(station=0.0, x=100.0, y=200.0, z=10.0),
+                ),
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:20",
+                    station=20.0,
+                    frame=AppliedSectionFrame(station=20.0, x=120.0, y=205.0, z=11.5),
+                ),
+            ],
+        ),
+    }
+
+    assert station_focus_point_from_preview(preview, {"station": 20.0}) == (120.0, 205.0, 11.5)
+
+
+def test_show_station_focus_creates_marker_and_fits_selection() -> None:
+    doc = App.newDocument("V1SectionViewerStationFocusTest")
+    gui = _FakeGui()
+    try:
+        preview = {
+            "station_row": {"station": 20.0, "label": "STA 20.000"},
+            "applied_section_set": AppliedSectionSet(
+                schema_version=1,
+                project_id="project:test",
+                applied_section_set_id="sections:focus",
+                station_rows=[AppliedSectionStationRow("station:20", 20.0, "section:20")],
+                sections=[
+                    AppliedSection(
+                        schema_version=1,
+                        project_id="project:test",
+                        applied_section_id="section:20",
+                        station=20.0,
+                        frame=AppliedSectionFrame(station=20.0, x=120.0, y=205.0, z=11.5),
+                    )
+                ],
+            ),
+        }
+
+        marker = show_station_focus_from_preview(
+            preview,
+            {"station": 20.0, "label": "STA 20.000"},
+            document=doc,
+            gui_module=gui,
+        )
+
+        assert marker.Name == "V1CrossSectionStationFocus"
+        assert "STA 20.000" in marker.Label
+        assert gui.Selection.selected == [marker]
+        assert gui.ActiveDocument.ActiveView.fit_selection is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_section_preview_zoom_bounds_keep_cursor_data_point_stable() -> None:
+    bounds = (0.0, 100.0, 0.0, 50.0)
+    plot = _FakeRect(10.0, 20.0, 200.0, 100.0)
+    point = _FakePoint(60.0, 70.0)
+
+    zoomed = _SectionGeometryPreviewWidget._zoom_bounds(bounds, point, plot, 0.5)
+
+    assert [round(value, 6) for value in zoomed] == [12.5, 62.5, 12.5, 37.5]
 
 
 def test_show_v1_section_preview_retargets_drawing_payload_from_station_row() -> None:
