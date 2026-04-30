@@ -29,6 +29,7 @@ class SectionComponentRow:
     component_id: str
     kind: str
     template_ref: str = ""
+    assembly_ref: str = ""
     region_ref: str = ""
     notes: str = ""
 

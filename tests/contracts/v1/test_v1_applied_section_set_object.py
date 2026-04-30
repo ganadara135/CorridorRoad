@@ -54,6 +54,10 @@ def _sample_set() -> AppliedSectionSet:
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
+                active_structure_ids=["structure:bridge-01"],
+                active_structure_rule_ids=["rule:bridge-section"],
+                active_structure_influence_zone_ids=["zone:bridge-01"],
+                structure_diagnostic_rows=["info|structure|section:1|Structure context active."],
                 point_rows=[
                     AppliedSectionPoint("fg:right", 100.0, 195.5, 9.9, "fg_surface", -4.5),
                     AppliedSectionPoint("fg:center", 100.0, 200.0, 10.0, "fg_surface", 0.0),
@@ -114,8 +118,13 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.DaylightLeftSlopes) == [-0.5, -0.5]
         assert list(obj.DaylightRightSlopes) == [-0.4, -0.4]
         assert len(list(obj.PointRows)) == 6
+        assert len(list(obj.ComponentRows)) == 2
         assert list(obj.RegionIds) == ["region:main", "region:main"]
         assert list(obj.AssemblyIds) == ["assembly:basic-road", "assembly:basic-road"]
+        assert list(obj.ActiveStructureRows) == ["section:1|structure:bridge-01"]
+        assert list(obj.ActiveStructureRuleRows) == ["section:1|rule:bridge-section"]
+        assert list(obj.ActiveStructureInfluenceZoneRows) == ["section:1|zone:bridge-01"]
+        assert list(obj.StructureDiagnosticRows) == ["section:1|info\\pstructure\\psection:1\\pStructure context active."]
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)
@@ -142,7 +151,13 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [section.subgrade_depth for section in model.sections] == [0.25, 0.20]
         assert [section.daylight_left_width for section in model.sections] == [3.0, 3.5]
         assert [section.daylight_right_width for section in model.sections] == [2.5, 2.0]
+        assert [section.component_rows[0].component_id for section in model.sections] == ["lane-1", "lane-1"]
+        assert [section.component_rows[0].kind for section in model.sections] == ["lane", "lane"]
         assert [len(section.point_rows) for section in model.sections] == [3, 3]
+        assert model.sections[0].active_structure_ids == ["structure:bridge-01"]
+        assert model.sections[0].active_structure_rule_ids == ["rule:bridge-section"]
+        assert model.sections[0].active_structure_influence_zone_ids == ["zone:bridge-01"]
+        assert model.sections[0].structure_diagnostic_rows == ["info|structure|section:1|Structure context active."]
         assert model.sections[0].point_rows[0].point_role == "fg_surface"
         assert model.sections[0].point_rows[0].lateral_offset == -4.5
         assert find_v1_applied_section_set(doc) == obj

@@ -27,6 +27,7 @@ from ..objects.obj_region import (
     to_region_model,
 )
 from ..objects.obj_stationing import find_v1_stationing
+from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.region_resolution_service import RegionValidationService
 
 
@@ -306,6 +307,7 @@ class V1RegionEditorTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.region_obj = find_v1_region_model(self.document)
         self._assembly_refs = assembly_model_ids(self.document)
+        self._structure_refs = structure_model_ids(self.document)
         self.form = self._build_ui()
         self._load_existing_rows()
 
@@ -359,7 +361,7 @@ class V1RegionEditorTaskPanel:
 
         self._table = QtWidgets.QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
-            ["Start STA", "End STA", "Primary Kind", "Layers", "Assembly", "Structures", "Drainage", "Priority", "Notes"]
+            ["Start STA", "End STA", "Primary Kind", "Layers", "Assembly", "Structure", "Drainage", "Priority", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -452,7 +454,7 @@ class V1RegionEditorTaskPanel:
             row.primary_kind,
             _join_refs(row.applied_layers),
             row.assembly_ref,
-            _join_refs(row.structure_refs),
+            str(getattr(row, "structure_ref", "") or ""),
             _join_refs(row.drainage_refs),
             str(int(row.priority)),
             row.notes,
@@ -469,6 +471,13 @@ class V1RegionEditorTaskPanel:
                 combo.setEditable(True)
                 combo.addItem("")
                 combo.addItems(self._assembly_refs)
+                combo.setCurrentText(str(value or ""))
+                self._table.setCellWidget(index, col, combo)
+            elif col == 5:
+                combo = QtWidgets.QComboBox()
+                combo.setEditable(True)
+                combo.addItem("")
+                combo.addItems(self._structure_refs)
                 combo.setCurrentText(str(value or ""))
                 self._table.setCellWidget(index, col, combo)
             else:
@@ -497,21 +506,29 @@ class V1RegionEditorTaskPanel:
     def _validate(self) -> None:
         try:
             model = self._model_from_table()
-            result = RegionValidationService().validate(model)
-            self._set_status(_format_validation_result(result, model, self._assembly_refs))
+            result = RegionValidationService().validate(
+                model,
+                known_assembly_refs=self._assembly_refs,
+                known_structure_refs=self._structure_refs,
+            )
+            self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs))
         except Exception as exc:
             self._set_status(f"Region validation failed:\n{exc}")
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
             model = self._model_from_table()
-            result = RegionValidationService().validate(model)
+            result = RegionValidationService().validate(
+                model,
+                known_assembly_refs=self._assembly_refs,
+                known_structure_refs=self._structure_refs,
+            )
             if result.status == "error":
-                self._set_status(_format_validation_result(result, model, self._assembly_refs))
+                self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs))
                 _show_message(self.form, "Regions", "Regions were not applied because validation has errors.")
                 return False
             self.region_obj = apply_v1_region_model(document=self.document, region_model=model)
-            self._set_status(_format_validation_result(result, model, self._assembly_refs) + f"\n\nApplied to: {self.region_obj.Label}")
+            self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs) + f"\n\nApplied to: {self.region_obj.Label}")
             _show_message(self.form, "Regions", f"Regions have been applied.\nRows: {len(model.region_rows)}")
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -541,7 +558,7 @@ class V1RegionEditorTaskPanel:
             primary_kind = _item_text(self._table, row_index, 2) or "normal_road"
             layers = _split_refs(_item_text(self._table, row_index, 3))
             assembly_ref = _item_text(self._table, row_index, 4)
-            structure_refs = _split_refs(_item_text(self._table, row_index, 5))
+            structure_ref = _item_text(self._table, row_index, 5)
             drainage_refs = _split_refs(_item_text(self._table, row_index, 6))
             priority = int(_required_float(_item_text(self._table, row_index, 7) or "10", f"Row {row_index + 1} priority"))
             notes = _item_text(self._table, row_index, 8)
@@ -554,7 +571,7 @@ class V1RegionEditorTaskPanel:
                     station_start=station_start,
                     station_end=station_end,
                     assembly_ref=assembly_ref,
-                    structure_refs=structure_refs,
+                    structure_ref=structure_ref,
                     drainage_refs=drainage_refs,
                     priority=priority,
                     notes=notes,
@@ -607,13 +624,41 @@ def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs:
     """Return Region editor warnings for Assembly refs that do not exist yet."""
 
     known = {str(value).strip() for value in list(assembly_refs or []) if str(value).strip()}
-    if not known:
-        return []
     warnings: list[str] = []
     for row in list(getattr(region_model, "region_rows", []) or []):
         assembly_ref = str(getattr(row, "assembly_ref", "") or "").strip()
         if assembly_ref and assembly_ref not in known:
             warnings.append(f"WARNING: {row.region_id} references missing assembly_ref {assembly_ref}.")
+    return warnings
+
+
+def structure_model_ids(document) -> list[str]:
+    """Return v1 Structure ids available for Region structure_ref selection."""
+
+    structure_obj = find_v1_structure_model(document)
+    model = to_structure_model(structure_obj)
+    if model is None:
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for row in list(getattr(model, "structure_rows", []) or []):
+        structure_id = str(getattr(row, "structure_id", "") or "").strip()
+        if not structure_id or structure_id in seen:
+            continue
+        seen.add(structure_id)
+        output.append(structure_id)
+    return output
+
+
+def region_structure_reference_warnings(region_model: RegionModel, structure_refs: list[str]) -> list[str]:
+    """Return Region editor warnings for Structure refs that do not exist yet."""
+
+    known = {str(value).strip() for value in list(structure_refs or []) if str(value).strip()}
+    warnings: list[str] = []
+    for row in list(getattr(region_model, "region_rows", []) or []):
+        structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
+        if structure_ref and structure_ref not in known:
+            warnings.append(f"WARNING: {row.region_id} references missing structure_ref {structure_ref}.")
     return warnings
 
 
@@ -647,7 +692,7 @@ def _preset_region_rows(
                 station_end=end_sta,
                 assembly_ref=str(spec.get("assembly_ref", "") or assembly_ref or ""),
                 template_ref=str(spec.get("template_ref", "") or template_ref or ""),
-                structure_refs=list(spec.get("structures", []) or []),
+                structure_ref=_first_ref(spec.get("structures", []) or []),
                 drainage_refs=list(spec.get("drainage", []) or []),
                 priority=int(spec.get("priority", 10) or 10),
                 notes=str(spec.get("notes", "") or ""),
@@ -656,7 +701,13 @@ def _preset_region_rows(
     return rows
 
 
-def _format_validation_result(result, region_model: RegionModel | None = None, assembly_refs: list[str] | None = None) -> str:
+def _format_validation_result(
+    result,
+    region_model: RegionModel | None = None,
+    assembly_refs: list[str] | None = None,
+    structure_refs: list[str] | None = None,
+) -> str:
+    del region_model, assembly_refs, structure_refs
     lines = [f"Validation status: {getattr(result, 'status', '') or 'unknown'}"]
     diagnostics = list(getattr(result, "diagnostic_rows", []) or [])
     if not diagnostics:
@@ -665,11 +716,6 @@ def _format_validation_result(result, region_model: RegionModel | None = None, a
         lines.append("Diagnostics:")
         for row in diagnostics:
             lines.append(f"- {row.severity}: {row.kind}: {row.message}")
-    if region_model is not None:
-        warnings = region_assembly_reference_warnings(region_model, list(assembly_refs or []))
-        if warnings:
-            lines.append("Assembly reference checks:")
-            lines.extend(f"- {warning}" for warning in warnings)
     return "\n".join(lines)
 
 
@@ -694,6 +740,14 @@ def _split_refs(value: object) -> list[str]:
 
 def _join_refs(values) -> str:
     return ",".join(str(value).strip() for value in list(values or []) if str(value).strip())
+
+
+def _first_ref(values) -> str:
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _format_float(value: float) -> str:

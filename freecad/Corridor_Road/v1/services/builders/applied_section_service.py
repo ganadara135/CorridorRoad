@@ -12,9 +12,15 @@ from ...models.result.applied_section import (
     AppliedSectionPoint,
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
+from ...models.result.tin_surface import TINSurface
 from ...common.diagnostics import DiagnosticMessage
 from ...models.source.alignment_model import AlignmentModel
-from ...models.source.assembly_model import AssemblyModel, SectionTemplate
+from ...models.source.assembly_model import (
+    AssemblyModel,
+    SectionTemplate,
+    assembly_bench_validation_messages,
+    normalize_bench_rows,
+)
 from ...models.source.override_model import OverrideModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
@@ -34,6 +40,7 @@ from ...services.evaluation.region_resolution_service import (
 from ...services.evaluation.structure_interaction_service import (
     StructureInteractionService,
 )
+from ...services.evaluation.tin_sampling_service import TinSamplingService
 
 
 @dataclass(frozen=True)
@@ -51,6 +58,7 @@ class AppliedSectionBuildRequest:
     applied_section_id: str
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
+    existing_ground_surface: TINSurface | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +76,18 @@ class AppliedSectionSetBuildRequest:
     applied_section_set_id: str
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
+    existing_ground_surface: TINSurface | None = None
+
+
+@dataclass(frozen=True)
+class _BenchEvaluation:
+    component: object
+    side_label: str
+    edge_offset: float
+    edge_z: float
+    direction: float
+    segments: list[dict[str, object]]
+    diagnostics: list[DiagnosticMessage] = field(default_factory=list)
 
 
 class AppliedSectionService:
@@ -81,12 +101,14 @@ class AppliedSectionService:
         region_service: RegionResolutionService | None = None,
         override_service: OverrideResolutionService | None = None,
         structure_service: StructureInteractionService | None = None,
+        tin_sampling_service: TinSamplingService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
         self.region_service = region_service or RegionResolutionService()
         self.override_service = override_service or OverrideResolutionService()
         self.structure_service = structure_service or StructureInteractionService()
+        self.tin_sampling_service = tin_sampling_service or TinSamplingService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -116,6 +138,7 @@ class AppliedSectionService:
         structure_result = self.structure_service.resolve_station(
             request.structure_model,
             request.station,
+            active_structure_ref=region_context.structure_ref,
         ) if request.structure_model is not None else None
 
         template_id = self._resolve_template_id(
@@ -139,28 +162,51 @@ class AppliedSectionService:
             alignment_result=alignment_result,
             profile_result=profile_result,
         )
+        active_structure_ids = list(getattr(structure_result, "active_structure_ids", []) or []) if structure_result is not None else []
+        active_rule_ids = list(getattr(structure_result, "active_rule_ids", []) or []) if structure_result is not None else []
+        active_influence_zone_ids = list(getattr(structure_result, "active_influence_zone_ids", []) or []) if structure_result is not None else []
+        structure_diagnostics = _structure_context_diagnostics(
+            station=request.station,
+            active_structure_ids=active_structure_ids,
+            active_rule_ids=active_rule_ids,
+            active_influence_zone_ids=active_influence_zone_ids,
+        )
+        left_width, right_width = self._surface_widths(template)
+        subgrade_depth = self._subgrade_depth(template)
+        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
+        fg_points = _surface_section_offsets(template, frame=frame)
+        bench_evaluations = _bench_evaluations(
+            template,
+            frame=frame,
+            fg_points=fg_points,
+            surface_left_width=left_width,
+            surface_right_width=right_width,
+            existing_ground_surface=request.existing_ground_surface,
+            sampling_service=self.tin_sampling_service,
+        )
+        diagnostics.extend(_bench_evaluation_diagnostics(bench_evaluations))
         component_rows = self._build_component_rows(
             template,
             region_id=region_context.region_id,
             override_ids=override_result.active_override_ids,
             structure_ids=_unique_refs(
-                list(region_context.structure_refs or [])
+                _region_structure_refs(region_context)
                 + (
                     structure_result.active_structure_ids
                     if structure_result is not None
                     else []
                 )
             ),
+            bench_evaluations=bench_evaluations,
         )
-        left_width, right_width = self._surface_widths(template)
-        subgrade_depth = self._subgrade_depth(template)
-        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
         point_rows = self._build_point_rows(
             template,
             frame=frame,
+            fg_points=fg_points,
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
+            bench_evaluations=bench_evaluations,
         )
 
         return AppliedSection(
@@ -184,6 +230,10 @@ class AppliedSectionService:
             daylight_left_slope=daylight_left_slope,
             daylight_right_slope=daylight_right_slope,
             point_rows=point_rows,
+            active_structure_ids=active_structure_ids,
+            active_structure_rule_ids=active_rule_ids,
+            active_structure_influence_zone_ids=active_influence_zone_ids,
+            structure_diagnostic_rows=structure_diagnostics,
             label=f"STA {request.station:g}",
             source_refs=[
                 ref
@@ -317,6 +367,7 @@ class AppliedSectionService:
             )
         if template is not None:
             diagnostics.extend(_ditch_shape_diagnostics(template))
+            diagnostics.extend(_bench_diagnostics(template))
         return diagnostics
 
     @staticmethod
@@ -326,11 +377,12 @@ class AppliedSectionService:
         region_id: str,
         override_ids: list[str],
         structure_ids: list[str],
+        bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionComponentRow]:
         if template is None:
             return []
 
-        return [
+        rows = [
             AppliedSectionComponentRow(
                 component_id=component.component_id,
                 kind=component.kind,
@@ -347,6 +399,16 @@ class AppliedSectionService:
             for component in template.component_rows
             if component.enabled
         ]
+        rows.extend(
+            _bench_component_rows(
+                template,
+                region_id=region_id,
+                override_ids=override_ids,
+                structure_ids=structure_ids,
+                bench_evaluations=bench_evaluations,
+            )
+        )
+        return rows
 
     @staticmethod
     def _surface_widths(template: SectionTemplate | None) -> tuple[float, float]:
@@ -460,13 +522,15 @@ class AppliedSectionService:
         template: SectionTemplate | None,
         *,
         frame: AppliedSectionFrame,
+        fg_points: list[tuple[float, float, float, float]] | None = None,
         surface_left_width: float,
         surface_right_width: float,
         subgrade_depth: float,
+        bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionPoint]:
         """Resolve first-slice FG, subgrade, and ditch section points from enabled components."""
 
-        fg_points = _surface_section_offsets(template, frame=frame)
+        fg_points = list(fg_points if fg_points is not None else _surface_section_offsets(template, frame=frame))
         if not fg_points:
             return []
         output: list[AppliedSectionPoint] = []
@@ -502,6 +566,16 @@ class AppliedSectionService:
                 surface_right_width=surface_right_width,
             )
         )
+        output.extend(
+            _bench_section_points(
+                template,
+                frame=frame,
+                fg_points=fg_points,
+                surface_left_width=surface_left_width,
+                surface_right_width=surface_right_width,
+                bench_evaluations=bench_evaluations,
+            )
+        )
         return output
 
 
@@ -532,6 +606,7 @@ class AppliedSectionSetService:
                     station=station,
                     applied_section_id=section_id,
                     structure_model=request.structure_model,
+                    existing_ground_surface=request.existing_ground_surface,
                 )
             )
             sections.append(section)
@@ -562,6 +637,9 @@ class AppliedSectionSetService:
                     ],
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
+                    request.structure_model.structure_model_id
+                    if request.structure_model is not None
+                    else "",
                 ]
                 if ref
             ],
@@ -578,6 +656,658 @@ def _unique_refs(values: list[str]) -> list[str]:
         seen.add(text)
         output.append(text)
     return output
+
+
+def _region_structure_refs(region_context) -> list[str]:
+    structure_ref = str(getattr(region_context, "structure_ref", "") or "").strip()
+    if structure_ref:
+        return [structure_ref]
+    return list(getattr(region_context, "structure_refs", []) or [])[:1]
+
+
+def _bench_evaluations(
+    template: SectionTemplate | None,
+    *,
+    frame: AppliedSectionFrame | None = None,
+    fg_points: list[tuple[float, float, float, float]] | None = None,
+    surface_left_width: float = 0.0,
+    surface_right_width: float = 0.0,
+    existing_ground_surface: TINSurface | None = None,
+    sampling_service: TinSamplingService | None = None,
+) -> list[_BenchEvaluation]:
+    if template is None:
+        return []
+    frame_z = float(getattr(frame, "z", 0.0) or 0.0) if frame is not None else 0.0
+    left_width = max(float(surface_left_width or 0.0), 0.0)
+    right_width = max(float(surface_right_width or 0.0), 0.0)
+    points = list(fg_points or [])
+    output: list[_BenchEvaluation] = []
+    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        if str(getattr(component, "kind", "") or "") != "side_slope":
+            continue
+        base_segments = _bench_profile_segments(component)
+        if not base_segments:
+            continue
+        side = str(getattr(component, "side", "") or "center")
+        for side_label, edge_offset, direction in _bench_side_edges(side, left_width=left_width, right_width=right_width):
+            edge_z = _edge_z_at_offset(points, edge_offset, default_z=frame_z)
+            segments, diagnostics = _clip_bench_segments_to_terrain(
+                component,
+                list(base_segments),
+                side_label=side_label,
+                edge_offset=edge_offset,
+                edge_z=edge_z,
+                direction=direction,
+                frame=frame,
+                existing_ground_surface=existing_ground_surface,
+                sampling_service=sampling_service,
+            )
+            output.append(
+                _BenchEvaluation(
+                    component=component,
+                    side_label=side_label,
+                    edge_offset=edge_offset,
+                    edge_z=edge_z,
+                    direction=direction,
+                    segments=segments,
+                    diagnostics=diagnostics,
+                )
+            )
+    return output
+
+
+def _bench_side_edges(side: str, *, left_width: float, right_width: float) -> list[tuple[str, float, float]]:
+    key = str(side or "center")
+    rows: list[tuple[str, float, float]] = []
+    if key in {"left", "both", "center"}:
+        rows.append(("left", max(float(left_width or 0.0), 0.0), 1.0))
+    if key in {"right", "both", "center"}:
+        rows.append(("right", -max(float(right_width or 0.0), 0.0), -1.0))
+    return rows
+
+
+def _bench_evaluation_diagnostics(evaluations: list[_BenchEvaluation]) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    for evaluation in list(evaluations or []):
+        diagnostics.extend(list(getattr(evaluation, "diagnostics", []) or []))
+    return diagnostics
+
+
+def _bench_component_rows(
+    template: SectionTemplate,
+    *,
+    region_id: str,
+    override_ids: list[str],
+    structure_ids: list[str],
+    bench_evaluations: list[_BenchEvaluation] | None = None,
+) -> list[AppliedSectionComponentRow]:
+    rows: list[AppliedSectionComponentRow] = []
+    evaluations = list(bench_evaluations or _bench_evaluations(template))
+    for evaluation in evaluations:
+        component = evaluation.component
+        segments = list(evaluation.segments or [])
+        if not segments:
+            continue
+        side = str(getattr(evaluation, "side_label", "") or getattr(component, "side", "") or "center")
+        for index, segment in enumerate(segments, start=1):
+            kind = str(segment.get("kind", "") or "side_slope")
+            rows.append(
+                AppliedSectionComponentRow(
+                    component_id=f"{component.component_id}:{kind}:{index}",
+                    kind=kind,
+                    source_template_id=template.template_id,
+                    region_id=region_id,
+                    side=side,
+                    width=max(float(segment.get("width", 0.0) or 0.0), 0.0),
+                    slope=float(segment.get("slope", 0.0) or 0.0),
+                    material=str(getattr(component, "material", "") or ""),
+                    override_ids=list(override_ids),
+                    structure_ids=list(structure_ids),
+                )
+            )
+        rows.append(
+            AppliedSectionComponentRow(
+                component_id=f"{component.component_id}:daylight",
+                kind="daylight",
+                source_template_id=template.template_id,
+                region_id=region_id,
+                side=side,
+                width=0.0,
+                slope=0.0,
+                material=str(getattr(component, "material", "") or ""),
+                override_ids=list(override_ids),
+                structure_ids=list(structure_ids),
+            )
+        )
+    return rows
+
+
+def _bench_section_points(
+    template: SectionTemplate | None,
+    *,
+    frame: AppliedSectionFrame,
+    fg_points: list[tuple[float, float, float, float]],
+    surface_left_width: float,
+    surface_right_width: float,
+    bench_evaluations: list[_BenchEvaluation] | None = None,
+) -> list[AppliedSectionPoint]:
+    """Return evaluated side-slope and bench break points outside FG edges."""
+
+    if template is None or not fg_points:
+        return []
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    output: list[AppliedSectionPoint] = []
+    evaluations = list(
+        bench_evaluations
+        or _bench_evaluations(
+            template,
+            frame=frame,
+            fg_points=fg_points,
+            surface_left_width=surface_left_width,
+            surface_right_width=surface_right_width,
+        )
+    )
+    for evaluation in evaluations:
+        output.extend(
+            _oriented_bench_points(
+                evaluation.component,
+                evaluation.segments,
+                side_label=evaluation.side_label,
+                edge_offset=evaluation.edge_offset,
+                edge_z=evaluation.edge_z,
+                direction=evaluation.direction,
+                base_x=base_x,
+                base_y=base_y,
+                normal_x=normal_x,
+                normal_y=normal_y,
+            )
+        )
+    return output
+
+
+def _oriented_bench_points(
+    component,
+    segments: list[dict[str, object]],
+    *,
+    side_label: str,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    base_x: float,
+    base_y: float,
+    normal_x: float,
+    normal_y: float,
+) -> list[AppliedSectionPoint]:
+    output: list[AppliedSectionPoint] = []
+    offset = float(edge_offset)
+    z = float(edge_z)
+    component_id = str(getattr(component, "component_id", "") or "side_slope")
+    for index, segment in enumerate(segments, start=1):
+        width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        slope = float(segment.get("slope", 0.0) or 0.0)
+        kind = str(segment.get("kind", "") or "side_slope")
+        offset += float(direction) * width
+        z += slope * width
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"bench:{side_label}:{component_id}:{index}",
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=z,
+                point_role="bench_surface" if kind == "bench" else "side_slope_surface",
+                lateral_offset=offset,
+            )
+        )
+    if output:
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"bench:{side_label}:{component_id}:daylight",
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=z,
+                point_role="daylight_marker",
+                lateral_offset=offset,
+            )
+        )
+    return output
+
+
+def _bench_profile_segments(component) -> list[dict[str, object]]:
+    params = dict(getattr(component, "parameters", {}) or {})
+    rows = normalize_bench_rows(params.get("bench_rows", []))
+    if not rows:
+        return []
+    remaining = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+    current_slope = float(getattr(component, "slope", 0.0) or 0.0)
+    repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
+    source_rows = [rows[0]] if repeat else rows
+    segments: list[dict[str, object]] = []
+
+    def append_row(row: dict[str, object]) -> bool:
+        nonlocal remaining, current_slope
+        if remaining <= 1.0e-9:
+            return False
+        before = remaining
+        drop = max(float(row.get("drop", 0.0) or 0.0), 0.0)
+        pre_width = 0.0
+        if drop > 1.0e-9 and abs(current_slope) > 1.0e-9:
+            pre_width = min(remaining, drop / abs(current_slope))
+        if pre_width > 1.0e-9:
+            segments.append({"kind": "side_slope", "width": pre_width, "slope": current_slope})
+            remaining = max(remaining - pre_width, 0.0)
+        bench_width = min(max(float(row.get("width", 0.0) or 0.0), 0.0), remaining)
+        if bench_width > 1.0e-9:
+            segments.append({"kind": "bench", "width": bench_width, "slope": float(row.get("slope", 0.0) or 0.0)})
+            remaining = max(remaining - bench_width, 0.0)
+        next_slope = float(row.get("post_slope", current_slope) or current_slope)
+        current_slope = next_slope
+        return abs(before - remaining) > 1.0e-9
+
+    if repeat and source_rows:
+        guard = 0
+        while remaining > 1.0e-9 and guard < 512:
+            guard += 1
+            if not append_row(source_rows[0]):
+                break
+    else:
+        for row in source_rows:
+            if remaining <= 1.0e-9:
+                break
+            append_row(row)
+    if remaining > 1.0e-9:
+        segments.append({"kind": "side_slope", "width": remaining, "slope": current_slope})
+    return segments
+
+
+def _clip_bench_segments_to_terrain(
+    component,
+    segments: list[dict[str, object]],
+    *,
+    side_label: str,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    frame: AppliedSectionFrame | None,
+    existing_ground_surface: TINSurface | None,
+    sampling_service: TinSamplingService | None,
+) -> tuple[list[dict[str, object]], list[DiagnosticMessage]]:
+    params = dict(getattr(component, "parameters", {}) or {})
+    if str(params.get("daylight_mode", "") or "").strip().lower() != "terrain":
+        return segments, []
+    component_id = str(getattr(component, "component_id", "") or "side_slope")
+    notes = f"component_id={component_id}; side={side_label}"
+    if existing_ground_surface is None or frame is None:
+        return segments, [
+            DiagnosticMessage(
+                severity="warning",
+                kind="bench_daylight_fallback",
+                message=(
+                    f"side-slope component {component_id} uses terrain daylight mode, "
+                    "but no existing-ground TIN is available; Assembly side-slope width was used."
+                ),
+                notes=notes,
+            )
+        ]
+    service = sampling_service or TinSamplingService()
+    terrain_context = _bench_terrain_context(
+        component,
+        side_label=side_label,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+        frame=frame,
+        existing_ground_surface=existing_ground_surface,
+        sampling_service=service,
+    )
+    diagnostics = []
+    if terrain_context:
+        diagnostics.append(terrain_context)
+    intersection = _find_bench_tin_intersection(
+        segments,
+        side_label=side_label,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+        frame=frame,
+        surface=existing_ground_surface,
+        sampling_service=service,
+        search_step=_parameter_float(params, "daylight_search_step", 0.5),
+    )
+    if intersection is None:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="warning",
+                kind="bench_daylight_no_hit",
+                message=(
+                    f"side-slope component {component_id} did not intersect terrain within "
+                    "the evaluated bench profile; full Assembly side-slope width was used."
+                ),
+                notes=notes,
+            )
+        )
+        return segments, diagnostics
+    total_width = _segments_total_width(segments)
+    if intersection >= total_width - 1.0e-6:
+        return segments, diagnostics
+    clipped, clip_info = _clip_bench_segments(segments, intersection)
+    diagnostics.extend(
+        _bench_clip_diagnostics(
+            component,
+            side_label=side_label,
+            total_width=total_width,
+            clip_distance=intersection,
+            clip_info=clip_info,
+        )
+    )
+    return clipped, diagnostics
+
+
+def _bench_terrain_context(
+    component,
+    *,
+    side_label: str,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    frame: AppliedSectionFrame,
+    existing_ground_surface: TINSurface,
+    sampling_service: TinSamplingService,
+) -> DiagnosticMessage | None:
+    x, y, _z = _station_offset_point(frame, edge_offset, edge_z)
+    sample = sampling_service.sample_xy(surface=existing_ground_surface, x=x, y=y)
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return None
+    terrain_z = float(sample.z)
+    context = "cut" if terrain_z > float(edge_z) else "fill" if terrain_z < float(edge_z) else "balanced"
+    return DiagnosticMessage(
+        severity="info",
+        kind="bench_cut_fill_context",
+        message=(
+            f"side-slope component {getattr(component, 'component_id', '') or 'side_slope'} "
+            f"evaluated {context} terrain context on {side_label} side."
+        ),
+        notes=f"design_edge_z={float(edge_z):g}; terrain_edge_z={terrain_z:g}; direction={float(direction):g}",
+    )
+
+
+def _find_bench_tin_intersection(
+    segments: list[dict[str, object]],
+    *,
+    side_label: str,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    frame: AppliedSectionFrame,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+    search_step: float,
+    tolerance: float = 1.0e-6,
+) -> float | None:
+    del side_label
+    total_width = _segments_total_width(segments)
+    if total_width <= tolerance:
+        return None
+    step = max(float(search_step or 0.0), 0.25)
+    sample_count = max(2, int(math.ceil(total_width / step)))
+    previous_distance: float | None = None
+    previous_delta: float | None = None
+    for index in range(0, sample_count + 1):
+        distance = total_width * float(index) / float(sample_count)
+        delta = _bench_design_terrain_delta(
+            segments,
+            distance=distance,
+            edge_offset=edge_offset,
+            edge_z=edge_z,
+            direction=direction,
+            frame=frame,
+            surface=surface,
+            sampling_service=sampling_service,
+        )
+        if delta is None:
+            continue
+        if abs(delta) <= tolerance and distance > tolerance:
+            return distance
+        if previous_delta is not None and previous_distance is not None and previous_delta * delta < 0.0:
+            return _bisect_bench_intersection(
+                segments,
+                low=previous_distance,
+                high=distance,
+                edge_offset=edge_offset,
+                edge_z=edge_z,
+                direction=direction,
+                frame=frame,
+                surface=surface,
+                sampling_service=sampling_service,
+                tolerance=tolerance,
+            )
+        previous_distance = distance
+        previous_delta = delta
+    return None
+
+
+def _bisect_bench_intersection(
+    segments: list[dict[str, object]],
+    *,
+    low: float,
+    high: float,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    frame: AppliedSectionFrame,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float,
+    iterations: int = 32,
+) -> float | None:
+    low_delta = _bench_design_terrain_delta(
+        segments,
+        distance=low,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+        frame=frame,
+        surface=surface,
+        sampling_service=sampling_service,
+    )
+    if low_delta is None:
+        return None
+    for _index in range(max(1, int(iterations))):
+        mid = (float(low) + float(high)) * 0.5
+        mid_delta = _bench_design_terrain_delta(
+            segments,
+            distance=mid,
+            edge_offset=edge_offset,
+            edge_z=edge_z,
+            direction=direction,
+            frame=frame,
+            surface=surface,
+            sampling_service=sampling_service,
+        )
+        if mid_delta is None:
+            return None
+        if abs(mid_delta) <= tolerance or abs(float(high) - float(low)) <= tolerance:
+            return mid
+        if low_delta * mid_delta <= 0.0:
+            high = mid
+        else:
+            low = mid
+            low_delta = mid_delta
+    return (float(low) + float(high)) * 0.5
+
+
+def _bench_design_terrain_delta(
+    segments: list[dict[str, object]],
+    *,
+    distance: float,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    frame: AppliedSectionFrame,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+) -> float | None:
+    offset, z = _bench_profile_point_at_distance(
+        segments,
+        distance=distance,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        direction=direction,
+    )
+    x, y, _z = _station_offset_point(frame, offset, z)
+    sample = sampling_service.sample_xy(surface=surface, x=x, y=y)
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return None
+    return z - float(sample.z)
+
+
+def _bench_profile_point_at_distance(
+    segments: list[dict[str, object]],
+    *,
+    distance: float,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+) -> tuple[float, float]:
+    remaining = max(float(distance or 0.0), 0.0)
+    offset = float(edge_offset)
+    z = float(edge_z)
+    for segment in list(segments or []):
+        width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
+        slope = float(segment.get("slope", 0.0) or 0.0)
+        step = min(width, remaining)
+        offset += float(direction) * step
+        z += slope * step
+        remaining -= step
+        if remaining <= 1.0e-9:
+            break
+    return offset, z
+
+
+def _station_offset_point(frame: AppliedSectionFrame, offset: float, z: float) -> tuple[float, float, float]:
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    return base_x + normal_x * float(offset), base_y + normal_y * float(offset), float(z)
+
+
+def _clip_bench_segments(
+    segments: list[dict[str, object]],
+    clip_distance: float,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    remaining = max(float(clip_distance or 0.0), 0.0)
+    output: list[dict[str, object]] = []
+    skipped_count = 0
+    shortened_kind = ""
+    clipping_started = False
+    for segment in list(segments or []):
+        width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        if clipping_started:
+            skipped_count += 1
+            continue
+        if remaining >= width - 1.0e-9:
+            output.append(dict(segment))
+            remaining -= width
+            continue
+        if remaining > 1.0e-9:
+            clipped = dict(segment)
+            clipped["width"] = remaining
+            output.append(clipped)
+            shortened_kind = str(segment.get("kind", "") or "side_slope")
+        remaining = 0.0
+        clipping_started = True
+    return output, {"skipped_count": skipped_count, "shortened_kind": shortened_kind}
+
+
+def _bench_clip_diagnostics(
+    component,
+    *,
+    side_label: str,
+    total_width: float,
+    clip_distance: float,
+    clip_info: dict[str, object],
+) -> list[DiagnosticMessage]:
+    component_id = str(getattr(component, "component_id", "") or "side_slope")
+    diagnostics = [
+        DiagnosticMessage(
+            severity="info",
+            kind="bench_daylight_shortened",
+            message=(
+                f"side-slope component {component_id} was shortened at terrain daylight "
+                f"from {float(total_width):g} to {float(clip_distance):g}."
+            ),
+            notes=f"component_id={component_id}; side={side_label}",
+        )
+    ]
+    skipped_count = int(clip_info.get("skipped_count", 0) or 0)
+    if skipped_count > 0:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="info",
+                kind="bench_daylight_skipped",
+                message=(
+                    f"side-slope component {component_id} skipped {skipped_count} downstream "
+                    "bench/slope segment(s) after terrain daylight intersection."
+                ),
+                notes=f"component_id={component_id}; side={side_label}; shortened_kind={clip_info.get('shortened_kind', '')}",
+            )
+        )
+    return diagnostics
+
+
+def _segments_total_width(segments: list[dict[str, object]]) -> float:
+    return sum(max(float(segment.get("width", 0.0) or 0.0), 0.0) for segment in list(segments or []))
+
+
+def _bench_diagnostics(template: SectionTemplate) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    for component in list(getattr(template, "component_rows", []) or []):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        if str(getattr(component, "kind", "") or "") != "side_slope":
+            continue
+        for message in assembly_bench_validation_messages(component):
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="warning",
+                    kind="side_slope_bench_parameter",
+                    message=message,
+                    notes=f"template_id={template.template_id}",
+                )
+            )
+    return diagnostics
+
+
+def _structure_context_diagnostics(
+    *,
+    station: float,
+    active_structure_ids: list[str],
+    active_rule_ids: list[str],
+    active_influence_zone_ids: list[str],
+) -> list[str]:
+    if not active_structure_ids:
+        return []
+    diagnostics: list[str] = []
+    if not active_rule_ids:
+        diagnostics.append(
+            f"warning|structure_interaction_rule|STA {float(station):g}|Active structure context has no interaction rule ids."
+        )
+    if not active_influence_zone_ids:
+        diagnostics.append(
+            f"info|structure_influence_zone|STA {float(station):g}|Active structure context has no influence zone ids."
+        )
+    return diagnostics
 
 
 def _unique_assembly_models(values: list[AssemblyModel]) -> list[AssemblyModel]:
@@ -979,8 +1709,27 @@ def _oriented_ditch_rows(
     return rows
 
 
+def _edge_z_at_offset(
+    fg_points: list[tuple[float, float, float, float]],
+    offset: float,
+    *,
+    default_z: float,
+) -> float:
+    if not fg_points:
+        return float(default_z)
+    target = float(offset)
+    nearest = min(fg_points, key=lambda row: abs(float(row[0]) - target))
+    return float(nearest[3])
+
+
 def _component_width(component) -> float:
     return max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _parameter_float(params: dict[str, object], key: str, default: float = 0.0) -> float:

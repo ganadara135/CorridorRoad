@@ -24,7 +24,9 @@ class SectionOutputMapper:
                 component_id=row.component_id,
                 kind=row.kind,
                 template_ref=row.source_template_id,
+                assembly_ref=applied_section.assembly_id,
                 region_ref=row.region_id,
+                notes=_component_notes(row),
             )
             for index, row in enumerate(applied_section.component_rows, start=1)
         ]
@@ -81,7 +83,7 @@ class SectionOutputMapper:
         points = list(getattr(applied_section, "point_rows", []) or [])
         if len(points) < 2:
             return []
-        return [
+        rows = [
             SectionGeometryRow(
                 row_id=f"{applied_section.applied_section_id}:design-section",
                 kind="design_section",
@@ -93,6 +95,8 @@ class SectionOutputMapper:
                 source_ref=applied_section.applied_section_id,
             )
         ]
+        rows.extend(_side_slope_geometry_rows(applied_section, points))
+        return rows
 
     @staticmethod
     def _frame_summary_rows(applied_section: AppliedSection) -> list[SectionSummaryRow]:
@@ -144,3 +148,52 @@ class SectionOutputMapper:
                 ),
             ),
         ]
+
+
+def _component_notes(row) -> str:
+    kind = str(getattr(row, "kind", "") or "").strip().lower()
+    notes = []
+    if kind in {"side_slope", "bench", "daylight"}:
+        notes.append("scope=side_slope")
+    side = str(getattr(row, "side", "") or "").strip()
+    if side:
+        notes.append(f"side={side}")
+    structure_ids = list(getattr(row, "structure_ids", []) or [])
+    if structure_ids:
+        notes.append(f"structure_refs={','.join(str(value) for value in structure_ids if str(value).strip())}")
+    return "; ".join(notes)
+
+
+def _side_slope_geometry_rows(applied_section: AppliedSection, points: list[object]) -> list[SectionGeometryRow]:
+    side_points = [
+        point
+        for point in list(points or [])
+        if str(getattr(point, "point_role", "") or "") in {"side_slope_surface", "bench_surface", "daylight_marker"}
+    ]
+    if len(side_points) < 2:
+        return []
+    rows: list[SectionGeometryRow] = []
+    for role, kind, style_role in (
+        ("side_slope_surface", "side_slope_section", "side_slope"),
+        ("bench_surface", "bench_section", "side_slope_bench"),
+        ("daylight_marker", "daylight_marker", "side_slope"),
+    ):
+        role_points = sorted(
+            [point for point in side_points if str(getattr(point, "point_role", "") or "") == role],
+            key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0),
+        )
+        if len(role_points) < 1:
+            continue
+        rows.append(
+            SectionGeometryRow(
+                row_id=f"{applied_section.applied_section_id}:{kind}",
+                kind=kind,
+                x_values=[float(getattr(point, "lateral_offset", 0.0) or 0.0) for point in role_points],
+                y_values=[float(getattr(point, "z", 0.0) or 0.0) for point in role_points],
+                z_values=[float(getattr(point, "z", 0.0) or 0.0) for point in role_points],
+                closed=False,
+                style_role=style_role,
+                source_ref=applied_section.applied_section_id,
+            )
+        )
+    return rows

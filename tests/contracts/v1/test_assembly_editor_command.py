@@ -10,7 +10,10 @@ from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     _ditch_shape_diagram,
     _ditch_shape_defaults,
     _ditch_visible_field_keys,
+    _bench_component_note,
+    _merge_bench_parameters,
     _merge_ditch_parameters,
+    _side_slope_bench_preview_segments,
     _validate_assembly_model,
     assembly_preset_model_from_document,
     assembly_preset_names,
@@ -68,6 +71,11 @@ def test_assembly_presets_offer_multiple_practical_templates() -> None:
         assert ditch_components
         assert {component.parameters.get("shape") for component in ditch_components} == {"trapezoid"}
         assert ditch_components[0].parameters["bottom_width"] == 0.6
+        benched = assembly_preset_model_from_document("Benched Slope Road", doc, project=project)
+        side_slopes = [component for component in benched.template_rows[0].component_rows if component.kind == "side_slope"]
+        assert len(side_slopes) == 2
+        assert side_slopes[0].parameters["bench_mode"] == "rows"
+        assert side_slopes[0].parameters["bench_rows"][0]["width"] == 1.5
     finally:
         App.closeDocument(doc.Name)
 
@@ -108,6 +116,57 @@ def test_assembly_validation_reports_ditch_shape_parameter_warnings() -> None:
     assert "WARN: ditch component ditch-concrete uses structural material and requires wall_thickness." in messages
 
 
+def test_assembly_validation_reports_side_slope_bench_warnings() -> None:
+    model = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:bench-validation",
+        template_rows=[
+            SectionTemplate(
+                template_id="template:bench-validation",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent(
+                        "side-slope-left",
+                        "side_slope",
+                        side="left",
+                        width=0.0,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [{"drop": 2.0, "width": 1.2, "slope": -0.02, "post_slope": -0.5}],
+                            "repeat_first_bench_to_daylight": True,
+                        },
+                    )
+                ],
+            )
+        ],
+    )
+
+    messages = _validate_assembly_model(model)
+
+    assert "WARN: side_slope component side-slope-left has bench_rows but zero side-slope width." in messages
+    assert (
+        "WARN: side_slope component side-slope-left repeats bench rows to daylight without daylight mode and max width."
+        in messages
+    )
+
+
+def test_assembly_object_roundtrips_side_slope_bench_parameters() -> None:
+    doc, project = _new_project_doc()
+    try:
+        model = assembly_preset_model_from_document("Benched Slope Road", doc, project=project)
+
+        obj = apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+        roundtrip = to_assembly_model(obj)
+        side_slopes = [component for component in roundtrip.template_rows[0].component_rows if component.kind == "side_slope"]
+
+        assert side_slopes[0].parameters["bench_mode"] == "rows"
+        assert side_slopes[0].parameters["bench_rows"][0]["drop"] == 3.0
+        assert side_slopes[0].parameters["repeat_first_bench_to_daylight"] is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_ditch_parameter_editor_merge_preserves_unknown_parameters() -> None:
     merged = _merge_ditch_parameters(
         {"shape": "v", "depth": "0.2", "hydraulic_note": "keep"},
@@ -119,6 +178,41 @@ def test_ditch_parameter_editor_merge_preserves_unknown_parameters() -> None:
     assert merged["depth"] == "0.45"
     assert "top_width" not in merged
     assert merged["hydraulic_note"] == "keep"
+
+
+def test_bench_parameter_editor_merge_preserves_unknown_parameters() -> None:
+    merged = _merge_bench_parameters(
+        {"drainage_note": "keep", "bench_mode": "none"},
+        {
+            "bench_mode": "rows",
+            "bench_rows": [{"drop": "3.0", "width": "1.5", "slope": "-0.02", "post_slope": "-0.5"}],
+            "repeat_first_bench_to_daylight": True,
+            "daylight_mode": "terrain",
+            "daylight_max_width": "80.000",
+        },
+    )
+
+    assert merged["drainage_note"] == "keep"
+    assert merged["bench_mode"] == "rows"
+    assert merged["bench_rows"][0]["width"] == 1.5
+    assert merged["repeat_first_bench_to_daylight"] is True
+    assert merged["daylight_mode"] == "terrain"
+
+
+def test_bench_component_note_summarizes_rows_and_daylight_context() -> None:
+    note = _bench_component_note(
+        side="left",
+        parameters={
+            "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+            "repeat_first_bench_to_daylight": True,
+            "daylight_mode": "terrain",
+        },
+    )
+
+    assert "Left side slope bench rows=1" in note
+    assert "first_width=1.500" in note
+    assert "repeat_to_daylight=on" in note
+    assert "daylight=terrain" in note
 
 
 def test_ditch_shape_helpers_limit_visible_fields_and_defaults() -> None:
@@ -204,6 +298,38 @@ def test_assembly_preview_points_follow_shape_aware_ditch_parameters() -> None:
         round(float(left.x), 6) == round(float(right.x), 6)
         and abs(float(left.z) - float(right.z)) > 0.5
         for left, right in zip(points, points[1:])
+    )
+
+
+def test_assembly_preview_points_show_side_slope_bench_segments() -> None:
+    component = TemplateComponent(
+        "side-slope-right",
+        "side_slope",
+        side="right",
+        width=10.0,
+        slope=-0.5,
+        parameters={
+            "bench_rows": [{"drop": 3.0, "width": 2.0, "slope": -0.02, "post_slope": -0.5}],
+        },
+    )
+    template = SectionTemplate(
+        template_id="template:bench-preview",
+        template_kind="roadway",
+        component_rows=[
+            TemplateComponent("lane-right", "lane", side="right", width=3.5),
+            component,
+        ],
+    )
+
+    segments = _side_slope_bench_preview_segments(component)
+    points = _assembly_preview_points(template)
+
+    assert [segment["kind"] for segment in segments] == ["side_slope", "bench", "side_slope"]
+    assert any(
+        abs(abs(float(right.x) - float(left.x)) - 2.0) < 1.0e-6
+        and abs((float(right.z) - float(left.z)) / (float(right.x) - float(left.x)) + 0.02) < 1.0e-6
+        for left, right in zip(points, points[1:])
+        if abs(float(right.x) - float(left.x)) > 1.0e-9
     )
 
 

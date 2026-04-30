@@ -12,8 +12,10 @@ Baseline document:
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
 - [V1_ASSEMBLY_MODEL.md](./V1_ASSEMBLY_MODEL.md)
+- [V1_ASSEMBLY_SLOPE_BENCH_PLAN.md](./V1_ASSEMBLY_SLOPE_BENCH_PLAN.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
 - [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
+- [V1_REGION_APPLICATION_FLOW_PLAN.md](./V1_REGION_APPLICATION_FLOW_PLAN.md)
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md)
 - [V1_DITCH_SHAPE_CONTRACT.md](./V1_DITCH_SHAPE_CONTRACT.md)
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md)
@@ -87,10 +89,13 @@ Preferred review workflow:
 - treat external TIN and Alignment CSV coordinates through `V1_COORDINATE_IMPORT_POLICY.md`: World-first CSV input converts to Local model coordinates, Local-first input is stored directly, and CSV export should expose Project default / World / Local coordinate choices where practical
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
-- model corridor ranges through `Region` as `primary_kind + applied_layers + domain references`, so bridge, culvert, drainage, ditch, ramp, and intersection influences can overlap without becoming hidden geometry edits
+- model corridor ranges through `Region` as `primary_kind + applied_layers + singular Assembly/Structure refs + domain context`, so each range keeps one clear section owner and one clear structure owner
 - use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
+- use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
+- use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
+- check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available

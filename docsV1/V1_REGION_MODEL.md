@@ -92,6 +92,12 @@ Regions are the station-range organizer for corridor behavior.
 
 They may reference structures, drainage elements, ramp contexts, or intersection contexts, but they do not own those domain meanings.
 
+For the planned Region application workflow, use `V1_REGION_APPLICATION_FLOW_PLAN.md`.
+
+That plan keeps the authoring order as `Assembly -> Structure -> Region`.
+
+It treats each `RegionRow` as the station-range application layer for one Assembly and zero or one Structure.
+
 The ownership split is:
 
 - `RegionModel` owns where a corridor policy interval applies
@@ -104,7 +110,7 @@ A region may therefore say:
 
 - this station range is primarily a bridge region
 - this same range also has ditch and drainage layers
-- this range references one bridge structure and two drainage elements
+- this range references one bridge structure and related drainage elements
 
 But the region must not become the hidden source model for the bridge or drainage design itself.
 
@@ -202,7 +208,8 @@ Each `RegionRow` represents one station-bounded policy zone.
 - `station_start`
 - `station_end`
 - `assembly_ref`
-- `structure_refs`
+- `structure_ref`
+- compatibility `structure_refs`
 - `drainage_refs`
 - optional `ramp_ref`
 - optional `intersection_ref`
@@ -231,6 +238,12 @@ Each `RegionRow` represents one station-bounded policy zone.
 
 Region rows must be defined in station space, not only by visual extents or 3D shapes.
 
+One region row should reference one Assembly and zero or one Structure.
+
+If more than one Structure is needed over the same apparent station range, use separate Region rows so each row has one clear structure owner.
+
+`structure_refs` may remain in compatibility storage, but more than one active structure reference should produce a diagnostic.
+
 ### 11.5 Primary Kind and Applied Layers
 
 One region should have one `primary_kind`.
@@ -249,6 +262,14 @@ Examples:
 - `drainage`
 
 Other overlapping items should be represented as `applied_layers` and explicit references.
+
+The following primary kinds require a `structure_ref` diagnostic if the reference is empty:
+
+- `bridge`
+- `culvert`
+- `structure_influence`
+
+This is a validation rule for source completeness. It does not make Region own Structure geometry.
 
 Examples:
 
@@ -272,6 +293,7 @@ Recommended source shape:
   "station_start": 120.0,
   "station_end": 180.0,
   "assembly_ref": "assembly:bridge-deck",
+  "structure_ref": "structure:bridge-01",
   "structure_refs": ["structure:bridge-01"],
   "drainage_refs": ["drainage:deck-drain-left", "drainage:side-ditch-right"],
   "policy_set_ref": "region-policy:bridge-01",
@@ -283,7 +305,7 @@ Recommended source shape:
 
 Viewer display may compress this into one row:
 
-`STA 120.000 - 180.000 | bridge | Assembly: bridge-deck | Layers: ditch, drainage | Structures: bridge-01`
+`STA 120.000 - 180.000 | bridge | Assembly: bridge-deck | Layers: ditch, drainage | Structure: bridge-01`
 
 ### 11.7 Rule for Overlap
 
@@ -494,7 +516,8 @@ This result object captures resolved region context for downstream consumers.
 - `active_template_ref`
 - `active_assembly_ref`
 - `active_transition_ref`
-- `resolved_structure_refs`
+- `resolved_structure_ref`
+- compatibility `resolved_structure_refs`
 - `resolved_drainage_refs`
 - `resolved_ramp_ref`
 - `resolved_intersection_ref`

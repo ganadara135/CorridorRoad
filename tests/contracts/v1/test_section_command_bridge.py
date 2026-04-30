@@ -642,6 +642,7 @@ def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
                 station=20.0,
                 template_id="template:basic-road",
                 region_id="region:mainline",
+                active_structure_ids=["structure:bridge-01"],
                 component_rows=[
                     AppliedSectionComponentRow(
                         component_id="lane-left",
@@ -702,7 +703,11 @@ def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
 
         assert preview["source_inspector"]["structure_status"] == "resolved"
         assert preview["source_inspector"]["structure_label"] == "Structures Real Document"
+        assert preview["source_inspector"]["structure_source_ref"] == "structure:bridge-01"
+        assert preview["source_inspector"]["owner_structure"] == "structure:bridge-01"
         assert "structure" not in preview["source_inspector"]["unresolved_fields"]
+        assert preview["structure_rows"][0]["label"] == "Active Structure"
+        assert preview["structure_rows"][0]["value"] == "structure:bridge-01"
         assert any(row["kind"] == "structure_model" for row in preview["structure_rows"])
     finally:
         App.closeDocument(doc.Name)
@@ -1023,7 +1028,7 @@ def test_build_handoff_target_rows_marks_ready_targets() -> None:
     assert rows[0][1] == "ready"
     assert "Assembly A" in rows[0][2]
     assert "STA 0.000" in rows[0][3]
-    assert rows[2][0] == "Structures"
+    assert rows[2][0] == "Structure"
     assert rows[2][1] == "ready"
     assert "Structure Model A" in rows[2][2]
 

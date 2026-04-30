@@ -16,6 +16,12 @@ from .profile_output import ProfileOutput
 from .quantity_output import QuantityOutput
 from .section_output import SectionOutput
 from .surface_output import SurfaceOutput
+from .structure_solid_output import (
+    StructureExportDiagnosticRow,
+    StructureSolidOutput,
+    StructureSolidOutputRow,
+    StructureSolidSegmentRow,
+)
 
 __all__ = [
     "ContextReviewOutput",
@@ -33,4 +39,8 @@ __all__ = [
     "QuantityOutput",
     "SectionOutput",
     "SurfaceOutput",
+    "StructureExportDiagnosticRow",
+    "StructureSolidOutput",
+    "StructureSolidOutputRow",
+    "StructureSolidSegmentRow",
 ]

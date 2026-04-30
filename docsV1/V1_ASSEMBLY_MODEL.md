@@ -107,6 +107,38 @@ Lined materials expose `lining_thickness`.
 
 Structural materials such as concrete or precast require `wall_thickness` for U, L, and rectangular ditches.
 
+For `kind = "side_slope"`, bench-specific intent should also be stored in `parameters`.
+
+The governing slope bench plan is `docsV1/V1_ASSEMBLY_SLOPE_BENCH_PLAN.md`.
+
+Recommended bench parameter keys include:
+
+- `bench_mode`
+- `bench_rows`
+- `repeat_first_bench_to_daylight`
+- `daylight_mode`
+- `daylight_search_step`
+- `daylight_max_width`
+- `daylight_max_width_delta`
+- `daylight_max_triangles`
+
+Recommended bench row fields are:
+
+- `drop`
+- `width`
+- `slope`
+- `post_slope`
+- `row_id`
+- `label`
+
+Assembly owns these reusable side-slope bench rules.
+
+Region applies the Assembly over station ranges, but it does not own bench geometry.
+
+The current Assembly editor provides a first-slice `Side Slope Bench` helper panel.
+
+The helper panel reads the selected `side_slope` row, edits bench rows, repeat-to-daylight settings, and daylight limits, then writes them back to the raw `Parameters` column.
+
 ## Relationships
 
 `RegionRow.assembly_ref` should reference `AssemblyModel.assembly_id`.
@@ -141,6 +173,10 @@ The first editor-level validation checks:
 - `custom_polyline` ditch definitions provide at least two section points
 - structural ditch materials provide wall thickness where the selected shape needs a future component body
 - lined ditch materials provide lining thickness for quantity and review
+- side-slope `bench_mode` values are supported
+- side-slope `bench_rows` are parseable and have positive width
+- repeated bench-to-daylight settings have daylight mode and a finite max width
+- side-slope rows with bench intent have positive side-slope width
 
 ## Preset Data
 

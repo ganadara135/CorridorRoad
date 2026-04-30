@@ -1,5 +1,8 @@
+import json
+
 import FreeCAD as App
 
+from freecad.Corridor_Road.objects import obj_project as project_module
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_AI_ASSIST,
     V1_TREE_AI_CHECKS,
@@ -47,7 +50,9 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_PLAN_PROFILE_REVIEW,
     V1_TREE_PROFILES,
     CorridorRoadProject,
+    ViewProviderCorridorRoadProject,
     ensure_project_tree,
+    ensure_project_viewprovider,
     resolve_v1_target_container,
     route_to_v1_tree,
 )
@@ -59,6 +64,54 @@ def _new_project_doc():
     CorridorRoadProject(project)
     project.Label = "CorridorRoad Project"
     return doc, project
+
+
+class _FakeViewObject:
+    def __init__(self):
+        self.Object = object()
+        self.Proxy = None
+        self.Visibility = False
+
+
+class _FakeProjectObject:
+    def __init__(self):
+        self.ViewObject = _FakeViewObject()
+
+
+class _StaleProjectViewProvider:
+    Type = "ViewProviderCorridorRoadProject"
+
+    def claimChildren(self):
+        return []
+
+    def setupContextMenu(self, vobj, menu):
+        del vobj, menu
+
+
+def test_project_view_provider_state_excludes_runtime_object_reference() -> None:
+    vobj = _FakeViewObject()
+    provider = ViewProviderCorridorRoadProject(vobj)
+    provider.attach(vobj)
+
+    state = provider.__getstate__()
+
+    assert state == {"Type": "ViewProviderCorridorRoadProject"}
+    json.dumps(state)
+    assert vobj.Proxy is provider
+
+
+def test_ensure_project_viewprovider_replaces_stale_proxy_without_custom_state() -> None:
+    project = _FakeProjectObject()
+    project.ViewObject.Proxy = _StaleProjectViewProvider()
+    original_gui_up = project_module._gui_up
+    project_module._gui_up = lambda: True
+    try:
+        ensure_project_viewprovider(project)
+    finally:
+        project_module._gui_up = original_gui_up
+
+    assert isinstance(project.ViewObject.Proxy, ViewProviderCorridorRoadProject)
+    json.dumps(project.ViewObject.Proxy.__getstate__())
 
 
 def test_ensure_project_tree_creates_v1_root_groups() -> None:

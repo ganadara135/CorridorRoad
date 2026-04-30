@@ -1,4 +1,5 @@
 from freecad.Corridor_Road.v1.commands.cmd_earthwork_balance import build_demo_earthwork_report
+from freecad.Corridor_Road.v1.models.output.quantity_output import QuantityFragmentRow
 from freecad.Corridor_Road.v1.ui.common import clear_ui_context, get_ui_context
 from freecad.Corridor_Road.v1.ui.viewers import earthwork_review_view
 from freecad.Corridor_Road.v1.ui.viewers.earthwork_review_view import (
@@ -53,6 +54,56 @@ def test_build_section_handoff_context_targets_selected_earthwork_window() -> No
     assert context["viewer_context"]["earthwork_cut_fill_summary"].startswith("100.000 / 40.000 m3")
     assert context["earthwork_hint_rows"][0]["label"] == "Earthwork Window"
     assert context["earthwork_hint_rows"][1]["label"] == "Cut / Fill"
+
+
+def test_build_section_handoff_context_includes_bench_quantity_source_trace() -> None:
+    report = build_demo_earthwork_report(preferred_station=0.0)
+    quantity_output = report["quantity_output"]
+    quantity_output.fragment_rows.extend(
+        [
+            QuantityFragmentRow(
+                fragment_row_id="qty:bench",
+                fragment_id="qty:bench",
+                quantity_kind="bench_surface_length",
+                measurement_kind="section_side_slope_breakline",
+                value=0.5,
+                unit="m",
+                station_start=0.0,
+                station_end=0.0,
+                component_ref="bench:right:1",
+                assembly_ref="assembly:bench-road",
+                region_ref="region:mainline",
+            ),
+            QuantityFragmentRow(
+                fragment_row_id="qty:slope",
+                fragment_id="qty:slope",
+                quantity_kind="slope_face_length",
+                measurement_kind="section_side_slope_breakline",
+                value=4.5,
+                unit="m",
+                station_start=0.0,
+                station_end=0.0,
+                component_ref="slope:right:1",
+                assembly_ref="assembly:bench-road",
+                region_ref="region:mainline",
+            ),
+        ]
+    )
+
+    context = build_section_handoff_context(
+        report,
+        station_row={"station": 0.0, "label": "STA 0.000"},
+    )
+
+    trace_rows = [
+        row
+        for row in context["earthwork_hint_rows"]
+        if row["kind"] == "side_slope_quantity_trace"
+    ]
+    assert trace_rows
+    assert trace_rows[0]["value"] == "bench=0.500 m; slope=4.500 m"
+    assert "assembly_ref=assembly:bench-road" in trace_rows[0]["notes"]
+    assert "region_ref=region:mainline" in trace_rows[0]["notes"]
 
 
 def test_build_plan_profile_handoff_context_targets_selected_earthwork_window() -> None:

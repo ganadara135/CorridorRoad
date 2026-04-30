@@ -362,6 +362,18 @@ This supports:
 
 Section exchange should not reconstruct section meaning from template files alone.
 
+Bench and side-slope exchange should preserve source context from normalized Section and Quantity outputs.
+
+Required bench source context should include:
+
+- `assembly_ref`
+- `region_ref`
+- `component_ref`
+- `context_kind`
+- quantity kind when the row is quantity-derived
+
+This context should be visible in the exchange package before any format-specific writer consumes it.
+
 ## 16. Quantity and Earthwork Exchange Relationship
 
 Not all early exchange formats need quantity or earthwork output immediately, but the architecture should allow it.
@@ -371,6 +383,7 @@ Potential future exchange uses:
 - quantity summary exports
 - earthwork-balance summary exchange
 - report-oriented packages
+- bench and slope-face source trace rows for package review
 
 The exchange plan should leave room for these without making them mandatory in the first phase.
 

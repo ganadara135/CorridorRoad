@@ -31,6 +31,7 @@ class CmdOutputsExchange:
                     "",
                     "Planned primary actions:",
                     "- Review Outputs",
+                    "- Structure Output Package",
                     "- Export DXF",
                     "- Export LandXML",
                     "- Export IFC",

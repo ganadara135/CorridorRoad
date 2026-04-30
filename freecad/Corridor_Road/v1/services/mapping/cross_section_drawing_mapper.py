@@ -131,6 +131,10 @@ def _geometry_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingG
     rows.extend(_point_role_geometry_rows(applied_section, "ditch_surface", "drainage", "ditch"))
     if not any(row.kind == "ditch" for row in rows):
         rows.extend(_component_ditch_geometry_rows(applied_section))
+    side_slope_point_rows = _side_slope_point_geometry_rows(applied_section)
+    if side_slope_point_rows:
+        rows.extend(side_slope_point_rows)
+        return [row for row in rows if len(row.offset_values) >= 2 and len(row.elevation_values) >= 2]
     component_slope_rows = _component_slope_face_rows(applied_section)
     rows.extend(component_slope_rows if component_slope_rows else _fallback_slope_face_rows(applied_section))
     return [row for row in rows if len(row.offset_values) >= 2 and len(row.elevation_values) >= 2]
@@ -272,6 +276,60 @@ def _component_slope_face_rows(applied_section: AppliedSection) -> list[CrossSec
     return rows
 
 
+def _side_slope_point_geometry_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
+    points = [
+        point
+        for point in list(getattr(applied_section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") in {"side_slope_surface", "bench_surface", "daylight_marker"}
+    ]
+    if not points:
+        return []
+    left_edge, left_z, right_edge_abs, right_z = _terminal_section_edges(applied_section)
+    side_specs = [
+        ("left", left_edge, left_z, 1.0),
+        ("right", -right_edge_abs, right_z, -1.0),
+    ]
+    rows: list[CrossSectionDrawingGeometryRow] = []
+    for side_label, edge_offset, edge_z, direction in side_specs:
+        side_points = [
+            point
+            for point in points
+            if _point_side(point) == side_label
+            and (_point_offset(point) - float(edge_offset)) * float(direction) >= -1.0e-9
+        ]
+        side_points.sort(key=lambda point: (_point_offset(point) - float(edge_offset)) * float(direction))
+        previous_offset = float(edge_offset)
+        previous_z = float(edge_z)
+        segment_index = 0
+        for point in side_points:
+            role = str(getattr(point, "point_role", "") or "")
+            offset = _point_offset(point)
+            z = float(getattr(point, "z", previous_z) or previous_z)
+            if role == "daylight_marker":
+                previous_offset = offset
+                previous_z = z
+                continue
+            if abs(offset - previous_offset) <= 1.0e-9:
+                previous_offset = offset
+                previous_z = z
+                continue
+            segment_index += 1
+            kind = "bench" if role == "bench_surface" else "side_slope"
+            rows.append(
+                CrossSectionDrawingGeometryRow(
+                    row_id=f"{applied_section.applied_section_id}:{side_label}:side-slope:{segment_index}",
+                    kind=kind,
+                    offset_values=[previous_offset, offset],
+                    elevation_values=[previous_z, z],
+                    style_role="side_slope_bench" if kind == "bench" else "side_slope",
+                    source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+                )
+            )
+            previous_offset = offset
+            previous_z = z
+    return rows
+
+
 def _fallback_slope_face_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
     rows: list[CrossSectionDrawingGeometryRow] = []
     left, left_z, right, right_z = _terminal_section_edges(applied_section)
@@ -345,6 +403,8 @@ def _label_rows(
             "subgrade": "Subgrade",
             "ditch": _ditch_label(row),
             "slope_face": _slope_label(row),
+            "side_slope": _slope_label(row),
+            "bench": _bench_label(row),
         }.get(row.kind, row.kind)
         rows.append(
             CrossSectionDrawingLabelRow(
@@ -369,6 +429,18 @@ def _label_rows(
                 elevation=max(float(span["start_z"]), float(span["end_z"])),
                 role=f"component:{span.get('kind', '')}",
                 value=f"{width:.3f} m",
+                source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+            )
+        )
+    for point in _daylight_marker_points(applied_section):
+        rows.append(
+            CrossSectionDrawingLabelRow(
+                row_id=f"{applied_section.applied_section_id}:label-{getattr(point, 'point_id', '') or 'daylight'}",
+                text=_daylight_label(point),
+                offset=_point_offset(point),
+                elevation=float(getattr(point, "z", 0.0) or 0.0),
+                role="side_slope:daylight",
+                value="",
                 source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
             )
         )
@@ -470,10 +542,14 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
         "left": [0.0, base_z],
         "right": [0.0, base_z],
     }
+    derived_side_slope_parents = _derived_side_slope_parent_ids(applied_section)
     for index, component in enumerate(list(getattr(applied_section, "component_rows", []) or []), start=1):
         kind = str(getattr(component, "kind", "") or "").strip().lower()
         width = max(0.0, float(getattr(component, "width", 0.0) or 0.0))
         if not kind or width <= 1.0e-9:
+            continue
+        component_id = str(getattr(component, "component_id", "") or "")
+        if kind == "side_slope" and component_id in derived_side_slope_parents:
             continue
         side = str(getattr(component, "side", "") or "center").strip().lower() or "center"
         slope = float(getattr(component, "slope", 0.0) or 0.0)
@@ -486,7 +562,7 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
             spans.append(
                 {
                     "row_id": f"{index}:center",
-                    "component_id": str(getattr(component, "component_id", "") or ""),
+                    "component_id": component_id,
                     "kind": kind,
                     "side": "center",
                     "start": -half_width,
@@ -511,7 +587,7 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
             spans.append(
                 {
                     "row_id": f"{index}:{side_name}",
-                    "component_id": str(getattr(component, "component_id", "") or ""),
+                    "component_id": component_id,
                     "kind": kind,
                     "side": side_name,
                     "start": start,
@@ -523,6 +599,16 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
             )
             cursors[side_name] = [cursor_offset + width, end_z]
     return spans
+
+
+def _derived_side_slope_parent_ids(applied_section: AppliedSection) -> set[str]:
+    output: set[str] = set()
+    for component in list(getattr(applied_section, "component_rows", []) or []):
+        component_id = str(getattr(component, "component_id", "") or "")
+        parts = component_id.split(":")
+        if len(parts) >= 3 and parts[1] in {"side_slope", "bench", "daylight"}:
+            output.add(parts[0])
+    return output
 
 
 def _component_label(span: dict[str, object]) -> str:
@@ -540,6 +626,8 @@ def _component_label(span: dict[str, object]) -> str:
         "green_strip": "green strip",
         "ditch": "ditch",
         "side_slope": "daylight",
+        "bench": "bench",
+        "daylight": "daylight",
     }.get(kind, kind.replace("_", " ") or "component")
     return f"{label} {side_label}".strip()
 
@@ -552,6 +640,23 @@ def _point_offset(point) -> float:
         except Exception:
             pass
     return float(getattr(point, "y", 0.0) or 0.0)
+
+
+def _point_side(point) -> str:
+    offset = _point_offset(point)
+    if offset > 0.0:
+        return "left"
+    if offset < 0.0:
+        return "right"
+    return "center"
+
+
+def _daylight_marker_points(applied_section: AppliedSection) -> list[object]:
+    return [
+        point
+        for point in list(getattr(applied_section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "daylight_marker"
+    ]
 
 
 def _frame_elevation(applied_section: AppliedSection) -> float:
@@ -586,3 +691,14 @@ def _slope_label(row: CrossSectionDrawingGeometryRow) -> str:
     offset, _elevation = _row_midpoint(row)
     side = "Left" if offset > 0.0 else "Right" if offset < 0.0 else "Center"
     return f"{side} slope"
+
+
+def _bench_label(row: CrossSectionDrawingGeometryRow) -> str:
+    offset, _elevation = _row_midpoint(row)
+    side = "Left" if offset > 0.0 else "Right" if offset < 0.0 else "Center"
+    return f"{side} bench"
+
+
+def _daylight_label(point) -> str:
+    side = {"left": "Left", "right": "Right"}.get(_point_side(point), "Center")
+    return f"{side} daylight"

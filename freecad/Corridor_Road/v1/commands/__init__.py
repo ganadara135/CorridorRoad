@@ -18,6 +18,7 @@ from .cmd_build_corridor import (
     document_has_v1_applied_sections,
     run_v1_build_corridor_command,
 )
+from .cmd_structure_output import run_v1_structure_output_command
 from .cmd_create_profile import create_v1_sample_profile
 from .cmd_generate_stations import generate_v1_stations, run_v1_generate_stations_command
 from .cmd_profile_editor import run_v1_profile_editor_command
@@ -58,6 +59,7 @@ __all__ = [
     "run_v1_profile_editor_command",
     "run_v1_region_editor_command",
     "run_v1_structure_editor_command",
+    "run_v1_structure_output_command",
     "show_v1_structure_preview_object",
     "run_v1_plan_profile_preview_command",
     "run_v1_stationing_review_command",

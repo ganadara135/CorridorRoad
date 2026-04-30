@@ -1602,6 +1602,15 @@ class ViewProviderCorridorRoadProject:
         except Exception:
             pass
 
+    def __getstate__(self):
+        # FreeCAD serializes view-provider proxies through PropertyPythonObject.
+        # Keep transient FeaturePython references out of that state.
+        return {"Type": "ViewProviderCorridorRoadProject"}
+
+    def __setstate__(self, state):
+        del state
+        self.Type = "ViewProviderCorridorRoadProject"
+
     def getIcon(self):
         return ""
 
@@ -1642,12 +1651,29 @@ def ensure_project_viewprovider(obj):
     proxy = getattr(vobj, "Proxy", None)
     if proxy is not None and getattr(proxy, "Type", "") == "ViewProviderCorridorRoadProject":
         # Older proxy instances may not have latest methods (e.g., claimChildren).
-        if hasattr(proxy, "claimChildren") and hasattr(proxy, "setupContextMenu"):
+        if (
+            hasattr(proxy, "claimChildren")
+            and hasattr(proxy, "setupContextMenu")
+            and _has_custom_python_object_state(proxy)
+        ):
             return
     try:
         ViewProviderCorridorRoadProject(vobj)
     except Exception:
         pass
+
+
+def _has_custom_python_object_state(proxy) -> bool:
+    try:
+        state_method = getattr(type(proxy), "__getstate__", None)
+        default_state_method = getattr(object, "__getstate__", None)
+        return (
+            state_method is not None
+            and state_method is not default_state_method
+            and callable(getattr(proxy, "__setstate__", None))
+        )
+    except Exception:
+        return False
 
 
 def _hide_project_link_properties(obj):

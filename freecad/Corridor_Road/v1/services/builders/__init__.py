@@ -14,6 +14,7 @@ from .corridor_surface_geometry_service import (
     CorridorDesignSurfaceGeometryRequest,
     CorridorSurfaceGeometryService,
 )
+from .corridor_solid_service import StructureSolidBuildRequest, StructureSolidOutputService
 from .corridor_model_service import CorridorModelBuildRequest, CorridorModelService
 from .earthwork_balance_service import (
     EarthworkBalanceBuildRequest,
@@ -32,6 +33,8 @@ __all__ = [
     "CorridorSurfaceService",
     "CorridorDesignSurfaceGeometryRequest",
     "CorridorSurfaceGeometryService",
+    "StructureSolidBuildRequest",
+    "StructureSolidOutputService",
     "CorridorModelBuildRequest",
     "CorridorModelService",
     "EarthworkBalanceBuildRequest",

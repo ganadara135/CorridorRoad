@@ -7,7 +7,13 @@ try:
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
 
-from ..models.source.assembly_model import AssemblyModel, SectionTemplate, TemplateComponent
+from ..models.source.assembly_model import (
+    AssemblyModel,
+    SectionTemplate,
+    TemplateComponent,
+    parse_component_parameters,
+    serialize_component_parameters,
+)
 
 
 class V1AssemblyModelObject:
@@ -163,7 +169,7 @@ def update_v1_assembly_model_object(obj, assembly_model: AssemblyModel, *, label
     obj.ComponentMaterials = [str(component.material) for _template_id, component in components]
     obj.ComponentTargetRefs = [str(component.target_ref) for _template_id, component in components]
     obj.ComponentEnabledValues = [1 if bool(component.enabled) else 0 for _template_id, component in components]
-    obj.ComponentParameterRows = [_join_parameters(component.parameters) for _template_id, component in components]
+    obj.ComponentParameterRows = [serialize_component_parameters(component.parameters) for _template_id, component in components]
     obj.ComponentNotes = [str(component.notes) for _template_id, component in components]
     try:
         obj.touch()
@@ -196,7 +202,7 @@ def to_assembly_model(obj) -> AssemblyModel | None:
                     thickness=_float_list_value(getattr(obj, "ComponentThicknesses", []), component_index, 0.0),
                     material=_list_value(getattr(obj, "ComponentMaterials", []), component_index, ""),
                     target_ref=_list_value(getattr(obj, "ComponentTargetRefs", []), component_index, ""),
-                    parameters=_split_parameters(_list_value(getattr(obj, "ComponentParameterRows", []), component_index, "")),
+                    parameters=parse_component_parameters(_list_value(getattr(obj, "ComponentParameterRows", []), component_index, "")),
                     notes=_list_value(getattr(obj, "ComponentNotes", []), component_index, ""),
                     enabled=bool(_int_list_value(getattr(obj, "ComponentEnabledValues", []), component_index, 1)),
                 )
@@ -290,22 +296,6 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
-
-
-def _join_parameters(parameters: dict[str, object]) -> str:
-    return ";".join(f"{key}={value}" for key, value in sorted(dict(parameters or {}).items()) if str(key).strip())
-
-
-def _split_parameters(value: object) -> dict[str, str]:
-    output: dict[str, str] = {}
-    for token in str(value or "").split(";"):
-        if "=" not in token:
-            continue
-        key, raw = token.split("=", 1)
-        key = key.strip()
-        if key:
-            output[key] = raw.strip()
-    return output
 
 
 def _list_value(values, index: int, default: str = "") -> str:

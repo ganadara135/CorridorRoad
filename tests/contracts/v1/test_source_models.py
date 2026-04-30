@@ -4,6 +4,10 @@ from freecad.Corridor_Road.v1.models.source import (
     OverrideModel,
     ProfileModel,
     ProjectModel,
+    BridgeGeometrySpec,
+    CulvertGeometrySpec,
+    RetainingWallGeometrySpec,
+    StructureGeometrySpec,
     RegionModel,
     StructureModel,
     SuperelevationModel,
@@ -15,6 +19,7 @@ from freecad.Corridor_Road.v1.models.source.alignment_model import (
 from freecad.Corridor_Road.v1.models.source.assembly_model import (
     SectionTemplate,
     TemplateComponent,
+    normalize_bench_rows,
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import (
     ProfileControlPoint,
@@ -101,6 +106,24 @@ def test_source_models_can_be_instantiated() -> None:
         project_id="proj-1",
         structure_model_id="str-1",
         alignment_id="align-1",
+        geometry_spec_rows=[
+            StructureGeometrySpec(
+                geometry_spec_id="geometry-spec-1",
+                structure_ref="structure-1",
+                shape_kind="deck_slab",
+                width=10.0,
+                height=1.2,
+            )
+        ],
+        bridge_geometry_spec_rows=[
+            BridgeGeometrySpec("geometry-spec-1", deck_width=10.0, deck_thickness=1.2)
+        ],
+        culvert_geometry_spec_rows=[
+            CulvertGeometrySpec("geometry-spec-2", barrel_shape="box", span=3.0, rise=2.0)
+        ],
+        retaining_wall_geometry_spec_rows=[
+            RetainingWallGeometrySpec("geometry-spec-3", wall_height=3.0, retained_side="right")
+        ],
     )
     superelevation = SuperelevationModel(
         schema_version=1,
@@ -116,7 +139,41 @@ def test_source_models_can_be_instantiated() -> None:
     assert region.region_rows[0].template_ref == "tmpl-1"
     assert region.region_rows[0].primary_kind == "normal_road"
     assert region.region_rows[0].applied_layers == ["ditch", "drainage"]
+    assert region.region_rows[0].structure_ref == "structure:bridge-01"
     assert region.region_rows[0].structure_refs == ["structure:bridge-01"]
     assert override_model.override_model_id == "ovr-1"
     assert structure_model.structure_model_id == "str-1"
+    assert structure_model.geometry_spec_rows[0].shape_kind == "deck_slab"
+    assert structure_model.bridge_geometry_spec_rows[0].deck_width == 10.0
+    assert structure_model.culvert_geometry_spec_rows[0].barrel_shape == "box"
+    assert structure_model.retaining_wall_geometry_spec_rows[0].retained_side == "right"
     assert superelevation.superelevation_id == "sup-1"
+
+
+def test_side_slope_component_normalizes_bench_rows_in_parameters() -> None:
+    component = TemplateComponent(
+        component_id="side-slope-left",
+        kind="side_slope",
+        side="left",
+        width=12.0,
+        slope=-0.5,
+        parameters={
+            "bench_rows": [{"drop": "3.0", "width": "1.5", "slope": "-0.02", "post": "-0.5"}],
+            "repeat_first_bench_to_daylight": "true",
+        },
+    )
+
+    assert component.parameters["bench_mode"] == "rows"
+    assert component.parameters["bench_rows"] == [
+        {"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5, "row_id": "bench:1"}
+    ]
+    assert component.parameters["repeat_first_bench_to_daylight"] is True
+
+
+def test_bench_rows_can_be_normalized_from_compact_text() -> None:
+    rows = normalize_bench_rows("drop=2.5,width=1.2,slope=-0.02,post_slope=-0.5|3.0,1.5,-0.01,-0.4")
+
+    assert rows == [
+        {"drop": 2.5, "width": 1.2, "slope": -0.02, "post_slope": -0.5, "row_id": "bench:1"},
+        {"drop": 3.0, "width": 1.5, "slope": -0.01, "post_slope": -0.4, "row_id": "bench:2"},
+    ]

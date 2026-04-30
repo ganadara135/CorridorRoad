@@ -12,6 +12,16 @@ from ..evaluation.tin_sampling_service import TinSamplingService
 
 
 @dataclass(frozen=True)
+class _SectionPointLite:
+    point_id: str
+    x: float
+    y: float
+    z: float
+    lateral_offset: float
+    point_role: str = ""
+
+
+@dataclass(frozen=True)
 class CorridorDesignSurfaceGeometryRequest:
     """Input bundle for a minimal corridor surface ribbon."""
 
@@ -71,6 +81,13 @@ class CorridorSurfaceGeometryService:
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor slope-face surface.")
         fallback_half_width = max(float(request.fallback_half_width or 0.0), 0.1)
+        point_surface = _build_daylight_surface_from_side_slope_points(
+            request,
+            sections=sections,
+            fallback_half_width=fallback_half_width,
+        )
+        if point_surface is not None:
+            return point_surface
         edge_rows = _daylight_inner_edge_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
         daylight_rows = _daylight_rows(request.applied_section_set)
         sampling_service = TinSamplingService()
@@ -399,6 +416,202 @@ def _build_surface_from_point_grid(
             )
         ],
     )
+
+
+def _build_daylight_surface_from_side_slope_points(
+    request: CorridorDesignSurfaceGeometryRequest,
+    *,
+    sections: list[object],
+    fallback_half_width: float,
+) -> TINSurface | None:
+    side_grids = _side_slope_point_grids(sections, fallback_half_width=fallback_half_width)
+    if not side_grids:
+        return None
+    vertices: list[TINVertex] = []
+    triangles: list[TINTriangle] = []
+    bench_breakline_count = 0
+    side_slope_point_count = 0
+    daylight_marker_count = 0
+    for side_label, grid in side_grids.items():
+        if len(grid) < 2:
+            continue
+        for section_index, points in enumerate(grid):
+            section = sections[section_index]
+            for point_index, point in enumerate(points):
+                role = str(getattr(point, "point_role", "") or "")
+                bench_breakline_count += 1 if role == "bench_surface" else 0
+                side_slope_point_count += 1 if role == "side_slope_surface" else 0
+                daylight_marker_count += 1 if role == "daylight_marker" else 0
+                vertices.append(
+                    TINVertex(
+                        vertex_id=f"v{section_index}:{side_label}:p{point_index}",
+                        x=float(point.x),
+                        y=float(point.y),
+                        z=float(point.z),
+                        source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{point.point_id}",
+                        notes=role,
+                    )
+                )
+        for section_index in range(len(grid) - 1):
+            point_count = min(len(grid[section_index]), len(grid[section_index + 1]))
+            for point_index in range(point_count - 1):
+                p00 = f"v{section_index}:{side_label}:p{point_index}"
+                p01 = f"v{section_index}:{side_label}:p{point_index + 1}"
+                p10 = f"v{section_index + 1}:{side_label}:p{point_index}"
+                p11 = f"v{section_index + 1}:{side_label}:p{point_index + 1}"
+                triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:a", p00, p01, p11, triangle_kind="corridor_daylight_bench_strip"))
+                triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:b", p00, p11, p10, triangle_kind="corridor_daylight_bench_strip"))
+    if not vertices or not triangles:
+        return None
+    z_values = [vertex.z for vertex in vertices]
+    offset_values = [
+        abs(float(point.lateral_offset))
+        for grid in side_grids.values()
+        for points in grid
+        for point in points
+    ]
+    return TINSurface(
+        schema_version=1,
+        project_id=request.project_id,
+        surface_id=request.surface_id,
+        surface_kind="daylight_surface",
+        label=f"Slope Face Surface - {request.corridor.corridor_id}",
+        source_refs=[
+            str(getattr(request.corridor, "corridor_id", "") or ""),
+            str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+        ],
+        vertex_rows=vertices,
+        triangle_rows=triangles,
+        boundary_refs=[f"{request.surface_id}:bench-daylight-boundary"],
+        quality_rows=[
+            TINQualityRow(f"{request.surface_id}:station_count", "station_count", len(sections), "count"),
+            TINQualityRow(f"{request.surface_id}:section_point_count", "section_point_count", len(vertices), "count"),
+            TINQualityRow(f"{request.surface_id}:side_slope_point_count", "side_slope_point_count", side_slope_point_count, "count"),
+            TINQualityRow(f"{request.surface_id}:bench_breakline_count", "bench_breakline_count", bench_breakline_count, "count"),
+            TINQualityRow(f"{request.surface_id}:daylight_marker_count", "daylight_marker_count", daylight_marker_count, "count"),
+            TINQualityRow(f"{request.surface_id}:offset_abs_max", "offset_abs_max", max(offset_values), "m"),
+            TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
+            TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
+        ],
+        provenance_rows=[
+            TINProvenanceRow(
+                provenance_id=f"{request.surface_id}:provenance:applied-section-bench-points",
+                source_kind="applied_section_side_slope_points",
+                source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+                notes="Corridor slope-face surface built from evaluated side_slope_surface, bench_surface, and daylight_marker breaklines.",
+            )
+        ],
+    )
+
+
+def _side_slope_point_grids(
+    sections: list[object],
+    *,
+    fallback_half_width: float,
+) -> dict[str, list[list[_SectionPointLite]]]:
+    grids: dict[str, list[list[_SectionPointLite]]] = {}
+    for side_label in ("left", "right"):
+        grid: list[list[_SectionPointLite]] = []
+        reference_count: int | None = None
+        for section in list(sections or []):
+            rows = _side_slope_points_for_section(
+                section,
+                side_label=side_label,
+                fallback_half_width=fallback_half_width,
+            )
+            if len(rows) < 2:
+                grid = []
+                break
+            if reference_count is None:
+                reference_count = len(rows)
+            elif len(rows) != reference_count:
+                grid = []
+                break
+            grid.append(rows)
+        if len(grid) >= 2:
+            grids[side_label] = grid
+    return grids
+
+
+def _side_slope_points_for_section(
+    section,
+    *,
+    side_label: str,
+    fallback_half_width: float,
+) -> list[_SectionPointLite]:
+    edge_offset, edge_z = _section_terminal_edge(section, side_label=side_label, fallback_half_width=fallback_half_width)
+    frame = getattr(section, "frame", None)
+    edge_x, edge_y, edge_z = _xy_at_offset(frame, edge_offset, edge_z)
+    direction = 1.0 if side_label == "left" else -1.0
+    rows = [
+        _SectionPointLite(
+            point_id=f"{side_label}:terminal-edge",
+            x=edge_x,
+            y=edge_y,
+            z=edge_z,
+            lateral_offset=edge_offset,
+            point_role="terminal_edge",
+        )
+    ]
+    for point in list(getattr(section, "point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or "")
+        if role not in {"side_slope_surface", "bench_surface", "daylight_marker"}:
+            continue
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        if side_label == "left" and offset < edge_offset - 1.0e-9:
+            continue
+        if side_label == "right" and offset > edge_offset + 1.0e-9:
+            continue
+        rows.append(
+            _SectionPointLite(
+                point_id=str(getattr(point, "point_id", "") or role),
+                x=float(getattr(point, "x", 0.0) or 0.0),
+                y=float(getattr(point, "y", 0.0) or 0.0),
+                z=float(getattr(point, "z", 0.0) or 0.0),
+                lateral_offset=offset,
+                point_role=role,
+            )
+        )
+    rows.sort(key=lambda point: (float(point.lateral_offset) - edge_offset) * direction)
+    output: list[_SectionPointLite] = []
+    for point in rows:
+        if output:
+            previous = output[-1]
+            if (
+                abs(float(point.lateral_offset) - float(previous.lateral_offset)) <= 1.0e-9
+                and abs(float(point.z) - float(previous.z)) <= 1.0e-9
+            ):
+                continue
+        output.append(point)
+    return output
+
+
+def _section_terminal_edge(section, *, side_label: str, fallback_half_width: float) -> tuple[float, float]:
+    left_width, right_width = _surface_width_rows_for_section(section, fallback_half_width=fallback_half_width)
+    frame = getattr(section, "frame", None)
+    frame_z = float(getattr(frame, "z", 0.0) or 0.0)
+    edge = (left_width, frame_z) if side_label == "left" else (-right_width, frame_z)
+    for point in list(getattr(section, "point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or "")
+        if role not in {"fg_surface", "ditch_surface"}:
+            continue
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        z = float(getattr(point, "z", frame_z) or frame_z)
+        if side_label == "left":
+            if offset > edge[0] or (abs(offset - edge[0]) <= 1.0e-9 and z > edge[1]):
+                edge = (offset, z)
+        elif offset < edge[0] or (abs(offset - edge[0]) <= 1.0e-9 and z > edge[1]):
+            edge = (offset, z)
+    return edge
+
+
+def _xy_at_offset(frame, offset: float, z: float) -> tuple[float, float, float]:
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    return base_x + normal_x * float(offset), base_y + normal_y * float(offset), float(z)
 
 
 def _frame_rows(applied_section_set: AppliedSectionSet) -> list[object]:

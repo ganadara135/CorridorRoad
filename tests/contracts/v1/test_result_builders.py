@@ -32,6 +32,17 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    BridgeGeometrySpec,
+    CulvertGeometrySpec,
+    RetainingWallGeometrySpec,
+    StructureGeometrySpec,
+    StructureInfluenceZone,
+    StructureInteractionRule,
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.services.builders import (
     AppliedSectionBuildRequest,
     AppliedSectionSetBuildRequest,
@@ -49,7 +60,10 @@ from freecad.Corridor_Road.v1.services.builders import (
     MassHaulService,
     QuantityBuildRequest,
     QuantityBuildService,
+    StructureSolidBuildRequest,
+    StructureSolidOutputService,
 )
+from freecad.Corridor_Road.v1.models.output import StructureSolidOutput, StructureSolidOutputRow
 
 
 def test_applied_section_service_builds_component_rows_from_template() -> None:
@@ -145,6 +159,223 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     assert [point.point_role for point in result.point_rows].count("fg_surface") >= 2
     assert [point.point_role for point in result.point_rows].count("subgrade_surface") >= 2
     assert min(point.lateral_offset for point in result.point_rows if point.point_role == "fg_surface") < 0.0
+
+
+def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-bench",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-bench",
+        alignment_id="align-bench",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-bench",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-bench",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
+                    TemplateComponent(
+                        "side-slope-right",
+                        "side_slope",
+                        side="right",
+                        width=8.0,
+                        slope=-0.5,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [
+                                {
+                                    "drop": 2.0,
+                                    "width": 1.0,
+                                    "slope": -0.02,
+                                    "post_slope": -0.5,
+                                    "row_id": "bench-1",
+                                }
+                            ],
+                            "repeat_first_bench_to_daylight": True,
+                            "daylight_mode": "terrain",
+                            "daylight_max_width": 80.0,
+                        },
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-bench",
+        alignment_id="align-bench",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-bench",
+        alignment_id="align-bench",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-bench",
+        )
+    )
+
+    assert result.daylight_right_width == 8.0
+    assert [row.kind for row in result.component_rows] == [
+        "lane",
+        "side_slope",
+        "side_slope",
+        "bench",
+        "side_slope",
+        "daylight",
+    ]
+    assert [round(row.width, 2) for row in result.component_rows if row.component_id.startswith("side-slope-right:")] == [4.0, 1.0, 3.0, 0.0]
+    bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
+    assert [point.point_role for point in bench_points] == [
+        "side_slope_surface",
+        "bench_surface",
+        "side_slope_surface",
+        "daylight_marker",
+    ]
+    assert [round(point.lateral_offset, 2) for point in bench_points] == [-7.5, -8.5, -11.5, -11.5]
+    assert round(bench_points[1].z, 2) == 7.98
+    assert any(row.kind == "bench_daylight_fallback" for row in result.diagnostic_rows)
+
+
+def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-bench-terrain",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-bench-terrain",
+        alignment_id="align-bench-terrain",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-bench-terrain",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-bench-terrain",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
+                    TemplateComponent(
+                        "side-slope-right",
+                        "side_slope",
+                        side="right",
+                        width=8.0,
+                        slope=-0.5,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [
+                                {
+                                    "drop": 2.0,
+                                    "width": 1.0,
+                                    "slope": -0.02,
+                                    "post_slope": -0.5,
+                                }
+                            ],
+                            "daylight_mode": "terrain",
+                            "daylight_search_step": 0.25,
+                        },
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-bench-terrain",
+        alignment_id="align-bench-terrain",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-terrain")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-bench-terrain",
+        alignment_id="align-bench-terrain",
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-bench",
+        vertex_rows=[
+            TINVertex("eg-0", 0.0, -20.0, 7.99),
+            TINVertex("eg-1", 20.0, -20.0, 7.99),
+            TINVertex("eg-2", 20.0, 20.0, 7.99),
+            TINVertex("eg-3", 0.0, 20.0, 7.99),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-bench-terrain",
+            existing_ground_surface=existing_ground,
+        )
+    )
+
+    derived_rows = [row for row in result.component_rows if row.component_id.startswith("side-slope-right:")]
+    assert [row.kind for row in derived_rows] == ["side_slope", "bench", "daylight"]
+    assert [round(row.width, 2) for row in derived_rows] == [4.0, 0.5, 0.0]
+    bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
+    assert [round(point.lateral_offset, 2) for point in bench_points] == [-7.5, -8.0, -8.0]
+    assert [round(point.z, 2) for point in bench_points] == [8.0, 7.99, 7.99]
+    assert any(row.kind == "bench_daylight_shortened" for row in result.diagnostic_rows)
+    assert any(row.kind == "bench_daylight_skipped" for row in result.diagnostic_rows)
+    assert not any(row.kind == "bench_daylight_fallback" for row in result.diagnostic_rows)
 
 
 def test_applied_section_service_builds_ditch_surface_points_from_ditch_components() -> None:
@@ -478,6 +709,624 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
     assert [row.component_id for row in result.component_rows] == ["lane-1"]
     assert result.component_rows[0].structure_ids == ["structure:wall-01"]
     assert result.diagnostic_rows == []
+
+
+def test_applied_section_service_attaches_structure_context_rows() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-structure-context",
+        geometry_sequence=[
+            AlignmentElement("el-1", "tangent", station_start=0.0, station_end=100.0)
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-structure-context",
+        alignment_id="align-structure-context",
+        control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:basic-road",
+        active_template_id="template:basic-road",
+        template_rows=[
+            SectionTemplate(
+                template_id="template:basic-road",
+                template_kind="roadway",
+                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:structure-context",
+        alignment_id="align-structure-context",
+        region_rows=[RegionRow("region:main", station_start=0.0, station_end=100.0)],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="overrides:empty",
+        alignment_id="align-structure-context",
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        alignment_id="align-structure-context",
+        structure_rows=[
+            StructureRow(
+                "structure:bridge-01",
+                "bridge",
+                "interface",
+                StructurePlacement("placement:bridge-01", "align-structure-context", 20.0, 40.0),
+            )
+        ],
+        interaction_rule_rows=[
+            StructureInteractionRule("rule:bridge-section", "structure:bridge-01", "section_handoff", "section")
+        ],
+        influence_zone_rows=[
+            StructureInfluenceZone("zone:bridge-01", "structure:bridge-01", "clearance", 15.0, 45.0)
+        ],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=30.0,
+            applied_section_id="sec-structure-context",
+            structure_model=structure_model,
+        )
+    )
+
+    assert result.active_structure_ids == ["structure:bridge-01"]
+    assert result.active_structure_rule_ids == ["rule:bridge-section"]
+    assert result.active_structure_influence_zone_ids == ["zone:bridge-01"]
+    assert result.structure_diagnostic_rows == []
+    assert result.component_rows[0].structure_ids == ["structure:bridge-01"]
+
+
+def test_applied_section_service_filters_structure_context_by_region_structure_ref() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-structure-filter",
+        geometry_sequence=[
+            AlignmentElement(
+                "tangent-1",
+                "tangent",
+                0.0,
+                100.0,
+                length=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="profile-structure-filter",
+        alignment_id="align-structure-filter",
+        control_rows=[
+            ProfileControlPoint("pvi-1", 0.0, 10.0),
+            ProfileControlPoint("pvi-2", 100.0, 12.0),
+        ],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly:road",
+        active_template_id="template:road",
+        template_rows=[
+            SectionTemplate(
+                template_id="template:road",
+                template_kind="roadway",
+                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:structure-filter",
+        alignment_id="align-structure-filter",
+        region_rows=[
+            RegionRow(
+                region_id="region:main",
+                station_start=0.0,
+                station_end=100.0,
+                assembly_ref="assembly:road",
+                structure_ref="structure:bridge-01",
+            )
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        alignment_id="align-structure-filter",
+        structure_rows=[
+            StructureRow("structure:bridge-01", "bridge", "interface", StructurePlacement("placement:bridge", "align-structure-filter", 20.0, 40.0)),
+            StructureRow("structure:wall-01", "retaining_wall", "interface", StructurePlacement("placement:wall", "align-structure-filter", 20.0, 40.0)),
+        ],
+        interaction_rule_rows=[
+            StructureInteractionRule("rule:bridge", "structure:bridge-01", "section_handoff", "section"),
+            StructureInteractionRule("rule:wall", "structure:wall-01", "section_handoff", "section"),
+        ],
+        influence_zone_rows=[
+            StructureInfluenceZone("zone:bridge", "structure:bridge-01", "clearance", 15.0, 45.0),
+            StructureInfluenceZone("zone:wall", "structure:wall-01", "clearance", 15.0, 45.0),
+        ],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides:empty"),
+            station=30.0,
+            applied_section_id="sec-structure-filter",
+            structure_model=structure_model,
+        )
+    )
+
+    assert result.active_structure_ids == ["structure:bridge-01"]
+    assert result.active_structure_rule_ids == ["rule:bridge"]
+    assert result.active_structure_influence_zone_ids == ["zone:bridge"]
+    assert result.component_rows[0].structure_ids == ["structure:bridge-01"]
+
+
+def test_structure_solid_output_service_builds_source_traceable_rows() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="corridor:main",
+        applied_section_set_ref="sections:main",
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                station=0.0,
+                frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=0.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:20",
+                station=20.0,
+                frame=AppliedSectionFrame(station=20.0, x=20.0, y=4.0, z=2.0, tangent_direction_deg=10.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:40",
+                station=40.0,
+                frame=AppliedSectionFrame(station=40.0, x=40.0, y=8.0, z=4.0, tangent_direction_deg=20.0),
+            ),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                "structure:bridge-01",
+                "bridge",
+                "interface",
+                StructurePlacement("placement:bridge-01", "alignment:main", 10.0, 30.0),
+                geometry_spec_ref="geometry-spec:bridge-01",
+            )
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec(
+                "geometry-spec:bridge-01",
+                "structure:bridge-01",
+                width=12.0,
+                height=1.2,
+                material="concrete",
+            )
+        ],
+        bridge_geometry_spec_rows=[
+            BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=14.0, deck_thickness=1.5)
+        ],
+    )
+
+    output = StructureSolidOutputService().build(
+        StructureSolidBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied,
+            structure_model=structure_model,
+        )
+    )
+
+    assert isinstance(output, StructureSolidOutput)
+    assert output.solid_rows[0].solid_kind == "bridge_deck_solid"
+    assert output.solid_rows[0].structure_id == "structure:bridge-01"
+    assert output.solid_rows[0].geometry_spec_id == "geometry-spec:bridge-01"
+    assert output.solid_rows[0].path_source == "3d_centerline"
+    assert output.solid_rows[0].width == 14.0
+    assert output.solid_rows[0].height == 1.5
+    assert output.solid_rows[0].volume == 420.0
+    assert output.solid_rows[0].start_x == 10.0
+    assert output.solid_rows[0].start_y == 2.0
+    assert output.solid_rows[0].start_z == 1.0
+    assert output.solid_rows[0].end_x == 30.0
+    assert output.solid_rows[0].end_y == 6.0
+    assert output.solid_rows[0].end_z == 3.0
+    assert output.solid_rows[0].start_tangent_direction_deg == 5.0
+    assert output.solid_rows[0].end_tangent_direction_deg == 15.0
+    assert len(output.solid_segment_rows) == 2
+    assert [row.station_start for row in output.solid_segment_rows] == [10.0, 20.0]
+    assert [row.station_end for row in output.solid_segment_rows] == [20.0, 30.0]
+    assert [row.segment_index for row in output.solid_segment_rows] == [1, 2]
+    assert output.solid_segment_rows[0].end_x == 20.0
+    assert output.solid_segment_rows[1].start_x == 20.0
+    assert sum(row.volume for row in output.solid_segment_rows) == output.solid_rows[0].volume
+
+
+def test_structure_solid_output_service_filters_by_applied_section_structure_ref() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="corridor:main",
+        applied_section_set_ref="sections:main",
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:20",
+                station=20.0,
+                assembly_id="assembly:bridge-deck",
+                region_id="region:bridge-01",
+                active_structure_ids=["structure:bridge-01"],
+            )
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                "structure:bridge-01",
+                "bridge",
+                "interface",
+                StructurePlacement("placement:bridge-01", "alignment:main", 10.0, 30.0),
+                geometry_spec_ref="geometry-spec:bridge-01",
+            ),
+            StructureRow(
+                "structure:wall-01",
+                "retaining_wall",
+                "interface",
+                StructurePlacement("placement:wall-01", "alignment:main", 10.0, 30.0),
+                geometry_spec_ref="geometry-spec:wall-01",
+            ),
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:bridge-01", "structure:bridge-01", width=12.0, height=1.2),
+            StructureGeometrySpec("geometry-spec:wall-01", "structure:wall-01", width=0.4, height=3.0),
+        ],
+        bridge_geometry_spec_rows=[
+            BridgeGeometrySpec("geometry-spec:bridge-01", deck_width=14.0, deck_thickness=1.5)
+        ],
+        retaining_wall_geometry_spec_rows=[
+            RetainingWallGeometrySpec("geometry-spec:wall-01", wall_height=3.0, wall_thickness=0.4)
+        ],
+    )
+
+    output = StructureSolidOutputService().build(
+        StructureSolidBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied,
+            structure_model=structure_model,
+        )
+    )
+
+    assert [row.structure_id for row in output.solid_rows] == ["structure:bridge-01"]
+    assert output.solid_rows[0].region_ref == "region:bridge-01"
+    assert output.solid_rows[0].assembly_ref == "assembly:bridge-deck"
+    assert output.solid_rows[0].structure_ref == "structure:bridge-01"
+    assert output.solid_segment_rows[0].region_ref == "region:bridge-01"
+    assert "structure:bridge-01" in output.source_refs
+    assert "region:bridge-01" in output.source_refs
+    assert "assembly:bridge-deck" in output.source_refs
+    assert "structure:wall-01" not in output.source_refs
+
+
+def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="corridor:main",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                station=0.0,
+            )
+        ],
+    )
+    structure_solid_output = StructureSolidOutput(
+        schema_version=1,
+        project_id="proj-1",
+        structure_solid_output_id="structure-solids:main",
+        corridor_id="corridor:main",
+        solid_rows=[
+            StructureSolidOutputRow(
+                output_object_id="solid:culvert-01",
+                structure_id="structure:culvert-01",
+                geometry_spec_id="geometry-spec:culvert-01",
+                solid_kind="culvert_body_solid",
+                station_start=10.0,
+                station_end=20.0,
+                width=3.0,
+                height=2.0,
+                length=10.0,
+                volume=60.0,
+            )
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                "structure:culvert-01",
+                "culvert",
+                "active",
+                StructurePlacement("placement:culvert-01", "alignment:main", 10.0, 20.0),
+                geometry_spec_ref="geometry-spec:culvert-01",
+            )
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:culvert-01", "structure:culvert-01", width=3.0, height=2.0)
+        ],
+        culvert_geometry_spec_rows=[
+            CulvertGeometrySpec(
+                "geometry-spec:culvert-01",
+                barrel_shape="box",
+                barrel_count=2,
+                span=3.0,
+                rise=2.0,
+                wall_thickness=0.25,
+                headwall_type="straight",
+                wingwall_type="flared",
+            )
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="quantity:main",
+            structure_solid_output=structure_solid_output,
+            structure_model=structure_model,
+        )
+    )
+
+    structure_rows = [
+        row
+        for row in result.fragment_rows
+        if row.measurement_kind == "structure_solid_output"
+    ]
+
+    assert [row.quantity_kind for row in structure_rows] == [
+        "culvert_barrel_volume",
+        "culvert_opening_area",
+        "culvert_barrel_count",
+        "culvert_wall_volume",
+        "culvert_headwall_count",
+        "culvert_wingwall_count",
+    ]
+    assert [row.value for row in structure_rows] == [60.0, 6.0, 2.0, 27.5, 2.0, 4.0]
+    assert all(row.structure_ref == "structure:culvert-01" for row in structure_rows)
+    assert "structure-solids:main" in result.source_refs
+
+
+def test_quantity_build_service_uses_singular_component_structure_ref() -> None:
+    corridor = CorridorModel(schema_version=1, project_id="proj-1", corridor_id="corridor:main")
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                station=0.0,
+                region_id="region:main",
+                component_rows=[
+                    AppliedSectionComponentRow(
+                        component_id="lane-1",
+                        kind="lane",
+                        structure_ids=["structure:bridge-01", "structure:wall-01"],
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="quantity:main",
+        )
+    )
+
+    assert result.fragment_rows[0].structure_ref == "structure:bridge-01"
+
+
+def test_quantity_build_service_adds_bridge_and_wall_detail_fragments() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="corridor:main",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
+        sections=[AppliedSection(schema_version=1, project_id="proj-1", applied_section_id="section:0", station=0.0)],
+    )
+    structure_solid_output = StructureSolidOutput(
+        schema_version=1,
+        project_id="proj-1",
+        structure_solid_output_id="structure-solids:main",
+        corridor_id="corridor:main",
+        solid_rows=[
+            StructureSolidOutputRow(
+                output_object_id="solid:bridge-01",
+                structure_id="structure:bridge-01",
+                geometry_spec_id="geometry-spec:bridge-01",
+                solid_kind="bridge_deck_solid",
+                station_start=0.0,
+                station_end=20.0,
+                width=12.0,
+                height=1.0,
+                length=20.0,
+                volume=240.0,
+            ),
+            StructureSolidOutputRow(
+                output_object_id="solid:wall-01",
+                structure_id="structure:wall-01",
+                geometry_spec_id="geometry-spec:wall-01",
+                solid_kind="retaining_wall_solid",
+                station_start=0.0,
+                station_end=20.0,
+                width=0.5,
+                height=4.0,
+                length=20.0,
+                volume=40.0,
+            ),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                "structure:bridge-01",
+                "bridge",
+                "active",
+                StructurePlacement("placement:bridge-01", "alignment:main", 0.0, 20.0),
+                geometry_spec_ref="geometry-spec:bridge-01",
+            ),
+            StructureRow(
+                "structure:wall-01",
+                "retaining_wall",
+                "active",
+                StructurePlacement("placement:wall-01", "alignment:main", 0.0, 20.0),
+                geometry_spec_ref="geometry-spec:wall-01",
+            ),
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:bridge-01", "structure:bridge-01", width=12.0, height=1.0),
+            StructureGeometrySpec("geometry-spec:wall-01", "structure:wall-01", width=0.5, height=4.0),
+        ],
+        bridge_geometry_spec_rows=[
+            BridgeGeometrySpec(
+                "geometry-spec:bridge-01",
+                deck_width=12.0,
+                deck_thickness=1.0,
+                girder_depth=1.5,
+                barrier_height=1.0,
+                abutment_start_offset=0.5,
+                abutment_end_offset=0.5,
+                pier_station_refs=["pier:10"],
+                approach_slab_length=5.0,
+            )
+        ],
+        retaining_wall_geometry_spec_rows=[
+            RetainingWallGeometrySpec(
+                "geometry-spec:wall-01",
+                wall_height=4.0,
+                wall_thickness=0.5,
+                footing_width=1.5,
+                footing_thickness=0.4,
+                coping_height=0.2,
+                drainage_layer_ref="drainage:wall-01",
+            )
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="quantity:main",
+            structure_solid_output=structure_solid_output,
+            structure_model=structure_model,
+        )
+    )
+
+    rows = [row for row in result.fragment_rows if row.measurement_kind == "structure_solid_output"]
+    by_kind = {row.quantity_kind: row for row in rows}
+    assert by_kind["bridge_deck_volume"].value == 240.0
+    assert by_kind["bridge_girder_depth_length"].value == 30.0
+    assert by_kind["bridge_barrier_face_area"].value == 40.0
+    assert by_kind["bridge_approach_slab_area"].value == 120.0
+    assert by_kind["bridge_support_count"].value == 3.0
+    assert by_kind["wall_body_volume"].value == 40.0
+    assert by_kind["wall_footing_volume"].value == 12.0
+    assert by_kind["wall_coping_volume"].value == 2.0
+    assert by_kind["wall_drainage_layer_length"].value == 20.0
+    assert by_kind["bridge_deck_volume"].structure_ref == "structure:bridge-01"
+    assert by_kind["wall_body_volume"].structure_ref == "structure:wall-01"
 
 
 def test_applied_section_service_warns_on_region_assembly_ref_mismatch() -> None:
@@ -1247,6 +2096,72 @@ def test_corridor_surface_geometry_service_builds_daylight_surface_from_side_slo
     assert max(vertex.z for vertex in result.vertex_rows) == 11.0
 
 
+def test_corridor_surface_geometry_service_uses_bench_breakline_points_for_daylight_surface() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench",
+        corridor_id="cor-bench",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=3.5,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.5, 8.0, "side_slope_surface", -7.5),
+                    AppliedSectionPoint("bench:right:1", 0.0, -8.0, 7.99, "bench_surface", -8.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -8.0, 7.99, "daylight_marker", -8.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 11.0, 0.0),
+                surface_right_width=3.5,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 10.0, -7.5, 9.0, "side_slope_surface", -7.5),
+                    AppliedSectionPoint("bench:right:1", 10.0, -8.0, 8.99, "bench_surface", -8.0),
+                    AppliedSectionPoint("daylight:right", 10.0, -8.0, 8.99, "daylight_marker", -8.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench:daylight",
+        )
+    )
+
+    quality = {row.kind: row.value for row in result.quality_rows}
+    vertices = result.vertex_map()
+    assert result.surface_kind == "daylight_surface"
+    assert len(result.triangle_rows) == 4
+    assert quality["bench_breakline_count"] == 2
+    assert quality["daylight_marker_count"] == 0
+    assert vertices["v0:right:p0"].y == -3.5
+    assert vertices["v0:right:p2"].notes == "bench_surface"
+    assert vertices["v1:right:p2"].z == 8.99
+
+
 def test_corridor_surface_geometry_service_starts_daylight_from_ditch_outer_edges() -> None:
     corridor = CorridorModel(
         schema_version=1,
@@ -1604,6 +2519,60 @@ def test_quantity_build_service_aggregates_section_quantity_fragments() -> None:
     assert len(result.fragment_rows) == 1
     assert result.fragment_rows[0].quantity_kind == "pavement_area"
     assert result.aggregate_rows[0].value == 25.0
+
+
+def test_quantity_build_service_adds_bench_and_slope_face_length_fragments() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-qty",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-qty",
+        corridor_id="cor-bench-qty",
+        alignment_id="align-1",
+        station_rows=[AppliedSectionStationRow("sta-1", 0.0, "sec-bench-qty")],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-bench-qty",
+                corridor_id="cor-bench-qty",
+                alignment_id="align-1",
+                profile_id="prof-1",
+                assembly_id="assembly-bench",
+                station=0.0,
+                region_id="region-bench",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=3.5,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.5, 8.0, "side_slope_surface", -7.5),
+                    AppliedSectionPoint("bench:right:1", 0.0, -8.0, 7.99, "bench_surface", -8.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -8.0, 7.99, "daylight_marker", -8.0),
+                ],
+            )
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="qty-bench",
+        )
+    )
+
+    rows = {row.quantity_kind: row for row in result.fragment_rows}
+    assert abs(rows["slope_face_length"].value - (4.0**2 + 2.0**2) ** 0.5) < 1.0e-9
+    assert abs(rows["bench_surface_length"].value - (0.5**2 + 0.01**2) ** 0.5) < 1.0e-9
+    assert rows["bench_surface_length"].measurement_kind == "section_side_slope_breakline"
+    assert rows["bench_surface_length"].assembly_ref == "assembly-bench"
+    assert rows["bench_surface_length"].region_ref == "region-bench"
 
 
 def test_quantity_build_service_derives_earthwork_volumes_from_section_areas() -> None:

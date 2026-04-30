@@ -73,6 +73,7 @@ def test_create_or_update_v1_region_model_object_routes_to_regions_tree() -> Non
         assert obj.RegionCount == 2
         assert list(obj.PrimaryKinds) == ["normal_road", "bridge"]
         assert list(obj.AppliedLayerRows)[1] == "ditch,drainage"
+        assert list(obj.StructureRefs)[1] == "structure:bridge-01"
         assert list(obj.StructureRefRows)[1] == "structure:bridge-01"
         assert list(obj.DrainageRefRows)[1] == "drainage:deck-drain-left,drainage:side-ditch-right"
         assert obj.Name in _group_names(tree[V1_TREE_REGIONS])
@@ -95,6 +96,7 @@ def test_v1_region_model_object_roundtrips_to_region_model() -> None:
         assert model.region_model_id == "regions:main"
         assert model.region_rows[1].primary_kind == "bridge"
         assert model.region_rows[1].applied_layers == ["ditch", "drainage"]
+        assert model.region_rows[1].structure_ref == "structure:bridge-01"
         assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
         assert model.region_rows[1].drainage_refs == ["drainage:deck-drain-left", "drainage:side-ditch-right"]
         assert model.region_rows[1].override_refs == ["override:bridge-shoulder"]

@@ -205,7 +205,10 @@ def _build_source_inspector(
     structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
     template_label = template_object_label or owner_template
     region_label = region_object_label or owner_region
-    owner_structure = structure_label or str(viewer_context.get("structure_summary", "") or "").strip()
+    active_structure_ref = _applied_section_structure_ref(applied_section)
+    if not active_structure_ref:
+        active_structure_ref = str(viewer_context.get("active_structure_ref", "") or "").strip()
+    owner_structure = active_structure_ref or structure_label or str(viewer_context.get("structure_summary", "") or "").strip()
     section_set_status = _source_owner_status(object_label=section_set_label, source_ref=applied_section_set_ref)
     template_status = _source_owner_status(object_label=template_object_label, source_ref=owner_template)
     region_status = _source_owner_status(object_label=region_object_label, source_ref=owner_region)
@@ -242,6 +245,7 @@ def _build_source_inspector(
         "region_source_ref": owner_region,
         "region_status": region_status,
         "structure_label": structure_label,
+        "structure_source_ref": active_structure_ref,
         "structure_status": structure_status,
         "component_id": component_id,
         "component_kind": component_kind,
@@ -263,6 +267,21 @@ def _first_component_ref(section_output, attr_name: str) -> str:
         value = str(getattr(row, attr_name, "") or "").strip()
         if value:
             return value
+    return ""
+
+
+def _applied_section_structure_ref(applied_section) -> str:
+    """Return the singular active Structure ref carried by an AppliedSection."""
+
+    for value in list(getattr(applied_section, "active_structure_ids", []) or []):
+        text = str(value or "").strip()
+        if text:
+            return text
+    for component in list(getattr(applied_section, "component_rows", []) or []):
+        for value in list(getattr(component, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                return text
     return ""
 
 
@@ -643,6 +662,16 @@ def _build_structure_review_rows(
 
     viewer_context = dict(viewer_context or {})
     rows = []
+    active_structure_ref = str(viewer_context.get("active_structure_ref", "") or "").strip()
+    if active_structure_ref:
+        rows.append(
+            {
+                "kind": "active_structure",
+                "label": "Active Structure",
+                "value": active_structure_ref,
+                "notes": "Resolved from Region structure_ref for the current station.",
+            }
+        )
     for value in list(viewer_context.get("structure_rows", []) or [])[:6]:
         text = str(value or "").strip()
         if text:
@@ -944,7 +973,9 @@ def _build_v1_applied_section_set_preview(
         "cut_fill_calc": getattr(project, "CutFillCalc", None) if project is not None else None,
         "structure_model": structure_model,
     }
-    viewer_context: dict[str, object] = {}
+    viewer_context: dict[str, object] = {
+        "active_structure_ref": _applied_section_structure_ref(applied_section),
+    }
     diagnostic_rows = _build_diagnostic_review_rows(
         section_output=section_output,
         viewer_context=viewer_context,
@@ -1234,6 +1265,10 @@ def show_v1_section_preview(
         explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
         _retarget_preview_to_station(preview)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
+    active_structure_ref = _applied_section_structure_ref(preview.get("applied_section", None))
+    if active_structure_ref and not str(viewer_context.get("active_structure_ref", "") or "").strip():
+        viewer_context["active_structure_ref"] = active_structure_ref
+        preview["viewer_context"] = viewer_context
     source_objects = dict(preview.get("source_objects", {}) or {})
     _apply_tin_section_geometry(preview)
     _apply_section_earthwork_area(preview)

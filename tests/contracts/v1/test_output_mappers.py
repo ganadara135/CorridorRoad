@@ -28,6 +28,12 @@ from freecad.Corridor_Road.v1.models.result.surface_model import (
     SurfaceModel,
     SurfaceRow,
 )
+from freecad.Corridor_Road.v1.models.output import (
+    StructureExportDiagnosticRow,
+    StructureSolidOutput,
+    StructureSolidOutputRow,
+    StructureSolidSegmentRow,
+)
 from freecad.Corridor_Road.v1.services.mapping import (
     EarthworkOutputMapper,
     ExchangeOutputMapper,
@@ -95,6 +101,50 @@ def test_section_output_mapper_maps_components_and_quantities() -> None:
     assert summary_by_kind["frame_status"].value == "alignment=ok; profile=ok"
 
 
+def test_section_output_mapper_marks_bench_rows_as_side_slope_scope() -> None:
+    applied_section = AppliedSection(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_id="sec-bench",
+        alignment_id="align-1",
+        assembly_id="assembly:bench-road",
+        station=10.0,
+        component_rows=[
+            AppliedSectionComponentRow(
+                component_id="side-slope-right:bench:1",
+                kind="bench",
+                source_template_id="tmpl-1",
+                region_id="region-1",
+                side="right",
+                width=1.0,
+                slope=-0.02,
+            ),
+            AppliedSectionComponentRow(
+                component_id="side-slope-right:daylight",
+                kind="daylight",
+                source_template_id="tmpl-1",
+                region_id="region-1",
+                side="right",
+            ),
+        ],
+        point_rows=[
+            AppliedSectionPoint("slope:right:1", 10.0, -7.5, 8.0, "side_slope_surface", -7.5),
+            AppliedSectionPoint("bench:right:1", 10.0, -8.0, 7.99, "bench_surface", -8.0),
+            AppliedSectionPoint("daylight:right", 10.0, -8.0, 7.99, "daylight_marker", -8.0),
+        ],
+    )
+
+    output = SectionOutputMapper().map_applied_section(applied_section)
+
+    assert output.component_rows[0].notes == "scope=side_slope; side=right"
+    assert output.component_rows[0].assembly_ref == "assembly:bench-road"
+    assert output.component_rows[1].notes == "scope=side_slope; side=right"
+    geometry_by_kind = {row.kind: row for row in output.geometry_rows}
+    assert geometry_by_kind["bench_section"].style_role == "side_slope_bench"
+    assert geometry_by_kind["bench_section"].x_values == [-8.0]
+    assert geometry_by_kind["daylight_marker"].style_role == "side_slope"
+
+
 def test_surface_output_mapper_maps_surface_rows() -> None:
     surface_model = SurfaceModel(
         schema_version=1,
@@ -137,6 +187,8 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
                 value=100.0,
                 unit="m2",
                 component_ref="lane-1",
+                assembly_ref="assembly:road",
+                structure_ref="structure:bridge-01",
             )
         ],
         aggregate_rows=[
@@ -155,6 +207,8 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
 
     assert output.quantity_output_id == "qty-1"
     assert output.fragment_rows[0].component_ref == "lane-1"
+    assert output.fragment_rows[0].assembly_ref == "assembly:road"
+    assert output.fragment_rows[0].structure_ref == "structure:bridge-01"
     assert output.aggregate_rows[0].fragment_refs == ["frag-1"]
 
 
@@ -320,3 +374,192 @@ def test_exchange_output_mapper_packages_multiple_outputs() -> None:
     assert exchange_output.exchange_output_id == "pkg-1"
     assert len(exchange_output.output_refs) == 2
     assert exchange_output.payload_metadata["output_count"] == 2
+
+
+def test_exchange_output_mapper_packages_structure_solid_output_geometry() -> None:
+    structure_output = StructureSolidOutput(
+        schema_version=1,
+        project_id="proj-1",
+        structure_solid_output_id="structure-solids:main",
+        corridor_id="corridor:main",
+        structure_model_id="structures:main",
+        source_refs=["structures:main"],
+        result_refs=["corridor:main"],
+        solid_rows=[
+            StructureSolidOutputRow(
+                output_object_id="solid:bridge-01",
+                structure_id="structure:bridge-01",
+                geometry_spec_id="geometry-spec:bridge-01",
+                solid_kind="bridge_deck_solid",
+                station_start=10.0,
+                station_end=30.0,
+                path_source="3d_centerline",
+                material="concrete",
+                width=14.0,
+                height=1.5,
+                length=20.0,
+                volume=420.0,
+                region_ref="region:bridge-01",
+                assembly_ref="assembly:bridge-deck",
+                structure_ref="structure:bridge-01",
+            )
+        ],
+        solid_segment_rows=[
+            StructureSolidSegmentRow(
+                segment_id="solid:bridge-01:segment:1",
+                parent_output_object_id="solid:bridge-01",
+                structure_id="structure:bridge-01",
+                geometry_spec_id="geometry-spec:bridge-01",
+                segment_index=1,
+                station_start=10.0,
+                station_end=20.0,
+                start_x=10.0,
+                start_y=0.0,
+                start_z=0.0,
+                end_x=20.0,
+                end_y=2.0,
+                end_z=1.0,
+                length=10.0,
+                volume=210.0,
+                region_ref="region:bridge-01",
+                assembly_ref="assembly:bridge-deck",
+                structure_ref="structure:bridge-01",
+            ),
+            StructureSolidSegmentRow(
+                segment_id="solid:bridge-01:segment:2",
+                parent_output_object_id="solid:bridge-01",
+                structure_id="structure:bridge-01",
+                geometry_spec_id="geometry-spec:bridge-01",
+                segment_index=2,
+                station_start=20.0,
+                station_end=30.0,
+                start_x=20.0,
+                start_y=2.0,
+                start_z=1.0,
+                end_x=30.0,
+                end_y=4.0,
+                end_z=2.0,
+                length=10.0,
+                volume=210.0,
+                region_ref="region:bridge-01",
+                assembly_ref="assembly:bridge-deck",
+                structure_ref="structure:bridge-01",
+            ),
+        ],
+        diagnostic_rows=[
+            StructureExportDiagnosticRow(
+                diagnostic_id="structure-export:simplified_ifc_geometry:bridge-01",
+                severity="warning",
+                kind="simplified_ifc_geometry",
+                structure_id="structure:bridge-01",
+                geometry_spec_id="geometry-spec:bridge-01",
+                output_object_id="solid:bridge-01",
+                message="IFC export will use a simplified rectangular swept solid proxy.",
+            )
+        ],
+    )
+
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-structures",
+            format="ifc",
+            package_kind="structure_geometry_exchange",
+            outputs=[structure_output],
+        )
+    )
+
+    assert exchange_output.output_refs[0].output_kind == "structuresolid"
+    assert exchange_output.output_refs[0].output_id == "structure-solids:main"
+    assert exchange_output.payload_metadata["structure_solid_count"] == 1
+    assert exchange_output.payload_metadata["structure_solid_segment_count"] == 2
+    assert exchange_output.payload_metadata["source_context_count"] == 1
+    assert exchange_output.payload_metadata["region_ref_count"] == 1
+    assert exchange_output.payload_metadata["assembly_ref_count"] == 1
+    assert exchange_output.payload_metadata["structure_ref_count"] == 1
+    assert exchange_output.payload_metadata["diagnostic_count"] == 1
+    assert exchange_output.payload_metadata["diagnostic_warning_count"] == 1
+    assert exchange_output.format_payload["structure_solid_rows"][0]["structure_id"] == "structure:bridge-01"
+    assert exchange_output.format_payload["structure_solid_rows"][0]["region_ref"] == "region:bridge-01"
+    assert exchange_output.format_payload["source_context_rows"][0]["region_ref"] == "region:bridge-01"
+    assert exchange_output.format_payload["source_context_rows"][0]["assembly_ref"] == "assembly:bridge-deck"
+    assert exchange_output.format_payload["source_context_rows"][0]["structure_ref"] == "structure:bridge-01"
+    assert exchange_output.format_payload["structure_solid_segment_rows"][1]["segment_index"] == 2
+    assert exchange_output.format_payload["diagnostic_rows"][0]["kind"] == "simplified_ifc_geometry"
+    assert exchange_output.format_payload["diagnostic_rows"][0]["output_object_id"] == "solid:bridge-01"
+    assert exchange_output.format_payload["structure_solid_rows"][0]["geometry_spec_id"] == "geometry-spec:bridge-01"
+    assert exchange_output.source_refs == ["structures:main"]
+    assert exchange_output.result_refs == ["corridor:main"]
+
+
+def test_exchange_output_mapper_packages_side_slope_bench_source_context() -> None:
+    applied_section = AppliedSection(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_id="sec-bench",
+        alignment_id="align-1",
+        assembly_id="assembly:bench-road",
+        station=20.0,
+        source_refs=["assembly:bench-road", "region:bench-01"],
+        component_rows=[
+            AppliedSectionComponentRow(
+                component_id="side-slope-right:bench:1",
+                kind="bench",
+                source_template_id="tmpl-side-slope-right",
+                region_id="region:bench-01",
+                side="right",
+            )
+        ],
+    )
+    section_output = SectionOutputMapper().map_applied_section(applied_section)
+    quantity_output = QuantityOutputMapper().map_quantity_model(
+        QuantityModel(
+            schema_version=1,
+            project_id="proj-1",
+            quantity_model_id="qty-bench",
+            corridor_id="corridor:main",
+            fragment_rows=[
+                QuantityFragment(
+                    fragment_id="frag-bench-length",
+                    quantity_kind="bench_surface_length",
+                    measurement_kind="section_side_slope_breakline",
+                    value=12.5,
+                    unit="m",
+                    component_ref="side-slope-right:bench:1",
+                    assembly_ref="assembly:bench-road",
+                    region_ref="region:bench-01",
+                )
+            ],
+        )
+    )
+
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-bench",
+            format="json",
+            package_kind="corridor_source_trace_exchange",
+            outputs=[section_output, quantity_output],
+        )
+    )
+
+    context_rows = exchange_output.format_payload["source_context_rows"]
+    context_by_kind = {row["context_kind"]: row for row in context_rows}
+    component_context = context_by_kind["section_side_slope_component"]
+    quantity_context = context_by_kind["side_slope_quantity_fragment"]
+
+    assert exchange_output.payload_metadata["source_context_count"] == 2
+    assert exchange_output.payload_metadata["side_slope_source_context_count"] == 2
+    assert exchange_output.payload_metadata["bench_source_context_count"] == 2
+    assert component_context["scope"] == "side_slope"
+    assert component_context["assembly_ref"] == "assembly:bench-road"
+    assert component_context["region_ref"] == "region:bench-01"
+    assert component_context["component_ref"] == "side-slope-right:bench:1"
+    assert component_context["template_ref"] == "tmpl-side-slope-right"
+    assert component_context["component_kind"] == "bench"
+    assert quantity_context["scope"] == "side_slope"
+    assert quantity_context["assembly_ref"] == "assembly:bench-road"
+    assert quantity_context["region_ref"] == "region:bench-01"
+    assert quantity_context["component_ref"] == "side-slope-right:bench:1"
+    assert quantity_context["quantity_kind"] == "bench_surface_length"
+    assert quantity_context["measurement_kind"] == "section_side_slope_breakline"

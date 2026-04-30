@@ -9,16 +9,20 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
     apply_v1_region_model,
     region_assembly_reference_warnings,
+    region_structure_reference_warnings,
     region_preset_model_from_document,
     region_preset_names,
+    structure_model_ids,
     starter_region_model_from_document,
 )
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to_region_model
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 
 
 def _new_project_doc():
@@ -65,6 +69,7 @@ def test_region_presets_offer_multiple_practical_region_sets() -> None:
         assert [row.primary_kind for row in model.region_rows] == ["normal_road", "bridge", "normal_road"]
         assert model.region_rows[0].station_start == min(stations)
         assert model.region_rows[-1].station_end == max(stations)
+        assert model.region_rows[1].structure_ref == "structure:bridge-01"
         assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
         assert model.region_rows[1].drainage_refs == ["drainage:deck-drain"]
     finally:
@@ -115,6 +120,64 @@ def test_region_assembly_reference_warnings_report_missing_refs() -> None:
     assert warnings == ["WARNING: region:missing references missing assembly_ref assembly:missing."]
 
 
+def test_region_editor_lists_v1_structure_ids_for_structure_selector() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-region-editor",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        "structure:bridge-01",
+                        "bridge",
+                        "interface",
+                        StructurePlacement("placement:bridge-01", "", 10.0, 20.0),
+                    ),
+                    StructureRow(
+                        "structure:wall-01",
+                        "retaining_wall",
+                        "interface",
+                        StructurePlacement("placement:wall-01", "", 30.0, 40.0),
+                    ),
+                ],
+            ),
+        )
+
+        assert structure_model_ids(doc) == ["structure:bridge-01", "structure:wall-01"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_structure_reference_warnings_report_missing_refs() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-region-editor",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:known",
+                station_start=0.0,
+                station_end=50.0,
+                structure_ref="structure:bridge-01",
+            ),
+            RegionRow(
+                region_id="region:missing",
+                station_start=50.0,
+                station_end=100.0,
+                structure_ref="structure:missing",
+            ),
+        ],
+    )
+
+    warnings = region_structure_reference_warnings(model, ["structure:bridge-01"])
+
+    assert warnings == ["WARNING: region:missing references missing structure_ref structure:missing."]
+
+
 def test_apply_v1_region_model_creates_region_source_object_only() -> None:
     doc, project, tree = _new_project_doc()
     try:
@@ -149,6 +212,7 @@ def test_apply_v1_region_model_creates_region_source_object_only() -> None:
         assert obj.RegionCount == 1
         assert roundtrip.region_rows[0].primary_kind == "bridge"
         assert roundtrip.region_rows[0].applied_layers == ["ditch", "drainage"]
+        assert roundtrip.region_rows[0].structure_ref == "structure:bridge-01"
         assert roundtrip.region_rows[0].structure_refs == ["structure:bridge-01"]
         assert roundtrip.region_rows[0].drainage_refs == ["drainage:deck-drain"]
         assert obj.Name in _group_names(tree[V1_TREE_REGIONS])

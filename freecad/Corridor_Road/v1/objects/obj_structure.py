@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+
 try:
     import FreeCAD as App
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
 
 from ..models.source.structure_model import (
+    BridgeGeometrySpec,
+    CulvertGeometrySpec,
+    RetainingWallGeometrySpec,
+    StructureGeometrySpec,
     StructureInfluenceZone,
     StructureInteractionRule,
     StructureModel,
@@ -73,6 +80,23 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "Offsets", "Placements", "structure offsets")
     _add_property(obj, "App::PropertyStringList", "ElevationReferences", "Placements", "elevation references")
     _add_property(obj, "App::PropertyStringList", "OrientationModes", "Placements", "orientation modes")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecRefs", "Geometry Specs", "native geometry spec refs")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecIds", "Geometry Specs", "geometry spec ids")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecStructureRefs", "Geometry Specs", "geometry spec structure refs")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecShapeKinds", "Geometry Specs", "geometry spec shape kinds")
+    _add_property(obj, "App::PropertyFloatList", "GeometrySpecWidths", "Geometry Specs", "geometry spec widths")
+    _add_property(obj, "App::PropertyFloatList", "GeometrySpecHeights", "Geometry Specs", "geometry spec heights")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecLengthModes", "Geometry Specs", "geometry spec length modes")
+    _add_property(obj, "App::PropertyFloatList", "GeometrySpecSkewAngles", "Geometry Specs", "geometry spec skew angles")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecVerticalPositionModes", "Geometry Specs", "geometry spec vertical position modes")
+    _add_property(obj, "App::PropertyFloatList", "GeometrySpecBaseElevations", "Geometry Specs", "geometry spec base elevations")
+    _add_property(obj, "App::PropertyFloatList", "GeometrySpecTopElevations", "Geometry Specs", "geometry spec top elevations")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecMaterials", "Geometry Specs", "geometry spec materials")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecStyleRoles", "Geometry Specs", "geometry spec style roles")
+    _add_property(obj, "App::PropertyStringList", "GeometrySpecNotes", "Geometry Specs", "geometry spec notes")
+    _add_property(obj, "App::PropertyStringList", "BridgeGeometrySpecRows", "Kind Geometry Specs", "bridge-specific geometry spec rows")
+    _add_property(obj, "App::PropertyStringList", "CulvertGeometrySpecRows", "Kind Geometry Specs", "culvert-specific geometry spec rows")
+    _add_property(obj, "App::PropertyStringList", "RetainingWallGeometrySpecRows", "Kind Geometry Specs", "retaining-wall-specific geometry spec rows")
     _add_property(obj, "App::PropertyStringList", "GeometryRefs", "References", "geometry refs")
     _add_property(obj, "App::PropertyStringList", "ReferenceModes", "References", "reference modes")
     _add_property(obj, "App::PropertyStringList", "RuleIds", "Interaction Rules", "interaction rule ids")
@@ -152,6 +176,10 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
 
     ensure_v1_structure_properties(obj)
     rows = list(getattr(structure_model, "structure_rows", []) or [])
+    geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
+    bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
+    culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
+    retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
     rule_rows = list(getattr(structure_model, "interaction_rule_rows", []) or [])
     zone_rows = list(getattr(structure_model, "influence_zone_rows", []) or [])
     diagnostics = validate_structure_model(structure_model)
@@ -173,6 +201,23 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.Offsets = [float(row.placement.offset) for row in rows]
     obj.ElevationReferences = [str(row.placement.elevation_reference) for row in rows]
     obj.OrientationModes = [str(row.placement.orientation_mode) for row in rows]
+    obj.GeometrySpecRefs = [str(getattr(row, "geometry_spec_ref", "") or "") for row in rows]
+    obj.GeometrySpecIds = [str(row.geometry_spec_id) for row in geometry_spec_rows]
+    obj.GeometrySpecStructureRefs = [str(row.structure_ref) for row in geometry_spec_rows]
+    obj.GeometrySpecShapeKinds = [str(row.shape_kind) for row in geometry_spec_rows]
+    obj.GeometrySpecWidths = [float(row.width) for row in geometry_spec_rows]
+    obj.GeometrySpecHeights = [float(row.height) for row in geometry_spec_rows]
+    obj.GeometrySpecLengthModes = [str(row.length_mode) for row in geometry_spec_rows]
+    obj.GeometrySpecSkewAngles = [float(row.skew_angle_deg) for row in geometry_spec_rows]
+    obj.GeometrySpecVerticalPositionModes = [str(row.vertical_position_mode) for row in geometry_spec_rows]
+    obj.GeometrySpecBaseElevations = [_optional_float_value(row.base_elevation) for row in geometry_spec_rows]
+    obj.GeometrySpecTopElevations = [_optional_float_value(row.top_elevation) for row in geometry_spec_rows]
+    obj.GeometrySpecMaterials = [str(row.material) for row in geometry_spec_rows]
+    obj.GeometrySpecStyleRoles = [str(row.style_role) for row in geometry_spec_rows]
+    obj.GeometrySpecNotes = [str(row.notes) for row in geometry_spec_rows]
+    obj.BridgeGeometrySpecRows = [_json_row(row) for row in bridge_geometry_spec_rows]
+    obj.CulvertGeometrySpecRows = [_json_row(row) for row in culvert_geometry_spec_rows]
+    obj.RetainingWallGeometrySpecRows = [_json_row(row) for row in retaining_wall_geometry_spec_rows]
     obj.GeometryRefs = [str(row.geometry_ref) for row in rows]
     obj.ReferenceModes = [str(row.reference_mode) for row in rows]
     obj.RuleIds = [str(row.interaction_rule_id) for row in rule_rows]
@@ -226,10 +271,47 @@ def to_structure_model(obj) -> StructureModel | None:
                 structure_kind=_list_value(getattr(obj, "StructureKinds", []), index, "bridge"),
                 structure_role=_list_value(getattr(obj, "StructureRoles", []), index, "active"),
                 placement=placement,
+                geometry_spec_ref=_list_value(getattr(obj, "GeometrySpecRefs", []), index, ""),
                 geometry_ref=_list_value(getattr(obj, "GeometryRefs", []), index, ""),
                 reference_mode=_list_value(getattr(obj, "ReferenceModes", []), index, "native"),
             )
         )
+
+    geometry_spec_rows: list[StructureGeometrySpec] = []
+    geometry_spec_ids = list(getattr(obj, "GeometrySpecIds", []) or [])
+    base_elevations = _float_list(getattr(obj, "GeometrySpecBaseElevations", []) or [])
+    top_elevations = _float_list(getattr(obj, "GeometrySpecTopElevations", []) or [])
+    for index, geometry_spec_id in enumerate(geometry_spec_ids):
+        geometry_spec_rows.append(
+            StructureGeometrySpec(
+                geometry_spec_id=str(geometry_spec_id),
+                structure_ref=_list_value(getattr(obj, "GeometrySpecStructureRefs", []), index, ""),
+                shape_kind=_list_value(getattr(obj, "GeometrySpecShapeKinds", []), index, ""),
+                width=_float_list_value(getattr(obj, "GeometrySpecWidths", []), index, 0.0),
+                height=_float_list_value(getattr(obj, "GeometrySpecHeights", []), index, 0.0),
+                length_mode=_list_value(getattr(obj, "GeometrySpecLengthModes", []), index, "station_range"),
+                skew_angle_deg=_float_list_value(getattr(obj, "GeometrySpecSkewAngles", []), index, 0.0),
+                vertical_position_mode=_list_value(getattr(obj, "GeometrySpecVerticalPositionModes", []), index, "profile_frame"),
+                base_elevation=_none_if_blank_offset(base_elevations, index),
+                top_elevation=_none_if_blank_offset(top_elevations, index),
+                material=_list_value(getattr(obj, "GeometrySpecMaterials", []), index, ""),
+                style_role=_list_value(getattr(obj, "GeometrySpecStyleRoles", []), index, ""),
+                notes=_list_value(getattr(obj, "GeometrySpecNotes", []), index, ""),
+            )
+        )
+
+    bridge_geometry_spec_rows = [
+        BridgeGeometrySpec(**row)
+        for row in _json_rows(getattr(obj, "BridgeGeometrySpecRows", []) or [])
+    ]
+    culvert_geometry_spec_rows = [
+        CulvertGeometrySpec(**row)
+        for row in _json_rows(getattr(obj, "CulvertGeometrySpecRows", []) or [])
+    ]
+    retaining_wall_geometry_spec_rows = [
+        RetainingWallGeometrySpec(**row)
+        for row in _json_rows(getattr(obj, "RetainingWallGeometrySpecRows", []) or [])
+    ]
 
     rule_rows: list[StructureInteractionRule] = []
     rule_ids = list(getattr(obj, "RuleIds", []) or [])
@@ -270,6 +352,10 @@ def to_structure_model(obj) -> StructureModel | None:
         alignment_id=str(getattr(obj, "AlignmentId", "") or ""),
         label=str(getattr(obj, "Label", "") or "Structures"),
         structure_rows=rows,
+        geometry_spec_rows=geometry_spec_rows,
+        bridge_geometry_spec_rows=bridge_geometry_spec_rows,
+        culvert_geometry_spec_rows=culvert_geometry_spec_rows,
+        retaining_wall_geometry_spec_rows=retaining_wall_geometry_spec_rows,
         interaction_rule_rows=rule_rows,
         influence_zone_rows=zone_rows,
     )
@@ -292,16 +378,52 @@ def validate_structure_model(structure_model: StructureModel) -> list[str]:
     """Return compact diagnostics for obvious StructureModel authoring issues."""
 
     rows = list(getattr(structure_model, "structure_rows", []) or [])
+    geometry_spec_rows = list(getattr(structure_model, "geometry_spec_rows", []) or [])
+    bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
+    culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
+    retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
+    geometry_specs_by_id = {
+        str(getattr(row, "geometry_spec_id", "") or ""): row
+        for row in geometry_spec_rows
+    }
+    bridge_specs_by_ref = {
+        str(getattr(row, "geometry_spec_ref", "") or ""): row
+        for row in bridge_geometry_spec_rows
+    }
+    culvert_specs_by_ref = {
+        str(getattr(row, "geometry_spec_ref", "") or ""): row
+        for row in culvert_geometry_spec_rows
+    }
+    retaining_wall_specs_by_ref = {
+        str(getattr(row, "geometry_spec_ref", "") or ""): row
+        for row in retaining_wall_geometry_spec_rows
+    }
     diagnostics: list[str] = []
     seen = set()
     for index, row in enumerate(rows, start=1):
         structure_id = str(getattr(row, "structure_id", "") or "").strip()
+        kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+        geometry_spec_ref = str(getattr(row, "geometry_spec_ref", "") or "").strip()
+        geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
+        reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
         placement = getattr(row, "placement", None)
         if not structure_id:
             diagnostics.append(f"warning|structure_id|row:{index}|Structure id is empty.")
         elif structure_id in seen:
             diagnostics.append(f"warning|structure_id|{structure_id}|Structure id is duplicated.")
         seen.add(structure_id)
+        if reference_mode == "native" and not geometry_spec_ref:
+            diagnostics.append(f"error|geometry_spec_missing|{structure_id or index}|Native structure is missing a geometry spec reference.")
+        if geometry_spec_ref and geometry_spec_ref not in geometry_specs_by_id:
+            diagnostics.append(f"error|geometry_spec_ref|{structure_id or index}|Structure references a missing geometry spec.")
+        if geometry_ref and geometry_spec_ref and reference_mode in {"native", "source_ref", "reference_geometry"}:
+            diagnostics.append(f"warning|geometry_reference_conflict|{structure_id or index}|Structure has both native geometry spec and external geometry reference.")
+        if kind == "bridge" and geometry_spec_ref and geometry_spec_ref not in bridge_specs_by_ref:
+            diagnostics.append(f"error|bridge_geometry_spec_missing|{structure_id or index}|Bridge structure is missing bridge-specific geometry spec fields.")
+        elif kind == "culvert" and geometry_spec_ref and geometry_spec_ref not in culvert_specs_by_ref:
+            diagnostics.append(f"error|culvert_geometry_spec_missing|{structure_id or index}|Culvert structure is missing culvert-specific geometry spec fields.")
+        elif kind in {"retaining_wall", "wall"} and geometry_spec_ref and geometry_spec_ref not in retaining_wall_specs_by_ref:
+            diagnostics.append(f"error|retaining_wall_geometry_spec_missing|{structure_id or index}|Retaining wall structure is missing retaining-wall-specific geometry spec fields.")
         if placement is None:
             diagnostics.append(f"error|placement|{structure_id or index}|Structure placement is missing.")
             continue
@@ -309,6 +431,58 @@ def validate_structure_model(structure_model: StructureModel) -> list[str]:
         end = float(getattr(placement, "station_end", 0.0) or 0.0)
         if end < start:
             diagnostics.append(f"error|station_range|{structure_id or index}|Station end is before station start.")
+    seen_specs = set()
+    structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
+    for index, spec in enumerate(geometry_spec_rows, start=1):
+        geometry_spec_id = str(getattr(spec, "geometry_spec_id", "") or "").strip()
+        structure_ref = str(getattr(spec, "structure_ref", "") or "").strip()
+        if not geometry_spec_id:
+            diagnostics.append(f"warning|geometry_spec_id|row:{index}|Geometry spec id is empty.")
+        elif geometry_spec_id in seen_specs:
+            diagnostics.append(f"warning|geometry_spec_id|{geometry_spec_id}|Geometry spec id is duplicated.")
+        seen_specs.add(geometry_spec_id)
+        if structure_ref and structure_ref not in structure_ids:
+            diagnostics.append(f"warning|geometry_spec_ref|{geometry_spec_id or index}|Geometry spec references an unknown structure.")
+        width = float(getattr(spec, "width", 0.0) or 0.0)
+        height = float(getattr(spec, "height", 0.0) or 0.0)
+        if width <= 0.0:
+            diagnostics.append(f"error|geometry_width|{geometry_spec_id or index}|Geometry spec width must be greater than zero.")
+        if height <= 0.0:
+            diagnostics.append(f"error|geometry_height|{geometry_spec_id or index}|Geometry spec height must be greater than zero.")
+        skew = float(getattr(spec, "skew_angle_deg", 0.0) or 0.0)
+        if skew != 0.0:
+            diagnostics.append(f"warning|unsupported_skew_angle|{geometry_spec_id or index}|Current preview builder records skew but does not apply skewed geometry.")
+    spec_ids = {str(getattr(row, "geometry_spec_id", "") or "") for row in geometry_spec_rows}
+    for spec in bridge_geometry_spec_rows:
+        spec_ref = str(getattr(spec, "geometry_spec_ref", "") or "")
+        if spec_ref and spec_ref not in spec_ids:
+            diagnostics.append(f"warning|bridge_geometry_spec_ref|{spec_ref}|Bridge geometry spec references an unknown common geometry spec.")
+        _validate_positive(diagnostics, "bridge_deck_width", spec_ref, getattr(spec, "deck_width", 0.0), "Bridge deck width must be greater than zero.")
+        _validate_positive(diagnostics, "bridge_deck_thickness", spec_ref, getattr(spec, "deck_thickness", 0.0), "Bridge deck thickness must be greater than zero.")
+        _validate_non_negative(diagnostics, "bridge_clearance_height", spec_ref, getattr(spec, "clearance_height", 0.0), "Bridge clearance height must not be negative.")
+    for spec in culvert_geometry_spec_rows:
+        spec_ref = str(getattr(spec, "geometry_spec_ref", "") or "")
+        if spec_ref and spec_ref not in spec_ids:
+            diagnostics.append(f"warning|culvert_geometry_spec_ref|{spec_ref}|Culvert geometry spec references an unknown common geometry spec.")
+        _validate_positive_int(diagnostics, "culvert_barrel_count", spec_ref, getattr(spec, "barrel_count", 0), "Culvert barrel count must be greater than zero.")
+        barrel_shape = str(getattr(spec, "barrel_shape", "") or "").strip().lower()
+        if barrel_shape in {"box", "pipe_arch", "custom_profile"}:
+            _validate_positive(diagnostics, "culvert_span", spec_ref, getattr(spec, "span", 0.0), "Culvert span must be greater than zero.")
+            _validate_positive(diagnostics, "culvert_rise", spec_ref, getattr(spec, "rise", 0.0), "Culvert rise must be greater than zero.")
+        elif barrel_shape == "circular":
+            _validate_positive(diagnostics, "culvert_diameter", spec_ref, getattr(spec, "diameter", 0.0), "Circular culvert diameter must be greater than zero.")
+        else:
+            diagnostics.append(f"warning|culvert_barrel_shape|{spec_ref}|Culvert barrel shape is not a recommended value.")
+        _validate_non_negative(diagnostics, "culvert_wall_thickness", spec_ref, getattr(spec, "wall_thickness", 0.0), "Culvert wall thickness must not be negative.")
+    for spec in retaining_wall_geometry_spec_rows:
+        spec_ref = str(getattr(spec, "geometry_spec_ref", "") or "")
+        if spec_ref and spec_ref not in spec_ids:
+            diagnostics.append(f"warning|retaining_wall_geometry_spec_ref|{spec_ref}|Retaining wall geometry spec references an unknown common geometry spec.")
+        _validate_positive(diagnostics, "wall_height", spec_ref, getattr(spec, "wall_height", 0.0), "Retaining wall height must be greater than zero.")
+        _validate_positive(diagnostics, "wall_thickness", spec_ref, getattr(spec, "wall_thickness", 0.0), "Retaining wall thickness must be greater than zero.")
+        retained_side = str(getattr(spec, "retained_side", "") or "").strip().lower()
+        if retained_side and retained_side not in {"left", "right", "inside", "outside"}:
+            diagnostics.append(f"warning|wall_retained_side|{spec_ref}|Retaining wall retained side is not a recommended value.")
     return diagnostics
 
 
@@ -339,6 +513,25 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         obj.addProperty(property_type, name, group, doc)
     except Exception:
         pass
+
+
+def _validate_positive(diagnostics: list[str], kind: str, row_ref: str, value: object, message: str) -> None:
+    if float(value or 0.0) <= 0.0:
+        diagnostics.append(f"error|{kind}|{row_ref}|{message}")
+
+
+def _validate_non_negative(diagnostics: list[str], kind: str, row_ref: str, value: object, message: str) -> None:
+    if float(value or 0.0) < 0.0:
+        diagnostics.append(f"error|{kind}|{row_ref}|{message}")
+
+
+def _validate_positive_int(diagnostics: list[str], kind: str, row_ref: str, value: object, message: str) -> None:
+    try:
+        parsed = int(value or 0)
+    except Exception:
+        parsed = 0
+    if parsed <= 0:
+        diagnostics.append(f"error|{kind}|{row_ref}|{message}")
 
 
 def _project_id(project) -> str:
@@ -388,3 +581,19 @@ def _none_if_blank_offset(values: list[float], index: int) -> float | None:
     if index >= len(values):
         return None
     return float(values[index])
+
+
+def _json_row(row) -> str:
+    return json.dumps(asdict(row), sort_keys=True, separators=(",", ":"))
+
+
+def _json_rows(values) -> list[dict]:
+    rows = []
+    for value in list(values or []):
+        try:
+            decoded = json.loads(str(value))
+            if isinstance(decoded, dict):
+                rows.append(decoded)
+        except Exception:
+            pass
+    return rows

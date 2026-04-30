@@ -7,6 +7,10 @@ from freecad.Corridor_Road.objects.obj_project import (
 )
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     CmdV1StructureEditor,
+    _bridge_spec_from_detail,
+    _kind_detail_field_specs,
+    _kind_detail_values,
+    _replace_kind_spec,
     apply_v1_structure_model,
     show_v1_structure_preview_object,
     starter_structure_model_from_document,
@@ -14,6 +18,8 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     structure_preset_names,
 )
 from freecad.Corridor_Road.v1.models.source.structure_model import (
+    BridgeGeometrySpec,
+    StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
     StructureRow,
@@ -67,6 +73,15 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
         assert len(model.structure_rows) == 1
         assert model.structure_rows[0].structure_id == "structure:culvert-01"
         assert model.structure_rows[0].structure_kind == "culvert"
+        assert model.structure_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
+        assert model.geometry_spec_rows[0].structure_ref == "structure:culvert-01"
+        assert model.geometry_spec_rows[0].shape_kind == "box"
+        assert model.geometry_spec_rows[0].width == 3.0
+        assert model.geometry_spec_rows[0].height == 2.0
+        assert model.geometry_spec_rows[0].vertical_position_mode == "profile_frame"
+        assert model.culvert_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
+        assert model.culvert_geometry_spec_rows[0].barrel_shape == "box"
+        assert model.culvert_geometry_spec_rows[0].wall_thickness == 0.3
         assert model.structure_rows[0].placement.station_start < model.structure_rows[0].placement.station_end
     finally:
         App.closeDocument(doc.Name)
@@ -172,6 +187,8 @@ def test_show_v1_structure_preview_object_creates_visible_3d_preview() -> None:
         assert preview.V1ObjectType == "V1StructureShowPreview"
         assert preview.StructureModelId == "structures:main"
         assert int(preview.StructureCount) == 1
+        assert int(preview.GeometrySpecCount) == 1
+        assert preview.PreviewGeometrySource == "geometry_spec"
         assert preview.PreviewPathSource == "alignment"
         assert preview.Shape.BoundBox.XLength > 0.0
         assert preview.Shape.BoundBox.ZLength > 0.0
@@ -251,11 +268,89 @@ def test_structure_preview_follows_3d_centerline_when_applied_sections_exist() -
         App.closeDocument(doc.Name)
 
 
+def test_structure_preview_uses_geometry_spec_dimensions_and_notes() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-editor",
+            structure_model_id="structures:main",
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:bridge-wide",
+                    structure_kind="bridge",
+                    structure_role="interface",
+                    placement=StructurePlacement(
+                        placement_id="placement:bridge-wide",
+                        alignment_id="",
+                        station_start=0.0,
+                        station_end=40.0,
+                        offset=0.0,
+                    ),
+                    geometry_spec_ref="geometry-spec:bridge-wide",
+                )
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:bridge-wide",
+                    structure_ref="structure:bridge-wide",
+                    shape_kind="deck_slab",
+                    width=20.0,
+                    height=2.5,
+                    skew_angle_deg=7.5,
+                    base_elevation=3.0,
+                )
+            ],
+            bridge_geometry_spec_rows=[
+                BridgeGeometrySpec(
+                    geometry_spec_ref="geometry-spec:bridge-wide",
+                    deck_width=22.0,
+                    deck_thickness=2.8,
+                )
+            ],
+        )
+
+        preview = show_v1_structure_preview_object(doc, model, project=project)
+
+        assert preview.PreviewGeometrySource == "geometry_spec"
+        assert preview.Shape.BoundBox.YLength >= 21.0
+        assert preview.Shape.BoundBox.ZLength >= 2.7
+        assert any("warning|skew_angle|structure:bridge-wide|" in row for row in list(preview.PreviewReviewNotes))
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_structure_editor_command_resources_are_v1_structures() -> None:
     resources = CmdV1StructureEditor().GetResources()
 
     assert resources["MenuText"] == "Structures"
     assert "v1" in resources["ToolTip"]
+
+
+def test_structure_detail_helpers_update_kind_specific_bridge_spec() -> None:
+    fields = _kind_detail_field_specs("bridge")
+    spec = _bridge_spec_from_detail(
+        "geometry-spec:bridge-01",
+        {
+            "deck_width": "14.0",
+            "deck_thickness": "1.5",
+            "girder_depth": "2.0",
+            "barrier_height": "1.1",
+            "clearance_height": "5.5",
+            "abutment_start_offset": "0",
+            "abutment_end_offset": "0",
+            "pier_station_refs": "120, 150",
+            "approach_slab_length": "6.5",
+            "bearing_elevation_mode": "profile_frame",
+        },
+    )
+    rows = _replace_kind_spec([BridgeGeometrySpec("geometry-spec:old", deck_width=9.0)], spec)
+    values = _kind_detail_values("bridge", "geometry-spec:bridge-01", rows, [], [])
+
+    assert ("deck_width", "Deck Width") in fields
+    assert len(rows) == 2
+    assert values["deck_width"] == "14.000"
+    assert values["pier_station_refs"] == "120, 150"
 
 
 def _group_names(folder) -> set[str]:

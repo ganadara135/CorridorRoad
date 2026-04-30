@@ -26,7 +26,12 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
 )
 from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
-from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
+from freecad.Corridor_Road.v1.models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionComponentRow,
+    AppliedSectionFrame,
+    AppliedSectionPoint,
+)
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
@@ -352,8 +357,49 @@ def test_corridor_applied_sections_review_summary_tracks_source_context() -> Non
         assert summary["diagnostic_count"] == 0
         assert summary["ditch_point_count"] == 8
         assert summary["slope_face_count"] == 0
+        assert summary["structure_count"] == 0
         assert "2 STA" in summary["summary"]
+        assert "structures:0" in summary["summary"]
         assert "ditch_pts:8" in summary["summary"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_applied_sections_review_summary_tracks_singular_structure_owner() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:structure",
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            station_rows=[AppliedSectionStationRow("station:10", 10.0, "section:10")],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="proj-1",
+                    applied_section_id="section:10",
+                    corridor_id="corridor:main",
+                    station=10.0,
+                    active_structure_ids=["structure:bridge-01", "structure:wall-ignored"],
+                    component_rows=[
+                        AppliedSectionComponentRow(
+                            component_id="lane-1",
+                            kind="lane",
+                            structure_ids=["structure:bridge-01"],
+                        )
+                    ],
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        summary = corridor_applied_sections_review_summary(doc)
+
+        assert summary["structure_count"] == 1
+        assert summary["structure_refs"] == ["structure:bridge-01"]
+        assert "structures:1" in summary["summary"]
     finally:
         App.closeDocument(doc.Name)
 

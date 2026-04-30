@@ -138,7 +138,8 @@ Minimum `RegionRow` fields:
 - `station_start`
 - `station_end`
 - `assembly_ref`
-- `structure_refs`
+- `structure_ref`
+- compatibility `structure_refs`
 - `drainage_refs`
 - `ramp_ref`
 - `intersection_ref`
@@ -184,7 +185,8 @@ The first validation service should check:
 - region ids are unique
 - priority is numeric
 - assembly/template references are not contradictory
-- structure and drainage references are preserved as lists
+- `structure_refs` has at most one active structure reference
+- drainage references are preserved as lists
 - overlapping rows with equal priority produce a warning
 - gaps between required normal road coverage produce a warning, not an auto-fix
 
@@ -214,7 +216,8 @@ Resolution result fields:
 - `active_applied_layers`
 - `active_assembly_ref`
 - `active_template_ref`
-- `resolved_structure_refs`
+- `resolved_structure_ref`
+- compatibility `resolved_structure_refs`
 - `resolved_drainage_refs`
 - `resolved_ramp_ref`
 - `resolved_intersection_ref`
@@ -232,7 +235,7 @@ Recommended columns:
 - `Primary Kind`
 - `Layers`
 - `Assembly`
-- `Structures`
+- `Structure`
 - `Drainage`
 - `Priority`
 - `Notes`
@@ -301,6 +304,7 @@ Acceptance criteria:
 Tasks:
 
 - [x] implement region validation service
+- [x] validate Region Assembly and Structure refs against known source ids when provided
 - [x] implement active station resolution
 - [x] implement overlap diagnostics
 - [x] add focused service tests
@@ -311,6 +315,7 @@ Acceptance criteria:
 - [x] overlapping regions resolve by priority
 - [x] equal-priority overlap emits a warning
 - [x] invalid station ranges emit errors
+- [x] unknown Assembly or Structure refs emit warnings when source id context is provided
 
 ### Phase R3: FreeCAD Source Object Bridge
 
@@ -371,7 +376,8 @@ Use these Region fields as downstream references:
 - `applied_layers` adds non-exclusive context such as `ditch`, `drainage`, `guardrail`, or `widening`.
 - `assembly_ref` points to the Assembly source to apply at the station.
 - `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
-- `structure_refs` points to bridge, culvert, retaining wall, or other Structure sources.
+- `structure_ref` points to the one Structure source to apply at the station.
+- `structure_refs` is compatibility storage and should have at most one active entry.
 - `drainage_refs` points to Drainage elements or collection/discharge context.
 - `ramp_ref` and `intersection_ref` point to Ramp and Intersection sources when the Region is tied to those domains.
 - `override_refs` points to station-specific or component-specific overrides.

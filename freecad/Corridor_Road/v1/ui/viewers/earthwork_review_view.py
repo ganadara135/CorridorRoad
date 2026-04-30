@@ -37,6 +37,13 @@ def build_section_handoff_context(
         focused_balance_row=focused_balance_row,
         focused_haul_zone=focused_haul_zone,
     )
+    earthwork_hint_rows.extend(
+        _side_slope_quantity_handoff_rows(
+            report.get("quantity_output", None),
+            station_value=station_value,
+            focused_balance_row=focused_balance_row,
+        )
+    )
 
     viewer_context = {
         "source_panel": "Earthwork Review",
@@ -151,6 +158,92 @@ def _earthwork_handoff_rows(
             }
         )
     return rows
+
+
+def _side_slope_quantity_handoff_rows(
+    quantity_output,
+    *,
+    station_value: float,
+    focused_balance_row,
+) -> list[dict[str, str]]:
+    rows = _side_slope_quantity_rows(
+        quantity_output,
+        station_value=station_value,
+        focused_balance_row=focused_balance_row,
+    )
+    if not rows:
+        return []
+    total_bench = sum(float(getattr(row, "value", 0.0) or 0.0) for row in rows if str(getattr(row, "quantity_kind", "") or "") == "bench_surface_length")
+    total_slope = sum(float(getattr(row, "value", 0.0) or 0.0) for row in rows if str(getattr(row, "quantity_kind", "") or "") == "slope_face_length")
+    source_tokens = _side_slope_quantity_source_tokens(rows)
+    return [
+        {
+            "kind": "side_slope_quantity_trace",
+            "label": "Bench / Slope Face",
+            "value": f"bench={total_bench:.3f} m; slope={total_slope:.3f} m",
+            "notes": "Source refs: " + (", ".join(source_tokens) if source_tokens else "(unresolved)"),
+        }
+    ]
+
+
+def _side_slope_quantity_rows(
+    quantity_output,
+    *,
+    station_value: float,
+    focused_balance_row,
+) -> list[object]:
+    if quantity_output is None:
+        return []
+    rows = []
+    for row in list(getattr(quantity_output, "fragment_rows", []) or []):
+        if str(getattr(row, "quantity_kind", "") or "") not in {"bench_surface_length", "slope_face_length"}:
+            continue
+        if not _quantity_row_matches_focus(row, station_value=station_value, focused_balance_row=focused_balance_row):
+            continue
+        rows.append(row)
+    return rows
+
+
+def _quantity_row_matches_focus(row, *, station_value: float, focused_balance_row) -> bool:
+    station_start = getattr(row, "station_start", None)
+    station_end = getattr(row, "station_end", None)
+    if focused_balance_row is not None:
+        window_start = getattr(focused_balance_row, "station_start", None)
+        window_end = getattr(focused_balance_row, "station_end", None)
+        if window_start is not None and window_end is not None:
+            lo = min(float(window_start), float(window_end))
+            hi = max(float(window_start), float(window_end))
+            if station_start is not None and lo <= float(station_start) <= hi:
+                return True
+            if station_end is not None and lo <= float(station_end) <= hi:
+                return True
+    if station_start is None and station_end is None:
+        return True
+    if station_start is not None and abs(float(station_start) - float(station_value)) <= 1.0e-6:
+        return True
+    if station_end is not None and abs(float(station_end) - float(station_value)) <= 1.0e-6:
+        return True
+    return False
+
+
+def _side_slope_quantity_source_tokens(rows: list[object]) -> list[str]:
+    tokens: list[str] = []
+    seen = set()
+    for row in rows:
+        for label, value in (
+            ("assembly", getattr(row, "assembly_ref", "")),
+            ("region", getattr(row, "region_ref", "")),
+            ("component", getattr(row, "component_ref", "")),
+        ):
+            text = str(value or "").strip()
+            if not text:
+                continue
+            token = f"{label}_ref={text}"
+            if token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+    return tokens
 
 
 def _earthwork_window_summary(row) -> str:

@@ -123,6 +123,41 @@ def test_cross_section_drawing_payload_starts_slope_face_from_ditch_outer_edges(
     assert any(row.offset_values == [-5.2, -7.2] and row.elevation_values == [19.6, 18.8] for row in slope_rows)
 
 
+def test_cross_section_drawing_payload_uses_bench_point_rows_for_side_slope_geometry() -> None:
+    section = AppliedSection(
+        schema_version=1,
+        project_id="project:cross-section-drawing",
+        applied_section_id="section:bench",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station=60.0,
+        frame=AppliedSectionFrame(station=60.0, x=60.0, y=0.0, z=10.0),
+        surface_right_width=3.5,
+        point_rows=[
+            AppliedSectionPoint("fg:right", 60.0, -3.5, 10.0, "fg_surface", -3.5),
+            AppliedSectionPoint("fg:center", 60.0, 0.0, 10.0, "fg_surface", 0.0),
+            AppliedSectionPoint("slope:right:1", 60.0, -7.5, 8.0, "side_slope_surface", -7.5),
+            AppliedSectionPoint("bench:right:1", 60.0, -8.0, 7.99, "bench_surface", -8.0),
+            AppliedSectionPoint("daylight:right", 60.0, -8.0, 7.99, "daylight_marker", -8.0),
+        ],
+    )
+
+    payload = CrossSectionDrawingMapper().map_applied_section(section)
+
+    side_slope_rows = [row for row in payload.geometry_rows if row.kind == "side_slope"]
+    bench_rows = [row for row in payload.geometry_rows if row.kind == "bench"]
+    labels = {(row.text, row.role) for row in payload.label_rows}
+
+    assert side_slope_rows[0].style_role == "side_slope"
+    assert side_slope_rows[0].offset_values == [-3.5, -7.5]
+    assert side_slope_rows[0].elevation_values == [10.0, 8.0]
+    assert bench_rows[0].style_role == "side_slope_bench"
+    assert bench_rows[0].offset_values == [-7.5, -8.0]
+    assert bench_rows[0].elevation_values == [8.0, 7.99]
+    assert ("Right bench", "side_slope_bench") in labels
+    assert ("Right daylight", "side_slope:daylight") in labels
+
+
 def test_cross_section_drawing_payload_synthesizes_v0_style_rows_from_components() -> None:
     section = AppliedSection(
         schema_version=1,

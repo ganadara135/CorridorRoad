@@ -23,9 +23,15 @@ from ...objects.obj_project import (
 from ..models.source.assembly_model import (
     ASSEMBLY_COMPONENT_KINDS,
     ASSEMBLY_COMPONENT_SIDES,
+    ASSEMBLY_BENCH_MODES,
+    ASSEMBLY_BENCH_PARAMETER_KEYS,
     AssemblyModel,
     SectionTemplate,
     TemplateComponent,
+    assembly_bench_validation_messages,
+    normalize_bench_rows,
+    parse_component_parameters,
+    serialize_component_parameters,
 )
 from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_assembly import (
@@ -170,6 +176,53 @@ ASSEMBLY_PRESETS = {
             ("ditch:right", "ditch", "right", 1.8, -0.02, 0.0, "earth", "Right trapezoid roadside ditch", {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0}),
             ("side_slope:left", "side_slope", "left", 6.0, -0.33, 0.0, "earth", "Left slope face to terrain"),
             ("side_slope:right", "side_slope", "right", 6.0, -0.33, 0.0, "earth", "Right slope face to terrain"),
+        ],
+    },
+    "Benched Slope Road": {
+        "assembly_id": "assembly:benched-slope-road",
+        "template_id": "template:benched-slope-road",
+        "label": "Benched Slope Road Assembly",
+        "template_label": "Benched Slope Road",
+        "note": "Rural road with side-slope bench intent stored on side_slope component parameters.",
+        "components": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.25, "asphalt", "Left travel lane"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.25, "asphalt", "Right travel lane"),
+            ("shoulder:left", "shoulder", "left", 1.5, -0.04, 0.20, "aggregate", "Left shoulder"),
+            ("shoulder:right", "shoulder", "right", 1.5, -0.04, 0.20, "aggregate", "Right shoulder"),
+            (
+                "side_slope:left",
+                "side_slope",
+                "left",
+                12.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Left side slope with repeatable bench intent",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 80.0,
+                },
+            ),
+            (
+                "side_slope:right",
+                "side_slope",
+                "right",
+                12.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Right side slope with repeatable bench intent",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 80.0,
+                },
+            ),
         ],
     },
 }
@@ -468,9 +521,60 @@ class V1AssemblyEditorTaskPanel:
             ditch_form.addWidget(edit, row_index, col_index + 1)
         ditch_layout.addLayout(ditch_form)
         layout.addWidget(self._ditch_group)
+
+        self._bench_group = QtWidgets.QGroupBox("Side Slope Bench")
+        bench_layout = QtWidgets.QVBoxLayout(self._bench_group)
+        bench_hint = QtWidgets.QLabel(
+            "Select a side_slope row, edit bench rows, then apply them back to the Parameters column."
+        )
+        bench_hint.setWordWrap(True)
+        bench_layout.addWidget(bench_hint)
+        bench_top_row = QtWidgets.QHBoxLayout()
+        bench_top_row.addWidget(QtWidgets.QLabel("Mode:"))
+        self._bench_mode_combo = QtWidgets.QComboBox()
+        self._bench_mode_combo.addItems(list(ASSEMBLY_BENCH_MODES))
+        bench_top_row.addWidget(self._bench_mode_combo)
+        self._bench_repeat_combo = QtWidgets.QComboBox()
+        self._bench_repeat_combo.addItems(["0", "1"])
+        bench_top_row.addWidget(QtWidgets.QLabel("Repeat to daylight:"))
+        bench_top_row.addWidget(self._bench_repeat_combo)
+        bench_top_row.addWidget(QtWidgets.QLabel("Daylight mode:"))
+        self._bench_daylight_mode = QtWidgets.QLineEdit()
+        self._bench_daylight_mode.setPlaceholderText("terrain")
+        bench_top_row.addWidget(self._bench_daylight_mode)
+        bench_top_row.addWidget(QtWidgets.QLabel("Max width:"))
+        self._bench_daylight_max_width = QtWidgets.QLineEdit()
+        self._bench_daylight_max_width.setPlaceholderText("80.000")
+        bench_top_row.addWidget(self._bench_daylight_max_width)
+        bench_layout.addLayout(bench_top_row)
+        self._bench_table = QtWidgets.QTableWidget(0, 5)
+        self._bench_table.setHorizontalHeaderLabels(["Drop", "Width", "Slope", "Post Slope", "Label"])
+        try:
+            self._bench_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        bench_layout.addWidget(self._bench_table)
+        bench_button_row = QtWidgets.QHBoxLayout()
+        add_bench_button = QtWidgets.QPushButton("Add Bench Row")
+        add_bench_button.clicked.connect(self._add_bench_row)
+        bench_button_row.addWidget(add_bench_button)
+        delete_bench_button = QtWidgets.QPushButton("Delete Bench Row")
+        delete_bench_button.clicked.connect(self._delete_selected_bench_rows)
+        bench_button_row.addWidget(delete_bench_button)
+        default_bench_button = QtWidgets.QPushButton("Load Bench Defaults")
+        default_bench_button.clicked.connect(self._load_bench_defaults)
+        bench_button_row.addWidget(default_bench_button)
+        apply_bench_button = QtWidgets.QPushButton("Apply Bench Parameters")
+        apply_bench_button.clicked.connect(self._apply_bench_parameters_to_selection)
+        bench_button_row.addWidget(apply_bench_button)
+        bench_button_row.addStretch(1)
+        bench_layout.addLayout(bench_button_row)
+        layout.addWidget(self._bench_group)
+
         self._table.cellPressed.connect(self._lock_component_row)
         self._table.itemSelectionChanged.connect(self._restore_or_load_component_selection)
         self._update_ditch_shape_controls()
+        self._clear_bench_parameter_fields()
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
@@ -611,6 +715,7 @@ class V1AssemblyEditorTaskPanel:
         self._locked_component_row = int(row_index)
         self._select_component_row(row_index, column_index)
         self._load_ditch_parameters_from_selection()
+        self._load_bench_parameters_from_selection()
 
     def _select_component_row(self, row_index: int, column_index: int = 0) -> None:
         if row_index < 0 or row_index >= self._table.rowCount():
@@ -633,6 +738,7 @@ class V1AssemblyEditorTaskPanel:
                 self._select_component_row(locked)
                 return
         self._load_ditch_parameters_from_selection()
+        self._load_bench_parameters_from_selection()
 
     def _valid_locked_component_row(self) -> int:
         row_index = int(getattr(self, "_locked_component_row", -1) or -1)
@@ -744,6 +850,125 @@ class V1AssemblyEditorTaskPanel:
             return _item_text(self._table, row_index, 6)
         return ""
 
+    def _load_bench_parameters_from_selection(self) -> None:
+        row_index = self._selected_row_index()
+        if row_index < 0 or not hasattr(self, "_bench_table"):
+            return
+        if _item_text(self._table, row_index, 1) != "side_slope":
+            self._clear_bench_parameter_fields()
+            return
+        params = _split_parameters(_item_text(self._table, row_index, 8))
+        rows = normalize_bench_rows(params.get("bench_rows", []))
+        mode = str(params.get("bench_mode", "") or ("rows" if rows else "none")).strip().lower().replace("-", "_")
+        self._bench_mode_combo.setCurrentText(mode if mode in ASSEMBLY_BENCH_MODES else "none")
+        self._bench_repeat_combo.setCurrentText("1" if _truthy(params.get("repeat_first_bench_to_daylight")) else "0")
+        self._bench_daylight_mode.setText(str(params.get("daylight_mode", "") or ""))
+        self._bench_daylight_max_width.setText(str(params.get("daylight_max_width", "") or ""))
+        self._replace_bench_rows(rows)
+
+    def _clear_bench_parameter_fields(self) -> None:
+        if not hasattr(self, "_bench_table"):
+            return
+        self._bench_mode_combo.setCurrentText("none")
+        self._bench_repeat_combo.setCurrentText("0")
+        self._bench_daylight_mode.clear()
+        self._bench_daylight_max_width.clear()
+        self._bench_table.setRowCount(0)
+
+    def _replace_bench_rows(self, rows: list[dict[str, object]]) -> None:
+        self._bench_table.setRowCount(0)
+        for row in list(rows or []):
+            self._append_bench_table_row(row)
+
+    def _append_bench_table_row(self, row: dict[str, object] | None = None) -> None:
+        row = dict(row or {})
+        index = self._bench_table.rowCount()
+        self._bench_table.insertRow(index)
+        values = [
+            row.get("drop", "3.000"),
+            row.get("width", "1.500"),
+            row.get("slope", "-0.020"),
+            row.get("post_slope", "-0.500"),
+            row.get("label", ""),
+        ]
+        for col, value in enumerate(values):
+            self._bench_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+
+    def _add_bench_row(self) -> None:
+        self._append_bench_table_row()
+        self._bench_mode_combo.setCurrentText("rows")
+        self._set_status("Added a bench row. Apply Bench Parameters to update the selected side_slope row.")
+
+    def _delete_selected_bench_rows(self) -> None:
+        rows = sorted({item.row() for item in list(self._bench_table.selectedItems() or [])}, reverse=True)
+        if not rows and self._bench_table.currentRow() >= 0:
+            rows = [self._bench_table.currentRow()]
+        for row_index in rows:
+            self._bench_table.removeRow(row_index)
+        self._set_status(f"Deleted {len(rows)} bench row(s).")
+
+    def _load_bench_defaults(self) -> None:
+        self._bench_mode_combo.setCurrentText("rows")
+        self._bench_repeat_combo.setCurrentText("1")
+        self._bench_daylight_mode.setText("terrain")
+        self._bench_daylight_max_width.setText("80.000")
+        self._replace_bench_rows([{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}])
+        self._set_status("Loaded bench defaults. Apply them to the selected side_slope row when ready.")
+
+    def _apply_bench_parameters_to_selection(self) -> None:
+        row_index = self._selected_row_index()
+        if row_index < 0:
+            self._set_status("Select a side_slope component row before applying bench parameters.")
+            return
+        if _item_text(self._table, row_index, 1) != "side_slope":
+            self._set_status("Selected component is not a side_slope. Change Kind to side_slope first.")
+            return
+        existing = _split_parameters(_item_text(self._table, row_index, 8))
+        params = _merge_bench_parameters(existing, self._bench_editor_parameters())
+        _set_table_item_text(self._table, row_index, 8, _join_parameters(params))
+        self._update_bench_note_for_row(row_index)
+        try:
+            messages = _validate_assembly_model(self._model_from_table())
+        except Exception as exc:
+            self._set_status(f"Bench parameters were applied, but validation failed:\n{exc}")
+            return
+        self._set_status(
+            "Bench parameters applied to the selected row.\n"
+            + ("\n".join(messages) if messages else "Validation status: ok")
+        )
+
+    def _bench_editor_parameters(self) -> dict[str, object]:
+        output: dict[str, object] = {
+            "bench_mode": str(self._bench_mode_combo.currentText() or "none"),
+            "bench_rows": self._bench_table_rows(),
+            "repeat_first_bench_to_daylight": self._bench_repeat_combo.currentText() == "1",
+        }
+        daylight_mode = str(self._bench_daylight_mode.text() or "").strip()
+        max_width = str(self._bench_daylight_max_width.text() or "").strip()
+        if daylight_mode:
+            output["daylight_mode"] = daylight_mode
+        if max_width:
+            output["daylight_max_width"] = max_width
+        return output
+
+    def _bench_table_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for row_index in range(self._bench_table.rowCount()):
+            width = _optional_float(_table_item_text(self._bench_table, row_index, 1), 0.0)
+            if width <= 0.0:
+                continue
+            row = {
+                "drop": _optional_float(_table_item_text(self._bench_table, row_index, 0), 0.0),
+                "width": width,
+                "slope": _optional_float(_table_item_text(self._bench_table, row_index, 2), 0.0),
+                "post_slope": _optional_float(_table_item_text(self._bench_table, row_index, 3), 0.0),
+            }
+            label = str(_table_item_text(self._bench_table, row_index, 4) or "").strip()
+            if label:
+                row["label"] = label
+            rows.append(row)
+        return normalize_bench_rows(rows)
+
     def _validate(self) -> None:
         try:
             model = self._model_from_table()
@@ -783,6 +1008,7 @@ class V1AssemblyEditorTaskPanel:
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
             self._refresh_ditch_notes()
+            self._refresh_bench_notes()
             model = self._model_from_table()
             messages = _validate_assembly_model(model)
             if any(message.startswith("ERROR") for message in messages):
@@ -858,6 +1084,20 @@ class V1AssemblyEditorTaskPanel:
         )
         _set_table_item_text(self._table, row_index, 9, note)
 
+    def _refresh_bench_notes(self) -> None:
+        for row_index in range(self._table.rowCount()):
+            self._update_bench_note_for_row(row_index)
+
+    def _update_bench_note_for_row(self, row_index: int) -> None:
+        if row_index < 0 or _item_text(self._table, row_index, 1) != "side_slope":
+            return
+        note = _bench_component_note(
+            side=_item_text(self._table, row_index, 2),
+            parameters=_split_parameters(_item_text(self._table, row_index, 8)),
+        )
+        if note:
+            _set_table_item_text(self._table, row_index, 9, note)
+
 
 class CmdV1AssemblyEditor:
     """Open the v1 Assembly source editor."""
@@ -895,6 +1135,8 @@ def _validate_assembly_model(model: AssemblyModel) -> list[str]:
             if component.width < 0.0:
                 messages.append(f"ERROR: component {component.component_id} width must not be negative.")
             for message in ditch_component_validation_messages(component):
+                messages.append(f"WARN: {message}")
+            for message in assembly_bench_validation_messages(component):
                 messages.append(f"WARN: {message}")
     if not messages:
         messages.append("Validation status: ok")
@@ -953,6 +1195,17 @@ def _assembly_side_points(template: SectionTemplate, *, side: str, start_x: floa
         if str(getattr(component, "kind", "") or "") == "ditch":
             x, z = _append_ditch_preview_points(points, component, base_x=x, base_z=z, direction=direction)
             continue
+        if str(getattr(component, "kind", "") or "") == "side_slope":
+            bench_segments = _side_slope_bench_preview_segments(component)
+            if bench_segments:
+                x, z = _append_side_slope_bench_preview_points(
+                    points,
+                    bench_segments,
+                    base_x=x,
+                    base_z=z,
+                    direction=direction,
+                )
+                continue
         width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
         if width <= 1.0e-9:
             continue
@@ -961,6 +1214,73 @@ def _assembly_side_points(template: SectionTemplate, *, side: str, start_x: floa
         z += slope * width
         points.append(App.Vector(x, 0.0, z))
     return points
+
+
+def _side_slope_bench_preview_segments(component) -> list[dict[str, object]]:
+    params = dict(getattr(component, "parameters", {}) or {})
+    rows = normalize_bench_rows(params.get("bench_rows", []))
+    if not rows:
+        return []
+    remaining = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+    current_slope = float(getattr(component, "slope", 0.0) or 0.0)
+    repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
+    source_rows = [rows[0]] if repeat else rows
+    segments: list[dict[str, object]] = []
+
+    def append_row(row: dict[str, object]) -> bool:
+        nonlocal remaining, current_slope
+        if remaining <= 1.0e-9:
+            return False
+        before = remaining
+        drop = max(float(row.get("drop", 0.0) or 0.0), 0.0)
+        pre_width = 0.0
+        if drop > 1.0e-9 and abs(current_slope) > 1.0e-9:
+            pre_width = min(remaining, drop / abs(current_slope))
+        if pre_width > 1.0e-9:
+            segments.append({"kind": "side_slope", "width": pre_width, "slope": current_slope})
+            remaining = max(remaining - pre_width, 0.0)
+        bench_width = min(max(float(row.get("width", 0.0) or 0.0), 0.0), remaining)
+        if bench_width > 1.0e-9:
+            segments.append({"kind": "bench", "width": bench_width, "slope": float(row.get("slope", 0.0) or 0.0)})
+            remaining = max(remaining - bench_width, 0.0)
+        current_slope = float(row.get("post_slope", current_slope) or current_slope)
+        return abs(before - remaining) > 1.0e-9
+
+    if repeat and source_rows:
+        guard = 0
+        while remaining > 1.0e-9 and guard < 512:
+            guard += 1
+            if not append_row(source_rows[0]):
+                break
+    else:
+        for row in source_rows:
+            if remaining <= 1.0e-9:
+                break
+            append_row(row)
+    if remaining > 1.0e-9:
+        segments.append({"kind": "side_slope", "width": remaining, "slope": current_slope})
+    return segments
+
+
+def _append_side_slope_bench_preview_points(
+    points,
+    segments: list[dict[str, object]],
+    *,
+    base_x: float,
+    base_z: float,
+    direction: float,
+) -> tuple[float, float]:
+    x = float(base_x)
+    z = float(base_z)
+    for segment in list(segments or []):
+        width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        slope = float(segment.get("slope", 0.0) or 0.0)
+        x += float(direction) * width
+        z += slope * width
+        points.append(App.Vector(x, 0.0, z))
+    return x, z
 
 
 def _append_ditch_preview_points(points, component, *, base_x: float, base_z: float, direction: float) -> tuple[float, float]:
@@ -1133,10 +1453,22 @@ def _required_float(value: object, label: str) -> float:
         raise ValueError(f"{label} must be a number.") from None
 
 
+def _optional_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
 def _item_text(table, row: int, col: int) -> str:
     widget = table.cellWidget(row, col)
     if widget is not None and hasattr(widget, "currentText"):
         return str(widget.currentText() or "").strip()
+    item = table.item(row, col)
+    return str(item.text() if item is not None else "").strip()
+
+
+def _table_item_text(table, row: int, col: int) -> str:
     item = table.item(row, col)
     return str(item.text() if item is not None else "").strip()
 
@@ -1153,8 +1485,14 @@ def _format_float(value: float) -> str:
     return f"{float(value):.3f}"
 
 
+def _truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _join_parameters(parameters: dict[str, object]) -> str:
-    return ";".join(f"{key}={value}" for key, value in sorted(dict(parameters or {}).items()) if str(key).strip())
+    return serialize_component_parameters(parameters)
 
 
 def _merge_ditch_parameters(existing: dict[str, object], edited: dict[str, object]) -> dict[str, object]:
@@ -1167,6 +1505,31 @@ def _merge_ditch_parameters(existing: dict[str, object], edited: dict[str, objec
         value = edited.get(key, "")
         if str(value).strip():
             output[key] = str(value).strip()
+    return output
+
+
+def _merge_bench_parameters(existing: dict[str, object], edited: dict[str, object]) -> dict[str, object]:
+    output = {
+        str(key): value
+        for key, value in dict(existing or {}).items()
+        if str(key).strip() and str(key).strip() not in ASSEMBLY_BENCH_PARAMETER_KEYS
+    }
+    edited_values = dict(edited or {})
+    mode = str(edited_values.get("bench_mode", "") or "none").strip().lower().replace("-", "_")
+    rows = normalize_bench_rows(edited_values.get("bench_rows", []))
+    if rows:
+        output["bench_mode"] = mode if mode in ASSEMBLY_BENCH_MODES and mode != "none" else "rows"
+        output["bench_rows"] = rows
+    elif mode and mode != "none":
+        output["bench_mode"] = mode
+    if _truthy(edited_values.get("repeat_first_bench_to_daylight")):
+        output["repeat_first_bench_to_daylight"] = True
+    daylight_mode = str(edited_values.get("daylight_mode", "") or "").strip()
+    if daylight_mode:
+        output["daylight_mode"] = daylight_mode
+    daylight_max_width = str(edited_values.get("daylight_max_width", "") or "").strip()
+    if daylight_max_width:
+        output["daylight_max_width"] = daylight_max_width
     return output
 
 
@@ -1194,16 +1557,8 @@ def _ditch_shape_defaults(shape: str) -> dict[str, str]:
     return dict(DITCH_SHAPE_DEFAULTS.get(key, DITCH_SHAPE_DEFAULTS["trapezoid"]))
 
 
-def _split_parameters(value: object) -> dict[str, str]:
-    output: dict[str, str] = {}
-    for token in str(value or "").split(";"):
-        if "=" not in token:
-            continue
-        key, raw = token.split("=", 1)
-        key = key.strip()
-        if key:
-            output[key] = raw.strip()
-    return output
+def _split_parameters(value: object) -> dict[str, object]:
+    return parse_component_parameters(value)
 
 
 def _ditch_shape_note(shape: str) -> str:
@@ -1246,6 +1601,22 @@ def _ditch_component_note(*, side: object, material: object, parameters: dict[st
         parts.append(f"material={material_text}")
     if policy in {"earth", "lined", "structural"}:
         parts.append(f"policy={policy}")
+    return "; ".join(parts)
+
+
+def _bench_component_note(*, side: object, parameters: dict[str, object]) -> str:
+    params = dict(parameters or {})
+    rows = normalize_bench_rows(params.get("bench_rows", []))
+    if not rows:
+        return ""
+    side_text = str(side or "").strip().title() or "Side"
+    parts = [f"{side_text} side slope bench rows={len(rows)}"]
+    parts.append(f"first_width={float(rows[0].get('width', 0.0) or 0.0):.3f}")
+    if _truthy(params.get("repeat_first_bench_to_daylight")):
+        parts.append("repeat_to_daylight=on")
+    daylight_mode = str(params.get("daylight_mode", "") or "").strip()
+    if daylight_mode:
+        parts.append(f"daylight={daylight_mode}")
     return "; ".join(parts)
 
 

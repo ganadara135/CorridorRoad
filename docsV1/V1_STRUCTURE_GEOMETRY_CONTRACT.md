@@ -421,6 +421,295 @@ Recommended implementation order:
 9. Add structure quantity fragments.
 10. Add exchange mapping for structure output geometry.
 
+## 21.1 Execution Breakdown
+
+Current execution status:
+
+- [x] Step 1: Add normalized geometry spec storage to `StructureModel`.
+  - Add a traceable `geometry_spec_ref` from `StructureRow` to native geometry source rows.
+  - Add `StructureGeometrySpec` as the first normalized source row for common geometry dimensions.
+  - Persist geometry spec rows on the FreeCAD v1 Structure source object.
+  - Round-trip geometry spec rows through `to_structure_model`.
+  - Keep generated preview geometry as an output, not the source.
+- [x] Step 2: Add common editable fields.
+  - Expose `width`, `height`, `skew_angle_deg`, and `vertical_position_mode` in source editing flows.
+  - Preserve `length_mode`, elevation fields, material, style role, and notes.
+  - Validate zero or negative dimensions once the editor can author them.
+- [x] Step 3: Add kind-specific specs.
+  - Add bridge deck, girder, barrier, clearance, and support fields.
+  - Add culvert barrel, wall, invert, inlet, outlet, headwall, and wingwall fields.
+  - Add retaining wall body, footing, side, batter, coping, and drainage reference fields.
+- [x] Step 4: Add selected-row detail panel.
+  - Keep the main Structures table compact.
+  - Show kind-specific geometry controls only for the selected structure.
+  - Preserve same-row selection after apply and rebuild where practical.
+- [x] Step 5: Make `V1StructureShowPreview` read geometry specs.
+  - Use native spec dimensions before fallback preview sizes.
+  - Report path source and unsupported simplifications as review diagnostics.
+  - Keep preview objects marked as presentation output.
+- [x] Step 6: Add validation for required fields by kind.
+  - Emit diagnostics for missing native specs, missing required fields, invalid dimensions, unsupported skew, and reference conflicts.
+  - Keep validation messages traceable to `structure_id` and `geometry_spec_id`.
+- [x] Step 7: Add AppliedSection structure-context rows.
+  - Pass active structures, interaction rules, influence zones, and clearance diagnostics through evaluation results.
+  - Do not copy editable geometry into `AppliedSection`.
+- [x] Step 8: Add corridor structure solid outputs.
+  - Generate bridge, culvert, wall, clearance, and adjacent-surface outputs from source specs and resolved interactions.
+  - Keep corridor build code from inventing structure meaning from preview geometry.
+- [x] Step 9: Add structure quantity fragments.
+  - Normalize quantities by `structure_id`, `geometry_spec_id`, output id, station range, and material.
+  - Consume output fragments rather than raw viewer geometry.
+- [x] Step 10: Add exchange mapping for structure output geometry.
+  - Map normalized structure outputs into exchange packages.
+  - Preserve source traceability and external reference identity.
+
+## 21.2 Workflow Hookup
+
+Current execution status:
+
+- [x] Add a Build Corridor helper for structure output handoff.
+  - Resolve `AppliedSectionSet`, `CorridorModel`, and `StructureModel` from the active document.
+  - Build `StructureSolidOutput` from source geometry specs.
+  - Build structure quantity fragments from normalized solid output rows.
+  - Map structure solids and quantity output into one exchange package.
+  - Keep this as a workflow handoff helper, not a geometry editor or preview mutation path.
+- [x] Expose the structure output package from the Build Corridor panel.
+  - Add a user-facing action that builds structure solids, quantities, and exchange output after corridor review inputs exist.
+  - Report output ids and counts in the panel summary.
+  - Keep package results in command state until a dedicated persisted output/export command is added.
+- [x] Persist the structure output package as a v1 `ExchangePackage` object.
+  - Store exchange metadata, payload rows, output ids, and source/result refs on a document object.
+  - Route the object to `09_Outputs & Exchange / Exchange Packages`.
+  - Keep persisted payloads derived from normalized outputs, not preview geometry.
+- [x] Add a JSON export adapter for persisted structure exchange packages.
+  - Export the persisted `ExchangePackage` snapshot, including exchange metadata, structure solid rows, and quantity fragment rows.
+  - Add a Build Corridor panel action for JSON export.
+  - Keep this as a normalized package export, not a full IFC writer.
+- [x] Add an IFC4 handoff adapter for persisted structure exchange packages.
+  - Consume normalized structure solid rows from the persisted `ExchangePackage`.
+  - Emit deterministic `IfcBuildingElementProxy` rows with CorridorRoad property sets.
+  - Add a Build Corridor panel action for IFC export.
+- [x] Add basic IFC shape representations.
+  - Emit local placement, rectangle profile, extruded solid, shape representation, and product definition shape rows.
+  - Derive swept dimensions from normalized structure solid width, height, and length.
+  - Keep property sets as the traceable engineering payload.
+- [x] Orient IFC shape placement from evaluated 3D centerline context.
+  - Carry placement x, y, z, and tangent direction through normalized structure solid rows.
+  - Interpolate placement from AppliedSection frames when 3D centerline context exists.
+  - Use IFC local placement reference direction for structure tangent orientation.
+
+## 21.3 Remaining Work Plan
+
+The remaining Structure work should proceed in small slices that preserve the v1 source/result/output boundary.
+
+Do not make generated preview or export geometry editable source state.
+
+### Phase 1: Start/End Frame Output
+
+Status: completed.
+
+Purpose:
+
+- Make each structure output row reconstructable across its full station range.
+- Support curved or changing-tangent alignments without relying on one anchor placement.
+
+Scope:
+
+- Add `start_x`, `start_y`, `start_z`, `end_x`, `end_y`, `end_z`.
+- Add `start_tangent_direction_deg` and `end_tangent_direction_deg`.
+- Keep existing `placement_x`, `placement_y`, `placement_z`, and `tangent_direction_deg` as the anchor placement.
+- Build these fields from AppliedSection frame interpolation.
+- Fall back to station-range coordinates when AppliedSections are unavailable.
+
+Acceptance criteria:
+
+- A structure crossing two AppliedSection frames records both start and end frame coordinates.
+- Existing exchange payloads include the new fields.
+- IFC export preserves start/end frame fields in CorridorRoad property sets.
+
+### Phase 2: Segmented Structure Geometry
+
+Status: completed.
+
+Purpose:
+
+- Represent structure ranges that cross curved or changing-tangent alignments more honestly.
+- Avoid pretending a long curved bridge or wall is one straight extrusion when enough frame context exists.
+
+Scope:
+
+- Split long structure solids into station segments using available AppliedSection frames.
+- Emit segment rows or child geometry rows linked to the parent `structure_id`.
+- Keep parent structure source rows unchanged.
+- Add diagnostics when segmentation falls back to a single straight extrusion.
+
+Acceptance criteria:
+
+- A structure spanning multiple frames produces traceable segment metadata.
+- Segment geometry remains output-only.
+- Quantity totals still aggregate back to the parent `structure_id`.
+
+### Phase 3: IFC Shape Refinement
+
+Status: completed.
+
+Purpose:
+
+- Move the IFC handoff from simple rectangular swept solids toward reviewable corridor-following geometry.
+
+Scope:
+
+- Consume start/end or segment geometry from `StructureSolidOutput`.
+- Export segmented swept solids for curved/path-following structure rows.
+- Preserve `IfcBuildingElementProxy` and CorridorRoad property sets until a stricter IFC class mapping is ready.
+- Add explicit export diagnostics for simplified geometry.
+
+Acceptance criteria:
+
+- IFC rows show segment placements and directions where segmentation exists.
+- Simplified IFC geometry is clearly labeled in properties or diagnostics.
+- Export remains deterministic for contract tests.
+
+### Phase 4: Structure Export Command Separation
+
+Status: completed.
+
+Purpose:
+
+- Reduce Build Corridor panel clutter and make structure export a dedicated workflow.
+
+Scope:
+
+- Move `Build Structure Package`, `Export Package JSON`, and `Export IFC` into a dedicated Structure Output or Exchange command.
+- Keep Build Corridor focused on corridor result build and review.
+- Preserve a thin bridge from Build Corridor only if it improves handoff.
+
+Acceptance criteria:
+
+- Build Corridor panel has a compact action area.
+- Structure package/export workflows remain discoverable from v1 outputs or structures.
+- Existing command helpers remain callable for tests and automation.
+
+Completed implementation:
+
+- Add `CorridorRoad_V1StructureOutput` as the dedicated Structure Output command.
+- Register Structure Output under the Outputs & Exchange workflow.
+- Keep Build Corridor limited to corridor build, review, visibility, and a thin `Structure Output...` handoff.
+- Move package build, JSON export, and IFC export panel actions into the Structure Output task panel.
+- Preserve top-level structure package/export helpers for tests and automation.
+
+### Phase 5: Validation And Export Readiness
+
+Status: completed.
+
+Purpose:
+
+- Prevent incomplete structure geometry from silently becoming misleading output.
+
+Scope:
+
+- Add export-readiness diagnostics for missing dimensions, missing frame context, zero lengths, unsupported skew, and simplified IFC geometry.
+- Separate source validation from output/export validation.
+- Surface readiness state in Structure editor and export command.
+
+Acceptance criteria:
+
+- Missing required geometry blocks export or emits explicit warnings according to severity.
+- Diagnostics identify `structure_id`, `geometry_spec_id`, and output row id.
+- Users can see why a structure exported as a simplified proxy or segment.
+
+Completed implementation:
+
+- Add output/export-readiness diagnostics to `StructureSolidOutput`.
+- Diagnose missing or invalid output dimensions, zero output length, missing frame context, unsupported skew, simplified IFC proxy geometry, and segmented proxy geometry.
+- Persist export readiness status, diagnostic count, and diagnostic rows on the v1 `ExchangePackage` object.
+- Include export diagnostics in normalized JSON exchange payloads.
+- Block IFC export when readiness diagnostics contain errors.
+- Add IFC property-set fields for export readiness status, diagnostic count, and diagnostic kinds.
+- Surface readiness status and diagnostic counts in the Structure Output command.
+- Surface the last persisted export-readiness state in the Structure editor status text.
+
+### Phase 6: Kind-Specific Quantity Detail
+
+Status: completed.
+
+Purpose:
+
+- Make quantities useful for bridge, culvert, and retaining-wall review instead of only envelope volume.
+
+Scope:
+
+- Split bridge quantities into deck, girder, barrier, approach slab, and support placeholders where source fields exist.
+- Split culvert quantities into barrel, opening, wall, headwall, and wingwall placeholders.
+- Split retaining wall quantities into wall body, footing, coping, and drainage layer placeholders.
+- Keep every quantity fragment traceable to source geometry specs and output solids.
+
+Acceptance criteria:
+
+- Quantity output exposes kind-specific fragment rows.
+- Aggregate totals still match parent structure totals.
+- Missing optional detail fields do not invent engineering quantities.
+
+Completed implementation:
+
+- Pass `StructureModel` source specs into structure quantity building.
+- Preserve parent structure body/deck/barrel volume fragments from normalized structure solid outputs.
+- Add bridge detail fragments when source fields exist:
+  - `bridge_deck_volume`
+  - `bridge_girder_depth_length`
+  - `bridge_barrier_face_area`
+  - `bridge_approach_slab_area`
+  - `bridge_support_count`
+- Add culvert detail fragments when source fields exist:
+  - `culvert_barrel_volume`
+  - `culvert_opening_area`
+  - `culvert_barrel_count`
+  - `culvert_wall_volume`
+  - `culvert_headwall_count`
+  - `culvert_wingwall_count`
+- Add retaining-wall detail fragments when source fields exist:
+  - `wall_body_volume`
+  - `wall_footing_volume`
+  - `wall_coping_volume`
+  - `wall_drainage_layer_length`
+- Carry `structure_ref` through quantity output fragment rows for traceability.
+
+### Phase 7: Persistence Scaling
+
+Status: completed.
+
+Purpose:
+
+- Avoid overloading FreeCAD string properties as exchange packages grow.
+
+Scope:
+
+- Review `ExchangePackage` JSON property size limits.
+- Decide whether large payload rows should become child output objects, document attachments, or external package files.
+- Keep source/result/output identity stable across save and reload.
+
+Acceptance criteria:
+
+- Large structure packages can be persisted without truncating payload data.
+- Export can rebuild from persisted package data.
+- The v1 project tree still routes packages under Outputs & Exchange.
+
+Completed implementation:
+
+- Add chunked JSON payload persistence for large `ExchangePackage` sections.
+- Keep small payloads in inline JSON string properties for simple inspection and backward compatibility.
+- Store large payload sections in `PropertyStringList` chunk properties:
+  - `PayloadMetadataJsonChunks`
+  - `FormatPayloadJsonChunks`
+  - `StructureSolidRowsJsonChunks`
+  - `StructureSolidSegmentRowsJsonChunks`
+  - `ExportDiagnosticRowsJsonChunks`
+  - `QuantityFragmentRowsJsonChunks`
+- Store `PayloadStorageMode` and `PayloadByteCount` on the persisted exchange package.
+- Make JSON and IFC export rebuild payloads from chunks before falling back to inline JSON.
+- Verify chunked payloads survive FCStd save and reload.
+- Keep exchange packages routed through the existing Outputs & Exchange tree path.
+
 ## 22. Acceptance Criteria
 
 First-slice implementation is acceptable when:
@@ -447,6 +736,6 @@ It does not allow users to edit generated structure preview solids as source.
 
 Structure geometry in v1 should be authored as normalized source intent and consumed by evaluation, review, corridor build, quantities, and exchange outputs.
 
-The immediate next step is to add kind-specific geometry specs and a detail panel to the v1 Structures editor.
+The immediate next step is to review the completed structure geometry sequence as a whole and decide whether to start a polish pass, broader integration tests, or the next v1 domain.
 
 The preview should stay lightweight, traceable, and rebuildable from `StructureModel`.

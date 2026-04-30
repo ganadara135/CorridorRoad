@@ -186,6 +186,8 @@ They identify what the user is actually looking at.
 - `component_id`
 - `component_kind`
 - `template_id`
+- `assembly_ref`
+- `region_ref`
 - `side`
 - `order`
 - `enabled`
@@ -196,6 +198,10 @@ They identify what the user is actually looking at.
 - `span`
 - `parameter_summary`
 - `geometry_ref`
+
+Current implementation note:
+
+- `SectionComponentRow` preserves `assembly_ref` and `region_ref` so exchange packages and review surfaces can trace evaluated side-slope and bench rows back to the active source Assembly and Region.
 
 ### 9.3 Recommended component row semantics
 

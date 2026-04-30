@@ -14,6 +14,9 @@ from ...models.source.region_model import (
 from ...models.result.region_context import RegionContextSummary
 
 
+STRUCTURE_REQUIRED_PRIMARY_KINDS = {"bridge", "culvert", "structure_influence"}
+
+
 @dataclass(frozen=True)
 class RegionValidationResult:
     """Validation result for a RegionModel."""
@@ -35,6 +38,7 @@ class RegionResolutionResult:
     active_assembly_ref: str = ""
     active_superelevation_ref: str = ""
     active_transition_ref: str = ""
+    resolved_structure_ref: str = ""
     resolved_structure_refs: list[str] = field(default_factory=list)
     resolved_drainage_refs: list[str] = field(default_factory=list)
     resolved_ramp_ref: str = ""
@@ -47,9 +51,17 @@ class RegionResolutionResult:
 class RegionValidationService:
     """Validate v1 region source rows without mutating them."""
 
-    def validate(self, region_model: RegionModel) -> RegionValidationResult:
+    def validate(
+        self,
+        region_model: RegionModel,
+        *,
+        known_assembly_refs: list[str] | None = None,
+        known_structure_refs: list[str] | None = None,
+    ) -> RegionValidationResult:
         diagnostics: list[RegionDiagnosticRow] = []
         rows = list(getattr(region_model, "region_rows", []) or [])
+        known_assembly_ref_set = _known_ref_set(known_assembly_refs)
+        known_structure_ref_set = _known_ref_set(known_structure_refs)
         seen_ids: set[str] = set()
         for index, row in enumerate(rows, start=1):
             region_id = str(getattr(row, "region_id", "") or "").strip()
@@ -90,10 +102,49 @@ class RegionValidationService:
                         "Region has no assembly_ref or template_ref yet.",
                     )
                 )
+            assembly_ref = str(getattr(row, "assembly_ref", "") or "").strip()
+            if known_assembly_ref_set is not None and assembly_ref and assembly_ref not in known_assembly_ref_set:
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "missing_assembly_ref",
+                        source_ref,
+                        f"Region references missing assembly_ref {assembly_ref}.",
+                    )
+                )
             try:
                 int(getattr(row, "priority", 0) or 0)
             except Exception:
                 diagnostics.append(_diagnostic("error", "invalid_priority", source_ref, "Region priority must be numeric."))
+            structure_refs = list(getattr(row, "structure_refs", []) or [])
+            if len(structure_refs) > 1:
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "multiple_structure_refs",
+                        source_ref,
+                        "Region should reference at most one active Structure; split the range into separate Region rows.",
+                    )
+                )
+            structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
+            if _primary_kind_requires_structure(primary_kind) and not structure_ref:
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "missing_required_structure_ref",
+                        source_ref,
+                        f"Region primary_kind {primary_kind} requires a structure_ref.",
+                    )
+                )
+            if known_structure_ref_set is not None and structure_ref and structure_ref not in known_structure_ref_set:
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "missing_structure_ref",
+                        source_ref,
+                        f"Region references missing structure_ref {structure_ref}.",
+                    )
+                )
 
         diagnostics.extend(_overlap_diagnostics(rows))
         status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
@@ -106,10 +157,20 @@ class RegionResolutionService:
     def __init__(self, *, validation_service: RegionValidationService | None = None) -> None:
         self.validation_service = validation_service or RegionValidationService()
 
-    def validate(self, region_model: RegionModel) -> RegionValidationResult:
+    def validate(
+        self,
+        region_model: RegionModel,
+        *,
+        known_assembly_refs: list[str] | None = None,
+        known_structure_refs: list[str] | None = None,
+    ) -> RegionValidationResult:
         """Validate a RegionModel using the shared validation service."""
 
-        return self.validation_service.validate(region_model)
+        return self.validation_service.validate(
+            region_model,
+            known_assembly_refs=known_assembly_refs,
+            known_structure_refs=known_structure_refs,
+        )
 
     def resolve_station(
         self,
@@ -160,6 +221,7 @@ class RegionResolutionService:
             active_template_ref=active.template_ref,
             active_assembly_ref=active.assembly_ref,
             active_superelevation_ref=active.superelevation_ref,
+            resolved_structure_ref=str(getattr(active, "structure_ref", "") or ""),
             resolved_structure_refs=list(active.structure_refs or []),
             resolved_drainage_refs=list(active.drainage_refs or []),
             resolved_ramp_ref=active.ramp_ref,
@@ -218,6 +280,7 @@ class RegionResolutionService:
             template_ref=result.active_template_ref,
             policy_set_ref=result.active_policy_set_id,
             superelevation_ref=result.active_superelevation_ref,
+            structure_ref=result.resolved_structure_ref,
             structure_refs=list(result.resolved_structure_refs or []),
             drainage_refs=list(result.resolved_drainage_refs or []),
             ramp_ref=result.resolved_ramp_ref,
@@ -290,6 +353,16 @@ def _overlap_diagnostics(rows: list[RegionRow]) -> list[RegionDiagnosticRow]:
                     )
                 )
     return diagnostics
+
+
+def _known_ref_set(values: list[str] | None) -> set[str] | None:
+    if values is None:
+        return None
+    return {str(value).strip() for value in list(values or []) if str(value).strip()}
+
+
+def _primary_kind_requires_structure(primary_kind: str) -> bool:
+    return str(primary_kind or "").strip() in STRUCTURE_REQUIRED_PRIMARY_KINDS
 
 
 def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: str = "") -> RegionDiagnosticRow:

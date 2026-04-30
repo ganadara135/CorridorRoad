@@ -89,3 +89,7 @@ class AppliedSection(ResultModelBase):
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)
+    active_structure_ids: list[str] = field(default_factory=list)
+    active_structure_rule_ids: list[str] = field(default_factory=list)
+    active_structure_influence_zone_ids: list[str] = field(default_factory=list)
+    structure_diagnostic_rows: list[str] = field(default_factory=list)

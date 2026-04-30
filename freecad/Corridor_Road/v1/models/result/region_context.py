@@ -29,6 +29,7 @@ class RegionContextSummary:
     template_ref: str = ""
     policy_set_ref: str = ""
     superelevation_ref: str = ""
+    structure_ref: str = ""
     structure_refs: list[str] = field(default_factory=list)
     drainage_refs: list[str] = field(default_factory=list)
     ramp_ref: str = ""
@@ -48,8 +49,9 @@ class RegionContextSummary:
         refs = []
         if self.assembly_ref:
             refs.append(f"assembly={self.assembly_ref}")
-        if self.structure_refs:
-            refs.append(f"structures={','.join(self.structure_refs)}")
+        structure_ref = self.structure_ref or (self.structure_refs[0] if self.structure_refs else "")
+        if structure_ref:
+            refs.append(f"structure={structure_ref}")
         if self.drainage_refs:
             refs.append(f"drainage={','.join(self.drainage_refs)}")
         ref_text = f" | {'; '.join(refs)}" if refs else ""
@@ -84,8 +86,8 @@ class RegionContextSummary:
             RegionContextReviewItem(
                 row_id="region:structures",
                 kind="structure",
-                label="Structures",
-                value=", ".join(self.structure_refs),
+                label="Structure",
+                value=self.structure_ref or (self.structure_refs[0] if self.structure_refs else ""),
                 source_ref=source_ref,
             ),
             RegionContextReviewItem(

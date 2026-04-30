@@ -242,6 +242,9 @@ Major coordinate interpretation must be explicit.
 - `generated_at`
 - `degraded_export`
 - `degraded_reason_rows`
+- `source_context_count`
+- `side_slope_source_context_count`
+- `bench_source_context_count`
 
 ## 14. Format Payload Rule
 
@@ -390,6 +393,13 @@ An exchange package should make it possible to trace:
 - which internal source/result/output contracts were used
 - which station or alignment scope was exported
 - which parts were omitted or simplified
+
+Current implementation note:
+
+- `format_payload.source_context_rows` carries normalized source context rows for structure solids, section side-slope components, and quantity fragments.
+- Side-slope benches use `context_kind = "section_side_slope_component"` for section component rows and `context_kind = "side_slope_quantity_fragment"` for bench/slope-face quantity rows.
+- Bench source context rows must include `assembly_ref`, `region_ref`, and `component_ref` when those source refs are available.
+- Package export paths should persist these rows unchanged so command-created JSON packages and downstream handoff flows can be audited against the same source context.
 
 ## 21. Validation Rules
 

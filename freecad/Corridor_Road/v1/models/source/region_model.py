@@ -97,6 +97,7 @@ class RegionRow:
     applied_layers: list[str] = field(default_factory=list)
     region_index: int = 0
     assembly_ref: str = ""
+    structure_ref: str = ""
     structure_refs: list[str] = field(default_factory=list)
     drainage_refs: list[str] = field(default_factory=list)
     ramp_ref: str = ""
@@ -117,7 +118,14 @@ class RegionRow:
         if not self.region_kind:
             object.__setattr__(self, "region_kind", primary_kind)
         object.__setattr__(self, "applied_layers", normalize_region_layers(self.applied_layers))
-        object.__setattr__(self, "structure_refs", normalize_region_refs(self.structure_refs))
+        structure_ref = str(self.structure_ref or "").strip()
+        structure_refs = normalize_region_refs(self.structure_refs)
+        if structure_ref and structure_ref not in structure_refs:
+            structure_refs = [structure_ref] + structure_refs
+        if not structure_ref and structure_refs:
+            structure_ref = structure_refs[0]
+        object.__setattr__(self, "structure_ref", structure_ref)
+        object.__setattr__(self, "structure_refs", structure_refs)
         object.__setattr__(self, "drainage_refs", normalize_region_refs(self.drainage_refs))
         object.__setattr__(self, "override_refs", normalize_region_refs(self.override_refs))
 

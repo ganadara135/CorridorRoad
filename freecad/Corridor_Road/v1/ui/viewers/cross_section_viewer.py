@@ -56,7 +56,7 @@ def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     target_specs = (
         ("Assembly", "assembly_model", inspector.get("template_label", "")),
         ("Regions", "region_model", inspector.get("region_label", "")),
-        ("Structures", "structure_model", inspector.get("structure_label", "")),
+        ("Structure", "structure_model", inspector.get("owner_structure", "") or inspector.get("structure_label", "")),
     )
 
     rows: list[list[str]] = []
@@ -1077,6 +1077,9 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             "drainage": "#20c7e8",
             "ditch": "#20c7e8",
             "slope_face": "#72c85f",
+            "side_slope": "#72c85f",
+            "side_slope_bench": "#c8f06d",
+            "bench": "#c8f06d",
             "existing_ground": "#55c7a5",
             "terrain": "#55c7a5",
             "existing_ground_tin": "#55c7a5",
@@ -1087,7 +1090,7 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
         role_text = str(role or "").strip().lower()
         if str(kind or "").strip().lower() == "overall_width":
             return QtGui.QColor("#76b884")
-        if "side_slope" in role_text:
+        if "side_slope" in role_text or "bench" in role_text:
             return QtGui.QColor("#c8f06d")
         if "ditch" in role_text:
             return QtGui.QColor("#72d6ee")
@@ -1096,7 +1099,7 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
     @staticmethod
     def _label_color(role: str):
         role_text = str(role or "").strip().lower()
-        if "side_slope" in role_text:
+        if "side_slope" in role_text or "bench" in role_text:
             return QtGui.QColor("#c8f06d")
         if "ditch" in role_text or "drainage" in role_text:
             return QtGui.QColor("#72d6ee")

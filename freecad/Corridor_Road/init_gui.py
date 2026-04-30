@@ -32,6 +32,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401
@@ -73,6 +74,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         ]
         output_commands = [
             "CorridorRoad_OutputsExchange",
+            "CorridorRoad_V1StructureOutput",
         ]
         ai_commands = [
             "CorridorRoad_AIAssist",

@@ -85,6 +85,7 @@ def test_region_resolution_preserves_primary_layers_and_domain_refs() -> None:
     assert result.active_primary_kind == "bridge"
     assert result.active_applied_layers == ["ditch", "drainage"]
     assert result.active_assembly_ref == "assembly:bridge-deck"
+    assert result.resolved_structure_ref == "structure:bridge-01"
     assert result.resolved_structure_refs == ["structure:bridge-01"]
     assert result.resolved_drainage_refs == ["drainage:deck-drain-left", "drainage:side-ditch-right"]
     assert result.overlap_region_ids == ["region-normal"]

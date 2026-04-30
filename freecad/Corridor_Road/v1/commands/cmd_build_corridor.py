@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 try:
     import FreeCAD as App
     import FreeCADGui as Gui
@@ -12,9 +14,12 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ...objects.obj_project import CorridorRoadProject, ensure_project_properties, ensure_project_tree, find_project
+from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model
+from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_object, find_v1_exchange_package
 from ..objects.obj_region import find_v1_region_model
+from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import create_or_update_v1_surface_model_object, find_v1_surface_model
 from ..services.builders import (
     CorridorDesignSurfaceGeometryRequest,
@@ -23,8 +28,25 @@ from ..services.builders import (
     CorridorSurfaceBuildRequest,
     CorridorSurfaceGeometryService,
     CorridorSurfaceService,
+    QuantityBuildRequest,
+    QuantityBuildService,
+    StructureSolidBuildRequest,
+    StructureSolidOutputService,
 )
+from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
+
+
+@dataclass(frozen=True)
+class StructureOutputPackageBuildResult:
+    """Build Corridor handoff result for structure solids, quantities, and exchange payloads."""
+
+    corridor_model: object
+    structure_solid_output: object
+    quantity_model: object
+    quantity_output: object
+    exchange_output: object
+    section_outputs: list[object] = field(default_factory=list)
 
 
 CORRIDOR_BUILD_REVIEW_OBJECTS = (
@@ -109,6 +131,179 @@ def build_document_corridor_surface_model(
             surface_model_id=surface_model_id,
         )
     )
+
+
+def build_document_structure_output_package(
+    document=None,
+    *,
+    project=None,
+    corridor_model=None,
+    structure_solid_output_id: str = "structure-solids:main",
+    quantity_model_id: str = "quantities:structures",
+    exchange_output_id: str = "exchange:structure-solids",
+    exchange_format: str = "ifc",
+    package_kind: str = "structure_geometry",
+) -> StructureOutputPackageBuildResult:
+    """Build structure solids, derived quantities, and one normalized exchange package."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    applied_obj = find_v1_applied_section_set(doc)
+    applied_section_set = to_applied_section_set(applied_obj)
+    if applied_section_set is None:
+        raise RuntimeError("A v1 AppliedSectionSet is required before structure outputs.")
+    structure_model = to_structure_model(find_v1_structure_model(doc))
+    if structure_model is None:
+        raise RuntimeError("A v1 StructureModel is required before structure outputs.")
+
+    prj = project or find_project(doc)
+    project_id = _project_id(prj)
+    corridor = corridor_model or build_document_corridor_model(doc, project=prj)
+    structure_solid_output = StructureSolidOutputService().build(
+        StructureSolidBuildRequest(
+            project_id=project_id,
+            corridor=corridor,
+            structure_model=structure_model,
+            applied_section_set=applied_section_set,
+            structure_solid_output_id=structure_solid_output_id,
+        )
+    )
+    quantity_model = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id=project_id,
+            corridor=corridor,
+            quantity_model_id=quantity_model_id,
+            applied_section_set=applied_section_set,
+            structure_solid_output=structure_solid_output,
+            structure_model=structure_model,
+        )
+    )
+    quantity_output = QuantityOutputMapper().map_quantity_model(quantity_model)
+    section_outputs = [
+        SectionOutputMapper().map_applied_section(section)
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    ]
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id=project_id,
+            exchange_output_id=exchange_output_id,
+            format=exchange_format,
+            package_kind=package_kind,
+            outputs=[structure_solid_output, quantity_output, *section_outputs],
+        )
+    )
+    return StructureOutputPackageBuildResult(
+        corridor_model=corridor,
+        structure_solid_output=structure_solid_output,
+        quantity_model=quantity_model,
+        quantity_output=quantity_output,
+        exchange_output=exchange_output,
+        section_outputs=section_outputs,
+    )
+
+
+def structure_output_package_summary(result: StructureOutputPackageBuildResult) -> dict[str, object]:
+    """Return display-ready counts and ids for a built structure output package."""
+
+    solid_rows = list(getattr(result.structure_solid_output, "solid_rows", []) or [])
+    solid_segment_rows = list(getattr(result.structure_solid_output, "solid_segment_rows", []) or [])
+    export_diagnostics = list(getattr(result.structure_solid_output, "diagnostic_rows", []) or [])
+    quantity_fragments = list(getattr(result.quantity_model, "fragment_rows", []) or [])
+    exchange_refs = list(getattr(result.exchange_output, "output_refs", []) or [])
+    payload_metadata = getattr(result.exchange_output, "payload_metadata", {}) or {}
+    active_structure_refs = sorted(
+        {
+            str(getattr(row, "structure_id", "") or "")
+            for row in solid_rows
+            if str(getattr(row, "structure_id", "") or "")
+        }
+    )
+    return {
+        "corridor_id": str(getattr(result.corridor_model, "corridor_id", "") or ""),
+        "structure_solid_output_id": str(getattr(result.structure_solid_output, "structure_solid_output_id", "") or ""),
+        "solid_count": len(solid_rows),
+        "active_structure_refs": active_structure_refs,
+        "active_structure_count": len(active_structure_refs),
+        "solid_segment_count": len(solid_segment_rows),
+        "export_readiness_status": _export_readiness_status(export_diagnostics),
+        "export_diagnostic_count": len(export_diagnostics),
+        "quantity_model_id": str(getattr(result.quantity_model, "quantity_model_id", "") or ""),
+        "quantity_fragment_count": len(quantity_fragments),
+        "section_output_count": len(list(getattr(result, "section_outputs", []) or [])),
+        "source_context_count": int(payload_metadata.get("source_context_count", 0) or 0),
+        "side_slope_source_context_count": int(payload_metadata.get("side_slope_source_context_count", 0) or 0),
+        "bench_source_context_count": int(payload_metadata.get("bench_source_context_count", 0) or 0),
+        "exchange_output_id": str(getattr(result.exchange_output, "exchange_output_id", "") or ""),
+        "exchange_format": str(getattr(result.exchange_output, "format", "") or ""),
+        "exchange_output_count": len(exchange_refs),
+    }
+
+
+def _export_readiness_status(diagnostics: list[object]) -> str:
+    severities = {str(getattr(row, "severity", "") or "").strip().lower() for row in list(diagnostics or [])}
+    if "error" in severities:
+        return "error"
+    if "warning" in severities:
+        return "warning"
+    return "ready"
+
+
+def apply_v1_structure_output_package(*, document=None, project=None, package_result=None):
+    """Persist a built structure output package as a v1 ExchangePackage object."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    prj = project or find_project(doc)
+    if package_result is None:
+        package_result = build_document_structure_output_package(doc, project=prj)
+    obj = create_or_update_v1_exchange_package_object(
+        document=doc,
+        project=prj,
+        package_result=package_result,
+    )
+    try:
+        doc.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def export_document_structure_output_package_json(
+    path: str,
+    *,
+    document=None,
+    project=None,
+    exchange_package=None,
+) -> dict[str, object]:
+    """Export the current persisted structure exchange package to JSON."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    package_obj = find_v1_exchange_package(doc, preferred_exchange_package=exchange_package)
+    if package_obj is None:
+        package_obj = apply_v1_structure_output_package(document=doc, project=project)
+    return export_exchange_package_to_json(path, package_obj)
+
+
+def export_document_structure_output_package_ifc(
+    path: str,
+    *,
+    document=None,
+    project=None,
+    exchange_package=None,
+) -> dict[str, object]:
+    """Export the current persisted structure exchange package to IFC4 STEP."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    package_obj = find_v1_exchange_package(doc, preferred_exchange_package=exchange_package)
+    if package_obj is None:
+        package_obj = apply_v1_structure_output_package(document=doc, project=project)
+    return export_exchange_package_to_ifc(path, package_obj)
 
 
 def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None, build_surfaces: bool = True):
@@ -857,7 +1052,7 @@ class V1BuildCorridorTaskPanel:
         title.setFont(font)
         layout.addWidget(title)
         note = QtWidgets.QLabel(
-            "Build the v1 CorridorModel from Applied Sections and create the first corridor-derived SurfaceModel. Solids remain a later physical-component step."
+            "Build the v1 CorridorModel from Applied Sections, review corridor surfaces, and package structure outputs when StructureModel source rows are available."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -1001,17 +1196,24 @@ class V1BuildCorridorTaskPanel:
         focus_button = QtWidgets.QPushButton("Focus Selected")
         focus_button.clicked.connect(self._show_selected_row)
         row.addWidget(focus_button)
+        structure_output_button = QtWidgets.QPushButton("Structure Output...")
+        structure_output_button.clicked.connect(self._open_structure_output_panel)
+        row.addWidget(structure_output_button)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        export_row = QtWidgets.QHBoxLayout()
         show_all_button = QtWidgets.QPushButton("Show All")
         show_all_button.clicked.connect(lambda: self._set_all_preview_visibility(True))
-        row.addWidget(show_all_button)
+        export_row.addWidget(show_all_button)
         hide_all_button = QtWidgets.QPushButton("Hide All")
         hide_all_button.clicked.connect(lambda: self._set_all_preview_visibility(False))
-        row.addWidget(hide_all_button)
-        row.addStretch(1)
+        export_row.addWidget(hide_all_button)
+        export_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
-        row.addWidget(close_button)
-        layout.addLayout(row)
+        export_row.addWidget(close_button)
+        layout.addLayout(export_row)
         return widget
 
     def _refresh_summary(self):
@@ -1032,6 +1234,7 @@ class V1BuildCorridorTaskPanel:
                     f"Stations: {len(applied.station_rows)}",
                     f"Alignment: {applied.alignment_id}",
                     f"Source Review: {applied_summary.get('summary', '')}",
+                    f"Source Structure: {_format_structure_review_summary(applied_summary)}",
                     f"Source Diagnostics: {applied_summary.get('diagnostics', '')}",
                     "",
                     "Click Apply to create or update the v1 CorridorModel.",
@@ -1068,6 +1271,18 @@ class V1BuildCorridorTaskPanel:
         except Exception as exc:
             self._summary.setPlainText(f"CorridorModel was not built:\n{exc}")
             _show_message(self.form, "Build Corridor", f"CorridorModel was not built.\n{exc}")
+            return False
+
+    def _open_structure_output_panel(self) -> bool:
+        try:
+            from .cmd_structure_output import run_v1_structure_output_command
+
+            run_v1_structure_output_command(document=self.document)
+            self._summary.setPlainText("Structure Output panel opened.")
+            return True
+        except Exception as exc:
+            self._summary.setPlainText(f"Structure Output panel was not opened:\n{exc}")
+            _show_message(self.form, "Build Corridor", f"Structure Output panel was not opened.\n{exc}")
             return False
 
     def _set_guided_review_rows(self, rows: list[dict[str, object]]) -> None:
@@ -1431,10 +1646,17 @@ def corridor_applied_sections_review_summary(document=None) -> dict[str, object]
     )
     region_count = len({str(getattr(section, "region_id", "") or "") for section in sections if str(getattr(section, "region_id", "") or "")})
     assembly_count = len({str(getattr(section, "assembly_id", "") or "") for section in sections if str(getattr(section, "assembly_id", "") or "")})
+    structure_refs = {
+        ref
+        for section in sections
+        for ref in [_first_active_structure_ref(section)]
+        if ref
+    }
+    structure_count = len(structure_refs)
     station_range = f"{min(stations):.3f}->{max(stations):.3f}" if stations else "no stations"
     summary = (
         f"{len(station_rows)} STA | {station_range} | "
-        f"regions:{region_count} | assemblies:{assembly_count} | "
+        f"regions:{region_count} | assemblies:{assembly_count} | structures:{structure_count} | "
         f"ditch_pts:{ditch_point_count} | slope_rows:{slope_face_count}"
     )
     diagnostics = f"{diagnostic_count} diagnostic(s)" if diagnostic_count else "ok"
@@ -1449,7 +1671,29 @@ def corridor_applied_sections_review_summary(document=None) -> dict[str, object]
         "slope_face_count": slope_face_count,
         "region_count": region_count,
         "assembly_count": assembly_count,
+        "structure_count": structure_count,
+        "structure_refs": sorted(structure_refs),
     }
+
+
+def _first_active_structure_ref(section) -> str:
+    for value in list(getattr(section, "active_structure_ids", []) or []):
+        text = str(value or "").strip()
+        if text:
+            return text
+    for component in list(getattr(section, "component_rows", []) or []):
+        for value in list(getattr(component, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _format_structure_review_summary(applied_summary: dict[str, object]) -> str:
+    refs = list(applied_summary.get("structure_refs", []) or [])
+    if refs:
+        return f"{len(refs)} active ({', '.join(str(value) for value in refs[:3])})"
+    return "none"
 
 
 def _drainage_point_side(point) -> str:

@@ -29,7 +29,9 @@ class QuantityOutputMapper:
                 station_start=row.station_start,
                 station_end=row.station_end,
                 component_ref=row.component_ref,
+                assembly_ref=getattr(row, "assembly_ref", ""),
                 region_ref=row.region_ref,
+                structure_ref=row.structure_ref,
             )
             for row in quantity_model.fragment_rows
         ]

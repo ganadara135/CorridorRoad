@@ -9,7 +9,13 @@ from .profile_model import ProfileModel
 from .project_model import ProjectModel
 from .ramp_model import RampModel
 from .region_model import RegionDiagnosticRow, RegionModel, RegionPolicySet, RegionRow
-from .structure_model import StructureModel
+from .structure_model import (
+    BridgeGeometrySpec,
+    CulvertGeometrySpec,
+    RetainingWallGeometrySpec,
+    StructureGeometrySpec,
+    StructureModel,
+)
 from .superelevation_model import SuperelevationModel
 from .tin_edit_model import TINEditOperation, TINEditSet
 
@@ -29,6 +35,10 @@ __all__ = [
     "RegionPolicySet",
     "RegionDiagnosticRow",
     "StructureModel",
+    "StructureGeometrySpec",
+    "BridgeGeometrySpec",
+    "CulvertGeometrySpec",
+    "RetainingWallGeometrySpec",
     "SuperelevationModel",
     "TINEditOperation",
     "TINEditSet",

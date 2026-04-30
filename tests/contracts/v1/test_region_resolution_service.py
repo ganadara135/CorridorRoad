@@ -21,8 +21,22 @@ def test_region_row_supports_primary_kind_layers_and_domain_refs() -> None:
 
     assert row.primary_kind == "bridge"
     assert row.applied_layers == ["ditch", "drainage"]
+    assert row.structure_ref == "structure:bridge-01"
     assert row.structure_refs == ["structure:bridge-01"]
     assert row.drainage_refs == ["drainage:deck-drain-left", "drainage:side-ditch-right"]
+
+
+def test_region_row_singular_structure_ref_populates_compatibility_refs() -> None:
+    row = RegionRow(
+        region_id="region:wall-01",
+        station_start=0.0,
+        station_end=50.0,
+        assembly_ref="assembly:road",
+        structure_ref="structure:wall-01",
+    )
+
+    assert row.structure_ref == "structure:wall-01"
+    assert row.structure_refs == ["structure:wall-01"]
 
 
 def test_region_resolution_selects_highest_priority_overlap() -> None:
@@ -63,6 +77,7 @@ def test_region_resolution_selects_highest_priority_overlap() -> None:
     assert result.active_primary_kind == "bridge"
     assert result.active_applied_layers == ["ditch", "drainage"]
     assert result.active_assembly_ref == "assembly:bridge-deck"
+    assert result.resolved_structure_ref == "structure:bridge-01"
     assert result.resolved_structure_refs == ["structure:bridge-01"]
     assert result.resolved_drainage_refs == ["drainage:deck-drain-left"]
     assert result.overlap_region_ids == ["region:normal"]
@@ -109,6 +124,7 @@ def test_region_handoff_summary_preserves_downstream_refs_and_review_rows() -> N
     assert summary.applied_layers == ["ditch", "drainage"]
     assert summary.assembly_ref == "assembly:bridge-deck"
     assert summary.template_ref == "template:bridge"
+    assert summary.structure_ref == "structure:bridge-01"
     assert summary.structure_refs == ["structure:bridge-01"]
     assert summary.drainage_refs == ["drainage:deck-drain-left"]
     assert summary.override_refs == ["override:bridge-shoulder"]
@@ -116,6 +132,130 @@ def test_region_handoff_summary_preserves_downstream_refs_and_review_rows() -> N
     assert "bridge" in summary.summary_text
     assert review_items["region:primary_kind"].value == "bridge"
     assert review_items["region:structures"].value == "structure:bridge-01"
+
+
+def test_region_validation_warns_when_region_has_multiple_structure_refs() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:multiple-structures",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:bridge",
+                primary_kind="bridge",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_ref="assembly:bridge",
+                structure_refs=["structure:bridge-01", "structure:wall-01"],
+            )
+        ],
+    )
+
+    result = RegionValidationService().validate(model)
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["multiple_structure_refs"]
+
+
+def test_region_validation_warns_when_assembly_ref_is_unknown() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:assembly-refs",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:missing-assembly",
+                primary_kind="normal_road",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_ref="assembly:missing",
+            )
+        ],
+    )
+
+    result = RegionValidationService().validate(model, known_assembly_refs=["assembly:road"])
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["missing_assembly_ref"]
+    assert "assembly:missing" in result.diagnostic_rows[0].message
+
+
+def test_region_validation_warns_when_structure_ref_is_unknown() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:structure-refs",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:missing-structure",
+                primary_kind="normal_road",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_ref="assembly:road",
+                structure_ref="structure:missing",
+            )
+        ],
+    )
+
+    result = RegionResolutionService().validate(
+        model,
+        known_assembly_refs=["assembly:road"],
+        known_structure_refs=["structure:bridge-01"],
+    )
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["missing_structure_ref"]
+    assert "structure:missing" in result.diagnostic_rows[0].message
+
+
+def test_region_validation_warns_when_structure_required_kind_has_no_structure_ref() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:required-structure",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:bridge-without-structure",
+                primary_kind="bridge",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_ref="assembly:bridge",
+            )
+        ],
+    )
+
+    result = RegionValidationService().validate(model)
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["missing_required_structure_ref"]
+    assert "bridge" in result.diagnostic_rows[0].message
+
+
+def test_region_validation_allows_normal_road_without_structure_ref() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:optional-structure",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:normal-road",
+                primary_kind="normal_road",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_ref="assembly:road",
+            )
+        ],
+    )
+
+    result = RegionValidationService().validate(model)
+
+    assert result.status == "ok"
+    assert result.diagnostic_rows == []
 
 
 def test_region_validation_reports_bad_range_and_equal_priority_overlap() -> None:

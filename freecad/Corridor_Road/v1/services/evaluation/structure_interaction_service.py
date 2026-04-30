@@ -24,10 +24,17 @@ class StructureInteractionService:
         self,
         structure_model: StructureModel,
         station: float,
+        *,
+        active_structure_ref: str = "",
     ) -> StructureResolutionResult:
         """Resolve active structures, rules, and influence zones at a station."""
 
         active_structures = self._active_structures(structure_model.structure_rows, station)
+        active_structure_ref = str(active_structure_ref or "").strip()
+        if active_structure_ref:
+            active_structures = [
+                row for row in active_structures if str(getattr(row, "structure_id", "") or "") == active_structure_ref
+            ]
         active_structure_ids = [row.structure_id for row in active_structures]
 
         active_zone_ids = [
