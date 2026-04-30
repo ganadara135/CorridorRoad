@@ -756,6 +756,14 @@ def _resolve_slope_face_outer_point(
     slope: float,
 ) -> _SlopeFaceOuterPoint:
     max_width = max(float(max_width or 0.0), 0.0)
+    slope = _terrain_oriented_slope(
+        sampling_service=sampling_service,
+        surface=surface,
+        edge_x=edge_x,
+        edge_y=edge_y,
+        edge_z=edge_z,
+        slope=slope,
+    )
     fallback_x = float(edge_x) + float(normal_x) * max_width
     fallback_y = float(edge_y) + float(normal_y) * max_width
     fallback_z = float(edge_z) + float(slope) * max_width
@@ -780,6 +788,30 @@ def _resolve_slope_face_outer_point(
     if bool(getattr(sample, "found", False)) and getattr(sample, "z", None) is not None:
         return _SlopeFaceOuterPoint(fallback_x, fallback_y, float(sample.z), sampled=True, status="sampled_outer_edge")
     return _SlopeFaceOuterPoint(fallback_x, fallback_y, fallback_z, status="fallback:no_eg_hit_in_search_width")
+
+
+def _terrain_oriented_slope(
+    *,
+    sampling_service: TinSamplingService,
+    surface: TINSurface | None,
+    edge_x: float,
+    edge_y: float,
+    edge_z: float,
+    slope: float,
+    tolerance: float = 1.0e-6,
+) -> float:
+    slope_value = float(slope or 0.0)
+    if surface is None or abs(slope_value) <= 1.0e-12:
+        return slope_value
+    sample = sampling_service.sample_xy(surface=surface, x=float(edge_x), y=float(edge_y))
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return slope_value
+    delta = float(sample.z) - float(edge_z)
+    if delta > tolerance:
+        return abs(slope_value)
+    if delta < -tolerance:
+        return -abs(slope_value)
+    return slope_value
 
 
 def _find_slope_face_tin_intersection(

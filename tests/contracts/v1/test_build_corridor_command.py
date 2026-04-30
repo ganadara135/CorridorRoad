@@ -1,7 +1,9 @@
 import FreeCAD as App
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
+    V1BuildCorridorTaskPanel,
     apply_v1_corridor_model,
     build_document_corridor_model,
     build_document_corridor_surface_model,
@@ -36,6 +38,8 @@ from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_updat
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
 
+_QAPP = None
+
 
 def _new_project_doc():
     doc = App.newDocument("V1BuildCorridorCommandTest")
@@ -43,6 +47,12 @@ def _new_project_doc():
     CorridorRoadProject(project)
     ensure_project_tree(project, include_references=False)
     return doc, project
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def _sample_sections() -> AppliedSectionSet:
@@ -246,8 +256,13 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+        progress_events = []
 
-        obj = apply_v1_corridor_model(document=doc, project=project)
+        obj = apply_v1_corridor_model(
+            document=doc,
+            project=project,
+            progress_callback=lambda value, text: progress_events.append((value, text)),
+        )
 
         assert obj == find_v1_corridor_model(doc)
         assert obj.V1ObjectType == "V1CorridorModel"
@@ -309,6 +324,23 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(first_issue_marker.MarkerCount) == 1
         shown_marker = show_corridor_slope_face_issue_marker(doc, 0)
         assert shown_marker.Name == "ReviewIssueSlopeFaceIssue001L"
+        assert progress_events[0] == (40, "Preparing project tree...")
+        assert any(text == "Building corridor surfaces..." for _value, text in progress_events)
+        assert progress_events[-1] == (94, "Recomputing document...")
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_panel_shows_progress_bar() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1BuildCorridorTaskPanel(document=doc)
+        progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
+
+        assert len(progress_bars) == 1
+        assert progress_bars[0].value() == 0
+        assert progress_bars[0].format() == "Ready"
     finally:
         App.closeDocument(doc.Name)
 

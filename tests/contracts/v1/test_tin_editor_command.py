@@ -31,6 +31,7 @@ from freecad.Corridor_Road.v1.services.mapping import TINMeshPreviewMapper
 
 
 SAMPLE_PATH = r"tests\samples\pointcloud_utm_realistic_hilly.csv"
+_QAPP = None
 
 
 class _Selection:
@@ -137,6 +138,12 @@ def _new_project_doc():
     return doc, project, tree
 
 
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
+
+
 def test_apply_tin_editor_operations_creates_edited_preview_and_routes_to_tree() -> None:
     doc, _project, tree = _new_project_doc()
     try:
@@ -213,18 +220,24 @@ def test_build_tin_source_from_csv_creates_base_preview_for_editor_source_tab() 
 
 
 def test_tin_editor_uses_apply_as_single_write_button() -> None:
+    _ensure_qapp()
     doc, _project, _tree = _new_project_doc()
     try:
         panel = V1TINEditorTaskPanel(document=doc, base_surface=_small_surface(), gui_module=None)
         buttons = [button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)]
+        progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
 
         assert buttons.count("Apply") == 1
         assert "Build TIN" not in buttons
+        assert len(progress_bars) == 1
+        assert progress_bars[0].value() == 0
+        assert progress_bars[0].format() == "Ready"
     finally:
         App.closeDocument(doc.Name)
 
 
 def test_tin_editor_apply_applies_current_editor_state_without_rebuilding_source() -> None:
+    _ensure_qapp()
     doc, _project, _tree = _new_project_doc()
     original_show_message = cmd_edit_tin._show_message
     cmd_edit_tin._show_message = lambda *args, **kwargs: None
@@ -237,6 +250,8 @@ def test_tin_editor_apply_applies_current_editor_state_without_rebuilding_source
         assert panel._last_result is not None
         assert panel._last_result["edit_result"].removed_triangle_count == 1
         assert [triangle.triangle_id for triangle in panel._last_result["edited_surface"].triangle_rows] == ["t0"]
+        assert panel._progress.value() == 100
+        assert panel._progress.format() == "TIN apply complete"
     finally:
         cmd_edit_tin._show_message = original_show_message
         App.closeDocument(doc.Name)

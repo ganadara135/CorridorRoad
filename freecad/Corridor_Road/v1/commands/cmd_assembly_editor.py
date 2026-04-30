@@ -971,6 +971,7 @@ class V1AssemblyEditorTaskPanel:
 
     def _validate(self) -> None:
         try:
+            self._sync_bench_parameters_to_selected_row()
             model = self._model_from_table()
             messages = _validate_assembly_model(model)
             self._set_status("\n".join(messages) if messages else "Validation status: ok")
@@ -979,6 +980,7 @@ class V1AssemblyEditorTaskPanel:
 
     def _show_current_assembly(self) -> None:
         try:
+            self._sync_bench_parameters_to_selected_row()
             model = self._model_from_table()
             messages = _validate_assembly_model(model)
             if any(message.startswith("ERROR") for message in messages):
@@ -1007,6 +1009,7 @@ class V1AssemblyEditorTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            self._sync_bench_parameters_to_selected_row()
             self._refresh_ditch_notes()
             self._refresh_bench_notes()
             model = self._model_from_table()
@@ -1025,6 +1028,21 @@ class V1AssemblyEditorTaskPanel:
             self._set_status(f"Assembly was not applied:\n{exc}")
             _show_message(self.form, "Assembly", f"Assembly was not applied.\n{exc}")
             return False
+
+    def _sync_bench_parameters_to_selected_row(self) -> bool:
+        if not hasattr(self, "_bench_table"):
+            return False
+        row_index = self._selected_row_index()
+        if row_index < 0 or _item_text(self._table, row_index, 1) != "side_slope":
+            return False
+        existing = _split_parameters(_item_text(self._table, row_index, 8))
+        params = _merge_bench_parameters(existing, self._bench_editor_parameters())
+        text = _join_parameters(params)
+        if text == _item_text(self._table, row_index, 8):
+            return False
+        _set_table_item_text(self._table, row_index, 8, text)
+        self._update_bench_note_for_row(row_index)
+        return True
 
     def _model_from_table(self) -> AssemblyModel:
         alignment = find_v1_alignment(self.document)

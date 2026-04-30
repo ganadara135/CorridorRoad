@@ -194,6 +194,12 @@ class V1TINEditorTaskPanel:
         self._summary.setStyleSheet("color: #dfe8ff; background: #263142; padding: 6px;")
         layout.addWidget(self._summary)
 
+        self._progress = QtWidgets.QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setFormat("Ready")
+        layout.addWidget(self._progress)
+
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(self._build_source_tab(), "Source")
         self._tabs.addTab(self._build_boundary_tab(), "Boundary")
@@ -393,11 +399,17 @@ class V1TINEditorTaskPanel:
 
     def _build_tin(self, *, close_after: bool = False) -> bool:
         try:
+            self._set_progress(0, "Preparing TIN apply...")
             source_result = None
             csv_path = str(self._source_csv_text.text() or "").strip()
             if csv_path and (self.base_surface is None or csv_path != self._source_csv_path):
+                self._set_progress(15, "Building source TIN...")
                 source_result = self._build_source_tin(show_completion=False, focus_preview=False)
+                self._set_progress(45, "Source TIN ready...")
+            else:
+                self._set_progress(25, "Reading TIN edit rows...")
             result = self._apply_current_editor_state(focus_preview=True)
+            self._set_progress(85, "Updating TIN preview...")
             edit_result = result["edit_result"]
             mesh_preview = result.get("mesh_preview")
             source_text = ""
@@ -408,6 +420,7 @@ class V1TINEditorTaskPanel:
                     f"Base vertices: {len(list(getattr(source_surface, 'vertex_rows', []) or []))}\n"
                     f"Base triangles: {len(list(getattr(source_surface, 'triangle_rows', []) or []))}\n"
                 )
+            self._set_progress(100, "TIN apply complete")
             _show_message(
                 self.form,
                 "TIN",
@@ -424,14 +437,19 @@ class V1TINEditorTaskPanel:
                 self.gui_module.Control.closeDialog()
             return True
         except Exception as exc:
+            self._set_progress(0, "TIN apply failed")
             self._set_diagnostics(f"TIN build failed:\n{exc}")
             _show_message(self.form, "TIN", f"TIN was not built.\n{exc}")
             return False
 
     def _apply(self, *, close_after: bool = False, show_completion: bool = True) -> bool:
         try:
+            self._set_progress(0, "Preparing TIN apply...")
+            self._set_progress(30, "Reading TIN edit rows...")
             result = self._apply_current_editor_state(focus_preview=True)
+            self._set_progress(85, "Updating TIN preview...")
             if show_completion:
+                self._set_progress(100, "TIN apply complete")
                 _show_message(
                     self.form,
                     "TIN",
@@ -444,16 +462,23 @@ class V1TINEditorTaskPanel:
                 )
             if close_after and self.gui_module is not None:
                 self.gui_module.Control.closeDialog()
+            if not show_completion:
+                self._set_progress(100, "TIN apply complete")
             return True
         except Exception as exc:
+            self._set_progress(0, "TIN apply failed")
             self._set_diagnostics(f"TIN edit failed:\n{exc}")
             _show_message(self.form, "TIN", f"TIN edits were not applied.\n{exc}")
             return False
 
     def _show_preview(self) -> None:
         try:
+            self._set_progress(0, "Preparing TIN preview...")
+            self._set_progress(30, "Reading TIN edit rows...")
             self._apply_current_editor_state(focus_preview=True)
+            self._set_progress(100, "TIN preview ready")
         except Exception as exc:
+            self._set_progress(0, "TIN preview failed")
             self._set_diagnostics(f"TIN preview failed:\n{exc}")
             _show_message(self.form, "TIN", f"TIN preview could not be shown.\n{exc}")
 
@@ -544,11 +569,13 @@ class V1TINEditorTaskPanel:
         if self.base_surface is None:
             raise ValueError("No selected TIN-capable Mesh/Shape object was found.")
         operations = self._operations_from_ui()
+        self._set_progress(55, "Applying TIN operations...")
         result = apply_tin_editor_operations(
             document=self.document,
             base_surface=self.base_surface,
             operations=operations,
         )
+        self._set_progress(75, "Writing TIN result...")
         self._stop_triangle_pick_mode(silent=True)
         self._stop_vertex_pick_mode(silent=True)
         self._stop_boundary_pick_mode(silent=True)
@@ -556,8 +583,21 @@ class V1TINEditorTaskPanel:
         self._last_result = result
         self._set_diagnostics(_format_editor_result(result))
         if focus_preview:
+            self._set_progress(90, "Focusing TIN preview...")
             _focus_preview(self.document, result.get("mesh_preview"), gui_module=self.gui_module)
         return result
+
+    def _set_progress(self, value: int, text: str = "") -> None:
+        progress = getattr(self, "_progress", None)
+        if progress is None:
+            return
+        try:
+            progress.setValue(max(0, min(100, int(value))))
+            if text:
+                progress.setFormat(text)
+        except Exception:
+            return
+        _process_panel_events()
 
     def _use_boundary_full_extent(self) -> None:
         self._reset_boundary_rect()
@@ -1931,6 +1971,20 @@ def _format_editor_result(result: dict[str, object]) -> str:
             f"removed={report.removed_triangle_count}, changed={report.changed_vertex_count}"
         )
     return "\n".join(lines)
+
+
+def _process_panel_events() -> None:
+    try:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents()
+    except Exception:
+        pass
+    try:
+        if Gui is not None and hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+    except Exception:
+        pass
 
 
 def _show_message(parent, title: str, message: str) -> None:

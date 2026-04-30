@@ -61,8 +61,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
         ]
         assembly_region_commands = [
             "CorridorRoad_V1EditAssembly",
-            "CorridorRoad_V1EditRegions",
             "CorridorRoad_V1EditStructures",
+            "CorridorRoad_V1EditRegions",
         ]
         corridor_commands = [
             "CorridorRoad_V1AppliedSections",

@@ -249,6 +249,20 @@ def _export_readiness_status(diagnostics: list[object]) -> str:
     return "ready"
 
 
+def _notify_progress(progress_callback, value: int, text: str) -> None:
+    if not callable(progress_callback):
+        return
+    try:
+        progress_callback(value, text)
+    except TypeError:
+        try:
+            progress_callback(value)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def apply_v1_structure_output_package(*, document=None, project=None, package_result=None):
     """Persist a built structure output package as a v1 ExchangePackage object."""
 
@@ -306,12 +320,20 @@ def export_document_structure_output_package_ifc(
     return export_exchange_package_to_ifc(path, package_obj)
 
 
-def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None, build_surfaces: bool = True):
+def apply_v1_corridor_model(
+    *,
+    document=None,
+    project=None,
+    corridor_model=None,
+    build_surfaces: bool = True,
+    progress_callback=None,
+):
     """Persist a v1 CorridorModel result object."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    _notify_progress(progress_callback, 40, "Preparing project tree...")
     prj = project or find_project(doc)
     if prj is None:
         try:
@@ -323,38 +345,47 @@ def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None,
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
     if corridor_model is None:
+        _notify_progress(progress_callback, 45, "Building CorridorModel...")
         corridor_model = build_document_corridor_model(doc, project=prj)
     surface_model = None
     if build_surfaces:
+        _notify_progress(progress_callback, 50, "Building corridor surfaces...")
         surface_model = build_document_corridor_surface_model(doc, project=prj, corridor_model=corridor_model)
         corridor_model.surface_build_refs = [str(getattr(surface_model, "surface_model_id", "") or "surface:main")]
+    _notify_progress(progress_callback, 65, "Writing CorridorModel object...")
     obj = create_or_update_v1_corridor_model_object(document=doc, project=prj, corridor_model=corridor_model)
     if surface_model is not None:
+        _notify_progress(progress_callback, 70, "Writing SurfaceModel object...")
         create_or_update_v1_surface_model_object(document=doc, project=prj, surface_model=surface_model)
+        _notify_progress(progress_callback, 74, "Creating centerline preview...")
         create_corridor_centerline_3d_preview(
             document=doc,
             project=prj,
             corridor_model=corridor_model,
             applied_section_set_ref=str(getattr(corridor_model, "applied_section_set_ref", "") or ""),
         )
+        _notify_progress(progress_callback, 78, "Creating design surface preview...")
         create_corridor_design_surface_preview(
             document=doc,
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
         )
+        _notify_progress(progress_callback, 82, "Creating subgrade surface preview...")
         create_corridor_subgrade_surface_preview(
             document=doc,
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
         )
+        _notify_progress(progress_callback, 86, "Creating slope face preview...")
         create_corridor_daylight_surface_preview(
             document=doc,
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
         )
+        _notify_progress(progress_callback, 90, "Creating drainage preview...")
         create_corridor_drainage_surface_preview(
             document=doc,
             project=prj,
@@ -362,6 +393,7 @@ def apply_v1_corridor_model(*, document=None, project=None, corridor_model=None,
             surface_model=surface_model,
         )
     try:
+        _notify_progress(progress_callback, 94, "Recomputing document...")
         doc.recompute()
     except Exception:
         pass
@@ -1060,6 +1092,11 @@ class V1BuildCorridorTaskPanel:
         self._summary.setReadOnly(True)
         self._summary.setFixedHeight(150)
         layout.addWidget(self._summary)
+        self._progress = QtWidgets.QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setFormat("Ready")
+        layout.addWidget(self._progress)
         tabs = QtWidgets.QTabWidget()
         guided_tab = QtWidgets.QWidget()
         guided_layout = QtWidgets.QVBoxLayout(guided_tab)
@@ -1248,30 +1285,54 @@ class V1BuildCorridorTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            self._set_progress(0, "Preparing Corridor Build...")
+            self._set_progress(15, "Reading Applied Sections...")
             result = build_document_corridor_model(self.document)
-            obj = apply_v1_corridor_model(document=self.document, corridor_model=result)
+            self._set_progress(35, "Building CorridorModel...")
+            obj = apply_v1_corridor_model(
+                document=self.document,
+                corridor_model=result,
+                progress_callback=self._set_progress,
+            )
+            self._set_progress(96, "Reading surface summary...")
             surface_obj = find_v1_surface_model(self.document)
             surface_count = int(getattr(surface_obj, "SurfaceCount", 0) or 0) if surface_obj is not None else 0
             message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
+            self._set_progress(97, "Refreshing review rows...")
             review_rows = corridor_build_review_rows(self.document)
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(review_rows)
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
             self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
+            self._set_progress(99, "Focusing review preview...")
             focused = self._show_preferred_review_row(review_rows)
             if focused:
                 self._summary.setPlainText(
                     message + f"\nObject: {obj.Label}\nFocused: {getattr(focused, 'Label', getattr(focused, 'Name', ''))}"
                 )
+            self._set_progress(100, "Corridor Build complete")
             _show_message(self.form, "Build Corridor", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
         except Exception as exc:
+            self._set_progress(0, "Corridor Build failed")
             self._summary.setPlainText(f"CorridorModel was not built:\n{exc}")
             _show_message(self.form, "Build Corridor", f"CorridorModel was not built.\n{exc}")
             return False
+
+    def _set_progress(self, value: int, text: str = "") -> None:
+        progress = getattr(self, "_progress", None)
+        if progress is None:
+            return
+        try:
+            progress.setValue(max(0, min(100, int(value))))
+            if text:
+                progress.setFormat(text)
+        except Exception:
+            return
+        _process_panel_events()
 
     def _open_structure_output_panel(self) -> bool:
         try:
@@ -2510,6 +2571,20 @@ def _skip_corridor_existing_ground_candidate(obj) -> bool:
     if label.startswith(("TIN Boundary Rectangle Preview", "TIN Void Rectangle Preview")):
         return True
     return False
+
+
+def _process_panel_events() -> None:
+    try:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents()
+    except Exception:
+        pass
+    try:
+        if Gui is not None and hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+    except Exception:
+        pass
 
 
 def _show_message(parent, title: str, message: str) -> None:

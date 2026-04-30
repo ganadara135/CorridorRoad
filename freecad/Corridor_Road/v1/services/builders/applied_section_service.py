@@ -957,6 +957,14 @@ def _clip_bench_segments_to_terrain(
             )
         ]
     service = sampling_service or TinSamplingService()
+    segments = _orient_bench_segments_to_terrain(
+        segments,
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        frame=frame,
+        existing_ground_surface=existing_ground_surface,
+        sampling_service=service,
+    )
     terrain_context = _bench_terrain_context(
         component,
         side_label=side_label,
@@ -1008,6 +1016,55 @@ def _clip_bench_segments_to_terrain(
         )
     )
     return clipped, diagnostics
+
+
+def _orient_bench_segments_to_terrain(
+    segments: list[dict[str, object]],
+    *,
+    edge_offset: float,
+    edge_z: float,
+    frame: AppliedSectionFrame,
+    existing_ground_surface: TINSurface,
+    sampling_service: TinSamplingService,
+) -> list[dict[str, object]]:
+    direction = _bench_cut_fill_slope_direction(
+        edge_offset=edge_offset,
+        edge_z=edge_z,
+        frame=frame,
+        existing_ground_surface=existing_ground_surface,
+        sampling_service=sampling_service,
+    )
+    if direction == 0:
+        return segments
+    output: list[dict[str, object]] = []
+    for segment in list(segments or []):
+        row = dict(segment)
+        slope = float(row.get("slope", 0.0) or 0.0)
+        if abs(slope) > 1.0e-12:
+            row["slope"] = float(direction) * abs(slope)
+        output.append(row)
+    return output
+
+
+def _bench_cut_fill_slope_direction(
+    *,
+    edge_offset: float,
+    edge_z: float,
+    frame: AppliedSectionFrame,
+    existing_ground_surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float = 1.0e-6,
+) -> int:
+    x, y, _z = _station_offset_point(frame, edge_offset, edge_z)
+    sample = sampling_service.sample_xy(surface=existing_ground_surface, x=x, y=y)
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return 0
+    delta = float(sample.z) - float(edge_z)
+    if delta > tolerance:
+        return 1
+    if delta < -tolerance:
+        return -1
+    return 0
 
 
 def _bench_terrain_context(
