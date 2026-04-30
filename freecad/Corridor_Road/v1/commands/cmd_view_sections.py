@@ -637,6 +637,7 @@ def _build_structure_review_rows(
     *,
     viewer_context: dict[str, object] | None,
     region_model=None,
+    structure_model=None,
 ) -> list[dict[str, str]]:
     """Build minimal structure review rows for the v1 section viewer."""
 
@@ -663,6 +664,19 @@ def _build_structure_review_rows(
                 "value": structure_summary,
                 "notes": "",
             },
+        )
+    if structure_model is not None:
+        label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
+        count = getattr(structure_model, "StructureCount", None)
+        if count is None:
+            count = len(list(getattr(structure_model, "StructureIds", []) or []))
+        rows.append(
+            {
+                "kind": "structure_model",
+                "label": "Structure Model",
+                "value": label or "Structures",
+                "notes": f"Rows: {int(count or 0)}",
+            }
         )
     if not rows and region_model is not None:
         rows.append(
@@ -883,6 +897,10 @@ def _build_v1_applied_section_set_preview(
         from ..objects.obj_region import find_v1_region_model
     except Exception:
         find_v1_region_model = None
+    try:
+        from ..objects.obj_structure import find_v1_structure_model
+    except Exception:
+        find_v1_structure_model = None
 
     applied_obj = find_v1_applied_section_set(document, preferred_applied_section_set)
     applied_section_set = to_applied_section_set(applied_obj)
@@ -915,6 +933,7 @@ def _build_v1_applied_section_set_preview(
 
     assembly_model = find_v1_assembly_model(document) if find_v1_assembly_model is not None else None
     region_model = find_v1_region_model(document) if find_v1_region_model is not None else None
+    structure_model = find_v1_structure_model(document) if find_v1_structure_model is not None else None
     source_objects = {
         "project": project,
         "applied_section_set": applied_obj,
@@ -923,7 +942,7 @@ def _build_v1_applied_section_set_preview(
         "region_model": region_model,
         "corridor": getattr(project, "Corridor", None) if project is not None else None,
         "cut_fill_calc": getattr(project, "CutFillCalc", None) if project is not None else None,
-        "structure_model": None,
+        "structure_model": structure_model,
     }
     viewer_context: dict[str, object] = {}
     diagnostic_rows = _build_diagnostic_review_rows(
@@ -959,7 +978,7 @@ def _build_v1_applied_section_set_preview(
             section_set=applied_obj,
             assembly_model=None,
             region_model=region_model,
-            structure_model=source_objects.get("structure_model"),
+            structure_model=structure_model,
             viewer_context=viewer_context,
         ),
         "terrain_rows": _build_terrain_review_rows(
@@ -971,6 +990,7 @@ def _build_v1_applied_section_set_preview(
         "structure_rows": _build_structure_review_rows(
             viewer_context=viewer_context,
             region_model=region_model,
+            structure_model=structure_model,
         ),
         "earthwork_hint_rows": earthwork_hint_rows,
         "review_marker_rows": review_marker_rows,
@@ -1232,6 +1252,7 @@ def show_v1_section_preview(
     preview["structure_rows"] = list(preview.get("structure_rows", []) or []) or _build_structure_review_rows(
         viewer_context=viewer_context,
         region_model=source_objects.get("region_model"),
+        structure_model=source_objects.get("structure_model"),
     )
     preview["earthwork_hint_rows"] = list(preview.get("earthwork_hint_rows", []) or []) or _build_earthwork_hint_rows(
         earthwork_model=None,

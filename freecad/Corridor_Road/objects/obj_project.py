@@ -1288,6 +1288,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
+    if record_kind == "v1_structure_show_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_applied_section_show_preview":
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if record_kind == "tin_mesh_preview":
@@ -1348,7 +1350,7 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_DESIGN_TIN, None)
     if _is_type(child, proxy_types=(CORRIDOR_PROXY_TYPE,), name_prefixes=(CORRIDOR_NAME_PREFIX,)):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
-    if _is_type(child, proxy_types=("StructureSet",), name_prefixes=("StructureSet",)):
+    if _is_type(child, proxy_types=("V1StructureModel", "StructureModel", "StructureSet"), name_prefixes=("V1StructureModel", "StructureModel", "StructureSet")):
         return tree.get(V1_TREE_STRUCTURES, None)
     if _is_v1_review(child):
         if _is_type(child, proxy_types=("PlanProfileReview",), name_prefixes=("PlanProfileReview",)):

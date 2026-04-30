@@ -1310,6 +1310,7 @@ class CrossSectionViewerTaskPanel:
         for label, command_name in (
             ("Open Assembly", "CorridorRoad_V1EditAssembly"),
             ("Open Regions", "CorridorRoad_V1EditRegions"),
+            ("Open Structures", "CorridorRoad_V1EditStructures"),
         ):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(
@@ -1791,6 +1792,8 @@ class CrossSectionViewerTaskPanel:
             objects_to_select = [source_objects.get("assembly_model")]
         elif command_name == "CorridorRoad_V1EditRegions":
             objects_to_select = [source_objects.get("region_model")]
+        elif command_name == "CorridorRoad_V1EditStructures":
+            objects_to_select = [source_objects.get("structure_model")]
         self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,

@@ -44,6 +44,12 @@ from .obj_region import (
     find_v1_region_model,
     to_region_model,
 )
+from .obj_structure import (
+    V1StructureModelObject,
+    create_or_update_v1_structure_model_object,
+    find_v1_structure_model,
+    to_structure_model,
+)
 from .obj_stationing import (
     V1StationingObject,
     create_v1_stationing,
@@ -60,11 +66,13 @@ __all__ = [
     "V1ProfileObject",
     "V1RegionModelObject",
     "V1StationingObject",
+    "V1StructureModelObject",
     "V1SurfaceModelObject",
     "assembly_model_ids",
     "create_or_update_v1_assembly_model_object",
     "create_or_update_v1_applied_section_set_object",
     "create_or_update_v1_region_model_object",
+    "create_or_update_v1_structure_model_object",
     "create_or_update_v1_corridor_model_object",
     "create_or_update_v1_surface_model_object",
     "create_sample_v1_alignment",
@@ -78,6 +86,7 @@ __all__ = [
     "find_v1_profile",
     "find_v1_region_model",
     "find_v1_stationing",
+    "find_v1_structure_model",
     "list_v1_assembly_models",
     "station_value_rows",
     "to_alignment_model",
@@ -87,5 +96,6 @@ __all__ = [
     "to_surface_model",
     "to_profile_model",
     "to_region_model",
+    "to_structure_model",
     "update_v1_stationing_from_alignment",
 ]

@@ -22,7 +22,6 @@ Current implementation entry points:
 
 - command bridge: `freecad/Corridor_Road/v1/commands/cmd_view_sections.py`
 - v1 viewer task panel: `freecad/Corridor_Road/v1/ui/viewers/cross_section_viewer.py`
-- existing v0 viewer bridge: `freecad/Corridor_Road/ui/task_cross_section_viewer.py`
 - handoff helper: `freecad/Corridor_Road/v1/ui/common/legacy_handoff.py`
 - preview contract tests: `tests/contracts/v1/test_section_command_bridge.py`
 
@@ -56,14 +55,15 @@ Current implementation entry points:
 
 ## 5. Milestone C: Editor Handoff and Return
 
-- [x] handoff to `Typical Section` editor exists
-- [x] handoff to `Region` editor exists
-- [x] handoff to `Structure` editor exists
+- [x] handoff to v1 `Assembly` editor exists
+- [x] handoff to v1 `Region` editor exists
+- [x] handoff to v1 `Structure` editor exists
 - [x] station context is passed through handoff
 - [x] component context is passed through handoff
-- [x] same-context return path exists through existing v0 editors
+- [x] same-context return path exists through v1 editor commands
 - [x] show active handoff context more clearly in the v1 viewer status area
-- [ ] verify structure handoff selects linked `StructureSet` consistently in real documents
+- [x] verify structure handoff selects linked `StructureModel` consistently in real documents
+- [x] add v1 Structures 3D preview output for source-row review
 - [ ] add explicit return-state tests for `viewer -> editor -> viewer`
 - [x] document preferred handoff flow in a short manual QA scenario note
 

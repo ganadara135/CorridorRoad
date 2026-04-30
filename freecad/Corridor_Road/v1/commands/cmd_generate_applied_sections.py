@@ -33,6 +33,7 @@ from ..objects.obj_assembly import find_v1_assembly_model, list_v1_assembly_mode
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
+from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 
 
@@ -56,12 +57,14 @@ def build_document_applied_section_set(document=None, *, project=None, corridor_
     assembly_obj = assembly_objs[0] if assembly_objs else find_v1_assembly_model(doc)
     region_obj = find_v1_region_model(doc)
     stationing_obj = find_v1_stationing(doc)
+    structure_obj = find_v1_structure_model(doc)
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
     assembly_models = [model for model in (to_assembly_model(obj) for obj in assembly_objs) if model is not None]
     assembly = assembly_models[0] if assembly_models else to_assembly_model(assembly_obj)
     region_model = to_region_model(region_obj)
+    structure_model = to_structure_model(structure_obj)
     stations = _station_values(stationing_obj)
 
     missing = []
@@ -94,6 +97,7 @@ def build_document_applied_section_set(document=None, *, project=None, corridor_
             assembly=assembly,
             assembly_models=assembly_models,
             region_model=region_model,
+            structure_model=structure_model,
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",
@@ -362,6 +366,7 @@ class V1AppliedSectionsTaskPanel:
                 f"Profile: {_source_status(find_v1_profile(self.document))}",
                 f"Assembly: {_assembly_source_status(self.document)}",
                 f"Regions: {_source_status(find_v1_region_model(self.document))}",
+                f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
                 "",
                 "Click Apply to create or update the v1 AppliedSectionSet result.",

@@ -16,6 +16,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionStationRow,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
+from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.models.output.section_output import (
     SectionGeometryRow,
@@ -24,6 +25,11 @@ from freecad.Corridor_Road.v1.models.output.section_output import (
 from freecad.Corridor_Road.v1.models.source.alignment_model import (
     AlignmentElement,
     AlignmentModel,
+)
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
 )
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_cross_section_drawing_dimension_table_rows,
@@ -621,6 +627,83 @@ def test_show_v1_section_preview_opens_document_v1_applied_section_set_before_de
         assert preview["source_inspector"]["section_set_status"] == "resolved"
         assert preview["source_inspector"]["template_status"] == "source_ref"
         assert preview["source_inspector"]["unresolved_fields"] == ["structure"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
+    doc = App.newDocument("V1SectionViewerStructureModelTest")
+    try:
+        sections = [
+            AppliedSection(
+                schema_version=1,
+                project_id="project:test",
+                applied_section_id="section:20",
+                station=20.0,
+                template_id="template:basic-road",
+                region_id="region:mainline",
+                component_rows=[
+                    AppliedSectionComponentRow(
+                        component_id="lane-left",
+                        kind="lane",
+                        source_template_id="template:basic-road",
+                        region_id="region:mainline",
+                    )
+                ],
+            )
+        ]
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:real-document",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id="section:20:station",
+                    station=20.0,
+                    applied_section_id="section:20",
+                )
+            ],
+            sections=sections,
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Real Document",
+        )
+        create_or_update_v1_structure_model_object(
+            document=doc,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="project:test",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:bridge-01",
+                        structure_kind="bridge",
+                        structure_role="interface",
+                        placement=StructurePlacement(
+                            placement_id="placement:bridge-01",
+                            alignment_id="",
+                            station_start=10.0,
+                            station_end=30.0,
+                        ),
+                    )
+                ],
+            ),
+            label="Structures Real Document",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=20.0,
+            app_module=None,
+            gui_module=None,
+        )
+
+        assert preview["source_inspector"]["structure_status"] == "resolved"
+        assert preview["source_inspector"]["structure_label"] == "Structures Real Document"
+        assert "structure" not in preview["source_inspector"]["unresolved_fields"]
+        assert any(row["kind"] == "structure_model" for row in preview["structure_rows"])
     finally:
         App.closeDocument(doc.Name)
 

@@ -21,9 +21,9 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [x] a real project file is open
 - [x] alignment exists
 - [x] profile exists
-- [ ] section set exists
+- [ ] v1 AppliedSectionSet exists
 - [x] region plan exists or is intentionally absent
-- [ ] structure set exists or is intentionally absent
+- [ ] v1 StructureModel exists or is intentionally absent
 - [ ] earthwork-related result object exists or is intentionally absent
 
 ## 2A. Preferred Start Rule
@@ -31,7 +31,7 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [x] section review was started from the v1 `Cross Section Viewer`
 - [x] plan/profile review was started from the v1 `Plan/Profile Viewer`
 - [ ] earthwork review was started from the v1 `Earthwork Viewer`
-- [ ] no existing v0 viewer was needed as the first review screen
+- [x] no existing v0 viewer was needed as the first review screen
 
 ## 3. Cross Section Viewer
 
@@ -46,13 +46,14 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [x] dimension annotations are visible in the lower drawing band
 - [ ] label and dimension overlap is acceptable in normal panel size
 - [x] `Source Inspector` is visible
-- [ ] `Source Inspector` shows `Section Set`, `Template`, `Region`, and `Structure` owner rows
+- [x] `Source Inspector` shows `Section Set`, `Assembly`, `Region`, and `Structure` owner rows
 - [ ] unresolved source owners are visible when source tracing is incomplete
-- [ ] `Station Navigation` shows the full station list
-- [ ] moving to another station changes the focus as expected
-- [ ] `Open Typical Section` opens the correct existing v0 editor
-- [ ] `Open Regions` opens the correct existing v0 editor
-- [ ] `Open Structures` opens the correct existing v0 editor
+- [x] `Station Navigation` shows the full station list
+- [x] moving to another station changes the focus as expected
+- [x] `Open Assembly` opens the v1 Assembly editor
+- [x] `Open Regions` opens the v1 Regions editor
+- [x] `Open Structures` opens the v1 Structures editor
+- [ ] v1 Structures editor creates a visible `V1StructureShowPreview` in the 3D view
 - [ ] return from editor comes back to the intended station context
 
 ## 4. Plan/Profile Viewer
@@ -61,7 +62,7 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [x] title uses `Viewer`
 - [ ] `Current Focus` is visible
 - [ ] `Viewer Context` is visible
-- [ ] `Station Navigation` shows the full station list
+- [x] `Station Navigation` shows the full station list
 - [ ] moving to another station changes the focus as expected
 - [ ] `Profile Controls` row emphasis matches the focus station
 - [x] `Open Alignment` opens the correct existing v0 editor
