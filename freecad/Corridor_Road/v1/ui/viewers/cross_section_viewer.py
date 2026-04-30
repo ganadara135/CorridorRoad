@@ -47,37 +47,33 @@ def _preview_focused_component_label(preview: dict[str, object]) -> str:
 def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     """Build normalized editor-handoff rows for one section viewer payload."""
 
-    legacy_objects = dict(preview.get("legacy_objects", {}) or {})
+    source_objects = _preview_source_objects(preview)
     inspector = dict(preview.get("source_inspector", {}) or {})
     station_label = _preview_station_label(preview)
     focused_label = _preview_focused_component_label(preview)
     focused_suffix = f" | Focus={focused_label}" if focused_label else ""
 
     target_specs = (
-        ("Typical Section", "typical_section", inspector.get("template_label", "")),
-        ("Regions", "region_plan", inspector.get("region_label", "")),
-        ("Structures", "structure_set", inspector.get("structure_label", "")),
+        ("Assembly", "assembly_model", inspector.get("template_label", "")),
+        ("Regions", "region_model", inspector.get("region_label", "")),
+        ("Structures", "structure_model", inspector.get("structure_label", "")),
     )
 
     rows: list[list[str]] = []
     for target_label, object_key, owner_label in target_specs:
-        obj = legacy_objects.get(object_key)
+        obj = source_objects.get(object_key)
         object_label = str(
             getattr(obj, "Label", "") or getattr(obj, "Name", "") or owner_label or ""
         ).strip()
-        is_ready = obj is not None or bool(object_label)
-        status = "ready" if is_ready else "missing"
+        if obj is not None:
+            status = "ready"
+        elif object_label:
+            status = "source_ref"
+        else:
+            status = "missing"
         context_text = f"{station_label}{focused_suffix}"
         if object_label:
             context_text = f"{context_text} | Target={object_label}"
-        elif target_label == "Structures":
-            fallback_section_set = legacy_objects.get("section_set")
-            section_set_label = str(
-                getattr(fallback_section_set, "Label", "") or getattr(fallback_section_set, "Name", "") or ""
-            ).strip()
-            if section_set_label:
-                context_text = f"{context_text} | Via SectionSet={section_set_label}"
-                status = "ready"
         rows.append(
             [
                 target_label,
@@ -87,6 +83,12 @@ def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
             ]
         )
     return rows
+
+
+def _preview_source_objects(preview: dict[str, object]) -> dict[str, object]:
+    """Return v1 source/result objects carried by the viewer payload."""
+
+    return dict(preview.get("source_objects", {}) or {})
 
 
 def build_handoff_status(preview: dict[str, object]) -> dict[str, str]:
@@ -325,15 +327,15 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
             "Section Set",
             "section_set_status",
             "section_set_label",
-            "",
+            "section_set_source_ref",
             "Section station/result container used by this viewer.",
         ),
         (
-            "Template",
+            "Assembly",
             "template_status",
             "template_label",
             "template_source_ref",
-            "Assembly template source for the focused section.",
+            "v1 assembly/template source for the focused section.",
         ),
         (
             "Region",
@@ -1026,7 +1028,7 @@ class CrossSectionViewerTaskPanel:
 
         layout.addWidget(QtWidgets.QLabel("Components"))
         self._component_table = self._table_widget(
-            headers=["Id", "Kind", "Template", "Region"],
+            headers=["Id", "Kind", "Assembly Template", "Region"],
             rows=[
                 [
                     str(getattr(row, "component_id", "") or ""),
@@ -1123,67 +1125,20 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
-        layout.addWidget(QtWidgets.QLabel("Diagnostics"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Severity", "Kind", "Message", "Notes"],
-                rows=self._diagnostic_review_rows(),
-                empty_text="No diagnostic rows.",
-            )
-        )
-
-        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
-        layout.addWidget(QtWidgets.QLabel("Viewer Context"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Field", "Value"],
-                rows=self._viewer_context_rows(viewer_context),
-                empty_text="No viewer context rows.",
-            )
-        )
-
-        layout.addWidget(QtWidgets.QLabel("Viewer Source Rows"))
-        self._viewer_source_table = self._table_widget(
-            headers=["Id", "Type", "Side", "Source", "Scope"],
-            rows=[
-                [
-                    str(row.get("id", "") or ""),
-                    str(row.get("type", "") or ""),
-                    str(row.get("side", "") or ""),
-                    str(row.get("source", "") or ""),
-                    str(row.get("scope", "") or ""),
-                ]
-                for row in list(viewer_context.get("component_rows", []) or [])
-            ],
-            empty_text="No viewer source rows.",
-        )
-        layout.addWidget(self._viewer_source_table)
-        self._select_focused_source_row(self._viewer_source_table)
-
-        layout.addWidget(QtWidgets.QLabel("Editor Handoff"))
-        layout.addWidget(
-            self._table_widget(
-                headers=["Target", "Status", "Object", "Context"],
-                rows=self._handoff_target_rows(),
-                empty_text="No editor handoff rows.",
-            )
-        )
-
-        handoff_status = self._handoff_status()
-        self._status_label = QtWidgets.QLabel(handoff_status.get("text", ""))
+        self._status_label = QtWidgets.QLabel("")
         self._status_label.setWordWrap(True)
-        self._status_label.setStyleSheet(handoff_status.get("style", "color: #666;"))
+        self._status_label.setStyleSheet("color: #666;")
+        self._status_label.setVisible(False)
         layout.addWidget(self._status_label)
 
         button_row = QtWidgets.QHBoxLayout()
         for label, command_name in (
-            ("Open Typical Section", "CorridorRoad_EditTypicalSection"),
-            ("Open Regions", "CorridorRoad_EditRegions"),
-            ("Open Structures", "CorridorRoad_EditStructures"),
+            ("Open Assembly", "CorridorRoad_V1EditAssembly"),
+            ("Open Regions", "CorridorRoad_V1EditRegions"),
         ):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(
-                lambda _checked=False, name=command_name: self._open_legacy_command(name)
+                lambda _checked=False, name=command_name: self._open_v1_command(name)
             )
             button_row.addWidget(button)
         button_row.addStretch(1)
@@ -1226,8 +1181,15 @@ class CrossSectionViewerTaskPanel:
         applied_section = self.preview.get("applied_section")
         section_output = self.preview.get("section_output")
         station_row = dict(self.preview.get("station_row", {}) or {})
+        inspector = dict(self.preview.get("source_inspector", {}) or {})
         station_value = float(getattr(section_output, "station", 0.0) or 0.0)
         station_label = str(station_row.get("label", f"STA {station_value:.3f}") or f"STA {station_value:.3f}")
+        template_label = str(
+            getattr(applied_section, "template_id", "")
+            or inspector.get("template_label", "")
+            or inspector.get("template_source_ref", "")
+            or "(unresolved)"
+        )
 
         return "\n".join(
             [
@@ -1235,7 +1197,7 @@ class CrossSectionViewerTaskPanel:
                 f"Station Label: {station_label}",
                 f"Result State: {self._result_state_value()}",
                 f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
-                f"Template: {getattr(applied_section, 'template_id', '') or '(unresolved)'}",
+                f"Assembly Template: {template_label}",
                 f"Stations: {len(self._navigation_station_rows())}",
                 f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
                 f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
@@ -1326,19 +1288,19 @@ class CrossSectionViewerTaskPanel:
         return build_source_inspector_detail_rows(self.preview)
 
     def _source_inspector_rows(self) -> list[list[str]]:
-        """Return legacy source-inspector rows for older tests/helpers."""
+        """Return compact source-inspector rows for older tests/helpers."""
 
         inspector = dict(self.preview.get("source_inspector", {}) or {})
         mapping = [
             ("Station", "station_label"),
             ("Section Set", "section_set_label"),
-            ("Template Label", "template_label"),
+            ("Assembly Template Label", "template_label"),
             ("Region Label", "region_label"),
             ("Structure Label", "structure_label"),
             ("Component Id", "component_id"),
             ("Component Kind", "component_kind"),
             ("Component Side", "component_side"),
-            ("Owner Template", "owner_template"),
+            ("Owner Assembly Template", "owner_template"),
             ("Owner Region", "owner_region"),
             ("Owner Structure", "owner_structure"),
             ("Ownership Status", "ownership_status"),
@@ -1569,20 +1531,22 @@ class CrossSectionViewerTaskPanel:
         if row is None:
             self._status_label.setText("No station row is available.")
             self._status_label.setStyleSheet("color: #b36b00;")
+            self._status_label.setVisible(True)
             return
         if Gui is None:
             self._status_label.setText("FreeCAD GUI is not available for station navigation.")
             self._status_label.setStyleSheet("color: #b33;")
+            self._status_label.setVisible(True)
             return
 
-        legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
-        section_set = legacy_objects.get("section_set")
-        section_set_name = str(getattr(section_set, "Name", "") or "").strip()
+        source_objects = _preview_source_objects(self.preview)
+        applied_section_set = source_objects.get("applied_section_set")
+        applied_section_set_name = str(getattr(applied_section_set, "Name", "") or "").strip()
         station_value = float(row.get("station", 0.0) or 0.0)
         station_label = str(row.get("label", "") or "").strip()
         context_payload = {
             "source": "v1_cross_section_navigation",
-            "preferred_section_set_name": section_set_name,
+            "preferred_applied_section_set_name": applied_section_set_name,
             "preferred_station": station_value,
             "station_row": dict(row),
             "viewer_context": dict(self.preview.get("viewer_context", {}) or {}),
@@ -1642,15 +1606,13 @@ class CrossSectionViewerTaskPanel:
                 table.selectRow(row_index)
                 return
 
-    def _open_legacy_command(self, command_name: str) -> None:
-        legacy_objects = dict(self.preview.get("legacy_objects", {}) or {})
+    def _open_v1_command(self, command_name: str) -> None:
+        source_objects = _preview_source_objects(self.preview)
         objects_to_select = []
-        if command_name == "CorridorRoad_EditTypicalSection":
-            objects_to_select = [legacy_objects.get("typical_section")]
-        elif command_name == "CorridorRoad_EditRegions":
-            objects_to_select = [legacy_objects.get("region_plan")]
-        elif command_name == "CorridorRoad_EditStructures":
-            objects_to_select = [legacy_objects.get("section_set")]
+        if command_name == "CorridorRoad_V1EditAssembly":
+            objects_to_select = [source_objects.get("assembly_model")]
+        elif command_name == "CorridorRoad_V1EditRegions":
+            objects_to_select = [source_objects.get("region_model")]
         self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,
@@ -1659,9 +1621,9 @@ class CrossSectionViewerTaskPanel:
             context_payload={
                 "source": "v1_cross_section_viewer",
                 "station_row": dict(self.preview.get("station_row", {}) or {}),
-                "legacy_object_names": {
+                "source_object_names": {
                     key: str(getattr(obj, "Name", "") or "")
-                    for key, obj in legacy_objects.items()
+                    for key, obj in source_objects.items()
                     if obj is not None
                 },
             },
@@ -1676,6 +1638,7 @@ class CrossSectionViewerTaskPanel:
         try:
             label.setText(str(text or ""))
             label.setStyleSheet("color: #666;" if ok else "color: #b33;")
+            label.setVisible(bool(str(text or "").strip()))
         except RuntimeError:
             pass
 

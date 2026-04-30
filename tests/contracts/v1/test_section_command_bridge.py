@@ -6,6 +6,15 @@ from freecad.Corridor_Road.v1.commands.cmd_view_sections import (
     show_v1_section_preview,
 )
 from freecad.Corridor_Road.v1.models.result import TINSurface
+from freecad.Corridor_Road.v1.models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionComponentRow,
+)
+from freecad.Corridor_Road.v1.models.result.applied_section_set import (
+    AppliedSectionSet,
+    AppliedSectionStationRow,
+)
+from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.models.output.section_output import (
     SectionGeometryRow,
@@ -324,11 +333,11 @@ def test_show_v1_section_preview_resolves_source_inspector_owner_fields() -> Non
     preview = show_v1_section_preview(
         document=None,
         extra_context={
-            "legacy_objects": {
-                "section_set": _StateObject(label="SectionSet A"),
-                "typical_section": _StateObject(label="Typical Section A"),
-                "region_plan": _StateObject(label="Region Plan A"),
-                "structure_set": _StateObject(label="Structure Set A"),
+            "source_objects": {
+                "applied_section_set": _StateObject(label="Applied Sections A"),
+                "assembly_model": _StateObject(label="Assembly A"),
+                "region_model": _StateObject(label="Region Model A"),
+                "structure_model": _StateObject(label="Structure Model A"),
             }
         },
         app_module=None,
@@ -336,18 +345,24 @@ def test_show_v1_section_preview_resolves_source_inspector_owner_fields() -> Non
     )
 
     inspector = preview["source_inspector"]
-    assert inspector["section_set_label"] == "SectionSet A"
-    assert inspector["template_label"] == "Typical Section A"
-    assert inspector["region_label"] == "Region Plan A"
-    assert inspector["structure_label"] == "Structure Set A"
-    assert inspector["owner_structure"] == "Structure Set A"
+    assert inspector["section_set_label"] == "Applied Sections A"
+    assert inspector["template_label"] == "Assembly A"
+    assert inspector["region_label"] == "Region Model A"
+    assert inspector["structure_label"] == "Structure Model A"
+    assert inspector["owner_structure"] == "Structure Model A"
     assert inspector["ownership_status"] == "resolved"
     assert inspector["unresolved_fields"] == []
     owner_rows = build_source_inspector_owner_rows(preview)
-    assert ["Section Set", "resolved", "SectionSet A", "-", "Object resolved. Section station/result container used by this viewer."] in owner_rows
-    assert any(row[0] == "Template" and row[1] == "resolved" and row[2] == "Typical Section A" for row in owner_rows)
-    assert any(row[0] == "Region" and row[1] == "resolved" and row[2] == "Region Plan A" for row in owner_rows)
-    assert any(row[0] == "Structure" and row[1] == "resolved" and row[2] == "Structure Set A" for row in owner_rows)
+    assert any(
+        row[0] == "Section Set"
+        and row[1] == "resolved"
+        and row[2] == "Applied Sections A"
+        and row[4] == "Object resolved. Section station/result container used by this viewer."
+        for row in owner_rows
+    )
+    assert any(row[0] == "Assembly" and row[1] == "resolved" and row[2] == "Assembly A" for row in owner_rows)
+    assert any(row[0] == "Region" and row[1] == "resolved" and row[2] == "Region Model A" for row in owner_rows)
+    assert any(row[0] == "Structure" and row[1] == "resolved" and row[2] == "Structure Model A" for row in owner_rows)
 
 
 def test_show_v1_section_preview_marks_unresolved_ownership_fields() -> None:
@@ -355,12 +370,136 @@ def test_show_v1_section_preview_marks_unresolved_ownership_fields() -> None:
 
     inspector = preview["source_inspector"]
     assert inspector["ownership_status"] in ("partial", "unresolved")
-    assert "section_set" in inspector["unresolved_fields"]
+    assert "template" in inspector["unresolved_fields"]
+    assert "structure" in inspector["unresolved_fields"]
     owner_rows = build_source_inspector_owner_rows(preview)
     detail_rows = build_source_inspector_detail_rows(preview)
-    assert any(row[0] == "Section Set" and row[1] == "unresolved" for row in owner_rows)
-    assert any(row[0] == "Template" and row[1] in ("resolved", "source_ref") for row in owner_rows)
-    assert any(row[0] == "Unresolved Fields" and "section_set" in row[1] for row in detail_rows)
+    assert any(row[0] == "Section Set" and row[1] == "resolved" for row in owner_rows)
+    assert any(row[0] == "Assembly" and row[1] == "unresolved" for row in owner_rows)
+    assert any(row[0] == "Unresolved Fields" and "template" in row[1] for row in detail_rows)
+
+
+def test_show_v1_section_preview_uses_v1_result_refs_for_source_ownership() -> None:
+    sections = [
+        AppliedSection(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_id=f"section:{index}",
+            station=float(station),
+            region_id="region:mainline",
+            component_rows=[
+                AppliedSectionComponentRow(
+                    component_id="lane-left",
+                    kind="lane",
+                    source_template_id="template:basic-road",
+                    region_id="region:mainline",
+                )
+            ],
+        )
+        for index, station in enumerate([0.0, 10.0, 20.0, 30.0, 40.0], start=1)
+    ]
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="project:test",
+        applied_section_set_id="sections:main",
+        label="Applied Sections Main",
+        station_rows=[
+            AppliedSectionStationRow(
+                station_row_id=f"section:{index}:station",
+                station=float(station),
+                applied_section_id=f"section:{index}",
+            )
+            for index, station in enumerate([0.0, 10.0, 20.0, 30.0, 40.0], start=1)
+        ],
+        sections=sections,
+    )
+
+    preview = show_v1_section_preview(
+        document=None,
+        extra_context={
+            "applied_section_set": applied_section_set,
+            "applied_section": sections[2],
+            "station_row": {"station": 20.0, "label": "STA 20.000"},
+            "station_rows": [
+                {"station": 0.0, "label": "STA 0.000"},
+                {"station": 20.0, "label": "STA 20.000"},
+                {"station": 40.0, "label": "STA 40.000"},
+            ],
+        },
+        app_module=None,
+        gui_module=None,
+    )
+
+    inspector = preview["source_inspector"]
+    assert inspector["section_set_status"] == "resolved"
+    assert inspector["template_status"] == "source_ref"
+    assert inspector["region_status"] == "source_ref"
+    assert inspector["structure_status"] == "unresolved"
+    assert inspector["unresolved_fields"] == ["structure"]
+    assert [row["station"] for row in preview["station_rows"]] == [0.0, 10.0, 20.0, 30.0, 40.0]
+    owner_rows = build_source_inspector_owner_rows(preview)
+    assert any(row[0] == "Assembly" and row[2] == "template:basic-road" for row in owner_rows)
+    assert any(row[0] == "Region" and row[2] == "region:mainline" for row in owner_rows)
+
+
+def test_show_v1_section_preview_opens_document_v1_applied_section_set_before_demo() -> None:
+    doc = App.newDocument("V1SectionViewerAppliedSectionSetTest")
+    try:
+        sections = [
+            AppliedSection(
+                schema_version=1,
+                project_id="project:test",
+                applied_section_id=f"section:{index}",
+                station=float(station),
+                template_id="template:basic-road",
+                region_id="region:mainline",
+                component_rows=[
+                    AppliedSectionComponentRow(
+                        component_id="lane-left",
+                        kind="lane",
+                        source_template_id="template:basic-road",
+                        region_id="region:mainline",
+                    )
+                ],
+            )
+            for index, station in enumerate([0.0, 10.0, 20.0, 30.0, 40.0], start=1)
+        ]
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:real-document",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id=f"section:{index}:station",
+                    station=float(station),
+                    applied_section_id=f"section:{index}",
+                )
+                for index, station in enumerate([0.0, 10.0, 20.0, 30.0, 40.0], start=1)
+            ],
+            sections=sections,
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Real Document",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=30.0,
+            app_module=None,
+            gui_module=None,
+        )
+
+        assert preview["source"] == "v1_applied_section_set"
+        assert preview["applied_section_set"].applied_section_set_id == "sections:real-document"
+        assert preview["station_row"]["station"] == 30.0
+        assert [row["station"] for row in preview["station_rows"]] == [0.0, 10.0, 20.0, 30.0, 40.0]
+        assert preview["source_inspector"]["section_set_status"] == "resolved"
+        assert preview["source_inspector"]["template_status"] == "source_ref"
+        assert preview["source_inspector"]["unresolved_fields"] == ["structure"]
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_format_section_preview_includes_focus_component_line() -> None:
@@ -427,13 +566,13 @@ def test_format_section_preview_uses_overridden_result_state() -> None:
     assert "State Reason: Manual preview override for stale review." in summary
 
 
-def test_show_v1_section_preview_resolves_rebuild_needed_from_legacy_object() -> None:
+def test_show_v1_section_preview_resolves_rebuild_needed_from_v1_source_object() -> None:
     preview = show_v1_section_preview(
         document=None,
         extra_context={
             "result_state": {},
-            "legacy_objects": {
-                "section_set": _StateObject(label="SectionSet Demo", needs_recompute=True),
+            "source_objects": {
+                "applied_section_set": _StateObject(label="Applied Sections Demo", needs_recompute=True),
             },
         },
         app_module=None,
@@ -441,16 +580,16 @@ def test_show_v1_section_preview_resolves_rebuild_needed_from_legacy_object() ->
     )
 
     assert preview["result_state"]["state"] == "rebuild_needed"
-    assert "SectionSet Demo" in preview["result_state"]["reason"]
+    assert "Applied Sections Demo" in preview["result_state"]["reason"]
 
 
-def test_show_v1_section_preview_resolves_blocked_from_legacy_status() -> None:
+def test_show_v1_section_preview_resolves_blocked_from_v1_source_status() -> None:
     preview = show_v1_section_preview(
         document=None,
         extra_context={
             "result_state": {},
-            "legacy_objects": {
-                "section_set": _StateObject(label="SectionSet Demo", status="ERROR: Missing section wires"),
+            "source_objects": {
+                "applied_section_set": _StateObject(label="Applied Sections Demo", status="ERROR: Missing applied sections"),
             },
         },
         app_module=None,
@@ -660,12 +799,12 @@ def test_build_handoff_target_rows_marks_ready_targets() -> None:
     preview = show_v1_section_preview(
         document=None,
         extra_context={
-            "source": "existing_v0_cross_section_viewer",
-            "legacy_objects": {
-                "section_set": _StateObject(label="SectionSet A"),
-                "typical_section": _StateObject(label="Typical Section A"),
-                "region_plan": _StateObject(label="Region Plan A"),
-                "structure_set": _StateObject(label="Structure Set A"),
+            "source": "v1_cross_section_viewer",
+            "source_objects": {
+                "applied_section_set": _StateObject(label="Applied Sections A"),
+                "assembly_model": _StateObject(label="Assembly A"),
+                "region_model": _StateObject(label="Region Model A"),
+                "structure_model": _StateObject(label="Structure Model A"),
             },
         },
         app_module=None,
@@ -674,20 +813,20 @@ def test_build_handoff_target_rows_marks_ready_targets() -> None:
 
     rows = build_handoff_target_rows(preview)
 
-    assert rows[0][0] == "Typical Section"
+    assert rows[0][0] == "Assembly"
     assert rows[0][1] == "ready"
-    assert "Typical Section A" in rows[0][2]
+    assert "Assembly A" in rows[0][2]
     assert "STA 0.000" in rows[0][3]
     assert rows[2][0] == "Structures"
     assert rows[2][1] == "ready"
-    assert "Structure Set A" in rows[2][2]
+    assert "Structure Model A" in rows[2][2]
 
 
 def test_build_handoff_status_reports_missing_targets() -> None:
     preview = show_v1_section_preview(
         document=None,
         extra_context={
-            "source": "existing_v0_cross_section_viewer",
+            "source": "v1_cross_section_viewer",
         },
         app_module=None,
         gui_module=None,
@@ -696,6 +835,6 @@ def test_build_handoff_status_reports_missing_targets() -> None:
     status = build_handoff_status(preview)
 
     assert "Handoff Context: STA 0.000" in status["text"]
-    assert "Source=existing_v0_cross_section_viewer" in status["text"]
+    assert "Source=v1_cross_section_viewer" in status["text"]
     assert "Missing=" in status["text"]
     assert status["style"] == "color: #b36b00;"

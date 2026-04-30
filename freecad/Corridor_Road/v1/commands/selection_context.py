@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def selected_section_target(gui_module, document):
-    """Resolve the preferred SectionSet and station from the current GUI selection."""
+    """Resolve the preferred v1 AppliedSectionSet and station from the current GUI selection."""
 
     if gui_module is None or document is None:
         return None, None
@@ -16,15 +16,13 @@ def selected_section_target(gui_module, document):
         if obj is None:
             continue
         try:
-            if str(getattr(getattr(obj, "Proxy", None), "Type", "") or "") == "SectionSet":
+            if str(getattr(obj, "V1ObjectType", "") or "") == "V1AppliedSectionSet":
                 return obj, None
         except Exception:
             pass
         try:
-            parent = getattr(obj, "ParentSectionSet", None)
-            station = getattr(obj, "Station", None)
-            if parent is not None:
-                return parent, station
+            if str(getattr(getattr(obj, "Proxy", None), "Type", "") or "") == "V1AppliedSectionSet":
+                return obj, None
         except Exception:
             pass
     return None, None

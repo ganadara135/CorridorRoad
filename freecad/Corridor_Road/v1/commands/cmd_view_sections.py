@@ -10,6 +10,8 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     Gui = None
 
 from ..models.output.section_output import SectionGeometryRow
+from ..models.result.applied_section import AppliedSection
+from ..models.result.applied_section_set import AppliedSectionSet
 from ..models.result.tin_surface import TINSurface
 from ..services.evaluation import (
     AlignmentEvaluationService,
@@ -50,19 +52,19 @@ def _build_result_state(
 
 
 def _status_text(obj) -> str:
-    """Return a normalized legacy status text for one object."""
+    """Return a normalized status text for one source/result object."""
 
     return str(getattr(obj, "Status", "") or "").strip()
 
 
 def _needs_recompute(obj) -> bool:
-    """Return whether one legacy object exposes a recompute-needed signal."""
+    """Return whether one source/result object exposes a recompute-needed signal."""
 
     return _safe_bool(getattr(obj, "NeedsRecompute", False))
 
 
 def _state_from_status_text(status_text: str) -> tuple[str | None, str]:
-    """Map one legacy status string into a normalized viewer state."""
+    """Map one source/result status string into a normalized viewer state."""
 
     text = str(status_text or "").strip()
     upper_text = text.upper()
@@ -104,7 +106,7 @@ def _resolve_result_state(
     *,
     explicit_result_state: dict[str, object] | None = None,
     diagnostic_rows: list[dict[str, object]] | None = None,
-    legacy_objects: dict[str, object] | None = None,
+    source_objects: dict[str, object] | None = None,
 ) -> dict[str, str]:
     """Resolve the normalized section-viewer result state."""
 
@@ -114,14 +116,14 @@ def _resolve_result_state(
     if explicit_state:
         return _build_result_state(state=explicit_state, reason=explicit_reason)
 
-    objects = dict(legacy_objects or {})
+    objects = dict(source_objects or {})
     for key in (
-        "section_set",
+        "applied_section_set",
         "corridor",
         "cut_fill_calc",
-        "typical_section",
-        "region_plan",
-        "structure_set",
+        "assembly_model",
+        "region_model",
+        "structure_model",
     ):
         obj = objects.get(key)
         if obj is None:
@@ -151,10 +153,11 @@ def _build_source_inspector(
     applied_section,
     section_output,
     station_row: dict[str, object] | None,
+    applied_section_set=None,
     section_set=None,
-    typical_section=None,
-    region_plan=None,
-    structure_set=None,
+    assembly_model=None,
+    region_model=None,
+    structure_model=None,
     viewer_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a compact source-inspector payload for the v1 section viewer."""
@@ -179,16 +182,31 @@ def _build_source_inspector(
     component_id = focused_id or str(getattr(selected_component, "component_id", "") or "").strip()
     component_kind = focused_kind or str(getattr(selected_component, "kind", "") or "").strip()
     component_side = focused_side or str(focused.get("scope", "") or "").strip()
-    section_set_label = str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip()
+    applied_section_set_label = str(
+        getattr(applied_section_set, "label", "")
+        or getattr(applied_section_set, "applied_section_set_id", "")
+        or ""
+    ).strip()
+    applied_section_set_ref = str(getattr(applied_section_set, "applied_section_set_id", "") or "").strip()
+    section_set_label = str(
+        getattr(section_set, "Label", "")
+        or getattr(section_set, "Name", "")
+        or applied_section_set_label
+        or ""
+    ).strip()
     owner_template = str(getattr(applied_section, "template_id", "") or "").strip()
     owner_region = str(getattr(applied_section, "region_id", "") or "").strip()
-    template_object_label = str(getattr(typical_section, "Label", "") or getattr(typical_section, "Name", "") or "").strip()
-    region_object_label = str(getattr(region_plan, "Label", "") or getattr(region_plan, "Name", "") or "").strip()
-    structure_label = str(getattr(structure_set, "Label", "") or getattr(structure_set, "Name", "") or "").strip()
+    if not owner_template:
+        owner_template = _first_component_ref(section_output, "template_ref")
+    if not owner_region:
+        owner_region = _first_component_ref(section_output, "region_ref")
+    template_object_label = str(getattr(assembly_model, "Label", "") or getattr(assembly_model, "Name", "") or "").strip()
+    region_object_label = str(getattr(region_model, "Label", "") or getattr(region_model, "Name", "") or "").strip()
+    structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
     template_label = template_object_label or owner_template
     region_label = region_object_label or owner_region
     owner_structure = structure_label or str(viewer_context.get("structure_summary", "") or "").strip()
-    section_set_status = _source_owner_status(object_label=section_set_label, source_ref="")
+    section_set_status = _source_owner_status(object_label=section_set_label, source_ref=applied_section_set_ref)
     template_status = _source_owner_status(object_label=template_object_label, source_ref=owner_template)
     region_status = _source_owner_status(object_label=region_object_label, source_ref=owner_region)
     structure_status = _source_owner_status(object_label=structure_label, source_ref=owner_structure)
@@ -213,6 +231,7 @@ def _build_source_inspector(
     return {
         "station_label": str((station_row or {}).get("label", "") or "").strip(),
         "section_set_label": section_set_label,
+        "section_set_source_ref": applied_section_set_ref,
         "section_set_status": section_set_status,
         "template_label": template_label,
         "template_object_label": template_object_label,
@@ -237,6 +256,16 @@ def _build_source_inspector(
     }
 
 
+def _first_component_ref(section_output, attr_name: str) -> str:
+    """Return the first non-empty component source reference from section output."""
+
+    for row in list(getattr(section_output, "component_rows", []) or []):
+        value = str(getattr(row, attr_name, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _source_owner_status(*, object_label: str, source_ref: str) -> str:
     """Classify how strongly one source owner is resolved."""
 
@@ -245,6 +274,66 @@ def _source_owner_status(*, object_label: str, source_ref: str) -> str:
     if str(source_ref or "").strip():
         return "source_ref"
     return "unresolved"
+
+
+def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[dict[str, object]]:
+    """Build viewer station rows from a v1 AppliedSectionSet result contract."""
+
+    rows = []
+    for index, row in enumerate(list(getattr(applied_section_set, "station_rows", []) or [])):
+        try:
+            station = float(getattr(row, "station", 0.0) or 0.0)
+        except Exception:
+            continue
+        rows.append(
+            {
+                "index": index,
+                "station": station,
+                "label": f"STA {station:.3f}",
+                "applied_section_id": str(getattr(row, "applied_section_id", "") or ""),
+                "kind": str(getattr(row, "kind", "") or ""),
+            }
+        )
+    if rows:
+        return rows
+    for index, section in enumerate(list(getattr(applied_section_set, "sections", []) or [])):
+        try:
+            station = float(getattr(section, "station", 0.0) or 0.0)
+        except Exception:
+            continue
+        rows.append(
+            {
+                "index": index,
+                "station": station,
+                "label": f"STA {station:.3f}",
+                "applied_section_id": str(getattr(section, "applied_section_id", "") or ""),
+                "kind": "applied_section",
+            }
+        )
+    return rows
+
+
+def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> list[dict[str, object]]:
+    """Merge station navigation rows without dropping v1 result stations."""
+
+    by_station: dict[float, dict[str, object]] = {}
+    for rows in row_groups:
+        for row in list(rows or []):
+            item = dict(row or {})
+            try:
+                station = round(float(item.get("station", 0.0) or 0.0), 6)
+            except Exception:
+                continue
+            existing = by_station.get(station, {})
+            merged = dict(existing)
+            merged.update({key: value for key, value in item.items() if value not in (None, "")})
+            by_station[station] = merged
+    merged_rows = [by_station[key] for key in sorted(by_station)]
+    for index, row in enumerate(merged_rows):
+        row["index"] = index
+        row["station"] = float(row.get("station", 0.0) or 0.0)
+        row["label"] = str(row.get("label", "") or f"STA {row['station']:.3f}")
+    return merged_rows
 
 
 def _build_terrain_review_rows(
@@ -547,7 +636,7 @@ def _resolve_document_tin_surface(document, *, gui_module=Gui) -> TINSurface | N
 def _build_structure_review_rows(
     *,
     viewer_context: dict[str, object] | None,
-    region_plan=None,
+    region_model=None,
 ) -> list[dict[str, str]]:
     """Build minimal structure review rows for the v1 section viewer."""
 
@@ -575,13 +664,13 @@ def _build_structure_review_rows(
                 "notes": "",
             },
         )
-    if not rows and region_plan is not None:
+    if not rows and region_model is not None:
         rows.append(
             {
                 "kind": "structure_fallback",
                 "label": "Structure Context",
-                "value": str(getattr(region_plan, "Label", "") or getattr(region_plan, "Name", "") or "").strip(),
-                "notes": "No explicit structure rows were provided in the current preview payload.",
+                "value": str(getattr(region_model, "Label", "") or getattr(region_model, "Name", "") or "").strip(),
+                "notes": "No explicit v1 structure rows were provided in the current preview payload.",
             }
         )
     return rows
@@ -765,103 +854,143 @@ def build_document_section_preview(
 
     adapter = LegacyDocumentAdapter()
     project = adapter._find_project(document)
-    bundle = adapter.build_preview_bundle(
+    return _build_v1_applied_section_set_preview(
         document,
-        preferred_section_set=preferred_section_set,
+        project=project,
+        preferred_applied_section_set=preferred_section_set,
+        preferred_station=preferred_station,
     )
-    if bundle is None or not bundle.applied_section_set.sections:
+
+
+def _build_v1_applied_section_set_preview(
+    document,
+    *,
+    project=None,
+    preferred_applied_section_set=None,
+    preferred_station: float | None = None,
+) -> dict[str, object] | None:
+    """Build a section viewer payload directly from a persisted v1 AppliedSectionSet."""
+
+    try:
+        from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
+    except Exception:
+        return None
+    try:
+        from ..objects.obj_assembly import find_v1_assembly_model
+    except Exception:
+        find_v1_assembly_model = None
+    try:
+        from ..objects.obj_region import find_v1_region_model
+    except Exception:
+        find_v1_region_model = None
+
+    applied_obj = find_v1_applied_section_set(document, preferred_applied_section_set)
+    applied_section_set = to_applied_section_set(applied_obj)
+    sections = list(getattr(applied_section_set, "sections", []) or []) if applied_section_set is not None else []
+    if applied_obj is None or applied_section_set is None or not sections:
         return None
 
-    section_set = preferred_section_set or adapter._resolve_section_set(
-        project,
-        document,
-        preferred_section_set=preferred_section_set,
-    )
-    typical_section = adapter._resolve_typical_section(project, section_set, document)
-    region_plan = adapter._resolve_region_plan(project, section_set, document)
-    alignment_object = adapter._resolve_alignment_object(project, document)
-    alignment_model = adapter.build_alignment_model(
-        document,
-        preferred_alignment=alignment_object,
-    )
-    viewer_station_rows = adapter.viewer_station_rows(section_set) if section_set is not None else []
-    station_row = adapter.nearest_station_row(section_set, preferred_station=preferred_station)
-    tin_surface = _resolve_document_tin_surface(document)
-    target_station = (
-        adapter._safe_float(station_row.get("station", 0.0), 0.0)
-        if station_row is not None
-        else bundle.applied_section_set.sections[0].station
-    )
+    station_rows = _viewer_station_rows_from_applied_section_set(applied_section_set)
+    if preferred_station is None and station_rows:
+        target_station = float(station_rows[0].get("station", 0.0) or 0.0)
+    elif preferred_station is None:
+        target_station = float(getattr(sections[0], "station", 0.0) or 0.0)
+    else:
+        target_station = float(preferred_station)
+
     applied_section = min(
-        list(bundle.applied_section_set.sections),
-        key=lambda row: abs(float(row.station) - float(target_station)),
+        sections,
+        key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station),
     )
+    target_station = float(getattr(applied_section, "station", target_station) or target_station)
+    station_payload = _nearest_station_payload(station_rows, target_station) or {
+        "station": target_station,
+        "label": f"STA {target_station:.3f}",
+    }
     section_output = SectionOutputMapper().map_applied_section(applied_section)
     drawing_payload = CrossSectionDrawingMapper().map_applied_section_set(
-        bundle.applied_section_set,
+        applied_section_set,
         station=target_station,
     )
-    station_payload = station_row or {"station": applied_section.station, "label": f"STA {applied_section.station:.3f}"}
-    viewer_context = {}
-    legacy_objects = {
+
+    assembly_model = find_v1_assembly_model(document) if find_v1_assembly_model is not None else None
+    region_model = find_v1_region_model(document) if find_v1_region_model is not None else None
+    source_objects = {
         "project": project,
-        "section_set": section_set,
-        "alignment": alignment_object,
-        "typical_section": typical_section,
-        "region_plan": region_plan,
+        "applied_section_set": applied_obj,
+        "alignment": None,
+        "assembly_model": assembly_model,
+        "region_model": region_model,
         "corridor": getattr(project, "Corridor", None) if project is not None else None,
         "cut_fill_calc": getattr(project, "CutFillCalc", None) if project is not None else None,
-        "structure_set": getattr(project, "StructureSet", None) if project is not None else None,
+        "structure_model": None,
     }
+    viewer_context: dict[str, object] = {}
     diagnostic_rows = _build_diagnostic_review_rows(
         section_output=section_output,
         viewer_context=viewer_context,
     )
     earthwork_hint_rows = _build_earthwork_hint_rows(
-        earthwork_model=bundle.earthwork_model,
+        earthwork_model=None,
         station_row=station_payload,
-        cut_fill_calc=legacy_objects.get("cut_fill_calc"),
+        cut_fill_calc=source_objects.get("cut_fill_calc"),
     )
     review_marker_rows = _build_review_marker_rows(
         station_row=station_payload,
         viewer_context=viewer_context,
     )
+
     return {
-        "applied_section_set": bundle.applied_section_set,
+        "source": "v1_applied_section_set",
+        "applied_section_set": applied_section_set,
         "applied_section": applied_section,
         "section_output": section_output,
         "drawing_payload": drawing_payload,
         "station_row": station_payload,
         "result_state": _resolve_result_state(
             diagnostic_rows=diagnostic_rows,
-            legacy_objects=legacy_objects,
+            source_objects=source_objects,
         ),
         "source_inspector": _build_source_inspector(
             applied_section=applied_section,
             section_output=section_output,
             station_row=station_payload,
-            section_set=section_set,
-            typical_section=typical_section,
-            region_plan=region_plan,
-            structure_set=legacy_objects.get("structure_set"),
+            applied_section_set=applied_section_set,
+            section_set=applied_obj,
+            assembly_model=None,
+            region_model=region_model,
+            structure_model=source_objects.get("structure_model"),
+            viewer_context=viewer_context,
         ),
         "terrain_rows": _build_terrain_review_rows(
             applied_section=applied_section,
             station_row=station_payload,
         ),
-        "alignment_model": alignment_model,
-        "tin_surface": tin_surface,
-        "station_rows": viewer_station_rows,
+        "tin_surface": _resolve_document_tin_surface(document),
+        "station_rows": station_rows,
         "structure_rows": _build_structure_review_rows(
             viewer_context=viewer_context,
-            region_plan=region_plan,
+            region_model=region_model,
         ),
         "earthwork_hint_rows": earthwork_hint_rows,
         "review_marker_rows": review_marker_rows,
         "corridor_review_rows": _build_corridor_review_rows(document),
         "diagnostic_rows": diagnostic_rows,
-        "legacy_objects": legacy_objects,
+        "source_objects": source_objects,
     }
+
+
+def _nearest_station_payload(rows: list[dict[str, object]], station: float) -> dict[str, object] | None:
+    """Return the station navigation row nearest to a target station."""
+
+    if not rows:
+        return None
+    best = min(
+        [dict(row or {}) for row in rows],
+        key=lambda row: abs(float(row.get("station", 0.0) or 0.0) - float(station)),
+    )
+    best["is_current"] = True
+    return best
 
 
 def build_demo_section_preview(document_label: str = "") -> dict[str, object]:
@@ -924,7 +1053,58 @@ def build_demo_section_preview(document_label: str = "") -> dict[str, object]:
             {"index": 1, "station": 20.0, "label": "STA 20.000", "is_current": False},
             {"index": 2, "station": 40.0, "label": "STA 40.000", "is_current": False},
         ],
-        "legacy_objects": {},
+    }
+
+
+def _build_missing_v1_applied_section_set_preview(document_label: str = "") -> dict[str, object]:
+    """Build a blocked v1-only payload when no AppliedSectionSet result exists."""
+
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        applied_section_set_id="",
+        label=str(document_label or "No v1 AppliedSectionSet"),
+    )
+    applied_section = AppliedSection(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        applied_section_id="missing:v1-applied-section",
+        label=str(document_label or "No v1 AppliedSectionSet"),
+        station=0.0,
+    )
+    section_output = SectionOutputMapper().map_applied_section(applied_section)
+    diagnostic_rows = [
+        {
+            "severity": "error",
+            "kind": "missing_v1_applied_section_set",
+            "message": "No v1 AppliedSectionSet result was found in the active document.",
+            "notes": "Run v1 Applied Sections before opening the Cross Section Viewer.",
+        }
+    ]
+    return {
+        "source": "missing_v1_applied_section_set",
+        "applied_section_set": applied_section_set,
+        "applied_section": applied_section,
+        "section_output": section_output,
+        "station_row": {"station": 0.0, "label": "STA 0.000"},
+        "station_rows": [],
+        "result_state": _build_result_state(
+            state="blocked",
+            reason="No v1 AppliedSectionSet result was found in the active document.",
+        ),
+        "source_inspector": _build_source_inspector(
+            applied_section=applied_section,
+            section_output=section_output,
+            station_row={"station": 0.0, "label": "STA 0.000"},
+            applied_section_set=None,
+        ),
+        "terrain_rows": [],
+        "structure_rows": [],
+        "earthwork_hint_rows": [],
+        "review_marker_rows": [],
+        "corridor_review_rows": [],
+        "diagnostic_rows": diagnostic_rows,
+        "source_objects": {},
     }
 
 
@@ -943,6 +1123,12 @@ def format_section_preview(preview: dict[str, object]) -> str:
     drawing_payload = preview.get("drawing_payload")
     source_inspector = dict(preview.get("source_inspector", {}) or {})
     ownership_status = str(source_inspector.get("ownership_status", "unknown") or "unknown").strip()
+    template_label = str(
+        applied_section.template_id
+        or source_inspector.get("template_label", "")
+        or source_inspector.get("template_source_ref", "")
+        or "(unresolved)"
+    )
 
     lines = [
         "CorridorRoad v1 Cross Section Viewer",
@@ -956,7 +1142,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
         f"Drawing Dimensions: {len(list(getattr(drawing_payload, 'dimension_rows', []) or []))}",
         f"Source Ownership: {ownership_status}",
         f"Region: {applied_section.region_id or '(none)'}",
-        f"Template: {applied_section.template_id or '(unresolved)'}",
+        f"Assembly Template: {template_label}",
     ]
     unresolved_fields = [
         str(value)
@@ -1018,6 +1204,8 @@ def show_v1_section_preview(
             preferred_section_set=preferred_section_set,
             preferred_station=preferred_station,
         )
+    if preview is None and active_document is not None:
+        preview = _build_missing_v1_applied_section_set_preview(document_label=document_label)
     if preview is None:
         preview = build_demo_section_preview(document_label=document_label)
     explicit_review_marker_rows = None
@@ -1026,28 +1214,29 @@ def show_v1_section_preview(
         explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
         _retarget_preview_to_station(preview)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
-    legacy_objects = dict(preview.get("legacy_objects", {}) or {})
+    source_objects = dict(preview.get("source_objects", {}) or {})
     _apply_tin_section_geometry(preview)
     _apply_section_earthwork_area(preview)
     preview["source_inspector"] = _build_source_inspector(
         applied_section=preview["applied_section"],
         section_output=preview["section_output"],
         station_row=dict(preview.get("station_row", {}) or {}),
-        section_set=legacy_objects.get("section_set"),
-        typical_section=legacy_objects.get("typical_section"),
-        region_plan=legacy_objects.get("region_plan"),
-        structure_set=legacy_objects.get("structure_set"),
+        applied_section_set=preview.get("applied_section_set", None),
+        section_set=source_objects.get("applied_section_set"),
+        assembly_model=source_objects.get("assembly_model"),
+        region_model=source_objects.get("region_model"),
+        structure_model=source_objects.get("structure_model"),
         viewer_context=viewer_context,
     )
     preview["terrain_rows"] = _resolve_terrain_review_rows(preview)
     preview["structure_rows"] = list(preview.get("structure_rows", []) or []) or _build_structure_review_rows(
         viewer_context=viewer_context,
-        region_plan=legacy_objects.get("region_plan"),
+        region_model=source_objects.get("region_model"),
     )
     preview["earthwork_hint_rows"] = list(preview.get("earthwork_hint_rows", []) or []) or _build_earthwork_hint_rows(
         earthwork_model=None,
         station_row=dict(preview.get("station_row", {}) or {}),
-        cut_fill_calc=legacy_objects.get("cut_fill_calc"),
+        cut_fill_calc=source_objects.get("cut_fill_calc"),
     )
     if explicit_review_marker_rows is not None:
         preview["review_marker_rows"] = list(preview.get("review_marker_rows", []) or [])
@@ -1062,11 +1251,14 @@ def show_v1_section_preview(
         section_output=preview["section_output"],
         viewer_context=viewer_context,
     )
-    preview["station_rows"] = list(preview.get("station_rows", []) or [])
+    preview["station_rows"] = _merge_viewer_station_rows(
+        list(preview.get("station_rows", []) or []),
+        _viewer_station_rows_from_applied_section_set(preview.get("applied_section_set", None)),
+    )
     preview["result_state"] = _resolve_result_state(
         explicit_result_state=dict(preview.get("result_state", {}) or {}),
         diagnostic_rows=list(preview.get("diagnostic_rows", []) or []),
-        legacy_objects=legacy_objects,
+        source_objects=source_objects,
     )
     if "drawing_payload" not in preview:
         try:
@@ -1125,7 +1317,11 @@ def run_v1_section_view_command() -> dict[str, object]:
     if App is not None and getattr(App, "ActiveDocument", None) is not None:
         preferred_section_set, preferred_station = selected_section_target(Gui, App.ActiveDocument)
         if preferred_section_set is None:
-            object_name = str(ui_context.get("preferred_section_set_name", "") or "").strip()
+            object_name = str(
+                ui_context.get("preferred_applied_section_set_name", "")
+                or ui_context.get("preferred_section_set_name", "")
+                or ""
+            ).strip()
             if object_name:
                 try:
                     preferred_section_set = App.ActiveDocument.getObject(object_name)

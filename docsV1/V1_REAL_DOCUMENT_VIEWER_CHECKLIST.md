@@ -18,34 +18,34 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 
 ## 2. Document Setup
 
-- [ ] a real project file is open
-- [ ] alignment exists
-- [ ] profile exists
+- [x] a real project file is open
+- [x] alignment exists
+- [x] profile exists
 - [ ] section set exists
-- [ ] region plan exists or is intentionally absent
+- [x] region plan exists or is intentionally absent
 - [ ] structure set exists or is intentionally absent
 - [ ] earthwork-related result object exists or is intentionally absent
 
 ## 2A. Preferred Start Rule
 
-- [ ] section review was started from the v1 `Cross Section Viewer`
-- [ ] plan/profile review was started from the v1 `Plan/Profile Viewer`
+- [x] section review was started from the v1 `Cross Section Viewer`
+- [x] plan/profile review was started from the v1 `Plan/Profile Viewer`
 - [ ] earthwork review was started from the v1 `Earthwork Viewer`
 - [ ] no existing v0 viewer was needed as the first review screen
 
 ## 3. Cross Section Viewer
 
-- [ ] opens directly
-- [ ] title uses `Viewer`
+- [x] opens directly
+- [x] title uses `Viewer`
 - [ ] `Current Focus` is visible
-- [ ] `Result State` is visible
+- [x] `Result State` is visible
 - [ ] viewer is not limited to `demo section viewer payload`
-- [ ] 2D section drawing is visually dominant and readable
-- [ ] FG, EG when available, subgrade, ditch, and slope-face styles are distinguishable
-- [ ] component labels are visible near the relevant section spans
-- [ ] dimension annotations are visible in the lower drawing band
+- [x] 2D section drawing is visually dominant and readable
+- [x] FG, EG when available, subgrade, ditch, and slope-face styles are distinguishable
+- [x] component labels are visible near the relevant section spans
+- [x] dimension annotations are visible in the lower drawing band
 - [ ] label and dimension overlap is acceptable in normal panel size
-- [ ] `Source Inspector` is visible
+- [x] `Source Inspector` is visible
 - [ ] `Source Inspector` shows `Section Set`, `Template`, `Region`, and `Structure` owner rows
 - [ ] unresolved source owners are visible when source tracing is incomplete
 - [ ] `Station Navigation` shows the full station list
@@ -57,16 +57,16 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 
 ## 4. Plan/Profile Viewer
 
-- [ ] opens directly
-- [ ] title uses `Viewer`
+- [x] opens directly
+- [x] title uses `Viewer`
 - [ ] `Current Focus` is visible
 - [ ] `Viewer Context` is visible
 - [ ] `Station Navigation` shows the full station list
 - [ ] moving to another station changes the focus as expected
 - [ ] `Profile Controls` row emphasis matches the focus station
-- [ ] `Open Alignment` opens the correct existing v0 editor
-- [ ] `Open Profiles` opens the correct existing v0 editor
-- [ ] `Open PVI` opens the correct existing v0 editor
+- [x] `Open Alignment` opens the correct existing v0 editor
+- [x] `Open Profiles` opens the correct existing v0 editor
+- [x] `Open PVI` opens the correct existing v0 editor
 - [ ] return from editor comes back with understandable station context
 
 ## 5. Earthwork Viewer
@@ -103,7 +103,7 @@ The current real document should be considered a pass only if:
 ## 8. Record
 
 - Document:
-- Date:
+- Date: 4.30.26
 - Tester:
 - Cross Section Viewer: pass / fail
 - Plan/Profile Viewer: pass / fail
