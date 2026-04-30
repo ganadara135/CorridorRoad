@@ -113,6 +113,7 @@ Recommended primary object families:
 - `StructureModel`
 - `StructureRow`
 - `StructurePlacement`
+- `StructureGeometrySpec`
 - `StructureInteractionRule`
 - `StructureInfluenceZone`
 - `StructureResolutionResult`
@@ -153,6 +154,7 @@ Each `StructureRow` represents one structure or structure reference that may inf
 - `structure_role`
 - `placement_ref`
 - `geometry_ref`
+- `geometry_spec_ref`
 - `reference_mode`
 - `source_ref`
 - `notes`
@@ -176,6 +178,12 @@ Each `StructureRow` represents one structure or structure reference that may inf
 ### 10.5 Rule
 
 The structure row should preserve engineering meaning instead of collapsing everything into a generic mesh reference.
+
+Native structure dimensions and kind-specific shape parameters are governed by `docsV1/V1_STRUCTURE_GEOMETRY_CONTRACT.md`.
+
+`geometry_spec_ref` should point to native v1 geometry intent.
+
+`geometry_ref` should point to external, imported, or detailed reference geometry.
 
 ## 11. StructurePlacement
 
