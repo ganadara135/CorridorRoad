@@ -187,15 +187,31 @@ class CorridorSurfaceGeometryService:
                 lo0 = f"v{index}:left:outer"
                 li1 = f"v{index + 1}:left:inner"
                 lo1 = f"v{index + 1}:left:outer"
-                triangles.append(TINTriangle(f"span:{index}:left:a", li0, lo0, lo1, triangle_kind="corridor_daylight_strip"))
-                triangles.append(TINTriangle(f"span:{index}:left:b", li0, lo1, li1, triangle_kind="corridor_daylight_strip"))
+                _append_side_slope_strip_triangles(
+                    triangles,
+                    triangle_id_prefix=f"span:{index}:left",
+                    side_label="left",
+                    p00=li0,
+                    p01=lo0,
+                    p10=li1,
+                    p11=lo1,
+                    triangle_kind="corridor_daylight_strip",
+                )
             if daylight_rows[index][1] > 0.0 and daylight_rows[index + 1][1] > 0.0:
                 ri0 = f"v{index}:right:inner"
                 ro0 = f"v{index}:right:outer"
                 ri1 = f"v{index + 1}:right:inner"
                 ro1 = f"v{index + 1}:right:outer"
-                triangles.append(TINTriangle(f"span:{index}:right:a", ri0, ri1, ro1, triangle_kind="corridor_daylight_strip"))
-                triangles.append(TINTriangle(f"span:{index}:right:b", ri0, ro1, ro0, triangle_kind="corridor_daylight_strip"))
+                _append_side_slope_strip_triangles(
+                    triangles,
+                    triangle_id_prefix=f"span:{index}:right",
+                    side_label="right",
+                    p00=ri0,
+                    p01=ro0,
+                    p10=ri1,
+                    p11=ro1,
+                    triangle_kind="corridor_daylight_strip",
+                )
 
         if not vertices or not triangles:
             raise ValueError("No slope-face strips were generated from applied-section side-slope data.")
@@ -446,10 +462,18 @@ def _build_daylight_surface_from_side_slope_points(
                 side_slope_point_count += 1 if role == "side_slope_surface" else 0
                 daylight_marker_count += 1 if role == "daylight_marker" else 0
         for section_index in range(len(grid) - 1):
-            span_rows = _resampled_side_slope_span_rows(grid[section_index], grid[section_index + 1])
-            if len(span_rows[0]) < 2 or len(span_rows[1]) < 2:
+            first_row, second_row = _resampled_side_slope_span_rows(
+                grid[section_index],
+                grid[section_index + 1],
+            )
+            if len(first_row) < 2 or len(second_row) < 2:
                 continue
-            for row_index, points in enumerate(span_rows):
+            mesh_rows = _densified_side_slope_span_rows(
+                first_row,
+                second_row,
+                existing_ground_surface=request.existing_ground_surface,
+            )
+            for row_index, points in enumerate(mesh_rows):
                 for point_index, point in enumerate(points):
                     vertices.append(
                         TINVertex(
@@ -457,17 +481,31 @@ def _build_daylight_surface_from_side_slope_points(
                             x=float(point.x),
                             y=float(point.y),
                             z=float(point.z),
-                            source_point_ref=f"{getattr(sections[section_index + row_index], 'applied_section_id', '')}:{point.point_id}",
+                            source_point_ref=_span_source_point_ref(sections, section_index, row_index, len(mesh_rows), point),
                             notes=str(getattr(point, "point_role", "") or ""),
                         )
                     )
-            for point_index in range(len(span_rows[0]) - 1):
-                p00 = f"v{section_index}:{side_label}:r0:p{point_index}"
-                p01 = f"v{section_index}:{side_label}:r0:p{point_index + 1}"
-                p10 = f"v{section_index}:{side_label}:r1:p{point_index}"
-                p11 = f"v{section_index}:{side_label}:r1:p{point_index + 1}"
-                triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:a", p00, p01, p11, triangle_kind="corridor_daylight_bench_strip"))
-                triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:b", p00, p11, p10, triangle_kind="corridor_daylight_bench_strip"))
+            for row_index in range(len(mesh_rows) - 1):
+                point_count = min(len(mesh_rows[row_index]), len(mesh_rows[row_index + 1]))
+                for point_index in range(point_count - 1):
+                    p00 = f"v{section_index}:{side_label}:r{row_index}:p{point_index}"
+                    p01 = f"v{section_index}:{side_label}:r{row_index}:p{point_index + 1}"
+                    p10 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index}"
+                    p11 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index + 1}"
+                    _append_side_slope_grid_cell_triangles(
+                        triangles,
+                        triangle_id_prefix=f"span:{section_index}:{side_label}:r{row_index}:p{point_index}",
+                        side_label=side_label,
+                        p00=p00,
+                        p01=p01,
+                        p10=p10,
+                        p11=p11,
+                        q00=mesh_rows[row_index][point_index],
+                        q01=mesh_rows[row_index][point_index + 1],
+                        q10=mesh_rows[row_index + 1][point_index],
+                        q11=mesh_rows[row_index + 1][point_index + 1],
+                        triangle_kind="corridor_daylight_bench_strip",
+                    )
     if not vertices or not triangles:
         return None
     z_values = [vertex.z for vertex in vertices]
@@ -511,6 +549,60 @@ def _build_daylight_surface_from_side_slope_points(
     )
 
 
+def _append_side_slope_strip_triangles(
+    triangles: list[TINTriangle],
+    *,
+    triangle_id_prefix: str,
+    side_label: str,
+    p00: str,
+    p01: str,
+    p10: str,
+    p11: str,
+    triangle_kind: str,
+) -> None:
+    if str(side_label or "").strip().lower() == "left":
+        triangles.append(TINTriangle(f"{triangle_id_prefix}:a", p00, p11, p01, triangle_kind=triangle_kind))
+        triangles.append(TINTriangle(f"{triangle_id_prefix}:b", p00, p10, p11, triangle_kind=triangle_kind))
+        return
+    triangles.append(TINTriangle(f"{triangle_id_prefix}:a", p00, p01, p11, triangle_kind=triangle_kind))
+    triangles.append(TINTriangle(f"{triangle_id_prefix}:b", p00, p11, p10, triangle_kind=triangle_kind))
+
+
+def _append_side_slope_grid_cell_triangles(
+    triangles: list[TINTriangle],
+    *,
+    triangle_id_prefix: str,
+    side_label: str,
+    p00: str,
+    p01: str,
+    p10: str,
+    p11: str,
+    q00: _SectionPointLite,
+    q01: _SectionPointLite,
+    q10: _SectionPointLite,
+    q11: _SectionPointLite,
+    triangle_kind: str,
+) -> None:
+    first_row_collapsed = _same_section_point_xy(q00, q01)
+    second_row_collapsed = _same_section_point_xy(q10, q11)
+    if first_row_collapsed or second_row_collapsed:
+        return
+    _append_side_slope_strip_triangles(
+        triangles,
+        triangle_id_prefix=triangle_id_prefix,
+        side_label=side_label,
+        p00=p00,
+        p01=p01,
+        p10=p10,
+        p11=p11,
+        triangle_kind=triangle_kind,
+    )
+
+
+def _same_section_point_xy(first: _SectionPointLite, second: _SectionPointLite, tolerance: float = 1.0e-8) -> bool:
+    return _distance_xy(first.x, first.y, second.x, second.y) <= tolerance
+
+
 def _side_slope_point_grids(
     sections: list[object],
     *,
@@ -546,13 +638,132 @@ def _resampled_side_slope_span_rows(
     first: list[_SectionPointLite],
     second: list[_SectionPointLite],
 ) -> tuple[list[_SectionPointLite], list[_SectionPointLite]]:
-    distances = _merged_side_slope_distances(first, second)
+    first_distances = _side_slope_row_distances(first)
+    second_distances = _side_slope_row_distances(second)
+    if not first_distances or not second_distances:
+        return ([], [])
+    shared_max = min(float(first_distances[-1]), float(second_distances[-1]))
+    if shared_max <= 1.0e-9:
+        return ([], [])
+    distances = [
+        distance
+        for distance in _merged_side_slope_distances(first, second)
+        if distance <= shared_max + 1.0e-6
+    ]
+    if not distances or abs(float(distances[-1]) - shared_max) > 1.0e-6:
+        distances.append(shared_max)
+    distances = sorted(max(float(distance), 0.0) for distance in distances)
     if len(distances) < 2:
         return ([], [])
     return (
         [_interpolate_side_slope_point_at_distance(first, distance) for distance in distances],
         [_interpolate_side_slope_point_at_distance(second, distance) for distance in distances],
     )
+
+
+def _densified_side_slope_span_rows(
+    first: list[_SectionPointLite],
+    second: list[_SectionPointLite],
+    *,
+    existing_ground_surface: TINSurface | None,
+    max_spacing: float = 5.0,
+) -> list[list[_SectionPointLite]]:
+    if existing_ground_surface is None or len(first) < 2 or len(second) < 2:
+        return [first, second]
+    if not _row_has_daylight_marker(first) and not _row_has_daylight_marker(second):
+        return [first, second]
+    span = _distance_xy(first[0].x, first[0].y, second[0].x, second[0].y)
+    steps = max(1, int(math.ceil(span / max(float(max_spacing or 0.0), 1.0))))
+    if steps <= 1:
+        return [
+            _project_daylight_markers_to_surface(first, existing_ground_surface),
+            _project_daylight_markers_to_surface(second, existing_ground_surface),
+        ]
+    output: list[list[_SectionPointLite]] = []
+    for step in range(steps + 1):
+        ratio = float(step) / float(steps)
+        output.append(_interpolate_side_slope_row_between(first, second, ratio, existing_ground_surface=existing_ground_surface))
+    return output
+
+
+def _interpolate_side_slope_row_between(
+    first: list[_SectionPointLite],
+    second: list[_SectionPointLite],
+    ratio: float,
+    *,
+    existing_ground_surface: TINSurface,
+) -> list[_SectionPointLite]:
+    count = min(len(first), len(second))
+    row = [
+        _interpolate_between_side_slope_points(
+            first[index],
+            second[index],
+            ratio,
+            role=_merged_interpolated_span_role(first[index], second[index]),
+        )
+        for index in range(count)
+    ]
+    return _project_daylight_markers_to_surface(row, existing_ground_surface)
+
+
+def _project_daylight_markers_to_surface(
+    row: list[_SectionPointLite],
+    surface: TINSurface,
+) -> list[_SectionPointLite]:
+    service = TinSamplingService()
+    output: list[_SectionPointLite] = []
+    for point in list(row or []):
+        if str(getattr(point, "point_role", "") or "") != "daylight_marker":
+            output.append(point)
+            continue
+        sample = service.sample_xy(surface=surface, x=float(point.x), y=float(point.y))
+        if bool(getattr(sample, "found", False)) and getattr(sample, "z", None) is not None:
+            output.append(
+                _SectionPointLite(
+                    point_id=point.point_id,
+                    x=point.x,
+                    y=point.y,
+                    z=float(sample.z),
+                    lateral_offset=point.lateral_offset,
+                    point_role=point.point_role,
+                )
+            )
+        else:
+            output.append(point)
+    return output
+
+
+def _row_has_daylight_marker(row: list[_SectionPointLite]) -> bool:
+    return any(str(getattr(point, "point_role", "") or "") == "daylight_marker" for point in list(row or []))
+
+
+def _merged_interpolated_span_role(first: _SectionPointLite, second: _SectionPointLite) -> str:
+    first_role = str(getattr(first, "point_role", "") or "")
+    second_role = str(getattr(second, "point_role", "") or "")
+    if first_role == "daylight_marker" or second_role == "daylight_marker":
+        return "daylight_marker"
+    if first_role == "bench_surface" or second_role == "bench_surface":
+        return "bench_surface"
+    return first_role or second_role
+
+
+def _span_source_point_ref(
+    sections: list[object],
+    section_index: int,
+    row_index: int,
+    row_count: int,
+    point: _SectionPointLite,
+) -> str:
+    if row_index <= 0:
+        section = sections[section_index] if section_index < len(sections) else None
+    elif row_index >= max(0, int(row_count) - 1):
+        section = sections[section_index + 1] if section_index + 1 < len(sections) else None
+    else:
+        section = None
+    section_id = str(getattr(section, "applied_section_id", "") or "") if section is not None else ""
+    if section_id:
+        return f"{section_id}:{point.point_id}"
+    return str(getattr(point, "point_id", "") or "")
 
 
 def _merged_side_slope_distances(*rows: list[_SectionPointLite], tolerance: float = 1.0e-6) -> list[float]:
@@ -697,8 +908,20 @@ def _terrain_adjusted_side_slope_points_for_section(
     if daylight_width <= 1.0e-9 or abs(float(slope or 0.0)) <= 1.0e-12:
         return rows
     frame = getattr(section, "frame", None)
-    normal_x, normal_y = _outward_normal_for_side(frame, side_label=side_label)
+    has_bench_breakline = any(
+        str(getattr(point, "point_role", "") or "") == "bench_surface"
+        for point in list(rows[1:] or [])
+    )
     sampling_service = TinSamplingService()
+    if has_bench_breakline:
+        piecewise_rows = _terrain_adjusted_piecewise_side_slope_points(
+            rows,
+            surface=existing_ground_surface,
+            sampling_service=sampling_service,
+        )
+        if piecewise_rows is not None:
+            return piecewise_rows
+    normal_x, normal_y = _outward_normal_for_side(frame, side_label=side_label)
     outer = _resolve_slope_face_outer_point(
         sampling_service=sampling_service,
         surface=existing_ground_surface,
@@ -718,10 +941,6 @@ def _terrain_adjusted_side_slope_points_for_section(
     )
     slope_sign = _slope_sign_from_points(terminal.z, outer.z)
     adjusted: list[_SectionPointLite] = [terminal]
-    has_bench_breakline = any(
-        str(getattr(point, "point_role", "") or "") == "bench_surface"
-        for point in list(rows[1:] or [])
-    )
     for point in list(rows[1:] or []):
         if str(getattr(point, "point_role", "") or "") == "daylight_marker":
             continue
@@ -755,6 +974,187 @@ def _terrain_adjusted_side_slope_points_for_section(
             )
         )
     return adjusted
+
+
+def _terrain_adjusted_piecewise_side_slope_points(
+    rows: list[_SectionPointLite],
+    *,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+) -> list[_SectionPointLite] | None:
+    if len(rows) < 2:
+        return None
+    terminal = rows[0]
+    slope_sign = _terrain_slope_sign_at_point(
+        terminal,
+        surface=surface,
+        sampling_service=sampling_service,
+    )
+    if slope_sign == 0:
+        return rows
+    oriented = [terminal]
+    for point in list(rows[1:] or []):
+        oriented_point = _terrain_oriented_side_slope_point(
+            point,
+            terminal=terminal,
+            slope_sign=slope_sign,
+            preserve_wrong_direction=True,
+        )
+        if oriented_point is not None:
+            oriented.append(oriented_point)
+    oriented = _unique_side_slope_points(oriented)
+    if len(oriented) < 2:
+        return None
+    intersection = _find_piecewise_side_slope_terrain_intersection(
+        oriented,
+        surface=surface,
+        sampling_service=sampling_service,
+    )
+    if intersection is None:
+        return oriented
+    segment_index, point = intersection
+    return oriented[: segment_index + 1] + [point]
+
+
+def _terrain_slope_sign_at_point(
+    point: _SectionPointLite,
+    *,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float = 1.0e-6,
+) -> int:
+    sample = sampling_service.sample_xy(surface=surface, x=float(point.x), y=float(point.y))
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return 0
+    delta = float(sample.z) - float(point.z)
+    if delta > tolerance:
+        return 1
+    if delta < -tolerance:
+        return -1
+    return 0
+
+
+def _unique_side_slope_points(rows: list[_SectionPointLite]) -> list[_SectionPointLite]:
+    output: list[_SectionPointLite] = []
+    for point in list(rows or []):
+        if output:
+            previous = output[-1]
+            if (
+                abs(float(point.lateral_offset) - float(previous.lateral_offset)) <= 1.0e-9
+                and abs(float(point.z) - float(previous.z)) <= 1.0e-9
+            ):
+                continue
+        output.append(point)
+    return output
+
+
+def _find_piecewise_side_slope_terrain_intersection(
+    rows: list[_SectionPointLite],
+    *,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float = 1.0e-6,
+) -> tuple[int, _SectionPointLite] | None:
+    if len(rows) < 2:
+        return None
+    previous_delta = _side_slope_point_terrain_delta(rows[0], surface=surface, sampling_service=sampling_service)
+    for index in range(len(rows) - 1):
+        start = rows[index]
+        end = rows[index + 1]
+        end_delta = _side_slope_point_terrain_delta(end, surface=surface, sampling_service=sampling_service)
+        if previous_delta is None:
+            previous_delta = end_delta
+            continue
+        if end_delta is None:
+            continue
+        if abs(end_delta) <= tolerance and index > 0:
+            return index + 1, _as_daylight_marker(end)
+        if previous_delta * end_delta < 0.0:
+            intersection = _bisect_piecewise_side_slope_intersection(
+                start,
+                end,
+                surface=surface,
+                sampling_service=sampling_service,
+                tolerance=tolerance,
+            )
+            if intersection is not None:
+                return index, intersection
+        previous_delta = end_delta
+    return None
+
+
+def _side_slope_point_terrain_delta(
+    point: _SectionPointLite,
+    *,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+) -> float | None:
+    sample = sampling_service.sample_xy(surface=surface, x=float(point.x), y=float(point.y))
+    if not bool(getattr(sample, "found", False)) or getattr(sample, "z", None) is None:
+        return None
+    return float(point.z) - float(sample.z)
+
+
+def _bisect_piecewise_side_slope_intersection(
+    start: _SectionPointLite,
+    end: _SectionPointLite,
+    *,
+    surface: TINSurface,
+    sampling_service: TinSamplingService,
+    tolerance: float,
+    iterations: int = 32,
+) -> _SectionPointLite | None:
+    low = 0.0
+    high = 1.0
+    low_point = _interpolate_between_side_slope_points(start, end, low, role=start.point_role)
+    low_delta = _side_slope_point_terrain_delta(low_point, surface=surface, sampling_service=sampling_service)
+    if low_delta is None:
+        return None
+    for _index in range(max(1, int(iterations))):
+        mid = (low + high) * 0.5
+        mid_point = _interpolate_between_side_slope_points(start, end, mid, role="daylight_marker")
+        mid_delta = _side_slope_point_terrain_delta(mid_point, surface=surface, sampling_service=sampling_service)
+        if mid_delta is None:
+            return None
+        if abs(mid_delta) <= tolerance or abs(high - low) <= tolerance:
+            return _as_daylight_marker(mid_point)
+        if low_delta * mid_delta <= 0.0:
+            high = mid
+        else:
+            low = mid
+            low_delta = mid_delta
+    return _as_daylight_marker(
+        _interpolate_between_side_slope_points(start, end, (low + high) * 0.5, role="daylight_marker")
+    )
+
+
+def _interpolate_between_side_slope_points(
+    start: _SectionPointLite,
+    end: _SectionPointLite,
+    ratio: float,
+    *,
+    role: str,
+) -> _SectionPointLite:
+    t = min(max(float(ratio), 0.0), 1.0)
+    return _SectionPointLite(
+        point_id=f"{start.point_id}->{end.point_id}@{t:.6g}",
+        x=float(start.x) + (float(end.x) - float(start.x)) * t,
+        y=float(start.y) + (float(end.y) - float(start.y)) * t,
+        z=float(start.z) + (float(end.z) - float(start.z)) * t,
+        lateral_offset=float(start.lateral_offset) + (float(end.lateral_offset) - float(start.lateral_offset)) * t,
+        point_role=role,
+    )
+
+
+def _as_daylight_marker(point: _SectionPointLite) -> _SectionPointLite:
+    return _SectionPointLite(
+        point_id=point.point_id if str(point.point_role or "") == "daylight_marker" else f"{point.point_id}:daylight",
+        x=point.x,
+        y=point.y,
+        z=point.z,
+        lateral_offset=point.lateral_offset,
+        point_role="daylight_marker",
+    )
 
 
 def _terrain_oriented_side_slope_point(

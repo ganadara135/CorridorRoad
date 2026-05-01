@@ -2,6 +2,7 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
     apply_v1_corridor_model,
@@ -22,10 +23,12 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     focus_corridor_slope_face_issue,
     preferred_corridor_build_review_row_index,
     set_all_corridor_build_preview_visibility,
+    set_corridor_build_daylight_contact_marker_visibility,
     set_corridor_build_preview_visibility,
     show_corridor_build_review_object,
     show_corridor_slope_face_issue_marker,
 )
+from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINVertex
 from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import tin_mesh_preview_style
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.applied_section import (
@@ -345,6 +348,23 @@ def test_build_corridor_panel_shows_progress_bar() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_build_corridor_panel_has_daylight_contact_marker_checkbox() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1BuildCorridorTaskPanel(document=doc)
+        checks = panel.form.findChildren(QtWidgets.QCheckBox)
+        contact_checks = [check for check in checks if check.text() == "Daylight Contact Markers"]
+
+        assert len(contact_checks) == 1
+        assert contact_checks[0].isChecked() is False
+        assert panel._show_daylight_contact_markers() is False
+        contact_checks[0].setChecked(True)
+        assert panel._show_daylight_contact_markers() is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
     doc, project = _new_project_doc()
     try:
@@ -465,6 +485,70 @@ def test_corridor_drainage_review_rows_track_ditch_surface_points() -> None:
         assert int(marker.MarkerCount) == 1
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_slope_face_markers_include_daylight_contact_vertices() -> None:
+    doc, project = _new_project_doc()
+    try:
+        surface = TINSurface(
+            schema_version=1,
+            project_id="proj-1",
+            surface_id="surface:daylight",
+            surface_kind="daylight_surface",
+            vertex_rows=[
+                TINVertex("v0:right:r0:p0", 0.0, -4.0, 10.0, notes="terminal_edge"),
+                TINVertex("v0:right:r0:p1", 0.0, -8.0, 12.0, notes="daylight_marker"),
+                TINVertex("v1:right:r0:p1", 10.0, -8.5, 12.2, notes="daylight_marker"),
+            ],
+        )
+
+        created = build_corridor_command._create_slope_face_diagnostic_markers(
+            document=doc,
+            project=project,
+            surface=surface,
+            show_daylight_contact_markers=False,
+        )
+
+        marker = doc.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+        assert marker is not None
+        assert marker.Label == "Slope Face Daylight / EG Intersections"
+        assert int(marker.MarkerCount) == 2
+        assert marker in created
+        shown = set_corridor_build_daylight_contact_marker_visibility(doc, True)
+        assert shown == marker
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_daylight_contact_marker_visibility_helper_targets_contact_marker_only() -> None:
+    class FakeView:
+        def __init__(self):
+            self.Visibility = False
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.ViewObject = FakeView()
+
+    class FakeDocument:
+        def __init__(self):
+            self.contact = FakeObject("ReviewIssueSlopeFaceIntersectionMarkers")
+            self.fallback = FakeObject("ReviewIssueSlopeFaceFallbackMarkers")
+
+        def getObject(self, name):
+            if name == self.contact.Name:
+                return self.contact
+            if name == self.fallback.Name:
+                return self.fallback
+            return None
+
+    doc = FakeDocument()
+
+    shown = set_corridor_build_daylight_contact_marker_visibility(doc, True)
+
+    assert shown == doc.contact
+    assert doc.contact.ViewObject.Visibility is True
+    assert doc.fallback.ViewObject.Visibility is False
 
 
 def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:

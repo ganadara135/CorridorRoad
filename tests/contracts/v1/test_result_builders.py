@@ -66,6 +66,32 @@ from freecad.Corridor_Road.v1.services.builders import (
 from freecad.Corridor_Road.v1.models.output import StructureSolidOutput, StructureSolidOutputRow
 
 
+def _triangle_normal_z(surface: TINSurface, triangle: TINTriangle) -> float:
+    vertices = surface.vertex_map()
+    v1 = vertices[triangle.v1]
+    v2 = vertices[triangle.v2]
+    v3 = vertices[triangle.v3]
+    ax = float(v2.x) - float(v1.x)
+    ay = float(v2.y) - float(v1.y)
+    bx = float(v3.x) - float(v1.x)
+    by = float(v3.y) - float(v1.y)
+    return ax * by - ay * bx
+
+
+def _surface_vertices_by_prefix(surface: TINSurface, prefix: str) -> list[TINVertex]:
+    return sorted(
+        [vertex for vertex in surface.vertex_rows if vertex.vertex_id.startswith(prefix)],
+        key=lambda vertex: int(str(vertex.vertex_id).rsplit(":p", 1)[-1]),
+    )
+
+
+def _rounded_vertex_xyz_rows(vertices: list[TINVertex]) -> list[tuple[float, float, float]]:
+    return [
+        (round(float(vertex.x), 6), round(float(vertex.y), 6), round(float(vertex.z), 6))
+        for vertex in vertices
+    ]
+
+
 def test_applied_section_service_builds_component_rows_from_template() -> None:
     alignment = AlignmentModel(
         schema_version=1,
@@ -477,6 +503,109 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
     assert derived_rows[0].slope == 0.5
     assert [round(point.z, 2) for point in bench_points] == [12.0, 12.0]
     assert any(row.kind == "bench_cut_fill_context" and "cut terrain context" in row.message for row in result.diagnostic_rows)
+
+
+def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_before_corridor_build() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-bench-max-daylight",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-bench-max-daylight",
+        alignment_id="align-bench-max-daylight",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-bench-max-daylight",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-bench-max-daylight",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
+                    TemplateComponent(
+                        "side-slope-right",
+                        "side_slope",
+                        side="right",
+                        width=8.0,
+                        slope=-0.5,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [{"drop": 2.0, "width": 1.0, "slope": -0.02, "post_slope": -0.5}],
+                            "repeat_first_bench_to_daylight": True,
+                            "daylight_mode": "terrain",
+                            "daylight_max_width": 20.0,
+                            "daylight_search_step": 0.25,
+                        },
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-bench-max-daylight",
+        alignment_id="align-bench-max-daylight",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-max-daylight")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-bench-max-daylight",
+        alignment_id="align-bench-max-daylight",
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-bench-max-daylight",
+        vertex_rows=[
+            TINVertex("eg-0", 0.0, -30.0, 15.0),
+            TINVertex("eg-1", 20.0, -30.0, 15.0),
+            TINVertex("eg-2", 20.0, 20.0, 15.0),
+            TINVertex("eg-3", 0.0, 20.0, 15.0),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-bench-max-daylight",
+            existing_ground_surface=existing_ground,
+        )
+    )
+
+    bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
+    daylight_point = bench_points[-1]
+    assert daylight_point.point_role == "daylight_marker"
+    assert round(daylight_point.z, 2) == 15.0
+    assert daylight_point.lateral_offset < -11.5
+    assert not any(row.kind == "bench_daylight_no_hit" for row in result.diagnostic_rows)
+    assert any(row.kind == "bench_daylight_shortened" for row in result.diagnostic_rows)
 
 
 def test_applied_section_service_builds_ditch_surface_points_from_ditch_components() -> None:
@@ -2263,6 +2392,73 @@ def test_corridor_surface_geometry_service_uses_bench_breakline_points_for_dayli
     assert vertices["v0:right:r1:p2"].z == 8.99
 
 
+def test_corridor_surface_geometry_service_orients_benched_daylight_triangles_up_on_both_sides() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-orientation",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-orientation",
+        corridor_id="cor-bench-orientation",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:left:1", 0.0, 7.0, 8.5, "side_slope_surface", 7.0),
+                    AppliedSectionPoint("bench:left:1", 0.0, 8.0, 8.45, "bench_surface", 8.0),
+                    AppliedSectionPoint("daylight:left", 0.0, 9.0, 8.0, "daylight_marker", 9.0),
+                    AppliedSectionPoint("slope:right:1", 0.0, -6.0, 8.8, "side_slope_surface", -6.0),
+                    AppliedSectionPoint("bench:right:1", 0.0, -7.0, 8.75, "bench_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -8.0, 8.0, "daylight_marker", -8.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 11.0, 0.0),
+                surface_left_width=5.0,
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:left:1", 10.0, 7.0, 9.5, "side_slope_surface", 7.0),
+                    AppliedSectionPoint("bench:left:1", 10.0, 8.0, 9.45, "bench_surface", 8.0),
+                    AppliedSectionPoint("daylight:left", 10.0, 9.0, 9.0, "daylight_marker", 9.0),
+                    AppliedSectionPoint("slope:right:1", 10.0, -6.0, 9.8, "side_slope_surface", -6.0),
+                    AppliedSectionPoint("bench:right:1", 10.0, -7.0, 9.75, "bench_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 10.0, -8.0, 9.0, "daylight_marker", -8.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-orientation:daylight",
+        )
+    )
+
+    assert {":left:" in row.triangle_id for row in result.triangle_rows} == {False, True}
+    assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
+
+
 def test_corridor_surface_geometry_service_reties_side_slope_points_to_cut_daylight() -> None:
     corridor = CorridorModel(
         schema_version=1,
@@ -2425,7 +2621,90 @@ def test_corridor_surface_geometry_service_preserves_bench_breakline_when_retyin
     assert quality["bench_breakline_count"] == 2
     assert len(bench_vertices) == 2
     assert all(vertex.z > 10.0 for vertex in bench_vertices)
-    assert len(result.triangle_rows) == 6
+    assert len(result.triangle_rows) >= 4
+
+
+def test_corridor_surface_geometry_service_ties_benched_profile_to_terrain_after_bench() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-piecewise",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-piecewise",
+        corridor_id="cor-bench-piecewise",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                daylight_right_width=8.0,
+                daylight_right_slope=-0.5,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 0.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("slope:right:2", 0.0, -9.5, 7.97, "side_slope_surface", -9.5),
+                    AppliedSectionPoint("daylight:right", 0.0, -9.5, 7.97, "daylight_marker", -9.5),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                daylight_right_width=8.0,
+                daylight_right_slope=-0.5,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 10.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 10.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("slope:right:2", 10.0, -9.5, 7.97, "side_slope_surface", -9.5),
+                    AppliedSectionPoint("daylight:right", 10.0, -9.5, 7.97, "daylight_marker", -9.5),
+                ],
+            ),
+        ],
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-piecewise",
+        vertex_rows=[
+            TINVertex("eg-0", -1.0, -20.0, 12.0),
+            TINVertex("eg-1", 11.0, -20.0, 12.0),
+            TINVertex("eg-2", 11.0, 5.0, 12.0),
+            TINVertex("eg-3", -1.0, 5.0, 12.0),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-piecewise:daylight",
+            existing_ground_surface=existing_ground,
+        )
+    )
+
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    assert daylight_vertices
+    assert all(vertex.y < -8.5 for vertex in daylight_vertices)
+    assert all(abs(vertex.z - 12.0) < 1.0e-6 for vertex in daylight_vertices)
 
 
 def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has_fewer_breaks() -> None:
@@ -2484,7 +2763,237 @@ def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has
     quality = {row.kind: row.value for row in result.quality_rows}
     assert quality["bench_breakline_count"] == 1
     assert any(vertex.notes == "bench_surface" for vertex in result.vertex_rows)
-    assert len(result.triangle_rows) >= 4
+    assert len(result.triangle_rows) >= 2
+    assert not any(triangle.notes == "daylight_transition_cap" for triangle in result.triangle_rows)
+    assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
+
+
+def test_corridor_surface_geometry_service_densifies_daylight_edge_between_station_contacts() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-densified-contact",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-densified-contact",
+        corridor_id="cor-bench-densified-contact",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 0.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 0.0, -9.0, 10.0, "daylight_marker", -9.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 20.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 20.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 20.0, -9.0, 12.0, "daylight_marker", -9.0),
+                ],
+            ),
+        ],
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-densified-contact",
+        vertex_rows=[
+            TINVertex("eg-0", -5.0, -20.0, 10.0),
+            TINVertex("eg-1", 25.0, -20.0, 13.0),
+            TINVertex("eg-2", 25.0, 5.0, 13.0),
+            TINVertex("eg-3", -5.0, 5.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-densified-contact:daylight",
+            existing_ground_surface=existing_ground,
+        )
+    )
+
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    quality = {row.kind: row.value for row in result.quality_rows}
+    assert len(daylight_vertices) > 2
+    assert len(result.triangle_rows) > 4
+    assert any(10.0 < vertex.z < 13.0 for vertex in daylight_vertices)
+    assert quality["daylight_marker_count"] == 2
+
+
+def test_corridor_surface_geometry_service_uses_shared_station_breaks_across_adjacent_daylight_spans() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-shared-breaks",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-shared-breaks",
+        corridor_id="cor-bench-shared-breaks",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -7.0, 8.5, "daylight_marker", -7.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 10.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 10.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 10.0, -9.0, 8.2, "daylight_marker", -9.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 20.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 20.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("slope:right:2", 20.0, -10.0, 7.72, "side_slope_surface", -10.0),
+                    AppliedSectionPoint("daylight:right", 20.0, -10.0, 7.72, "daylight_marker", -10.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-shared-breaks:daylight",
+        )
+    )
+
+    first_span_boundary = _surface_vertices_by_prefix(result, "v0:right:r1:p")
+    second_span_boundary = _surface_vertices_by_prefix(result, "v1:right:r0:p")
+    assert first_span_boundary
+    assert second_span_boundary
+    assert not any(triangle.notes == "daylight_transition_cap" for triangle in result.triangle_rows)
+
+
+def test_corridor_surface_geometry_service_does_not_fill_beyond_shorter_daylight_row() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-daylight-tear-fill",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-daylight-tear-fill",
+        corridor_id="cor-daylight-tear-fill",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -8.0, 10.0, "daylight_marker", -8.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 10.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 10.0, -18.0, 11.0, "daylight_marker", -18.0),
+                ],
+            ),
+        ],
+    )
+    existing_ground = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="tin:eg-daylight-tear-fill",
+        vertex_rows=[
+            TINVertex("eg-0", -5.0, -35.0, 10.0),
+            TINVertex("eg-1", 15.0, -35.0, 11.0),
+            TINVertex("eg-2", 15.0, 5.0, 11.0),
+            TINVertex("eg-3", -5.0, 5.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("eg-t0", "eg-0", "eg-1", "eg-2"),
+            TINTriangle("eg-t1", "eg-0", "eg-2", "eg-3"),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-daylight-tear-fill:daylight",
+            existing_ground_surface=existing_ground,
+        )
+    )
+
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    assert daylight_vertices
+    assert min(vertex.y for vertex in daylight_vertices) >= -8.000001
 
 
 def test_corridor_surface_geometry_service_starts_daylight_from_ditch_outer_edges() -> None:
@@ -2835,6 +3344,7 @@ def test_corridor_surface_geometry_service_orients_slope_face_up_for_cut_interse
     quality = {row.kind: row.value for row in result.quality_rows}
     assert quality["eg_intersection_count"] == 4
     assert quality["slope_face_fallback_count"] == 0
+    assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
 
 
 def test_corridor_model_service_builds_from_applied_section_set() -> None:

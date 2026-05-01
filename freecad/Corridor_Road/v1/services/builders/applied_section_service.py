@@ -880,12 +880,15 @@ def _oriented_bench_points(
     return output
 
 
-def _bench_profile_segments(component) -> list[dict[str, object]]:
+def _bench_profile_segments(component, *, total_width: float | None = None) -> list[dict[str, object]]:
     params = dict(getattr(component, "parameters", {}) or {})
     rows = normalize_bench_rows(params.get("bench_rows", []))
     if not rows:
         return []
-    remaining = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+    remaining = max(
+        float(total_width if total_width is not None else getattr(component, "width", 0.0) or 0.0),
+        0.0,
+    )
     current_slope = float(getattr(component, "slope", 0.0) or 0.0)
     repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
     source_rows = [rows[0]] if repeat else rows
@@ -957,6 +960,7 @@ def _clip_bench_segments_to_terrain(
             )
         ]
     service = sampling_service or TinSamplingService()
+    segments = _terrain_daylight_search_segments(component, segments)
     segments = _orient_bench_segments_to_terrain(
         segments,
         edge_offset=edge_offset,
@@ -1016,6 +1020,17 @@ def _clip_bench_segments_to_terrain(
         )
     )
     return clipped, diagnostics
+
+
+def _terrain_daylight_search_segments(component, segments: list[dict[str, object]]) -> list[dict[str, object]]:
+    params = dict(getattr(component, "parameters", {}) or {})
+    if not _truthy(params.get("repeat_first_bench_to_daylight")):
+        return segments
+    max_width = _parameter_float(params, "daylight_max_width", _parameter_float(params, "daylight_max_search_width", 0.0))
+    if max_width <= _segments_total_width(segments) + 1.0e-9:
+        return segments
+    extended = _bench_profile_segments(component, total_width=max_width)
+    return extended or segments
 
 
 def _orient_bench_segments_to_terrain(

@@ -326,6 +326,7 @@ def apply_v1_corridor_model(
     project=None,
     corridor_model=None,
     build_surfaces: bool = True,
+    show_daylight_contact_markers: bool = True,
     progress_callback=None,
 ):
     """Persist a v1 CorridorModel result object."""
@@ -384,6 +385,7 @@ def apply_v1_corridor_model(
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
+            show_daylight_contact_markers=show_daylight_contact_markers,
         )
         _notify_progress(progress_callback, 90, "Creating drainage preview...")
         create_corridor_drainage_surface_preview(
@@ -733,6 +735,17 @@ def set_all_corridor_build_preview_visibility(document=None, visible: bool = Tru
     return changed
 
 
+def set_corridor_build_daylight_contact_marker_visibility(document=None, visible: bool = True):
+    """Set visibility for the large daylight/EG contact marker object."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    obj = _corridor_build_daylight_contact_marker_object(doc)
+    if obj is None:
+        return None
+    _set_object_visibility(obj, bool(visible))
+    return obj
+
+
 def preferred_corridor_build_review_row_index(
     rows: list[dict[str, object]],
     *,
@@ -934,6 +947,7 @@ def create_corridor_daylight_surface_preview(
     project=None,
     corridor_model=None,
     surface_model=None,
+    show_daylight_contact_markers: bool = True,
 ):
     """Create or update the first slope-face mesh preview for a corridor."""
 
@@ -983,6 +997,7 @@ def create_corridor_daylight_surface_preview(
             surface=tin_surface,
             corridor_model=corridor_model,
             applied_section_set=applied_section_set,
+            show_daylight_contact_markers=show_daylight_contact_markers,
         )
     return preview_obj
 
@@ -1222,6 +1237,14 @@ class V1BuildCorridorTaskPanel:
             visibility_row.addWidget(check)
         visibility_row.addStretch(1)
         visibility_layout.addLayout(visibility_row)
+        marker_row = QtWidgets.QHBoxLayout()
+        self._daylight_contact_marker_check = QtWidgets.QCheckBox("Daylight Contact Markers")
+        self._daylight_contact_marker_check.setToolTip("Show or hide the large daylight/EG contact markers.")
+        self._daylight_contact_marker_check.setChecked(False)
+        self._daylight_contact_marker_check.toggled.connect(self._set_daylight_contact_marker_visibility)
+        marker_row.addWidget(self._daylight_contact_marker_check)
+        marker_row.addStretch(1)
+        visibility_layout.addLayout(marker_row)
         visibility_layout.addStretch(1)
         row = QtWidgets.QHBoxLayout()
         refresh_button = QtWidgets.QPushButton("Refresh")
@@ -1292,6 +1315,7 @@ class V1BuildCorridorTaskPanel:
             obj = apply_v1_corridor_model(
                 document=self.document,
                 corridor_model=result,
+                show_daylight_contact_markers=self._show_daylight_contact_markers(),
                 progress_callback=self._set_progress,
             )
             self._set_progress(96, "Reading surface summary...")
@@ -1563,6 +1587,13 @@ class V1BuildCorridorTaskPanel:
         state = "shown" if visible else "hidden"
         self._summary.setPlainText(f"Preview {state}.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
 
+    def _set_daylight_contact_marker_visibility(self, visible: bool) -> None:
+        obj = set_corridor_build_daylight_contact_marker_visibility(self.document, visible)
+        if obj is None:
+            return
+        state = "shown" if visible else "hidden"
+        self._summary.setPlainText(f"Daylight contact markers {state}.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
+
     def _set_all_preview_visibility(self, visible: bool) -> None:
         count = set_all_corridor_build_preview_visibility(self.document, visible, include_issue_markers=True)
         self._sync_visibility_checks()
@@ -1585,6 +1616,32 @@ class V1BuildCorridorTaskPanel:
                     check.blockSignals(False)
                 except Exception:
                     pass
+        self._sync_daylight_contact_marker_check()
+
+    def _sync_daylight_contact_marker_check(self) -> None:
+        check = getattr(self, "_daylight_contact_marker_check", None)
+        if check is None:
+            return
+        obj = _corridor_build_daylight_contact_marker_object(self.document)
+        if obj is None:
+            return
+        try:
+            check.blockSignals(True)
+            check.setChecked(_object_visibility(obj))
+        finally:
+            try:
+                check.blockSignals(False)
+            except Exception:
+                pass
+
+    def _show_daylight_contact_markers(self) -> bool:
+        check = getattr(self, "_daylight_contact_marker_check", None)
+        if check is None:
+            return True
+        try:
+            return bool(check.isChecked())
+        except Exception:
+            return True
 
     def _show_preferred_review_row(self, rows: list[dict[str, object]]):
         row_index = preferred_corridor_build_review_row_index(rows)
@@ -2043,6 +2100,15 @@ def _corridor_build_issue_marker_objects(document) -> list[object]:
     return markers
 
 
+def _corridor_build_daylight_contact_marker_object(document):
+    if document is None:
+        return None
+    try:
+        return document.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+    except Exception:
+        return None
+
+
 def _set_object_visibility(obj, visible: bool) -> None:
     if obj is None:
         return
@@ -2122,6 +2188,7 @@ def _create_slope_face_diagnostic_markers(
     surface=None,
     corridor_model=None,
     applied_section_set=None,
+    show_daylight_contact_markers: bool = True,
 ):
     """Create visible 3D markers for slope-face EG tie-in states."""
 
@@ -2132,25 +2199,29 @@ def _create_slope_face_diagnostic_markers(
         _remove_slope_face_diagnostic_markers(document)
         return []
     marker_specs = [
-        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face EG Intersections", (0.10, 0.85, 0.25)),
+        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face Daylight / EG Intersections", (0.10, 0.85, 0.25), 1.8),
         ("sampled_outer_edge", "ReviewIssueSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", (1.00, 0.72, 0.10)),
         ("fallback", "ReviewIssueSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", (1.00, 0.18, 0.12)),
     ]
     radius = _marker_radius([point for points in status_points.values() for point in points])
     created = []
-    for status_key, object_name, label, color in marker_specs:
+    for spec in marker_specs:
+        status_key, object_name, label, color = spec[:4]
+        radius_scale = float(spec[4]) if len(spec) > 4 else 1.0
         points = status_points.get(status_key, [])
         obj = _create_marker_compound(
             document=document,
             object_name=object_name,
             label=label,
             points=points,
-            radius=radius,
+            radius=radius * radius_scale,
             color=color,
             surface=surface,
             corridor_model=corridor_model,
         )
         if obj is not None:
+            if status_key == "intersection":
+                _set_object_visibility(obj, bool(show_daylight_contact_markers))
             created.append(obj)
             try:
                 from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -2256,9 +2327,12 @@ def _slope_face_status_points(surface) -> dict[str, list[tuple[float, float, flo
     }
     for vertex in list(getattr(surface, "vertex_rows", []) or []):
         vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+        status = str(getattr(vertex, "notes", "") or "")
+        if status == "daylight_marker":
+            points["intersection"].append((float(vertex.x), float(vertex.y), float(vertex.z)))
+            continue
         if not vertex_id.endswith(":outer"):
             continue
-        status = str(getattr(vertex, "notes", "") or "")
         if status == "intersection":
             key = "intersection"
         elif status == "sampled_outer_edge":

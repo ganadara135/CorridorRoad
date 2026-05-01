@@ -1,8 +1,10 @@
 import FreeCAD as App
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_ASSEMBLIES, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     CmdV1AssemblyEditor,
+    V1AssemblyEditorTaskPanel,
     _assembly_preview_points,
     _ditch_component_note,
     _ditch_effective_field_keys,
@@ -30,6 +32,8 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import find_v1_assembly_model, to_assembly_model
 
+_QAPP = None
+
 
 def _new_project_doc():
     doc = App.newDocument("V1AssemblyEditorCommandTest")
@@ -37,6 +41,12 @@ def _new_project_doc():
     CorridorRoadProject(project)
     ensure_project_tree(project, include_references=False)
     return doc, project
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def test_starter_assembly_model_builds_basic_road_components() -> None:
@@ -206,6 +216,19 @@ def test_bench_parameter_editor_merge_preserves_unknown_parameters() -> None:
 
 def test_bench_daylight_modes_are_explicit_editor_choices() -> None:
     assert ASSEMBLY_DAYLIGHT_MODES == ("off", "terrain", "fixed_width")
+
+
+def test_assembly_editor_defaults_daylight_mode_to_terrain() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+
+        assert panel._bench_daylight_mode.currentText() == "terrain"
+        panel._clear_bench_parameter_fields()
+        assert panel._bench_daylight_mode.currentText() == "terrain"
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_assembly_validation_warns_on_unknown_daylight_mode() -> None:

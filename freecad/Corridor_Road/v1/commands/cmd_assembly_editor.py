@@ -609,6 +609,7 @@ class V1AssemblyEditorTaskPanel:
         bench_top_row.addWidget(QtWidgets.QLabel("Daylight mode:"))
         self._bench_daylight_mode = QtWidgets.QComboBox()
         self._bench_daylight_mode.addItems(list(ASSEMBLY_DAYLIGHT_MODES))
+        self._bench_daylight_mode.setCurrentText("terrain")
         bench_top_row.addWidget(self._bench_daylight_mode)
         bench_top_row.addWidget(QtWidgets.QLabel("Max width:"))
         self._bench_daylight_max_width = QtWidgets.QLineEdit()
@@ -930,8 +931,8 @@ class V1AssemblyEditorTaskPanel:
         mode = str(params.get("bench_mode", "") or ("rows" if rows else "none")).strip().lower().replace("-", "_")
         self._bench_mode_combo.setCurrentText(mode if mode in ASSEMBLY_BENCH_MODES else "none")
         self._bench_repeat_combo.setCurrentText("1" if _truthy(params.get("repeat_first_bench_to_daylight")) else "0")
-        daylight_mode = str(params.get("daylight_mode", "") or "off").strip().lower().replace("-", "_")
-        self._bench_daylight_mode.setCurrentText(daylight_mode if daylight_mode in ASSEMBLY_DAYLIGHT_MODES else "off")
+        daylight_mode = str(params.get("daylight_mode", "") or "terrain").strip().lower().replace("-", "_")
+        self._bench_daylight_mode.setCurrentText(daylight_mode if daylight_mode in ASSEMBLY_DAYLIGHT_MODES else "terrain")
         self._bench_daylight_max_width.setText(str(params.get("daylight_max_width", "") or ""))
         self._replace_bench_rows(rows)
 
@@ -940,7 +941,7 @@ class V1AssemblyEditorTaskPanel:
             return
         self._bench_mode_combo.setCurrentText("none")
         self._bench_repeat_combo.setCurrentText("0")
-        self._bench_daylight_mode.setCurrentText("off")
+        self._bench_daylight_mode.setCurrentText("terrain")
         self._bench_daylight_max_width.clear()
         self._bench_table.setRowCount(0)
 
@@ -1012,7 +1013,7 @@ class V1AssemblyEditorTaskPanel:
             "bench_rows": self._bench_table_rows(),
             "repeat_first_bench_to_daylight": self._bench_repeat_combo.currentText() == "1",
         }
-        daylight_mode = str(self._bench_daylight_mode.currentText() or "off").strip()
+        daylight_mode = str(self._bench_daylight_mode.currentText() or "terrain").strip()
         max_width = str(self._bench_daylight_max_width.text() or "").strip()
         if daylight_mode:
             output["daylight_mode"] = daylight_mode
