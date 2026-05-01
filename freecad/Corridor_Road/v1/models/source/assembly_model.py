@@ -29,6 +29,7 @@ ASSEMBLY_COMPONENT_KINDS = (
 ASSEMBLY_COMPONENT_SIDES = ("left", "right", "center", "both")
 
 ASSEMBLY_BENCH_MODES = ("none", "single", "rows")
+ASSEMBLY_DAYLIGHT_MODES = ("off", "terrain", "fixed_width")
 ASSEMBLY_BENCH_PARAMETER_KEYS = (
     "bench_mode",
     "bench_rows",
@@ -198,6 +199,8 @@ def assembly_bench_validation_messages(component: TemplateComponent) -> list[str
     if bench_rows and _bool(params.get("repeat_first_bench_to_daylight")):
         daylight_mode = str(params.get("daylight_mode", "") or "").strip().lower()
         max_width = _float(params.get("daylight_max_width", params.get("daylight_max_search_width")), 0.0)
+        if daylight_mode and daylight_mode not in ASSEMBLY_DAYLIGHT_MODES:
+            messages.append(f"side_slope component {component.component_id} has unknown daylight_mode {daylight_mode}.")
         if daylight_mode in {"", "none", "off"} or max_width <= 0.0:
             messages.append(
                 f"side_slope component {component.component_id} repeats bench rows to daylight without daylight mode and max width."

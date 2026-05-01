@@ -2,7 +2,11 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_APPLIED_SECTIONS, CorridorRoadProject, ensure_project_tree
-from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import assembly_preset_model_from_document, starter_assembly_model_from_document
+from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
+    apply_v1_assembly_model,
+    assembly_preset_model_from_document,
+    starter_assembly_model_from_document,
+)
 import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections as applied_sections_command
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     CmdV1AppliedSections,
@@ -55,6 +59,42 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
         assert result.sections[0].assembly_id == "assembly:basic-road"
         assert result.sections[0].template_id == "template:basic-road"
         assert result.sections[0].region_id == "region:normal-01"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_preset_apply_syncs_region_refs_for_benched_build() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=starter_assembly_model_from_document(doc, project=project, alignment=alignment),
+        )
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=assembly_preset_model_from_document("Benched Slope Road", doc, project=project, alignment=alignment),
+        )
+
+        result = build_document_applied_section_set(doc, project=project)
+
+        assert result.sections
+        assert result.sections[0].assembly_id == "assembly:benched-slope-road"
+        assert result.sections[0].template_id == "template:benched-slope-road"
+        assert any(row.kind == "bench" for row in result.sections[0].component_rows)
+        assert any(point.point_role == "bench_surface" for point in result.sections[0].point_rows)
+        polylines = applied_sections_command._applied_section_preview_polylines(
+            result.sections[0],
+            result.sections[0].frame,
+        )
+        assert any("side_slope_points" in role for role, _points in polylines)
+        assert not any(role in {"left_slope_face", "right_slope_face"} for role, _points in polylines)
     finally:
         App.closeDocument(doc.Name)
 

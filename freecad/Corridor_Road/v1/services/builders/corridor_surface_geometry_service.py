@@ -440,29 +440,32 @@ def _build_daylight_surface_from_side_slope_points(
         if len(grid) < 2:
             continue
         for section_index, points in enumerate(grid):
-            section = sections[section_index]
             for point_index, point in enumerate(points):
                 role = str(getattr(point, "point_role", "") or "")
                 bench_breakline_count += 1 if role == "bench_surface" else 0
                 side_slope_point_count += 1 if role == "side_slope_surface" else 0
                 daylight_marker_count += 1 if role == "daylight_marker" else 0
-                vertices.append(
-                    TINVertex(
-                        vertex_id=f"v{section_index}:{side_label}:p{point_index}",
-                        x=float(point.x),
-                        y=float(point.y),
-                        z=float(point.z),
-                        source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{point.point_id}",
-                        notes=role,
-                    )
-                )
         for section_index in range(len(grid) - 1):
-            point_count = min(len(grid[section_index]), len(grid[section_index + 1]))
-            for point_index in range(point_count - 1):
-                p00 = f"v{section_index}:{side_label}:p{point_index}"
-                p01 = f"v{section_index}:{side_label}:p{point_index + 1}"
-                p10 = f"v{section_index + 1}:{side_label}:p{point_index}"
-                p11 = f"v{section_index + 1}:{side_label}:p{point_index + 1}"
+            span_rows = _resampled_side_slope_span_rows(grid[section_index], grid[section_index + 1])
+            if len(span_rows[0]) < 2 or len(span_rows[1]) < 2:
+                continue
+            for row_index, points in enumerate(span_rows):
+                for point_index, point in enumerate(points):
+                    vertices.append(
+                        TINVertex(
+                            vertex_id=f"v{section_index}:{side_label}:r{row_index}:p{point_index}",
+                            x=float(point.x),
+                            y=float(point.y),
+                            z=float(point.z),
+                            source_point_ref=f"{getattr(sections[section_index + row_index], 'applied_section_id', '')}:{point.point_id}",
+                            notes=str(getattr(point, "point_role", "") or ""),
+                        )
+                    )
+            for point_index in range(len(span_rows[0]) - 1):
+                p00 = f"v{section_index}:{side_label}:r0:p{point_index}"
+                p01 = f"v{section_index}:{side_label}:r0:p{point_index + 1}"
+                p10 = f"v{section_index}:{side_label}:r1:p{point_index}"
+                p11 = f"v{section_index}:{side_label}:r1:p{point_index + 1}"
                 triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:a", p00, p01, p11, triangle_kind="corridor_daylight_bench_strip"))
                 triangles.append(TINTriangle(f"span:{section_index}:{side_label}:p{point_index}:b", p00, p11, p10, triangle_kind="corridor_daylight_bench_strip"))
     if not vertices or not triangles:
@@ -517,7 +520,6 @@ def _side_slope_point_grids(
     grids: dict[str, list[list[_SectionPointLite]]] = {}
     for side_label in ("left", "right"):
         grid: list[list[_SectionPointLite]] = []
-        reference_count: int | None = None
         section_rows = list(sections or [])
         for section in section_rows:
             rows = _side_slope_points_for_section(
@@ -534,15 +536,98 @@ def _side_slope_point_grids(
                 side_label=side_label,
                 existing_ground_surface=existing_ground_surface,
             )
-            if reference_count is None:
-                reference_count = len(rows)
-            elif len(rows) != reference_count:
-                grid = []
-                break
             grid.append(rows)
         if len(grid) >= 2:
             grids[side_label] = grid
     return grids
+
+
+def _resampled_side_slope_span_rows(
+    first: list[_SectionPointLite],
+    second: list[_SectionPointLite],
+) -> tuple[list[_SectionPointLite], list[_SectionPointLite]]:
+    distances = _merged_side_slope_distances(first, second)
+    if len(distances) < 2:
+        return ([], [])
+    return (
+        [_interpolate_side_slope_point_at_distance(first, distance) for distance in distances],
+        [_interpolate_side_slope_point_at_distance(second, distance) for distance in distances],
+    )
+
+
+def _merged_side_slope_distances(*rows: list[_SectionPointLite], tolerance: float = 1.0e-6) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        if not row:
+            continue
+        start = float(row[0].lateral_offset)
+        for point in row:
+            values.append(abs(float(point.lateral_offset) - start))
+    values = sorted(max(float(value), 0.0) for value in values)
+    output: list[float] = []
+    for value in values:
+        if not output or abs(value - output[-1]) > tolerance:
+            output.append(value)
+    return output
+
+
+def _interpolate_side_slope_point_at_distance(
+    row: list[_SectionPointLite],
+    distance: float,
+) -> _SectionPointLite:
+    if not row:
+        return _SectionPointLite("", 0.0, 0.0, 0.0, 0.0, "")
+    if len(row) == 1:
+        return row[0]
+    distances = _side_slope_row_distances(row)
+    target = max(float(distance), 0.0)
+    if target <= distances[0] + 1.0e-9:
+        return row[0]
+    if target >= distances[-1] - 1.0e-9:
+        return row[-1]
+    for index in range(len(row) - 1):
+        start_distance = distances[index]
+        end_distance = distances[index + 1]
+        if target < start_distance - 1.0e-9 or target > end_distance + 1.0e-9:
+            continue
+        span = max(end_distance - start_distance, 1.0e-12)
+        ratio = (target - start_distance) / span
+        start = row[index]
+        end = row[index + 1]
+        role = _side_slope_interpolated_role(start, end, target, end_distance)
+        return _SectionPointLite(
+            point_id=f"{start.point_id}->{end.point_id}@{target:.6g}",
+            x=float(start.x) + (float(end.x) - float(start.x)) * ratio,
+            y=float(start.y) + (float(end.y) - float(start.y)) * ratio,
+            z=float(start.z) + (float(end.z) - float(start.z)) * ratio,
+            lateral_offset=float(start.lateral_offset) + (float(end.lateral_offset) - float(start.lateral_offset)) * ratio,
+            point_role=role,
+        )
+    return row[-1]
+
+
+def _side_slope_row_distances(row: list[_SectionPointLite]) -> list[float]:
+    if not row:
+        return []
+    start = float(row[0].lateral_offset)
+    return [abs(float(point.lateral_offset) - start) for point in row]
+
+
+def _side_slope_interpolated_role(
+    start: _SectionPointLite,
+    end: _SectionPointLite,
+    target: float,
+    end_distance: float,
+) -> str:
+    end_role = str(getattr(end, "point_role", "") or "")
+    start_role = str(getattr(start, "point_role", "") or "")
+    if abs(float(target) - float(end_distance)) <= 1.0e-6:
+        return end_role
+    if end_role == "bench_surface" or start_role == "bench_surface":
+        return "bench_surface"
+    if end_role == "daylight_marker":
+        return "side_slope_surface"
+    return end_role or start_role
 
 
 def _side_slope_points_for_section(
@@ -633,6 +718,10 @@ def _terrain_adjusted_side_slope_points_for_section(
     )
     slope_sign = _slope_sign_from_points(terminal.z, outer.z)
     adjusted: list[_SectionPointLite] = [terminal]
+    has_bench_breakline = any(
+        str(getattr(point, "point_role", "") or "") == "bench_surface"
+        for point in list(rows[1:] or [])
+    )
     for point in list(rows[1:] or []):
         if str(getattr(point, "point_role", "") or "") == "daylight_marker":
             continue
@@ -642,9 +731,13 @@ def _terrain_adjusted_side_slope_points_for_section(
             outer_offset,
         ):
             continue
-        if slope_sign > 0 and float(point.z) < float(terminal.z) - 1.0e-6:
-            continue
-        if slope_sign < 0 and float(point.z) > float(terminal.z) + 1.0e-6:
+        point = _terrain_oriented_side_slope_point(
+            point,
+            terminal=terminal,
+            slope_sign=slope_sign,
+            preserve_wrong_direction=has_bench_breakline,
+        )
+        if point is None:
             continue
         adjusted.append(point)
     if (
@@ -662,6 +755,38 @@ def _terrain_adjusted_side_slope_points_for_section(
             )
         )
     return adjusted
+
+
+def _terrain_oriented_side_slope_point(
+    point: _SectionPointLite,
+    *,
+    terminal: _SectionPointLite,
+    slope_sign: int,
+    preserve_wrong_direction: bool,
+) -> _SectionPointLite | None:
+    """Preserve bench breaklines while matching the terrain cut/fill direction."""
+
+    if slope_sign == 0:
+        return point
+    terminal_z = float(terminal.z)
+    point_z = float(point.z)
+    wrong_fill_or_cut_direction = (
+        (slope_sign > 0 and point_z < terminal_z - 1.0e-6)
+        or (slope_sign < 0 and point_z > terminal_z + 1.0e-6)
+    )
+    if not wrong_fill_or_cut_direction:
+        return point
+    if not preserve_wrong_direction:
+        return None
+    oriented_z = terminal_z + float(slope_sign) * abs(point_z - terminal_z)
+    return _SectionPointLite(
+        point_id=point.point_id,
+        x=point.x,
+        y=point.y,
+        z=oriented_z,
+        lateral_offset=point.lateral_offset,
+        point_role=point.point_role,
+    )
 
 
 def _section_daylight_policy_for_side(section, *, side_label: str) -> tuple[float, float]:

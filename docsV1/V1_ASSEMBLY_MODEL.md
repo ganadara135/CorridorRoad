@@ -131,13 +131,19 @@ Recommended bench row fields are:
 - `row_id`
 - `label`
 
+Recommended `daylight_mode` values are:
+
+- `off`: do not apply terrain daylight behavior.
+- `terrain`: tie bench/side-slope daylight to the existing ground TIN.
+- `fixed_width`: keep the Assembly-defined side-slope/bench width without terrain clipping.
+
 Assembly owns these reusable side-slope bench rules.
 
 Region applies the Assembly over station ranges, but it does not own bench geometry.
 
 The current Assembly editor provides a first-slice `Side Slope Bench` helper panel.
 
-The helper panel reads the selected `side_slope` row, edits bench rows, repeat-to-daylight settings, and daylight limits, then writes them back to the raw `Parameters` column.
+The helper panel reads the selected `side_slope` row, edits bench rows, repeat-to-daylight settings, daylight mode, and daylight limits, then writes them back to the raw `Parameters` column.
 
 ## Relationships
 
@@ -159,6 +165,10 @@ If multiple `AssemblyModel` sources exist in the document, Applied Section gener
 
 If `RegionRow.assembly_ref` cannot be matched to any available Assembly source, the builder should emit diagnostics instead of silently applying the wrong Assembly.
 
+When the primary Assembly source object is reapplied with a new `AssemblyModel.assembly_id` or active template id, the Assembly apply command may update Region rows that referenced the previous primary Assembly/template pair.
+
+This keeps the common single-Assembly workflow coherent after changing presets while preserving explicit Region references that point elsewhere.
+
 ## Diagnostics
 
 The first editor-level validation checks:
@@ -174,6 +184,7 @@ The first editor-level validation checks:
 - structural ditch materials provide wall thickness where the selected shape needs a future component body
 - lined ditch materials provide lining thickness for quantity and review
 - side-slope `bench_mode` values are supported
+- side-slope `daylight_mode` values are supported
 - side-slope `bench_rows` are parseable and have positive width
 - repeated bench-to-daylight settings have daylight mode and a finite max width
 - side-slope rows with bench intent have positive side-slope width

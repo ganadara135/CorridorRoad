@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 try:
     import FreeCAD as App
     import FreeCADGui as Gui
@@ -25,6 +27,7 @@ from ..models.source.assembly_model import (
     ASSEMBLY_COMPONENT_SIDES,
     ASSEMBLY_BENCH_MODES,
     ASSEMBLY_BENCH_PARAMETER_KEYS,
+    ASSEMBLY_DAYLIGHT_MODES,
     AssemblyModel,
     SectionTemplate,
     TemplateComponent,
@@ -38,6 +41,11 @@ from ..objects.obj_assembly import (
     create_or_update_v1_assembly_model_object,
     find_v1_assembly_model,
     to_assembly_model,
+)
+from ..objects.obj_region import (
+    create_or_update_v1_region_model_object,
+    find_v1_region_model,
+    to_region_model,
 )
 from ..services.builders.applied_section_service import (
     ditch_component_local_profile,
@@ -300,16 +308,76 @@ def apply_v1_assembly_model(
         prj.Label = "CorridorRoad Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
+    previous_obj = doc.getObject("V1AssemblyModel")
+    previous_assembly_id = str(getattr(previous_obj, "AssemblyId", "") or "").strip() if previous_obj is not None else ""
+    previous_template_id = str(getattr(previous_obj, "ActiveTemplateId", "") or "").strip() if previous_obj is not None else ""
     obj = create_or_update_v1_assembly_model_object(
         document=doc,
         project=prj,
         assembly_model=assembly_model,
+    )
+    _sync_region_refs_after_assembly_apply(
+        doc,
+        project=prj,
+        previous_assembly_id=previous_assembly_id,
+        previous_template_id=previous_template_id,
+        new_assembly_id=str(getattr(assembly_model, "assembly_id", "") or "").strip(),
+        new_template_id=str(getattr(assembly_model, "active_template_id", "") or "").strip(),
     )
     try:
         doc.recompute()
     except Exception:
         pass
     return obj
+
+
+def _sync_region_refs_after_assembly_apply(
+    document,
+    *,
+    project,
+    previous_assembly_id: str,
+    previous_template_id: str,
+    new_assembly_id: str,
+    new_template_id: str,
+) -> int:
+    """Keep Region source refs aligned when the primary Assembly object changes identity."""
+
+    if document is None or not new_assembly_id:
+        return 0
+    if previous_assembly_id == new_assembly_id and previous_template_id == new_template_id:
+        return 0
+    region_obj = find_v1_region_model(document)
+    region_model = to_region_model(region_obj)
+    if region_model is None:
+        return 0
+    updated_rows = []
+    changed = 0
+    for row in list(getattr(region_model, "region_rows", []) or []):
+        assembly_ref = str(getattr(row, "assembly_ref", "") or "").strip()
+        template_ref = str(getattr(row, "template_ref", "") or "").strip()
+        assembly_matches_previous = bool(previous_assembly_id) and assembly_ref == previous_assembly_id
+        template_matches_previous = bool(previous_template_id) and template_ref == previous_template_id
+        blank_refs = not assembly_ref and not template_ref
+        if assembly_matches_previous or template_matches_previous or blank_refs:
+            updated_rows.append(
+                replace(
+                    row,
+                    assembly_ref=new_assembly_id,
+                    template_ref=new_template_id or template_ref,
+                )
+            )
+            changed += 1
+        else:
+            updated_rows.append(row)
+    if changed <= 0:
+        return 0
+    region_model.region_rows = updated_rows
+    create_or_update_v1_region_model_object(
+        document,
+        project=project,
+        region_model=region_model,
+    )
+    return changed
 
 
 def show_assembly_preview_object(document, assembly_model: AssemblyModel):
@@ -539,8 +607,8 @@ class V1AssemblyEditorTaskPanel:
         bench_top_row.addWidget(QtWidgets.QLabel("Repeat to daylight:"))
         bench_top_row.addWidget(self._bench_repeat_combo)
         bench_top_row.addWidget(QtWidgets.QLabel("Daylight mode:"))
-        self._bench_daylight_mode = QtWidgets.QLineEdit()
-        self._bench_daylight_mode.setPlaceholderText("terrain")
+        self._bench_daylight_mode = QtWidgets.QComboBox()
+        self._bench_daylight_mode.addItems(list(ASSEMBLY_DAYLIGHT_MODES))
         bench_top_row.addWidget(self._bench_daylight_mode)
         bench_top_row.addWidget(QtWidgets.QLabel("Max width:"))
         self._bench_daylight_max_width = QtWidgets.QLineEdit()
@@ -862,7 +930,8 @@ class V1AssemblyEditorTaskPanel:
         mode = str(params.get("bench_mode", "") or ("rows" if rows else "none")).strip().lower().replace("-", "_")
         self._bench_mode_combo.setCurrentText(mode if mode in ASSEMBLY_BENCH_MODES else "none")
         self._bench_repeat_combo.setCurrentText("1" if _truthy(params.get("repeat_first_bench_to_daylight")) else "0")
-        self._bench_daylight_mode.setText(str(params.get("daylight_mode", "") or ""))
+        daylight_mode = str(params.get("daylight_mode", "") or "off").strip().lower().replace("-", "_")
+        self._bench_daylight_mode.setCurrentText(daylight_mode if daylight_mode in ASSEMBLY_DAYLIGHT_MODES else "off")
         self._bench_daylight_max_width.setText(str(params.get("daylight_max_width", "") or ""))
         self._replace_bench_rows(rows)
 
@@ -871,7 +940,7 @@ class V1AssemblyEditorTaskPanel:
             return
         self._bench_mode_combo.setCurrentText("none")
         self._bench_repeat_combo.setCurrentText("0")
-        self._bench_daylight_mode.clear()
+        self._bench_daylight_mode.setCurrentText("off")
         self._bench_daylight_max_width.clear()
         self._bench_table.setRowCount(0)
 
@@ -910,7 +979,7 @@ class V1AssemblyEditorTaskPanel:
     def _load_bench_defaults(self) -> None:
         self._bench_mode_combo.setCurrentText("rows")
         self._bench_repeat_combo.setCurrentText("1")
-        self._bench_daylight_mode.setText("terrain")
+        self._bench_daylight_mode.setCurrentText("terrain")
         self._bench_daylight_max_width.setText("80.000")
         self._replace_bench_rows([{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}])
         self._set_status("Loaded bench defaults. Apply them to the selected side_slope row when ready.")
@@ -943,7 +1012,7 @@ class V1AssemblyEditorTaskPanel:
             "bench_rows": self._bench_table_rows(),
             "repeat_first_bench_to_daylight": self._bench_repeat_combo.currentText() == "1",
         }
-        daylight_mode = str(self._bench_daylight_mode.text() or "").strip()
+        daylight_mode = str(self._bench_daylight_mode.currentText() or "off").strip()
         max_width = str(self._bench_daylight_max_width.text() or "").strip()
         if daylight_mode:
             output["daylight_mode"] = daylight_mode

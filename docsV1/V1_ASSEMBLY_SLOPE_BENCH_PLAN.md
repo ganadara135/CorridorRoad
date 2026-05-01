@@ -198,6 +198,12 @@ Recommended `bench_mode` values:
 - `single`
 - `rows`
 
+Recommended `daylight_mode` values:
+
+- `off`: do not run daylight tie-in behavior.
+- `terrain`: search the existing ground TIN and clip/extend to the terrain daylight point.
+- `fixed_width`: keep the Assembly-defined bench/side-slope profile without terrain clipping.
+
 Recommended bench row fields:
 
 - `drop`
@@ -220,6 +226,7 @@ Do not add percent-to-decimal slope conversion code for bench migration unless a
 Assembly validation should warn when:
 
 - `bench_mode` is unknown
+- `daylight_mode` is unknown
 - `bench_rows` cannot be parsed
 - a bench row has non-positive width
 - `drop` is negative

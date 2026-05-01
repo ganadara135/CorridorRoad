@@ -21,7 +21,12 @@ from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     show_assembly_preview_object,
     starter_assembly_model_from_document,
 )
-from freecad.Corridor_Road.v1.models.source.assembly_model import AssemblyModel, SectionTemplate, TemplateComponent
+from freecad.Corridor_Road.v1.models.source.assembly_model import (
+    ASSEMBLY_DAYLIGHT_MODES,
+    AssemblyModel,
+    SectionTemplate,
+    TemplateComponent,
+)
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import find_v1_assembly_model, to_assembly_model
 
@@ -197,6 +202,45 @@ def test_bench_parameter_editor_merge_preserves_unknown_parameters() -> None:
     assert merged["bench_rows"][0]["width"] == 1.5
     assert merged["repeat_first_bench_to_daylight"] is True
     assert merged["daylight_mode"] == "terrain"
+
+
+def test_bench_daylight_modes_are_explicit_editor_choices() -> None:
+    assert ASSEMBLY_DAYLIGHT_MODES == ("off", "terrain", "fixed_width")
+
+
+def test_assembly_validation_warns_on_unknown_daylight_mode() -> None:
+    model = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="assembly",
+        active_template_id="template",
+        template_rows=[
+            SectionTemplate(
+                template_id="template",
+                template_kind="roadway",
+                label="Template",
+                component_rows=[
+                    TemplateComponent(
+                        "side-slope-left",
+                        "side_slope",
+                        side="left",
+                        width=3.0,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [{"drop": 2.0, "width": 1.2, "slope": -0.02, "post_slope": -0.5}],
+                            "repeat_first_bench_to_daylight": True,
+                            "daylight_mode": "target_surface",
+                            "daylight_max_width": 80.0,
+                        },
+                    )
+                ],
+            )
+        ],
+    )
+
+    messages = _validate_assembly_model(model)
+
+    assert "WARN: side_slope component side-slope-left has unknown daylight_mode target_surface." in messages
 
 
 def test_bench_component_note_summarizes_rows_and_daylight_context() -> None:

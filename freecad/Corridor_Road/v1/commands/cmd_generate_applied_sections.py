@@ -628,7 +628,11 @@ def _applied_section_preview_polylines(section, frame):
         for fg_point, subgrade_point in _matched_offset_point_pairs(section, "fg_surface", "subgrade_surface"):
             polylines.append(("subgrade_link", [fg_point, subgrade_point]))
     if fg_points:
-        polylines.extend(_applied_section_daylight_polylines(section, frame, fg_points))
+        side_slope_polylines = _applied_section_side_slope_point_polylines(section)
+        if side_slope_polylines:
+            polylines.extend(side_slope_polylines)
+        else:
+            polylines.extend(_applied_section_daylight_polylines(section, frame, fg_points))
     if polylines:
         return polylines
     return [("fallback_section", _applied_section_preview_points(section, frame))]
@@ -670,6 +674,58 @@ def _matched_offset_point_pairs(section, first_role: str, second_role: str):
         except Exception:
             pass
     return pairs
+
+
+def _applied_section_side_slope_point_polylines(section):
+    edge_rows = _applied_section_fg_edge_rows(section)
+    if not edge_rows:
+        return []
+    left_edge = edge_rows[-1]
+    right_edge = edge_rows[0]
+    point_rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") in {"side_slope_surface", "bench_surface", "daylight_marker"}
+    ]
+    if not point_rows:
+        return []
+    polylines = []
+    side_specs = [
+        ("left", left_edge, 1.0),
+        ("right", right_edge, -1.0),
+    ]
+    for side_label, edge, direction in side_specs:
+        edge_offset = float(getattr(edge, "lateral_offset", 0.0) or 0.0)
+        side_points = []
+        for point in point_rows:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+            if (offset - edge_offset) * float(direction) < -1.0e-9:
+                continue
+            side_points.append(point)
+        side_points.sort(key=lambda point: (float(getattr(point, "lateral_offset", 0.0) or 0.0) - edge_offset) * float(direction))
+        vectors = [_point_row_vector(edge)]
+        vectors.extend(_point_row_vector(point) for point in side_points)
+        vectors = _unique_preview_points([vector for vector in vectors if vector is not None])
+        if len(vectors) >= 2:
+            polylines.append((f"{side_label}_side_slope_points", vectors))
+    return polylines
+
+
+def _applied_section_fg_edge_rows(section):
+    rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "fg_surface"
+    ]
+    rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+    return rows
+
+
+def _point_row_vector(point):
+    try:
+        return App.Vector(float(point.x), float(point.y), float(point.z))
+    except Exception:
+        return None
 
 
 def _applied_section_daylight_polylines(section, frame, fg_points):
