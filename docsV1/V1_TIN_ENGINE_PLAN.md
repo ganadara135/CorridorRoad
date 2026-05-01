@@ -294,7 +294,28 @@ Architectural rule:
 
 Corridor-derived surfaces should use the same core TIN contracts as imported surfaces wherever possible.
 
-## 15. Relationship to Earthwork Balance
+## 15. Slope-Face Supplemental Sampling Rule
+
+The daylight surface mesher should preserve evaluated section breaklines.
+
+For adjacent applied sections, Build Corridor consumes the persisted `AppliedSection` point rows as source truth.
+
+The mesher should:
+
+- keep `daylight_marker` XY/Z values from `AppliedSection`
+- connect adjacent evaluated section rows by point order after harmonizing unequal side-slope row break parameters
+- keep supplemental mesh rows derived and non-editable
+- avoid upstream-priority span rules, fan cells, taper caps, and terrain stitches
+
+This prevents Build Corridor from creating a second daylight interpretation when neighboring stations resolve different daylight widths or final side-slope grades.
+
+Supplemental rows are derived mesh rows.
+
+When full section point rows do not match across a span, supplemental sampling may derive side-slope-only rows from the harmonized `side_slope_surface`, `bench_surface`, and `daylight_marker` profiles.
+
+They must not become editable `AppliedSection` source rows or modify daylight endpoints.
+
+## 16. Relationship to Earthwork Balance
 
 The earthwork balance subsystem depends on the TIN engine for:
 
@@ -306,25 +327,25 @@ The earthwork balance subsystem depends on the TIN engine for:
 
 Without a stable TIN engine, earthwork analysis will remain fragile.
 
-## 16. Relationship to Exchange
+## 17. Relationship to Exchange
 
 The TIN engine should map cleanly to exchange workflows.
 
-### 16.1 LandXML
+### 17.1 LandXML
 
 LandXML is a priority exchange target because it commonly carries TIN surfaces.
 
 The TIN engine should therefore preserve enough structure and metadata for reliable LandXML export and import normalization.
 
-### 16.2 DXF
+### 17.2 DXF
 
 DXF is useful for boundary and breakline ingestion, and for some drawing-oriented exports.
 
-### 16.3 IFC
+### 17.3 IFC
 
 IFC is not the main terrain exchange path, but TIN-derived outputs may still inform reference geometry workflows.
 
-## 17. Recommended Service Families
+## 18. Recommended Service Families
 
 Recommended conceptual service boundaries:
 
@@ -339,7 +360,7 @@ Recommended conceptual service boundaries:
 
 These names are conceptual; the important part is separation of responsibilities.
 
-## 18. Performance Strategy
+## 19. Performance Strategy
 
 TIN operations can become expensive, so the engine should support:
 
@@ -351,11 +372,11 @@ TIN operations can become expensive, so the engine should support:
 
 Performance work should not compromise correctness of the core contracts.
 
-## 19. Validation Rules
+## 20. Validation Rules
 
 The engine should validate both inputs and results.
 
-### 19.1 Input validation
+### 20.1 Input validation
 
 Examples:
 
@@ -364,7 +385,7 @@ Examples:
 - malformed polylines
 - non-closed boundaries where closure is required
 
-### 19.2 Surface validation
+### 20.2 Surface validation
 
 Examples:
 
@@ -373,7 +394,7 @@ Examples:
 - void-boundary inconsistencies
 - insufficient local density
 
-### 19.3 Sampling validation
+### 20.3 Sampling validation
 
 Examples:
 
@@ -381,7 +402,7 @@ Examples:
 - no triangle hit
 - ambiguous intersection or low confidence
 
-## 20. Anti-Patterns to Avoid
+## 21. Anti-Patterns to Avoid
 
 Avoid the following:
 
@@ -391,7 +412,7 @@ Avoid the following:
 - discarding breakline and boundary semantics too early
 - exporting surfaces from display meshes rather than normalized TIN contracts
 
-## 21. Recommended Follow-Up Documents
+## 22. Recommended Follow-Up Documents
 
 This TIN plan should be followed by:
 
@@ -400,7 +421,7 @@ This TIN plan should be followed by:
 3. `V1_SECTION_OUTPUT_SCHEMA.md`
 4. `V1_EXCHANGE_PLAN.md`
 
-## 22. Final Rule
+## 23. Final Rule
 
 In v1, TIN is not just a terrain import feature.
 

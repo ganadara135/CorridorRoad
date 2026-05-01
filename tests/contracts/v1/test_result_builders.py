@@ -2386,7 +2386,7 @@ def test_corridor_surface_geometry_service_uses_bench_breakline_points_for_dayli
     assert result.surface_kind == "daylight_surface"
     assert len(result.triangle_rows) == 4
     assert quality["bench_breakline_count"] == 2
-    assert quality["daylight_marker_count"] == 0
+    assert quality["daylight_marker_count"] == 2
     assert vertices["v0:right:r0:p0"].y == -3.5
     assert vertices["v0:right:r0:p2"].notes == "bench_surface"
     assert vertices["v0:right:r1:p2"].z == 8.99
@@ -2459,7 +2459,7 @@ def test_corridor_surface_geometry_service_orients_benched_daylight_triangles_up
     assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
 
 
-def test_corridor_surface_geometry_service_reties_side_slope_points_to_cut_daylight() -> None:
+def test_corridor_surface_geometry_service_preserves_applied_daylight_line_when_eg_exists() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -2535,9 +2535,8 @@ def test_corridor_surface_geometry_service_reties_side_slope_points_to_cut_dayli
     vertices = result.vertex_map()
     quality = {row.kind: row.value for row in result.quality_rows}
     assert vertices["v0:right:r0:p0"].y == -4.0
-    assert abs(vertices["v0:right:r0:p1"].y - -8.0) < 1.0e-6
-    assert abs(vertices["v0:right:r0:p1"].z - 12.0) < 1.0e-6
-    assert min(vertex.z for vertex in result.vertex_rows) >= 10.0
+    assert abs(vertices["v0:right:r0:p1"].y - -7.5) < 1.0e-6
+    assert abs(vertices["v0:right:r0:p1"].z - 8.0) < 1.0e-6
     assert quality["daylight_marker_count"] == 2
 
 
@@ -2617,14 +2616,14 @@ def test_corridor_surface_geometry_service_preserves_bench_breakline_when_retyin
     )
 
     quality = {row.kind: row.value for row in result.quality_rows}
-    bench_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "bench_surface"]
     assert quality["bench_breakline_count"] == 2
-    assert len(bench_vertices) == 2
-    assert all(vertex.z > 10.0 for vertex in bench_vertices)
+    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
+    assert daylight_vertices
+    assert all(abs(vertex.y - -8.5) < 1.0e-6 for vertex in daylight_vertices)
     assert len(result.triangle_rows) >= 4
 
 
-def test_corridor_surface_geometry_service_ties_benched_profile_to_terrain_after_bench() -> None:
+def test_corridor_surface_geometry_service_preserves_benched_profile_daylight_after_bench() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -2704,7 +2703,7 @@ def test_corridor_surface_geometry_service_ties_benched_profile_to_terrain_after
     daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
     assert daylight_vertices
     assert all(vertex.y < -8.5 for vertex in daylight_vertices)
-    assert all(abs(vertex.z - 12.0) < 1.0e-6 for vertex in daylight_vertices)
+    assert all(abs(vertex.z - 7.97) < 1.0e-6 for vertex in daylight_vertices)
 
 
 def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has_fewer_breaks() -> None:
@@ -2768,7 +2767,7 @@ def test_corridor_surface_geometry_service_keeps_bench_when_adjacent_station_has
     assert min(_triangle_normal_z(result, triangle) for triangle in result.triangle_rows) > 0.0
 
 
-def test_corridor_surface_geometry_service_densifies_daylight_edge_between_station_contacts() -> None:
+def test_corridor_surface_geometry_service_uses_supplemental_sampling_between_daylight_contacts() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -2836,6 +2835,7 @@ def test_corridor_surface_geometry_service_densifies_daylight_edge_between_stati
             applied_section_set=applied_section_set,
             surface_id="cor-bench-densified-contact:daylight",
             existing_ground_surface=existing_ground,
+            supplemental_sampling_enabled=True,
         )
     )
 
@@ -2844,7 +2844,72 @@ def test_corridor_surface_geometry_service_densifies_daylight_edge_between_stati
     assert len(daylight_vertices) > 2
     assert len(result.triangle_rows) > 4
     assert any(10.0 < vertex.z < 13.0 for vertex in daylight_vertices)
-    assert quality["daylight_marker_count"] == 2
+    assert quality["daylight_marker_count"] > 2
+
+
+def test_corridor_surface_geometry_service_supplemental_sampling_keeps_mismatched_side_slope_rows() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-bench-supplemental-mismatch",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-bench-supplemental-mismatch",
+        corridor_id="cor-bench-supplemental-mismatch",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -18.0, 10.0, "daylight_marker", -18.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("slope:right:1", 20.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 20.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 20.0, -9.0, 8.2, "daylight_marker", -9.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_daylight_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-bench-supplemental-mismatch:daylight",
+            supplemental_sampling_enabled=True,
+            supplemental_sampling_max_spacing=5.0,
+        )
+    )
+
+    quality = {row.kind: row.value for row in result.quality_rows}
+    provenance = {row.source_kind for row in result.provenance_rows}
+    assert quality["station_count"] > 2
+    assert quality["daylight_marker_count"] > 2
+    assert min(vertex.y for vertex in result.vertex_rows) <= -17.999999
+    assert "applied_section_side_slope_points" in provenance
+    assert not any("supplemental" in vertex.source_point_ref and vertex.notes == "" for vertex in result.vertex_rows)
 
 
 def test_corridor_surface_geometry_service_uses_shared_station_breaks_across_adjacent_daylight_spans() -> None:
@@ -2922,7 +2987,7 @@ def test_corridor_surface_geometry_service_uses_shared_station_breaks_across_adj
     assert not any(triangle.notes == "daylight_transition_cap" for triangle in result.triangle_rows)
 
 
-def test_corridor_surface_geometry_service_does_not_fill_beyond_shorter_daylight_row() -> None:
+def test_corridor_surface_geometry_service_connects_applied_daylight_rows_without_span_rule() -> None:
     corridor = CorridorModel(
         schema_version=1,
         project_id="proj-1",
@@ -2949,7 +3014,7 @@ def test_corridor_surface_geometry_service_does_not_fill_beyond_shorter_daylight
                 surface_right_width=4.0,
                 point_rows=[
                     AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
-                    AppliedSectionPoint("daylight:right", 0.0, -8.0, 10.0, "daylight_marker", -8.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -18.0, 10.0, "daylight_marker", -18.0),
                 ],
             ),
             AppliedSection(
@@ -2960,7 +3025,7 @@ def test_corridor_surface_geometry_service_does_not_fill_beyond_shorter_daylight
                 surface_right_width=4.0,
                 point_rows=[
                     AppliedSectionPoint("slope:right:1", 10.0, -7.0, 8.5, "side_slope_surface", -7.0),
-                    AppliedSectionPoint("daylight:right", 10.0, -18.0, 11.0, "daylight_marker", -18.0),
+                    AppliedSectionPoint("daylight:right", 10.0, -8.0, 9.0, "daylight_marker", -8.0),
                 ],
             ),
         ],
@@ -2991,9 +3056,14 @@ def test_corridor_surface_geometry_service_does_not_fill_beyond_shorter_daylight
         )
     )
 
-    daylight_vertices = [vertex for vertex in result.vertex_rows if vertex.notes == "daylight_marker"]
-    assert daylight_vertices
-    assert min(vertex.y for vertex in daylight_vertices) >= -8.000001
+    vertices = list(result.vertex_rows)
+    miter_vertices = [vertex for vertex in vertices if "upstream-slope-miter" in vertex.source_point_ref]
+    quality = {row.kind: row.value for row in result.quality_rows}
+    assert not miter_vertices
+    assert min(vertex.y for vertex in vertices) <= -17.999999
+    assert not any(triangle.triangle_id.endswith(":fan") for triangle in result.triangle_rows)
+    assert not any(triangle.triangle_kind == "corridor_daylight_taper_cap" for triangle in result.triangle_rows)
+    assert "daylight_taper_cap_triangle_count" not in quality
 
 
 def test_corridor_surface_geometry_service_starts_daylight_from_ditch_outer_edges() -> None:

@@ -278,8 +278,8 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         preview = doc.getObject("V1CorridorDesignSurfacePreview")
         assert preview is not None
         assert preview.CRRecordKind == "v1_corridor_surface_preview"
-        assert int(preview.VertexCount) == 4
-        assert int(preview.TriangleCount) == 2
+        assert int(preview.VertexCount) == 10
+        assert int(preview.TriangleCount) == 8
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
         assert centerline is not None
         assert centerline.CRRecordKind == "v1_corridor_centerline_preview"
@@ -289,35 +289,35 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
         assert subgrade_preview is not None
         assert subgrade_preview.CRRecordKind == "v1_corridor_surface_preview"
-        assert int(subgrade_preview.VertexCount) == 4
-        assert int(subgrade_preview.TriangleCount) == 2
+        assert int(subgrade_preview.VertexCount) == 10
+        assert int(subgrade_preview.TriangleCount) == 8
         daylight_preview = doc.getObject("V1CorridorDaylightSurfacePreview")
         assert daylight_preview is not None
         assert daylight_preview.CRRecordKind == "v1_corridor_surface_preview"
-        assert int(daylight_preview.VertexCount) == 8
-        assert int(daylight_preview.TriangleCount) == 4
+        assert int(daylight_preview.VertexCount) == 20
+        assert int(daylight_preview.TriangleCount) == 16
         assert int(daylight_preview.EGIntersectionCount) == 0
         assert int(daylight_preview.EGTieInHitCount) == 0
-        assert int(daylight_preview.SlopeFaceFallbackCount) == 4
-        assert int(daylight_preview.SlopeFaceNoExistingGroundCount) == 4
+        assert int(daylight_preview.SlopeFaceFallbackCount) == 10
+        assert int(daylight_preview.SlopeFaceNoExistingGroundCount) == 10
         assert int(daylight_preview.SlopeFaceNoEGHitCount) == 0
-        assert "fallbacks: 4" in daylight_preview.SlopeFaceDiagnosticSummary
-        assert "no EG TIN: 4" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "fallbacks: 10" in daylight_preview.SlopeFaceDiagnosticSummary
+        assert "no EG TIN: 10" in daylight_preview.SlopeFaceDiagnosticSummary
         assert "STA 0.000 L no EG TIN" in daylight_preview.SlopeFaceIssueStations
         assert "STA 20.000 R no EG TIN" in daylight_preview.SlopeFaceIssueStations
-        assert len(list(daylight_preview.SlopeFaceIssueRows)) == 4
+        assert len(list(daylight_preview.SlopeFaceIssueRows)) == 10
         issue_rows = corridor_slope_face_issue_rows(doc)
         assert issue_rows[0]["station_label"] == "STA 0.000"
         assert issue_rows[0]["side"] == "L"
         assert issue_rows[0]["reason"] == "no EG TIN"
         assert issue_rows[0]["marker_object"] == "ReviewIssueSlopeFaceIssue001L"
-        assert issue_rows[-1]["station_label"] == "STA 20.000"
+        assert issue_rows[-1]["station_label"] == "row 5"
         assert issue_rows[-1]["side"] == "R"
         fallback_markers = doc.getObject("ReviewIssueSlopeFaceFallbackMarkers")
         assert fallback_markers is not None
         assert fallback_markers.V1ObjectType == "ReviewIssue"
         assert fallback_markers.IssueKind == "slope_face_tie_in"
-        assert int(fallback_markers.MarkerCount) == 4
+        assert int(fallback_markers.MarkerCount) == 10
         first_issue_marker = doc.getObject("ReviewIssueSlopeFaceIssue001L")
         assert first_issue_marker is not None
         assert first_issue_marker.V1ObjectType == "ReviewIssue"
@@ -365,6 +365,42 @@ def test_build_corridor_panel_has_daylight_contact_marker_checkbox() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_build_corridor_panel_has_supplemental_sampling_checked_by_default() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1BuildCorridorTaskPanel(document=doc)
+        checks = panel.form.findChildren(QtWidgets.QCheckBox)
+        sampling_checks = [check for check in checks if check.text() == "Supplemental Sampling"]
+
+        assert len(sampling_checks) == 1
+        assert sampling_checks[0].isChecked() is True
+        assert panel._use_supplemental_sampling() is True
+        sampling_checks[0].setChecked(False)
+        assert panel._use_supplemental_sampling() is False
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_can_disable_supplemental_sampling() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+
+        preview = doc.getObject("V1CorridorDesignSurfacePreview")
+        daylight_preview = doc.getObject("V1CorridorDaylightSurfacePreview")
+        assert preview is not None
+        assert daylight_preview is not None
+        assert int(preview.VertexCount) == 4
+        assert int(preview.TriangleCount) == 2
+        assert int(daylight_preview.VertexCount) == 8
+        assert int(daylight_preview.TriangleCount) == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
     doc, project = _new_project_doc()
     try:
@@ -381,12 +417,12 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         assert [row["role"] for row in rows] == ["centerline", "design", "subgrade", "daylight", "drainage"]
         assert [row["status"] for row in rows] == ["ready", "ready", "ready", "ready", "missing"]
         assert rows[0]["triangle_or_point_count"] == 2
-        assert rows[1]["vertex_count"] == 4
-        assert rows[1]["triangle_or_point_count"] == 2
+        assert rows[1]["vertex_count"] == 10
+        assert rows[1]["triangle_or_point_count"] == 8
         assert "2 STA" in str(rows[1]["applied_section_summary"])
         assert rows[1]["applied_section_diagnostics"] == "ok"
-        assert "fallbacks: 4" in str(rows[3]["notes"])
-        assert "no EG TIN: 4" in str(rows[3]["notes"])
+        assert "fallbacks: 10" in str(rows[3]["notes"])
+        assert "no EG TIN: 10" in str(rows[3]["notes"])
         assert "STA 0.000 L no EG TIN" in str(rows[3]["notes"])
         assert "STA 20.000 R no EG TIN" in str(rows[3]["notes"])
         assert preferred_corridor_build_review_row_index(rows) == 1
@@ -513,6 +549,7 @@ def test_slope_face_markers_include_daylight_contact_vertices() -> None:
         assert marker is not None
         assert marker.Label == "Slope Face Daylight / EG Intersections"
         assert int(marker.MarkerCount) == 2
+        assert build_corridor_command._object_visibility(marker) is False
         assert marker in created
         shown = set_corridor_build_daylight_contact_marker_visibility(doc, True)
         assert shown == marker
@@ -520,7 +557,7 @@ def test_slope_face_markers_include_daylight_contact_vertices() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_daylight_contact_marker_visibility_helper_targets_contact_marker_only() -> None:
+def test_daylight_contact_marker_visibility_helper_targets_daylight_marker_objects() -> None:
     class FakeView:
         def __init__(self):
             self.Visibility = False
@@ -533,11 +570,14 @@ def test_daylight_contact_marker_visibility_helper_targets_contact_marker_only()
     class FakeDocument:
         def __init__(self):
             self.contact = FakeObject("ReviewIssueSlopeFaceIntersectionMarkers")
+            self.sampled = FakeObject("ReviewIssueSlopeFaceSampledEdgeMarkers")
             self.fallback = FakeObject("ReviewIssueSlopeFaceFallbackMarkers")
 
         def getObject(self, name):
             if name == self.contact.Name:
                 return self.contact
+            if name == self.sampled.Name:
+                return self.sampled
             if name == self.fallback.Name:
                 return self.fallback
             return None
@@ -548,7 +588,8 @@ def test_daylight_contact_marker_visibility_helper_targets_contact_marker_only()
 
     assert shown == doc.contact
     assert doc.contact.ViewObject.Visibility is True
-    assert doc.fallback.ViewObject.Visibility is False
+    assert doc.sampled.ViewObject.Visibility is True
+    assert doc.fallback.ViewObject.Visibility is True
 
 
 def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
@@ -738,11 +779,11 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.CRRecordKind == "v1_corridor_surface_preview"
         assert drainage_preview.SurfaceRole == "drainage"
         assert drainage_preview.SurfaceKind == "drainage_surface"
-        assert int(drainage_preview.VertexCount) == 8
-        assert int(drainage_preview.TriangleCount) == 6
+        assert int(drainage_preview.VertexCount) == 20
+        assert int(drainage_preview.TriangleCount) == 24
         rows = corridor_build_review_rows(doc)
         assert rows[4]["status"] == "ready"
-        assert rows[4]["vertex_count"] == 8
+        assert rows[4]["vertex_count"] == 20
     finally:
         App.closeDocument(doc.Name)
 

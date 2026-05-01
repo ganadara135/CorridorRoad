@@ -352,6 +352,7 @@ Current implementation status:
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
 - [x] split slope-face fallback diagnostics into missing EG TIN and no EG hit within search width
 - [x] expose Build Corridor output review rows for centerline, design surface, subgrade surface, slope-face surface, and drainage surface previews
+- [x] preserve AppliedSection daylight breaklines and use supplemental sampling for slope-face span detail
 - [ ] build full design, subgrade, and daylight TIN geometry from complete semantic section points
 - [ ] add clipped review/export surface variants
 
@@ -410,7 +411,59 @@ But they must not become the new surface source.
 
 Review systems should inspect surface identity and provenance, not mutate surface definitions directly.
 
-## 20. Diagnostics
+## 20. Slope-Face Supplemental Sampling Rule
+
+### 20.1 Purpose
+
+This rule records the v1 daylight surface behavior for adjacent applied-section spans.
+
+### 20.2 Core Rule
+
+For a station span from section `i` to section `i+1`, the evaluated `AppliedSection` rows own the daylight breakline positions.
+
+The mesher should use:
+
+- each section's persisted `side_slope_surface`, `bench_surface`, and `daylight_marker` point rows as source truth
+- index-wise connection after adjacent side-slope rows are harmonized by their persisted break parameters
+- supplemental sampling rows when a station span needs extra detail
+
+Do not extend a shorter receiving row with a derived miter point.
+
+Do not project existing `daylight_marker` rows back to terrain during Build Corridor.
+
+Do not apply a separate upstream station span rule inside Build Corridor.
+
+### 20.3 Reason
+
+Adjacent stations can resolve different daylight widths, bench counts, and final side-slope grades.
+
+Build Corridor is an output meshing step, not a second daylight solver.
+
+If it moves daylight endpoints, the preview can diverge from Applied Sections and hide the actual evaluation result.
+
+Supplemental sampling adds intermediate derived section rows without changing source breaklines.
+
+### 20.4 Implementation Notes
+
+If adjacent side-slope rows have different point counts, the mesher should first resample both rows onto a shared parameter set derived from the two persisted polylines.
+
+If a supplemental section cannot copy the full `AppliedSection.point_rows` because the two source sections have different point counts or roles, it may synthesize only derived `side_slope_surface`, `bench_surface`, and `daylight_marker` rows from the harmonized side-slope profiles.
+
+The current preview implementation does not create `upstream-slope-miter` points.
+
+Do not treat display fills or terrain stitches as source truth.
+
+Terrain stitch strips may be used only as narrow contact visualization where daylight points already match existing ground.
+
+### 20.5 Non-Goals
+
+- Do not globally overwrite downstream Assembly side-slope parameters.
+- Do not create wide terrain fill surfaces to hide missing daylight evaluation.
+- Do not extend downstream rows to make the current span look wider.
+- Do not add fan cells, taper caps, or terrain stitches to hide a missing section evaluation.
+- Do not edit `AppliedSection` source rows from surface meshing.
+
+## 21. Diagnostics
 
 Diagnostics should be produced when:
 
@@ -430,7 +483,7 @@ Recommended diagnostic fields:
 - `message`
 - `notes`
 
-## 21. Identity and Provenance
+## 22. Identity and Provenance
 
 Surface objects should preserve:
 
@@ -448,7 +501,7 @@ This is important for:
 - exchange packaging
 - AI-assisted alternative evaluation
 
-## 22. Validation Rules
+## 23. Validation Rules
 
 Validation should check for:
 
@@ -461,7 +514,7 @@ Validation should check for:
 
 Validation results should be recorded in `diagnostic_rows`.
 
-## 23. AI and Alternative Design
+## 24. AI and Alternative Design
 
 AI-assisted workflows may propose:
 
@@ -474,7 +527,7 @@ But accepted changes must still flow through normalized corridor and surface rec
 
 The AI layer must not keep a hidden surface world outside the TIN and surface contracts.
 
-## 24. Anti-Patterns
+## 25. Anti-Patterns
 
 The following should be avoided:
 
@@ -484,7 +537,7 @@ The following should be avoided:
 - hiding comparison logic inside one earthwork-only tool
 - rebuilding surface meaning independently in every consumer
 
-## 25. Summary
+## 26. Summary
 
 In v1, `SurfaceModel` is the derived result model for:
 

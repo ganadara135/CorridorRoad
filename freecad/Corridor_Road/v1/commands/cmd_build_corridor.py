@@ -327,6 +327,7 @@ def apply_v1_corridor_model(
     corridor_model=None,
     build_surfaces: bool = True,
     show_daylight_contact_markers: bool = True,
+    supplemental_sampling_enabled: bool = True,
     progress_callback=None,
 ):
     """Persist a v1 CorridorModel result object."""
@@ -371,6 +372,7 @@ def apply_v1_corridor_model(
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
+            supplemental_sampling_enabled=supplemental_sampling_enabled,
         )
         _notify_progress(progress_callback, 82, "Creating subgrade surface preview...")
         create_corridor_subgrade_surface_preview(
@@ -378,6 +380,7 @@ def apply_v1_corridor_model(
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
+            supplemental_sampling_enabled=supplemental_sampling_enabled,
         )
         _notify_progress(progress_callback, 86, "Creating slope face preview...")
         create_corridor_daylight_surface_preview(
@@ -386,6 +389,7 @@ def apply_v1_corridor_model(
             corridor_model=corridor_model,
             surface_model=surface_model,
             show_daylight_contact_markers=show_daylight_contact_markers,
+            supplemental_sampling_enabled=supplemental_sampling_enabled,
         )
         _notify_progress(progress_callback, 90, "Creating drainage preview...")
         create_corridor_drainage_surface_preview(
@@ -393,6 +397,7 @@ def apply_v1_corridor_model(
             project=prj,
             corridor_model=corridor_model,
             surface_model=surface_model,
+            supplemental_sampling_enabled=supplemental_sampling_enabled,
         )
     try:
         _notify_progress(progress_callback, 94, "Recomputing document...")
@@ -736,14 +741,15 @@ def set_all_corridor_build_preview_visibility(document=None, visible: bool = Tru
 
 
 def set_corridor_build_daylight_contact_marker_visibility(document=None, visible: bool = True):
-    """Set visibility for the large daylight/EG contact marker object."""
+    """Set visibility for daylight marker objects created by Build Corridor."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
-    obj = _corridor_build_daylight_contact_marker_object(doc)
-    if obj is None:
+    objects = _corridor_build_daylight_marker_objects(doc)
+    if not objects:
         return None
-    _set_object_visibility(obj, bool(visible))
-    return obj
+    for obj in objects:
+        _set_object_visibility(obj, bool(visible))
+    return _corridor_build_daylight_contact_marker_object(doc) or objects[0]
 
 
 def preferred_corridor_build_review_row_index(
@@ -847,6 +853,7 @@ def create_corridor_design_surface_preview(
     project=None,
     corridor_model=None,
     surface_model=None,
+    supplemental_sampling_enabled: bool = False,
 ):
     """Create or update the first design-surface mesh preview for a corridor."""
 
@@ -865,6 +872,7 @@ def create_corridor_design_surface_preview(
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
+                supplemental_sampling_enabled=supplemental_sampling_enabled,
             )
         )
     except Exception:
@@ -897,6 +905,7 @@ def create_corridor_subgrade_surface_preview(
     project=None,
     corridor_model=None,
     surface_model=None,
+    supplemental_sampling_enabled: bool = False,
 ):
     """Create or update the first subgrade-surface mesh preview for a corridor."""
 
@@ -915,6 +924,7 @@ def create_corridor_subgrade_surface_preview(
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
+                supplemental_sampling_enabled=supplemental_sampling_enabled,
             )
         )
     except Exception:
@@ -948,6 +958,7 @@ def create_corridor_daylight_surface_preview(
     corridor_model=None,
     surface_model=None,
     show_daylight_contact_markers: bool = True,
+    supplemental_sampling_enabled: bool = False,
 ):
     """Create or update the first slope-face mesh preview for a corridor."""
 
@@ -967,6 +978,7 @@ def create_corridor_daylight_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 existing_ground_surface=_resolve_corridor_existing_ground_tin_surface(doc),
+                supplemental_sampling_enabled=supplemental_sampling_enabled,
             )
         )
     except Exception:
@@ -1008,6 +1020,7 @@ def create_corridor_drainage_surface_preview(
     project=None,
     corridor_model=None,
     surface_model=None,
+    supplemental_sampling_enabled: bool = False,
 ):
     """Create or update the first ditch/drainage mesh preview for a corridor."""
 
@@ -1029,6 +1042,7 @@ def create_corridor_drainage_surface_preview(
                 corridor=corridor_model,
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
+                supplemental_sampling_enabled=supplemental_sampling_enabled,
             )
         )
     except Exception:
@@ -1125,6 +1139,9 @@ class V1BuildCorridorTaskPanel:
         drainage_tab = QtWidgets.QWidget()
         drainage_layout = QtWidgets.QVBoxLayout(drainage_tab)
         drainage_layout.setContentsMargins(8, 8, 8, 8)
+        options_tab = QtWidgets.QWidget()
+        options_layout = QtWidgets.QVBoxLayout(options_tab)
+        options_layout.setContentsMargins(8, 8, 8, 8)
         visibility_tab = QtWidgets.QWidget()
         visibility_layout = QtWidgets.QVBoxLayout(visibility_tab)
         visibility_layout.setContentsMargins(8, 8, 8, 8)
@@ -1132,6 +1149,7 @@ class V1BuildCorridorTaskPanel:
         tabs.addTab(results_tab, "Results")
         tabs.addTab(issues_tab, "Slope Issues")
         tabs.addTab(drainage_tab, "Drainage")
+        tabs.addTab(options_tab, "Options")
         tabs.addTab(visibility_tab, "Visibility")
         layout.addWidget(tabs, 1)
         guided_label = QtWidgets.QLabel("Guided Review")
@@ -1224,6 +1242,16 @@ class V1BuildCorridorTaskPanel:
             pass
         self._drainage_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_drainage_review_row(row_index))
         drainage_layout.addWidget(self._drainage_table, 1)
+        sampling_label = QtWidgets.QLabel("Surface Sampling")
+        sampling_label.setToolTip("Control generated Build Corridor mesh rows between source Applied Section stations.")
+        options_layout.addWidget(sampling_label)
+        self._supplemental_sampling_check = QtWidgets.QCheckBox("Supplemental Sampling")
+        self._supplemental_sampling_check.setToolTip(
+            "Automatically add generated mesh rows inside triggered station spans for cleaner corridor surfaces."
+        )
+        self._supplemental_sampling_check.setChecked(True)
+        options_layout.addWidget(self._supplemental_sampling_check)
+        options_layout.addStretch(1)
         visibility_label = QtWidgets.QLabel("Preview Visibility")
         visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
         visibility_layout.addWidget(visibility_label)
@@ -1316,6 +1344,7 @@ class V1BuildCorridorTaskPanel:
                 document=self.document,
                 corridor_model=result,
                 show_daylight_contact_markers=self._show_daylight_contact_markers(),
+                supplemental_sampling_enabled=self._use_supplemental_sampling(),
                 progress_callback=self._set_progress,
             )
             self._set_progress(96, "Reading surface summary...")
@@ -1357,6 +1386,15 @@ class V1BuildCorridorTaskPanel:
         except Exception:
             return
         _process_panel_events()
+
+    def _use_supplemental_sampling(self) -> bool:
+        check = getattr(self, "_supplemental_sampling_check", None)
+        if check is None:
+            return True
+        try:
+            return bool(check.isChecked())
+        except Exception:
+            return True
 
     def _open_structure_output_panel(self) -> bool:
         try:
@@ -2109,6 +2147,29 @@ def _corridor_build_daylight_contact_marker_object(document):
         return None
 
 
+def _corridor_build_daylight_marker_objects(document) -> list[object]:
+    if document is None:
+        return []
+    names = (
+        "ReviewIssueSlopeFaceIntersectionMarkers",
+        "ReviewIssueSlopeFaceSampledEdgeMarkers",
+        "ReviewIssueSlopeFaceFallbackMarkers",
+    )
+    objects = []
+    for name in names:
+        try:
+            obj = document.getObject(name)
+        except Exception:
+            obj = None
+        if obj is not None:
+            objects.append(obj)
+    for obj in _corridor_build_issue_marker_objects(document):
+        name = str(getattr(obj, "Name", "") or "")
+        if name.startswith("ReviewIssueSlopeFaceIssue"):
+            objects.append(obj)
+    return objects
+
+
 def _set_object_visibility(obj, visible: bool) -> None:
     if obj is None:
         return
@@ -2198,10 +2259,11 @@ def _create_slope_face_diagnostic_markers(
     if not status_points:
         _remove_slope_face_diagnostic_markers(document)
         return []
+    daylight_marker_color = (0.10, 0.85, 0.25)
     marker_specs = [
-        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face Daylight / EG Intersections", (0.10, 0.85, 0.25), 1.8),
-        ("sampled_outer_edge", "ReviewIssueSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", (1.00, 0.72, 0.10)),
-        ("fallback", "ReviewIssueSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", (1.00, 0.18, 0.12)),
+        ("intersection", "ReviewIssueSlopeFaceIntersectionMarkers", "Slope Face Daylight / EG Intersections", daylight_marker_color, 1.8),
+        ("sampled_outer_edge", "ReviewIssueSlopeFaceSampledEdgeMarkers", "Slope Face Outer Edge Samples", daylight_marker_color),
+        ("fallback", "ReviewIssueSlopeFaceFallbackMarkers", "Slope Face Fallback / No Hit", daylight_marker_color),
     ]
     radius = _marker_radius([point for points in status_points.values() for point in points])
     created = []
@@ -2220,8 +2282,7 @@ def _create_slope_face_diagnostic_markers(
             corridor_model=corridor_model,
         )
         if obj is not None:
-            if status_key == "intersection":
-                _set_object_visibility(obj, bool(show_daylight_contact_markers))
+            _set_object_visibility(obj, bool(show_daylight_contact_markers))
             created.append(obj)
             try:
                 from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -2237,6 +2298,7 @@ def _create_slope_face_diagnostic_markers(
             corridor_model=corridor_model,
             applied_section_set=applied_section_set,
             radius=radius,
+            visible=show_daylight_contact_markers,
         )
     )
     return created
@@ -2278,6 +2340,7 @@ def _create_slope_face_individual_issue_markers(
     corridor_model=None,
     applied_section_set=None,
     radius: float = 0.5,
+    visible: bool = True,
 ):
     """Create one small marker object for each station-side slope-face issue."""
 
@@ -2300,7 +2363,7 @@ def _create_slope_face_individual_issue_markers(
             label=f"Slope Face Issue - {row.get('station_label', '')} {row.get('side', '')}",
             points=[point],
             radius=max(float(radius or 0.5) * 1.6, 0.3),
-            color=(1.00, 0.02, 0.02),
+            color=(0.10, 0.85, 0.25),
             surface=surface,
             corridor_model=corridor_model,
         )
@@ -2309,6 +2372,7 @@ def _create_slope_face_individual_issue_markers(
         _set_preview_property(obj, "IssueStation", str(row.get("station_label", "") or ""))
         _set_preview_property(obj, "IssueSide", str(row.get("side", "") or ""))
         _set_preview_property(obj, "IssueReason", str(row.get("reason", "") or ""))
+        _set_object_visibility(obj, bool(visible))
         created.append(obj)
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree

@@ -5,10 +5,17 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from ...models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from ...models.result.applied_section_set import AppliedSectionSet
 from ...models.result.corridor_model import CorridorModel
 from ...models.result.tin_surface import TINProvenanceRow, TINQualityRow, TINSurface, TINTriangle, TINVertex
 from ..evaluation.tin_sampling_service import TinSamplingService
+
+
+SUPPLEMENTAL_SAMPLING_MAX_SPACING = 5.0
+SUPPLEMENTAL_DAYLIGHT_WIDTH_DELTA_THRESHOLD = 1.5
+SUPPLEMENTAL_SLOPE_DELTA_THRESHOLD = 0.05
+SUPPLEMENTAL_FRAME_Z_DELTA_THRESHOLD = 0.5
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,8 @@ class CorridorDesignSurfaceGeometryRequest:
     surface_id: str
     fallback_half_width: float = 6.0
     existing_ground_surface: TINSurface | None = None
+    supplemental_sampling_enabled: bool = False
+    supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING
 
 
 class CorridorSurfaceGeometryService:
@@ -76,8 +85,8 @@ class CorridorSurfaceGeometryService:
     def build_daylight_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
         """Build first-slice slope-face strips from design edges and side-slope policy."""
 
-        frame_rows = _frame_rows(request.applied_section_set)
-        sections = _section_rows(request.applied_section_set)
+        sections = _section_rows_for_request(request)
+        frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor slope-face surface.")
         fallback_half_width = max(float(request.fallback_half_width or 0.0), 0.1)
@@ -88,8 +97,8 @@ class CorridorSurfaceGeometryService:
         )
         if point_surface is not None:
             return point_surface
-        edge_rows = _daylight_inner_edge_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
-        daylight_rows = _daylight_rows(request.applied_section_set)
+        edge_rows = _daylight_inner_edge_rows_for_sections(sections, fallback_half_width=fallback_half_width)
+        daylight_rows = _daylight_rows_for_sections(sections)
         sampling_service = TinSamplingService()
         vertices: list[TINVertex] = []
         triangles: list[TINTriangle] = []
@@ -269,12 +278,12 @@ class CorridorSurfaceGeometryService:
     ) -> TINSurface:
         """Build a two-edge ribbon from applied-section frames."""
 
-        frame_rows = _frame_rows(request.applied_section_set)
+        sections = _section_rows_for_request(request)
+        frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor surface.")
 
         fallback_half_width = max(float(request.fallback_half_width or 0.0), 0.1)
-        sections = _section_rows(request.applied_section_set)
         point_grid = _section_point_grid(sections, point_role=point_role)
         if point_grid:
             return _build_surface_from_point_grid(
@@ -290,7 +299,7 @@ class CorridorSurfaceGeometryService:
 
         vertices: list[TINVertex] = []
         triangles: list[TINTriangle] = []
-        width_rows = _surface_width_rows(request.applied_section_set, fallback_half_width=fallback_half_width)
+        width_rows = _surface_width_rows_for_sections(sections, fallback_half_width=fallback_half_width)
         for index, frame in enumerate(frame_rows):
             section = sections[index]
             angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
@@ -462,17 +471,9 @@ def _build_daylight_surface_from_side_slope_points(
                 side_slope_point_count += 1 if role == "side_slope_surface" else 0
                 daylight_marker_count += 1 if role == "daylight_marker" else 0
         for section_index in range(len(grid) - 1):
-            first_row, second_row = _resampled_side_slope_span_rows(
-                grid[section_index],
-                grid[section_index + 1],
-            )
-            if len(first_row) < 2 or len(second_row) < 2:
+            mesh_rows = list(_harmonized_side_slope_pair_rows(grid[section_index], grid[section_index + 1]))
+            if len(mesh_rows[0]) < 2 or len(mesh_rows[1]) < 2:
                 continue
-            mesh_rows = _densified_side_slope_span_rows(
-                first_row,
-                second_row,
-                existing_ground_surface=request.existing_ground_surface,
-            )
             for row_index, points in enumerate(mesh_rows):
                 for point_index, point in enumerate(points):
                     vertices.append(
@@ -492,7 +493,11 @@ def _build_daylight_surface_from_side_slope_points(
                     p01 = f"v{section_index}:{side_label}:r{row_index}:p{point_index + 1}"
                     p10 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index}"
                     p11 = f"v{section_index}:{side_label}:r{row_index + 1}:p{point_index + 1}"
-                    _append_side_slope_grid_cell_triangles(
+                    if _same_section_point_xy(mesh_rows[row_index][point_index], mesh_rows[row_index][point_index + 1]):
+                        continue
+                    if _same_section_point_xy(mesh_rows[row_index + 1][point_index], mesh_rows[row_index + 1][point_index + 1]):
+                        continue
+                    _append_side_slope_strip_triangles(
                         triangles,
                         triangle_id_prefix=f"span:{section_index}:{side_label}:r{row_index}:p{point_index}",
                         side_label=side_label,
@@ -500,10 +505,6 @@ def _build_daylight_surface_from_side_slope_points(
                         p01=p01,
                         p10=p10,
                         p11=p11,
-                        q00=mesh_rows[row_index][point_index],
-                        q01=mesh_rows[row_index][point_index + 1],
-                        q10=mesh_rows[row_index + 1][point_index],
-                        q11=mesh_rows[row_index + 1][point_index + 1],
                         triangle_kind="corridor_daylight_bench_strip",
                     )
     if not vertices or not triangles:
@@ -568,39 +569,111 @@ def _append_side_slope_strip_triangles(
     triangles.append(TINTriangle(f"{triangle_id_prefix}:b", p00, p11, p10, triangle_kind=triangle_kind))
 
 
-def _append_side_slope_grid_cell_triangles(
-    triangles: list[TINTriangle],
-    *,
-    triangle_id_prefix: str,
-    side_label: str,
-    p00: str,
-    p01: str,
-    p10: str,
-    p11: str,
-    q00: _SectionPointLite,
-    q01: _SectionPointLite,
-    q10: _SectionPointLite,
-    q11: _SectionPointLite,
-    triangle_kind: str,
-) -> None:
-    first_row_collapsed = _same_section_point_xy(q00, q01)
-    second_row_collapsed = _same_section_point_xy(q10, q11)
-    if first_row_collapsed or second_row_collapsed:
-        return
-    _append_side_slope_strip_triangles(
-        triangles,
-        triangle_id_prefix=triangle_id_prefix,
-        side_label=side_label,
-        p00=p00,
-        p01=p01,
-        p10=p10,
-        p11=p11,
-        triangle_kind=triangle_kind,
+def _same_section_point_xy(first: _SectionPointLite, second: _SectionPointLite, tolerance: float = 1.0e-8) -> bool:
+    return _distance_xy(first.x, first.y, second.x, second.y) <= tolerance
+
+
+def _harmonized_side_slope_pair_rows(
+    first: list[_SectionPointLite],
+    second: list[_SectionPointLite],
+) -> tuple[list[_SectionPointLite], list[_SectionPointLite]]:
+    """Return pair rows with matching point counts while preserving both polylines."""
+
+    first = list(first or [])
+    second = list(second or [])
+    if len(first) >= 2 and len(first) == len(second):
+        return first, second
+    params = _merged_side_slope_polyline_params(first, second)
+    if len(params) < 2:
+        return first, second
+    first_row = [_interpolate_side_slope_point_at_param(first, param) for param in params]
+    second_row = [_interpolate_side_slope_point_at_param(second, param) for param in params]
+    if len(first_row) >= 2 and len(first_row) == len(second_row):
+        return first_row, second_row
+    return first, second
+
+
+def _merged_side_slope_polyline_params(*rows: list[_SectionPointLite], tolerance: float = 1.0e-9) -> list[float]:
+    params = [0.0, 1.0]
+    for row in rows:
+        params.extend(_side_slope_polyline_params(row))
+    output: list[float] = []
+    for value in sorted(max(0.0, min(1.0, float(param))) for param in params):
+        if not output or abs(value - output[-1]) > tolerance:
+            output.append(value)
+    return output
+
+
+def _side_slope_polyline_params(row: list[_SectionPointLite]) -> list[float]:
+    points = list(row or [])
+    if len(points) < 2:
+        return []
+    distances = [0.0]
+    total = 0.0
+    for index in range(1, len(points)):
+        total += _distance_3d(points[index - 1], points[index])
+        distances.append(total)
+    if total <= 1.0e-12:
+        denom = max(1, len(points) - 1)
+        return [float(index) / float(denom) for index in range(len(points))]
+    return [float(distance) / float(total) for distance in distances]
+
+
+def _interpolate_side_slope_point_at_param(row: list[_SectionPointLite], param: float) -> _SectionPointLite:
+    points = list(row or [])
+    if not points:
+        return _SectionPointLite("", 0.0, 0.0, 0.0, 0.0, "")
+    if len(points) == 1:
+        return points[0]
+    params = _side_slope_polyline_params(points)
+    if len(params) != len(points):
+        return points[-1]
+    target = max(0.0, min(1.0, float(param)))
+    if target <= params[0] + 1.0e-9:
+        return points[0]
+    if target >= params[-1] - 1.0e-9:
+        return points[-1]
+    last_segment = max(0, len(points) - 2)
+    segment = 0
+    while segment < last_segment and target > params[segment + 1] + 1.0e-12:
+        segment += 1
+    start = points[segment]
+    end = points[segment + 1]
+    start_param = params[segment]
+    end_param = params[segment + 1]
+    span = max(float(end_param) - float(start_param), 1.0e-12)
+    ratio = (target - float(start_param)) / span
+    role = _interpolated_side_slope_role(start, end, ratio)
+    return _SectionPointLite(
+        point_id=f"{start.point_id}->{end.point_id}@{target:.6g}",
+        x=_lerp(start.x, end.x, ratio),
+        y=_lerp(start.y, end.y, ratio),
+        z=_lerp(start.z, end.z, ratio),
+        lateral_offset=_lerp(start.lateral_offset, end.lateral_offset, ratio),
+        point_role=role,
     )
 
 
-def _same_section_point_xy(first: _SectionPointLite, second: _SectionPointLite, tolerance: float = 1.0e-8) -> bool:
-    return _distance_xy(first.x, first.y, second.x, second.y) <= tolerance
+def _interpolated_side_slope_role(start: _SectionPointLite, end: _SectionPointLite, ratio: float) -> str:
+    if float(ratio) >= 1.0 - 1.0e-9:
+        return str(getattr(end, "point_role", "") or "")
+    start_role = str(getattr(start, "point_role", "") or "")
+    end_role = str(getattr(end, "point_role", "") or "")
+    if start_role == "bench_surface" or end_role == "bench_surface":
+        return "bench_surface"
+    if start_role == "terminal_edge":
+        return end_role if end_role != "daylight_marker" else "side_slope_surface"
+    if end_role == "daylight_marker":
+        return start_role if start_role else "side_slope_surface"
+    return start_role or end_role
+
+
+def _distance_3d(first: _SectionPointLite, second: _SectionPointLite) -> float:
+    return math.sqrt(
+        (float(second.x) - float(first.x)) ** 2
+        + (float(second.y) - float(first.y)) ** 2
+        + (float(second.z) - float(first.z)) ** 2
+    )
 
 
 def _side_slope_point_grids(
@@ -622,129 +695,23 @@ def _side_slope_point_grids(
             if len(rows) < 2:
                 grid = []
                 break
-            rows = _terrain_adjusted_side_slope_points_for_section(
-                section,
-                rows,
-                side_label=side_label,
-                existing_ground_surface=existing_ground_surface,
-            )
+            # AppliedSection daylight markers are evaluated source-truth for Build Corridor.
+            # Terrain tie-in here is only a fallback for rows that do not yet carry one.
+            if not _row_has_daylight_marker(rows):
+                rows = _terrain_adjusted_side_slope_points_for_section(
+                    section,
+                    rows,
+                    side_label=side_label,
+                    existing_ground_surface=existing_ground_surface,
+                )
             grid.append(rows)
         if len(grid) >= 2:
             grids[side_label] = grid
     return grids
 
 
-def _resampled_side_slope_span_rows(
-    first: list[_SectionPointLite],
-    second: list[_SectionPointLite],
-) -> tuple[list[_SectionPointLite], list[_SectionPointLite]]:
-    first_distances = _side_slope_row_distances(first)
-    second_distances = _side_slope_row_distances(second)
-    if not first_distances or not second_distances:
-        return ([], [])
-    shared_max = min(float(first_distances[-1]), float(second_distances[-1]))
-    if shared_max <= 1.0e-9:
-        return ([], [])
-    distances = [
-        distance
-        for distance in _merged_side_slope_distances(first, second)
-        if distance <= shared_max + 1.0e-6
-    ]
-    if not distances or abs(float(distances[-1]) - shared_max) > 1.0e-6:
-        distances.append(shared_max)
-    distances = sorted(max(float(distance), 0.0) for distance in distances)
-    if len(distances) < 2:
-        return ([], [])
-    return (
-        [_interpolate_side_slope_point_at_distance(first, distance) for distance in distances],
-        [_interpolate_side_slope_point_at_distance(second, distance) for distance in distances],
-    )
-
-
-def _densified_side_slope_span_rows(
-    first: list[_SectionPointLite],
-    second: list[_SectionPointLite],
-    *,
-    existing_ground_surface: TINSurface | None,
-    max_spacing: float = 5.0,
-) -> list[list[_SectionPointLite]]:
-    if existing_ground_surface is None or len(first) < 2 or len(second) < 2:
-        return [first, second]
-    if not _row_has_daylight_marker(first) and not _row_has_daylight_marker(second):
-        return [first, second]
-    span = _distance_xy(first[0].x, first[0].y, second[0].x, second[0].y)
-    steps = max(1, int(math.ceil(span / max(float(max_spacing or 0.0), 1.0))))
-    if steps <= 1:
-        return [
-            _project_daylight_markers_to_surface(first, existing_ground_surface),
-            _project_daylight_markers_to_surface(second, existing_ground_surface),
-        ]
-    output: list[list[_SectionPointLite]] = []
-    for step in range(steps + 1):
-        ratio = float(step) / float(steps)
-        output.append(_interpolate_side_slope_row_between(first, second, ratio, existing_ground_surface=existing_ground_surface))
-    return output
-
-
-def _interpolate_side_slope_row_between(
-    first: list[_SectionPointLite],
-    second: list[_SectionPointLite],
-    ratio: float,
-    *,
-    existing_ground_surface: TINSurface,
-) -> list[_SectionPointLite]:
-    count = min(len(first), len(second))
-    row = [
-        _interpolate_between_side_slope_points(
-            first[index],
-            second[index],
-            ratio,
-            role=_merged_interpolated_span_role(first[index], second[index]),
-        )
-        for index in range(count)
-    ]
-    return _project_daylight_markers_to_surface(row, existing_ground_surface)
-
-
-def _project_daylight_markers_to_surface(
-    row: list[_SectionPointLite],
-    surface: TINSurface,
-) -> list[_SectionPointLite]:
-    service = TinSamplingService()
-    output: list[_SectionPointLite] = []
-    for point in list(row or []):
-        if str(getattr(point, "point_role", "") or "") != "daylight_marker":
-            output.append(point)
-            continue
-        sample = service.sample_xy(surface=surface, x=float(point.x), y=float(point.y))
-        if bool(getattr(sample, "found", False)) and getattr(sample, "z", None) is not None:
-            output.append(
-                _SectionPointLite(
-                    point_id=point.point_id,
-                    x=point.x,
-                    y=point.y,
-                    z=float(sample.z),
-                    lateral_offset=point.lateral_offset,
-                    point_role=point.point_role,
-                )
-            )
-        else:
-            output.append(point)
-    return output
-
-
 def _row_has_daylight_marker(row: list[_SectionPointLite]) -> bool:
     return any(str(getattr(point, "point_role", "") or "") == "daylight_marker" for point in list(row or []))
-
-
-def _merged_interpolated_span_role(first: _SectionPointLite, second: _SectionPointLite) -> str:
-    first_role = str(getattr(first, "point_role", "") or "")
-    second_role = str(getattr(second, "point_role", "") or "")
-    if first_role == "daylight_marker" or second_role == "daylight_marker":
-        return "daylight_marker"
-    if first_role == "bench_surface" or second_role == "bench_surface":
-        return "bench_surface"
-    return first_role or second_role
 
 
 def _span_source_point_ref(
@@ -764,81 +731,6 @@ def _span_source_point_ref(
     if section_id:
         return f"{section_id}:{point.point_id}"
     return str(getattr(point, "point_id", "") or "")
-
-
-def _merged_side_slope_distances(*rows: list[_SectionPointLite], tolerance: float = 1.0e-6) -> list[float]:
-    values: list[float] = []
-    for row in rows:
-        if not row:
-            continue
-        start = float(row[0].lateral_offset)
-        for point in row:
-            values.append(abs(float(point.lateral_offset) - start))
-    values = sorted(max(float(value), 0.0) for value in values)
-    output: list[float] = []
-    for value in values:
-        if not output or abs(value - output[-1]) > tolerance:
-            output.append(value)
-    return output
-
-
-def _interpolate_side_slope_point_at_distance(
-    row: list[_SectionPointLite],
-    distance: float,
-) -> _SectionPointLite:
-    if not row:
-        return _SectionPointLite("", 0.0, 0.0, 0.0, 0.0, "")
-    if len(row) == 1:
-        return row[0]
-    distances = _side_slope_row_distances(row)
-    target = max(float(distance), 0.0)
-    if target <= distances[0] + 1.0e-9:
-        return row[0]
-    if target >= distances[-1] - 1.0e-9:
-        return row[-1]
-    for index in range(len(row) - 1):
-        start_distance = distances[index]
-        end_distance = distances[index + 1]
-        if target < start_distance - 1.0e-9 or target > end_distance + 1.0e-9:
-            continue
-        span = max(end_distance - start_distance, 1.0e-12)
-        ratio = (target - start_distance) / span
-        start = row[index]
-        end = row[index + 1]
-        role = _side_slope_interpolated_role(start, end, target, end_distance)
-        return _SectionPointLite(
-            point_id=f"{start.point_id}->{end.point_id}@{target:.6g}",
-            x=float(start.x) + (float(end.x) - float(start.x)) * ratio,
-            y=float(start.y) + (float(end.y) - float(start.y)) * ratio,
-            z=float(start.z) + (float(end.z) - float(start.z)) * ratio,
-            lateral_offset=float(start.lateral_offset) + (float(end.lateral_offset) - float(start.lateral_offset)) * ratio,
-            point_role=role,
-        )
-    return row[-1]
-
-
-def _side_slope_row_distances(row: list[_SectionPointLite]) -> list[float]:
-    if not row:
-        return []
-    start = float(row[0].lateral_offset)
-    return [abs(float(point.lateral_offset) - start) for point in row]
-
-
-def _side_slope_interpolated_role(
-    start: _SectionPointLite,
-    end: _SectionPointLite,
-    target: float,
-    end_distance: float,
-) -> str:
-    end_role = str(getattr(end, "point_role", "") or "")
-    start_role = str(getattr(start, "point_role", "") or "")
-    if abs(float(target) - float(end_distance)) <= 1.0e-6:
-        return end_role
-    if end_role == "bench_surface" or start_role == "bench_surface":
-        return "bench_surface"
-    if end_role == "daylight_marker":
-        return "side_slope_surface"
-    return end_role or start_role
 
 
 def _side_slope_points_for_section(
@@ -888,6 +780,11 @@ def _side_slope_points_for_section(
             if (
                 abs(float(point.lateral_offset) - float(previous.lateral_offset)) <= 1.0e-9
                 and abs(float(point.z) - float(previous.z)) <= 1.0e-9
+                and "daylight_marker"
+                not in {
+                    str(getattr(point, "point_role", "") or ""),
+                    str(getattr(previous, "point_role", "") or ""),
+                }
             ):
                 continue
         output.append(point)
@@ -1042,6 +939,11 @@ def _unique_side_slope_points(rows: list[_SectionPointLite]) -> list[_SectionPoi
             if (
                 abs(float(point.lateral_offset) - float(previous.lateral_offset)) <= 1.0e-9
                 and abs(float(point.z) - float(previous.z)) <= 1.0e-9
+                and "daylight_marker"
+                not in {
+                    str(getattr(point, "point_role", "") or ""),
+                    str(getattr(previous, "point_role", "") or ""),
+                }
             ):
                 continue
         output.append(point)
@@ -1261,6 +1163,233 @@ def _frame_rows(applied_section_set: AppliedSectionSet) -> list[object]:
     return [getattr(section, "frame", None) for section in _section_rows(applied_section_set) if getattr(section, "frame", None) is not None]
 
 
+def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest) -> list[object]:
+    sections = _section_rows(request.applied_section_set)
+    if not bool(getattr(request, "supplemental_sampling_enabled", False)):
+        return sections
+    return _supplemental_sampled_sections(
+        sections,
+        max_spacing=float(getattr(request, "supplemental_sampling_max_spacing", SUPPLEMENTAL_SAMPLING_MAX_SPACING) or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
+    )
+
+
+def _supplemental_sampled_sections(
+    sections: list[object],
+    *,
+    max_spacing: float,
+) -> list[object]:
+    if len(sections) < 2:
+        return sections
+    spacing = max(float(max_spacing or 0.0), 0.1)
+    output: list[object] = []
+    for index in range(len(sections) - 1):
+        first = sections[index]
+        second = sections[index + 1]
+        output.append(first)
+        if not _span_needs_supplemental_sampling(first, second, max_spacing=spacing):
+            continue
+        step_count = max(2, int(math.ceil(_section_station_delta(first, second) / spacing)))
+        for step in range(1, step_count):
+            ratio = float(step) / float(step_count)
+            output.append(_interpolate_applied_section(first, second, ratio, sequence_index=step))
+    output.append(sections[-1])
+    return output
+
+
+def _span_needs_supplemental_sampling(first, second, *, max_spacing: float) -> bool:
+    if _section_station_delta(first, second) > float(max_spacing) + 1.0e-6:
+        return True
+    if max(
+        abs(float(getattr(second, "daylight_left_width", 0.0) or 0.0) - float(getattr(first, "daylight_left_width", 0.0) or 0.0)),
+        abs(float(getattr(second, "daylight_right_width", 0.0) or 0.0) - float(getattr(first, "daylight_right_width", 0.0) or 0.0)),
+    ) > SUPPLEMENTAL_DAYLIGHT_WIDTH_DELTA_THRESHOLD:
+        return True
+    if max(
+        abs(float(getattr(second, "daylight_left_slope", 0.0) or 0.0) - float(getattr(first, "daylight_left_slope", 0.0) or 0.0)),
+        abs(float(getattr(second, "daylight_right_slope", 0.0) or 0.0) - float(getattr(first, "daylight_right_slope", 0.0) or 0.0)),
+    ) > SUPPLEMENTAL_SLOPE_DELTA_THRESHOLD:
+        return True
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    if abs(float(getattr(second_frame, "z", 0.0) or 0.0) - float(getattr(first_frame, "z", 0.0) or 0.0)) > SUPPLEMENTAL_FRAME_Z_DELTA_THRESHOLD:
+        return True
+    return False
+
+
+def _section_station_delta(first, second) -> float:
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    first_station = float(getattr(first_frame, "station", getattr(first, "station", 0.0)) or 0.0)
+    second_station = float(getattr(second_frame, "station", getattr(second, "station", first_station)) or first_station)
+    return abs(second_station - first_station)
+
+
+def _interpolate_applied_section(first, second, ratio: float, *, sequence_index: int) -> AppliedSection:
+    t = min(max(float(ratio), 0.0), 1.0)
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    frame = _interpolate_applied_section_frame(first_frame, second_frame, t)
+    first_id = str(getattr(first, "applied_section_id", "") or "section")
+    second_id = str(getattr(second, "applied_section_id", "") or "section")
+    return AppliedSection(
+        schema_version=int(getattr(first, "schema_version", getattr(second, "schema_version", 1)) or 1),
+        project_id=str(getattr(first, "project_id", getattr(second, "project_id", "")) or ""),
+        applied_section_id=f"{first_id}->{second_id}:supplemental:{sequence_index}",
+        corridor_id=str(getattr(first, "corridor_id", getattr(second, "corridor_id", "")) or ""),
+        alignment_id=str(getattr(first, "alignment_id", getattr(second, "alignment_id", "")) or ""),
+        profile_id=str(getattr(first, "profile_id", getattr(second, "profile_id", "")) or ""),
+        assembly_id=str(getattr(first, "assembly_id", getattr(second, "assembly_id", "")) or ""),
+        station=float(getattr(frame, "station", 0.0) or 0.0),
+        template_id=str(getattr(first, "template_id", getattr(second, "template_id", "")) or ""),
+        region_id=str(getattr(first, "region_id", getattr(second, "region_id", "")) or ""),
+        frame=frame,
+        surface_left_width=_lerp(getattr(first, "surface_left_width", 0.0), getattr(second, "surface_left_width", 0.0), t),
+        surface_right_width=_lerp(getattr(first, "surface_right_width", 0.0), getattr(second, "surface_right_width", 0.0), t),
+        subgrade_depth=_lerp(getattr(first, "subgrade_depth", 0.0), getattr(second, "subgrade_depth", 0.0), t),
+        daylight_left_width=_lerp(getattr(first, "daylight_left_width", 0.0), getattr(second, "daylight_left_width", 0.0), t),
+        daylight_right_width=_lerp(getattr(first, "daylight_right_width", 0.0), getattr(second, "daylight_right_width", 0.0), t),
+        daylight_left_slope=_lerp(getattr(first, "daylight_left_slope", 0.0), getattr(second, "daylight_left_slope", 0.0), t),
+        daylight_right_slope=_lerp(getattr(first, "daylight_right_slope", 0.0), getattr(second, "daylight_right_slope", 0.0), t),
+        point_rows=_interpolate_applied_section_points(first, second, t),
+        component_rows=list(getattr(first, "component_rows", []) or []),
+        quantity_rows=[],
+        active_structure_ids=list(getattr(first, "active_structure_ids", []) or []),
+        active_structure_rule_ids=list(getattr(first, "active_structure_rule_ids", []) or []),
+        active_structure_influence_zone_ids=list(getattr(first, "active_structure_influence_zone_ids", []) or []),
+        structure_diagnostic_rows=list(getattr(first, "structure_diagnostic_rows", []) or []),
+    )
+
+
+def _interpolate_applied_section_frame(first, second, ratio: float) -> AppliedSectionFrame:
+    t = min(max(float(ratio), 0.0), 1.0)
+    return AppliedSectionFrame(
+        station=_lerp(getattr(first, "station", 0.0), getattr(second, "station", 0.0), t),
+        x=_lerp(getattr(first, "x", 0.0), getattr(second, "x", 0.0), t),
+        y=_lerp(getattr(first, "y", 0.0), getattr(second, "y", 0.0), t),
+        z=_lerp(getattr(first, "z", 0.0), getattr(second, "z", 0.0), t),
+        tangent_direction_deg=_interpolate_angle_degrees(
+            float(getattr(first, "tangent_direction_deg", 0.0) or 0.0),
+            float(getattr(second, "tangent_direction_deg", 0.0) or 0.0),
+            t,
+        ),
+        profile_grade=_lerp(getattr(first, "profile_grade", 0.0), getattr(second, "profile_grade", 0.0), t),
+        alignment_status=str(getattr(first, "alignment_status", "") or getattr(second, "alignment_status", "") or ""),
+        profile_status=str(getattr(first, "profile_status", "") or getattr(second, "profile_status", "") or ""),
+        active_alignment_element_id=str(getattr(first, "active_alignment_element_id", "") or ""),
+        active_profile_segment_start_id=str(getattr(first, "active_profile_segment_start_id", "") or ""),
+        active_profile_segment_end_id=str(getattr(second, "active_profile_segment_end_id", "") or ""),
+        active_vertical_curve_id=str(getattr(first, "active_vertical_curve_id", "") or getattr(second, "active_vertical_curve_id", "") or ""),
+        notes="supplemental_sampling",
+    )
+
+
+def _interpolate_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+    first_points = list(getattr(first, "point_rows", []) or [])
+    second_points = list(getattr(second, "point_rows", []) or [])
+    if len(first_points) != len(second_points):
+        return _interpolate_side_slope_applied_section_points(first, second, ratio)
+    output: list[AppliedSectionPoint] = []
+    t = min(max(float(ratio), 0.0), 1.0)
+    for index, first_point in enumerate(first_points):
+        second_point = second_points[index]
+        first_role = str(getattr(first_point, "point_role", "") or "")
+        second_role = str(getattr(second_point, "point_role", "") or "")
+        if first_role != second_role:
+            return _interpolate_side_slope_applied_section_points(first, second, t)
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}",
+                x=_lerp(getattr(first_point, "x", 0.0), getattr(second_point, "x", 0.0), t),
+                y=_lerp(getattr(first_point, "y", 0.0), getattr(second_point, "y", 0.0), t),
+                z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
+                point_role=first_role,
+                lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+            )
+        )
+    return output
+
+
+def _interpolate_side_slope_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+    output: list[AppliedSectionPoint] = []
+    t = min(max(float(ratio), 0.0), 1.0)
+    for side_label in ("left", "right"):
+        first_row = _side_slope_source_row_for_interpolation(first, side_label=side_label)
+        second_row = _side_slope_source_row_for_interpolation(second, side_label=side_label)
+        if not first_row or not second_row:
+            continue
+        if len(first_row) == 1 and len(second_row) == 1:
+            harmonized_first, harmonized_second = first_row, second_row
+        else:
+            harmonized_first, harmonized_second = _harmonized_side_slope_pair_rows(first_row, second_row)
+        point_count = min(len(harmonized_first), len(harmonized_second))
+        for index in range(point_count):
+            first_point = harmonized_first[index]
+            second_point = harmonized_second[index]
+            role = _interpolated_applied_side_slope_role(first_point, second_point)
+            output.append(
+                AppliedSectionPoint(
+                    point_id=f"supplemental:{side_label}:{index}:{first_point.point_id}->{second_point.point_id}@{t:.6g}",
+                    x=_lerp(first_point.x, second_point.x, t),
+                    y=_lerp(first_point.y, second_point.y, t),
+                    z=_lerp(first_point.z, second_point.z, t),
+                    point_role=role,
+                    lateral_offset=_lerp(first_point.lateral_offset, second_point.lateral_offset, t),
+                )
+            )
+    return output
+
+
+def _side_slope_source_row_for_interpolation(section, *, side_label: str) -> list[_SectionPointLite]:
+    rows: list[_SectionPointLite] = []
+    side = str(side_label or "").strip().lower()
+    for point in list(getattr(section, "point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or "")
+        if role not in {"side_slope_surface", "bench_surface", "daylight_marker"}:
+            continue
+        point_id = str(getattr(point, "point_id", "") or "").lower()
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        id_matches_side = f":{side}" in point_id or point_id.startswith(f"{side}:") or point_id.endswith(f":{side}")
+        offset_matches_side = (side == "left" and offset >= -1.0e-9) or (side == "right" and offset <= 1.0e-9)
+        if not id_matches_side and not offset_matches_side:
+            continue
+        rows.append(
+            _SectionPointLite(
+                point_id=str(getattr(point, "point_id", "") or role),
+                x=float(getattr(point, "x", 0.0) or 0.0),
+                y=float(getattr(point, "y", 0.0) or 0.0),
+                z=float(getattr(point, "z", 0.0) or 0.0),
+                lateral_offset=offset,
+                point_role=role,
+            )
+        )
+    if side == "left":
+        rows.sort(key=lambda point: float(point.lateral_offset))
+    else:
+        rows.sort(key=lambda point: -float(point.lateral_offset))
+    return _unique_side_slope_points(rows)
+
+
+def _interpolated_applied_side_slope_role(first: _SectionPointLite, second: _SectionPointLite) -> str:
+    first_role = str(getattr(first, "point_role", "") or "")
+    second_role = str(getattr(second, "point_role", "") or "")
+    if first_role == second_role:
+        return first_role
+    if "daylight_marker" in {first_role, second_role}:
+        return "daylight_marker"
+    if "bench_surface" in {first_role, second_role}:
+        return "bench_surface"
+    return "side_slope_surface"
+
+
+def _lerp(first, second, ratio: float) -> float:
+    return float(first or 0.0) + (float(second or 0.0) - float(first or 0.0)) * float(ratio)
+
+
+def _interpolate_angle_degrees(first: float, second: float, ratio: float) -> float:
+    delta = (float(second) - float(first) + 180.0) % 360.0 - 180.0
+    return float(first) + delta * float(ratio)
+
+
 def _section_rows(applied_section_set: AppliedSectionSet) -> list[object]:
     sections = list(getattr(applied_section_set, "sections", []) or [])
     section_by_id = {str(getattr(section, "applied_section_id", "") or ""): section for section in sections}
@@ -1296,8 +1425,12 @@ def _section_point_grid(sections: list[object], *, point_role: str) -> list[list
 
 
 def _surface_width_rows(applied_section_set: AppliedSectionSet, *, fallback_half_width: float) -> list[tuple[float, float]]:
+    return _surface_width_rows_for_sections(_section_rows(applied_section_set), fallback_half_width=fallback_half_width)
+
+
+def _surface_width_rows_for_sections(sections: list[object], *, fallback_half_width: float) -> list[tuple[float, float]]:
     widths: list[tuple[float, float]] = []
-    for section in _section_rows(applied_section_set):
+    for section in list(sections or []):
         left_width = float(getattr(section, "surface_left_width", 0.0) or 0.0)
         right_width = float(getattr(section, "surface_right_width", 0.0) or 0.0)
         if left_width <= 0.0 and right_width <= 0.0:
@@ -1317,6 +1450,14 @@ def _daylight_inner_edge_rows(
     *,
     fallback_half_width: float,
 ) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    return _daylight_inner_edge_rows_for_sections(_section_rows(applied_section_set), fallback_half_width=fallback_half_width)
+
+
+def _daylight_inner_edge_rows_for_sections(
+    sections: list[object],
+    *,
+    fallback_half_width: float,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
     """Return left/right slope-face start offsets and elevations.
 
     The slope face starts at the outermost built section edge. Ditch/drainage
@@ -1325,7 +1466,7 @@ def _daylight_inner_edge_rows(
     """
 
     rows: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for section in _section_rows(applied_section_set):
+    for section in list(sections or []):
         frame = getattr(section, "frame", None)
         frame_z = float(getattr(frame, "z", 0.0) or 0.0)
         left_width, right_width = _surface_width_rows_for_section(
@@ -1363,8 +1504,12 @@ def _surface_width_rows_for_section(section, *, fallback_half_width: float) -> t
 
 
 def _daylight_rows(applied_section_set: AppliedSectionSet) -> list[tuple[float, float, float, float]]:
+    return _daylight_rows_for_sections(_section_rows(applied_section_set))
+
+
+def _daylight_rows_for_sections(sections: list[object]) -> list[tuple[float, float, float, float]]:
     rows: list[tuple[float, float, float, float]] = []
-    for section in _section_rows(applied_section_set):
+    for section in list(sections or []):
         rows.append(
             (
                 max(float(getattr(section, "daylight_left_width", 0.0) or 0.0), 0.0),

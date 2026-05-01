@@ -875,11 +875,12 @@ def _style_applied_section_preview_object(obj) -> None:
     if vobj is None:
         return
     try:
+        daylight_color = (0.10, 0.85, 0.25)
         vobj.Visibility = True
         vobj.DisplayMode = "Flat Lines"
-        vobj.ShapeColor = (1.0, 0.36, 0.08)
-        vobj.LineColor = (1.0, 0.36, 0.08)
-        vobj.PointColor = (1.0, 0.36, 0.08)
+        vobj.ShapeColor = daylight_color
+        vobj.LineColor = daylight_color
+        vobj.PointColor = daylight_color
         vobj.LineWidth = 7.0
         vobj.PointSize = 9.0
         if hasattr(vobj, "DrawStyle"):
