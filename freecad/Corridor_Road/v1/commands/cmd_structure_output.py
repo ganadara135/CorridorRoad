@@ -252,7 +252,7 @@ class CmdV1StructureOutput:
 
     def GetResources(self):
         return {
-            "Pixmap": icon_path("structures.svg"),
+            "Pixmap": icon_path("structure_output.svg"),
             "MenuText": "Structure Output",
             "ToolTip": "Build and export v1 structure output packages",
         }

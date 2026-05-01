@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1b3a52"/>
+      <stop offset="100%" stop-color="#2f5f7f"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="12" ry="12" fill="url(#bg)" stroke="#0f2536" stroke-width="2"/>
+  <path d="M15 13h25l9 9v28H15z" fill="#263142" stroke="#dfeaf3" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M40 13v10h9" fill="none" stroke="#dfeaf3" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M22 29h16M22 36h20M22 43h12" stroke="#78f0a0" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M39 43h13" stroke="#ffcf40" stroke-width="4" stroke-linecap="round"/>
+  <path d="M48 37l7 6-7 6" fill="none" stroke="#ffcf40" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="11" y="39" width="15" height="12" rx="2" ry="2" fill="#1b3a52" stroke="#28c4ff" stroke-width="2.5"/>
+  <path d="M15 43h7M15 47h5" stroke="#dfeaf3" stroke-width="2" stroke-linecap="round"/>
+</svg>

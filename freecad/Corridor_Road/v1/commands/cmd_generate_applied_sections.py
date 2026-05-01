@@ -88,6 +88,7 @@ def build_document_applied_section_set(document=None, *, project=None, corridor_
         override_model_id="overrides:empty",
         alignment_id=alignment.alignment_id,
     )
+    existing_ground_surface = _resolve_applied_sections_existing_ground_tin_surface(doc)
     return AppliedSectionSetService().build(
         AppliedSectionSetBuildRequest(
             project_id=project_id,
@@ -101,6 +102,7 @@ def build_document_applied_section_set(document=None, *, project=None, corridor_
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",
+            existing_ground_surface=existing_ground_surface,
         )
     )
 
@@ -312,6 +314,12 @@ class V1AppliedSectionsTaskPanel:
         self._summary.setFixedHeight(160)
         layout.addWidget(self._summary)
 
+        self._progress = QtWidgets.QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setFormat("Ready")
+        layout.addWidget(self._progress)
+
         self._review_table = QtWidgets.QTableWidget(0, 13)
         self._review_table.setHorizontalHeaderLabels(
             [
@@ -391,20 +399,38 @@ class V1AppliedSectionsTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            self._set_progress(0, "Preparing Applied Sections...")
+            self._set_progress(15, "Reading v1 source models...")
             result = build_document_applied_section_set(self.document)
+            self._set_progress(65, "Writing AppliedSectionSet result...")
             obj = apply_v1_applied_section_set(document=self.document, applied_section_set=result)
+            self._set_progress(85, "Refreshing station review...")
             diagnostic_count = sum(len(section.diagnostic_rows) for section in result.sections)
             message = f"Applied Sections have been built.\nStations: {len(result.station_rows)}\nDiagnostics: {diagnostic_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             self._set_review_rows(applied_section_review_rows(result))
+            self._set_progress(100, "Applied Sections complete")
             _show_message(self.form, "Applied Sections", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
         except Exception as exc:
+            self._set_progress(0, "Applied Sections failed")
             self._summary.setPlainText(f"Applied Sections were not built:\n{exc}")
             _show_message(self.form, "Applied Sections", f"Applied Sections were not built.\n{exc}")
             return False
+
+    def _set_progress(self, value: int, text: str = "") -> None:
+        progress = getattr(self, "_progress", None)
+        if progress is None:
+            return
+        try:
+            progress.setValue(max(0, min(100, int(value))))
+            if text:
+                progress.setFormat(text)
+        except Exception:
+            return
+        _process_panel_events()
 
     def _set_review_rows(self, rows: list[dict[str, object]]) -> None:
         if not hasattr(self, "_review_table"):
@@ -663,6 +689,29 @@ def _applied_section_daylight_polylines(section, frame, fg_points):
         right_edge = fg_points[0]
         polylines.append(("right_slope_face", [right_edge, right_edge - normal * right_daylight + App.Vector(0.0, 0.0, right_slope * right_daylight)]))
     return polylines
+
+
+def _resolve_applied_sections_existing_ground_tin_surface(document):
+    try:
+        from .cmd_build_corridor import _resolve_corridor_existing_ground_tin_surface
+
+        return _resolve_corridor_existing_ground_tin_surface(document)
+    except Exception:
+        return None
+
+
+def _process_panel_events() -> None:
+    try:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents()
+    except Exception:
+        pass
+    try:
+        if Gui is not None and hasattr(Gui, "updateGui"):
+            Gui.updateGui()
+    except Exception:
+        pass
 
 
 def _applied_section_preview_points(section, frame):

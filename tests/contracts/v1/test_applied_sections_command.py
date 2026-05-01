@@ -1,9 +1,12 @@
 import FreeCAD as App
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_APPLIED_SECTIONS, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import assembly_preset_model_from_document, starter_assembly_model_from_document
+import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections as applied_sections_command
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     CmdV1AppliedSections,
+    V1AppliedSectionsTaskPanel,
     applied_section_review_row_color,
     applied_section_review_rows,
     apply_v1_applied_section_set,
@@ -18,6 +21,8 @@ from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profil
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 
+_QAPP = None
+
 
 def _new_project_doc():
     doc = App.newDocument("V1AppliedSectionsCommandTest")
@@ -25,6 +30,12 @@ def _new_project_doc():
     CorridorRoadProject(project)
     ensure_project_tree(project, include_references=False)
     return doc, project
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def test_build_document_applied_section_set_uses_v1_sources() -> None:
@@ -180,6 +191,33 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
             "template:basic-road",
         ]
     finally:
+        App.closeDocument(doc.Name)
+
+
+def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = applied_sections_command._show_message
+    applied_sections_command._show_message = lambda *_args, **_kwargs: None
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        panel = V1AppliedSectionsTaskPanel(document=doc)
+        progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
+
+        assert len(progress_bars) == 1
+        assert progress_bars[0].format() == "Ready"
+        assert panel._apply(close_after=False) is True
+        assert panel._progress.value() == 100
+        assert panel._progress.format() == "Applied Sections complete"
+    finally:
+        applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)
 
 

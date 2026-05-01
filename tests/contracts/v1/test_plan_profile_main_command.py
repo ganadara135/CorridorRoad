@@ -1,4 +1,5 @@
 from freecad.Corridor_Road.commands.cmd_review_plan_profile import (
+    CmdReviewPlanProfile,
     run_plan_profile_review_command,
 )
 
@@ -35,6 +36,12 @@ def test_run_plan_profile_review_command_prefers_v1() -> None:
     assert path == "v1"
     assert calls == ["v1"]
     assert app.Console.messages == []
+
+
+def test_review_plan_profile_command_uses_plan_profile_review_icon() -> None:
+    resources = CmdReviewPlanProfile().GetResources()
+
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("plan_profile_review.svg")
 
 
 def test_run_plan_profile_review_command_falls_back_to_profile_editor() -> None:

@@ -10,6 +10,7 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     V1ProfileEditorTaskPanel,
     apply_profile_control_rows,
     apply_profile_vertical_curve_rows,
+    auto_interpolate_profile_elevation_rows,
     build_profile_sheet_preview,
     build_profile_preview_shape,
     build_profile_editor_handoff_context,
@@ -23,7 +24,6 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_control_rows,
     profile_preset_names,
     profile_preset_rows,
-    profile_random_elevation_rows,
     profile_rows_from_stationing,
     profile_station_check_rows,
     profile_station_check_lines,
@@ -42,6 +42,8 @@ from freecad.Corridor_Road.v1.objects.obj_profile import (
     to_profile_model,
 )
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+
+_QAPP = None
 
 
 class _Selection:
@@ -64,6 +66,12 @@ def _new_project_doc():
     project.Label = "CorridorRoad Project"
     ensure_project_tree(project, include_references=False)
     return doc, project
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def _add_existing_ground_mesh(doc):
@@ -147,23 +155,39 @@ def test_apply_profile_control_rows_rejects_duplicate_stations() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_profile_random_elevation_rows_fill_station_rows() -> None:
-    rows = profile_random_elevation_rows(
+def test_auto_interpolate_profile_elevation_rows_fills_blank_elevations() -> None:
+    rows = auto_interpolate_profile_elevation_rows(
         [
-            {"station": 0.0, "kind": "grade_break"},
-            {"station": 80.0, "kind": "pvi"},
-            {"station": 160.0, "kind": "grade_break"},
-        ],
-        seed=42,
+            {"station": 0.0, "elevation": 130.0, "kind": "grade_break"},
+            {"station": 20.0, "elevation": None, "kind": "pvi"},
+            {"station": 40.0, "elevation": "", "kind": "pvi"},
+            {"station": 60.0, "elevation": 100.0, "kind": "grade_break"},
+        ]
     )
 
-    assert [row["station"] for row in rows] == [0.0, 80.0, 160.0]
-    assert [row["kind"] for row in rows] == ["grade_break", "pvi", "grade_break"]
-    assert all(isinstance(row["elevation"], float) for row in rows)
-    assert len({row["elevation"] for row in rows}) > 1
+    assert [row["station"] for row in rows] == [0.0, 20.0, 40.0, 60.0]
+    assert [round(float(row["elevation"]), 3) for row in rows] == [130.0, 120.0, 110.0, 100.0]
 
 
-def test_profile_editor_random_elevation_button_fills_table_rows() -> None:
+def test_auto_interpolate_profile_elevation_rows_requires_bounded_controls() -> None:
+    try:
+        auto_interpolate_profile_elevation_rows(
+            [
+                {"station": 0.0, "elevation": 130.0, "kind": "grade_break"},
+                {"station": 20.0, "elevation": None, "kind": "pvi"},
+                {"station": 30.0, "elevation": 125.0, "kind": "pvi"},
+                {"station": 40.0, "elevation": "", "kind": "grade_break"},
+            ]
+        )
+        assert False, "unbounded auto interpolation should raise"
+    except ValueError as exc:
+        assert "first and last station" in str(exc)
+        assert "First station: 0.000" in str(exc)
+        assert "Last station: 40.000" in str(exc)
+
+
+def test_profile_editor_uses_auto_interpolate_without_random_elevation_button() -> None:
+    _ensure_qapp()
     doc, project = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
@@ -171,13 +195,9 @@ def test_profile_editor_random_elevation_button_fills_table_rows() -> None:
         panel = V1ProfileEditorTaskPanel(profile=profile, document=doc, preferred_alignment=alignment)
 
         buttons = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
-        panel._apply_random_elevations()
-        rows = panel._table_rows(allow_empty=False)
 
-        assert "Random Elevation" in buttons
-        assert len(rows) == len(list(profile.ControlStations))
-        assert all(row["elevation"] is not None for row in rows)
-        assert len({row["elevation"] for row in rows}) > 1
+        assert "Random Elevation" not in buttons
+        assert "Auto Interpolate Elevations" in buttons
     finally:
         App.closeDocument(doc.Name)
 
@@ -375,6 +395,7 @@ def test_profile_station_check_rows_report_stationing_membership() -> None:
             [
                 {"station": 0.0, "kind": "grade_break"},
                 {"station": 60.0, "kind": "pvi"},
+                {"station": 180.0008, "kind": "grade_break"},
                 {"station": 999.0, "kind": "pvi"},
             ],
             alignment,
@@ -383,8 +404,11 @@ def test_profile_station_check_rows_report_stationing_membership() -> None:
 
         assert rows[0]["status"] == "OK"
         assert rows[1]["in_stationing"] == "yes"
-        assert rows[2]["status"] == "ERROR"
-        assert "outside alignment range" in rows[2]["notes"]
+        assert rows[2]["in_alignment"] == "yes"
+        assert rows[2]["in_stationing"] == "yes"
+        assert rows[2]["status"] == "OK"
+        assert rows[3]["status"] == "ERROR"
+        assert "outside alignment range" in rows[3]["notes"]
     finally:
         App.closeDocument(doc.Name)
 

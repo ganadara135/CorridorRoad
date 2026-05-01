@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import math
 import os
-import random
 
 try:
     import FreeCAD as App
@@ -336,53 +335,56 @@ def profile_rows_from_stationing(stationing) -> list[dict[str, object]]:
     return rows
 
 
-def profile_random_elevation_rows(
-    rows: list[dict[str, object]],
-    *,
-    seed: int | None = None,
-) -> list[dict[str, object]]:
-    """Fill profile rows with smooth random elevations based on station values."""
+def auto_interpolate_profile_elevation_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Fill blank profile elevations by linear interpolation between entered controls."""
 
-    source_rows = [dict(row or {}) for row in list(rows or [])]
-    if not source_rows:
-        return []
-    station_values = []
-    for index, row in enumerate(source_rows, start=1):
-        station = _optional_float(row.get("station", None))
-        if station is None:
-            raise ValueError(f"Row {index} station must be a number before generating random elevations.")
-        station_values.append(float(station))
-
-    rng = random.Random(seed)
-    start = min(station_values)
-    end = max(station_values)
-    span = max(1.0, end - start)
-    base = rng.uniform(24.0, 34.0)
-    trend = rng.uniform(-7.0, 7.0)
-    wave_a = rng.uniform(2.0, 6.0)
-    wave_b = rng.uniform(0.5, 2.5)
-    phase_a = rng.uniform(0.0, math.tau)
-    phase_b = rng.uniform(0.0, math.tau)
-
-    generated = []
-    for row, station in zip(source_rows, station_values):
-        t = (station - start) / span
-        elevation = (
-            base
-            + trend * (t - 0.5)
-            + wave_a * math.sin((math.tau * t) + phase_a)
-            + wave_b * math.sin((math.tau * 2.3 * t) + phase_b)
-            + rng.uniform(-1.25, 1.25)
-        )
-        generated.append(
+    parsed: list[dict[str, object]] = []
+    seen_stations: set[float] = set()
+    for index, row in enumerate(list(rows or [])):
+        station = _required_float(row.get("station", None), f"Row {index + 1} station")
+        station_key = round(station, 6)
+        if station_key in seen_stations:
+            raise ValueError(f"Duplicate station is not allowed: {station:.3f}")
+        seen_stations.add(station_key)
+        parsed.append(
             {
-                "control_point_id": row.get("control_point_id", ""),
-                "station": station,
-                "elevation": round(float(elevation), 3),
-                "kind": str(row.get("kind", "") or "pvi"),
+                "control_point_id": str(row.get("control_point_id", "") or ""),
+                "station": float(station),
+                "elevation": _optional_float(row.get("elevation", None)),
+                "kind": str(row.get("kind", "") or "pvi").strip() or "pvi",
             }
         )
-    return generated
+    if len(parsed) < 2:
+        raise ValueError("Auto Interpolate Elevations requires at least two station rows.")
+
+    parsed.sort(key=lambda item: float(item["station"]))
+    control_indices = [index for index, row in enumerate(parsed) if row.get("elevation", None) is not None]
+    if len(control_indices) < 2:
+        raise ValueError("Auto Interpolate Elevations requires at least two entered elevation values.")
+    if control_indices[0] != 0 or control_indices[-1] != len(parsed) - 1:
+        first_station = float(parsed[0]["station"])
+        last_station = float(parsed[-1]["station"])
+        raise ValueError(
+            "Enter elevation values for the first and last station before using Auto Interpolate Elevations.\n"
+            f"First station: {first_station:.3f}\n"
+            f"Last station: {last_station:.3f}"
+        )
+
+    for left_index, right_index in zip(control_indices, control_indices[1:]):
+        left = parsed[left_index]
+        right = parsed[right_index]
+        left_station = float(left["station"])
+        right_station = float(right["station"])
+        if right_station <= left_station:
+            raise ValueError("Profile stations must increase for auto interpolation.")
+        left_elevation = float(left["elevation"])
+        right_elevation = float(right["elevation"])
+        grade = (right_elevation - left_elevation) / (right_station - left_station)
+        for row_index in range(left_index + 1, right_index):
+            station = float(parsed[row_index]["station"])
+            parsed[row_index]["elevation"] = left_elevation + grade * (station - left_station)
+
+    return parsed
 
 
 def apply_profile_control_rows(profile, rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -732,7 +734,7 @@ def profile_station_check_rows(
     alignment,
     stationing,
     *,
-    station_tolerance: float = 1.0e-6,
+    station_tolerance: float = 1.0e-3,
 ) -> list[dict[str, object]]:
     """Return per-profile-station link checks against alignment and stationing."""
 
@@ -964,21 +966,23 @@ class V1ProfileEditorTaskPanel:
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
-        data_row = QtWidgets.QHBoxLayout()
-        data_row.addWidget(QtWidgets.QLabel("Profile data:"))
+        data_row = QtWidgets.QGridLayout()
+        data_row.setHorizontalSpacing(8)
+        data_row.setVerticalSpacing(6)
+        data_row.addWidget(QtWidgets.QLabel("Profile data:"), 0, 0)
         preset_button = QtWidgets.QPushButton("Preset Data")
         preset_button.clicked.connect(self._apply_preset_data)
-        data_row.addWidget(preset_button)
+        data_row.addWidget(preset_button, 0, 1)
         import_button = QtWidgets.QPushButton("Import CSV")
         import_button.clicked.connect(self._import_profile_csv)
-        data_row.addWidget(import_button)
+        data_row.addWidget(import_button, 0, 2)
         export_button = QtWidgets.QPushButton("Export CSV")
         export_button.clicked.connect(self._export_profile_csv)
-        data_row.addWidget(export_button)
-        random_button = QtWidgets.QPushButton("Random Elevation")
-        random_button.clicked.connect(self._apply_random_elevations)
-        data_row.addWidget(random_button)
-        data_row.addStretch(1)
+        data_row.addWidget(export_button, 0, 3)
+        interpolate_button = QtWidgets.QPushButton("Auto Interpolate Elevations")
+        interpolate_button.clicked.connect(self._auto_interpolate_elevations)
+        data_row.addWidget(interpolate_button, 1, 1, 1, 3)
+        data_row.setColumnStretch(4, 1)
         layout.addLayout(data_row)
 
         self._tabs = QtWidgets.QTabWidget()
@@ -1487,18 +1491,17 @@ class V1ProfileEditorTaskPanel:
             self._set_status(str(exc), ok=False)
             self._show_message("Profile", f"Profile CSV export failed.\n{exc}")
 
-    def _apply_random_elevations(self) -> None:
+    def _auto_interpolate_elevations(self) -> None:
         try:
-            rows = profile_random_elevation_rows(self._table_station_kind_rows())
-            if not rows:
-                self._set_status("No station rows are available for random elevation generation.", ok=False)
-                self._show_message("Profile", "No station rows are available.\nGenerate Stations first, then reopen Profile.")
-                return
+            rows = auto_interpolate_profile_elevation_rows(self._table_rows_with_optional_elevations())
             self._replace_table_rows(rows)
-            self._set_status(f"Random elevations generated for {len(rows)} station row(s). Apply when ready.", ok=True)
+            self._set_status(
+                f"Auto Interpolate Elevations filled {len(rows)} profile row(s). Apply when ready.",
+                ok=True,
+            )
         except Exception as exc:
             self._set_status(str(exc), ok=False)
-            self._show_message("Profile", f"Random elevations were not generated.\n{exc}")
+            self._show_message("Profile", f"Profile elevations were not auto-interpolated.\n{exc}")
 
     def _add_row(self) -> None:
         rows = self._table_rows(allow_empty=False)
@@ -1769,6 +1772,24 @@ class V1ProfileEditorTaskPanel:
                 {
                     "control_point_id": _existing_control_id(self.profile, row_index),
                     "station": _required_float(station_text, f"Row {row_index + 1} station"),
+                    "kind": kind_text.strip() or "pvi",
+                }
+            )
+        return rows
+
+    def _table_rows_with_optional_elevations(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for row_index in range(self._table.rowCount()):
+            station_text = self._item_text(row_index, 0)
+            elevation_text = self._item_text(row_index, 1)
+            kind_text = self._item_text(row_index, 2) or "pvi"
+            if not station_text and not elevation_text:
+                continue
+            rows.append(
+                {
+                    "control_point_id": _existing_control_id(self.profile, row_index),
+                    "station": _required_float(station_text, f"Row {row_index + 1} station"),
+                    "elevation": _optional_float(elevation_text),
                     "kind": kind_text.strip() or "pvi",
                 }
             )

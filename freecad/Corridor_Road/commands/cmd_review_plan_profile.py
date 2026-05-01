@@ -77,7 +77,7 @@ def run_plan_profile_review_command(
 class CmdReviewPlanProfile:
     def GetResources(self):
         return {
-            "Pixmap": icon_path("alignment.svg"),
+            "Pixmap": icon_path("plan_profile_review.svg"),
             "MenuText": "Review Plan/Profile",
             "ToolTip": "Review stationing and profile results for the current document",
         }

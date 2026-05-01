@@ -11,7 +11,7 @@ from freecad.Corridor_Road.misc.resources import icon_path
 class CmdOutputsExchange:
     def GetResources(self):
         return {
-            "Pixmap": icon_path("project_setup.svg"),
+            "Pixmap": icon_path("outputs_exchange.svg"),
             "MenuText": "Outputs & Exchange",
             "ToolTip": "Open the outputs and exchange stage for deliverables and export actions",
         }

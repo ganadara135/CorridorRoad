@@ -35,6 +35,13 @@ from freecad.Corridor_Road.v1.objects.obj_exchange_package import find_v1_exchan
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 
 
+def test_structure_output_command_uses_structure_output_icon() -> None:
+    resources = structure_output_command.CmdV1StructureOutput().GetResources()
+
+    assert resources["MenuText"] == "Structure Output"
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("structure_output.svg")
+
+
 def _new_project_doc():
     doc = App.newDocument("V1StructureOutputCommandTest")
     project = doc.addObject("App::FeaturePython", "CorridorRoadProject")

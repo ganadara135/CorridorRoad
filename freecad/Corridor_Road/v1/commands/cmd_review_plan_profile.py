@@ -1085,7 +1085,7 @@ class CmdV1ReviewPlanProfile:
         from freecad.Corridor_Road.misc.resources import icon_path
 
         return {
-            "Pixmap": icon_path("alignment.svg"),
+            "Pixmap": icon_path("plan_profile_review.svg"),
             "MenuText": "Plan/Profile Connection Review",
             "ToolTip": "Review Alignment, Stations, Profile, and TIN EG connectivity on one station grid",
         }

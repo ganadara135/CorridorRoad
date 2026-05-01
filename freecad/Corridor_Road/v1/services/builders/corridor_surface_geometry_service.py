@@ -424,7 +424,11 @@ def _build_daylight_surface_from_side_slope_points(
     sections: list[object],
     fallback_half_width: float,
 ) -> TINSurface | None:
-    side_grids = _side_slope_point_grids(sections, fallback_half_width=fallback_half_width)
+    side_grids = _side_slope_point_grids(
+        sections,
+        fallback_half_width=fallback_half_width,
+        existing_ground_surface=request.existing_ground_surface,
+    )
     if not side_grids:
         return None
     vertices: list[TINVertex] = []
@@ -508,12 +512,14 @@ def _side_slope_point_grids(
     sections: list[object],
     *,
     fallback_half_width: float,
+    existing_ground_surface: TINSurface | None = None,
 ) -> dict[str, list[list[_SectionPointLite]]]:
     grids: dict[str, list[list[_SectionPointLite]]] = {}
     for side_label in ("left", "right"):
         grid: list[list[_SectionPointLite]] = []
         reference_count: int | None = None
-        for section in list(sections or []):
+        section_rows = list(sections or [])
+        for section in section_rows:
             rows = _side_slope_points_for_section(
                 section,
                 side_label=side_label,
@@ -522,6 +528,12 @@ def _side_slope_point_grids(
             if len(rows) < 2:
                 grid = []
                 break
+            rows = _terrain_adjusted_side_slope_points_for_section(
+                section,
+                rows,
+                side_label=side_label,
+                existing_ground_surface=existing_ground_surface,
+            )
             if reference_count is None:
                 reference_count = len(rows)
             elif len(rows) != reference_count:
@@ -584,6 +596,112 @@ def _side_slope_points_for_section(
                 continue
         output.append(point)
     return output
+
+
+def _terrain_adjusted_side_slope_points_for_section(
+    section,
+    rows: list[_SectionPointLite],
+    *,
+    side_label: str,
+    existing_ground_surface: TINSurface | None,
+) -> list[_SectionPointLite]:
+    if existing_ground_surface is None or len(rows) < 1:
+        return rows
+    terminal = rows[0]
+    daylight_width, slope = _section_daylight_policy_for_side(section, side_label=side_label)
+    if daylight_width <= 1.0e-9 or abs(float(slope or 0.0)) <= 1.0e-12:
+        return rows
+    frame = getattr(section, "frame", None)
+    normal_x, normal_y = _outward_normal_for_side(frame, side_label=side_label)
+    sampling_service = TinSamplingService()
+    outer = _resolve_slope_face_outer_point(
+        sampling_service=sampling_service,
+        surface=existing_ground_surface,
+        edge_x=float(terminal.x),
+        edge_y=float(terminal.y),
+        edge_z=float(terminal.z),
+        normal_x=normal_x,
+        normal_y=normal_y,
+        max_width=daylight_width,
+        slope=slope,
+    )
+    outer_offset = float(terminal.lateral_offset) + (1.0 if side_label == "left" else -1.0) * _distance_xy(
+        terminal.x,
+        terminal.y,
+        outer.x,
+        outer.y,
+    )
+    slope_sign = _slope_sign_from_points(terminal.z, outer.z)
+    adjusted: list[_SectionPointLite] = [terminal]
+    for point in list(rows[1:] or []):
+        if str(getattr(point, "point_role", "") or "") == "daylight_marker":
+            continue
+        if not _point_between_offsets(
+            float(point.lateral_offset),
+            float(terminal.lateral_offset),
+            outer_offset,
+        ):
+            continue
+        if slope_sign > 0 and float(point.z) < float(terminal.z) - 1.0e-6:
+            continue
+        if slope_sign < 0 and float(point.z) > float(terminal.z) + 1.0e-6:
+            continue
+        adjusted.append(point)
+    if (
+        abs(float(adjusted[-1].lateral_offset) - outer_offset) > 1.0e-6
+        or abs(float(adjusted[-1].z) - float(outer.z)) > 1.0e-6
+    ):
+        adjusted.append(
+            _SectionPointLite(
+                point_id=f"{side_label}:terrain-daylight",
+                x=float(outer.x),
+                y=float(outer.y),
+                z=float(outer.z),
+                lateral_offset=outer_offset,
+                point_role="daylight_marker",
+            )
+        )
+    return adjusted
+
+
+def _section_daylight_policy_for_side(section, *, side_label: str) -> tuple[float, float]:
+    if side_label == "left":
+        return (
+            max(float(getattr(section, "daylight_left_width", 0.0) or 0.0), 0.0),
+            float(getattr(section, "daylight_left_slope", 0.0) or 0.0),
+        )
+    return (
+        max(float(getattr(section, "daylight_right_width", 0.0) or 0.0), 0.0),
+        float(getattr(section, "daylight_right_slope", 0.0) or 0.0),
+    )
+
+
+def _outward_normal_for_side(frame, *, side_label: str) -> tuple[float, float]:
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    nx = -math.sin(angle_rad)
+    ny = math.cos(angle_rad)
+    if side_label == "right":
+        return -nx, -ny
+    return nx, ny
+
+
+def _distance_xy(x0: float, y0: float, x1: float, y1: float) -> float:
+    return math.hypot(float(x1) - float(x0), float(y1) - float(y0))
+
+
+def _slope_sign_from_points(start_z: float, end_z: float, *, tolerance: float = 1.0e-6) -> int:
+    delta = float(end_z) - float(start_z)
+    if delta > tolerance:
+        return 1
+    if delta < -tolerance:
+        return -1
+    return 0
+
+
+def _point_between_offsets(value: float, start: float, end: float, *, tolerance: float = 1.0e-6) -> bool:
+    low = min(float(start), float(end)) - tolerance
+    high = max(float(start), float(end)) + tolerance
+    return low <= float(value) <= high
 
 
 def _section_terminal_edge(section, *, side_label: str, fallback_half_width: float) -> tuple[float, float]:

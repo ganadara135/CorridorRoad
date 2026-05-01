@@ -128,6 +128,7 @@ def test_plan_profile_command_resources_use_connection_review_label() -> None:
 
     assert resources["MenuText"] == "Plan/Profile Connection Review"
     assert "Alignment, Stations, Profile, and TIN EG connectivity" in resources["ToolTip"]
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("plan_profile_review.svg")
 
 
 def test_show_v1_plan_profile_preview_returns_preview_without_gui() -> None:
