@@ -45,7 +45,12 @@ APPLIED_SECTION_REVIEW_ROW_COLORS = {
 APPLIED_SECTION_REVIEW_TEXT_COLOR = (20, 20, 20)
 
 
-def build_document_applied_section_set(document=None, *, project=None, corridor_id: str = "corridor:main"):
+def build_document_applied_section_set(
+    document=None,
+    *,
+    project=None,
+    corridor_id: str = "corridor:main",
+):
     """Build an AppliedSectionSet result from the active v1 source objects."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -406,7 +411,11 @@ class V1AppliedSectionsTaskPanel:
             obj = apply_v1_applied_section_set(document=self.document, applied_section_set=result)
             self._set_progress(85, "Refreshing station review...")
             diagnostic_count = sum(len(section.diagnostic_rows) for section in result.sections)
-            message = f"Applied Sections have been built.\nStations: {len(result.station_rows)}\nDiagnostics: {diagnostic_count}"
+            message = (
+                f"Applied Sections have been built.\n"
+                f"Stations: {len(result.station_rows)}\n"
+                f"Diagnostics: {diagnostic_count}"
+            )
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             self._set_review_rows(applied_section_review_rows(result))
             self._set_progress(100, "Applied Sections complete")
@@ -628,6 +637,7 @@ def _applied_section_preview_polylines(section, frame):
         for fg_point, subgrade_point in _matched_offset_point_pairs(section, "fg_surface", "subgrade_surface"):
             polylines.append(("subgrade_link", [fg_point, subgrade_point]))
     if fg_points:
+        polylines.extend(_applied_section_ditch_point_polylines(section))
         side_slope_polylines = _applied_section_side_slope_point_polylines(section)
         if side_slope_polylines:
             polylines.extend(side_slope_polylines)
@@ -652,6 +662,41 @@ def _applied_section_point_role_vectors(section, point_role: str):
         except Exception:
             pass
     return _unique_preview_points(vectors)
+
+
+def _applied_section_ditch_point_polylines(section):
+    fg_edges = _applied_section_fg_edge_rows(section)
+    if len(fg_edges) < 2:
+        return []
+    ditch_rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+    ]
+    if not ditch_rows:
+        return []
+
+    right_edge = fg_edges[0]
+    left_edge = fg_edges[-1]
+    polylines = []
+    for side_label, edge, direction in (
+        ("left", left_edge, 1.0),
+        ("right", right_edge, -1.0),
+    ):
+        edge_offset = float(getattr(edge, "lateral_offset", 0.0) or 0.0)
+        side_points = []
+        for point in ditch_rows:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+            if (offset - edge_offset) * direction < -1.0e-9:
+                continue
+            side_points.append(point)
+        side_points.sort(key=lambda point: (float(getattr(point, "lateral_offset", 0.0) or 0.0) - edge_offset) * direction)
+        vectors = [_point_row_vector(edge)]
+        vectors.extend(_point_row_vector(point) for point in side_points)
+        vectors = _unique_preview_points([vector for vector in vectors if vector is not None])
+        if len(vectors) >= 2:
+            polylines.append((f"{side_label}_ditch_points", vectors))
+    return polylines
 
 
 def _matched_offset_point_pairs(section, first_role: str, second_role: str):

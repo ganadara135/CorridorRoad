@@ -113,6 +113,7 @@ class TINMeshPreviewMapper:
         object_name: str = "",
         mesh_module=None,
         app_module=None,
+        recompute: bool = True,
     ) -> TINMeshPreviewResult:
         """Create a FreeCAD Mesh::Feature preview object for a TINSurface."""
 
@@ -129,10 +130,11 @@ class TINMeshPreviewMapper:
                 obj.Label = label
             except Exception:
                 label = str(getattr(obj, "Label", "") or name)
-            try:
-                document.recompute()
-            except Exception:
-                pass
+            if bool(recompute):
+                try:
+                    document.recompute()
+                except Exception:
+                    pass
             return TINMeshPreviewResult(
                 status="created",
                 object_name=str(getattr(obj, "Name", "") or name),
@@ -156,6 +158,7 @@ class TINMeshPreviewMapper:
         surface_role: str = "base",
         mesh_module=None,
         app_module=None,
+        recompute: bool = True,
     ) -> TINMeshPreviewResult:
         """Create or update one reusable Mesh::Feature preview for a TINSurface."""
 
@@ -183,10 +186,11 @@ class TINMeshPreviewMapper:
             _set_integer_property(obj, "VertexCount", len(list(getattr(surface, "vertex_rows", []) or [])))
             _set_integer_property(obj, "TriangleCount", len(list(getattr(surface, "triangle_rows", []) or [])))
             _style_preview_object(obj, surface_role=str(surface_role or "base"))
-            try:
-                document.recompute()
-            except Exception:
-                pass
+            if bool(recompute):
+                try:
+                    document.recompute()
+                except Exception:
+                    pass
             return TINMeshPreviewResult(
                 status=status,
                 object_name=str(getattr(obj, "Name", "") or name),

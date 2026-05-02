@@ -28,14 +28,10 @@ class V1AppliedSectionSetObject:
 
     def execute(self, obj):
         ensure_v1_applied_section_set_properties(obj)
-        try:
-            obj.Shape = build_v1_applied_section_set_shape(obj)
-        except Exception:
-            if Part is not None:
-                try:
-                    obj.Shape = Part.Shape()
-                except Exception:
-                    pass
+        if str(getattr(obj, "ReviewShapeStatus", "") or "") == "built":
+            build_v1_applied_section_set_review_shape(obj)
+        else:
+            _set_empty_applied_section_set_shape(obj)
         return
 
 
@@ -47,6 +43,15 @@ class ViewProviderV1AppliedSectionSet:
     def __init__(self, vobj):
         vobj.Proxy = self
         _style_applied_section_set_view(vobj, visible=False)
+
+    def onChanged(self, vobj, prop):
+        if str(prop or "") != "Visibility":
+            return
+        try:
+            if bool(getattr(vobj, "Visibility", False)):
+                build_v1_applied_section_set_review_shape(getattr(vobj, "Object", None), visible=True)
+        except Exception:
+            pass
 
     def getIcon(self):
         try:
@@ -101,6 +106,8 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyIntegerList", "DiagnosticCounts", "Diagnostics", "diagnostic counts")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic summary rows")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
+    _add_property(obj, "App::PropertyString", "ReviewShapeStatus", "Review", "full review shape build status")
+    _add_property(obj, "App::PropertyInteger", "ReviewShapeStationCount", "Review", "station count used by the full review shape")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1AppliedSectionSet"
@@ -112,6 +119,8 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
         obj.AppliedSectionSetId = f"applied-sections:{str(getattr(obj, 'Name', '') or 'v1')}"
     if not str(getattr(obj, "CRRecordKind", "") or ""):
         obj.CRRecordKind = "v1_applied_section_set"
+    if not str(getattr(obj, "ReviewShapeStatus", "") or ""):
+        obj.ReviewShapeStatus = "not_built"
 
 
 def create_or_update_v1_applied_section_set_object(
@@ -210,20 +219,42 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DiagnosticCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "diagnostic_rows", []) or [])) for row in station_rows]
     obj.DiagnosticRows = _diagnostic_rows(sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
-    try:
-        obj.Shape = build_v1_applied_section_set_shape(obj)
-    except Exception:
-        if Part is not None:
-            try:
-                obj.Shape = Part.Shape()
-            except Exception:
-                pass
+    obj.ReviewShapeStatus = "not_built"
+    obj.ReviewShapeStationCount = 0
+    _set_empty_applied_section_set_shape(obj)
     _style_applied_section_set_view(getattr(obj, "ViewObject", None), visible=False)
     try:
         obj.touch()
     except Exception:
         pass
     return obj
+
+
+def build_v1_applied_section_set_review_shape(obj, *, visible: bool | None = None):
+    """Build and attach the full all-station review shape on demand."""
+
+    if obj is None:
+        return None
+    ensure_v1_applied_section_set_properties(obj)
+    shape = build_v1_applied_section_set_shape(obj)
+    if shape is not None:
+        try:
+            obj.Shape = shape
+            obj.ReviewShapeStatus = "built"
+            obj.ReviewShapeStationCount = int(getattr(obj, "StationCount", 0) or 0)
+        except Exception:
+            pass
+    _style_applied_section_set_view(getattr(obj, "ViewObject", None), visible=visible)
+    return shape
+
+
+def _set_empty_applied_section_set_shape(obj) -> None:
+    if obj is None or Part is None:
+        return
+    try:
+        obj.Shape = Part.Shape()
+    except Exception:
+        pass
 
 
 def _style_applied_section_set_view(vobj, *, visible: bool | None = None) -> None:
@@ -241,7 +272,9 @@ def _style_applied_section_set_view(vobj, *, visible: bool | None = None) -> Non
         if hasattr(vobj, "DrawStyle"):
             vobj.DrawStyle = "Solid"
         if visible is not None:
-            vobj.Visibility = bool(visible)
+            target = bool(visible)
+            if bool(getattr(vobj, "Visibility", False)) != target:
+                vobj.Visibility = target
     except Exception:
         pass
 

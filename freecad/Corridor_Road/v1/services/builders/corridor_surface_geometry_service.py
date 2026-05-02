@@ -1286,16 +1286,16 @@ def _interpolate_applied_section_frame(first, second, ratio: float) -> AppliedSe
 def _interpolate_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
     first_points = list(getattr(first, "point_rows", []) or [])
     second_points = list(getattr(second, "point_rows", []) or [])
-    if len(first_points) != len(second_points):
-        return _interpolate_side_slope_applied_section_points(first, second, ratio)
-    output: list[AppliedSectionPoint] = []
     t = min(max(float(ratio), 0.0), 1.0)
+    if len(first_points) != len(second_points):
+        return _interpolate_stable_applied_section_points(first, second, t)
+    output: list[AppliedSectionPoint] = []
     for index, first_point in enumerate(first_points):
         second_point = second_points[index]
         first_role = str(getattr(first_point, "point_role", "") or "")
         second_role = str(getattr(second_point, "point_role", "") or "")
         if first_role != second_role:
-            return _interpolate_side_slope_applied_section_points(first, second, t)
+            return _interpolate_stable_applied_section_points(first, second, t)
         output.append(
             AppliedSectionPoint(
                 point_id=f"{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}",
@@ -1307,6 +1307,47 @@ def _interpolate_applied_section_points(first, second, ratio: float) -> list[App
             )
         )
     return output
+
+
+def _interpolate_stable_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+    output: list[AppliedSectionPoint] = []
+    t = min(max(float(ratio), 0.0), 1.0)
+    for role in ("fg_surface", "subgrade_surface", "ditch_surface"):
+        output.extend(_interpolate_matching_role_points(first, second, role=role, ratio=t))
+    output.extend(_interpolate_side_slope_applied_section_points(first, second, t))
+    return output
+
+
+def _interpolate_matching_role_points(first, second, *, role: str, ratio: float) -> list[AppliedSectionPoint]:
+    first_rows = _role_points_for_interpolation(first, role=role)
+    second_rows = _role_points_for_interpolation(second, role=role)
+    if not first_rows or not second_rows or len(first_rows) != len(second_rows):
+        return []
+    t = min(max(float(ratio), 0.0), 1.0)
+    output: list[AppliedSectionPoint] = []
+    for index, first_point in enumerate(first_rows):
+        second_point = second_rows[index]
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"supplemental:{role}:{index}:{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}",
+                x=_lerp(getattr(first_point, "x", 0.0), getattr(second_point, "x", 0.0), t),
+                y=_lerp(getattr(first_point, "y", 0.0), getattr(second_point, "y", 0.0), t),
+                z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
+                point_role=role,
+                lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+            )
+        )
+    return output
+
+
+def _role_points_for_interpolation(section, *, role: str) -> list[object]:
+    rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == role
+    ]
+    rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+    return rows
 
 
 def _interpolate_side_slope_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:

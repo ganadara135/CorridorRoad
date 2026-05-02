@@ -70,6 +70,30 @@ def test_sample_xy_two_triangle_square_interpolates_z() -> None:
     assert abs(float(result.z or 0.0) - 15.0) < 1e-9
 
 
+def test_sample_xy_reuses_spatial_index_for_repeated_queries() -> None:
+    service = TinSamplingService()
+    surface = _square_surface()
+
+    first = service.sample_xy(surface=surface, x=2.5, y=2.5)
+    second = service.sample_xy(surface=surface, x=7.5, y=7.5)
+
+    assert first.found is True
+    assert second.found is True
+    assert len(service._index_cache) == 1
+
+
+def test_sample_xy_preserves_triangle_order_on_shared_boundary() -> None:
+    result = TinSamplingService().sample_xy(
+        surface=_square_surface(),
+        x=5.0,
+        y=5.0,
+    )
+
+    assert result.found is True
+    assert result.status == "ok"
+    assert result.face_id == "t0"
+
+
 def test_sample_xy_accepts_boundary_point() -> None:
     result = TinSamplingService().sample_xy(
         surface=_single_triangle_surface(),

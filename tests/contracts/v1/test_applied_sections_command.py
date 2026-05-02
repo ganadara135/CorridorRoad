@@ -20,7 +20,10 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_model_from_document
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
-from freecad.Corridor_Road.v1.objects.obj_applied_section import find_v1_applied_section_set
+from freecad.Corridor_Road.v1.objects.obj_applied_section import (
+    build_v1_applied_section_set_review_shape,
+    find_v1_applied_section_set,
+)
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
@@ -158,6 +161,12 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         assert "components:2" in rows[0]["ditch_summary"]
         assert "points:" in rows[0]["ditch_summary"]
         assert rows[0]["slope_face_summary"]
+        polylines = applied_sections_command._applied_section_preview_polylines(
+            result.sections[0],
+            result.sections[0].frame,
+        )
+        assert any(role == "left_ditch_points" for role, _points in polylines)
+        assert any(role == "right_ditch_points" for role, _points in polylines)
     finally:
         App.closeDocument(doc.Name)
 
@@ -231,14 +240,22 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
             "template:basic-road",
         ]
         assert hasattr(obj, "Shape")
+        assert obj.ReviewShapeStatus == "not_built"
+        assert int(obj.ReviewShapeStationCount) == 0
+        assert obj.Shape.isNull()
+        build_v1_applied_section_set_review_shape(obj)
+        assert obj.ReviewShapeStatus == "built"
+        assert int(obj.ReviewShapeStationCount) == 5
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         if getattr(obj, "ViewObject", None) is not None:
             assert obj.ViewObject.Visibility is False
             assert tuple(round(float(value), 2) for value in obj.ViewObject.LineColor) == (0.58, 0.70, 0.88)
             assert float(obj.ViewObject.LineWidth) <= 1.0
             obj.ViewObject.Visibility = True
+            assert obj.ReviewShapeStatus == "built"
             apply_v1_applied_section_set(document=doc, project=project)
             assert obj.ViewObject.Visibility is False
+            assert obj.ReviewShapeStatus == "not_built"
     finally:
         App.closeDocument(doc.Name)
 
@@ -261,10 +278,12 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
 
         assert len(progress_bars) == 1
+        assert not any(check.text() == "Fast Evaluation" for check in panel.form.findChildren(QtWidgets.QCheckBox))
         assert progress_bars[0].format() == "Ready"
         assert panel._apply(close_after=False) is True
         assert panel._progress.value() == 100
         assert panel._progress.format() == "Applied Sections complete"
+        assert "Fast Evaluation" not in panel._summary.toPlainText()
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)

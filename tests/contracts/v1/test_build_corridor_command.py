@@ -576,10 +576,21 @@ def test_slope_face_markers_include_daylight_contact_vertices() -> None:
         )
 
         marker = doc.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
+        assert marker is None
+        assert created == []
+        assert set_corridor_build_daylight_contact_marker_visibility(doc, True) is None
+
+        created = build_corridor_command._create_slope_face_diagnostic_markers(
+            document=doc,
+            project=project,
+            surface=surface,
+            show_daylight_contact_markers=True,
+        )
+
+        marker = doc.getObject("ReviewIssueSlopeFaceIntersectionMarkers")
         assert marker is not None
         assert marker.Label == "Slope Face Daylight / EG Intersections"
         assert int(marker.MarkerCount) == 2
-        assert build_corridor_command._object_visibility(marker) is False
         assert marker in created
         shown = set_corridor_build_daylight_contact_marker_visibility(doc, True)
         assert shown == marker

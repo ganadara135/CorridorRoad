@@ -3002,6 +3002,77 @@ def test_corridor_surface_geometry_service_supplemental_sampling_keeps_mismatche
     assert not any("supplemental" in vertex.source_point_ref and vertex.notes == "" for vertex in result.vertex_rows)
 
 
+def test_corridor_surface_geometry_service_supplemental_sampling_preserves_ditch_rows() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-ditch-supplemental",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-ditch-supplemental",
+        corridor_id="cor-ditch-supplemental",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 0.0, -4.0, 10.0, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:left", 0.0, 4.0, 10.0, "fg_surface", 4.0),
+                    AppliedSectionPoint("ditch:r0", 0.0, -5.0, 9.8, "ditch_surface", -5.0),
+                    AppliedSectionPoint("ditch:r1", 0.0, -4.0, 10.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("slope:right:1", 0.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("daylight:right", 0.0, -18.0, 10.0, "daylight_marker", -18.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 0.0),
+                surface_right_width=4.0,
+                point_rows=[
+                    AppliedSectionPoint("fg:right", 20.0, -4.0, 10.0, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:left", 20.0, 4.0, 10.0, "fg_surface", 4.0),
+                    AppliedSectionPoint("ditch:r0", 20.0, -5.0, 9.8, "ditch_surface", -5.0),
+                    AppliedSectionPoint("ditch:r1", 20.0, -4.0, 10.0, "ditch_surface", -4.0),
+                    AppliedSectionPoint("slope:right:1", 20.0, -7.0, 8.5, "side_slope_surface", -7.0),
+                    AppliedSectionPoint("bench:right:1", 20.0, -8.5, 8.47, "bench_surface", -8.5),
+                    AppliedSectionPoint("daylight:right", 20.0, -9.0, 8.2, "daylight_marker", -9.0),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_drainage_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-ditch-supplemental:drainage",
+            supplemental_sampling_enabled=True,
+            supplemental_sampling_max_spacing=5.0,
+        )
+    )
+
+    quality = {row.kind: row.value for row in result.quality_rows}
+    assert result.surface_kind == "drainage_surface"
+    assert quality["station_count"] > 2
+    assert quality["section_point_count"] == 2
+    assert any("supplemental" in vertex.source_point_ref for vertex in result.vertex_rows)
+
+
 def test_corridor_surface_geometry_service_uses_shared_station_breaks_across_adjacent_daylight_spans() -> None:
     corridor = CorridorModel(
         schema_version=1,

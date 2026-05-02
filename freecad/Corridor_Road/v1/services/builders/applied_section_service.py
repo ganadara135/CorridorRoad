@@ -990,7 +990,7 @@ def _clip_bench_segments_to_terrain(
     direction: float,
     frame: AppliedSectionFrame | None,
     existing_ground_surface: TINSurface | None,
-    sampling_service: TinSamplingService | None,
+    sampling_service: TinSamplingService | None = None,
 ) -> tuple[list[dict[str, object]], list[DiagnosticMessage]]:
     params = dict(getattr(component, "parameters", {}) or {})
     if str(params.get("daylight_mode", "") or "").strip().lower() != "terrain":

@@ -23,8 +23,64 @@ class TinSampleResult:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class _TinTriangleIndexEntry:
+    """Prepared triangle row used by the in-process sampling index."""
+
+    order: int
+    triangle: TINTriangle
+    vertices: tuple[TINVertex, TINVertex, TINVertex]
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+
+
+@dataclass(frozen=True)
+class _TinTriangleIndex:
+    """Lightweight uniform-grid index for repeated XY sampling."""
+
+    entries: tuple[_TinTriangleIndexEntry, ...]
+    grid: dict[tuple[int, int], tuple[_TinTriangleIndexEntry, ...]]
+    min_x: float
+    max_x: float
+    min_y: float
+    max_y: float
+    cell_width: float
+    cell_height: float
+    grid_size: int
+
+    def candidates(
+        self,
+        *,
+        x: float,
+        y: float,
+        tolerance: float,
+    ) -> tuple[_TinTriangleIndexEntry, ...]:
+        if (
+            x < self.min_x - tolerance
+            or x > self.max_x + tolerance
+            or y < self.min_y - tolerance
+            or y > self.max_y + tolerance
+        ):
+            return ()
+
+        ix = self._cell_index(value=x, origin=self.min_x, size=self.cell_width)
+        iy = self._cell_index(value=y, origin=self.min_y, size=self.cell_height)
+        return self.grid.get((ix, iy), ())
+
+    def _cell_index(self, *, value: float, origin: float, size: float) -> int:
+        if size <= 0.0:
+            return 0
+        index = int((value - origin) / size)
+        return max(0, min(self.grid_size - 1, index))
+
+
 class TinSamplingService:
     """Provide query-oriented TIN sampling."""
+
+    def __init__(self) -> None:
+        self._index_cache: dict[tuple[str, int, int, int], _TinTriangleIndex | None] = {}
 
     def sample_xy(
         self,
@@ -47,26 +103,32 @@ class TinSamplingService:
                 notes="TIN surface object is required for XY sampling.",
             )
 
-        vertices = surface.vertex_map()
-        degenerate_count = 0
-        for triangle in surface.triangle_rows:
-            tri_vertices = self._triangle_vertices(vertices, triangle)
-            if tri_vertices is None:
-                continue
-            sample = self._sample_triangle(
-                triangle=triangle,
-                vertices=tri_vertices,
+        index = self._triangle_index(surface)
+        if index is None:
+            return TinSampleResult(
+                surface_ref=resolved_ref,
+                x=x,
+                y=y,
+                status="no_hit",
+                notes="No containing TIN triangle found.",
+            )
+
+        candidates = index.candidates(x=x, y=y, tolerance=tolerance)
+        sample, degenerate_count = self._sample_entries(
+            entries=candidates,
+            x=x,
+            y=y,
+            tolerance=tolerance,
+        )
+        if sample is None:
+            sample, degenerate_count = self._sample_entries(
+                entries=index.entries,
                 x=x,
                 y=y,
                 tolerance=tolerance,
             )
-            if sample == "degenerate":
-                degenerate_count += 1
-                continue
-            if sample is None:
-                continue
-
-            z, confidence = sample
+        if sample is not None:
+            triangle, z, confidence = sample
             return TinSampleResult(
                 surface_ref=resolved_ref,
                 x=x,
@@ -162,6 +224,140 @@ class TinSamplingService:
             return vertices[triangle.v1], vertices[triangle.v2], vertices[triangle.v3]
         except KeyError:
             return None
+
+    def _triangle_index(self, surface: TINSurface) -> _TinTriangleIndex | None:
+        key = (
+            str(surface.surface_id),
+            id(surface),
+            len(surface.vertex_rows),
+            len(surface.triangle_rows),
+        )
+        if key not in self._index_cache:
+            self._index_cache[key] = self._build_triangle_index(surface)
+        return self._index_cache[key]
+
+    def _build_triangle_index(self, surface: TINSurface) -> _TinTriangleIndex | None:
+        vertices = surface.vertex_map()
+        entries: list[_TinTriangleIndexEntry] = []
+        for order, triangle in enumerate(surface.triangle_rows):
+            tri_vertices = self._triangle_vertices(vertices, triangle)
+            if tri_vertices is None:
+                continue
+            xs = [float(vertex.x) for vertex in tri_vertices]
+            ys = [float(vertex.y) for vertex in tri_vertices]
+            entries.append(
+                _TinTriangleIndexEntry(
+                    order=order,
+                    triangle=triangle,
+                    vertices=tri_vertices,
+                    min_x=min(xs),
+                    max_x=max(xs),
+                    min_y=min(ys),
+                    max_y=max(ys),
+                )
+            )
+        if not entries:
+            return None
+
+        min_x = min(entry.min_x for entry in entries)
+        max_x = max(entry.max_x for entry in entries)
+        min_y = min(entry.min_y for entry in entries)
+        max_y = max(entry.max_y for entry in entries)
+        grid_size = self._grid_size(len(entries))
+        x_span = max(max_x - min_x, 1.0)
+        y_span = max(max_y - min_y, 1.0)
+        cell_width = x_span / float(grid_size)
+        cell_height = y_span / float(grid_size)
+
+        mutable_grid: dict[tuple[int, int], list[_TinTriangleIndexEntry]] = {}
+        for entry in entries:
+            ix0 = self._cell_index(
+                value=entry.min_x,
+                origin=min_x,
+                size=cell_width,
+                grid_size=grid_size,
+            )
+            ix1 = self._cell_index(
+                value=entry.max_x,
+                origin=min_x,
+                size=cell_width,
+                grid_size=grid_size,
+            )
+            iy0 = self._cell_index(
+                value=entry.min_y,
+                origin=min_y,
+                size=cell_height,
+                grid_size=grid_size,
+            )
+            iy1 = self._cell_index(
+                value=entry.max_y,
+                origin=min_y,
+                size=cell_height,
+                grid_size=grid_size,
+            )
+            for ix in range(min(ix0, ix1), max(ix0, ix1) + 1):
+                for iy in range(min(iy0, iy1), max(iy0, iy1) + 1):
+                    mutable_grid.setdefault((ix, iy), []).append(entry)
+
+        grid = {cell: tuple(cell_entries) for cell, cell_entries in mutable_grid.items()}
+        return _TinTriangleIndex(
+            entries=tuple(entries),
+            grid=grid,
+            min_x=min_x,
+            max_x=max_x,
+            min_y=min_y,
+            max_y=max_y,
+            cell_width=cell_width,
+            cell_height=cell_height,
+            grid_size=grid_size,
+        )
+
+    def _sample_entries(
+        self,
+        *,
+        entries: tuple[_TinTriangleIndexEntry, ...],
+        x: float,
+        y: float,
+        tolerance: float,
+    ) -> tuple[tuple[TINTriangle, float, float] | None, int]:
+        degenerate_count = 0
+        for entry in entries:
+            sample = self._sample_triangle(
+                triangle=entry.triangle,
+                vertices=entry.vertices,
+                x=x,
+                y=y,
+                tolerance=tolerance,
+            )
+            if sample == "degenerate":
+                degenerate_count += 1
+                continue
+            if sample is None:
+                continue
+
+            z, confidence = sample
+            return (entry.triangle, z, confidence), degenerate_count
+        return None, degenerate_count
+
+    @staticmethod
+    def _grid_size(entry_count: int) -> int:
+        if entry_count <= 4:
+            return 1
+        size = int(float(entry_count) ** 0.5) + 1
+        return max(4, min(128, size))
+
+    @staticmethod
+    def _cell_index(
+        *,
+        value: float,
+        origin: float,
+        size: float,
+        grid_size: int,
+    ) -> int:
+        if size <= 0.0:
+            return 0
+        index = int((float(value) - float(origin)) / float(size))
+        return max(0, min(int(grid_size) - 1, index))
 
     @staticmethod
     def _sample_triangle(

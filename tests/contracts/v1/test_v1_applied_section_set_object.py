@@ -8,6 +8,7 @@ from freecad.Corridor_Road.objects.obj_project import (
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
+    build_v1_applied_section_set_review_shape,
     create_or_update_v1_applied_section_set_object,
     find_v1_applied_section_set,
     to_applied_section_set,
@@ -125,6 +126,13 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.ActiveStructureRuleRows) == ["section:1|rule:bridge-section"]
         assert list(obj.ActiveStructureInfluenceZoneRows) == ["section:1|zone:bridge-01"]
         assert list(obj.StructureDiagnosticRows) == ["section:1|info\\pstructure\\psection:1\\pStructure context active."]
+        assert obj.ReviewShapeStatus == "not_built"
+        assert int(obj.ReviewShapeStationCount) == 0
+        assert obj.Shape.isNull()
+        build_v1_applied_section_set_review_shape(obj)
+        assert obj.ReviewShapeStatus == "built"
+        assert int(obj.ReviewShapeStationCount) == 2
+        assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)
@@ -161,6 +169,27 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert model.sections[0].point_rows[0].point_role == "fg_surface"
         assert model.sections[0].point_rows[0].lateral_offset == -4.5
         assert find_v1_applied_section_set(doc) == obj
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_applied_section_set_builds_review_shape_when_unhidden() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        obj = create_or_update_v1_applied_section_set_object(
+            document=doc,
+            project=project,
+            applied_section_set=_sample_set(),
+        )
+        if getattr(obj, "ViewObject", None) is None:
+            return
+
+        assert obj.ReviewShapeStatus == "not_built"
+        obj.ViewObject.Visibility = True
+
+        assert obj.ViewObject.Visibility is True
+        assert obj.ReviewShapeStatus == "built"
+        assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
     finally:
         App.closeDocument(doc.Name)
 

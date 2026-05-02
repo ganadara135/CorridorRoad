@@ -885,6 +885,7 @@ def create_corridor_design_surface_preview(
         object_name="V1CorridorDesignSurfacePreview",
         label_prefix="Corridor Design Surface",
         surface_role="design",
+        recompute=False,
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
@@ -937,6 +938,7 @@ def create_corridor_subgrade_surface_preview(
         object_name="V1CorridorSubgradeSurfacePreview",
         label_prefix="Corridor Subgrade Surface",
         surface_role="subgrade",
+        recompute=False,
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
@@ -991,6 +993,7 @@ def create_corridor_daylight_surface_preview(
         object_name="V1CorridorDaylightSurfacePreview",
         label_prefix="Corridor Slope Face Surface",
         surface_role="daylight",
+        recompute=False,
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
@@ -1056,6 +1059,7 @@ def create_corridor_drainage_surface_preview(
         object_name="V1CorridorDrainageSurfacePreview",
         label_prefix="Corridor Drainage Surface",
         surface_role="drainage",
+        recompute=False,
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
@@ -2301,6 +2305,9 @@ def _create_slope_face_diagnostic_markers(
     """Create visible 3D markers for slope-face EG tie-in states."""
 
     if document is None or surface is None:
+        return []
+    if not bool(show_daylight_contact_markers):
+        _remove_slope_face_diagnostic_markers(document)
         return []
     status_points = _slope_face_status_points(surface)
     if not status_points:

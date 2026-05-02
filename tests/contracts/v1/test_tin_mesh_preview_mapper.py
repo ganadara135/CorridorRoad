@@ -129,6 +129,76 @@ def test_create_or_update_preview_object_reuses_edited_tin_mesh() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_create_or_update_preview_object_can_skip_recompute() -> None:
+    class FakeView:
+        pass
+
+    class FakeObject:
+        def __init__(self, name):
+            self.Name = name
+            self.Label = name
+            self.ViewObject = FakeView()
+
+        def addProperty(self, _property_type, name, _group, _doc):
+            setattr(self, name, None)
+
+    class FakeDocument:
+        def __init__(self):
+            self.objects = {}
+            self.recompute_count = 0
+
+        def getObject(self, name):
+            return self.objects.get(name)
+
+        def addObject(self, _type_name, name):
+            obj = FakeObject(name)
+            self.objects[name] = obj
+            return obj
+
+        def recompute(self):
+            self.recompute_count += 1
+
+    class FakeVector:
+        def __init__(self, *_values):
+            pass
+
+    class FakeMesh:
+        def __init__(self):
+            self.CountFacets = 0
+
+        def addFacet(self, *_points):
+            self.CountFacets += 1
+
+    class FakeMeshModule:
+        Mesh = FakeMesh
+
+    class FakeAppModule:
+        Vector = FakeVector
+
+    doc = FakeDocument()
+    mapper = TINMeshPreviewMapper()
+
+    default_result = mapper.create_or_update_preview_object(
+        doc,
+        _small_surface(),
+        object_name="TINPreview_Default_Recompute",
+        mesh_module=FakeMeshModule,
+        app_module=FakeAppModule,
+    )
+    skipped_result = mapper.create_or_update_preview_object(
+        doc,
+        _small_surface(),
+        object_name="TINPreview_Skip_Recompute",
+        mesh_module=FakeMeshModule,
+        app_module=FakeAppModule,
+        recompute=False,
+    )
+
+    assert default_result.status == "created"
+    assert skipped_result.status == "created"
+    assert doc.recompute_count == 1
+
+
 def test_edited_tin_preview_routes_to_existing_ground_mesh_preview_tree() -> None:
     doc = App.newDocument("TINMeshPreviewMapperTreeRouteTest")
     try:
