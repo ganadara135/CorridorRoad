@@ -32,6 +32,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_drainage_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_view_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
@@ -67,6 +68,9 @@ class CorridorRoadWorkbench(Gui.Workbench):
             "CorridorRoad_V1EditStructures",
             "CorridorRoad_V1EditRegions",
         ]
+        drainage_commands = [
+            "CorridorRoad_V1EditDrainage",
+        ]
         corridor_commands = [
             "CorridorRoad_V1AppliedSections",
             "CorridorRoad_GenerateCorridor",
@@ -89,6 +93,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
             + alignment_commands
             + station_profile_commands
             + assembly_region_commands
+            + drainage_commands
             + corridor_commands
             + review_commands
             + output_commands
@@ -102,6 +107,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         self.appendMenu(["CorridorRoad", "Alignment"], list(alignment_commands))
         self.appendMenu(["CorridorRoad", "Stations & Profile"], list(station_profile_commands))
         self.appendMenu(["CorridorRoad", "Assembly & Regions"], list(assembly_region_commands))
+        self.appendMenu(["CorridorRoad", "Drainage"], list(drainage_commands))
         self.appendMenu(["CorridorRoad", "Corridor"], list(corridor_commands))
         self.appendMenu(["CorridorRoad", "Review"], list(review_commands))
         self.appendMenu(["CorridorRoad", "Outputs & Exchange"], list(output_commands))

@@ -3,31 +3,77 @@
 
 # CorridorRoad Overview
 
-Corridor-oriented road design workflow with a fixed project tree and guided task panels.
+CorridorRoad is a FreeCAD workbench for corridor-style road design, review, and output preparation.
 
-## Main Features
-- Fixed Civil3D-style project tree with automatic object routing.
-- Horizontal alignment editing with PI, radius, and transition input.
-- Station generation and EG/FG profile workflow.
-- PVI-based vertical alignment editing.
-- 3D centerline generation from horizontal and vertical design data.
-- Section, corridor loft, design terrain, and cut/fill tools.
+The current development focus is the v1 workflow reset: clear source models, evaluated results, review viewers, and output packages instead of editing generated geometry directly.
 
-## Typical Workflow
-1. Create a CorridorRoad project.
-2. Set the design standard and project coordinates.
-3. Create or edit the horizontal alignment.
-4. Generate stations and edit EG/FG profiles.
-5. Edit PVI data and generate the 3D centerline.
-6. Generate sections, corridor loft, and design terrain.
-7. Run cut/fill analysis.
+## Current V1 Workflow
+
+Typical v1 workflow:
+
+1. Create or open a CorridorRoad project.
+2. Prepare TIN terrain data.
+3. Edit Alignment.
+4. Generate Stations.
+5. Edit Profile.
+6. Edit Assembly and Region definitions.
+7. Optionally prepare Structures and Drainage references.
+8. Generate Applied Sections.
+9. Build Corridor preview surfaces.
+10. Review Cross Sections, Plan/Profile, and Earthwork.
+11. Prepare Structure Output and exchange handoff data where available.
+
+## Available Areas
+
+- Project setup and v1 project tree routing
+- TIN editing and review
+- Alignment, station, and profile workflow
+- Assembly editor with ditch, side slope, bench, and preset support
+- Region editor with assembly, structure, and drainage references
+- Applied Sections generation and review handoff
+- Build Corridor preview surfaces and diagnostics
+- Cross Section Viewer
+- Plan/Profile Connection Review
+- Earthwork Viewer and v1-native earthwork report pipeline
+- Structure editor and Structure Output package workflow
+- Outputs & Exchange entry point
+- AI Assist entry point
+
+## In Progress
+
+- Drainage has a toolbar/menu entry and a planning document, but the full Drainage Editor is still under development.
+- Drainage currently appears mainly through Assembly ditch shapes, Applied Section `ditch_surface` points, Build Corridor drainage diagnostics, and planned `DrainageModel` integration.
+- Advanced hydraulic analysis, automatic pipe sizing, and full drainage report output are not part of the current release scope.
+
+## Design Direction
+
+CorridorRoad v1 follows a source -> evaluation -> result -> output -> presentation structure.
+
+- Source intent belongs in models such as Alignment, Profile, Assembly, Region, Structure, and Drainage.
+- Applied Sections and Corridor surfaces are generated results.
+- Review viewers expose diagnostics and handoff context.
+- Output packages preserve source traceability for later exchange and reporting.
 
 ## Documentation
+
+Primary v1 design documents are in `docsV1/`.
+
+Key references:
+
+- `docsV1/V1_MASTER_PLAN.md`
+- `docsV1/V1_SECTION_MODEL.md`
+- `docsV1/V1_REGION_MODEL.md`
+- `docsV1/V1_STRUCTURE_GEOMETRY_CONTRACT.md`
+- `docsV1/V1_EARTHWORK_IMPLEMENTATION_PLAN.md`
+- `docsV1/V1_DRAINAGE_IMPLEMENTATION_PLAN.md`
+
+Online project resources:
+
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Quick Start: https://github.com/ganadara135/CorridorRoad/wiki/Quick-Start
-- Workflow: https://github.com/ganadara135/CorridorRoad/wiki/Workflow
-- CSV Format: https://github.com/ganadara135/CorridorRoad/wiki/CSV-Format
-- Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
+- Releases: https://github.com/ganadara135/CorridorRoad/releases
+- Issues: https://github.com/ganadara135/CorridorRoad/issues
+- FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
+
 
 ## Support
 - FreeCAD Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
