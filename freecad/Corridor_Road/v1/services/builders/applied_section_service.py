@@ -678,9 +678,14 @@ def _bench_evaluations(
     if template is None:
         return []
     frame_z = float(getattr(frame, "z", 0.0) or 0.0) if frame is not None else 0.0
-    left_width = max(float(surface_left_width or 0.0), 0.0)
-    right_width = max(float(surface_right_width or 0.0), 0.0)
     points = list(fg_points or [])
+    side_edges = _bench_terminal_side_edges(
+        template,
+        frame=frame,
+        fg_points=points,
+        surface_left_width=surface_left_width,
+        surface_right_width=surface_right_width,
+    )
     output: list[_BenchEvaluation] = []
     for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
         if not bool(getattr(component, "enabled", True)):
@@ -691,8 +696,7 @@ def _bench_evaluations(
         if not base_segments:
             continue
         side = str(getattr(component, "side", "") or "center")
-        for side_label, edge_offset, direction in _bench_side_edges(side, left_width=left_width, right_width=right_width):
-            edge_z = _edge_z_at_offset(points, edge_offset, default_z=frame_z)
+        for side_label, edge_offset, edge_z, direction in _bench_side_edges(side, side_edges=side_edges, default_z=frame_z):
             segments, diagnostics = _clip_bench_segments_to_terrain(
                 component,
                 list(base_segments),
@@ -718,13 +722,59 @@ def _bench_evaluations(
     return output
 
 
-def _bench_side_edges(side: str, *, left_width: float, right_width: float) -> list[tuple[str, float, float]]:
+def _bench_terminal_side_edges(
+    template: SectionTemplate | None,
+    *,
+    frame: AppliedSectionFrame | None,
+    fg_points: list[tuple[float, float, float, float]],
+    surface_left_width: float,
+    surface_right_width: float,
+) -> dict[str, tuple[float, float, float]]:
+    """Return slope/bench start edges after fixed-width section and ditch geometry."""
+
+    frame_z = float(getattr(frame, "z", 0.0) or 0.0) if frame is not None else 0.0
+    left_edge = (max(float(surface_left_width or 0.0), 0.0), frame_z)
+    right_edge = (-max(float(surface_right_width or 0.0), 0.0), frame_z)
+    for offset, _x, _y, z in list(fg_points or []):
+        value = float(offset)
+        elev = float(z)
+        if value > left_edge[0] or (abs(value - left_edge[0]) <= 1.0e-9 and elev > left_edge[1]):
+            left_edge = (value, elev)
+        if value < right_edge[0] or (abs(value - right_edge[0]) <= 1.0e-9 and elev > right_edge[1]):
+            right_edge = (value, elev)
+    if frame is not None:
+        for point in _ditch_section_points(
+            template,
+            frame=frame,
+            surface_left_width=surface_left_width,
+            surface_right_width=surface_right_width,
+        ):
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+            z = float(getattr(point, "z", frame_z) or frame_z)
+            if offset > left_edge[0] or (abs(offset - left_edge[0]) <= 1.0e-9 and z > left_edge[1]):
+                left_edge = (offset, z)
+            if offset < right_edge[0] or (abs(offset - right_edge[0]) <= 1.0e-9 and z > right_edge[1]):
+                right_edge = (offset, z)
+    return {
+        "left": (left_edge[0], left_edge[1], 1.0),
+        "right": (right_edge[0], right_edge[1], -1.0),
+    }
+
+
+def _bench_side_edges(
+    side: str,
+    *,
+    side_edges: dict[str, tuple[float, float, float]],
+    default_z: float,
+) -> list[tuple[str, float, float, float]]:
     key = str(side or "center")
-    rows: list[tuple[str, float, float]] = []
+    rows: list[tuple[str, float, float, float]] = []
     if key in {"left", "both", "center"}:
-        rows.append(("left", max(float(left_width or 0.0), 0.0), 1.0))
+        offset, z, direction = side_edges.get("left", (0.0, float(default_z), 1.0))
+        rows.append(("left", float(offset), float(z), float(direction)))
     if key in {"right", "both", "center"}:
-        rows.append(("right", -max(float(right_width or 0.0), 0.0), -1.0))
+        offset, z, direction = side_edges.get("right", (0.0, float(default_z), -1.0))
+        rows.append(("right", float(offset), float(z), float(direction)))
     return rows
 
 

@@ -677,11 +677,10 @@ def _matched_offset_point_pairs(section, first_role: str, second_role: str):
 
 
 def _applied_section_side_slope_point_polylines(section):
-    edge_rows = _applied_section_fg_edge_rows(section)
-    if not edge_rows:
+    terminal_edges = _applied_section_terminal_edge_rows(section)
+    if terminal_edges is None:
         return []
-    left_edge = edge_rows[-1]
-    right_edge = edge_rows[0]
+    left_edge, right_edge = terminal_edges
     point_rows = [
         point
         for point in list(getattr(section, "point_rows", []) or [])
@@ -709,6 +708,19 @@ def _applied_section_side_slope_point_polylines(section):
         if len(vectors) >= 2:
             polylines.append((f"{side_label}_side_slope_points", vectors))
     return polylines
+
+
+def _applied_section_terminal_edge_rows(section):
+    rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") in {"fg_surface", "ditch_surface"}
+    ]
+    if not rows:
+        return None
+    left_edge = max(rows, key=lambda point: (float(getattr(point, "lateral_offset", 0.0) or 0.0), float(getattr(point, "z", 0.0) or 0.0)))
+    right_edge = min(rows, key=lambda point: (float(getattr(point, "lateral_offset", 0.0) or 0.0), -float(getattr(point, "z", 0.0) or 0.0)))
+    return left_edge, right_edge
 
 
 def _applied_section_fg_edge_rows(section):

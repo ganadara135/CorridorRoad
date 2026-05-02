@@ -6,6 +6,7 @@ from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     CmdV1AssemblyEditor,
     V1AssemblyEditorTaskPanel,
     _assembly_preview_points,
+    _bench_shape_diagram,
     _ditch_component_note,
     _ditch_effective_field_keys,
     _ditch_material_note,
@@ -15,8 +16,11 @@ from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
     _bench_component_note,
     _merge_bench_parameters,
     _merge_ditch_parameters,
+    NEW_ASSEMBLY_SOURCE_KEY,
     _side_slope_bench_preview_segments,
     _validate_assembly_model,
+    assembly_source_display_name,
+    assembly_source_rows,
     assembly_preset_model_from_document,
     assembly_preset_names,
     apply_v1_assembly_model,
@@ -91,6 +95,19 @@ def test_assembly_presets_offer_multiple_practical_templates() -> None:
         assert len(side_slopes) == 2
         assert side_slopes[0].parameters["bench_mode"] == "rows"
         assert side_slopes[0].parameters["bench_rows"][0]["width"] == 1.5
+        benched_ditch = assembly_preset_model_from_document("Benched Ditch Road", doc, project=project)
+        benched_ditch_components = benched_ditch.template_rows[0].component_rows
+        benched_ditch_ditches = [component for component in benched_ditch_components if component.kind == "ditch"]
+        benched_ditch_slopes = [component for component in benched_ditch_components if component.kind == "side_slope"]
+        assert "Benched Ditch Road" in names
+        assert benched_ditch.assembly_id == "assembly:benched-ditch-road"
+        assert benched_ditch.active_template_id == "template:benched-ditch-road"
+        assert len(benched_ditch_ditches) == 2
+        assert len(benched_ditch_slopes) == 2
+        assert {component.parameters.get("shape") for component in benched_ditch_ditches} == {"trapezoid"}
+        assert all(component.parameters["bench_mode"] == "rows" for component in benched_ditch_slopes)
+        assert all(component.parameters["repeat_first_bench_to_daylight"] is True for component in benched_ditch_slopes)
+        assert [component.kind for component in benched_ditch_components[-4:]] == ["ditch", "ditch", "side_slope", "side_slope"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -178,6 +195,184 @@ def test_assembly_object_roundtrips_side_slope_bench_parameters() -> None:
         assert side_slopes[0].parameters["bench_mode"] == "rows"
         assert side_slopes[0].parameters["bench_rows"][0]["drop"] == 3.0
         assert side_slopes[0].parameters["repeat_first_bench_to_daylight"] is True
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_source_rows_list_multiple_assembly_objects() -> None:
+    doc, project = _new_project_doc()
+    try:
+        basic = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        benched = assembly_preset_model_from_document("Benched Ditch Road", doc, project=project)
+
+        apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=basic,
+            object_name="V1AssemblyModel_basic",
+        )
+        apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=benched,
+            object_name="V1AssemblyModel_benched_ditch",
+        )
+
+        rows = assembly_source_rows(doc)
+        labels = [str(row["label"]) for row in rows]
+        displays = [str(row["display"]) for row in rows]
+
+        assert {row["assembly_id"] for row in rows} >= {"assembly:basic-road", "assembly:benched-ditch-road"}
+        assert "assembly:basic-road" in displays
+        assert "assembly:benched-ditch-road" in displays
+        assert any("assembly:basic-road" in label and "template:basic-road" in label for label in labels)
+        assert any("assembly:benched-ditch-road" in label and "template:benched-ditch-road" in label for label in labels)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_editor_can_load_selected_assembly_source() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    try:
+        basic = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        benched = assembly_preset_model_from_document("Benched Ditch Road", doc, project=project)
+        first = apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=basic,
+            object_name="V1AssemblyModel_basic",
+        )
+        second = apply_v1_assembly_model(
+            document=doc,
+            project=project,
+            assembly_model=benched,
+            object_name="V1AssemblyModel_benched_ditch",
+        )
+
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+        for index in range(panel._source_combo.count()):
+            if str(panel._source_combo.itemData(index) or "") == second.Name:
+                panel._source_combo.setCurrentIndex(index)
+                break
+        panel._load_selected_assembly_source()
+
+        assert panel.assembly_obj == second
+        assert panel._assembly_id.text() == "assembly:benched-ditch-road"
+        assert panel._template_id.text() == "template:benched-ditch-road"
+        assert panel._table.rowCount() == len(benched.template_rows[0].component_rows)
+        assert first.Name != second.Name
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_editor_marks_dirty_and_creates_new_when_assembly_id_differs() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = __import__(
+        "freecad.Corridor_Road.v1.commands.cmd_assembly_editor",
+        fromlist=["_show_message"],
+    )
+    old_show_message = original_show_message._show_message
+    original_show_message._show_message = lambda *_args, **_kwargs: None
+    try:
+        model = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        obj = apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+
+        panel._assembly_id.setText("assembly:another-road")
+        applied = panel._apply(close_after=False)
+
+        assert applied is True
+        assert panel.assembly_obj != obj
+        assert panel.assembly_obj.AssemblyId == "assembly:another-road"
+        assert "Saved" in panel._dirty_summary.text()
+        assert any(row["assembly_id"] == "assembly:another-road" for row in assembly_source_rows(doc))
+    finally:
+        original_show_message._show_message = old_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_editor_apply_creates_distinct_assembly_source_for_new_id() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = __import__(
+        "freecad.Corridor_Road.v1.commands.cmd_assembly_editor",
+        fromlist=["_show_message"],
+    )
+    old_show_message = original_show_message._show_message
+    original_show_message._show_message = lambda *_args, **_kwargs: None
+    try:
+        model = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        first = apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+        panel._assembly_id.setText("assembly:alternate-road")
+        panel._template_id.setText("template:alternate-road")
+
+        panel._apply(close_after=False)
+
+        rows = assembly_source_rows(doc)
+        assert first.Name == "V1AssemblyModel"
+        assert any(row["assembly_id"] == "assembly:alternate-road" for row in rows)
+        assert len(rows) >= 2
+    finally:
+        original_show_message._show_message = old_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_source_combo_offers_new_assembly_create_mode() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    try:
+        model = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+
+        assert panel._source_combo.itemText(0) == "New Assembly Create"
+        assert panel._source_combo.itemData(0) == NEW_ASSEMBLY_SOURCE_KEY
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_editor_new_assembly_mode_uses_apply_to_create_source() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = __import__(
+        "freecad.Corridor_Road.v1.commands.cmd_assembly_editor",
+        fromlist=["_show_message"],
+    )
+    old_show_message = original_show_message._show_message
+    original_show_message._show_message = lambda *_args, **_kwargs: None
+    try:
+        model = assembly_preset_model_from_document("Basic Road", doc, project=project)
+        apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+        panel = V1AssemblyEditorTaskPanel(document=doc)
+        panel._source_combo.setCurrentIndex(0)
+        panel._load_selected_assembly_source()
+
+        assert panel._new_assembly_mode is True
+        assert panel.assembly_obj is None
+        assert panel._assembly_id.text().startswith("assembly:new-assembly")
+        assert "New Assembly mode" in panel._editing_summary.text()
+
+        panel._apply(close_after=False)
+
+        assert panel._new_assembly_mode is False
+        assert panel.assembly_obj is not None
+        assert str(panel.assembly_obj.AssemblyId).startswith("assembly:new-assembly")
+        assert any(row["assembly_id"] == panel.assembly_obj.AssemblyId for row in assembly_source_rows(doc))
+    finally:
+        original_show_message._show_message = old_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_assembly_source_combo_displays_short_assembly_name() -> None:
+    doc, project = _new_project_doc()
+    try:
+        model = assembly_preset_model_from_document("Benched Ditch Road", doc, project=project)
+        obj = apply_v1_assembly_model(document=doc, project=project, assembly_model=model)
+
+        assert assembly_source_display_name(obj) == "assembly:benched-ditch-road"
     finally:
         App.closeDocument(doc.Name)
 
@@ -280,6 +475,23 @@ def test_bench_component_note_summarizes_rows_and_daylight_context() -> None:
     assert "first_width=1.500" in note
     assert "repeat_to_daylight=on" in note
     assert "daylight=terrain" in note
+
+
+def test_bench_shape_diagram_reflects_bench_rows_and_daylight_context() -> None:
+    diagram = _bench_shape_diagram(
+        [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+        width=12.0,
+        slope=-0.5,
+        repeat=True,
+        daylight_mode="terrain",
+        max_width="80.000",
+    )
+
+    assert "terminal edge -> daylight" in diagram
+    assert "____" in diagram
+    assert "bench: width=1.500" in diagram
+    assert "repeat=on" in diagram
+    assert "daylight=terrain, max=80.000" in diagram
 
 
 def test_ditch_shape_helpers_limit_visible_fields_and_defaults() -> None:

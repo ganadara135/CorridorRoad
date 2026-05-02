@@ -679,6 +679,96 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
     assert min(point.z for point in ditch_points) < result.frame.z
 
 
+def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-bench-ditch",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-bench-ditch",
+        alignment_id="align-bench-ditch",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-bench-ditch",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-bench-ditch",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-right", "lane", component_index=1, side="right", width=3.5),
+                    TemplateComponent("ditch-right", "ditch", component_index=2, side="right", width=1.0, slope=-0.04),
+                    TemplateComponent(
+                        "slope-right",
+                        "side_slope",
+                        component_index=3,
+                        side="right",
+                        width=4.0,
+                        slope=-0.5,
+                        parameters={
+                            "bench_mode": "rows",
+                            "bench_rows": [{"drop": 1.0, "width": 1.0, "slope": -0.02, "post_slope": -0.5}],
+                        },
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-bench-ditch",
+        alignment_id="align-bench-ditch",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-bench-ditch")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-bench-ditch",
+        alignment_id="align-bench-ditch",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-bench-ditch",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-bench-ditch",
+        )
+    )
+
+    ditch_outer = min(
+        (point for point in result.point_rows if point.point_role == "ditch_surface"),
+        key=lambda point: point.lateral_offset,
+    )
+    slope_points = [
+        point
+        for point in result.point_rows
+        if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}
+    ]
+    assert round(ditch_outer.lateral_offset, 2) == -4.50
+    assert [round(point.lateral_offset, 2) for point in slope_points] == [-6.50, -7.50, -8.50, -8.50]
+    assert round(slope_points[0].z, 2) == round(ditch_outer.z - 1.0, 2)
+
+
 def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> None:
     alignment = AlignmentModel(
         schema_version=1,

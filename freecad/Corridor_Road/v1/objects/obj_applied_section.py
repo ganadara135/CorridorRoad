@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import math
+
 try:
     import FreeCAD as App
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
+try:
+    import Part
+except Exception:  # pragma: no cover - Part is not available in plain Python.
+    Part = None
 
 from ..models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
@@ -22,6 +28,14 @@ class V1AppliedSectionSetObject:
 
     def execute(self, obj):
         ensure_v1_applied_section_set_properties(obj)
+        try:
+            obj.Shape = build_v1_applied_section_set_shape(obj)
+        except Exception:
+            if Part is not None:
+                try:
+                    obj.Shape = Part.Shape()
+                except Exception:
+                    pass
         return
 
 
@@ -32,10 +46,7 @@ class ViewProviderV1AppliedSectionSet:
 
     def __init__(self, vobj):
         vobj.Proxy = self
-        try:
-            vobj.Visibility = False
-        except Exception:
-            pass
+        _style_applied_section_set_view(vobj, visible=False)
 
     def getIcon(self):
         try:
@@ -127,7 +138,10 @@ def create_or_update_v1_applied_section_set_object(
 
     obj = doc.getObject(object_name)
     if obj is None:
-        obj = doc.addObject("App::FeaturePython", object_name)
+        try:
+            obj = doc.addObject("Part::FeaturePython", object_name)
+        except Exception:
+            obj = doc.addObject("App::FeaturePython", object_name)
         V1AppliedSectionSetObject(obj)
         try:
             ViewProviderV1AppliedSectionSet(obj.ViewObject)
@@ -135,6 +149,7 @@ def create_or_update_v1_applied_section_set_object(
             pass
     else:
         V1AppliedSectionSetObject(obj)
+    _style_applied_section_set_view(getattr(obj, "ViewObject", None), visible=False)
     update_v1_applied_section_set_object(obj, applied_section_set, label=label)
 
     if project is not None:
@@ -196,10 +211,145 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DiagnosticRows = _diagnostic_rows(sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
     try:
+        obj.Shape = build_v1_applied_section_set_shape(obj)
+    except Exception:
+        if Part is not None:
+            try:
+                obj.Shape = Part.Shape()
+            except Exception:
+                pass
+    _style_applied_section_set_view(getattr(obj, "ViewObject", None), visible=False)
+    try:
         obj.touch()
     except Exception:
         pass
     return obj
+
+
+def _style_applied_section_set_view(vobj, *, visible: bool | None = None) -> None:
+    """Style the whole AppliedSectionSet review shape as a quiet, hidden reference layer."""
+
+    if vobj is None:
+        return
+    try:
+        review_color = (0.58, 0.70, 0.88)
+        vobj.LineColor = review_color
+        vobj.PointColor = review_color
+        vobj.ShapeColor = review_color
+        vobj.LineWidth = 1.0
+        vobj.PointSize = 3.0
+        if hasattr(vobj, "DrawStyle"):
+            vobj.DrawStyle = "Solid"
+        if visible is not None:
+            vobj.Visibility = bool(visible)
+    except Exception:
+        pass
+
+
+def build_v1_applied_section_set_shape(obj):
+    """Build a hidden-by-default 3D review shape for the whole AppliedSectionSet."""
+
+    if App is None or Part is None:
+        return None
+    ensure_v1_applied_section_set_properties(obj)
+    section_ids = list(getattr(obj, "AppliedSectionIds", []) or [])
+    point_rows_by_section = _parse_point_rows(getattr(obj, "PointRows", []) or [])
+    edges = []
+    for index, section_id in enumerate(section_ids):
+        section_key = str(section_id or "")
+        point_rows = point_rows_by_section.get(section_key, [])
+        for points in _applied_section_display_point_groups(point_rows):
+            edge = _display_edge_from_applied_points(points)
+            if edge is not None:
+                edges.append(edge)
+        if point_rows:
+            continue
+        fallback_edge = _fallback_section_width_edge(obj, index)
+        if fallback_edge is not None:
+            edges.append(fallback_edge)
+    if not edges:
+        return Part.Shape()
+    if len(edges) == 1:
+        return edges[0]
+    return Part.Compound(edges)
+
+
+def _applied_section_display_point_groups(point_rows: list[AppliedSectionPoint]) -> list[list[AppliedSectionPoint]]:
+    rows = list(point_rows or [])
+    if not rows:
+        return []
+    role_groups = [
+        {"fg_surface", "ditch_surface", "side_slope_surface", "bench_surface", "daylight_marker"},
+        {"subgrade_surface"},
+    ]
+    output: list[list[AppliedSectionPoint]] = []
+    for roles in role_groups:
+        points = [point for point in rows if str(getattr(point, "point_role", "") or "") in roles]
+        points.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+        unique_points = _unique_display_points(points)
+        if len(unique_points) >= 2:
+            output.append(unique_points)
+    return output
+
+
+def _unique_display_points(points: list[AppliedSectionPoint]) -> list[AppliedSectionPoint]:
+    output: list[AppliedSectionPoint] = []
+    for point in list(points or []):
+        if output:
+            previous = output[-1]
+            if (
+                abs(float(getattr(point, "x", 0.0) or 0.0) - float(getattr(previous, "x", 0.0) or 0.0)) <= 1.0e-9
+                and abs(float(getattr(point, "y", 0.0) or 0.0) - float(getattr(previous, "y", 0.0) or 0.0)) <= 1.0e-9
+                and abs(float(getattr(point, "z", 0.0) or 0.0) - float(getattr(previous, "z", 0.0) or 0.0)) <= 1.0e-9
+            ):
+                continue
+        output.append(point)
+    return output
+
+
+def _display_edge_from_applied_points(points: list[AppliedSectionPoint]):
+    vectors = [
+        App.Vector(
+            float(getattr(point, "x", 0.0) or 0.0),
+            float(getattr(point, "y", 0.0) or 0.0),
+            float(getattr(point, "z", 0.0) or 0.0),
+        )
+        for point in list(points or [])
+    ]
+    if len(vectors) < 2:
+        return None
+    try:
+        return Part.makePolygon(vectors)
+    except Exception:
+        edges = []
+        for start, end in zip(vectors, vectors[1:]):
+            try:
+                if (end - start).Length > 1.0e-9:
+                    edges.append(Part.makeLine(start, end))
+            except Exception:
+                pass
+        if not edges:
+            return None
+        return Part.Compound(edges) if len(edges) > 1 else edges[0]
+
+
+def _fallback_section_width_edge(obj, index: int):
+    frame_x = _float_value(getattr(obj, "FrameXValues", []), index, 0.0)
+    frame_y = _float_value(getattr(obj, "FrameYValues", []), index, 0.0)
+    frame_z = _float_value(getattr(obj, "FrameZValues", []), index, 0.0)
+    heading = math.radians(_float_value(getattr(obj, "FrameTangentDirections", []), index, 0.0))
+    normal_x = -math.sin(heading)
+    normal_y = math.cos(heading)
+    left_width = _float_value(getattr(obj, "SurfaceLeftWidths", []), index, 0.0)
+    right_width = _float_value(getattr(obj, "SurfaceRightWidths", []), index, 0.0)
+    if left_width <= 0.0 and right_width <= 0.0:
+        return None
+    left = App.Vector(frame_x + normal_x * left_width, frame_y + normal_y * left_width, frame_z)
+    right = App.Vector(frame_x - normal_x * right_width, frame_y - normal_y * right_width, frame_z)
+    try:
+        return Part.makeLine(left, right)
+    except Exception:
+        return None
 
 
 def to_applied_section_set(obj) -> AppliedSectionSet | None:

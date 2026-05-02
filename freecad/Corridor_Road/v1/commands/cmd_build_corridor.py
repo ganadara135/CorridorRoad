@@ -62,6 +62,8 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("slope_issues", "3. Slope Face Issues", ("daylight",), "Check daylight tie-in fallbacks and EG hits."),
     ("drainage", "4. Drainage", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
 )
+BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
+BUILD_CORRIDOR_PANEL_MAX_WIDTH = 560
 
 CORRIDOR_BUILD_REVIEW_ROW_COLORS = {
     "ready": (220, 245, 224),
@@ -1103,6 +1105,11 @@ class V1BuildCorridorTaskPanel:
     def _build_ui(self):
         widget = QtWidgets.QWidget()
         widget.setWindowTitle("CorridorRoad v1 - Build Corridor")
+        try:
+            widget.setMinimumWidth(BUILD_CORRIDOR_PANEL_MIN_WIDTH)
+            widget.setMaximumWidth(BUILD_CORRIDOR_PANEL_MAX_WIDTH)
+        except Exception:
+            pass
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
@@ -1157,6 +1164,7 @@ class V1BuildCorridorTaskPanel:
         guided_layout.addWidget(guided_label)
         self._guided_table = QtWidgets.QTableWidget(0, 4)
         self._guided_table.setHorizontalHeaderLabels(["Step", "Status", "Focus", "Notes"])
+        _compact_build_corridor_table(self._guided_table, [145, 76, 120, 220])
         self._guided_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._guided_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._guided_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -1184,6 +1192,7 @@ class V1BuildCorridorTaskPanel:
                 "Notes",
             ]
         )
+        _compact_build_corridor_table(self._review_table, [110, 72, 150, 70, 105, 90, 150, 150, 220])
         self._review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -1202,6 +1211,7 @@ class V1BuildCorridorTaskPanel:
         issues_layout.addWidget(issue_label)
         self._slope_issue_table = QtWidgets.QTableWidget(0, 5)
         self._slope_issue_table.setHorizontalHeaderLabels(["Station", "Side", "Reason", "Status", "Marker"])
+        _compact_build_corridor_table(self._slope_issue_table, [90, 60, 150, 80, 130])
         self._slope_issue_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._slope_issue_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._slope_issue_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -1229,6 +1239,7 @@ class V1BuildCorridorTaskPanel:
         drainage_layout.addWidget(drainage_label)
         self._drainage_table = QtWidgets.QTableWidget(0, 6)
         self._drainage_table.setHorizontalHeaderLabels(["Station", "Status", "Points", "Left", "Right", "Notes"])
+        _compact_build_corridor_table(self._drainage_table, [90, 80, 65, 55, 55, 220])
         self._drainage_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._drainage_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._drainage_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -1255,16 +1266,15 @@ class V1BuildCorridorTaskPanel:
         visibility_label = QtWidgets.QLabel("Preview Visibility")
         visibility_label.setToolTip("Toggle corridor review objects in the 3D View without rebuilding the corridor.")
         visibility_layout.addWidget(visibility_label)
-        visibility_row = QtWidgets.QHBoxLayout()
+        visibility_grid = QtWidgets.QGridLayout()
         self._visibility_checks = {}
-        for role, title, _object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
+        for index, (role, title, _object_name) in enumerate(CORRIDOR_BUILD_REVIEW_OBJECTS):
             check = QtWidgets.QCheckBox(title)
             check.setChecked(True)
             check.toggled.connect(lambda checked, role=role: self._set_preview_visibility(role, checked))
             self._visibility_checks[role] = check
-            visibility_row.addWidget(check)
-        visibility_row.addStretch(1)
-        visibility_layout.addLayout(visibility_row)
+            visibility_grid.addWidget(check, index // 2, index % 2)
+        visibility_layout.addLayout(visibility_grid)
         marker_row = QtWidgets.QHBoxLayout()
         self._daylight_contact_marker_check = QtWidgets.QCheckBox("Daylight Contact Markers")
         self._daylight_contact_marker_check.setToolTip("Show or hide the large daylight/EG contact markers.")
@@ -1281,10 +1291,10 @@ class V1BuildCorridorTaskPanel:
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         row.addWidget(apply_button)
-        focus_button = QtWidgets.QPushButton("Focus Selected")
+        focus_button = QtWidgets.QPushButton("Focus")
         focus_button.clicked.connect(self._show_selected_row)
         row.addWidget(focus_button)
-        structure_output_button = QtWidgets.QPushButton("Structure Output...")
+        structure_output_button = QtWidgets.QPushButton("Structure Output")
         structure_output_button.clicked.connect(self._open_structure_output_panel)
         row.addWidget(structure_output_button)
         row.addStretch(1)
@@ -1353,6 +1363,7 @@ class V1BuildCorridorTaskPanel:
             message = f"CorridorModel has been built.\nStations: {len(result.station_rows)}\nSurface rows: {surface_count}"
             self._summary.setPlainText(message + f"\nObject: {obj.Label}")
             self._set_progress(97, "Refreshing review rows...")
+            _hide_applied_section_set_review_shape(self.document)
             review_rows = corridor_build_review_rows(self.document)
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(review_rows)
@@ -1754,6 +1765,42 @@ class V1BuildCorridorTaskPanel:
                     item.setForeground(text_brush)
         except Exception:
             pass
+
+
+def _compact_build_corridor_table(table, column_widths: list[int]) -> None:
+    """Keep Build Corridor tables from forcing a very wide task panel."""
+
+    if table is None:
+        return
+    try:
+        table.setMinimumWidth(0)
+        table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        table.setWordWrap(False)
+    except Exception:
+        pass
+    try:
+        header = table.horizontalHeader()
+        header.setMinimumSectionSize(40)
+        header.setDefaultSectionSize(90)
+        for index, width in enumerate(list(column_widths or [])):
+            table.setColumnWidth(index, int(width))
+    except Exception:
+        pass
+
+
+def _hide_applied_section_set_review_shape(document) -> bool:
+    """Hide source AppliedSectionSet review wires while Build Corridor output is being reviewed."""
+
+    obj = find_v1_applied_section_set(document)
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None:
+        return False
+    try:
+        vobj.Visibility = False
+        return True
+    except Exception:
+        return False
 
 
 def _project_id(project) -> str:

@@ -5,6 +5,7 @@ from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensur
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
+    _hide_applied_section_set_review_shape,
     apply_v1_corridor_model,
     build_document_corridor_model,
     build_document_corridor_surface_model,
@@ -344,6 +345,35 @@ def test_build_corridor_panel_shows_progress_bar() -> None:
         assert len(progress_bars) == 1
         assert progress_bars[0].value() == 0
         assert progress_bars[0].format() == "Ready"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_panel_uses_compact_task_width() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1BuildCorridorTaskPanel(document=doc)
+
+        assert panel.form.maximumWidth() <= 560
+        assert panel._guided_table.minimumWidth() == 0
+        assert panel._review_table.minimumWidth() == 0
+        assert panel._slope_issue_table.minimumWidth() == 0
+        assert panel._drainage_table.minimumWidth() == 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_hides_applied_section_set_review_shape() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+        if getattr(applied, "ViewObject", None) is None:
+            return
+        applied.ViewObject.Visibility = True
+
+        assert _hide_applied_section_set_review_shape(doc) is True
+        assert applied.ViewObject.Visibility is False
     finally:
         App.closeDocument(doc.Name)
 

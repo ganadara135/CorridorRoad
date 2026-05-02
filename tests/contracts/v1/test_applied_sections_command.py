@@ -230,6 +230,15 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
             "template:basic-road",
             "template:basic-road",
         ]
+        assert hasattr(obj, "Shape")
+        assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
+        if getattr(obj, "ViewObject", None) is not None:
+            assert obj.ViewObject.Visibility is False
+            assert tuple(round(float(value), 2) for value in obj.ViewObject.LineColor) == (0.58, 0.70, 0.88)
+            assert float(obj.ViewObject.LineWidth) <= 1.0
+            obj.ViewObject.Visibility = True
+            apply_v1_applied_section_set(document=doc, project=project)
+            assert obj.ViewObject.Visibility is False
     finally:
         App.closeDocument(doc.Name)
 

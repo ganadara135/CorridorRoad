@@ -40,6 +40,7 @@ from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_assembly import (
     create_or_update_v1_assembly_model_object,
     find_v1_assembly_model,
+    list_v1_assembly_models,
     to_assembly_model,
 )
 from ..objects.obj_region import (
@@ -233,7 +234,79 @@ ASSEMBLY_PRESETS = {
             ),
         ],
     },
+    "Benched Ditch Road": {
+        "assembly_id": "assembly:benched-ditch-road",
+        "template_id": "template:benched-ditch-road",
+        "label": "Benched Ditch Road Assembly",
+        "template_label": "Benched Ditch Road",
+        "note": "Rural road with roadside trapezoid ditches and repeatable bench intent on the outer side slopes.",
+        "components": [
+            ("lane:left", "lane", "left", 3.5, -0.02, 0.25, "asphalt", "Left travel lane"),
+            ("lane:right", "lane", "right", 3.5, -0.02, 0.25, "asphalt", "Right travel lane"),
+            ("shoulder:left", "shoulder", "left", 1.8, -0.04, 0.20, "aggregate", "Left shoulder"),
+            ("shoulder:right", "shoulder", "right", 1.8, -0.04, 0.20, "aggregate", "Right shoulder"),
+            (
+                "ditch:left",
+                "ditch",
+                "left",
+                1.8,
+                -0.02,
+                0.0,
+                "earth",
+                "Left trapezoid roadside ditch before benched slope",
+                {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0},
+            ),
+            (
+                "ditch:right",
+                "ditch",
+                "right",
+                1.8,
+                -0.02,
+                0.0,
+                "earth",
+                "Right trapezoid roadside ditch before benched slope",
+                {"shape": "trapezoid", "bottom_width": 0.6, "depth": 0.45, "inner_slope": 1.5, "outer_slope": 2.0},
+            ),
+            (
+                "side_slope:left",
+                "side_slope",
+                "left",
+                14.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Left outer side slope with repeatable bench intent",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 80.0,
+                },
+            ),
+            (
+                "side_slope:right",
+                "side_slope",
+                "right",
+                14.0,
+                -0.5,
+                0.0,
+                "earth",
+                "Right outer side slope with repeatable bench intent",
+                {
+                    "bench_mode": "rows",
+                    "bench_rows": [{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}],
+                    "repeat_first_bench_to_daylight": True,
+                    "daylight_mode": "terrain",
+                    "daylight_max_width": 80.0,
+                },
+            ),
+        ],
+    },
 }
+
+NEW_ASSEMBLY_SOURCE_KEY = "__new_assembly_create__"
+NEW_ASSEMBLY_SOURCE_LABEL = "New Assembly Create"
 
 
 def assembly_preset_names() -> list[str]:
@@ -292,6 +365,8 @@ def apply_v1_assembly_model(
     document=None,
     project=None,
     assembly_model: AssemblyModel,
+    assembly_obj=None,
+    object_name: str | None = None,
 ):
     """Persist a v1 AssemblyModel source object."""
 
@@ -308,13 +383,17 @@ def apply_v1_assembly_model(
         prj.Label = "CorridorRoad Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
-    previous_obj = doc.getObject("V1AssemblyModel")
+    target_name = str(object_name or getattr(assembly_obj, "Name", "") or "V1AssemblyModel")
+    previous_obj = assembly_obj if assembly_obj is not None else doc.getObject(target_name)
+    if previous_obj is None and target_name == "V1AssemblyModel":
+        previous_obj = doc.getObject("V1AssemblyModel")
     previous_assembly_id = str(getattr(previous_obj, "AssemblyId", "") or "").strip() if previous_obj is not None else ""
     previous_template_id = str(getattr(previous_obj, "ActiveTemplateId", "") or "").strip() if previous_obj is not None else ""
     obj = create_or_update_v1_assembly_model_object(
         document=doc,
         project=prj,
         assembly_model=assembly_model,
+        object_name=target_name,
     )
     _sync_region_refs_after_assembly_apply(
         doc,
@@ -329,6 +408,53 @@ def apply_v1_assembly_model(
     except Exception:
         pass
     return obj
+
+
+def assembly_source_rows(document) -> list[dict[str, object]]:
+    """Return user-facing Assembly source rows for the editor selector."""
+
+    rows: list[dict[str, object]] = []
+    for obj in list_v1_assembly_models(document):
+        rows.append(
+            {
+                "object": obj,
+                "name": str(getattr(obj, "Name", "") or ""),
+                "display": assembly_source_display_name(obj),
+                "label": assembly_source_label(obj),
+                "assembly_id": str(getattr(obj, "AssemblyId", "") or ""),
+                "template_id": str(getattr(obj, "ActiveTemplateId", "") or ""),
+            }
+        )
+    return rows
+
+
+def assembly_source_display_name(obj) -> str:
+    """Return the short Assembly name shown in the source combo."""
+
+    assembly_id = str(getattr(obj, "AssemblyId", "") or "").strip()
+    if assembly_id:
+        return assembly_id
+    label = str(getattr(obj, "Label", "") or "").strip()
+    if label:
+        return label
+    return str(getattr(obj, "Name", "") or "Assembly")
+
+
+def assembly_source_label(obj) -> str:
+    """Return a compact Assembly source label for combo boxes."""
+
+    label = str(getattr(obj, "Label", "") or getattr(obj, "Name", "") or "Assembly")
+    assembly_id = str(getattr(obj, "AssemblyId", "") or "")
+    template_id = str(getattr(obj, "ActiveTemplateId", "") or "")
+    name = str(getattr(obj, "Name", "") or "")
+    parts = [label]
+    if assembly_id:
+        parts.append(assembly_id)
+    if template_id:
+        parts.append(template_id)
+    if name:
+        parts.append(name)
+    return " | ".join(parts)
 
 
 def _sync_region_refs_after_assembly_apply(
@@ -450,8 +576,11 @@ class V1AssemblyEditorTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.assembly_obj = find_v1_assembly_model(self.document)
+        self._new_assembly_mode = False
         self._locked_component_row = -1
         self._restoring_component_selection = False
+        self._loading_model = False
+        self._dirty = False
         self._cell_widget_event_filter = _AssemblyCellWidgetEventFilter(self)
         self.form = self._build_ui()
         self._load_existing_rows()
@@ -487,12 +616,35 @@ class V1AssemblyEditorTaskPanel:
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        source_row = QtWidgets.QHBoxLayout()
+        source_row.addWidget(QtWidgets.QLabel("Assembly Source:"))
+        self._source_combo = QtWidgets.QComboBox()
+        source_row.addWidget(self._source_combo, 1)
+        layout.addLayout(source_row)
+        source_button_row = QtWidgets.QHBoxLayout()
+        refresh_source_button = QtWidgets.QPushButton("Refresh")
+        refresh_source_button.clicked.connect(self._refresh_assembly_sources)
+        source_button_row.addWidget(refresh_source_button)
+        load_source_button = QtWidgets.QPushButton("Load Source")
+        load_source_button.clicked.connect(self._load_selected_assembly_source)
+        source_button_row.addWidget(load_source_button)
+        source_button_row.addStretch(1)
+        layout.addLayout(source_button_row)
+        self._editing_summary = QtWidgets.QLabel("")
+        self._editing_summary.setWordWrap(True)
+        layout.addWidget(self._editing_summary)
+        self._dirty_summary = QtWidgets.QLabel("Saved")
+        self._dirty_summary.setWordWrap(True)
+        layout.addWidget(self._dirty_summary)
+
         meta_row = QtWidgets.QHBoxLayout()
         meta_row.addWidget(QtWidgets.QLabel("Assembly ID:"))
         self._assembly_id = QtWidgets.QLineEdit("assembly:basic-road")
+        self._assembly_id.textChanged.connect(self._mark_dirty)
         meta_row.addWidget(self._assembly_id)
         meta_row.addWidget(QtWidgets.QLabel("Template ID:"))
         self._template_id = QtWidgets.QLineEdit("template:basic-road")
+        self._template_id.textChanged.connect(self._mark_dirty)
         meta_row.addWidget(self._template_id)
         layout.addLayout(meta_row)
 
@@ -532,6 +684,7 @@ class V1AssemblyEditorTaskPanel:
             self._table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
+        self._table.itemChanged.connect(self._mark_dirty)
         layout.addWidget(self._table, 1)
 
         edit_row = QtWidgets.QHBoxLayout()
@@ -597,13 +750,21 @@ class V1AssemblyEditorTaskPanel:
         )
         bench_hint.setWordWrap(True)
         bench_layout.addWidget(bench_hint)
+        self._bench_shape_diagram = QtWidgets.QLabel("")
+        self._bench_shape_diagram.setWordWrap(False)
+        self._bench_shape_diagram.setStyleSheet(
+            "font-family: Consolas, monospace; background: #20242b; color: #dce8f2; padding: 6px;"
+        )
+        bench_layout.addWidget(self._bench_shape_diagram)
         bench_top_row = QtWidgets.QHBoxLayout()
         bench_top_row.addWidget(QtWidgets.QLabel("Mode:"))
         self._bench_mode_combo = QtWidgets.QComboBox()
         self._bench_mode_combo.addItems(list(ASSEMBLY_BENCH_MODES))
+        self._bench_mode_combo.currentIndexChanged.connect(self._update_bench_shape_diagram)
         bench_top_row.addWidget(self._bench_mode_combo)
         self._bench_repeat_combo = QtWidgets.QComboBox()
         self._bench_repeat_combo.addItems(["0", "1"])
+        self._bench_repeat_combo.currentIndexChanged.connect(self._update_bench_shape_diagram)
         bench_top_row.addWidget(QtWidgets.QLabel("Repeat to daylight:"))
         bench_top_row.addWidget(self._bench_repeat_combo)
         bench_top_row.addWidget(QtWidgets.QLabel("Daylight mode:"))
@@ -614,10 +775,12 @@ class V1AssemblyEditorTaskPanel:
         bench_top_row.addWidget(QtWidgets.QLabel("Max width:"))
         self._bench_daylight_max_width = QtWidgets.QLineEdit()
         self._bench_daylight_max_width.setPlaceholderText("80.000")
+        self._bench_daylight_max_width.textChanged.connect(self._update_bench_shape_diagram)
         bench_top_row.addWidget(self._bench_daylight_max_width)
         bench_layout.addLayout(bench_top_row)
         self._bench_table = QtWidgets.QTableWidget(0, 5)
         self._bench_table.setHorizontalHeaderLabels(["Drop", "Width", "Slope", "Post Slope", "Label"])
+        self._bench_table.itemChanged.connect(self._update_bench_shape_diagram)
         try:
             self._bench_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
@@ -669,17 +832,122 @@ class V1AssemblyEditorTaskPanel:
         self._update_preset_note()
         return widget
 
+    def _mark_dirty(self, *_args) -> None:
+        if bool(getattr(self, "_loading_model", False)):
+            return
+        self._set_dirty(True)
+
+    def _set_dirty(self, value: bool) -> None:
+        self._dirty = bool(value)
+        self._update_editing_summary()
+
+    def _update_editing_summary(self) -> None:
+        if not hasattr(self, "_editing_summary"):
+            return
+        selected_assembly_id = str(getattr(self.assembly_obj, "AssemblyId", "") or "")
+        selected_template_id = str(getattr(self.assembly_obj, "ActiveTemplateId", "") or "")
+        selected_name = str(getattr(self.assembly_obj, "Name", "") or "")
+        selected_label = str(getattr(self.assembly_obj, "Label", "") or selected_name or "New Assembly")
+        editing_id = str(self._assembly_id.text() or "").strip() if hasattr(self, "_assembly_id") else ""
+        editing_template = str(self._template_id.text() or "").strip() if hasattr(self, "_template_id") else ""
+        summary = (
+            f"Editing: {editing_id or 'assembly:basic-road'} | "
+            f"Template: {editing_template or 'template:basic-road'} | "
+            f"Source: {selected_label}"
+        )
+        if bool(getattr(self, "_new_assembly_mode", False)):
+            summary += "\nNew Assembly mode. Apply will create the source object."
+        if selected_name:
+            summary += f" ({selected_name})"
+        if selected_assembly_id and editing_id and selected_assembly_id != editing_id:
+            summary += "\nAssembly ID differs from the selected source. Apply will create or update the matching Assembly."
+        if selected_template_id and editing_template and selected_template_id != editing_template:
+            summary += "\nTemplate ID differs from the selected source."
+        self._editing_summary.setText(summary)
+        if hasattr(self, "_dirty_summary"):
+            self._dirty_summary.setText("Unsaved changes" if bool(getattr(self, "_dirty", False)) else "Saved")
+
     def _load_existing_rows(self) -> None:
+        self._refresh_assembly_sources(select_obj=self.assembly_obj)
         model = to_assembly_model(self.assembly_obj)
         if model is None:
+            self._update_editing_summary()
             return
         self._replace_model(model)
         self._set_status(f"Loaded {sum(len(t.component_rows) for t in model.template_rows)} component row(s).")
+
+    def _refresh_assembly_sources(self, *_, select_obj=None) -> None:
+        if not hasattr(self, "_source_combo"):
+            return
+        current_name = str(getattr(select_obj or self.assembly_obj, "Name", "") or "")
+        self._source_combo.blockSignals(True)
+        try:
+            self._source_combo.clear()
+            self._source_combo.addItem(NEW_ASSEMBLY_SOURCE_LABEL, NEW_ASSEMBLY_SOURCE_KEY)
+            try:
+                self._source_combo.setItemData(
+                    0,
+                    "Create a new Assembly source. Apply after editing.",
+                    QtCore.Qt.ToolTipRole,
+                )
+            except Exception:
+                pass
+            rows = assembly_source_rows(self.document)
+            for row in rows:
+                self._source_combo.addItem(str(row["display"]), str(row["name"]))
+                item_index = self._source_combo.count() - 1
+                try:
+                    self._source_combo.setItemData(item_index, str(row["label"]), QtCore.Qt.ToolTipRole)
+                except Exception:
+                    pass
+            if not rows:
+                self._source_combo.addItem("No Assembly source in document", "")
+            if current_name:
+                for index in range(self._source_combo.count()):
+                    if str(self._source_combo.itemData(index) or "") == current_name:
+                        self._source_combo.setCurrentIndex(index)
+                        break
+        finally:
+            self._source_combo.blockSignals(False)
+
+    def _load_selected_assembly_source(self) -> None:
+        name = str(self._source_combo.currentData() or "") if hasattr(self, "_source_combo") else ""
+        if name == NEW_ASSEMBLY_SOURCE_KEY:
+            self._enter_new_assembly_mode()
+            return
+        obj = self.document.getObject(name) if self.document is not None and name else None
+        model = to_assembly_model(obj)
+        if model is None:
+            self._set_status("No Assembly source is selected.")
+            return
+        self.assembly_obj = obj
+        self._replace_model(model)
+        self._refresh_assembly_sources(select_obj=obj)
+        self._set_dirty(False)
+        self._set_status(f"Loaded Assembly source: {assembly_source_label(obj)}")
+
+    def _enter_new_assembly_mode(self) -> None:
+        self.assembly_obj = None
+        self._new_assembly_mode = True
+        model = assembly_preset_model_from_document("Basic Road", document=self.document)
+        model.assembly_id = _next_new_assembly_id(self.document)
+        model.active_template_id = _template_id_from_assembly_id(model.assembly_id)
+        if model.template_rows:
+            model.template_rows[0] = replace(
+                model.template_rows[0],
+                template_id=model.active_template_id,
+                label=model.active_template_id,
+            )
+        self._replace_model(model)
+        self._set_dirty(True)
+        self._update_editing_summary()
+        self._set_status("New Assembly mode. Edit the rows, then Apply to create the source object.")
 
     def _load_selected_preset(self) -> None:
         try:
             preset_name = str(self._preset_combo.currentText() or "Basic Road")
             self._replace_model(assembly_preset_model_from_document(preset_name, document=self.document))
+            self._set_dirty(True)
             self._set_status(f"Assembly preset loaded: {preset_name}. Apply when ready.")
         except Exception as exc:
             self._set_status(f"Assembly preset was not loaded:\n{exc}")
@@ -691,14 +959,19 @@ class V1AssemblyEditorTaskPanel:
         self._preset_note.setText(str(preset.get("note", "") or ""))
 
     def _replace_model(self, model: AssemblyModel) -> None:
-        self._assembly_id.setText(model.assembly_id or "assembly:basic-road")
-        template = model.template_rows[0] if model.template_rows else SectionTemplate("template:basic-road", "roadway")
-        self._template_id.setText(template.template_id)
-        self._table.setRowCount(0)
-        self._locked_component_row = -1
-        for row in template.component_rows:
-            self._append_row(row)
-        self._refresh_cell_widget_row_properties()
+        self._loading_model = True
+        try:
+            self._assembly_id.setText(model.assembly_id or "assembly:basic-road")
+            template = model.template_rows[0] if model.template_rows else SectionTemplate("template:basic-road", "roadway")
+            self._template_id.setText(template.template_id)
+            self._table.setRowCount(0)
+            self._locked_component_row = -1
+            for row in template.component_rows:
+                self._append_row(row)
+            self._refresh_cell_widget_row_properties()
+        finally:
+            self._loading_model = False
+        self._set_dirty(False)
 
     def _append_row(self, row: TemplateComponent | None = None) -> None:
         row = row or TemplateComponent(
@@ -728,18 +1001,21 @@ class V1AssemblyEditorTaskPanel:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(list(ASSEMBLY_COMPONENT_KINDS))
                 combo.setCurrentText(str(value) if str(value) in ASSEMBLY_COMPONENT_KINDS else "lane")
+                combo.currentIndexChanged.connect(self._mark_dirty)
                 self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(list(ASSEMBLY_COMPONENT_SIDES))
                 combo.setCurrentText(str(value) if str(value) in ASSEMBLY_COMPONENT_SIDES else "center")
+                combo.currentIndexChanged.connect(self._mark_dirty)
                 self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             elif col == 7:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(["1", "0"])
                 combo.setCurrentText(str(value))
+                combo.currentIndexChanged.connect(self._mark_dirty)
                 self._prepare_cell_widget(combo, index, col)
                 self._table.setCellWidget(index, col, combo)
             else:
@@ -747,6 +1023,7 @@ class V1AssemblyEditorTaskPanel:
 
     def _add_component_row(self) -> None:
         self._append_row()
+        self._mark_dirty()
         self._set_status("Added an Assembly component row.")
 
     def _delete_selected_rows(self) -> None:
@@ -757,6 +1034,7 @@ class V1AssemblyEditorTaskPanel:
             self._table.removeRow(row_index)
         self._locked_component_row = -1
         self._refresh_cell_widget_row_properties()
+        self._mark_dirty()
         self._set_status(f"Deleted {len(rows)} component row(s).")
 
     def _prepare_cell_widget(self, widget, row_index: int, column_index: int) -> None:
@@ -935,6 +1213,7 @@ class V1AssemblyEditorTaskPanel:
         self._bench_daylight_mode.setCurrentText(daylight_mode if daylight_mode in ASSEMBLY_DAYLIGHT_MODES else "terrain")
         self._bench_daylight_max_width.setText(str(params.get("daylight_max_width", "") or ""))
         self._replace_bench_rows(rows)
+        self._update_bench_shape_diagram()
 
     def _clear_bench_parameter_fields(self) -> None:
         if not hasattr(self, "_bench_table"):
@@ -944,11 +1223,13 @@ class V1AssemblyEditorTaskPanel:
         self._bench_daylight_mode.setCurrentText("terrain")
         self._bench_daylight_max_width.clear()
         self._bench_table.setRowCount(0)
+        self._update_bench_shape_diagram()
 
     def _replace_bench_rows(self, rows: list[dict[str, object]]) -> None:
         self._bench_table.setRowCount(0)
         for row in list(rows or []):
             self._append_bench_table_row(row)
+        self._update_bench_shape_diagram()
 
     def _append_bench_table_row(self, row: dict[str, object] | None = None) -> None:
         row = dict(row or {})
@@ -963,10 +1244,12 @@ class V1AssemblyEditorTaskPanel:
         ]
         for col, value in enumerate(values):
             self._bench_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+        self._update_bench_shape_diagram()
 
     def _add_bench_row(self) -> None:
         self._append_bench_table_row()
         self._bench_mode_combo.setCurrentText("rows")
+        self._update_bench_shape_diagram()
         self._set_status("Added a bench row. Apply Bench Parameters to update the selected side_slope row.")
 
     def _delete_selected_bench_rows(self) -> None:
@@ -975,6 +1258,7 @@ class V1AssemblyEditorTaskPanel:
             rows = [self._bench_table.currentRow()]
         for row_index in rows:
             self._bench_table.removeRow(row_index)
+        self._update_bench_shape_diagram()
         self._set_status(f"Deleted {len(rows)} bench row(s).")
 
     def _load_bench_defaults(self) -> None:
@@ -983,6 +1267,7 @@ class V1AssemblyEditorTaskPanel:
         self._bench_daylight_mode.setCurrentText("terrain")
         self._bench_daylight_max_width.setText("80.000")
         self._replace_bench_rows([{"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5}])
+        self._update_bench_shape_diagram()
         self._set_status("Loaded bench defaults. Apply them to the selected side_slope row when ready.")
 
     def _apply_bench_parameters_to_selection(self) -> None:
@@ -1039,6 +1324,30 @@ class V1AssemblyEditorTaskPanel:
             rows.append(row)
         return normalize_bench_rows(rows)
 
+    def _update_bench_shape_diagram(self, *_args) -> None:
+        if not hasattr(self, "_bench_shape_diagram") or not hasattr(self, "_bench_table"):
+            return
+        row_index = self._selected_row_index()
+        width = 12.0
+        slope = -0.5
+        if row_index >= 0 and _item_text(self._table, row_index, 1) == "side_slope":
+            width = max(_optional_float(_item_text(self._table, row_index, 3), 12.0), 0.0)
+            slope = _optional_float(_item_text(self._table, row_index, 4), -0.5)
+        rows = self._bench_table_rows()
+        repeat = self._bench_repeat_combo.currentText() == "1"
+        daylight_mode = str(self._bench_daylight_mode.currentText() or "terrain")
+        max_width = str(self._bench_daylight_max_width.text() or "").strip()
+        self._bench_shape_diagram.setText(
+            _bench_shape_diagram(
+                rows,
+                width=width,
+                slope=slope,
+                repeat=repeat,
+                daylight_mode=daylight_mode,
+                max_width=max_width,
+            )
+        )
+
     def _validate(self) -> None:
         try:
             self._sync_bench_parameters_to_selected_row()
@@ -1088,9 +1397,30 @@ class V1AssemblyEditorTaskPanel:
                 self._set_status("\n".join(messages))
                 _show_message(self.form, "Assembly", "Assembly was not applied because validation has errors.")
                 return False
-            self.assembly_obj = apply_v1_assembly_model(document=self.document, assembly_model=model)
-            self._set_status(("\n".join(messages) if messages else "Validation status: ok") + f"\n\nApplied to: {self.assembly_obj.Label}")
-            _show_message(self.form, "Assembly", f"Assembly has been applied.\nComponents: {len(model.template_rows[0].component_rows)}")
+            target_obj, object_name, action = _resolve_apply_assembly_target(
+                self.document,
+                selected_obj=self.assembly_obj,
+                model=model,
+                new_mode=bool(getattr(self, "_new_assembly_mode", False)),
+            )
+            self.assembly_obj = apply_v1_assembly_model(
+                document=self.document,
+                assembly_model=model,
+                assembly_obj=target_obj,
+                object_name=object_name,
+            )
+            self._new_assembly_mode = False
+            self._refresh_assembly_sources(select_obj=self.assembly_obj)
+            self._set_dirty(False)
+            self._set_status(
+                ("\n".join(messages) if messages else "Validation status: ok")
+                + f"\n\n{action}: {self.assembly_obj.Label} ({self.assembly_obj.Name})"
+            )
+            _show_message(
+                self.form,
+                "Assembly",
+                f"Assembly has been applied.\nAction: {action}\nComponents: {len(model.template_rows[0].component_rows)}",
+            )
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
@@ -1253,6 +1583,72 @@ def _preset_components(preset: dict) -> list[TemplateComponent]:
     return rows
 
 
+def _new_assembly_object_name(document, assembly_id: str) -> str:
+    base = _assembly_object_name_from_id(assembly_id)
+    if document is None:
+        return base
+    if document.getObject(base) is None:
+        return base
+    index = 2
+    while document.getObject(f"{base}{index:03d}") is not None:
+        index += 1
+    return f"{base}{index:03d}"
+
+
+def _resolve_apply_assembly_target(document, *, selected_obj, model: AssemblyModel, new_mode: bool) -> tuple[object | None, str, str]:
+    model_assembly_id = str(getattr(model, "assembly_id", "") or "").strip()
+    selected_assembly_id = str(getattr(selected_obj, "AssemblyId", "") or "").strip()
+    matching_obj = _assembly_object_by_id(document, model_assembly_id)
+    if matching_obj is not None and (new_mode or matching_obj != selected_obj or selected_assembly_id != model_assembly_id):
+        return matching_obj, str(getattr(matching_obj, "Name", "") or "V1AssemblyModel"), "Updated matching Assembly"
+    if not new_mode and selected_obj is not None and selected_assembly_id == model_assembly_id:
+        return selected_obj, str(getattr(selected_obj, "Name", "") or "V1AssemblyModel"), "Updated selected Assembly"
+    return None, _new_assembly_object_name(document, model_assembly_id), "Created new Assembly"
+
+
+def _assembly_object_by_id(document, assembly_id: str):
+    target = str(assembly_id or "").strip()
+    if not target:
+        return None
+    for obj in list_v1_assembly_models(document):
+        if str(getattr(obj, "AssemblyId", "") or "").strip() == target:
+            return obj
+    return None
+
+
+def _next_new_assembly_id(document) -> str:
+    base = "assembly:new-assembly"
+    existing = {
+        str(getattr(obj, "AssemblyId", "") or "")
+        for obj in list_v1_assembly_models(document)
+    }
+    if base not in existing:
+        return base
+    index = 2
+    while f"{base}-{index}" in existing:
+        index += 1
+    return f"{base}-{index}"
+
+
+def _template_id_from_assembly_id(assembly_id: str) -> str:
+    text = str(assembly_id or "").strip()
+    if text.startswith("assembly:"):
+        return "template:" + text.split(":", 1)[1]
+    if text:
+        return "template:" + text
+    return "template:new-assembly"
+
+
+def _assembly_object_name_from_id(assembly_id: str) -> str:
+    text = str(assembly_id or "").strip() or "assembly"
+    if ":" in text:
+        text = text.split(":")[-1]
+    safe = "".join(ch if ch.isalnum() else "_" for ch in text).strip("_")
+    if not safe:
+        safe = "assembly"
+    return "V1AssemblyModel_" + safe
+
+
 def _assembly_preview_points(template: SectionTemplate):
     center_width = sum(
         max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
@@ -1348,6 +1744,58 @@ def _side_slope_bench_preview_segments(component) -> list[dict[str, object]]:
     if remaining > 1.0e-9:
         segments.append({"kind": "side_slope", "width": remaining, "slope": current_slope})
     return segments
+
+
+def _bench_shape_diagram(
+    rows: list[dict[str, object]],
+    *,
+    width: float,
+    slope: float,
+    repeat: bool,
+    daylight_mode: str,
+    max_width: str,
+) -> str:
+    rows = normalize_bench_rows(rows)
+    component = TemplateComponent(
+        component_id="bench:diagram",
+        kind="side_slope",
+        side="right",
+        width=max(float(width or 0.0), 0.0),
+        slope=float(slope or 0.0),
+        parameters={
+            "bench_rows": rows,
+            "repeat_first_bench_to_daylight": bool(repeat),
+        },
+    )
+    segments = _side_slope_bench_preview_segments(component)
+    if not rows:
+        return (
+            "terminal edge -> daylight\n"
+            "  \\ continuous side slope\n"
+            "   \\ no bench rows"
+        )
+    marks = []
+    details = []
+    for index, segment in enumerate(segments, start=1):
+        kind = str(segment.get("kind", "") or "")
+        width_value = float(segment.get("width", 0.0) or 0.0)
+        slope_value = float(segment.get("slope", 0.0) or 0.0)
+        if kind == "bench":
+            marks.append("____")
+            label = "bench"
+        else:
+            marks.append("\\")
+            label = "slope"
+        details.append(f"{index}. {label}: width={width_value:.3f}, slope={slope_value:.3f}")
+    daylight = str(daylight_mode or "terrain")
+    if max_width:
+        daylight = f"{daylight}, max={max_width}"
+    return (
+        "terminal edge -> daylight\n"
+        f"  {' '.join(marks)}\n"
+        f"  repeat={'on' if repeat else 'off'}, daylight={daylight}\n"
+        + "\n".join(details)
+    )
 
 
 def _append_side_slope_bench_preview_points(
