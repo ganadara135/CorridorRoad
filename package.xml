@@ -14,8 +14,8 @@
 
     <freecadmin>1.0.2</freecadmin>
     <pythonmin>3.10</pythonmin>
-    <version>0.2.9</version>
-    <date>2026-04-22</date>
+    <version>1.0.0</version>
+    <date>2026-05-02</date>
 
     <!--[ Dependencies ]―――――――――――――――――――――――――――――――――――――――――――――――――――――-->
 
@@ -29,7 +29,7 @@
 
     <!--[ Info ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
 
-    <description>Workbench for designing road workflow.</description>
+    <description>Workbench for source-driven v1 road corridor design, review, and output preparation.</description>
     <name>Corridor Road</name>
 
     <!--[ Tags ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
