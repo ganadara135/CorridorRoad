@@ -43,15 +43,15 @@ Registration checks:
 
 Manual FreeCAD QA still required before tagging:
 
-- [ ] restart FreeCAD and activate the CorridorRoad workbench
-- [ ] confirm toolbar order visually
-- [ ] open every primary toolbar command
-- [ ] confirm Drainage shows the under-development message
-- [ ] run a minimal TIN -> Alignment -> Stations -> Profile -> Assembly -> Region -> Applied Sections -> Build Corridor path
-- [ ] open Cross Section Viewer
-- [ ] open Plan/Profile Connection Review
-- [ ] open Earthwork Viewer
-- [ ] confirm no unexpected traceback appears in the FreeCAD report view
+- [x] restart FreeCAD and activate the CorridorRoad workbench
+- [x] confirm toolbar order visually
+- [x] open every primary toolbar command
+- [x] confirm Drainage shows the under-development message
+- [x] run a minimal TIN -> Alignment -> Stations -> Profile -> Assembly -> Region -> Applied Sections -> Build Corridor path
+- [x] open Cross Section Viewer
+- [x] open Plan/Profile Connection Review
+- [x] open Earthwork Viewer
+- [x] confirm no unexpected traceback appears in the FreeCAD report view
 
 ## 4. Wiki Pending
 

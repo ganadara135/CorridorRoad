@@ -1,7 +1,7 @@
 # CorridorRoad V1 Wiki 1.0.0 Update Checklist
 
 Date: 2026-05-02
-Status: Draft checklist
+Status: Local wiki drafts created under `docsV1/wiki/`
 Target release: `v1.0.0`
 
 Depends on:
@@ -9,6 +9,7 @@ Depends on:
 - `docsV1/V1_RELEASE_1_0_0_PLAN.md`
 - `README.md`
 - `ADDON_OVERVIEW.md`
+- `docsV1/wiki/WIKI_TOC.md`
 
 ## 1. Purpose
 
@@ -28,89 +29,91 @@ The Wiki should present v1 as the primary workflow and should not describe legac
 
 ### Home
 
-- [ ] Identify `1.0.0` as the v1 workflow release.
-- [ ] Link Quick Start, Workflow, Troubleshooting, and Developer Guide.
-- [ ] Mention Drainage as an in-progress stage.
+- [x] Identify `1.0.0` as the v1 workflow release.
+- [x] Link Quick Start, Workflow, Troubleshooting, and Developer Guide.
+- [x] Mention Drainage as an in-progress stage.
 
 ### Quick Start
 
-- [ ] Use the current toolbar order:
+- [x] Use the current toolbar order:
   `Project -> TIN -> Alignment -> Stations/Profile -> Assembly/Structures/Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
-- [ ] Add a note that Drainage currently opens an under-development message.
-- [ ] Include minimal smoke workflow for Applied Sections, Build Corridor, and Review.
+- [x] Add a note that Drainage currently opens an under-development message.
+- [x] Include minimal smoke workflow for Applied Sections, Build Corridor, and Review.
 
 ### Workflow
 
-- [ ] Explain source -> evaluation -> result -> output -> presentation.
-- [ ] Separate source editors from generated review/output surfaces.
-- [ ] Remove legacy v0 corridor loft as the main workflow.
+- [x] Explain source -> evaluation -> result -> output -> presentation.
+- [x] Separate source editors from generated review/output surfaces.
+- [x] Remove legacy v0 corridor loft as the main workflow.
 
 ### TIN / Terrain
 
-- [ ] Present TIN-first terrain preparation.
-- [ ] Mention terrain as a downstream input for Applied Sections, Corridor Build, and Earthwork.
+- [x] Present TIN-first terrain preparation.
+- [x] Mention terrain as a downstream input for Applied Sections, Corridor Build, and Earthwork.
 
 ### Alignment / Stations / Profile
 
-- [ ] Update command names to v1 wording.
-- [ ] Include Auto Interpolate Elevations in Profile guidance.
-- [ ] Mention station checks and review handoff.
+- [x] Update command names to v1 wording.
+- [x] Include Auto Interpolate Elevations in Profile guidance.
+- [x] Mention station checks and review handoff.
 
 ### Assembly / Region
 
-- [ ] Describe Assembly as reusable section source intent.
-- [ ] Describe Region as station-range application control.
-- [ ] Mention ditch, side slope, bench, Structure refs, and Drainage refs.
+- [x] Describe Assembly as reusable section source intent.
+- [x] Describe Region as station-range application control.
+- [x] Mention ditch, side slope, bench, Structure refs, and Drainage refs.
 
 ### Applied Sections / Build Corridor
 
-- [ ] Describe Applied Sections as generated station-wise results.
-- [ ] Describe Build Corridor as consuming Applied Sections.
-- [ ] Mention progress bars, diagnostics, and preview surfaces.
+- [x] Describe Applied Sections as generated station-wise results.
+- [x] Describe Build Corridor as consuming Applied Sections.
+- [x] Mention diagnostics and preview surfaces.
 
 ### Review
 
-- [ ] Add Cross Section Viewer.
-- [ ] Add Plan/Profile Connection Review.
-- [ ] Add Earthwork Viewer.
-- [ ] Mention handoff between review panels and source editors.
+- [x] Add Cross Section Viewer.
+- [x] Add Plan/Profile Connection Review.
+- [x] Add Earthwork Viewer.
+- [x] Mention handoff between review panels and source editors.
 
 ### Earthwork
 
-- [ ] Describe v1-native earthwork analysis from Applied Sections and EG terrain.
-- [ ] Mention cut/fill area, quantity, balance, and mass-haul review.
-- [ ] State known limitations clearly.
+- [x] Describe v1-native earthwork analysis from Applied Sections and EG terrain.
+- [x] Mention cut/fill area, quantity, balance, and mass-haul review.
+- [x] State known limitations clearly.
 
 ### Structures / Structure Output
 
-- [ ] Describe Structure source editing.
-- [ ] Describe Structure Output package and export-readiness diagnostics.
-- [ ] Avoid implying every exchange format is complete.
+- [x] Describe Structure source editing.
+- [x] Describe Structure Output package and export-readiness diagnostics.
+- [x] Avoid implying every exchange format is complete.
 
 ### Drainage
 
-- [ ] Add or update a Drainage page/section.
-- [ ] State that the toolbar/menu entry exists.
-- [ ] State that the full Drainage Editor is planned after `1.0.0`.
-- [ ] Mention current links through Assembly ditch shapes, Applied Section `ditch_surface` rows, and Build Corridor drainage diagnostics.
+- [x] Add or update a Drainage page/section.
+- [x] State that the toolbar/menu entry exists.
+- [x] State that the full Drainage Editor is planned after `1.0.0`.
+- [x] Mention current links through Assembly ditch shapes, Applied Section `ditch_surface` rows, and Build Corridor drainage diagnostics.
 
 ### Troubleshooting
 
-- [ ] Add "restart FreeCAD or reload the workbench after addon update".
-- [ ] Add guidance for missing command registration errors.
-- [ ] Add guidance for placeholder stages such as Drainage.
-- [ ] Add prerequisite notes for Applied Sections, Build Corridor, and Earthwork Review.
+- [x] Add "restart FreeCAD or reload the workbench after addon update".
+- [x] Add guidance for missing command registration errors.
+- [x] Add guidance for placeholder stages such as Drainage.
+- [x] Add prerequisite notes for Applied Sections, Build Corridor, and Earthwork Review.
 
 ### Developer Guide
 
-- [ ] Link to `docsV1/`.
-- [ ] Explain source/result/output package boundaries.
-- [ ] Mention preferred FreeCAD Python path for local validation.
+- [x] Link to `docsV1/`.
+- [x] Explain source/result/output package boundaries.
+- [x] Mention preferred FreeCAD Python path for local validation.
 
 ## 4. Completion Criteria
 
-- [ ] Wiki Quick Start matches README workflow order.
-- [ ] Wiki Home links to the `1.0.0` release.
-- [ ] Drainage limitations are visible in user-facing Wiki pages.
-- [ ] Troubleshooting covers workbench reload and command registration.
-- [ ] No main page presents v0 as the primary workflow.
+- [x] Local Wiki Quick Start matches README workflow order.
+- [x] Local Wiki Home links to the `1.0.0` release.
+- [x] Drainage limitations are visible in user-facing Wiki pages.
+- [x] Troubleshooting covers workbench reload and command registration.
+- [x] No main page presents v0 as the primary workflow.
+
+Publishing to the GitHub Wiki remains a release task outside this local document set.
