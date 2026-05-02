@@ -13,8 +13,8 @@ class CmdGenerateDesignTerrain:
     def GetResources(self):
         return {
             "Pixmap": icon_path("design_terrain.svg"),
-            "MenuText": "Design Terrain",
-            "ToolTip": "Merge design grading surface with existing terrain",
+            "MenuText": "Build Design Terrain",
+            "ToolTip": "Merge the design grading surface with existing terrain",
         }
 
     def IsActive(self):
@@ -25,4 +25,5 @@ class CmdGenerateDesignTerrain:
         Gui.Control.showDialog(panel)
 
 
-Gui.addCommand("CorridorRoad_GenerateDesignTerrain", CmdGenerateDesignTerrain())
+if hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
+    Gui.addCommand("CorridorRoad_GenerateDesignTerrain", CmdGenerateDesignTerrain())

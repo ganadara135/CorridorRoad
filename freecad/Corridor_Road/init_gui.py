@@ -18,80 +18,100 @@ _WB_ICON_PATH = icon_path("corridorroad_workbench.svg")
 
 class CorridorRoadWorkbench(Gui.Workbench):
     MenuText = "CorridorRoad"
-    ToolTip = "CorridorRoad Workbench (Alignment / Stations / Profiles)"
+    ToolTip = "CorridorRoad Workbench for road corridor design, review, and outputs"
     Icon = _WB_ICON_PATH if os.path.isfile(_WB_ICON_PATH) else ""
 
     def Initialize(self):
         import freecad.Corridor_Road.commands.cmd_new_project  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_project_setup  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_import_pointcloud_dem  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_import_pointcloud_tin  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_edit_tin  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_create_alignment  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_drainage_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_view_sections  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_review_plan_profile  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_stations  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_edit_profiles  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_edit_pvi  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_centerline3d  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_typical_section  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_edit_structures  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_regions  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_sections  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_region_editor  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_view_cross_section  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_edit_cross_section  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_corridor  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_design_grading_surface  # noqa: F401
-        import freecad.Corridor_Road.commands.cmd_generate_design_terrain  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_outputs_exchange  # noqa: F401
+        import freecad.Corridor_Road.commands.cmd_ai_assist  # noqa: F401
 
-        self.appendToolbar(
-            "CorridorRoad",
-            [
-                "CorridorRoad_NewProject",
-                "CorridorRoad_ProjectSetup",
-                "CorridorRoad_ImportPointCloudDEM",
-                "CorridorRoad_ImportPointCloudTIN",
-                "CorridorRoad_EditAlignment",
-                "CorridorRoad_GenerateStations",
-                "CorridorRoad_EditProfiles",
-                "CorridorRoad_EditPVI",
-                "CorridorRoad_GenerateCenterline3D",
-                "CorridorRoad_EditTypicalSection",
-                "CorridorRoad_EditStructures",
-                "CorridorRoad_EditRegions",
-                "CorridorRoad_GenerateSections",
-                "CorridorRoad_ViewCrossSection",
-                "CorridorRoad_EditCrossSection",
-                "CorridorRoad_GenerateCorridor",
-                "CorridorRoad_GenerateDesignGradingSurface",
-                "CorridorRoad_GenerateDesignTerrain",
-                "CorridorRoad_GenerateCutFillCalc",
-            ],
+        project_commands = [
+            "CorridorRoad_ProjectSetup",
+        ]
+        terrain_commands = [
+            "CorridorRoad_V1EditTIN",
+        ]
+        alignment_commands = [
+            "CorridorRoad_V1EditAlignment",
+        ]
+        station_profile_commands = [
+            "CorridorRoad_V1GenerateStations",
+            "CorridorRoad_V1EditProfile",
+            "CorridorRoad_ReviewPlanProfile",
+        ]
+        assembly_region_commands = [
+            "CorridorRoad_V1EditAssembly",
+            "CorridorRoad_V1EditStructures",
+            "CorridorRoad_V1EditRegions",
+        ]
+        drainage_commands = [
+            "CorridorRoad_V1EditDrainage",
+        ]
+        corridor_commands = [
+            "CorridorRoad_V1AppliedSections",
+            "CorridorRoad_GenerateCorridor",
+        ]
+        review_commands = [
+            "CorridorRoad_ViewCrossSection",
+            "CorridorRoad_GenerateCutFillCalc",
+        ]
+        output_commands = [
+            "CorridorRoad_OutputsExchange",
+            "CorridorRoad_V1StructureOutput",
+        ]
+        ai_commands = [
+            "CorridorRoad_AIAssist",
+        ]
+
+        workflow_toolbar_commands = (
+            project_commands
+            + terrain_commands
+            + alignment_commands
+            + station_profile_commands
+            + assembly_region_commands
+            + drainage_commands
+            + corridor_commands
+            + review_commands
+            + output_commands
+            + ai_commands
         )
 
-        self.appendMenu(
-            "CorridorRoad",
-            [
-                "CorridorRoad_NewProject",
-                "CorridorRoad_ProjectSetup",
-                "CorridorRoad_ImportPointCloudDEM",
-                "CorridorRoad_ImportPointCloudTIN",
-                "CorridorRoad_EditAlignment",
-                "CorridorRoad_GenerateStations",
-                "CorridorRoad_EditProfiles",
-                "CorridorRoad_EditPVI",
-                "CorridorRoad_GenerateCenterline3D",
-                "CorridorRoad_EditTypicalSection",
-                "CorridorRoad_EditStructures",
-                "CorridorRoad_EditRegions",
-                "CorridorRoad_GenerateSections",
-                "CorridorRoad_ViewCrossSection",
-                "CorridorRoad_EditCrossSection",
-                "CorridorRoad_GenerateCorridor",
-                "CorridorRoad_GenerateDesignGradingSurface",
-                "CorridorRoad_GenerateDesignTerrain",
-                "CorridorRoad_GenerateCutFillCalc",
-            ],
-        )
+        self.appendToolbar("CorridorRoad", list(workflow_toolbar_commands))
+
+        self.appendMenu(["CorridorRoad", "Project"], list(project_commands))
+        self.appendMenu(["CorridorRoad", "Survey & Surface"], list(terrain_commands))
+        self.appendMenu(["CorridorRoad", "Alignment"], list(alignment_commands))
+        self.appendMenu(["CorridorRoad", "Stations & Profile"], list(station_profile_commands))
+        self.appendMenu(["CorridorRoad", "Assembly & Regions"], list(assembly_region_commands))
+        self.appendMenu(["CorridorRoad", "Drainage"], list(drainage_commands))
+        self.appendMenu(["CorridorRoad", "Corridor"], list(corridor_commands))
+        self.appendMenu(["CorridorRoad", "Review"], list(review_commands))
+        self.appendMenu(["CorridorRoad", "Outputs & Exchange"], list(output_commands))
+        self.appendMenu(["CorridorRoad", "AI Assist"], list(ai_commands))
 
     def ContextMenu(self, recipient):
         try:

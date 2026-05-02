@@ -13,8 +13,8 @@ class CmdGenerateCenterline3D:
     def GetResources(self):
         return {
             "Pixmap": icon_path("centerline3d.svg"),
-            "MenuText": "3D Centerline",
-            "ToolTip": "Generate 3D centerline from horizontal and vertical inputs",
+            "MenuText": "3D Centerline Utility",
+            "ToolTip": "Open the 3D centerline utility for display and diagnostic support",
         }
 
     def IsActive(self):
@@ -24,4 +24,5 @@ class CmdGenerateCenterline3D:
         Gui.Control.showDialog(Centerline3DTaskPanel())
 
 
-Gui.addCommand("CorridorRoad_GenerateCenterline3D", CmdGenerateCenterline3D())
+if hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
+    Gui.addCommand("CorridorRoad_GenerateCenterline3D", CmdGenerateCenterline3D())

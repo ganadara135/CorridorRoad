@@ -5,6 +5,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common import clear_ui_context, context_station_label, get_ui_context
 
 from freecad.Corridor_Road.objects import design_standards as _ds
 from freecad.Corridor_Road.objects import unit_policy as _units
@@ -58,6 +59,104 @@ def _find_assembly_template(doc, project=None):
     return None
 
 
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
+
+
+def _alignment_review_display_unit(doc):
+    try:
+        return _units.get_linear_display_unit(doc)
+    except Exception:
+        return "m"
+
+
+def build_alignment_review_text(
+    *,
+    document=None,
+    alignment=None,
+    selected_row_label: str = "",
+    focus_station_label: str = "",
+    summary_lines: list[str] | None = None,
+):
+    lines = [
+        "CorridorRoad Alignment Review",
+        f"Alignment: {str(getattr(alignment, 'Label', '') or getattr(alignment, 'Name', '') or '(not selected)')}",
+        f"Display unit: {_alignment_review_display_unit(document)}",
+    ]
+    if selected_row_label:
+        lines.append(f"Selected Row: {str(selected_row_label).strip()}")
+    if focus_station_label:
+        lines.append(f"Focus Station: {str(focus_station_label).strip()}")
+
+    report_lines = [str(line).rstrip() for line in list(summary_lines or []) if str(line).strip()]
+    if report_lines:
+        lines.extend(["", "Criteria Report:"])
+        lines.extend(report_lines)
+    else:
+        lines.extend(
+            [
+                "",
+                "Criteria Report:",
+                "No criteria report is available yet.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Next Step:",
+            "Generate Stations after the alignment is stable.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def show_alignment_review_dialog(
+    *,
+    parent=None,
+    document=None,
+    alignment=None,
+    selected_row_label: str = "",
+    focus_station_label: str = "",
+    summary_lines: list[str] | None = None,
+):
+    dlg = QtWidgets.QDialog(parent)
+    dlg.setWindowTitle("Review Alignment")
+    dlg.resize(760, 520)
+    layout = QtWidgets.QVBoxLayout(dlg)
+    lbl = QtWidgets.QLabel(
+        "Review the horizontal alignment only. Stationing and profile review should happen after Generate Stations."
+    )
+    lbl.setWordWrap(True)
+    layout.addWidget(lbl)
+    txt = QtWidgets.QPlainTextEdit()
+    txt.setReadOnly(True)
+    txt.setPlainText(
+        build_alignment_review_text(
+            document=document,
+            alignment=alignment,
+            selected_row_label=selected_row_label,
+            focus_station_label=focus_station_label,
+            summary_lines=summary_lines,
+        )
+    )
+    layout.addWidget(txt, 1)
+    btn_close = QtWidgets.QPushButton("Close")
+    btn_close.clicked.connect(dlg.accept)
+    row = QtWidgets.QHBoxLayout()
+    row.addStretch(1)
+    row.addWidget(btn_close)
+    layout.addLayout(row)
+    dlg.exec_()
+
+
 class AlignmentEditorTaskPanel:
     ALIGNMENT_PRESETS = {
         "Simple Tangent": {
@@ -106,6 +205,8 @@ class AlignmentEditorTaskPanel:
 
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self.aln = None
         self.prj = None
         self._alignments = []
@@ -375,11 +476,13 @@ class AlignmentEditorTaskPanel:
         root.addWidget(gb_opts)
 
         rep_row = QtWidgets.QHBoxLayout()
-        self.btn_apply = QtWidgets.QPushButton("Apply Alignment")
+        self.btn_apply = QtWidgets.QPushButton("Apply")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Criteria Report")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Alignment")
         self.btn_close = QtWidgets.QPushButton("Close")
         rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
+        rep_row.addWidget(self.btn_open_v1_preview)
         rep_row.addWidget(self.btn_close)
         root.addLayout(rep_row)
 
@@ -393,6 +496,7 @@ class AlignmentEditorTaskPanel:
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply_changes)
         self.btn_refresh.clicked.connect(self._refresh_report)
+        self.btn_open_v1_preview.clicked.connect(self._open_alignment_review)
         self.btn_close.clicked.connect(self.reject)
         self.cmb_alignment.currentIndexChanged.connect(self._on_alignment_changed)
         self.btn_refresh_context.clicked.connect(self._on_refresh_context)
@@ -496,6 +600,8 @@ class AlignmentEditorTaskPanel:
 
         if selected is None:
             selected = self.aln
+        if selected is None:
+            selected = self._preferred_alignment_from_context()
 
         self.prj = find_project(self.doc)
         self.lbl_coord_hint.setText(coord_hint_text(self.prj if self.prj is not None else self.doc))
@@ -547,7 +653,7 @@ class AlignmentEditorTaskPanel:
         finally:
             self._loading = False
 
-        self.aln = self._current_alignment_from_combo()
+            self.aln = self._current_alignment_from_combo()
         if self.aln is None:
             self.lbl_info.setText(
                 f"HorizontalAlignment: 0 found, Sketch: {len(self._sketches)} found | Display unit: {self._display_unit()}"
@@ -557,6 +663,13 @@ class AlignmentEditorTaskPanel:
                 f"HorizontalAlignment: {len(self._alignments)} found (selected: {self.aln.Label}), "
                 f"Sketch: {len(self._sketches)} found | Display unit: {self._display_unit()}"
             )
+
+    def _preferred_alignment_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("alignment", "") or ""))
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
 
     def _on_alignment_changed(self):
         if self._loading:
@@ -584,6 +697,117 @@ class AlignmentEditorTaskPanel:
         if self._loading:
             return
         self._refresh_report()
+
+    def _build_alignment_review_text(self):
+        row_context = self._selected_alignment_row_context()
+        report_lines = []
+        try:
+            report_lines = [line.rstrip() for line in str(self.txt_report.toPlainText() or "").splitlines()]
+        except Exception:
+            report_lines = []
+        return build_alignment_review_text(
+            document=self.doc,
+            alignment=self.aln,
+            selected_row_label=str(row_context.get("selected_row_label", "") or "").strip(),
+            focus_station_label=str(row_context.get("focus_station_label", "") or "").strip(),
+            summary_lines=report_lines,
+        )
+
+    def _open_alignment_review(self):
+        try:
+            row_context = self._selected_alignment_row_context()
+            report_lines = []
+            try:
+                report_lines = [line.rstrip() for line in str(self.txt_report.toPlainText() or "").splitlines()]
+            except Exception:
+                report_lines = []
+            show_alignment_review_dialog(
+                parent=self.form,
+                document=self.doc,
+                alignment=self.aln,
+                selected_row_label=str(row_context.get("selected_row_label", "") or "").strip(),
+                focus_station_label=str(row_context.get("focus_station_label", "") or "").strip(),
+                summary_lines=report_lines,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Alignment", f"Could not open alignment review: {ex}")
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import show_v1_plan_profile_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_alignment = self.aln
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_plan_profile_preview(
+                document=document,
+                preferred_alignment=preferred_alignment,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit Alignment", f"Could not open plan/profile review: {ex}")
+
+    def _selected_alignment_row_context(self):
+        row_index = int(self.table.currentRow())
+        if row_index < 0 or row_index >= int(self.table.rowCount()):
+            return {}
+        x_value = self._get_float(row_index, 0)
+        y_value = self._get_float(row_index, 1)
+        radius_value = self._get_float(row_index, 2)
+        transition_value = self._get_float(row_index, 3)
+        row_label = f"IP Row {row_index + 1}"
+        if x_value is None or y_value is None:
+            return {"selected_row_label": row_label}
+
+        focus_station = None
+        focus_station_label = ""
+        try:
+            x_internal = float(x_value)
+            y_internal = float(y_value)
+            if self._use_world_mode():
+                x_internal, y_internal, _z_internal = world_to_local(self._coord_context_obj(), x_internal, y_internal, 0.0)
+            if self.aln is not None and getattr(self.aln, "Shape", None) is not None and (not self.aln.Shape.isNull()):
+                focus_station = float(HorizontalAlignment.station_at_xy(self.aln, float(x_internal), float(y_internal)))
+                focus_station_label = _units.format_internal_length(self.prj if self.prj is not None else self.doc, focus_station)
+        except Exception:
+            focus_station = None
+            focus_station_label = ""
+
+        row_bits = [
+            row_label,
+            f"X={float(x_value):.3f}",
+            f"Y={float(y_value):.3f}",
+        ]
+        if radius_value is not None:
+            row_bits.append(f"R={float(radius_value):.3f}")
+        if transition_value is not None:
+            row_bits.append(f"Ls={float(transition_value):.3f}")
+        return {
+            "focus_station": focus_station,
+            "focus_station_label": focus_station_label,
+            "selected_row_label": " | ".join(row_bits),
+        }
+
+    def _build_v1_preview_context(self):
+        row_context = self._selected_alignment_row_context()
+        summary_lines = []
+        try:
+            summary_lines = [line.strip() for line in str(self.txt_report.toPlainText() or "").splitlines() if line.strip()][:6]
+        except Exception:
+            summary_lines = []
+        return {
+            "viewer_context": {
+                "source_panel": "Edit Alignment",
+                "mode_summary": f"Coord Mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}",
+                "table_summary": f"IP Rows: {int(self.table.rowCount())}",
+                "status_summary": f"Design standard: {self._selected_design_standard()}",
+                "summary_lines": summary_lines,
+                **{key: value for key, value in row_context.items() if value not in (None, "")},
+            }
+        }
 
     @staticmethod
     def _combo_data(cmb):
@@ -1134,6 +1358,10 @@ class AlignmentEditorTaskPanel:
                     lines.append(f"IP#{i}: {_units.format_internal_length(self.prj if self.prj is not None else self.doc, sta)}")
                 except Exception:
                     lines.append(f"IP#{i}: N/A")
+        context_station = self._context_station_label()
+        if context_station:
+            lines.append("")
+            lines.append(f"Context: opened from v1 preview at {context_station}")
         lines.append("")
         lines.append(f"Coordinate input mode: {'World (E/N)' if self._use_world_mode() else 'Local (X/Y)'}")
         self.txt_report.setPlainText("\n".join(lines))

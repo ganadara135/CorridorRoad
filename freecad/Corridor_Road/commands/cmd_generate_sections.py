@@ -13,8 +13,8 @@ class CmdGenerateSections:
     def GetResources(self):
         return {
             "Pixmap": icon_path("sections.svg"),
-            "MenuText": "Sections",
-            "ToolTip": "Generate sections from the active template",
+            "MenuText": "Generate Sections",
+            "ToolTip": "Generate section results from the current alignment, stations, and section rules",
         }
 
     def IsActive(self):
@@ -25,4 +25,5 @@ class CmdGenerateSections:
         Gui.Control.showDialog(panel)
 
 
-Gui.addCommand("CorridorRoad_GenerateSections", CmdGenerateSections())
+if hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
+    Gui.addCommand("CorridorRoad_GenerateSections", CmdGenerateSections())

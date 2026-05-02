@@ -6,6 +6,13 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.v1.ui.common import (
+    clear_ui_context,
+    context_station_label,
+    context_station_value,
+    get_ui_context,
+    nearest_value_index,
+)
 
 from freecad.Corridor_Road.objects import unit_policy as _units
 from freecad.Corridor_Road.objects.doc_query import find_project
@@ -21,6 +28,18 @@ from freecad.Corridor_Road.ui.common.profile_fg_helpers import (
 )
 
 
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
+
+
 class PviEditorTaskPanel:
     """
     PVI editor + FG generator (linear grades only).
@@ -28,6 +47,8 @@ class PviEditorTaskPanel:
 
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self._loading = False
         self._starter_source_name = ""
         self.form = self._build_ui()
@@ -146,17 +167,21 @@ class PviEditorTaskPanel:
         self.chk_keep_eg.setChecked(True)
 
         self.btn_open_profiles = QtWidgets.QPushButton("Open Edit Profiles")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Plan/Profile")
         self.btn_preview = QtWidgets.QPushButton("Preview FG (console)")
         self.btn_generate_only = QtWidgets.QPushButton("Generate FG Now (apply)")
+        self.btn_generate_preview = QtWidgets.QPushButton("Generate FG + Open Review")
         self.btn_close = QtWidgets.QPushButton("Close")
 
         gr.addRow(self.lbl_info)
         gr.addRow(self.chk_create_bundle)
         gr.addRow(self.chk_keep_eg)
         gr.addRow(self.btn_open_profiles)
+        gr.addRow(self.btn_open_v1_preview)
         gr.addRow(self.btn_preview)
         row_apply = QtWidgets.QHBoxLayout()
         row_apply.addWidget(self.btn_generate_only)
+        row_apply.addWidget(self.btn_generate_preview)
         row_apply.addWidget(self.btn_close)
         w_apply = QtWidgets.QWidget()
         w_apply.setLayout(row_apply)
@@ -172,8 +197,10 @@ class PviEditorTaskPanel:
         self.btn_load_starter.clicked.connect(self._load_starter_pvi)
         self.btn_clear_blank.clicked.connect(self._clear_to_blank)
         self.btn_open_profiles.clicked.connect(self._open_edit_profiles)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.btn_preview.clicked.connect(self._preview_fg)
         self.btn_generate_only.clicked.connect(self._generate_fg_to_profilebundle)
+        self.btn_generate_preview.clicked.connect(self._generate_and_open_v1_preview)
         self.btn_close.clicked.connect(self.reject)
         self.table.itemChanged.connect(self._on_table_item_changed)
 
@@ -534,17 +561,81 @@ class PviEditorTaskPanel:
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Edit PVI", f"Could not open Edit Profiles: {ex}")
 
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_review_plan_profile import show_v1_plan_profile_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_profile = self._preferred_profile_from_context() or _find_vertical_alignment(self.doc)
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_plan_profile_preview(
+                document=document,
+                preferred_profile=preferred_profile,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit PVI", f"Could not open plan/profile review: {ex}")
+
+    def _current_pvi_row_context(self):
+        row_index = int(self.table.currentRow())
+        if row_index < 0 or row_index >= int(self.table.rowCount()):
+            return {}
+        station_value = self._get_float(row_index, 0)
+        elevation_value = self._get_float(row_index, 1)
+        curve_length = self._get_float(row_index, 2)
+        row_bits = [f"PVI Row {row_index + 1}"]
+        if station_value is not None:
+            row_bits.append(f"STA {float(station_value):.3f}")
+        if elevation_value is not None:
+            row_bits.append(f"FG {float(elevation_value):.3f}")
+        if curve_length is not None:
+            row_bits.append(f"L {float(curve_length):.3f}")
+        focus_station = None
+        focus_station_label = ""
+        if station_value is not None:
+            try:
+                focus_station = float(self._meters_from_display(float(station_value)))
+                focus_station_label = f"STA {float(station_value):.3f} {self._display_unit()}"
+            except Exception:
+                focus_station = None
+                focus_station_label = ""
+        return {
+            "focus_station": focus_station,
+            "focus_station_label": focus_station_label,
+            "selected_row_label": " | ".join(row_bits),
+        }
+
+    def _build_v1_preview_context(self):
+        row_context = self._current_pvi_row_context()
+        summary_lines = [line.strip() for line in str(self.lbl_pvi_summary.text() or "").splitlines() if line.strip()][:6]
+        return {
+            "viewer_context": {
+                "source_panel": "Edit PVI",
+                "mode_summary": f"Clamp overlaps: {'Yes' if bool(self.chk_clamp.isChecked()) else 'No'}",
+                "table_summary": f"PVI rows: {int(self.table.rowCount())}",
+                "status_summary": str(self.lbl_status.text() or "").strip().replace("\n", " | "),
+                "summary_lines": summary_lines,
+                **{key: value for key, value in row_context.items() if value not in (None, "")},
+            }
+        }
+
     def _try_load_existing_va(self):
         if self.doc is None:
             self._refresh_status_summary()
             return
 
         self._apply_display_unit_ui()
-        va = _find_vertical_alignment(self.doc)
+        va = self._preferred_profile_from_context()
+        if va is None:
+            va = _find_vertical_alignment(self.doc)
         if va is None:
             self._refresh_status_summary()
             self._refresh_pvi_summary()
             self._load_starter_pvi(show_message=False)
+            self._apply_v1_station_focus()
             return
 
         st = list(getattr(va, "PVIStations", []) or [])
@@ -590,6 +681,49 @@ class PviEditorTaskPanel:
             pass
         self._refresh_status_summary()
         self._refresh_pvi_summary()
+        self._apply_v1_station_focus()
+
+    def _preferred_profile_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("profile", "") or ""))
+
+    def _context_station_value(self):
+        return context_station_value(self._v1_context)
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _apply_v1_station_focus(self):
+        target_station = self._context_station_value()
+        if target_station is None or self.table.rowCount() <= 0:
+            return
+        target_display_station = self._display_from_meters(float(target_station))
+        station_values = []
+        row_map = []
+        for row in range(self.table.rowCount()):
+            station_value = self._get_float(row, 0)
+            if station_value is None:
+                continue
+            row_map.append(int(row))
+            station_values.append(float(station_value))
+        target_index = nearest_value_index(station_values, target_display_station)
+        if target_index < 0 or target_index >= len(row_map):
+            return
+        target_row = int(row_map[target_index])
+        try:
+            self.table.setCurrentCell(target_row, 0)
+            self.table.selectRow(target_row)
+            item = self.table.item(target_row, 0)
+            if item is not None:
+                self.table.scrollToItem(item)
+        except Exception:
+            pass
+        label = self._context_station_label()
+        if label:
+            try:
+                self.lbl_status.setText(self.lbl_status.text() + f"\nContext: opened from v1 preview at {label}")
+            except Exception:
+                pass
 
     # ---- Save VerticalAlignment ----
     def _save_vertical_alignment(self):
@@ -676,7 +810,7 @@ class PviEditorTaskPanel:
                 f"[FG Preview] s={self._format_display_value(s_disp)} {self._display_unit()} -> z={self._format_display_value(z_disp)} {self._display_unit()}\n"
             )
 
-    def _generate_fg_to_profilebundle(self):
+    def _generate_fg_to_profilebundle(self, show_message=True):
         if self.doc is None:
             return
 
@@ -763,14 +897,22 @@ class PviEditorTaskPanel:
                 adopt_extra=[va, b, fgdisp, st_obj],
             )
 
-        QtWidgets.QMessageBox.information(
-            None,
-            "Edit PVI",
-            self._fg_generation_summary_text(len(stations)),
-        )
+        if show_message:
+            QtWidgets.QMessageBox.information(
+                None,
+                "Edit PVI",
+                self._fg_generation_summary_text(len(stations)),
+            )
         self._refresh_status_summary()
 
         try:
             Gui.ActiveDocument.ActiveView.fitAll()
         except Exception:
             pass
+
+    def _generate_and_open_v1_preview(self):
+        try:
+            self._generate_fg_to_profilebundle(show_message=False)
+            self._open_v1_preview()
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Edit PVI", f"Generate FG + Open Review failed: {ex}")

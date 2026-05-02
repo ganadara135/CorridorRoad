@@ -1,0 +1,310 @@
+from freecad.Corridor_Road.v1.commands.cmd_earthwork_balance import (
+    build_demo_earthwork_report,
+    build_document_earthwork_report,
+)
+from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionPoint
+from freecad.Corridor_Road.v1.models.result.applied_section_set import (
+    AppliedSectionSet,
+    AppliedSectionStationRow,
+)
+from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
+from freecad.Corridor_Road.v1.models.output.quantity_output import QuantityFragmentRow
+from freecad.Corridor_Road.v1.ui.common import clear_ui_context, get_ui_context
+from freecad.Corridor_Road.v1.ui.viewers import earthwork_review_view
+from freecad.Corridor_Road.v1.ui.viewers.earthwork_review_view import (
+    EarthworkViewerTaskPanel,
+    build_plan_profile_handoff_context,
+    build_section_handoff_context,
+)
+
+
+class _FakeControl:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def closeDialog(self) -> None:
+        self.closed = True
+
+
+class _FakeGui:
+    def __init__(self) -> None:
+        self.Control = _FakeControl()
+        self.ran = []
+
+    def runCommand(self, command_name: str, arg: int) -> None:
+        self.ran.append((command_name, arg))
+
+
+class _FakeStatusLabel:
+    def __init__(self) -> None:
+        self.text = ""
+        self.style = ""
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+    def setStyleSheet(self, style: str) -> None:
+        self.style = style
+
+
+class _DeletingControl:
+    def __init__(self, label) -> None:
+        self.closed = False
+        self.label = label
+
+    def closeDialog(self) -> None:
+        self.closed = True
+        self.label.deleted = True
+
+
+class _DeletingGui:
+    def __init__(self, label) -> None:
+        self.Control = _DeletingControl(label)
+        self.ran = []
+
+    def runCommand(self, command_name: str, arg: int) -> None:
+        self.ran.append((command_name, arg))
+
+
+class _DeletingStatusLabel(_FakeStatusLabel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.deleted = False
+
+    def setText(self, text: str) -> None:
+        if self.deleted:
+            raise RuntimeError("Internal C++ object already deleted")
+        super().setText(text)
+
+    def setStyleSheet(self, style: str) -> None:
+        if self.deleted:
+            raise RuntimeError("Internal C++ object already deleted")
+        super().setStyleSheet(style)
+
+
+def test_build_section_handoff_context_targets_selected_earthwork_window() -> None:
+    report = build_demo_earthwork_report(preferred_station=0.0)
+
+    context = build_section_handoff_context(
+        report,
+        station_row={"station": 20.0, "label": "STA 20.000"},
+    )
+
+    assert context["source"] == "v1_earthwork_to_section"
+    assert context["preferred_station"] == 20.0
+    assert context["station_row"]["label"] == "STA 20.000"
+    assert context["viewer_context"]["source_panel"] == "Earthwork Review"
+    assert context["viewer_context"]["earthwork_window_summary"] == "0.000 -> 20.000"
+    assert context["viewer_context"]["earthwork_cut_fill_summary"].startswith("100.000 / 40.000 m3")
+    assert context["earthwork_hint_rows"][0]["label"] == "Earthwork Window"
+    assert context["earthwork_hint_rows"][1]["label"] == "Cut / Fill"
+
+
+def test_build_section_handoff_context_includes_bench_quantity_source_trace() -> None:
+    report = build_demo_earthwork_report(preferred_station=0.0)
+    quantity_output = report["quantity_output"]
+    quantity_output.fragment_rows.extend(
+        [
+            QuantityFragmentRow(
+                fragment_row_id="qty:bench",
+                fragment_id="qty:bench",
+                quantity_kind="bench_surface_length",
+                measurement_kind="section_side_slope_breakline",
+                value=0.5,
+                unit="m",
+                station_start=0.0,
+                station_end=0.0,
+                component_ref="bench:right:1",
+                assembly_ref="assembly:bench-road",
+                region_ref="region:mainline",
+            ),
+            QuantityFragmentRow(
+                fragment_row_id="qty:slope",
+                fragment_id="qty:slope",
+                quantity_kind="slope_face_length",
+                measurement_kind="section_side_slope_breakline",
+                value=4.5,
+                unit="m",
+                station_start=0.0,
+                station_end=0.0,
+                component_ref="slope:right:1",
+                assembly_ref="assembly:bench-road",
+                region_ref="region:mainline",
+            ),
+        ]
+    )
+
+    context = build_section_handoff_context(
+        report,
+        station_row={"station": 0.0, "label": "STA 0.000"},
+    )
+
+    trace_rows = [
+        row
+        for row in context["earthwork_hint_rows"]
+        if row["kind"] == "side_slope_quantity_trace"
+    ]
+    assert trace_rows
+    assert trace_rows[0]["value"] == "bench=0.500 m; slope=4.500 m"
+    assert "assembly_ref=assembly:bench-road" in trace_rows[0]["notes"]
+    assert "region_ref=region:mainline" in trace_rows[0]["notes"]
+
+
+def test_build_plan_profile_handoff_context_targets_selected_earthwork_window() -> None:
+    report = build_demo_earthwork_report(preferred_station=0.0)
+
+    context = build_plan_profile_handoff_context(
+        report,
+        station_row={"station": 20.0, "label": "STA 20.000"},
+    )
+
+    assert context["source"] == "v1_earthwork_to_plan_profile"
+    assert context["preferred_station"] == 20.0
+    assert context["station_row"]["label"] == "STA 20.000"
+    assert context["viewer_context"]["source_panel"] == "Earthwork Review"
+    assert context["viewer_context"]["focus_station"] == 20.0
+    assert context["viewer_context"]["focus_station_label"] == "STA 20.000"
+    assert context["viewer_context"]["earthwork_window_summary"] == "0.000 -> 20.000"
+    assert context["viewer_context"]["earthwork_cut_fill_summary"].startswith("100.000 / 40.000 m3")
+
+
+def test_earthwork_viewer_opens_cross_section_with_context() -> None:
+    clear_ui_context()
+    fake_gui = _FakeGui()
+    original_gui = earthwork_review_view.Gui
+    earthwork_review_view.Gui = fake_gui
+    panel = EarthworkViewerTaskPanel.__new__(EarthworkViewerTaskPanel)
+    panel.report = build_demo_earthwork_report(preferred_station=0.0)
+    panel._status_label = _FakeStatusLabel()
+
+    try:
+        panel._open_cross_section_row({"station": 20.0, "label": "STA 20.000"})
+    finally:
+        earthwork_review_view.Gui = original_gui
+
+    context = get_ui_context()
+    assert fake_gui.Control.closed is True
+    assert fake_gui.ran == [("CorridorRoad_V1ViewSections", 0)]
+    assert context["source"] == "v1_earthwork_to_section"
+    assert context["preferred_station"] == 20.0
+    assert context["earthwork_hint_rows"]
+    assert "Cross Section Viewer" in panel._status_label.text
+
+
+def test_earthwork_viewer_opens_plan_profile_with_context() -> None:
+    clear_ui_context()
+    fake_gui = _FakeGui()
+    original_gui = earthwork_review_view.Gui
+    earthwork_review_view.Gui = fake_gui
+    panel = EarthworkViewerTaskPanel.__new__(EarthworkViewerTaskPanel)
+    panel.report = build_demo_earthwork_report(preferred_station=0.0)
+    panel._status_label = _FakeStatusLabel()
+
+    try:
+        panel._open_plan_profile_row({"station": 20.0, "label": "STA 20.000"})
+    finally:
+        earthwork_review_view.Gui = original_gui
+
+    context = get_ui_context()
+    assert fake_gui.Control.closed is True
+    assert fake_gui.ran == [("CorridorRoad_V1ReviewPlanProfile", 0)]
+    assert context["source"] == "v1_earthwork_to_plan_profile"
+    assert context["preferred_station"] == 20.0
+    assert context["viewer_context"]["earthwork_window_summary"] == "0.000 -> 20.000"
+    assert "Plan/Profile Connection Review" in panel._status_label.text
+
+
+def test_earthwork_viewer_station_navigation_does_not_touch_deleted_status_label() -> None:
+    clear_ui_context()
+    status_label = _DeletingStatusLabel()
+    fake_gui = _DeletingGui(status_label)
+    original_gui = earthwork_review_view.Gui
+    earthwork_review_view.Gui = fake_gui
+    panel = EarthworkViewerTaskPanel.__new__(EarthworkViewerTaskPanel)
+    panel.report = build_demo_earthwork_report(preferred_station=0.0)
+    panel._status_label = status_label
+
+    try:
+        panel._open_station_row({"station": 20.0, "label": "STA 20.000"})
+    finally:
+        earthwork_review_view.Gui = original_gui
+
+    context = get_ui_context()
+    assert fake_gui.Control.closed is True
+    assert fake_gui.ran == [("CorridorRoad_V1EarthworkBalance", 0)]
+    assert context["source"] == "v1_earthwork_navigation"
+    assert context["preferred_station"] == 20.0
+    assert status_label.text == "Opening STA 20.000 in v1 viewer."
+
+
+def test_earthwork_viewer_summary_includes_missing_eg_diagnostics() -> None:
+    panel = EarthworkViewerTaskPanel.__new__(EarthworkViewerTaskPanel)
+    panel.report = build_document_earthwork_report(
+        None,
+        preferred_section_set=_minimal_applied_section_set(),
+        existing_ground_surface=None,
+        corridor_model=CorridorModel(
+            schema_version=1,
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment_id="align-1",
+            profile_id="prof-1",
+        ),
+    )
+
+    summary = panel._summary_text()
+    diagnostic_rows = panel._diagnostic_table_rows()
+
+    assert "Diagnostics:" in summary
+    assert "missing_existing_ground_tin" in summary
+    assert "Existing-ground TIN is missing" in summary
+    assert any(row[1] == "missing_existing_ground_tin" for row in diagnostic_rows)
+    assert any(row[1] == "earthwork_review_empty_state" for row in diagnostic_rows)
+
+
+def _minimal_applied_section_set() -> AppliedSectionSet:
+    sections = [
+        AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id="sec-0",
+            corridor_id="cor-1",
+            alignment_id="align-1",
+            station=0.0,
+            point_rows=[
+                AppliedSectionPoint("sec-0:r", -5.0, 0.0, 2.0, "fg_surface", -5.0),
+                AppliedSectionPoint("sec-0:l", 5.0, 0.0, 2.0, "fg_surface", 5.0),
+            ],
+        ),
+        AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id="sec-10",
+            corridor_id="cor-1",
+            alignment_id="align-1",
+            station=10.0,
+            point_rows=[
+                AppliedSectionPoint("sec-10:r", -5.0, 10.0, 4.0, "fg_surface", -5.0),
+                AppliedSectionPoint("sec-10:l", 5.0, 10.0, 4.0, "fg_surface", 5.0),
+            ],
+        ),
+    ]
+    return AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=sections,
+    )
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+    print("[PASS] v1 earthwork review handoff contract tests completed.")

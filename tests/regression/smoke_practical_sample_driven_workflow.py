@@ -165,6 +165,8 @@ def run():
         "pointcloud_utm_realistic_hilly.csv",
         "profile_fg_manual_import_basic.csv",
         "profile_fg_manual_import_aliases.csv",
+        "profile_v1_pvi_rolling.csv",
+        "profile_v1_pvi_mountain_valley_plain.csv",
         "structure_utm_realistic_hilly.csv",
         "structure_utm_realistic_hilly_notch.csv",
         "structure_utm_realistic_hilly_template.csv",
@@ -192,6 +194,8 @@ def run():
     pavement_rows = _read_csv_rows(os.path.join(samples, "typical_section_pavement_basic.csv"))
     fg_basic_rows = _read_csv_rows(os.path.join(samples, "profile_fg_manual_import_basic.csv"))
     fg_alias_rows = _read_csv_rows(os.path.join(samples, "profile_fg_manual_import_aliases.csv"))
+    profile_v1_rolling_rows = _read_csv_rows(os.path.join(samples, "profile_v1_pvi_rolling.csv"))
+    profile_v1_terrain_rows = _read_csv_rows(os.path.join(samples, "profile_v1_pvi_mountain_valley_plain.csv"))
     simple_structure_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly.csv"))
     notch_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly_notch.csv"))
     template_rows = _read_csv_rows(os.path.join(samples, "structure_utm_realistic_hilly_template.csv"))
@@ -213,6 +217,12 @@ def run():
     _assert(len(fg_alias_rows) >= 8, "FG alias import sample should have at least 8 rows")
     alias_keys = {str(k) for k in list((fg_alias_rows[0] or {}).keys())}
     _assert({"PK", "DesignElevation"}.issubset(alias_keys), "FG alias import sample should expose PK/DesignElevation headers")
+    _assert(len(profile_v1_rolling_rows) >= 10, "v1 Profile rolling sample should have at least 10 PVI/control rows")
+    rolling_keys = {str(k) for k in list((profile_v1_rolling_rows[0] or {}).keys())}
+    _assert({"station", "elevation", "kind"}.issubset(rolling_keys), "v1 Profile rolling sample should expose station/elevation/kind headers")
+    _assert(len(profile_v1_terrain_rows) >= 9, "v1 Profile mountain/valley/plain sample should have at least 9 PVI/control rows")
+    terrain_keys = {str(k) for k in list((profile_v1_terrain_rows[0] or {}).keys())}
+    _assert({"STA", "FG", "Kind"}.issubset(terrain_keys), "v1 Profile terrain sample should expose v0-style STA/FG/Kind headers")
     _assert(all(str(r.get("CorridorMode", "") or "").strip().lower() == "notch" for r in notch_rows), "Notch starter sample should contain only notch corridor rows")
     _assert(all(str(r.get("GeometryMode", "") or "").strip().lower() == "template" for r in template_rows), "Template starter sample should contain only template geometry rows")
     _assert(all(str(r.get("GeometryMode", "") or "").strip().lower() == "external_shape" for r in external_rows), "External-shape starter sample should contain only external-shape rows")

@@ -8,6 +8,13 @@ import FreeCADGui as Gui
 import re
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common import (
+    clear_ui_context,
+    context_station_label,
+    context_station_value,
+    get_ui_context,
+    nearest_span_index,
+)
 
 from freecad.Corridor_Road.objects.doc_query import find_project
 from freecad.Corridor_Road.objects import design_standards as _ds
@@ -112,6 +119,18 @@ def _find_region_sets(doc):
     return find_region_plan_objects(doc)
 
 
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
+
+
 def _normalize_csv_linear_unit(value):
     token = str(value or "").strip().lower()
     if token in ("m", "meter", "meters", "metre", "metres"):
@@ -148,6 +167,8 @@ def _parse_csv_unit_metadata(lines):
 class RegionEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self._regions = []
         self._loading = False
         self._workflow_syncing = False
@@ -1075,14 +1096,18 @@ class RegionEditorTaskPanel:
         self.btn_remove = QtWidgets.QPushButton("Remove Row")
         self.btn_sort = QtWidgets.QPushButton("Sort by Start")
         self.btn_apply = QtWidgets.QPushButton("Apply")
+        self.btn_apply_preview = QtWidgets.QPushButton("Apply + Review")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Section Rules")
         self.btn_close = QtWidgets.QPushButton("Close")
-        for _btn in (self.btn_add, self.btn_remove, self.btn_sort, self.btn_apply, self.btn_close):
+        for _btn in (self.btn_add, self.btn_remove, self.btn_sort, self.btn_apply, self.btn_apply_preview, self.btn_open_v1_preview, self.btn_close):
             self._set_compact_button(_btn)
         btn_row.addWidget(self.btn_add)
         btn_row.addWidget(self.btn_remove)
         btn_row.addWidget(self.btn_sort)
         btn_row.addStretch(1)
         btn_row.addWidget(self.btn_apply)
+        btn_row.addWidget(self.btn_apply_preview)
+        btn_row.addWidget(self.btn_open_v1_preview)
         btn_row.addWidget(self.btn_close)
         main.addLayout(btn_row)
 
@@ -1100,6 +1125,8 @@ class RegionEditorTaskPanel:
         self.btn_remove.clicked.connect(self._remove_row)
         self.btn_sort.clicked.connect(self._sort_rows)
         self.btn_apply.clicked.connect(self._apply)
+        self.btn_apply_preview.clicked.connect(self._apply_and_open_v1_preview)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.btn_close.clicked.connect(self.reject)
         self.table.itemChanged.connect(self._on_table_item_changed)
         self.tbl_base.itemDoubleClicked.connect(lambda _item: self._jump_from_summary_table(self.tbl_base))
@@ -1720,7 +1747,9 @@ class RegionEditorTaskPanel:
             return
         self._regions = _find_region_sets(self.doc)
         prj = find_project(self.doc)
-        selected = resolve_project_region_plan(prj)
+        selected = self._preferred_region_from_context()
+        if selected is None:
+            selected = resolve_project_region_plan(prj)
         if selected is None and self._regions:
             selected = self._regions[0]
         self._loading = True
@@ -1740,6 +1769,88 @@ class RegionEditorTaskPanel:
         ]
         self.lbl_info.setText("\n".join(msg))
         self._on_target_changed()
+
+    def _preferred_region_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("region_plan", "") or ""))
+
+    def _preferred_section_set_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("section_set", "") or ""))
+
+    def _context_station_value(self):
+        return context_station_value(self._v1_context)
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _build_v1_preview_context(self):
+        target = self._current_target()
+        section_set = self._preferred_section_set_from_context()
+        context_station = self._context_station_label()
+        viewer_context = {
+            "source_panel": "Manage Region Plan",
+            "section_set_label": str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip(),
+            "station_label": str(context_station or "").strip(),
+            "diagnostic_tokens": ["Opened from Manage Region Plan"],
+        }
+        if target is not None:
+            viewer_context["structure_summary"] = (
+                f"Region Plan: {str(getattr(target, 'Label', '') or getattr(target, 'Name', '') or '').strip()}"
+            )
+        return {"viewer_context": viewer_context}
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_view_sections import show_v1_section_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_section_set = self._preferred_section_set_from_context()
+            preferred_station = self._context_station_value()
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_section_preview(
+                document=document,
+                preferred_section_set=preferred_section_set,
+                preferred_station=preferred_station,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Manage Region Plan", f"Could not open section-rule review: {ex}")
+
+    def _apply_v1_station_focus(self):
+        target_station = self._context_station_value()
+        if target_station is None:
+            return
+        rows = list(self._read_rows() or [])
+        spans = [
+            (
+                self._safe_float(row.get("StartStation", 0.0), default=0.0),
+                self._safe_float(row.get("EndStation", 0.0), default=0.0),
+            )
+            for row in rows
+        ]
+        target_index = nearest_span_index(spans, target_station)
+        if target_index < 0 or target_index >= len(rows):
+            return
+        target_row = int(rows[target_index].get("_table_row", target_index))
+        try:
+            self.table.setCurrentCell(target_row, 0)
+            item = self.table.item(target_row, 0)
+            if item is not None:
+                self.table.scrollToItem(item)
+        except Exception:
+            pass
+        try:
+            self._select_timeline_row_by_table_row(target_row)
+        except Exception:
+            pass
+        self._on_timeline_selection_changed()
+        label = self._context_station_label()
+        if label:
+            self.lbl_status.setText(f"Context: opened from v1 preview at {label}")
 
     def _on_target_changed(self):
         if self._loading:
@@ -1765,12 +1876,14 @@ class RegionEditorTaskPanel:
                 self.lbl_status.setText(f"New Region Plan will be created. Auto-seeded base/rows={len(rows) - hint_count}/{len(rows)} | hints={hint_count}")
             else:
                 self.lbl_status.setText("New Region Plan will be created.")
+            self._apply_v1_station_focus()
             return
         ensure_region_plan_properties(obj)
         grouped_rows = list(RegionPlan.export_records_from_grouped(obj) or [])
         self._populate_table(grouped_rows if grouped_rows else RegionPlan.records(obj))
         self._refresh_advanced_mode_availability()
         self.lbl_status.setText(str(getattr(obj, "Status", "Loaded") or "Loaded"))
+        self._apply_v1_station_focus()
 
     def _ensure_target(self):
         obj = self._current_target()
@@ -3218,16 +3331,16 @@ class RegionEditorTaskPanel:
             pass
         self.table.setCurrentCell(target_row, 0)
 
-    def _apply(self):
+    def _apply(self, show_message: bool = True):
         if self.doc is None:
             QtWidgets.QMessageBox.warning(None, "Manage Region Plan", "No active document.")
-            return
+            return False
         self._materialize_row_ids(force_if_generated=False)
         grouped = self._group_rows()
         rows = self._flatten_group_rows(grouped)
         if not rows:
             QtWidgets.QMessageBox.warning(None, "Manage Region Plan", "No region rows to save.")
-            return
+            return False
         issues = list(RegionPlan.validate_records(rows) or [])
         if issues:
             reply = QtWidgets.QMessageBox.question(
@@ -3238,7 +3351,7 @@ class RegionEditorTaskPanel:
                 QtWidgets.QMessageBox.No,
             )
             if reply != QtWidgets.QMessageBox.Yes:
-                return
+                return False
         try:
             obj = self._ensure_target()
             RegionPlan.apply_records(obj, rows)
@@ -3251,16 +3364,23 @@ class RegionEditorTaskPanel:
 
             self.doc.recompute()
             self.lbl_status.setText(str(getattr(obj, "Status", "Applied") or "Applied"))
-            QtWidgets.QMessageBox.information(
-                None,
-                "Manage Region Plan",
-                f"Region plan saved.\nRows: {len(rows)}\nStatus: {getattr(obj, 'Status', 'Applied')}",
-            )
+            if show_message:
+                QtWidgets.QMessageBox.information(
+                    None,
+                    "Manage Region Plan",
+                    f"Region plan saved.\nRows: {len(rows)}\nStatus: {getattr(obj, 'Status', 'Applied')}",
+                )
             self._refresh_context()
             try:
                 Gui.ActiveDocument.ActiveView.fitAll()
             except Exception:
                 pass
+            return True
         except Exception as ex:
             self.lbl_status.setText(f"ERROR: {ex}")
             QtWidgets.QMessageBox.warning(None, "Manage Region Plan", f"Apply failed: {ex}")
+            return False
+
+    def _apply_and_open_v1_preview(self):
+        if self._apply(show_message=False):
+            self._open_v1_preview()

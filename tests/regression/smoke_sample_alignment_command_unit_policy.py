@@ -2,7 +2,7 @@
 # SPDX-FileNotice: Part of the Corridor Road addon.
 
 """
-Sample alignment command unit-policy smoke test.
+Sample v1 alignment command smoke test.
 
 Run in FreeCAD Python environment:
     FreeCADCmd tests/regression/smoke_sample_alignment_command_unit_policy.py
@@ -11,8 +11,12 @@ Run in FreeCAD Python environment:
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from freecad.Corridor_Road.objects.doc_query import find_first
-from freecad.Corridor_Road.objects.obj_project import ensure_project_properties
+from freecad.Corridor_Road.objects.obj_project import (
+    V1_TREE_ALIGNMENTS,
+    ensure_project_properties,
+    ensure_project_tree,
+)
+from freecad.Corridor_Road.v1.objects.obj_alignment import find_v1_alignment, to_alignment_model
 
 if not hasattr(Gui, "addCommand"):
     Gui.addCommand = lambda *args, **kwargs: None
@@ -37,18 +41,19 @@ def run():
         CmdCreateAlignment().Activated()
         doc.recompute()
 
-        aln = find_first(doc, proxy_type="HorizontalAlignment", name_prefixes=("HorizontalAlignment",))
-        _assert(aln is not None, "Sample alignment command should create a HorizontalAlignment")
+        aln = find_v1_alignment(doc)
+        _assert(aln is not None, "Sample alignment command should create a V1Alignment object")
         _assert(not hasattr(prj, "LengthScale"), "Sample alignment command should not create LengthScale on a new project")
 
-        pts = list(getattr(aln, "IPPoints", []) or [])
-        _assert(len(pts) == 4, "Sample alignment command should create four IP points")
-        _assert(abs(float(pts[1].x) - (-12.0)) < 1.0e-6, "Sample alignment IP points should be created in meter-native model space")
-        _assert(abs(float(pts[2].y) - 24.0) < 1.0e-6, "Sample alignment Y offset should be created in meter-native model space")
-        _assert(abs(float(getattr(aln, "CurveRadii", [0.0, 0.0])[1]) - 18.0) < 1.0e-6, "Sample alignment radius should remain meter-native")
-        _assert(abs(float(getattr(aln, "TransitionLengths", [0.0, 0.0])[1]) - 8.0) < 1.0e-6, "Sample alignment transition should remain meter-native")
+        model = to_alignment_model(aln)
+        _assert(model is not None, "Sample alignment should convert to an AlignmentModel")
+        _assert(len(model.geometry_sequence) == 3, "Sample alignment should create three v1 geometry elements")
+        _assert(abs(model.geometry_sequence[-1].station_end - 180.0) < 1.0e-6, "Sample alignment station end should be 180 m")
+        tree = ensure_project_tree(prj, include_references=False)
+        names = {str(getattr(obj, "Name", "") or "") for obj in list(getattr(tree[V1_TREE_ALIGNMENTS], "Group", []) or [])}
+        _assert(aln.Name in names, "Sample alignment should be routed to v1 Alignments folder")
 
-        print("[PASS] Sample alignment command unit-policy smoke test completed.")
+        print("[PASS] Sample v1 alignment command smoke test completed.")
     finally:
         App.closeDocument(doc.Name)
 

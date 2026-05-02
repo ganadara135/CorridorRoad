@@ -6,6 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
+from freecad.Corridor_Road.v1.ui.common import clear_ui_context, context_station_label, get_ui_context
 
 from freecad.Corridor_Road.objects.doc_query import find_all, find_project
 from freecad.Corridor_Road.objects import unit_policy as _units
@@ -215,6 +216,18 @@ def _find_typical_section_templates(doc):
     return find_all(doc, proxy_type="TypicalSectionTemplate", name_prefixes=("TypicalSectionTemplate",))
 
 
+def _find_object_by_name(doc, object_name: str):
+    if doc is None or not object_name:
+        return None
+    for obj in list(getattr(doc, "Objects", []) or []):
+        try:
+            if str(getattr(obj, "Name", "") or "") == str(object_name):
+                return obj
+        except Exception:
+            pass
+    return None
+
+
 def _normalize_csv_linear_unit(value):
     token = str(value or "").strip().lower()
     if token in ("m", "meter", "meters", "metre", "metres"):
@@ -271,6 +284,8 @@ def _read_csv_dict_rows(path: str):
 class TypicalSectionEditorTaskPanel:
     def __init__(self):
         self.doc = App.ActiveDocument
+        self._v1_context = get_ui_context()
+        clear_ui_context()
         self._templates = []
         self._loading = False
         self._active_component_row = 0
@@ -493,9 +508,13 @@ class TypicalSectionEditorTaskPanel:
 
         bottom = QtWidgets.QHBoxLayout()
         self.btn_apply = QtWidgets.QPushButton("Apply")
+        self.btn_apply_preview = QtWidgets.QPushButton("Apply + Review")
+        self.btn_open_v1_preview = QtWidgets.QPushButton("Review Section Rules")
         self.btn_refresh = QtWidgets.QPushButton("Refresh")
         self.btn_close = QtWidgets.QPushButton("Close")
         bottom.addWidget(self.btn_apply)
+        bottom.addWidget(self.btn_apply_preview)
+        bottom.addWidget(self.btn_open_v1_preview)
         bottom.addWidget(self.btn_refresh)
         bottom.addWidget(self.btn_close)
         main.addLayout(bottom)
@@ -525,6 +544,8 @@ class TypicalSectionEditorTaskPanel:
         self.chk_show_pavement_display.toggled.connect(self._on_preview_visibility_changed)
         self.btn_refresh_preview.clicked.connect(self._refresh_preview)
         self.btn_apply.clicked.connect(self._apply)
+        self.btn_apply_preview.clicked.connect(self._apply_and_open_v1_preview)
+        self.btn_open_v1_preview.clicked.connect(self._open_v1_preview)
         self.btn_refresh.clicked.connect(self._refresh_context)
         self.btn_close.clicked.connect(self.reject)
         self.table.itemChanged.connect(self._on_component_table_changed)
@@ -589,7 +610,9 @@ class TypicalSectionEditorTaskPanel:
         try:
             self._templates = _find_typical_section_templates(self.doc)
             prj = find_project(self.doc)
-            pref = getattr(prj, "TypicalSectionTemplate", None) if prj is not None and hasattr(prj, "TypicalSectionTemplate") else None
+            pref = self._preferred_template_from_context()
+            if pref is None:
+                pref = getattr(prj, "TypicalSectionTemplate", None) if prj is not None and hasattr(prj, "TypicalSectionTemplate") else None
             self._fill_targets(selected=pref)
             self.lbl_info.setText(
                 "Typical section components define the finished-grade top profile.\n"
@@ -602,6 +625,52 @@ class TypicalSectionEditorTaskPanel:
         self._on_target_changed()
         self._sync_preview_controls()
         self._update_summary()
+
+    def _preferred_template_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("typical_section", "") or ""))
+
+    def _preferred_section_set_from_context(self):
+        legacy_names = dict(self._v1_context.get("legacy_object_names", {}) or {})
+        return _find_object_by_name(self.doc, str(legacy_names.get("section_set", "") or ""))
+
+    def _context_station_label(self):
+        return context_station_label(self._v1_context)
+
+    def _build_v1_preview_context(self):
+        target = self._current_target()
+        section_set = self._preferred_section_set_from_context()
+        context_station = self._context_station_label()
+        viewer_context = {
+            "source_panel": "Edit Typical Section",
+            "section_set_label": str(getattr(section_set, "Label", "") or getattr(section_set, "Name", "") or "").strip(),
+            "station_label": str(context_station or "").strip(),
+            "diagnostic_tokens": ["Opened from Edit Typical Section"],
+        }
+        if target is not None:
+            viewer_context["top_profile_edge_summary"] = (
+                f"Template: {str(getattr(target, 'Label', '') or getattr(target, 'Name', '') or '').strip()}"
+            )
+        return {"viewer_context": viewer_context}
+
+    def _open_v1_preview(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_view_sections import show_v1_section_preview
+
+            preview_context = self._build_v1_preview_context()
+            preferred_section_set = self._preferred_section_set_from_context()
+            document = self.doc
+            Gui.Control.closeDialog()
+            show_v1_section_preview(
+                document=document,
+                preferred_section_set=preferred_section_set,
+                preferred_station=None,
+                extra_context=preview_context,
+                app_module=App,
+                gui_module=Gui,
+            )
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(None, "Typical Section", f"Could not open section-rule review: {ex}")
 
     def _on_target_changed(self):
         if self._loading:
@@ -620,6 +689,9 @@ class TypicalSectionEditorTaskPanel:
             self._sync_preview_controls()
             self._refresh_component_hints()
             self._update_summary()
+            context_station = self._context_station_label()
+            if context_station:
+                self.lbl_status.setText(self.lbl_status.text() + f"\nContext: opened from v1 preview at {context_station}")
             return
 
         ensure_typical_section_template_properties(obj)
@@ -655,6 +727,9 @@ class TypicalSectionEditorTaskPanel:
         self._sync_preview_controls()
         self._refresh_component_hints()
         self._update_summary()
+        context_station = self._context_station_label()
+        if context_station:
+            self.lbl_status.setText(self.lbl_status.text() + f"\nContext: opened from v1 preview at {context_station}")
 
     def _set_rows(self, n):
         self._loading = True
@@ -1630,10 +1705,10 @@ class TypicalSectionEditorTaskPanel:
         except Exception as ex:
             self.lbl_status.setText(f"Preview failed: {ex}")
 
-    def _apply(self):
+    def _apply(self, show_message: bool = True):
         if self.doc is None:
             QtWidgets.QMessageBox.warning(None, "Typical Section", "No active document.")
-            return
+            return False
         try:
             obj = self._ensure_target()
             pav_disp = self._ensure_pavement_display(obj)
@@ -1659,14 +1734,21 @@ class TypicalSectionEditorTaskPanel:
             self._refresh_context()
             self._fill_targets(selected=obj)
             self.lbl_status.setText(str(getattr(obj, "Status", "Updated")))
-            QtWidgets.QMessageBox.information(
-                None,
-                "Typical Section",
-                "Typical section template updated.\n"
-                f"Components: {len(rows)}\n"
-                f"Advanced components: {int(getattr(obj, 'AdvancedComponentCount', 0) or 0)}\n"
-                f"Pavement layers: {len(pav_rows)}\n"
-                f"Pavement total thickness: {self._format_display_length(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0)} {self._display_unit_label()}",
-            )
+            if show_message:
+                QtWidgets.QMessageBox.information(
+                    None,
+                    "Typical Section",
+                    "Typical section template updated.\n"
+                    f"Components: {len(rows)}\n"
+                    f"Advanced components: {int(getattr(obj, 'AdvancedComponentCount', 0) or 0)}\n"
+                    f"Pavement layers: {len(pav_rows)}\n"
+                    f"Pavement total thickness: {self._format_display_length(getattr(obj, 'PavementTotalThickness', 0.0) or 0.0)} {self._display_unit_label()}",
+                )
+            return True
         except Exception as ex:
             QtWidgets.QMessageBox.warning(None, "Typical Section", f"Apply failed: {ex}")
+            return False
+
+    def _apply_and_open_v1_preview(self):
+        if self._apply(show_message=False):
+            self._open_v1_preview()

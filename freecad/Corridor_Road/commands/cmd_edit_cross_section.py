@@ -12,8 +12,8 @@ class CmdEditCrossSection:
     def GetResources(self):
         return {
             "Pixmap": icon_path("view_cross_section.svg"),
-            "MenuText": "Cross Section Editor",
-            "ToolTip": "Open the cross-section review and edit workspace",
+            "MenuText": "Advanced Cross Section Editor",
+            "ToolTip": "Open the advanced cross-section editing utility",
         }
 
     def IsActive(self):

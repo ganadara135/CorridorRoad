@@ -14,14 +14,25 @@ class CmdGenerateCorridor:
     def GetResources(self):
         return {
             "Pixmap": icon_path("corridor.svg"),
-            "MenuText": "Corridor",
-            "ToolTip": "Generate corridor surface from SectionSet",
+            "MenuText": "Build Corridor",
+            "ToolTip": "Build corridor results from the current section set",
         }
 
     def IsActive(self):
         return App.ActiveDocument is not None
 
     def Activated(self):
+        try:
+            from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
+                document_has_v1_applied_sections,
+                run_v1_build_corridor_command,
+            )
+
+            if document_has_v1_applied_sections(App.ActiveDocument):
+                run_v1_build_corridor_command()
+                return
+        except Exception:
+            pass
         panel = CorridorTaskPanel()
         Gui.Control.showDialog(panel)
 

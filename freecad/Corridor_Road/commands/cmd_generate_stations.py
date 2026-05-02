@@ -13,8 +13,8 @@ class CmdGenerateStations:
     def GetResources(self):
         return {
             "Pixmap": icon_path("stations.svg"),
-            "MenuText": "Stations",
-            "ToolTip": "Generate station ticks along the alignment",
+            "MenuText": "Generate Stations",
+            "ToolTip": "Generate stationing for the current alignment",
         }
 
     def IsActive(self):
@@ -25,4 +25,5 @@ class CmdGenerateStations:
         Gui.Control.showDialog(panel)
 
 
-Gui.addCommand("CorridorRoad_GenerateStations", CmdGenerateStations())
+if hasattr(Gui, "addCommand"):  # pragma: no cover - FreeCAD registration only.
+    Gui.addCommand("CorridorRoad_GenerateStations", CmdGenerateStations())
