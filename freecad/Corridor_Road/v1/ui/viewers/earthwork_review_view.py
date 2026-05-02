@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 try:
     import FreeCADGui as Gui
 except Exception:  # pragma: no cover - FreeCAD GUI is not available in tests.
@@ -338,6 +340,16 @@ class EarthworkViewerTaskPanel:
         summary.setPlainText(self._summary_text())
         layout.addWidget(summary)
 
+        diagnostic_rows = self._diagnostic_table_rows()
+        layout.addWidget(QtWidgets.QLabel("Diagnostics"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Severity", "Kind", "Message", "Notes"],
+                rows=diagnostic_rows,
+                empty_text=self._diagnostic_empty_text(),
+            )
+        )
+
         layout.addWidget(QtWidgets.QLabel("Station Navigation"))
         self._station_combo = QtWidgets.QComboBox()
         for row in self._navigation_station_rows():
@@ -420,7 +432,6 @@ class EarthworkViewerTaskPanel:
         for label, command_name in (
             ("Open Alignment Editor", "CorridorRoad_V1EditAlignment"),
             ("Open Profile Editor", "CorridorRoad_V1EditProfile"),
-            ("Open PVI", "CorridorRoad_EditPVI"),
         ):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(
@@ -488,6 +499,12 @@ class EarthworkViewerTaskPanel:
             )
         if focused_haul_zone is not None:
             lines.append(f"Focused Haul Zone: {getattr(focused_haul_zone, 'kind', '') or '(none)'}")
+        diagnostic_summary = self._diagnostic_summary_text()
+        if diagnostic_summary:
+            lines.append(diagnostic_summary)
+        empty_state = self._earthwork_empty_state_text()
+        if empty_state:
+            lines.append(empty_state)
         return "\n".join(lines)
 
     def _focus_badge_text(self) -> str:
@@ -539,6 +556,102 @@ class EarthworkViewerTaskPanel:
                     ]
                 )
         return rows
+
+    def _diagnostic_rows(self) -> list[object]:
+        rows: list[object] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for source in (
+            self.report.get("diagnostic_rows", []) or [],
+            getattr(self.report.get("earthwork_output", None), "diagnostic_rows", []) or [],
+            getattr(self.report.get("mass_haul_output", None), "diagnostic_rows", []) or [],
+            getattr(self.report.get("quantity_output", None), "diagnostic_rows", []) or [],
+        ):
+            for row in list(source or []):
+                key = (
+                    str(getattr(row, "severity", "") or ""),
+                    str(getattr(row, "kind", "") or ""),
+                    str(getattr(row, "message", "") or ""),
+                    str(getattr(row, "notes", "") or ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(row)
+        rows.extend(self._derived_empty_state_diagnostics())
+        return rows
+
+    def _diagnostic_table_rows(self) -> list[list[str]]:
+        return [
+            [
+                str(getattr(row, "severity", "") or ""),
+                str(getattr(row, "kind", "") or ""),
+                str(getattr(row, "message", "") or ""),
+                str(getattr(row, "notes", "") or ""),
+            ]
+            for row in self._diagnostic_rows()
+        ]
+
+    def _diagnostic_summary_text(self) -> str:
+        rows = self._diagnostic_rows()
+        if not rows:
+            return ""
+        counts: dict[str, int] = {}
+        kinds: list[str] = []
+        for row in rows:
+            severity = str(getattr(row, "severity", "") or "info")
+            counts[severity] = counts.get(severity, 0) + 1
+            kind = str(getattr(row, "kind", "") or "").strip()
+            if kind and kind not in kinds:
+                kinds.append(kind)
+        count_text = "; ".join(f"{key} {value}" for key, value in sorted(counts.items()))
+        kind_text = ", ".join(kinds[:5])
+        if len(kinds) > 5:
+            kind_text += ", ..."
+        return f"Diagnostics: {count_text}; kinds: {kind_text}"
+
+    def _diagnostic_empty_text(self) -> str:
+        empty_state = self._earthwork_empty_state_text()
+        if empty_state:
+            return empty_state
+        return "No earthwork diagnostics."
+
+    def _earthwork_empty_state_text(self) -> str:
+        earthwork_model = self.report.get("earthwork_model", None)
+        quantity_model = self.report.get("quantity_model", None)
+        analysis_result = self.report.get("earthwork_analysis_result", None)
+        balance_rows = list(getattr(earthwork_model, "balance_rows", []) or [])
+        quantity_rows = list(getattr(quantity_model, "fragment_rows", []) or [])
+        area_rows = list(getattr(analysis_result, "area_fragment_rows", []) or [])
+        diagnostics = self._raw_diagnostic_rows()
+        diagnostic_kinds = {str(getattr(row, "kind", "") or "") for row in diagnostics}
+        if "missing_applied_section_set" in diagnostic_kinds or "missing_applied_sections" in diagnostic_kinds:
+            return "Applied Sections are missing. Run Applied Sections before Earthwork Review."
+        if "missing_existing_ground_tin" in diagnostic_kinds:
+            return "Existing-ground TIN is missing. Select or create an EG TIN before Earthwork Review."
+        if analysis_result is not None and not area_rows:
+            return "No valid section cut/fill area rows were generated."
+        if quantity_model is not None and not any(str(getattr(row, "quantity_kind", "") or "") in {"cut", "fill"} for row in quantity_rows):
+            return "No station-window earthwork volume rows were generated."
+        if earthwork_model is not None and not balance_rows:
+            return "No earthwork balance rows were generated."
+        return ""
+
+    def _raw_diagnostic_rows(self) -> list[object]:
+        rows: list[object] = []
+        for source in (
+            self.report.get("diagnostic_rows", []) or [],
+            getattr(self.report.get("earthwork_output", None), "diagnostic_rows", []) or [],
+            getattr(self.report.get("mass_haul_output", None), "diagnostic_rows", []) or [],
+            getattr(self.report.get("quantity_output", None), "diagnostic_rows", []) or [],
+        ):
+            rows.extend(list(source or []))
+        return rows
+
+    def _derived_empty_state_diagnostics(self) -> list[object]:
+        text = self._earthwork_empty_state_text()
+        if not text:
+            return []
+        return [_SimpleDiagnostic("warning", "earthwork_review_empty_state", text)]
 
     def _selected_station_row(self) -> dict[str, object] | None:
         combo = getattr(self, "_station_combo", None)
@@ -592,13 +705,17 @@ class EarthworkViewerTaskPanel:
             "station_row": dict(row),
         }
         set_ui_context(**context_payload)
+        self._set_status_safely(f"Opening {station_label} in v1 viewer.", ok=True)
+        if not self._ensure_command_module(
+            "freecad.Corridor_Road.v1.commands.cmd_earthwork_balance",
+            "Earthwork Review",
+        ):
+            return
         try:
             Gui.Control.closeDialog()
         except Exception:
             pass
         Gui.runCommand("CorridorRoad_V1EarthworkBalance", 0)
-        self._status_label.setText(f"Opened {station_label} in v1 viewer.")
-        self._status_label.setStyleSheet("color: #666;")
 
     def _open_cross_section_row(self, row: dict[str, object] | None) -> None:
         if row is None:
@@ -614,6 +731,11 @@ class EarthworkViewerTaskPanel:
         set_ui_context(**context_payload)
         station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
         self._set_status_safely(f"Opening Cross Section Viewer for {station_label}.", ok=True)
+        if not self._ensure_command_module(
+            "freecad.Corridor_Road.v1.commands.cmd_view_sections",
+            "Cross Section Viewer",
+        ):
+            return
         try:
             Gui.Control.closeDialog()
         except Exception:
@@ -634,6 +756,11 @@ class EarthworkViewerTaskPanel:
         set_ui_context(**context_payload)
         station_label = str(dict(context_payload.get("station_row", {}) or {}).get("label", "") or "")
         self._set_status_safely(f"Opening Plan/Profile Connection Review for {station_label}.", ok=True)
+        if not self._ensure_command_module(
+            "freecad.Corridor_Road.v1.commands.cmd_review_plan_profile",
+            "Plan/Profile Connection Review",
+        ):
+            return
         try:
             Gui.Control.closeDialog()
         except Exception:
@@ -664,6 +791,17 @@ class EarthworkViewerTaskPanel:
         )
         if not success:
             self._set_status_safely(message, ok=False)
+
+    def _ensure_command_module(self, module_name: str, viewer_name: str) -> bool:
+        try:
+            importlib.import_module(module_name)
+            return True
+        except Exception as exc:
+            self._set_status_safely(
+                f"Could not prepare {viewer_name} command: {exc}",
+                ok=False,
+            )
+            return False
 
     def _set_status_safely(self, text: str, *, ok: bool = True) -> None:
         label = getattr(self, "_status_label", None)
@@ -715,3 +853,11 @@ class EarthworkViewerTaskPanel:
 
 
 EarthworkPreviewTaskPanel = EarthworkViewerTaskPanel
+
+
+class _SimpleDiagnostic:
+    def __init__(self, severity: str, kind: str, message: str, notes: str = "") -> None:
+        self.severity = severity
+        self.kind = kind
+        self.message = message
+        self.notes = notes

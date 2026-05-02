@@ -21,6 +21,8 @@ from ..services.evaluation import LegacyDocumentAdapter
 from ..services.builders import (
     EarthworkBalanceBuildRequest,
     EarthworkBalanceService,
+    EarthworkReportBuildRequest,
+    EarthworkReportService,
     MassHaulBuildRequest,
     MassHaulService,
     QuantityBuildRequest,
@@ -86,8 +88,108 @@ def build_document_earthwork_report(
     *,
     preferred_section_set=None,
     preferred_station: float | None = None,
+    existing_ground_surface=None,
+    corridor_model=None,
 ) -> dict[str, object] | None:
-    """Build a v1 earthwork report from a legacy FreeCAD document when possible."""
+    """Build a v1-native earthwork report from a FreeCAD document when possible."""
+
+    return build_v1_document_earthwork_report(
+        document,
+        preferred_section_set=preferred_section_set,
+        preferred_station=preferred_station,
+        existing_ground_surface=existing_ground_surface,
+        corridor_model=corridor_model,
+    )
+
+
+def build_v1_document_earthwork_report(
+    document,
+    *,
+    preferred_section_set=None,
+    preferred_station: float | None = None,
+    existing_ground_surface=None,
+    corridor_model=None,
+) -> dict[str, object] | None:
+    """Build a v1-native earthwork report from document Applied Sections and EG TIN."""
+
+    applied_section_set = _resolve_v1_applied_section_set_model(
+        document,
+        preferred_section_set=preferred_section_set,
+    )
+    if applied_section_set is None:
+        return None
+
+    corridor = corridor_model or _build_v1_corridor_model(
+        document,
+        applied_section_set=applied_section_set,
+    )
+    eg_surface = existing_ground_surface or _resolve_v1_existing_ground_tin_surface(document)
+    report_id = f"{corridor.corridor_id or 'corridor'}:earthwork"
+    result = EarthworkReportService().build(
+        EarthworkReportBuildRequest(
+            project_id=corridor.project_id,
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            existing_ground_surface=eg_surface,
+            report_id=report_id,
+        )
+    )
+
+    focus_station = _focus_station_from_applied_sections(
+        applied_section_set,
+        preferred_station=preferred_station,
+    )
+    station_row = _nearest_applied_section_station_row(
+        applied_section_set,
+        preferred_station=focus_station,
+    )
+    focused_balance_row = _nearest_balance_row(result.earthwork_model.balance_rows, focus_station)
+    focused_haul_zone = _nearest_haul_zone(result.mass_haul_model.haul_zone_rows, focus_station)
+    station_values = [
+        (float(row.station), f"STA {float(row.station):.3f}")
+        for row in list(getattr(applied_section_set, "station_rows", []) or [])
+    ]
+    navigation_rows = _build_navigation_station_rows(
+        station_values,
+        current_station=focus_station,
+    )
+
+    navigation_rows = _build_navigation_station_rows(
+        station_values,
+        current_station=focus_station,
+    )
+
+    return {
+        "corridor": result.corridor,
+        "applied_section_set": result.applied_section_set,
+        "earthwork_analysis_result": result.analysis_result,
+        "quantity_model": result.quantity_model,
+        "earthwork_model": result.earthwork_model,
+        "mass_haul_model": result.mass_haul_model,
+        "quantity_output": result.quantity_output,
+        "earthwork_output": result.earthwork_output,
+        "mass_haul_output": result.mass_haul_output,
+        "station_row": station_row,
+        "focused_balance_row": focused_balance_row,
+        "focused_haul_zone": focused_haul_zone,
+        "station_rows": navigation_rows,
+        "key_station_rows": navigation_rows,
+        "diagnostic_rows": result.diagnostic_rows,
+        "document_objects": {
+            "section_set": preferred_section_set,
+            "existing_ground_surface": eg_surface,
+        },
+        "legacy_objects": {},
+    }
+
+
+def build_legacy_document_earthwork_report(
+    document,
+    *,
+    preferred_section_set=None,
+    preferred_station: float | None = None,
+) -> dict[str, object] | None:
+    """Build the older adapter-backed earthwork report path."""
 
     adapter = LegacyDocumentAdapter()
     project = adapter._find_project(document)
@@ -168,10 +270,8 @@ def build_document_earthwork_report(
         "station_row": station_row,
         "focused_balance_row": focused_balance_row,
         "focused_haul_zone": focused_haul_zone,
-        "station_rows": _build_navigation_station_rows(
-            station_values,
-            current_station=focus_station,
-        ),
+        "station_rows": navigation_rows,
+        "key_station_rows": navigation_rows,
         "legacy_objects": {
             "project": project,
             "section_set": section_set,
@@ -180,6 +280,92 @@ def build_document_earthwork_report(
             "cut_fill_calc": cut_fill_calc,
         },
     }
+
+
+def _resolve_v1_applied_section_set_model(document, *, preferred_section_set=None) -> AppliedSectionSet | None:
+    if isinstance(preferred_section_set, AppliedSectionSet):
+        return preferred_section_set
+    try:
+        from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
+
+        obj = find_v1_applied_section_set(document, preferred_applied_section_set=preferred_section_set)
+        return to_applied_section_set(obj)
+    except Exception:
+        return None
+
+
+def _build_v1_corridor_model(document, *, applied_section_set: AppliedSectionSet) -> CorridorModel:
+    try:
+        from .cmd_build_corridor import build_document_corridor_model
+
+        return build_document_corridor_model(document)
+    except Exception:
+        return CorridorModel(
+            schema_version=1,
+            project_id=applied_section_set.project_id,
+            corridor_id=applied_section_set.corridor_id or "corridor:main",
+            alignment_id=applied_section_set.alignment_id,
+            profile_id="",
+            label="Earthwork Corridor",
+            applied_section_set_ref=applied_section_set.applied_section_set_id,
+            sampling_policy=CorridorSamplingPolicy(
+                sampling_policy_id=f"{applied_section_set.corridor_id or 'corridor'}:earthwork-sampling",
+                station_interval=_station_interval(applied_section_set),
+            ),
+        )
+
+
+def _resolve_v1_existing_ground_tin_surface(document):
+    try:
+        from .cmd_build_corridor import _resolve_corridor_existing_ground_tin_surface
+
+        return _resolve_corridor_existing_ground_tin_surface(document)
+    except Exception:
+        return None
+
+
+def _focus_station_from_applied_sections(
+    applied_section_set: AppliedSectionSet,
+    *,
+    preferred_station: float | None,
+) -> float | None:
+    if preferred_station is not None:
+        try:
+            return float(preferred_station)
+        except Exception:
+            pass
+    station_rows = list(getattr(applied_section_set, "station_rows", []) or [])
+    if not station_rows:
+        return None
+    return float(getattr(station_rows[0], "station", 0.0) or 0.0)
+
+
+def _nearest_applied_section_station_row(
+    applied_section_set: AppliedSectionSet,
+    *,
+    preferred_station: float | None,
+) -> dict[str, object]:
+    station_rows = list(getattr(applied_section_set, "station_rows", []) or [])
+    if not station_rows:
+        return {}
+    if preferred_station is None:
+        row = station_rows[0]
+    else:
+        row = min(station_rows, key=lambda item: abs(float(item.station) - float(preferred_station)))
+    station = float(getattr(row, "station", 0.0) or 0.0)
+    return {
+        "station": station,
+        "label": f"STA {station:.3f}",
+        "applied_section_id": str(getattr(row, "applied_section_id", "") or ""),
+    }
+
+
+def _station_interval(applied_section_set: AppliedSectionSet) -> float:
+    stations = sorted(float(row.station) for row in list(getattr(applied_section_set, "station_rows", []) or []))
+    if len(stations) < 2:
+        return 0.0
+    deltas = [end - start for start, end in zip(stations[:-1], stations[1:]) if end > start]
+    return min(deltas) if deltas else 0.0
 
 
 def build_demo_earthwork_report(
@@ -355,6 +541,14 @@ def build_demo_earthwork_report(
     focus_station = 0.0 if preferred_station is None else float(preferred_station)
     focused_balance_row = _nearest_balance_row(earthwork_model.balance_rows, focus_station)
     focused_haul_zone = _nearest_haul_zone(mass_haul_model.haul_zone_rows, focus_station)
+    navigation_rows = _build_navigation_station_rows(
+        [
+            (0.0, "STA 0.000"),
+            (20.0, "STA 20.000"),
+            (40.0, "STA 40.000"),
+        ],
+        current_station=focus_station,
+    )
 
     return {
         "corridor": corridor,
@@ -368,14 +562,8 @@ def build_demo_earthwork_report(
         "station_row": {"station": focus_station, "label": f"STA {focus_station:.3f}"},
         "focused_balance_row": focused_balance_row,
         "focused_haul_zone": focused_haul_zone,
-        "station_rows": _build_navigation_station_rows(
-            [
-                (0.0, "STA 0.000"),
-                (20.0, "STA 20.000"),
-                (40.0, "STA 40.000"),
-            ],
-            current_station=focus_station,
-        ),
+        "station_rows": navigation_rows,
+        "key_station_rows": navigation_rows,
         "legacy_objects": {},
     }
 
@@ -427,7 +615,7 @@ def format_earthwork_report(report: dict[str, object]) -> str:
             f"Balance points: {balance_point_count}",
             f"Final cumulative mass: {final_cumulative_mass} m3",
             f"Max surplus/deficit: {max_surplus_mass} / {max_deficit_mass} m3",
-            f"Navigation stations: {len(list(report.get('station_rows', []) or []))}",
+            f"Key stations: {len(list(report.get('key_station_rows', report.get('station_rows', [])) or []))}",
             *_focus_summary_lines(station_row, focused_balance_row, focused_haul_zone),
         ]
     )

@@ -20,6 +20,20 @@ from .earthwork_balance_service import (
     EarthworkBalanceBuildRequest,
     EarthworkBalanceService,
 )
+from .earthwork_analysis_service import (
+    EarthworkAnalysisBuildRequest,
+    EarthworkAnalysisResult,
+    EarthworkAnalysisService,
+)
+from .earthwork_quantity_service import (
+    EarthworkQuantityBuildRequest,
+    EarthworkQuantityService,
+)
+from .earthwork_report_service import (
+    EarthworkReportBuildRequest,
+    EarthworkReportResult,
+    EarthworkReportService,
+)
 from .mass_haul_service import MassHaulBuildRequest, MassHaulService
 from .quantity_build_service import QuantityBuildRequest, QuantityBuildService
 from .tin_build_service import TINBuildRequest, TINBuildService, TINPointInput
@@ -39,6 +53,14 @@ __all__ = [
     "CorridorModelService",
     "EarthworkBalanceBuildRequest",
     "EarthworkBalanceService",
+    "EarthworkAnalysisBuildRequest",
+    "EarthworkAnalysisResult",
+    "EarthworkAnalysisService",
+    "EarthworkQuantityBuildRequest",
+    "EarthworkQuantityService",
+    "EarthworkReportBuildRequest",
+    "EarthworkReportResult",
+    "EarthworkReportService",
     "MassHaulBuildRequest",
     "MassHaulService",
     "QuantityBuildRequest",
