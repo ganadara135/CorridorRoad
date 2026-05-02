@@ -7,6 +7,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [1.0.0] - 2026-05-02
+
+### Added
+- Introduced the v1 source-driven corridor workflow as the supported release direction.
+- Added v1-native TIN, Alignment, Stations, Profile, Assembly, Region, Applied Sections, Build Corridor, review, Earthwork, Structure Output, Outputs & Exchange, and AI Assist stage framing.
+- Added a Drainage toolbar/menu entry with a clear under-development message and dedicated drainage icon.
+- Added v1 release, drainage implementation, and release-overview documentation for the `1.0.0` release.
+- Added v1-native Earthwork report flow from Applied Sections and existing-ground terrain into cut/fill area, quantity, balance, mass-haul, and review outputs.
+
+### Changed
+- Rewrote `README.md` and `ADDON_OVERVIEW.md` around the v1 workflow, current release scope, and known in-progress areas.
+- Updated the workbench command registration so v1 review and Earthwork handoff commands are available from the active workbench session.
+- Clarified Drainage as a planned v1 stage after Region and before Applied Sections.
+- Refined Earthwork Review handoff behavior to avoid deleted Qt object access after closing the task panel.
+
+### Known Limitations
+- Full Drainage Editor functionality is not complete in `1.0.0`.
+- Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and full exchange output coverage remain future work.
+- Some workflows still retain legacy support paths during the v1 transition, but v1 source/result/output layering is the intended direction.
+
 ## [0.2.8] - 2026-04-20
 
 ### Changed
