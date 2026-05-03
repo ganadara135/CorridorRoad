@@ -13,6 +13,8 @@ CorridorRoad is developed as an open-source road design workbench for FreeCAD. I
 
 Sponsorship helps fund focused work on the v1 workflow, documentation, testing, and practical road-design features that are difficult to sustain through spare-time development alone.
 
+For commercial use, project-specific requirements, or custom workflow questions, please contact me.
+
 The current release direction is CorridorRoad `1.0.0`, the first v1 workflow release. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 ## What This Project Does
