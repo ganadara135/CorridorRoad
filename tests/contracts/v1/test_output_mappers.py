@@ -27,6 +27,7 @@ from freecad.Corridor_Road.v1.models.result.surface_model import (
     SurfaceBuildRelation,
     SurfaceModel,
     SurfaceRow,
+    SurfaceSpanRow,
 )
 from freecad.Corridor_Road.v1.models.output import (
     StructureExportDiagnosticRow,
@@ -165,12 +166,81 @@ def test_surface_output_mapper_maps_surface_rows() -> None:
                 relation_kind="corridor_build",
             )
         ],
+        span_rows=[
+            SurfaceSpanRow(
+                span_id="span-1",
+                surface_ref="surf-design",
+                station_start=0.0,
+                station_end=10.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                span_kind="region_boundary",
+                transition_ref="transition:a-b",
+                continuity_status="transition_applied",
+                diagnostic_refs=["region_context_change", "surface_transition_applied"],
+            )
+        ],
     )
 
     output = SurfaceOutputMapper().map_surface_model(surface_model)
 
     assert output.surface_output_id == "surf-1"
     assert output.surface_rows[0].surface_kind == "design_surface"
+    assert output.span_rows[0].span_kind == "region_boundary"
+    assert output.span_rows[0].from_region_ref == "region-a"
+    assert output.span_rows[0].transition_ref == "transition:a-b"
+    assert output.span_rows[0].continuity_status == "transition_applied"
+    assert {row.kind for row in output.diagnostic_rows} == {"region_context_change", "surface_transition_applied"}
+
+
+def test_exchange_output_mapper_packages_surface_transition_span_context() -> None:
+    surface_model = SurfaceModel(
+        schema_version=1,
+        project_id="proj-1",
+        surface_model_id="surface:main",
+        corridor_id="corridor:main",
+        source_refs=["corridor:main", "sections:main", "surface-transitions:main"],
+        surface_rows=[
+            SurfaceRow("corridor:main:design", "design_surface", "corridor:main:design:tin"),
+        ],
+        span_rows=[
+            SurfaceSpanRow(
+                "span:design:1",
+                "corridor:main:design",
+                20.0,
+                40.0,
+                from_region_ref="region:rural",
+                to_region_ref="region:urban",
+                span_kind="region_boundary",
+                transition_ref="transition:rural-urban",
+                continuity_status="transition_applied",
+                diagnostic_refs=["region_context_change", "surface_transition_applied"],
+            )
+        ],
+    )
+    surface_output = SurfaceOutputMapper().map_surface_model(surface_model)
+
+    exchange_output = ExchangeOutputMapper().map_output_package(
+        ExchangePackageRequest(
+            project_id="proj-1",
+            exchange_output_id="pkg-surfaces",
+            format="json",
+            package_kind="corridor_surface_exchange",
+            outputs=[surface_output],
+        )
+    )
+
+    assert exchange_output.payload_metadata["surface_span_count"] == 1
+    assert exchange_output.payload_metadata["surface_transition_span_count"] == 1
+    assert exchange_output.payload_metadata["surface_transition_diagnostic_count"] == 1
+    assert exchange_output.payload_metadata["diagnostic_warning_count"] == 2
+    assert exchange_output.format_payload["surface_span_rows"][0]["transition_ref"] == "transition:rural-urban"
+    assert exchange_output.format_payload["source_context_rows"][0]["context_kind"] == "surface_span"
+    assert exchange_output.format_payload["source_context_rows"][0]["transition_ref"] == "transition:rural-urban"
+    assert {row["kind"] for row in exchange_output.format_payload["diagnostic_rows"]} == {
+        "region_context_change",
+        "surface_transition_applied",
+    }
 
 
 def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:

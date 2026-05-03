@@ -13,6 +13,7 @@ from .corridor_surface_service import (
 from .corridor_surface_geometry_service import (
     CorridorDesignSurfaceGeometryRequest,
     CorridorSurfaceGeometryService,
+    transition_augmented_applied_section_set,
 )
 from .corridor_solid_service import StructureSolidBuildRequest, StructureSolidOutputService
 from .corridor_model_service import CorridorModelBuildRequest, CorridorModelService
@@ -47,6 +48,7 @@ __all__ = [
     "CorridorSurfaceService",
     "CorridorDesignSurfaceGeometryRequest",
     "CorridorSurfaceGeometryService",
+    "transition_augmented_applied_section_set",
     "StructureSolidBuildRequest",
     "StructureSolidOutputService",
     "CorridorModelBuildRequest",

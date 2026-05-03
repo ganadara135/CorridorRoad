@@ -24,6 +24,8 @@ from freecad.Corridor_Road.v1.models.source import (
     OverrideModel,
     ProfileModel,
     RegionModel,
+    SurfaceTransitionModel,
+    SurfaceTransitionRange,
 )
 from freecad.Corridor_Road.v1.models.source.alignment_model import AlignmentElement
 from freecad.Corridor_Road.v1.models.source.assembly_model import (
@@ -62,6 +64,7 @@ from freecad.Corridor_Road.v1.services.builders import (
     QuantityBuildService,
     StructureSolidBuildRequest,
     StructureSolidOutputService,
+    transition_augmented_applied_section_set,
 )
 from freecad.Corridor_Road.v1.models.output import StructureSolidOutput, StructureSolidOutputRow
 
@@ -2020,6 +2023,486 @@ def test_corridor_surface_service_builds_surface_family_rows() -> None:
     assert len(result.surface_rows) == 3
     assert result.surface_rows[0].surface_kind == "design_surface"
     assert result.build_relation_rows[0].relation_kind == "corridor_build"
+
+
+def test_corridor_surface_service_preserves_region_span_metadata() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-region-span",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-region-span",
+        corridor_id="cor-region-span",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 0.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 10.0, "sec-2"),
+            AppliedSectionStationRow("sta-3", 20.0, "sec-3"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                region_id="region-a",
+                assembly_id="assembly-a",
+                frame=AppliedSectionFrame(station=0.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                region_id="region-a",
+                assembly_id="assembly-a",
+                frame=AppliedSectionFrame(station=10.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-3",
+                region_id="region-b",
+                assembly_id="assembly-b",
+                frame=AppliedSectionFrame(station=20.0),
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceService().build(
+        CorridorSurfaceBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_model_id="surf-region-span",
+        )
+    )
+
+    design_spans = [row for row in result.span_rows if row.surface_ref == "cor-region-span:design"]
+    assert len(design_spans) == 2
+    assert design_spans[0].span_kind == "same_region"
+    assert design_spans[0].continuity_status == "ok"
+    assert design_spans[1].span_kind == "region_boundary"
+    assert design_spans[1].continuity_status == "needs_review"
+    assert design_spans[1].from_region_ref == "region-a"
+    assert design_spans[1].to_region_ref == "region-b"
+    assert "region_context_change" in design_spans[1].diagnostic_refs
+
+
+def test_corridor_surface_service_links_transition_ranges_to_boundary_spans() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-transition-span",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-span",
+        corridor_id="cor-transition-span",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                region_id="region-a",
+                assembly_id="assembly-a",
+                frame=AppliedSectionFrame(station=10.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                region_id="region-b",
+                assembly_id="assembly-b",
+                frame=AppliedSectionFrame(station=20.0),
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:main",
+        corridor_ref="cor-transition-span",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:a-b",
+                15.0,
+                25.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface", "subgrade_surface"],
+                approval_status="active",
+            )
+        ],
+    )
+
+    result = CorridorSurfaceService().build(
+        CorridorSurfaceBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_model_id="surf-transition-span",
+            surface_transition_model=transition_model,
+        )
+    )
+
+    design_span = next(row for row in result.span_rows if row.surface_ref == "cor-transition-span:design")
+    subgrade_span = next(row for row in result.span_rows if row.surface_ref == "cor-transition-span:subgrade")
+    daylight_span = next(row for row in result.span_rows if row.surface_ref == "cor-transition-span:daylight")
+    assert "surface-transitions:main" in result.source_refs
+    assert design_span.transition_ref == "transition:a-b"
+    assert design_span.continuity_status == "transition_applied"
+    assert "surface_transition_applied" in design_span.diagnostic_refs
+    assert subgrade_span.transition_ref == "transition:a-b"
+    assert daylight_span.transition_ref == ""
+    assert daylight_span.continuity_status == "needs_review"
+
+
+def test_transition_augmented_applied_section_set_generates_width_samples_inside_enabled_range() -> None:
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-width",
+        corridor_id="cor-transition-width",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                corridor_id="cor-transition-width",
+                region_id="region-a",
+                frame=AppliedSectionFrame(station=10.0, x=10.0, z=10.0),
+                surface_left_width=4.0,
+                surface_right_width=4.0,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                corridor_id="cor-transition-width",
+                region_id="region-b",
+                frame=AppliedSectionFrame(station=20.0, x=20.0, z=11.0),
+                surface_left_width=8.0,
+                surface_right_width=6.0,
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:width",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:width",
+                12.0,
+                19.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface"],
+                transition_mode="interpolate_width",
+                sample_interval=3.0,
+                approval_status="active",
+            )
+        ],
+    )
+
+    augmented = transition_augmented_applied_section_set(
+        applied_section_set,
+        surface_transition_model=transition_model,
+        surface_kind="design_surface",
+    )
+
+    assert [row.station for row in augmented.station_rows] == [10.0, 12.0, 15.0, 18.0, 20.0]
+    generated = [section for section in augmented.sections if "transition:width:generated" in section.applied_section_id]
+    assert [section.surface_left_width for section in generated] == [4.8, 6.0, 7.2]
+    assert all("surface_transition_generated" in section.structure_diagnostic_rows[0] for section in generated)
+
+
+def test_corridor_surface_geometry_service_uses_transition_generated_sections() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-transition-geometry",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-geometry",
+        corridor_id="cor-transition-geometry",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                corridor_id="cor-transition-geometry",
+                region_id="region-a",
+                frame=AppliedSectionFrame(station=10.0, x=10.0, z=10.0),
+                surface_left_width=4.0,
+                surface_right_width=4.0,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                corridor_id="cor-transition-geometry",
+                region_id="region-b",
+                frame=AppliedSectionFrame(station=20.0, x=20.0, z=11.0),
+                surface_left_width=8.0,
+                surface_right_width=6.0,
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:geometry",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:geometry",
+                12.0,
+                19.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface"],
+                transition_mode="interpolate_width",
+                sample_interval=3.0,
+                approval_status="active",
+            )
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_design_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="surface:transition-geometry",
+            surface_transition_model=transition_model,
+        )
+    )
+
+    station_count = next(row.value for row in result.quality_rows if row.metric == "station_count")
+    assert int(station_count) == 5
+    assert len(result.vertex_rows) == 10
+    assert len(result.triangle_rows) == 8
+
+
+def test_transition_augmented_applied_section_set_preserves_matching_role_points() -> None:
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-roles",
+        corridor_id="cor-transition-roles",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                corridor_id="cor-transition-roles",
+                region_id="region-a",
+                frame=AppliedSectionFrame(station=10.0, x=10.0, z=10.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:r", 10.0, -4.0, 9.9, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:l", 10.0, 4.0, 9.9, "fg_surface", 4.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                corridor_id="cor-transition-roles",
+                region_id="region-b",
+                frame=AppliedSectionFrame(station=20.0, x=20.0, z=11.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:r", 20.0, -5.0, 10.8, "fg_surface", -5.0),
+                    AppliedSectionPoint("fg:l", 20.0, 5.0, 10.8, "fg_surface", 5.0),
+                ],
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:roles",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:roles",
+                12.0,
+                18.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface"],
+                transition_mode="interpolate_matching_roles",
+                sample_interval=4.0,
+                approval_status="active",
+            )
+        ],
+    )
+
+    augmented = transition_augmented_applied_section_set(
+        applied_section_set,
+        surface_transition_model=transition_model,
+        surface_kind="design_surface",
+    )
+
+    generated = [section for section in augmented.sections if "transition:roles:generated" in section.applied_section_id]
+    assert [section.station for section in generated] == [12.0, 16.0]
+    assert [len(section.point_rows) for section in generated] == [2, 2]
+    assert {point.point_role for point in generated[0].point_rows} == {"fg_surface"}
+
+
+def test_transition_augmented_applied_section_set_ignores_disabled_ranges() -> None:
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-disabled",
+        corridor_id="cor-transition-disabled",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                corridor_id="cor-transition-disabled",
+                region_id="region-a",
+                frame=AppliedSectionFrame(station=10.0),
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                corridor_id="cor-transition-disabled",
+                region_id="region-b",
+                frame=AppliedSectionFrame(station=20.0),
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:disabled",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:disabled",
+                12.0,
+                18.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface"],
+                enabled=False,
+                approval_status="active",
+            )
+        ],
+    )
+
+    augmented = transition_augmented_applied_section_set(
+        applied_section_set,
+        surface_transition_model=transition_model,
+        surface_kind="design_surface",
+    )
+
+    assert [row.station for row in augmented.station_rows] == [10.0, 20.0]
+    assert [section.applied_section_id for section in augmented.sections] == ["sec-1", "sec-2"]
+
+
+def test_transition_augmented_applied_section_set_reports_skipped_unsafe_roles() -> None:
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-transition-unsafe",
+        corridor_id="cor-transition-unsafe",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-1", 10.0, "sec-1"),
+            AppliedSectionStationRow("sta-2", 20.0, "sec-2"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-1",
+                corridor_id="cor-transition-unsafe",
+                region_id="region-a",
+                frame=AppliedSectionFrame(station=10.0, x=10.0, z=10.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:r", 10.0, -4.0, 9.9, "fg_surface", -4.0),
+                    AppliedSectionPoint("fg:l", 10.0, 4.0, 9.9, "fg_surface", 4.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-2",
+                corridor_id="cor-transition-unsafe",
+                region_id="region-b",
+                frame=AppliedSectionFrame(station=20.0, x=20.0, z=11.0),
+                point_rows=[
+                    AppliedSectionPoint("fg:c", 20.0, 0.0, 10.8, "fg_surface", 0.0),
+                ],
+            ),
+        ],
+    )
+    transition_model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_model_id="surface-transitions:unsafe",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:unsafe",
+                12.0,
+                18.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                target_surface_kinds=["design_surface"],
+                transition_mode="interpolate_matching_roles",
+                sample_interval=4.0,
+                approval_status="active",
+            )
+        ],
+    )
+
+    augmented = transition_augmented_applied_section_set(
+        applied_section_set,
+        surface_transition_model=transition_model,
+        surface_kind="design_surface",
+    )
+
+    generated = [section for section in augmented.sections if "transition:unsafe:generated" in section.applied_section_id]
+    assert generated
+    assert any("surface_transition_role_skipped" in row for row in generated[0].structure_diagnostic_rows)
+    assert any("fg_surface point count mismatch: 2 -> 1" in row for row in generated[0].structure_diagnostic_rows)
 
 
 def test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist() -> None:

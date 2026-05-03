@@ -53,6 +53,7 @@ class ExchangeOutputMapper:
         )
         source_context_rows = self._source_context_rows(request.outputs)
         diagnostic_rows = self._diagnostic_rows(request.outputs)
+        surface_span_rows = self._surface_span_rows(request.outputs)
 
         return ExchangeOutput(
             schema_version=1,
@@ -84,6 +85,9 @@ class ExchangeOutputMapper:
                 "region_ref_count": len(self._source_ref_values(request.outputs, "region_ref")),
                 "assembly_ref_count": len(self._source_ref_values(request.outputs, "assembly_ref")),
                 "structure_ref_count": len(self._source_ref_values(request.outputs, "structure_ref")),
+                "surface_span_count": len(surface_span_rows),
+                "surface_transition_span_count": self._surface_transition_span_count(surface_span_rows),
+                "surface_transition_diagnostic_count": self._surface_transition_diagnostic_count(diagnostic_rows),
                 "diagnostic_count": len(diagnostic_rows),
                 "diagnostic_error_count": self._diagnostic_count(request.outputs, severity="error"),
                 "diagnostic_warning_count": self._diagnostic_count(request.outputs, severity="warning"),
@@ -93,6 +97,7 @@ class ExchangeOutputMapper:
                 "output_ids": [row.output_id for row in output_refs],
                 "structure_solid_rows": self._structure_solid_rows(request.outputs),
                 "structure_solid_segment_rows": self._structure_solid_segment_rows(request.outputs),
+                "surface_span_rows": surface_span_rows,
                 "source_context_rows": source_context_rows,
                 "diagnostic_rows": diagnostic_rows,
             },
@@ -158,6 +163,16 @@ class ExchangeOutputMapper:
         for output in list(outputs or []):
             output_id = self._output_id(output)
             for row in list(getattr(output, "solid_segment_rows", []) or []):
+                payload = asdict(row)
+                payload["output_ref"] = output_id
+                rows.append(payload)
+        return rows
+
+    def _surface_span_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for output in list(outputs or []):
+            output_id = self._output_id(output)
+            for row in list(getattr(output, "span_rows", []) or []):
                 payload = asdict(row)
                 payload["output_ref"] = output_id
                 rows.append(payload)
@@ -232,6 +247,23 @@ class ExchangeOutputMapper:
                     "component_ref": str(getattr(row, "component_ref", "") or ""),
                     "quantity_kind": str(getattr(row, "quantity_kind", "") or ""),
                     "measurement_kind": str(getattr(row, "measurement_kind", "") or ""),
+                }
+            )
+        for row in list(getattr(output, "span_rows", []) or []):
+            payloads.append(
+                {
+                    "context_kind": "surface_span",
+                    "scope": "surface_transition" if str(getattr(row, "transition_ref", "") or "") else "surface_span",
+                    "region_ref": str(getattr(row, "from_region_ref", "") or ""),
+                    "assembly_ref": "",
+                    "structure_ref": "",
+                    "source_row_ref": str(getattr(row, "span_row_id", "") or ""),
+                    "surface_ref": str(getattr(row, "surface_ref", "") or ""),
+                    "from_region_ref": str(getattr(row, "from_region_ref", "") or ""),
+                    "to_region_ref": str(getattr(row, "to_region_ref", "") or ""),
+                    "transition_ref": str(getattr(row, "transition_ref", "") or ""),
+                    "span_kind": str(getattr(row, "span_kind", "") or ""),
+                    "continuity_status": str(getattr(row, "continuity_status", "") or ""),
                 }
             )
         return [
@@ -309,4 +341,14 @@ class ExchangeOutputMapper:
             1
             for row in self._diagnostic_rows(outputs)
             if str(row.get("severity", "") or "").strip().lower() == expected
+        )
+
+    def _surface_transition_span_count(self, surface_span_rows: list[dict[str, object]]) -> int:
+        return sum(1 for row in list(surface_span_rows or []) if str(row.get("transition_ref", "") or ""))
+
+    def _surface_transition_diagnostic_count(self, diagnostic_rows: list[dict[str, object]]) -> int:
+        return sum(
+            1
+            for row in list(diagnostic_rows or [])
+            if str(row.get("kind", "") or "").startswith("surface_transition")
         )

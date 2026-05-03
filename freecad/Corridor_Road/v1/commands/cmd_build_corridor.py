@@ -21,6 +21,12 @@ from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_
 from ..objects.obj_region import find_v1_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import create_or_update_v1_surface_model_object, find_v1_surface_model
+from ..objects.obj_surface_transition import (
+    create_or_update_v1_surface_transition_model_object,
+    find_v1_surface_transition_model,
+    to_surface_transition_model,
+)
+from ..models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from ..services.builders import (
     CorridorDesignSurfaceGeometryRequest,
     CorridorModelBuildRequest,
@@ -32,7 +38,9 @@ from ..services.builders import (
     QuantityBuildService,
     StructureSolidBuildRequest,
     StructureSolidOutputService,
+    transition_augmented_applied_section_set,
 )
+from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
 from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
 
@@ -64,6 +72,11 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
 )
 BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
 BUILD_CORRIDOR_PANEL_MAX_WIDTH = 560
+REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD = 1.0
+REGION_BOUNDARY_SUBGRADE_JUMP_THRESHOLD = 0.15
+REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD = 1.0
+REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD = 0.05
+SURFACE_TRANSITION_DEFAULT_HALF_LENGTH = 5.0
 
 CORRIDOR_BUILD_REVIEW_ROW_COLORS = {
     "ready": (220, 245, 224),
@@ -125,12 +138,14 @@ def build_document_corridor_surface_model(
     if applied_section_set is None:
         raise RuntimeError("A v1 AppliedSectionSet is required before corridor surfaces.")
     corridor = corridor_model or build_document_corridor_model(doc, project=project)
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     return CorridorSurfaceService().build(
         CorridorSurfaceBuildRequest(
             project_id=_project_id(project or find_project(doc)),
             corridor=corridor,
             applied_section_set=applied_section_set,
             surface_model_id=surface_model_id,
+            surface_transition_model=transition_model,
         )
     )
 
@@ -401,6 +416,13 @@ def apply_v1_corridor_model(
             surface_model=surface_model,
             supplemental_sampling_enabled=supplemental_sampling_enabled,
         )
+        _notify_progress(progress_callback, 92, "Creating transition span markers...")
+        create_corridor_surface_transition_span_markers(
+            document=doc,
+            project=prj,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
     try:
         _notify_progress(progress_callback, 94, "Recomputing document...")
         doc.recompute()
@@ -603,6 +625,69 @@ def corridor_drainage_review_summary(document=None) -> dict[str, object]:
     }
 
 
+def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
+    """Return Build Corridor Region rows with boundary continuity diagnostics."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        return [
+            {
+                "region_id": "",
+                "station_start": "",
+                "station_end": "",
+                "assembly": "",
+                "structure": "",
+                "drainage": "",
+                "surface_status": "missing",
+                "boundary_status": "missing",
+                "diagnostics": "Applied Sections are required before Region boundary review.",
+            }
+        ]
+    sections = _station_ordered_applied_sections(applied)
+    if not sections:
+        return [
+            {
+                "region_id": "",
+                "station_start": "",
+                "station_end": "",
+                "assembly": "",
+                "structure": "",
+                "drainage": "",
+                "surface_status": "missing",
+                "boundary_status": "missing",
+                "diagnostics": "No Applied Section station rows are available.",
+            }
+        ]
+    groups = _contiguous_region_groups(sections)
+    rows: list[dict[str, object]] = []
+    for index, group in enumerate(groups):
+        group_sections = list(group.get("sections", []) or [])
+        first = group_sections[0]
+        last = group_sections[-1]
+        diagnostics: list[dict[str, str]] = []
+        if index > 0:
+            diagnostics.extend(_region_boundary_diagnostics(groups[index - 1]["sections"][-1], first, boundary_side="start"))
+        if index < len(groups) - 1:
+            diagnostics.extend(_region_boundary_diagnostics(last, groups[index + 1]["sections"][0], boundary_side="end"))
+        boundary_status = _region_boundary_status(diagnostics)
+        rows.append(
+            {
+                "region_id": str(group.get("region_id", "") or ""),
+                "station_start": float(group.get("station_start", 0.0) or 0.0),
+                "station_end": float(group.get("station_end", 0.0) or 0.0),
+                "assembly": _unique_join(_section_text_values(group_sections, "assembly_id")),
+                "structure": _unique_join(_section_structure_values(group_sections)) or "-",
+                "drainage": _region_group_drainage_summary(group_sections),
+                "surface_status": _region_group_surface_status(group_sections),
+                "boundary_status": boundary_status,
+                "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
+                "diagnostic_count": len(diagnostics),
+            }
+        )
+    return rows
+
+
 def show_corridor_build_review_object(document=None, row_index: int = 0):
     """Select and fit one Build Corridor review object by review-table row index."""
 
@@ -617,6 +702,243 @@ def show_corridor_build_review_object(document=None, row_index: int = 0):
         raise RuntimeError(f"{row.get('result', 'Result')} has not been built yet.")
     _select_and_fit_object(obj)
     return obj
+
+
+def focus_corridor_region_boundary_row(document=None, row_index: int = 0):
+    """Create/select a temporary 3D highlight for one Region row in Build Corridor."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_region_boundary_rows(doc)
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Region boundary row index is out of range.")
+    row = rows[row_index]
+    region_id = str(row.get("region_id", "") or "")
+    if not region_id:
+        raise RuntimeError("No Region row is available to highlight.")
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    if applied is None:
+        raise RuntimeError("Applied Sections are required before Region range highlight.")
+    obj = _create_region_boundary_highlight(document=doc, row=row, applied_section_set=applied)
+    if obj is None:
+        raise RuntimeError("Region range highlight was not created.")
+    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    set_corridor_build_preview_visibility(doc, "centerline", True)
+    _set_object_visibility(obj, True)
+    _select_and_fit_object(obj)
+    return obj
+
+
+def corridor_surface_transition_rows(document=None) -> list[dict[str, object]]:
+    """Return Build Corridor rows for user-selected Surface Transition ranges."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
+    if transition_model is None:
+        return []
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    region_rows = corridor_region_boundary_rows(doc)
+    validation = SurfaceTransitionValidationService().validate(
+        transition_model,
+        known_region_refs=_surface_transition_known_region_refs(region_rows),
+        boundary_stations=_surface_transition_boundary_stations(region_rows),
+    )
+    diagnostics_by_source: dict[str, list[object]] = {}
+    for diagnostic in list(validation.diagnostic_rows or []):
+        diagnostics_by_source.setdefault(str(getattr(diagnostic, "source_ref", "") or ""), []).append(diagnostic)
+
+    rows: list[dict[str, object]] = []
+    for transition in list(getattr(transition_model, "transition_ranges", []) or []):
+        transition_id = str(getattr(transition, "transition_id", "") or "")
+        diagnostics = diagnostics_by_source.get(transition_id, [])
+        generation_diagnostics = _surface_transition_generation_diagnostics(
+            applied,
+            transition_model,
+            transition_id=transition_id,
+            target_surface_kinds=list(getattr(transition, "target_surface_kinds", []) or []),
+        )
+        row_status = _surface_transition_row_status(transition, diagnostics)
+        if generation_diagnostics and row_status in {"active", "approved", "draft"}:
+            row_status = "warn"
+        rows.append(
+            {
+                "transition_id": transition_id,
+                "enabled": bool(getattr(transition, "enabled", True)),
+                "station_start": float(getattr(transition, "station_start", 0.0) or 0.0),
+                "station_end": float(getattr(transition, "station_end", 0.0) or 0.0),
+                "from_region_ref": str(getattr(transition, "from_region_ref", "") or ""),
+                "to_region_ref": str(getattr(transition, "to_region_ref", "") or ""),
+                "target_surfaces": _unique_join(list(getattr(transition, "target_surface_kinds", []) or [])),
+                "transition_mode": str(getattr(transition, "transition_mode", "") or ""),
+                "approval_status": str(getattr(transition, "approval_status", "") or ""),
+                "status": row_status,
+                "diagnostics": _surface_transition_review_diagnostic_summary(diagnostics, generation_diagnostics),
+                "generation_diagnostic_count": len(generation_diagnostics),
+            }
+        )
+    return rows
+
+
+def create_corridor_surface_transition_from_region_boundary(
+    document=None,
+    row_index: int = 0,
+    *,
+    half_length: float = SURFACE_TRANSITION_DEFAULT_HALF_LENGTH,
+):
+    """Create or replace a SurfaceTransitionRange around a selected Region boundary."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    region_rows = corridor_region_boundary_rows(doc)
+    boundary = _surface_transition_boundary_from_region_row(region_rows, int(row_index))
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    project = find_project(doc)
+    existing = to_surface_transition_model(find_v1_surface_transition_model(doc))
+    if existing is None:
+        existing = SurfaceTransitionModel(
+            schema_version=1,
+            project_id=_project_id(project),
+            transition_model_id="surface-transitions:main",
+            corridor_ref=str(getattr(applied, "corridor_id", "") or "corridor:main"),
+        )
+    transition_id = _surface_transition_id(
+        boundary["from_region_ref"],
+        boundary["to_region_ref"],
+        float(boundary["boundary_station"]),
+    )
+    station_start = float(boundary["boundary_station"]) - max(0.001, float(half_length))
+    station_end = float(boundary["boundary_station"]) + max(0.001, float(half_length))
+    new_range = SurfaceTransitionRange(
+        transition_id=transition_id,
+        station_start=station_start,
+        station_end=station_end,
+        from_region_ref=str(boundary["from_region_ref"]),
+        to_region_ref=str(boundary["to_region_ref"]),
+        transition_mode="interpolate_matching_roles",
+        sample_interval=2.5,
+        enabled=True,
+        approval_status="active",
+        source_ref="build-corridor:region-boundary",
+        notes="Created from Build Corridor Region boundary review.",
+    )
+    rows = [
+        row
+        for row in list(getattr(existing, "transition_ranges", []) or [])
+        if str(getattr(row, "transition_id", "") or "") != transition_id
+    ]
+    rows.append(new_range)
+    updated = SurfaceTransitionModel(
+        schema_version=int(getattr(existing, "schema_version", 1) or 1),
+        project_id=str(getattr(existing, "project_id", "") or _project_id(project)),
+        transition_model_id=str(getattr(existing, "transition_model_id", "") or "surface-transitions:main"),
+        corridor_ref=str(getattr(existing, "corridor_ref", "") or getattr(applied, "corridor_id", "") or "corridor:main"),
+        label=str(getattr(existing, "label", "") or "Surface Transitions"),
+        transition_ranges=sorted(rows, key=lambda row: (float(row.station_start), float(row.station_end), str(row.transition_id))),
+    )
+    return create_or_update_v1_surface_transition_model_object(
+        document=doc,
+        project=project,
+        transition_model=updated,
+    )
+
+
+def toggle_corridor_surface_transition_enabled(document=None, row_index: int = 0):
+    """Toggle a Surface Transition range enabled flag by transition-table row index."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    transition_obj = find_v1_surface_transition_model(doc)
+    transition_model = to_surface_transition_model(transition_obj)
+    if transition_model is None:
+        raise RuntimeError("No Surface Transition ranges are available.")
+    rows = list(getattr(transition_model, "transition_ranges", []) or [])
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Surface Transition row index is out of range.")
+    updated_rows: list[SurfaceTransitionRange] = []
+    for index, row in enumerate(rows):
+        updated_rows.append(
+            SurfaceTransitionRange(
+                transition_id=row.transition_id,
+                station_start=row.station_start,
+                station_end=row.station_end,
+                from_region_ref=row.from_region_ref,
+                to_region_ref=row.to_region_ref,
+                target_surface_kinds=list(row.target_surface_kinds or []),
+                transition_mode=row.transition_mode,
+                sample_interval=row.sample_interval,
+                enabled=(not bool(row.enabled)) if index == row_index else bool(row.enabled),
+                approval_status=row.approval_status,
+                source_ref=row.source_ref,
+                notes=row.notes,
+            )
+        )
+    updated = SurfaceTransitionModel(
+        schema_version=int(getattr(transition_model, "schema_version", 1) or 1),
+        project_id=str(getattr(transition_model, "project_id", "") or _project_id(find_project(doc))),
+        transition_model_id=str(getattr(transition_model, "transition_model_id", "") or "surface-transitions:main"),
+        corridor_ref=str(getattr(transition_model, "corridor_ref", "") or "corridor:main"),
+        label=str(getattr(transition_model, "label", "") or "Surface Transitions"),
+        transition_ranges=updated_rows,
+    )
+    return create_or_update_v1_surface_transition_model_object(
+        document=doc,
+        project=find_project(doc),
+        transition_model=updated,
+    )
+
+
+def update_corridor_surface_transition_station_range(
+    document=None,
+    row_index: int = 0,
+    *,
+    station_start: float,
+    station_end: float,
+):
+    """Update one Surface Transition station range by transition-table row index."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
+    if transition_model is None:
+        raise RuntimeError("No Surface Transition ranges are available.")
+    rows = list(getattr(transition_model, "transition_ranges", []) or [])
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Surface Transition row index is out of range.")
+    start = float(station_start)
+    end = float(station_end)
+    updated_rows: list[SurfaceTransitionRange] = []
+    for index, row in enumerate(rows):
+        updated_rows.append(
+            SurfaceTransitionRange(
+                transition_id=row.transition_id,
+                station_start=start if index == row_index else row.station_start,
+                station_end=end if index == row_index else row.station_end,
+                from_region_ref=row.from_region_ref,
+                to_region_ref=row.to_region_ref,
+                target_surface_kinds=list(row.target_surface_kinds or []),
+                transition_mode=row.transition_mode,
+                sample_interval=row.sample_interval,
+                enabled=bool(row.enabled),
+                approval_status=row.approval_status,
+                source_ref=row.source_ref or "build-corridor:station-range",
+                notes=row.notes,
+            )
+        )
+    updated = SurfaceTransitionModel(
+        schema_version=int(getattr(transition_model, "schema_version", 1) or 1),
+        project_id=str(getattr(transition_model, "project_id", "") or _project_id(find_project(doc))),
+        transition_model_id=str(getattr(transition_model, "transition_model_id", "") or "surface-transitions:main"),
+        corridor_ref=str(getattr(transition_model, "corridor_ref", "") or "corridor:main"),
+        label=str(getattr(transition_model, "label", "") or "Surface Transitions"),
+        transition_ranges=updated_rows,
+    )
+    return create_or_update_v1_surface_transition_model_object(
+        document=doc,
+        project=find_project(doc),
+        transition_model=updated,
+    )
 
 
 def focus_corridor_build_guided_review_step(document=None, step_id: str = "centerline"):
@@ -866,6 +1188,7 @@ def create_corridor_design_surface_preview(
     applied_section_set = to_applied_section_set(applied_obj)
     if applied_section_set is None:
         return None
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "design_surface") or f"{corridor_model.corridor_id}:design"
     try:
         tin_surface = CorridorSurfaceGeometryService().build_design_surface(
@@ -875,6 +1198,7 @@ def create_corridor_design_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                surface_transition_model=transition_model,
             )
         )
     except Exception:
@@ -919,6 +1243,7 @@ def create_corridor_subgrade_surface_preview(
     applied_section_set = to_applied_section_set(applied_obj)
     if applied_section_set is None:
         return None
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "subgrade_surface") or f"{corridor_model.corridor_id}:subgrade"
     try:
         tin_surface = CorridorSurfaceGeometryService().build_subgrade_surface(
@@ -928,6 +1253,7 @@ def create_corridor_subgrade_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                surface_transition_model=transition_model,
             )
         )
     except Exception:
@@ -973,6 +1299,7 @@ def create_corridor_daylight_surface_preview(
     applied_section_set = to_applied_section_set(applied_obj)
     if applied_section_set is None:
         return None
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "daylight_surface") or f"{corridor_model.corridor_id}:daylight"
     try:
         tin_surface = CorridorSurfaceGeometryService().build_daylight_surface(
@@ -983,6 +1310,7 @@ def create_corridor_daylight_surface_preview(
                 surface_id=surface_id,
                 existing_ground_surface=_resolve_corridor_existing_ground_tin_surface(doc),
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                surface_transition_model=transition_model,
             )
         )
     except Exception:
@@ -1036,6 +1364,7 @@ def create_corridor_drainage_surface_preview(
     applied_section_set = to_applied_section_set(applied_obj)
     if applied_section_set is None:
         return None
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
     surface_id = _surface_id(surface_model, "drainage_surface")
     if not surface_id:
         _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
@@ -1048,6 +1377,7 @@ def create_corridor_drainage_surface_preview(
                 applied_section_set=applied_section_set,
                 surface_id=surface_id,
                 supplemental_sampling_enabled=supplemental_sampling_enabled,
+                surface_transition_model=transition_model,
             )
         )
     except Exception:
@@ -1074,6 +1404,46 @@ def create_corridor_drainage_surface_preview(
         except Exception:
             pass
     return preview_obj
+
+
+def create_corridor_surface_transition_span_markers(
+    *,
+    document=None,
+    project=None,
+    corridor_model=None,
+    surface_model=None,
+):
+    """Create or update 3D markers for surface spans with Transition Surface intent."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None or surface_model is None:
+        return None
+    applied = to_applied_section_set(find_v1_applied_section_set(doc))
+    points, refs = _surface_transition_span_marker_points(applied, surface_model)
+    obj = _create_marker_compound(
+        document=doc,
+        object_name="V1SurfaceTransitionSpanMarkers",
+        label="Surface Transition Spans",
+        points=points,
+        radius=_marker_radius(points),
+        color=(0.72, 0.10, 0.88),
+        surface=surface_model,
+        corridor_model=corridor_model,
+    )
+    if obj is None:
+        return None
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "surface_transition_span")
+    _set_preview_property(obj, "CRRecordKind", "v1_surface_transition_span_marker")
+    _set_preview_property(obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
+    _set_preview_string_list_property(obj, "TransitionRefs", refs)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(project or find_project(doc), obj)
+    except Exception:
+        pass
+    return obj
 
 
 def run_v1_build_corridor_command():
@@ -1147,6 +1517,9 @@ class V1BuildCorridorTaskPanel:
         issues_tab = QtWidgets.QWidget()
         issues_layout = QtWidgets.QVBoxLayout(issues_tab)
         issues_layout.setContentsMargins(8, 8, 8, 8)
+        regions_tab = QtWidgets.QWidget()
+        regions_layout = QtWidgets.QVBoxLayout(regions_tab)
+        regions_layout.setContentsMargins(8, 8, 8, 8)
         drainage_tab = QtWidgets.QWidget()
         drainage_layout = QtWidgets.QVBoxLayout(drainage_tab)
         drainage_layout.setContentsMargins(8, 8, 8, 8)
@@ -1159,6 +1532,7 @@ class V1BuildCorridorTaskPanel:
         tabs.addTab(guided_tab, "Guided Review")
         tabs.addTab(results_tab, "Results")
         tabs.addTab(issues_tab, "Slope Issues")
+        tabs.addTab(regions_tab, "Regions")
         tabs.addTab(drainage_tab, "Drainage")
         tabs.addTab(options_tab, "Options")
         tabs.addTab(visibility_tab, "Visibility")
@@ -1238,6 +1612,87 @@ class V1BuildCorridorTaskPanel:
         issue_nav_row.addWidget(next_issue_button)
         issue_nav_row.addStretch(1)
         issues_layout.addLayout(issue_nav_row)
+        regions_label = QtWidgets.QLabel("Region Boundaries")
+        regions_label.setToolTip("Double-click a Region row to highlight that station range in the 3D view.")
+        regions_layout.addWidget(regions_label)
+        self._region_table = QtWidgets.QTableWidget(0, 9)
+        self._region_table.setHorizontalHeaderLabels(
+            ["Region", "Start STA", "End STA", "Assembly", "Structure", "Drainage", "Surface", "Boundary", "Diagnostics"]
+        )
+        _compact_build_corridor_table(self._region_table, [120, 80, 80, 105, 105, 90, 80, 90, 240])
+        self._region_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._region_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._region_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._region_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._region_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._region_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_region_boundary_row(row_index))
+        regions_layout.addWidget(self._region_table, 1)
+        region_button_row = QtWidgets.QHBoxLayout()
+        highlight_region_button = QtWidgets.QPushButton("Highlight Region")
+        highlight_region_button.clicked.connect(self._show_selected_region_boundary_row)
+        region_button_row.addWidget(highlight_region_button)
+        refresh_regions_button = QtWidgets.QPushButton("Refresh Boundaries")
+        refresh_regions_button.clicked.connect(lambda: self._set_region_boundary_rows(corridor_region_boundary_rows(self.document)))
+        region_button_row.addWidget(refresh_regions_button)
+        region_button_row.addStretch(1)
+        regions_layout.addLayout(region_button_row)
+        transitions_label = QtWidgets.QLabel("Surface Transitions")
+        transitions_label.setToolTip("User-selected station ranges where Transition Surface treatment should be applied.")
+        regions_layout.addWidget(transitions_label)
+        self._surface_transition_table = QtWidgets.QTableWidget(0, 10)
+        self._surface_transition_table.setHorizontalHeaderLabels(
+            ["Transition", "Enabled", "Start STA", "End STA", "From", "To", "Surfaces", "Mode", "Status", "Diagnostics"]
+        )
+        _compact_build_corridor_table(self._surface_transition_table, [135, 58, 80, 80, 90, 90, 115, 135, 75, 190])
+        self._surface_transition_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._surface_transition_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._surface_transition_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._surface_transition_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._surface_transition_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._surface_transition_table.itemSelectionChanged.connect(self._sync_selected_surface_transition_range_controls)
+        regions_layout.addWidget(self._surface_transition_table, 1)
+        transition_range_row = QtWidgets.QHBoxLayout()
+        transition_range_row.addWidget(QtWidgets.QLabel("Start STA"))
+        self._surface_transition_start_spin = QtWidgets.QDoubleSpinBox()
+        self._surface_transition_start_spin.setRange(-1.0e9, 1.0e9)
+        self._surface_transition_start_spin.setDecimals(3)
+        self._surface_transition_start_spin.setSingleStep(1.0)
+        transition_range_row.addWidget(self._surface_transition_start_spin)
+        transition_range_row.addWidget(QtWidgets.QLabel("End STA"))
+        self._surface_transition_end_spin = QtWidgets.QDoubleSpinBox()
+        self._surface_transition_end_spin.setRange(-1.0e9, 1.0e9)
+        self._surface_transition_end_spin.setDecimals(3)
+        self._surface_transition_end_spin.setSingleStep(1.0)
+        transition_range_row.addWidget(self._surface_transition_end_spin)
+        update_transition_range_button = QtWidgets.QPushButton("Update Range")
+        update_transition_range_button.clicked.connect(self._update_selected_surface_transition_station_range)
+        transition_range_row.addWidget(update_transition_range_button)
+        transition_range_row.addStretch(1)
+        regions_layout.addLayout(transition_range_row)
+        transition_button_row = QtWidgets.QHBoxLayout()
+        create_transition_button = QtWidgets.QPushButton("Create Transition")
+        create_transition_button.clicked.connect(self._create_transition_from_selected_region_boundary)
+        transition_button_row.addWidget(create_transition_button)
+        toggle_transition_button = QtWidgets.QPushButton("Toggle Enabled")
+        toggle_transition_button.clicked.connect(self._toggle_selected_surface_transition)
+        transition_button_row.addWidget(toggle_transition_button)
+        refresh_transitions_button = QtWidgets.QPushButton("Refresh Transitions")
+        refresh_transitions_button.clicked.connect(lambda: self._set_surface_transition_rows(corridor_surface_transition_rows(self.document)))
+        transition_button_row.addWidget(refresh_transitions_button)
+        transition_button_row.addStretch(1)
+        regions_layout.addLayout(transition_button_row)
         drainage_label = QtWidgets.QLabel("Drainage Diagnostics")
         drainage_label.setToolTip("Station-level ditch_surface point diagnostics from Applied Sections.")
         drainage_layout.addWidget(drainage_label)
@@ -1326,6 +1781,8 @@ class V1BuildCorridorTaskPanel:
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(corridor_build_review_rows(self.document))
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
             self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             return
         applied_summary = corridor_applied_sections_review_summary(self.document)
@@ -1346,6 +1803,8 @@ class V1BuildCorridorTaskPanel:
         self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
         self._set_review_rows(corridor_build_review_rows(self.document))
         self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+        self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
+        self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
         self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
 
     def _apply(self, *, close_after: bool = False) -> bool:
@@ -1372,6 +1831,8 @@ class V1BuildCorridorTaskPanel:
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(review_rows)
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
             self._set_drainage_review_rows(corridor_drainage_review_rows(self.document))
             self._set_progress(99, "Focusing review preview...")
             focused = self._show_preferred_review_row(review_rows)
@@ -1523,6 +1984,205 @@ class V1BuildCorridorTaskPanel:
                     item.setData(32, str(row.get("marker_object", "") or ""))
                 self._drainage_table.setItem(row_index, col, item)
             self._apply_drainage_row_style(row_index, str(row.get("status", "") or ""))
+
+    def _set_region_boundary_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_region_table"):
+            return
+        self._region_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._region_table.rowCount()
+            self._region_table.insertRow(row_index)
+            start = row.get("station_start", "")
+            end = row.get("station_end", "")
+            values = [
+                str(row.get("region_id", "") or ""),
+                "" if start == "" else f"{float(start):.3f}",
+                "" if end == "" else f"{float(end):.3f}",
+                str(row.get("assembly", "") or ""),
+                str(row.get("structure", "") or ""),
+                str(row.get("drainage", "") or ""),
+                str(row.get("surface_status", "") or ""),
+                str(row.get("boundary_status", "") or ""),
+                str(row.get("diagnostics", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(32, str(row.get("region_id", "") or ""))
+                self._region_table.setItem(row_index, col, item)
+            self._apply_region_boundary_row_style(row_index, str(row.get("boundary_status", "") or ""))
+        if self._region_table.rowCount() > 0:
+            try:
+                self._region_table.selectRow(0)
+            except Exception:
+                pass
+
+    def _set_surface_transition_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_surface_transition_table"):
+            return
+        self._surface_transition_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._surface_transition_table.rowCount()
+            self._surface_transition_table.insertRow(row_index)
+            start = row.get("station_start", "")
+            end = row.get("station_end", "")
+            values = [
+                str(row.get("transition_id", "") or ""),
+                "yes" if bool(row.get("enabled", True)) else "no",
+                "" if start == "" else f"{float(start):.3f}",
+                "" if end == "" else f"{float(end):.3f}",
+                str(row.get("from_region_ref", "") or ""),
+                str(row.get("to_region_ref", "") or ""),
+                str(row.get("target_surfaces", "") or ""),
+                str(row.get("transition_mode", "") or ""),
+                str(row.get("status", "") or ""),
+                str(row.get("diagnostics", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(32, str(row.get("transition_id", "") or ""))
+                self._surface_transition_table.setItem(row_index, col, item)
+            self._apply_surface_transition_row_style(row_index, str(row.get("status", "") or ""))
+        if self._surface_transition_table.rowCount() > 0:
+            try:
+                self._surface_transition_table.selectRow(0)
+            except Exception:
+                pass
+            self._sync_selected_surface_transition_range_controls()
+
+    def _show_selected_region_boundary_row(self) -> None:
+        rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
+        if not rows:
+            _show_message(self.form, "Build Corridor", "Select one Region row first.")
+            return
+        self._show_region_boundary_row(int(rows[0].row()))
+
+    def _show_region_boundary_row(self, row_index: int) -> None:
+        try:
+            rows = corridor_region_boundary_rows(self.document)
+            row = rows[int(row_index)]
+            obj = focus_corridor_region_boundary_row(self.document, int(row_index))
+            self._sync_visibility_checks()
+            try:
+                self._region_table.selectRow(int(row_index))
+            except Exception:
+                pass
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Region range highlighted.",
+                        f"Region: {row.get('region_id', '')}",
+                        f"Station: {float(row.get('station_start', 0.0) or 0.0):.3f} -> {float(row.get('station_end', 0.0) or 0.0):.3f}",
+                        f"Boundary: {row.get('boundary_status', '')}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Region range was not highlighted.\n{exc}")
+
+    def _create_transition_from_selected_region_boundary(self) -> None:
+        rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
+        if not rows:
+            _show_message(self.form, "Build Corridor", "Select one Region row first.")
+            return
+        try:
+            row_index = int(rows[0].row())
+            obj = create_corridor_surface_transition_from_region_boundary(self.document, row_index)
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
+            transition_rows = corridor_surface_transition_rows(self.document)
+            if transition_rows:
+                self._surface_transition_table.selectRow(max(0, len(transition_rows) - 1))
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Surface Transition range stored.",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                        "Source: Build Corridor Region boundary review.",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Surface Transition range was not created.\n{exc}")
+
+    def _toggle_selected_surface_transition(self) -> None:
+        rows = self._surface_transition_table.selectionModel().selectedRows() if hasattr(self, "_surface_transition_table") else []
+        if not rows:
+            _show_message(self.form, "Build Corridor", "Select one Surface Transition row first.")
+            return
+        try:
+            obj = toggle_corridor_surface_transition_enabled(self.document, int(rows[0].row()))
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
+            self._surface_transition_table.selectRow(int(rows[0].row()))
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Surface Transition enabled state updated.",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Surface Transition range was not updated.\n{exc}")
+
+    def _sync_selected_surface_transition_range_controls(self) -> None:
+        if not hasattr(self, "_surface_transition_table"):
+            return
+        rows = self._surface_transition_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        row_index = int(rows[0].row())
+        start_item = self._surface_transition_table.item(row_index, 2)
+        end_item = self._surface_transition_table.item(row_index, 3)
+        try:
+            start = float(start_item.text()) if start_item is not None and start_item.text() else 0.0
+            end = float(end_item.text()) if end_item is not None and end_item.text() else 0.0
+        except Exception:
+            return
+        for spin, value in (
+            (getattr(self, "_surface_transition_start_spin", None), start),
+            (getattr(self, "_surface_transition_end_spin", None), end),
+        ):
+            if spin is None:
+                continue
+            try:
+                spin.blockSignals(True)
+                spin.setValue(float(value))
+            finally:
+                try:
+                    spin.blockSignals(False)
+                except Exception:
+                    pass
+
+    def _update_selected_surface_transition_station_range(self) -> None:
+        rows = self._surface_transition_table.selectionModel().selectedRows() if hasattr(self, "_surface_transition_table") else []
+        if not rows:
+            _show_message(self.form, "Build Corridor", "Select one Surface Transition row first.")
+            return
+        try:
+            row_index = int(rows[0].row())
+            start = float(self._surface_transition_start_spin.value())
+            end = float(self._surface_transition_end_spin.value())
+            obj = update_corridor_surface_transition_station_range(
+                self.document,
+                row_index,
+                station_start=start,
+                station_end=end,
+            )
+            self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
+            self._surface_transition_table.selectRow(row_index)
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Surface Transition station range updated.",
+                        f"Station: {start:.3f} -> {end:.3f}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Corridor", f"Surface Transition station range was not updated.\n{exc}")
 
     def _show_drainage_review_row(self, row_index: int) -> None:
         try:
@@ -1770,6 +2430,43 @@ class V1BuildCorridorTaskPanel:
         except Exception:
             pass
 
+    def _apply_region_boundary_row_style(self, row_index: int, status: str) -> None:
+        color = corridor_build_review_row_color("empty" if str(status or "") == "warn" else status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._region_table.columnCount())):
+                item = self._region_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
+    def _apply_surface_transition_row_style(self, row_index: int, status: str) -> None:
+        color_key = "missing" if str(status or "") == "disabled" else "empty" if str(status or "") in {"warn", "draft"} else "ready"
+        if str(status or "") == "error":
+            color_key = "empty"
+        color = corridor_build_review_row_color(color_key)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._surface_transition_table.columnCount())):
+                item = self._surface_transition_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
 
 def _compact_build_corridor_table(table, column_widths: list[int]) -> None:
     """Keep Build Corridor tables from forcing a very wide task panel."""
@@ -1901,6 +2598,509 @@ def _format_structure_review_summary(applied_summary: dict[str, object]) -> str:
     if refs:
         return f"{len(refs)} active ({', '.join(str(value) for value in refs[:3])})"
     return "none"
+
+
+def _station_ordered_applied_sections(applied_section_set) -> list[object]:
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
+    output: list[object] = []
+    for row in sorted(
+        list(getattr(applied_section_set, "station_rows", []) or []),
+        key=lambda item: float(getattr(item, "station", 0.0) or 0.0),
+    ):
+        section = sections.get(str(getattr(row, "applied_section_id", "") or ""))
+        if section is not None:
+            output.append(section)
+    if output:
+        return output
+    return sorted(list(getattr(applied_section_set, "sections", []) or []), key=lambda section: _section_station(section))
+
+
+def _contiguous_region_groups(sections: list[object]) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = []
+    for section in list(sections or []):
+        region_id = _section_region_id(section)
+        if not groups or str(groups[-1].get("region_id", "") or "") != region_id:
+            groups.append({"region_id": region_id, "sections": [section]})
+        else:
+            groups[-1]["sections"].append(section)
+    for group in groups:
+        group_sections = list(group.get("sections", []) or [])
+        stations = [_section_station(section) for section in group_sections]
+        group["station_start"] = min(stations) if stations else 0.0
+        group["station_end"] = max(stations) if stations else 0.0
+    return groups
+
+
+def _section_region_id(section) -> str:
+    return str(getattr(section, "region_id", "") or "(unassigned)")
+
+
+def _section_station(section) -> float:
+    frame = getattr(section, "frame", None)
+    try:
+        return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
+    except Exception:
+        try:
+            return float(getattr(section, "station", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+
+def _section_text_values(sections: list[object], attr: str) -> list[str]:
+    values: list[str] = []
+    for section in list(sections or []):
+        text = str(getattr(section, attr, "") or "").strip()
+        if text:
+            values.append(text)
+    return values
+
+
+def _section_structure_values(sections: list[object]) -> list[str]:
+    values: list[str] = []
+    for section in list(sections or []):
+        values.extend(
+            str(value or "").strip()
+            for value in list(getattr(section, "active_structure_ids", []) or [])
+            if str(value or "").strip()
+        )
+    return values
+
+
+def _unique_join(values: list[str], *, max_items: int = 3) -> str:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    if not output:
+        return ""
+    clipped = output[: max(1, int(max_items))]
+    if len(output) > len(clipped):
+        clipped.append(f"+{len(output) - len(clipped)}")
+    return ", ".join(clipped)
+
+
+def _surface_transition_known_region_refs(region_rows: list[dict[str, object]]) -> list[str]:
+    return [
+        str(row.get("region_id", "") or "")
+        for row in list(region_rows or [])
+        if str(row.get("region_id", "") or "")
+    ]
+
+
+def _surface_transition_boundary_stations(region_rows: list[dict[str, object]]) -> list[float]:
+    stations: list[float] = []
+    rows = list(region_rows or [])
+    for index in range(len(rows) - 1):
+        try:
+            stations.append(float(rows[index].get("station_end", 0.0) or 0.0))
+        except Exception:
+            continue
+    return stations
+
+
+def _surface_transition_boundary_from_region_row(region_rows: list[dict[str, object]], row_index: int) -> dict[str, object]:
+    rows = [row for row in list(region_rows or []) if str(row.get("region_id", "") or "")]
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Region boundary row index is out of range.")
+    if len(rows) < 2:
+        raise RuntimeError("At least two Region rows are required to create a Surface Transition.")
+    current = rows[row_index]
+    if row_index < len(rows) - 1:
+        next_row = rows[row_index + 1]
+        return {
+            "from_region_ref": str(current.get("region_id", "") or ""),
+            "to_region_ref": str(next_row.get("region_id", "") or ""),
+            "boundary_station": float(current.get("station_end", 0.0) or 0.0),
+        }
+    previous = rows[row_index - 1]
+    return {
+        "from_region_ref": str(previous.get("region_id", "") or ""),
+        "to_region_ref": str(current.get("region_id", "") or ""),
+        "boundary_station": float(current.get("station_start", 0.0) or 0.0),
+    }
+
+
+def _surface_transition_id(from_region_ref: object, to_region_ref: object, boundary_station: float) -> str:
+    return f"surface-transition:{from_region_ref}->{to_region_ref}@{float(boundary_station):.3f}"
+
+
+def _surface_transition_row_status(transition, diagnostics: list[object]) -> str:
+    if not bool(getattr(transition, "enabled", True)):
+        return "disabled"
+    if any(str(getattr(row, "severity", "") or "") == "error" for row in list(diagnostics or [])):
+        return "error"
+    if diagnostics:
+        return "warn"
+    return str(getattr(transition, "approval_status", "") or "draft")
+
+
+def _surface_transition_diagnostic_summary(diagnostics: list[object], *, max_items: int = 2) -> str:
+    rows = list(diagnostics or [])
+    if not rows:
+        return "ok"
+    labels = []
+    for row in rows[: max(1, int(max_items))]:
+        kind = str(getattr(row, "kind", "") or "diagnostic")
+        severity = str(getattr(row, "severity", "") or "info")
+        labels.append(f"{severity}:{kind}")
+    if len(rows) > len(labels):
+        labels.append(f"+{len(rows) - len(labels)}")
+    return "; ".join(labels)
+
+
+def _surface_transition_review_diagnostic_summary(validation_diagnostics: list[object], generation_diagnostics: list[str]) -> str:
+    parts: list[str] = []
+    validation_summary = _surface_transition_diagnostic_summary(validation_diagnostics)
+    if validation_summary and validation_summary != "ok":
+        parts.append(validation_summary)
+    generation_rows = list(generation_diagnostics or [])
+    if generation_rows:
+        labels = []
+        for row in generation_rows[:2]:
+            labels.append(_surface_transition_generation_diagnostic_label(row))
+        if len(generation_rows) > len(labels):
+            labels.append(f"+{len(generation_rows) - len(labels)}")
+        parts.append("; ".join(labels))
+    return "ok" if not parts else " | ".join(parts)
+
+
+def _surface_transition_generation_diagnostic_label(row: str) -> str:
+    parts = str(row or "").split("|", 3)
+    if len(parts) >= 4:
+        return f"{parts[0]}:{parts[1]}"
+    return str(row or "")
+
+
+def _surface_transition_generation_diagnostics(
+    applied_section_set,
+    transition_model,
+    *,
+    transition_id: str,
+    target_surface_kinds: list[str],
+) -> list[str]:
+    if applied_section_set is None or transition_model is None:
+        return []
+    diagnostics: list[str] = []
+    for surface_kind in list(target_surface_kinds or []):
+        try:
+            augmented = transition_augmented_applied_section_set(
+                applied_section_set,
+                surface_transition_model=transition_model,
+                surface_kind=str(surface_kind or ""),
+            )
+        except Exception:
+            continue
+        for section in list(getattr(augmented, "sections", []) or []):
+            section_id = str(getattr(section, "applied_section_id", "") or "")
+            if str(transition_id or "") not in section_id:
+                continue
+            for diagnostic in list(getattr(section, "structure_diagnostic_rows", []) or []):
+                text = str(diagnostic or "")
+                if "surface_transition_role_skipped" in text and text not in diagnostics:
+                    diagnostics.append(text)
+    return diagnostics
+
+
+def _surface_transition_span_marker_points(applied_section_set, surface_model) -> tuple[list[tuple[float, float, float]], list[str]]:
+    if applied_section_set is None or surface_model is None:
+        return [], []
+    sections = _station_ordered_applied_sections(applied_section_set)
+    if len(sections) < 2:
+        return [], []
+    points: list[tuple[float, float, float]] = []
+    refs: list[str] = []
+    seen: set[tuple[str, float, float]] = set()
+    for span in list(getattr(surface_model, "span_rows", []) or []):
+        transition_ref = str(getattr(span, "transition_ref", "") or "")
+        if not transition_ref:
+            continue
+        try:
+            station_start = float(getattr(span, "station_start", 0.0) or 0.0)
+            station_end = float(getattr(span, "station_end", 0.0) or 0.0)
+        except Exception:
+            continue
+        key = (transition_ref, round(station_start, 6), round(station_end, 6))
+        if key in seen:
+            continue
+        seen.add(key)
+        point = _surface_transition_span_marker_point(sections, (station_start + station_end) * 0.5)
+        if point is None:
+            continue
+        points.append(point)
+        refs.append(transition_ref)
+    return points, refs
+
+
+def _surface_transition_span_marker_point(sections: list[object], station: float) -> tuple[float, float, float] | None:
+    if not sections:
+        return None
+    ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
+    for index in range(len(ordered) - 1):
+        first = ordered[index]
+        second = ordered[index + 1]
+        first_station = _section_station(first)
+        second_station = _section_station(second)
+        if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
+            ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (float(station) - first_station) / (second_station - first_station)
+            return _interpolate_section_frame_point(getattr(first, "frame", None), getattr(second, "frame", None), ratio, z_offset=0.75)
+    nearest = min(ordered, key=lambda section: abs(_section_station(section) - float(station)))
+    frame = getattr(nearest, "frame", None)
+    if frame is None:
+        return None
+    return (
+        float(getattr(frame, "x", 0.0) or 0.0),
+        float(getattr(frame, "y", 0.0) or 0.0),
+        float(getattr(frame, "z", 0.0) or 0.0) + 0.75,
+    )
+
+
+def _interpolate_section_frame_point(first_frame, second_frame, ratio: float, *, z_offset: float = 0.0) -> tuple[float, float, float] | None:
+    if first_frame is None and second_frame is None:
+        return None
+    if first_frame is None:
+        first_frame = second_frame
+    if second_frame is None:
+        second_frame = first_frame
+    t = max(0.0, min(1.0, float(ratio)))
+    return (
+        _lerp_value(getattr(first_frame, "x", 0.0), getattr(second_frame, "x", 0.0), t),
+        _lerp_value(getattr(first_frame, "y", 0.0), getattr(second_frame, "y", 0.0), t),
+        _lerp_value(getattr(first_frame, "z", 0.0), getattr(second_frame, "z", 0.0), t) + float(z_offset or 0.0),
+    )
+
+
+def _lerp_value(first, second, ratio: float) -> float:
+    return float(first or 0.0) + (float(second or 0.0) - float(first or 0.0)) * float(ratio)
+
+
+def _region_group_drainage_summary(sections: list[object]) -> str:
+    ditch_count = sum(
+        1
+        for section in list(sections or [])
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+    )
+    if ditch_count:
+        return f"ditch points: {ditch_count}"
+    return "-"
+
+
+def _region_group_surface_status(sections: list[object]) -> str:
+    if not sections:
+        return "missing"
+    return "ready" if all(getattr(section, "frame", None) is not None for section in sections) else "warn"
+
+
+def _region_boundary_diagnostics(left, right, *, boundary_side: str) -> list[dict[str, str]]:
+    if left is None or right is None:
+        return []
+    diagnostics: list[dict[str, str]] = []
+    left_station = _section_station(left)
+    right_station = _section_station(right)
+    station_text = f"STA {left_station:.3f}->{right_station:.3f}"
+    left_region = _section_region_id(left)
+    right_region = _section_region_id(right)
+    if left_region != right_region:
+        diagnostics.append(
+            _region_boundary_diagnostic(
+                "info",
+                "region_context_change",
+                f"{station_text}: {left_region} -> {right_region}.",
+                boundary_side,
+            )
+        )
+    for attr, label, threshold, kind in (
+        ("surface_left_width", "left design width", REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD, "region_boundary_width_jump"),
+        ("surface_right_width", "right design width", REGION_BOUNDARY_WIDTH_JUMP_THRESHOLD, "region_boundary_width_jump"),
+        ("subgrade_depth", "subgrade depth", REGION_BOUNDARY_SUBGRADE_JUMP_THRESHOLD, "region_boundary_subgrade_jump"),
+        ("daylight_left_width", "left daylight width", REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD, "region_boundary_daylight_width_jump"),
+        ("daylight_right_width", "right daylight width", REGION_BOUNDARY_DAYLIGHT_WIDTH_JUMP_THRESHOLD, "region_boundary_daylight_width_jump"),
+        ("daylight_left_slope", "left daylight slope", REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD, "region_boundary_daylight_slope_jump"),
+        ("daylight_right_slope", "right daylight slope", REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD, "region_boundary_daylight_slope_jump"),
+    ):
+        delta = abs(_float_attr(right, attr) - _float_attr(left, attr))
+        if delta > threshold + 1.0e-9:
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    kind,
+                    f"{station_text}: {label} changes by {delta:.3f}.",
+                    boundary_side,
+                )
+            )
+    left_roles = _surface_point_role_counts(left)
+    right_roles = _surface_point_role_counts(right)
+    if left_roles != right_roles:
+        diagnostics.append(
+            _region_boundary_diagnostic(
+                "warning",
+                "region_boundary_point_role_mismatch",
+                f"{station_text}: surface point roles differ ({_role_count_summary(left_roles)} -> {_role_count_summary(right_roles)}).",
+                boundary_side,
+            )
+        )
+    for role, kind, label in (
+        ("ditch_surface", "region_boundary_ditch_mismatch", "ditch"),
+        ("bench_surface", "region_boundary_bench_mismatch", "bench"),
+    ):
+        left_count = left_roles.get(role, 0)
+        right_count = right_roles.get(role, 0)
+        if bool(left_count) != bool(right_count):
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    kind,
+                    f"{station_text}: {label} rows exist on one side only ({left_count} -> {right_count}).",
+                    boundary_side,
+                )
+            )
+    left_structures = set(_section_structure_values([left]))
+    right_structures = set(_section_structure_values([right]))
+    if left_structures != right_structures:
+        diagnostics.append(
+            _region_boundary_diagnostic(
+                "info",
+                "region_boundary_structure_context_change",
+                f"{station_text}: structure context changes ({_unique_join(sorted(left_structures)) or '-'} -> {_unique_join(sorted(right_structures)) or '-'}).",
+                boundary_side,
+            )
+        )
+    return diagnostics
+
+
+def _region_boundary_diagnostic(severity: str, kind: str, message: str, boundary_side: str) -> dict[str, str]:
+    return {
+        "severity": str(severity or ""),
+        "kind": str(kind or ""),
+        "message": str(message or ""),
+        "boundary_side": str(boundary_side or ""),
+    }
+
+
+def _float_attr(obj, attr: str) -> float:
+    try:
+        return float(getattr(obj, attr, 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _surface_point_role_counts(section) -> dict[str, int]:
+    roles = {"fg_surface", "subgrade_surface", "ditch_surface", "side_slope_surface", "bench_surface", "daylight_marker"}
+    counts = {role: 0 for role in roles}
+    for point in list(getattr(section, "point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or "")
+        if role in counts:
+            counts[role] += 1
+    return {role: count for role, count in counts.items() if count}
+
+
+def _role_count_summary(counts: dict[str, int]) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{role}:{count}" for role, count in sorted(counts.items()))
+
+
+def _region_boundary_status(diagnostics: list[dict[str, str]]) -> str:
+    severities = {str(row.get("severity", "") or "") for row in list(diagnostics or [])}
+    if "error" in severities:
+        return "error"
+    if "warning" in severities:
+        return "warn"
+    return "ready"
+
+
+def _region_boundary_diagnostic_summary(diagnostics: list[dict[str, str]], *, max_items: int = 2) -> str:
+    if not diagnostics:
+        return "ok"
+    warning_count = sum(1 for row in diagnostics if str(row.get("severity", "") or "") == "warning")
+    info_count = sum(1 for row in diagnostics if str(row.get("severity", "") or "") == "info")
+    messages = [str(row.get("message", "") or "") for row in diagnostics if str(row.get("severity", "") or "") != "info"]
+    if not messages:
+        messages = [str(row.get("message", "") or "") for row in diagnostics]
+    clipped = [message for message in messages if message][: max(1, int(max_items))]
+    suffix = ""
+    if len(messages) > len(clipped):
+        suffix = f"; +{len(messages) - len(clipped)} more"
+    prefix = f"{warning_count} warning(s), {info_count} info"
+    return f"{prefix}: {'; '.join(clipped)}{suffix}"
+
+
+def _create_region_boundary_highlight(*, document=None, row: dict[str, object], applied_section_set=None):
+    if document is None or applied_section_set is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+    region_id = str(row.get("region_id", "") or "")
+    start = float(row.get("station_start", 0.0) or 0.0)
+    end = float(row.get("station_end", start) or start)
+    sections = [
+        section
+        for section in _station_ordered_applied_sections(applied_section_set)
+        if _section_region_id(section) == region_id and start - 1.0e-6 <= _section_station(section) <= end + 1.0e-6
+    ]
+    points = []
+    for section in sections:
+        frame = getattr(section, "frame", None)
+        if frame is None:
+            continue
+        try:
+            points.append(AppModule.Vector(float(frame.x), float(frame.y), float(frame.z)))
+        except Exception:
+            pass
+    if not points:
+        return None
+    shapes = []
+    if len(points) == 1:
+        shapes.append(Part.makeSphere(1.0, points[0]))
+    else:
+        shape, _curve_kind = _make_centerline_shape(points, Part)
+        if shape is not None and not shape.isNull():
+            shapes.append(shape)
+        try:
+            shapes.append(Part.makeSphere(0.8, points[0]))
+            shapes.append(Part.makeSphere(0.8, points[-1]))
+        except Exception:
+            pass
+    if not shapes:
+        return None
+    obj = document.getObject("V1RegionBoundaryRangeHighlight")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1RegionBoundaryRangeHighlight")
+    try:
+        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+        obj.Label = f"Region Range Highlight - {region_id}"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_region_boundary_highlight")
+    _set_preview_property(obj, "V1ObjectType", "V1RegionBoundaryHighlight")
+    _set_preview_property(obj, "RegionRef", region_id)
+    _set_preview_float_property(obj, "StationStart", start)
+    _set_preview_float_property(obj, "StationEnd", end)
+    _set_preview_property(obj, "BoundaryStatus", str(row.get("boundary_status", "") or ""))
+    _set_preview_property(obj, "BoundaryDiagnostics", str(row.get("diagnostics", "") or ""))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            color = (1.0, 0.55, 0.05)
+            vobj.Visibility = True
+            vobj.ShapeColor = color
+            vobj.LineColor = color
+            vobj.PointColor = color
+            vobj.LineWidth = 7.0
+            vobj.PointSize = 9.0
+    except Exception:
+        pass
+    return obj
 
 
 def _drainage_point_side(point) -> str:
@@ -2184,7 +3384,12 @@ def _corridor_build_issue_marker_objects(document) -> list[object]:
     markers = []
     for obj in list(getattr(document, "Objects", []) or []):
         name = str(getattr(obj, "Name", "") or "")
-        if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
+        if name.startswith((
+            "ReviewIssueSlopeFace",
+            "ReviewIssueDrainage",
+            "V1RegionBoundaryRangeHighlight",
+            "V1SurfaceTransitionSpanMarkers",
+        )):
             markers.append(obj)
     return markers
 

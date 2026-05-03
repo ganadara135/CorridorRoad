@@ -1284,6 +1284,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None)
     if record_kind == "v1_corridor_surface_preview":
         return tree.get(V1_TREE_DESIGN_TIN, None)
+    if record_kind == "v1_surface_transition_model":
+        return tree.get(V1_TREE_REGIONS, None)
     if record_kind == "v1_corridor_centerline_preview":
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if record_kind == "v1_assembly_show_preview":
@@ -1332,7 +1334,11 @@ def resolve_v1_target_container(prj, child):
         name_prefixes=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
     ):
         return tree.get(V1_TREE_ASSEMBLIES, None)
-    if _is_type(child, proxy_types=("V1RegionModel", "RegionModel", "RegionPlan"), name_prefixes=("V1RegionModel", "RegionModel", "RegionPlan")):
+    if _is_type(
+        child,
+        proxy_types=("V1RegionModel", "RegionModel", "RegionPlan", "V1SurfaceTransitionModel"),
+        name_prefixes=("V1RegionModel", "RegionModel", "RegionPlan", "V1SurfaceTransitionModel"),
+    ):
         return tree.get(V1_TREE_REGIONS, None)
     if _is_type(
         child,

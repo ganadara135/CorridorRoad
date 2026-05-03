@@ -5,8 +5,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from ...models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from ...models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
-from ...models.result.applied_section_set import AppliedSectionSet
+from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...models.result.corridor_model import CorridorModel
 from ...models.result.tin_surface import TINProvenanceRow, TINQualityRow, TINSurface, TINTriangle, TINVertex
 from ..evaluation.tin_sampling_service import TinSamplingService
@@ -40,6 +41,7 @@ class CorridorDesignSurfaceGeometryRequest:
     existing_ground_surface: TINSurface | None = None
     supplemental_sampling_enabled: bool = False
     supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING
+    surface_transition_model: SurfaceTransitionModel | None = None
 
 
 class CorridorSurfaceGeometryService:
@@ -85,7 +87,7 @@ class CorridorSurfaceGeometryService:
     def build_daylight_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
         """Build first-slice slope-face strips from design edges and side-slope policy."""
 
-        sections = _section_rows_for_request(request)
+        sections = _section_rows_for_request(request, surface_kind="daylight_surface")
         frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor slope-face surface.")
@@ -278,7 +280,7 @@ class CorridorSurfaceGeometryService:
     ) -> TINSurface:
         """Build a two-edge ribbon from applied-section frames."""
 
-        sections = _section_rows_for_request(request)
+        sections = _section_rows_for_request(request, surface_kind=surface_kind)
         frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
             raise ValueError("At least two applied-section frames are required to build a corridor surface.")
@@ -1163,14 +1165,293 @@ def _frame_rows(applied_section_set: AppliedSectionSet) -> list[object]:
     return [getattr(section, "frame", None) for section in _section_rows(applied_section_set) if getattr(section, "frame", None) is not None]
 
 
-def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest) -> list[object]:
+def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest, *, surface_kind: str = "") -> list[object]:
     sections = _section_rows(request.applied_section_set)
+    sections = _transition_augmented_sections(
+        sections,
+        surface_transition_model=getattr(request, "surface_transition_model", None),
+        surface_kind=surface_kind,
+    )
     if not bool(getattr(request, "supplemental_sampling_enabled", False)):
         return sections
     return _supplemental_sampled_sections(
         sections,
         max_spacing=float(getattr(request, "supplemental_sampling_max_spacing", SUPPLEMENTAL_SAMPLING_MAX_SPACING) or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
     )
+
+
+def transition_augmented_applied_section_set(
+    applied_section_set: AppliedSectionSet,
+    *,
+    surface_transition_model: SurfaceTransitionModel | None,
+    surface_kind: str,
+) -> AppliedSectionSet:
+    """Return an AppliedSectionSet with deterministic transition rows inserted."""
+
+    source_sections = _section_rows(applied_section_set)
+    sections = _transition_augmented_sections(
+        source_sections,
+        surface_transition_model=surface_transition_model,
+        surface_kind=surface_kind,
+    )
+    station_rows = [
+        AppliedSectionStationRow(
+            station_row_id=f"{getattr(section, 'applied_section_id', f'section:{index + 1}')}:station",
+            station=_section_station(section),
+            applied_section_id=str(getattr(section, "applied_section_id", "") or f"section:{index + 1}"),
+            kind="transition_sample" if _is_transition_generated_section(section) else "regular_sample",
+        )
+        for index, section in enumerate(sections)
+    ]
+    return AppliedSectionSet(
+        schema_version=int(getattr(applied_section_set, "schema_version", 1) or 1),
+        project_id=str(getattr(applied_section_set, "project_id", "") or ""),
+        applied_section_set_id=str(getattr(applied_section_set, "applied_section_set_id", "") or ""),
+        corridor_id=str(getattr(applied_section_set, "corridor_id", "") or ""),
+        alignment_id=str(getattr(applied_section_set, "alignment_id", "") or ""),
+        label=str(getattr(applied_section_set, "label", "") or ""),
+        station_rows=station_rows,
+        sections=sections,
+    )
+
+
+def _transition_augmented_sections(
+    sections: list[object],
+    *,
+    surface_transition_model: SurfaceTransitionModel | None,
+    surface_kind: str,
+) -> list[object]:
+    if len(sections) < 2 or surface_transition_model is None:
+        return sections
+    output: list[object] = []
+    for index in range(len(sections) - 1):
+        first = sections[index]
+        second = sections[index + 1]
+        output.append(first)
+        transition = _matching_transition_for_section_span(
+            surface_transition_model,
+            first,
+            second,
+            surface_kind=surface_kind,
+        )
+        if transition is None:
+            continue
+        for sample_index, station in enumerate(_transition_sample_stations(first, second, transition), start=1):
+            ratio = _station_ratio(first, second, station)
+            output.append(
+                _interpolate_transition_applied_section(
+                    first,
+                    second,
+                    ratio,
+                    transition=transition,
+                    surface_kind=surface_kind,
+                    sequence_index=sample_index,
+                )
+            )
+    output.append(sections[-1])
+    return sorted(output, key=lambda section: (_section_station(section), str(getattr(section, "applied_section_id", "") or "")))
+
+
+def _matching_transition_for_section_span(
+    surface_transition_model: SurfaceTransitionModel,
+    first,
+    second,
+    *,
+    surface_kind: str,
+) -> SurfaceTransitionRange | None:
+    first_region = str(getattr(first, "region_id", "") or "(unassigned)")
+    second_region = str(getattr(second, "region_id", "") or "(unassigned)")
+    span_start = min(_section_station(first), _section_station(second))
+    span_end = max(_section_station(first), _section_station(second))
+    candidates: list[SurfaceTransitionRange] = []
+    for row in list(getattr(surface_transition_model, "transition_ranges", []) or []):
+        if not bool(getattr(row, "enabled", True)):
+            continue
+        if str(getattr(row, "approval_status", "") or "") == "disabled":
+            continue
+        if surface_kind and surface_kind not in list(getattr(row, "target_surface_kinds", []) or []):
+            continue
+        row_from = str(getattr(row, "from_region_ref", "") or "")
+        row_to = str(getattr(row, "to_region_ref", "") or "")
+        if (row_from, row_to) != (first_region, second_region) and (row_from, row_to) != (second_region, first_region):
+            continue
+        row_start, row_end = _transition_station_range(row)
+        if max(span_start, row_start) >= min(span_end, row_end):
+            continue
+        candidates.append(row)
+    return candidates[0] if candidates else None
+
+
+def _transition_sample_stations(first, second, transition: SurfaceTransitionRange) -> list[float]:
+    span_start = min(_section_station(first), _section_station(second))
+    span_end = max(_section_station(first), _section_station(second))
+    transition_start, transition_end = _transition_station_range(transition)
+    start = max(span_start, transition_start)
+    end = min(span_end, transition_end)
+    if start >= end:
+        return []
+    interval = max(float(getattr(transition, "sample_interval", 0.0) or 0.0), 0.1)
+    stations: list[float] = []
+    value = start
+    while value < end - 1.0e-9:
+        if span_start + 1.0e-9 < value < span_end - 1.0e-9:
+            stations.append(round(value, 9))
+        value += interval
+    return stations
+
+
+def _transition_station_range(transition: SurfaceTransitionRange) -> tuple[float, float]:
+    start = float(getattr(transition, "station_start", 0.0) or 0.0)
+    end = float(getattr(transition, "station_end", 0.0) or 0.0)
+    return (start, end) if start <= end else (end, start)
+
+
+def _station_ratio(first, second, station: float) -> float:
+    first_station = _section_station(first)
+    second_station = _section_station(second)
+    delta = second_station - first_station
+    if abs(delta) <= 1.0e-9:
+        return 0.0
+    return (float(station) - first_station) / delta
+
+
+def _interpolate_transition_applied_section(
+    first,
+    second,
+    ratio: float,
+    *,
+    transition: SurfaceTransitionRange,
+    surface_kind: str,
+    sequence_index: int,
+) -> AppliedSection:
+    section = _interpolate_applied_section(first, second, ratio, sequence_index=sequence_index)
+    transition_id = str(getattr(transition, "transition_id", "") or "transition")
+    transition_mode = str(getattr(transition, "transition_mode", "") or "interpolate_matching_roles")
+    point_rows = list(getattr(section, "point_rows", []) or [])
+    diagnostics = _transition_generated_diagnostics(
+        first,
+        second,
+        transition=transition,
+        surface_kind=surface_kind,
+        transition_mode=transition_mode,
+    )
+    if transition_mode == "interpolate_width":
+        point_rows = [
+            point
+            for point in point_rows
+            if str(getattr(point, "point_role", "") or "") not in {"fg_surface", "subgrade_surface", "ditch_surface"}
+        ]
+    return AppliedSection(
+        schema_version=int(getattr(section, "schema_version", 1) or 1),
+        project_id=str(getattr(section, "project_id", "") or ""),
+        applied_section_id=f"{transition_id}:generated:{surface_kind}:{sequence_index}",
+        corridor_id=str(getattr(section, "corridor_id", "") or ""),
+        alignment_id=str(getattr(section, "alignment_id", "") or ""),
+        profile_id=str(getattr(section, "profile_id", "") or ""),
+        assembly_id=str(getattr(section, "assembly_id", "") or ""),
+        station=float(getattr(section, "station", 0.0) or 0.0),
+        template_id=str(getattr(section, "template_id", "") or ""),
+        region_id=str(getattr(section, "region_id", "") or ""),
+        frame=_transition_generated_frame(getattr(section, "frame", None), transition_id=transition_id, transition_mode=transition_mode),
+        surface_left_width=float(getattr(section, "surface_left_width", 0.0) or 0.0),
+        surface_right_width=float(getattr(section, "surface_right_width", 0.0) or 0.0),
+        subgrade_depth=float(getattr(section, "subgrade_depth", 0.0) or 0.0),
+        daylight_left_width=float(getattr(section, "daylight_left_width", 0.0) or 0.0),
+        daylight_right_width=float(getattr(section, "daylight_right_width", 0.0) or 0.0),
+        daylight_left_slope=float(getattr(section, "daylight_left_slope", 0.0) or 0.0),
+        daylight_right_slope=float(getattr(section, "daylight_right_slope", 0.0) or 0.0),
+        point_rows=point_rows,
+        component_rows=list(getattr(section, "component_rows", []) or []),
+        quantity_rows=[],
+        active_structure_ids=list(getattr(section, "active_structure_ids", []) or []),
+        active_structure_rule_ids=list(getattr(section, "active_structure_rule_ids", []) or []),
+        active_structure_influence_zone_ids=list(getattr(section, "active_structure_influence_zone_ids", []) or []),
+        structure_diagnostic_rows=list(getattr(section, "structure_diagnostic_rows", []) or [])
+        + [f"info|surface_transition_generated|{transition_id}|{transition_mode}"]
+        + diagnostics,
+    )
+
+
+def _transition_generated_diagnostics(
+    first,
+    second,
+    *,
+    transition: SurfaceTransitionRange,
+    surface_kind: str,
+    transition_mode: str,
+) -> list[str]:
+    transition_id = str(getattr(transition, "transition_id", "") or "transition")
+    if str(transition_mode or "") == "interpolate_width":
+        return []
+    diagnostics: list[str] = []
+    for role in _transition_surface_roles(surface_kind):
+        first_count = _transition_role_count(first, role)
+        second_count = _transition_role_count(second, role)
+        if first_count == second_count:
+            continue
+        if first_count <= 0 and second_count <= 0:
+            continue
+        diagnostics.append(
+            "warning|surface_transition_role_skipped|"
+            f"{transition_id}|{role} point count mismatch: {first_count} -> {second_count}"
+        )
+    if str(surface_kind or "") == "daylight_surface":
+        for side_label in ("left", "right"):
+            first_count = len(_side_slope_source_row_for_interpolation(first, side_label=side_label))
+            second_count = len(_side_slope_source_row_for_interpolation(second, side_label=side_label))
+            if first_count == second_count or (first_count <= 0 and second_count <= 0):
+                continue
+            diagnostics.append(
+                "warning|surface_transition_role_skipped|"
+                f"{transition_id}|{side_label} side-slope point count mismatch: {first_count} -> {second_count}"
+            )
+    return diagnostics
+
+
+def _transition_surface_roles(surface_kind: str) -> tuple[str, ...]:
+    kind = str(surface_kind or "")
+    if kind == "design_surface":
+        return ("fg_surface",)
+    if kind == "subgrade_surface":
+        return ("subgrade_surface",)
+    if kind == "drainage_surface":
+        return ("ditch_surface",)
+    if kind == "daylight_surface":
+        return ("side_slope_surface", "bench_surface", "daylight_marker")
+    return ("fg_surface", "subgrade_surface", "ditch_surface")
+
+
+def _transition_role_count(section, role: str) -> int:
+    return sum(
+        1
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == str(role or "")
+    )
+
+
+def _transition_generated_frame(frame, *, transition_id: str, transition_mode: str) -> AppliedSectionFrame | None:
+    if frame is None:
+        return None
+    return AppliedSectionFrame(
+        station=float(getattr(frame, "station", 0.0) or 0.0),
+        x=float(getattr(frame, "x", 0.0) or 0.0),
+        y=float(getattr(frame, "y", 0.0) or 0.0),
+        z=float(getattr(frame, "z", 0.0) or 0.0),
+        tangent_direction_deg=float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0),
+        profile_grade=float(getattr(frame, "profile_grade", 0.0) or 0.0),
+        alignment_status=str(getattr(frame, "alignment_status", "") or ""),
+        profile_status=str(getattr(frame, "profile_status", "") or ""),
+        active_alignment_element_id=str(getattr(frame, "active_alignment_element_id", "") or ""),
+        active_profile_segment_start_id=str(getattr(frame, "active_profile_segment_start_id", "") or ""),
+        active_profile_segment_end_id=str(getattr(frame, "active_profile_segment_end_id", "") or ""),
+        active_vertical_curve_id=str(getattr(frame, "active_vertical_curve_id", "") or ""),
+        notes=f"surface_transition_generated:{transition_id}:{transition_mode}",
+    )
+
+
+def _is_transition_generated_section(section) -> bool:
+    frame = getattr(section, "frame", None)
+    return "surface_transition_generated:" in str(getattr(frame, "notes", "") or "")
 
 
 def _supplemental_sampled_sections(
@@ -1217,11 +1498,18 @@ def _span_needs_supplemental_sampling(first, second, *, max_spacing: float) -> b
 
 
 def _section_station_delta(first, second) -> float:
-    first_frame = getattr(first, "frame", None)
-    second_frame = getattr(second, "frame", None)
-    first_station = float(getattr(first_frame, "station", getattr(first, "station", 0.0)) or 0.0)
-    second_station = float(getattr(second_frame, "station", getattr(second, "station", first_station)) or first_station)
-    return abs(second_station - first_station)
+    return abs(_section_station(second) - _section_station(first))
+
+
+def _section_station(section) -> float:
+    frame = getattr(section, "frame", None)
+    try:
+        return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
+    except Exception:
+        try:
+            return float(getattr(section, "station", 0.0) or 0.0)
+        except Exception:
+            return 0.0
 
 
 def _interpolate_applied_section(first, second, ratio: float, *, sequence_index: int) -> AppliedSection:

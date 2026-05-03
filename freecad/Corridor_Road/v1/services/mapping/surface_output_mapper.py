@@ -6,8 +6,10 @@ from ...models.output.surface_output import (
     SurfaceComparisonOutputRow,
     SurfaceOutput,
     SurfaceRowOutput,
+    SurfaceSpanOutputRow,
     SurfaceSummaryRow,
 )
+from ...common.diagnostics import DiagnosticMessage
 from ...models.result.surface_model import SurfaceModel
 
 
@@ -41,6 +43,23 @@ class SurfaceOutputMapper:
             for row in surface_model.comparison_rows
         ]
 
+        span_rows = [
+            SurfaceSpanOutputRow(
+                span_row_id=row.span_id,
+                surface_ref=row.surface_ref,
+                station_start=row.station_start,
+                station_end=row.station_end,
+                from_region_ref=row.from_region_ref,
+                to_region_ref=row.to_region_ref,
+                span_kind=row.span_kind,
+                transition_ref=row.transition_ref,
+                continuity_status=row.continuity_status,
+                diagnostic_refs=list(row.diagnostic_refs),
+                notes=row.notes,
+            )
+            for row in list(getattr(surface_model, "span_rows", []) or [])
+        ]
+
         summary_rows = [
             SurfaceSummaryRow(
                 summary_id=f"{surface_model.surface_model_id}:surface-count",
@@ -53,6 +72,12 @@ class SurfaceOutputMapper:
                 kind="comparison_count",
                 label="Comparison Count",
                 value=len(comparison_rows),
+            ),
+            SurfaceSummaryRow(
+                summary_id=f"{surface_model.surface_model_id}:span-count",
+                kind="span_count",
+                label="Surface Span Count",
+                value=len(span_rows),
             ),
         ]
 
@@ -68,7 +93,39 @@ class SurfaceOutputMapper:
             source_refs=list(surface_model.source_refs),
             result_refs=[row.surface_id for row in surface_model.surface_rows],
             surface_rows=surface_rows,
+            span_rows=span_rows,
             comparison_rows=comparison_rows,
             summary_rows=summary_rows,
-            diagnostic_rows=list(surface_model.diagnostic_rows),
+            diagnostic_rows=list(surface_model.diagnostic_rows) + _surface_span_diagnostic_rows(span_rows),
         )
+
+
+def _surface_span_diagnostic_rows(span_rows: list[SurfaceSpanOutputRow]) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    for row in list(span_rows or []):
+        for diagnostic_ref in list(getattr(row, "diagnostic_refs", []) or []):
+            kind = str(diagnostic_ref or "")
+            if not kind:
+                continue
+            severity = "warning" if kind in {"surface_transition_applied", "region_context_change"} else "info"
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity=severity,
+                    kind=kind,
+                    message=_surface_span_diagnostic_message(row, kind),
+                    notes=(
+                        f"surface_ref={row.surface_ref}; span={float(row.station_start):.3f}->{float(row.station_end):.3f}; "
+                        f"from_region_ref={row.from_region_ref}; to_region_ref={row.to_region_ref}; "
+                        f"transition_ref={row.transition_ref}"
+                    ),
+                )
+            )
+    return diagnostics
+
+
+def _surface_span_diagnostic_message(row: SurfaceSpanOutputRow, kind: str) -> str:
+    if kind == "surface_transition_applied":
+        return f"Surface span uses Transition Surface range {row.transition_ref}."
+    if kind == "region_context_change":
+        return f"Surface span crosses Region boundary {row.from_region_ref} -> {row.to_region_ref}."
+    return f"Surface span diagnostic: {kind}."

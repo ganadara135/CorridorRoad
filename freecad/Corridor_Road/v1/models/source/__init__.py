@@ -17,6 +17,11 @@ from .structure_model import (
     StructureModel,
 )
 from .superelevation_model import SuperelevationModel
+from .surface_transition_model import (
+    SurfaceTransitionDiagnosticRow,
+    SurfaceTransitionModel,
+    SurfaceTransitionRange,
+)
 from .tin_edit_model import TINEditOperation, TINEditSet
 
 __all__ = [
@@ -40,6 +45,9 @@ __all__ = [
     "CulvertGeometrySpec",
     "RetainingWallGeometrySpec",
     "SuperelevationModel",
+    "SurfaceTransitionDiagnosticRow",
+    "SurfaceTransitionModel",
+    "SurfaceTransitionRange",
     "TINEditOperation",
     "TINEditSet",
 ]
