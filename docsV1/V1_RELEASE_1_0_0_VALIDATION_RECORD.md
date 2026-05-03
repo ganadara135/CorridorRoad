@@ -59,10 +59,10 @@ The local repository does not contain editable Wiki page sources in `docs/wiki/`
 
 Before publishing the GitHub release:
 
-- [ ] update GitHub Wiki pages using `docsV1/V1_WIKI_1_0_0_UPDATE_CHECKLIST.md`
-- [ ] confirm Quick Start follows the same order as README
-- [ ] confirm Drainage limitations are visible
-- [ ] confirm Troubleshooting includes restart/reload guidance
+- [x] update GitHub Wiki pages using `docsV1/V1_WIKI_1_0_0_UPDATE_CHECKLIST.md`
+- [x] confirm Quick Start follows the same order as README
+- [x] confirm Drainage limitations are visible
+- [x] confirm Troubleshooting includes restart/reload guidance
 
 ## 5. Known Release Limitations
 
@@ -75,7 +75,7 @@ Before publishing the GitHub release:
 
 Do not tag `v1.0.0` until:
 
-- [ ] manual QA is complete
-- [ ] Wiki updates are complete
-- [ ] release notes are reviewed
-- [ ] final `git status` contains only intended release changes
+- [x] manual QA is complete
+- [x] Wiki updates are complete
+- [x] release notes are reviewed
+- [x] final `git status` contains only intended release changes
