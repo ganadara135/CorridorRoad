@@ -359,20 +359,57 @@ Recommended Region row columns:
 - Boundary Status
 - Diagnostics
 
+Region row station rule:
+
+- When a `RegionModel` source object exists, `Start STA` and `End STA` must come from the source `RegionRow`.
+- In the Regions editor, users select only `Start STA` from Stationing values.
+- `End STA` is derived from the next Region row's `Start STA`; the last row ends at the final Stationing value.
+- Region rows should cover the Stationing range without intentional gaps.
+- Applied Section samples must not shrink the displayed Region range.
+- If Applied Section samples do not cover the source Region start or end, show a warning diagnostic.
+- If adjacent source Region rows have a gap or overlap, show a warning diagnostic.
+- If no `RegionModel` source object exists, Build Corridor may fall back to Applied Section contiguous `region_id` groups.
+
+Applied Section and Region boundary rule:
+
+- Applied Sections should be generated from Stationing source rows.
+- Source Region start positions should be Stationing values selected in the Regions editor.
+- Source Region end positions are derived from the next Region start or final Stationing value.
+- Transition control stations should not be merged into Applied Sections automatically.
+- Build Corridor may create virtual boundary endpoint sections during surface build/review when a shared boundary station is owned by only one active Applied Section Region.
+- Virtual boundary sections are output/review context only; they must not be written back into the Applied Section source result.
+- Surface Transition spacing should remain Build Corridor surface-build intent, not Applied Section source intent.
+
 Double-click behavior:
 
-- double-clicking a Region row highlights that Region's station range in the 3D view
-- the highlight should be temporary review geometry or viewer overlay
-- the highlight should not edit source models or generated surfaces
+- double-clicking a Region row selects that Region's built object set in the 3D view
+- the selected object set should use built Region objects, not focus-time highlight objects
+- Build Corridor should create `V1CorridorRegionSurface` output objects per buildable Region and surface role
+- surface roles include design, subgrade, slope/daylight, and drainage when available
+- Build Corridor should create a `V1CorridorRegionStructure` display object when the Region has active Structure refs
+- each object should be linked by `region_id`
+- the object set should represent the Region footprint and related surfaces, not only its centerline range
+- the display objects should not edit source models or generated surfaces
 - the active row should remain selected after returning from 3D view interaction
 
-Recommended 3D highlight behavior:
+Recommended 3D display behavior:
 
 - draw start and end station markers
 - draw a centerline range segment
-- optionally show left/right surface edge preview where available
+- show left/right surface edge preview where available
 - use a distinct Region color
 - show a compact label with Region id and station range
+
+Region surface object rule:
+
+- `RegionModel` remains source intent and does not become editable geometry
+- Build Corridor creates or updates stable `V1CorridorRegionSurface` objects for each buildable reviewed Region
+- Build Corridor creates or updates a stable `V1CorridorRegionStructure` object for Structure context in the Region
+- the object stores `RegionRef`, station range, section count, surface face count, boundary status, and diagnostics
+- the Region Boundaries table double-clicks and `Highlight Region` action select the existing Region object set
+- Region row focus must not create temporary single highlight geometry
+- the selected Region surface may use a small display Z offset so it remains visible above the full design surface
+- a Region with only one sampled Applied Section should still receive a minimal displayable surface object
 
 Recommended actions:
 
@@ -380,7 +417,12 @@ Recommended actions:
 - `Zoom To Region`
 - `Highlight Region`
 - `Clear Highlight`
-- `Create Transition From Boundary`
+- `Create Transition From Region STA`
+
+`Highlight Region` must select and show the selected Region object set, not create
+a separate highlight object. Region surface objects are built from the Region's Applied
+Section frames and surface/point offsets. When available, the design surface preview
+should remain visible behind the selected Region object set.
 
 Boundary rows should report whether the Region has:
 
@@ -402,10 +444,13 @@ Recommended location:
 Recommended transition row columns:
 
 - Enabled
-- Start STA
-- End STA
+- STA
+- Spacing
+- Sample Count
 - From Region
 - To Region
+- From Surface
+- To Surface
 - Target Surfaces
 - Mode
 - Status
@@ -414,22 +459,47 @@ Recommended transition row columns:
 
 Recommended actions:
 
-- `Add Transition Range`
-- `Create From Selected Boundary`
+- `Update`
 - `Apply Transitions`
 - `Preview Transition`
 - `Remove Transition`
 - `Clear Disabled`
 
-When a user selects a Region boundary row and chooses `Create From Selected Boundary`, Build Corridor should propose:
+Surface Transition authoring should be selected-Region station driven.
 
-- a station range centered on the boundary
+Default workflow:
+
+- the user selects a Region row in `Region Boundaries`
+- the `Region STA` combo lists every Applied Section station that belongs to the selected Region
+- the combo also lists source Region start/end boundary positions
+- a combo item may be a local Region station, such as `STA 78.576 | region:2`
+- a Region endpoint may still represent a handoff, such as `STA 60.000 | region:1 -> region:2`
+- the selected station maps to exactly one `SurfaceTransitionRange.transition_id`
+- the user adjusts `sample_interval` for that selected station
+- each station-owned `SurfaceTransitionRange` stores its own `sample_interval`
+- spacing changes for one station must not modify spacing for another station
+- Start STA and End STA are derived from the selected station policy, not edited in the default UI
+- raw station range editing is advanced-only and should not be shown in the default Build Corridor panel
+
+When a user selects a Region STA and chooses `Update`, Build Corridor should persist:
+
+- a station range centered on the selected station
 - `from_region_ref`
 - `to_region_ref`
 - default target surfaces
 - default transition mode
+- the selected station-specific `sample_interval`
 
-The user must be able to adjust start and end station values before applying.
+`Spacing` is the currently applied transition sample interval.
+
+`Sample Count` is the derived number of transition samples generated from the stored station range and spacing.
+
+Spacing presets may be offered:
+
+- Dense: 1.000 m
+- Normal: 2.500 m
+- Sparse: 5.000 m
+- Custom: user-entered interval
 
 The UI should not expose raw TIN vertices or triangle editing.
 
@@ -502,14 +572,14 @@ Tasks:
 - [x] compare width, subgrade, daylight, point roles, ditch, bench, and structure context
 - [x] emit boundary diagnostics
 - [x] show Region Boundaries as one row per Region in Build Corridor
-- [x] double-click a Region row to highlight the Region station range in the 3D view
+- [x] double-click a Region row to select the Region built surface object in the 3D view
 - [x] add contract tests for boundary detection
 
 Acceptance criteria:
 
 - [x] Build Corridor can report Region boundary spans
 - [x] Build Corridor can show each Region as a review row
-- [x] double-clicking a Region row highlights the expected station range
+- [x] double-clicking a Region row selects the expected Region footprint object
 - [x] diagnostics identify large width/daylight jumps
 - [x] diagnostics identify point-role mismatches
 - [x] existing surface generation behavior is preserved
@@ -571,15 +641,15 @@ Tasks:
 - [x] add Region Boundaries table to Build Corridor
 - [x] add Surface Transitions table or tab to Build Corridor
 - [x] add boundary detection refresh action
-- [x] add 3D Region highlight action
+- [x] add 3D Region surface object selection action
 - [x] show transition diagnostics in review
 - [x] visually distinguish transition spans in surface preview
 
 Acceptance criteria:
 
-- [x] user can select start/end station for Transition Surface
+- [x] user can select a Region station and adjust its Transition Surface spacing
 - [x] user can enable or disable a transition range
-- [x] user can inspect a Region range in the 3D view from the Build Corridor table
+- [x] user can inspect a Region footprint object in the 3D view from the Build Corridor table
 - [x] user can review why transition generation succeeded or failed
 
 ### Phase RST6: Output and Exchange
@@ -602,7 +672,7 @@ Recommended focused tests:
 - Region boundary detection with adjacent different `region_id`
 - same Region span produces no boundary warning
 - Build Corridor Region Boundaries table emits one row per Region
-- double-click or activation handler routes selected Region to 3D highlight
+- double-click or activation handler routes selected Region to its 3D built surface object
 - width jump diagnostic threshold
 - daylight width/slope jump diagnostic threshold
 - point-role mismatch diagnostic
@@ -619,7 +689,7 @@ Recommended manual QA:
 3. Build Corridor without transition ranges.
 4. Confirm boundary diagnostics are visible.
 5. Confirm Build Corridor shows one row per Region.
-6. Double-click each Region row and confirm the 3D view highlights the expected station range.
+6. Double-click each Region row and confirm the 3D view selects the expected Region footprint object.
 7. Add a Transition Surface range around the boundary from Build Corridor.
 8. Rebuild Corridor.
 9. Confirm generated transition sections and surface preview behavior.

@@ -12,6 +12,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_applied_sections_review_summary,
     corridor_build_guided_review_steps,
     corridor_region_boundary_rows,
+    corridor_surface_transition_boundary_options,
     corridor_surface_transition_rows,
     corridor_build_review_rows,
     corridor_build_review_row_color,
@@ -31,6 +32,8 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     set_corridor_build_preview_visibility,
     show_corridor_build_review_object,
     show_corridor_slope_face_issue_marker,
+    create_corridor_region_surface_previews,
+    create_or_update_corridor_surface_transition_for_boundary,
     create_corridor_surface_transition_from_region_boundary,
     toggle_corridor_surface_transition_enabled,
     update_corridor_surface_transition_station_range,
@@ -46,12 +49,14 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
+from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
 from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
     create_or_update_v1_surface_transition_model_object,
     find_v1_surface_transition_model,
     to_surface_transition_model,
 )
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 
 _QAPP = None
@@ -320,6 +325,19 @@ def _sample_sections_with_region_boundary() -> AppliedSectionSet:
     )
 
 
+def _sample_region_model_with_source_ranges() -> RegionModel:
+    return RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:test",
+        alignment_id="alignment:main",
+        region_rows=[
+            RegionRow("region:rural", station_start=0.0, station_end=25.0, region_index=1, assembly_ref="assembly:rural"),
+            RegionRow("region:urban", station_start=25.0, station_end=45.0, region_index=2, assembly_ref="assembly:urban"),
+        ],
+    )
+
+
 def test_build_document_corridor_model_uses_applied_sections() -> None:
     doc, project = _new_project_doc()
     try:
@@ -454,19 +472,87 @@ def test_corridor_region_boundary_rows_report_region_ranges_and_diagnostics() ->
         App.closeDocument(doc.Name)
 
 
-def test_focus_corridor_region_boundary_row_creates_3d_highlight() -> None:
+def test_corridor_region_boundary_rows_use_source_region_ranges_when_available() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_region_model_object(doc, project=project, region_model=_sample_region_model_with_source_ranges())
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+
+        rows = corridor_region_boundary_rows(doc)
+        options = corridor_surface_transition_boundary_options(doc, region_id="region:rural")
+
+        assert [row["region_id"] for row in rows] == ["region:rural", "region:urban"]
+        assert rows[0]["station_start"] == 0.0
+        assert rows[0]["station_end"] == 25.0
+        assert rows[1]["station_start"] == 25.0
+        assert rows[1]["station_end"] == 45.0
+        assert "20.000->25.000" in rows[0]["diagnostics"]
+        assert "40.000->45.000" in rows[1]["diagnostics"]
+        assert "STA 25.000" in [options[index]["label"].split(" | ")[0] for index in range(len(options))]
+
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        create_corridor_region_surface_previews(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        urban = doc.getObject("V1CorridorRegionSurface_region_urban")
+        assert urban is not None
+        assert abs(float(urban.StationStart) - 25.0) < 1.0e-9
+        assert abs(float(urban.StationEnd) - 45.0) < 1.0e-9
+        assert int(urban.SectionCount) >= 3
+        assert int(urban.SurfaceFaceCount) > 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_focus_corridor_region_boundary_row_selects_built_region_surface_object() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        created = create_corridor_region_surface_previews(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
 
         marker = focus_corridor_region_boundary_row(doc, 0)
 
-        assert marker.Name == "V1RegionBoundaryRangeHighlight"
-        assert marker.V1ObjectType == "V1RegionBoundaryHighlight"
+        assert [obj.Name for obj in created] == [
+            "V1CorridorRegionSurface_region_rural",
+            "V1CorridorRegionSurface_region_rural_subgrade",
+            "V1CorridorRegionSurface_region_rural_daylight",
+            "V1CorridorRegionSurface_region_urban",
+            "V1CorridorRegionSurface_region_urban_subgrade",
+            "V1CorridorRegionSurface_region_urban_daylight",
+            "V1CorridorRegionStructure_region_urban",
+        ]
+        assert marker.Name == "V1CorridorRegionSurface_region_rural"
+        assert marker.V1ObjectType == "V1CorridorRegionSurface"
+        assert marker.CRRecordKind == "v1_corridor_region_surface_preview"
         assert marker.RegionRef == "region:rural"
         assert abs(float(marker.StationStart) - 0.0) < 1.0e-9
         assert abs(float(marker.StationEnd) - 20.0) < 1.0e-9
         assert marker.BoundaryStatus == "warn"
+        assert int(marker.SurfaceFaceCount) == int(marker.TriangleCount)
+        assert int(marker.SectionCount) == 2
+        assert abs(float(marker.DisplayZOffset) - 0.25) < 1.0e-9
+        assert doc.getObject("V1RegionDisplay_region_rural") is None
+
+        second_marker = focus_corridor_region_boundary_row(doc, 1)
+
+        assert second_marker.Name == "V1CorridorRegionSurface_region_urban"
+        assert second_marker.RegionRef == "region:urban"
+        assert int(second_marker.SectionCount) >= 2
+        assert int(second_marker.SurfaceFaceCount) >= 2
+        assert doc.getObject("V1CorridorRegionSurface_region_urban_daylight") is not None
+        assert doc.getObject("V1CorridorRegionStructure_region_urban") is not None
+        assert list(doc.getObject("V1CorridorRegionStructure_region_urban").StructureRefs) == ["structure:wall-01"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -476,18 +562,28 @@ def test_create_corridor_surface_transition_from_region_boundary_persists_source
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
 
-        obj = create_corridor_surface_transition_from_region_boundary(doc, 0)
+        obj = create_corridor_surface_transition_from_region_boundary(doc, 0, sample_interval=1.0)
         rows = corridor_surface_transition_rows(doc)
+        options = corridor_surface_transition_boundary_options(doc, region_id="region:rural")
         model = to_surface_transition_model(find_v1_surface_transition_model(doc))
 
         assert obj.V1ObjectType == "V1SurfaceTransitionModel"
         assert len(rows) == 1
         assert rows[0]["from_region_ref"] == "region:rural"
         assert rows[0]["to_region_ref"] == "region:urban"
+        assert "FG L" in rows[0]["from_surface"]
+        assert "FG L" in rows[0]["to_surface"]
         assert rows[0]["station_start"] == 15.0
         assert rows[0]["station_end"] == 25.0
+        assert rows[0]["boundary_station"] == 20.0
+        assert rows[0]["sample_interval"] == 1.0
+        assert rows[0]["sample_count"] == 11
         assert rows[0]["status"] == "active"
+        assert len(options) == 2
+        assert options[1]["transition_exists"] is True
+        assert options[1]["sample_interval"] == 1.0
         assert model is not None
+        assert model.transition_ranges[0].sample_interval == 1.0
         assert model.transition_ranges[0].source_ref == "build-corridor:region-boundary"
 
         toggle_corridor_surface_transition_enabled(doc, 0)
@@ -495,6 +591,44 @@ def test_create_corridor_surface_transition_from_region_boundary_persists_source
 
         assert rows[0]["enabled"] is False
         assert rows[0]["status"] == "disabled"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_create_or_update_corridor_surface_transition_for_boundary_updates_only_selected_spacing() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = _sample_sections_with_region_boundary()
+        extra = AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id="section:60",
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            assembly_id="assembly:urban",
+            region_id="region:suburban",
+            station=60.0,
+            frame=AppliedSectionFrame(station=60.0, x=60.0, y=0.0, z=13.0, tangent_direction_deg=0.0),
+            surface_left_width=8.0,
+            surface_right_width=6.0,
+            point_rows=[
+                AppliedSectionPoint("fg:left", 60.0, 8.0, 13.0, "fg_surface", 8.0),
+                AppliedSectionPoint("fg:right", 60.0, -6.0, 13.0, "fg_surface", -6.0),
+            ],
+        )
+        applied.sections.append(extra)
+        applied.station_rows.append(AppliedSectionStationRow("station:60", 60.0, "section:60"))
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+
+        create_or_update_corridor_surface_transition_for_boundary(doc, 1, sample_interval=1.0, region_id="region:rural")
+        create_or_update_corridor_surface_transition_for_boundary(doc, 0, sample_interval=5.0, region_id="region:urban")
+        create_or_update_corridor_surface_transition_for_boundary(doc, 1, sample_interval=2.5, region_id="region:rural")
+
+        model = to_surface_transition_model(find_v1_surface_transition_model(doc))
+        assert model is not None
+        intervals = {row.transition_id: row.sample_interval for row in model.transition_ranges}
+        assert intervals["surface-transition:region:rural->region:urban@20.000"] == 2.5
+        assert intervals["surface-transition:region:urban->region:suburban@40.000"] == 5.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -661,18 +795,31 @@ def test_build_corridor_panel_creates_surface_transition_from_selected_region() 
         assert hasattr(panel, "_surface_transition_table")
         assert panel._surface_transition_table.rowCount() == 0
 
+        assert panel._surface_transition_boundary_combo.count() == 2
+        assert "STA 0.000" in panel._surface_transition_boundary_combo.itemText(0)
+        assert "STA 20.000" in panel._surface_transition_boundary_combo.itemText(1)
+        panel._region_table.selectRow(1)
+        assert panel._surface_transition_boundary_combo.count() == 1
+        assert "STA 40.000" in panel._surface_transition_boundary_combo.itemText(0)
         panel._region_table.selectRow(0)
-        panel._create_transition_from_selected_region_boundary()
+        panel._surface_transition_boundary_combo.setCurrentIndex(1)
+        panel._surface_transition_spacing_combo.setCurrentIndex(0)
+        panel._create_transition_from_selected_boundary_option()
 
         assert panel._surface_transition_table.rowCount() == 1
-        assert panel._surface_transition_table.item(0, 4).text() == "region:rural"
-        assert panel._surface_transition_table.item(0, 5).text() == "region:urban"
-        assert panel._surface_transition_table.item(0, 8).text() == "active"
+        assert panel._surface_transition_table.item(0, 2).text() == "20.000"
+        assert panel._surface_transition_table.item(0, 3).text() == "1.000"
+        assert panel._surface_transition_table.item(0, 4).text() == "11"
+        assert panel._surface_transition_table.item(0, 5).text() == "region:rural"
+        assert panel._surface_transition_table.item(0, 6).text() == "region:urban"
+        assert "FG L" in panel._surface_transition_table.item(0, 7).text()
+        assert "FG L" in panel._surface_transition_table.item(0, 8).text()
+        assert panel._surface_transition_table.item(0, 11).text() == "active"
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_build_corridor_panel_updates_selected_surface_transition_station_range() -> None:
+def test_build_corridor_panel_updates_selected_surface_transition_spacing() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc()
     try:
@@ -680,17 +827,18 @@ def test_build_corridor_panel_updates_selected_surface_transition_station_range(
         create_corridor_surface_transition_from_region_boundary(doc, 0)
         panel = V1BuildCorridorTaskPanel(document=doc)
 
-        panel._surface_transition_table.selectRow(0)
-        panel._surface_transition_start_spin.setValue(17.0)
-        panel._surface_transition_end_spin.setValue(31.0)
-        panel._update_selected_surface_transition_station_range()
+        panel._surface_transition_boundary_combo.setCurrentIndex(1)
+        panel._surface_transition_spacing_combo.setCurrentIndex(3)
+        panel._surface_transition_spacing_spin.setValue(4.0)
+        panel._create_transition_from_selected_boundary_option()
 
         model = to_surface_transition_model(find_v1_surface_transition_model(doc))
         assert model is not None
-        assert model.transition_ranges[0].station_start == 17.0
-        assert model.transition_ranges[0].station_end == 31.0
-        assert panel._surface_transition_table.item(0, 2).text() == "17.000"
-        assert panel._surface_transition_table.item(0, 3).text() == "31.000"
+        assert model.transition_ranges[0].station_start == 15.0
+        assert model.transition_ranges[0].station_end == 25.0
+        assert model.transition_ranges[0].sample_interval == 4.0
+        assert panel._surface_transition_table.item(0, 2).text() == "20.000"
+        assert panel._surface_transition_table.item(0, 3).text() == "4.000"
     finally:
         App.closeDocument(doc.Name)
 

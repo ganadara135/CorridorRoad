@@ -10,7 +10,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     Gui = None
 
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 
 from ...objects.obj_project import (
     CorridorRoadProject,
@@ -172,7 +172,7 @@ REGION_PRESETS = {
                 "id": "region:normal-before",
                 "kind": "normal_road",
                 "start": 0.0,
-                "end": 0.30,
+                "end_sta": 100.0,
                 "layers": [],
                 "structures": [],
                 "drainage": [],
@@ -182,8 +182,8 @@ REGION_PRESETS = {
             {
                 "id": "region:drainage-01",
                 "kind": "drainage",
-                "start": 0.30,
-                "end": 0.70,
+                "start_sta": 100.0,
+                "end": 1.0,
                 "layers": ["ditch", "culvert"],
                 "structures": ["structure:culvert-01"],
                 "drainage": ["drainage:side-ditch-left", "drainage:culvert-01"],
@@ -193,7 +193,7 @@ REGION_PRESETS = {
             {
                 "id": "region:normal-after",
                 "kind": "normal_road",
-                "start": 0.70,
+                "start": 1.0,
                 "end": 1.0,
                 "layers": [],
                 "structures": [],
@@ -308,6 +308,8 @@ class V1RegionEditorTaskPanel:
         self.region_obj = find_v1_region_model(self.document)
         self._assembly_refs = assembly_model_ids(self.document)
         self._structure_refs = structure_model_ids(self.document)
+        self._station_values = _document_station_values(self.document)
+        self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
         self.form = self._build_ui()
         self._load_existing_rows()
 
@@ -361,7 +363,7 @@ class V1RegionEditorTaskPanel:
 
         self._table = QtWidgets.QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
-            ["Start STA", "End STA", "Primary Kind", "Layers", "Assembly", "Structure", "Drainage", "Priority", "Notes"]
+            ["Start STA", "End STA (Auto)", "Primary Kind", "Layers", "Assembly", "Structure", "Drainage", "Priority", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -436,14 +438,15 @@ class V1RegionEditorTaskPanel:
         self._table.setRowCount(0)
         for row in rows:
             self._append_row(row)
+        self._refresh_derived_end_sta()
 
     def _append_row(self, row: RegionRow | None = None) -> None:
         row = row or RegionRow(
             region_id=f"region:{self._table.rowCount() + 1}",
             region_index=self._table.rowCount() + 1,
             primary_kind="normal_road",
-            station_start=0.0,
-            station_end=100.0,
+            station_start=self._default_new_region_start(),
+            station_end=float(self._station_range[1]),
             priority=10,
         )
         index = self._table.rowCount()
@@ -460,7 +463,24 @@ class V1RegionEditorTaskPanel:
             row.notes,
         ]
         for col, value in enumerate(values):
-            if col == 2:
+            if col == 0:
+                combo = self._station_combo(value)
+                try:
+                    combo.currentTextChanged.connect(lambda _text: self._refresh_derived_end_sta())
+                except Exception:
+                    try:
+                        combo.currentIndexChanged.connect(lambda _index: self._refresh_derived_end_sta())
+                    except Exception:
+                        pass
+                self._table.setCellWidget(index, col, combo)
+            elif col == 1:
+                item = QtWidgets.QTableWidgetItem(str(value))
+                try:
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                except Exception:
+                    pass
+                self._table.setItem(index, col, item)
+            elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.addItems(REGION_KIND_CHOICES)
                 if str(value) in REGION_KIND_CHOICES:
@@ -482,10 +502,29 @@ class V1RegionEditorTaskPanel:
                 self._table.setCellWidget(index, col, combo)
             else:
                 self._table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+        self._refresh_derived_end_sta()
+
+    def _station_combo(self, value: object):
+        combo = QtWidgets.QComboBox()
+        combo.setEditable(True)
+        try:
+            combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        except Exception:
+            pass
+        values = [_format_float(station) for station in list(getattr(self, "_station_values", []) or [])]
+        current = _format_float(float(value))
+        seen: set[str] = set()
+        for text in values + ([current] if current not in values else []):
+            if text in seen:
+                continue
+            seen.add(text)
+            combo.addItem(text)
+        combo.setCurrentText(current)
+        return combo
 
     def _add_region_row(self) -> None:
         self._append_row()
-        self._set_status("Added a Region row. Edit values, then Validate or Apply.")
+        self._set_status("Added a Region row. Edit Start STA, then Validate or Apply. End STA is derived from the next row.")
 
     def _delete_selected_rows(self) -> None:
         rows = sorted({item.row() for item in list(self._table.selectedItems() or [])}, reverse=True)
@@ -493,11 +532,12 @@ class V1RegionEditorTaskPanel:
             rows = [self._table.currentRow()]
         for row_index in rows:
             self._table.removeRow(row_index)
+        self._refresh_derived_end_sta()
         self._set_status(f"Deleted {len(rows)} Region row(s).")
 
     def _sort_rows(self) -> None:
         try:
-            rows = sorted(self._table_rows(), key=lambda row: (row.station_start, row.station_end, row.region_id))
+            rows = self._table_rows(sort_by_start=True)
             self._replace_rows(rows)
             self._set_status("Region rows sorted by station.")
         except Exception as exc:
@@ -506,29 +546,38 @@ class V1RegionEditorTaskPanel:
     def _validate(self) -> None:
         try:
             model = self._model_from_table()
+            station_errors = _region_station_membership_errors(model, self._station_values)
             result = RegionValidationService().validate(
                 model,
                 known_assembly_refs=self._assembly_refs,
                 known_structure_refs=self._structure_refs,
             )
-            self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs))
+            self._set_status(
+                _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+            )
         except Exception as exc:
             self._set_status(f"Region validation failed:\n{exc}")
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
             model = self._model_from_table()
+            station_errors = _region_station_membership_errors(model, self._station_values)
             result = RegionValidationService().validate(
                 model,
                 known_assembly_refs=self._assembly_refs,
                 known_structure_refs=self._structure_refs,
             )
-            if result.status == "error":
-                self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs))
+            if result.status == "error" or station_errors:
+                self._set_status(
+                    _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+                )
                 _show_message(self.form, "Regions", "Regions were not applied because validation has errors.")
                 return False
             self.region_obj = apply_v1_region_model(document=self.document, region_model=model)
-            self._set_status(_format_validation_result(result, model, self._assembly_refs, self._structure_refs) + f"\n\nApplied to: {self.region_obj.Label}")
+            self._set_status(
+                _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+                + f"\n\nApplied to: {self.region_obj.Label}"
+            )
             _show_message(self.form, "Regions", f"Regions have been applied.\nRows: {len(model.region_rows)}")
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -551,10 +600,13 @@ class V1RegionEditorTaskPanel:
         )
 
     def _table_rows(self) -> list[RegionRow]:
+        return self._table_rows_from_specs(sort_by_start=False)
+
+    def _table_rows_from_specs(self, *, sort_by_start: bool = False) -> list[RegionRow]:
+        specs: list[dict[str, object]] = []
         rows: list[RegionRow] = []
         for row_index in range(self._table.rowCount()):
             station_start = _required_float(_item_text(self._table, row_index, 0), f"Row {row_index + 1} start STA")
-            station_end = _required_float(_item_text(self._table, row_index, 1), f"Row {row_index + 1} end STA")
             primary_kind = _item_text(self._table, row_index, 2) or "normal_road"
             layers = _split_refs(_item_text(self._table, row_index, 3))
             assembly_ref = _item_text(self._table, row_index, 4)
@@ -562,22 +614,71 @@ class V1RegionEditorTaskPanel:
             drainage_refs = _split_refs(_item_text(self._table, row_index, 6))
             priority = int(_required_float(_item_text(self._table, row_index, 7) or "10", f"Row {row_index + 1} priority"))
             notes = _item_text(self._table, row_index, 8)
+            specs.append(
+                {
+                    "station_start": station_start,
+                    "primary_kind": primary_kind,
+                    "layers": layers,
+                    "assembly_ref": assembly_ref,
+                    "structure_ref": structure_ref,
+                    "drainage_refs": drainage_refs,
+                    "priority": priority,
+                    "notes": notes,
+                }
+            )
+        if sort_by_start:
+            specs = sorted(specs, key=lambda row: (float(row["station_start"]), str(row.get("primary_kind", ""))))
+        for row_index, spec in enumerate(specs):
+            station_start = float(spec["station_start"])
+            station_end = float(specs[row_index + 1]["station_start"]) if row_index < len(specs) - 1 else float(self._station_range[1])
             rows.append(
                 RegionRow(
                     region_id=f"region:{row_index + 1}",
                     region_index=row_index + 1,
-                    primary_kind=primary_kind,
-                    applied_layers=layers,
+                    primary_kind=str(spec["primary_kind"]),
+                    applied_layers=list(spec["layers"]),
                     station_start=station_start,
                     station_end=station_end,
-                    assembly_ref=assembly_ref,
-                    structure_ref=structure_ref,
-                    drainage_refs=drainage_refs,
-                    priority=priority,
-                    notes=notes,
+                    assembly_ref=str(spec["assembly_ref"]),
+                    structure_ref=str(spec["structure_ref"]),
+                    drainage_refs=list(spec["drainage_refs"]),
+                    priority=int(spec["priority"]),
+                    notes=str(spec["notes"]),
                 )
             )
         return rows
+
+    def _default_new_region_start(self) -> float:
+        starts: list[float] = []
+        for row_index in range(self._table.rowCount()):
+            try:
+                starts.append(_required_float(_item_text(self._table, row_index, 0), "Start STA"))
+            except Exception:
+                continue
+        available = [value for value in self._station_values if round(float(value), 6) not in {round(start, 6) for start in starts}]
+        if available:
+            return float(available[0])
+        return float(self._station_range[0])
+
+    def _refresh_derived_end_sta(self) -> None:
+        if not hasattr(self, "_table"):
+            return
+        for row_index in range(self._table.rowCount()):
+            try:
+                end = _required_float(_item_text(self._table, row_index + 1, 0), "Next Start STA") if row_index < self._table.rowCount() - 1 else float(self._station_range[1])
+                item = self._table.item(row_index, 1)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem("")
+                    try:
+                        item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    except Exception:
+                        pass
+                    self._table.setItem(row_index, 1, item)
+                item.setText(_format_float(end))
+            except Exception:
+                item = self._table.item(row_index, 1)
+                if item is not None:
+                    item.setText("")
 
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
@@ -601,14 +702,7 @@ class CmdV1RegionEditor:
 
 
 def _document_station_range(document, alignment_obj=None) -> tuple[float, float]:
-    stationing = find_v1_stationing(document)
-    stations = list(getattr(stationing, "StationValues", []) or []) if stationing is not None else []
-    values = []
-    for station in stations:
-        try:
-            values.append(float(station))
-        except Exception:
-            pass
+    values = _document_station_values(document)
     if values:
         return min(values), max(values)
     try:
@@ -618,6 +712,52 @@ def _document_station_range(document, alignment_obj=None) -> tuple[float, float]
     except Exception:
         pass
     return 0.0, 100.0
+
+
+def _document_station_values(document) -> list[float]:
+    stationing = find_v1_stationing(document)
+    stations = list(getattr(stationing, "StationValues", []) or []) if stationing is not None else []
+    values: dict[float, float] = {}
+    for station in stations:
+        try:
+            value = float(station)
+        except Exception:
+            continue
+        values[round(value, 6)] = value
+    return [values[key] for key in sorted(values)]
+
+
+def _region_station_membership_errors(region_model: RegionModel, station_values: list[float]) -> list[str]:
+    known = {round(float(value), 6) for value in list(station_values or [])}
+    if not known:
+        return ["Stationing has no station values; Region Start STA and End STA cannot be checked."]
+    errors: list[str] = []
+    rows = list(getattr(region_model, "region_rows", []) or [])
+    if rows:
+        station_min = min(float(value) for value in list(station_values or []))
+        station_max = max(float(value) for value in list(station_values or []))
+        first_start = float(getattr(rows[0], "station_start", 0.0) or 0.0)
+        last_end = float(getattr(rows[-1], "station_end", 0.0) or 0.0)
+        if round(first_start, 6) != round(station_min, 6):
+            errors.append(f"First Region Start STA must be the first Stationing value {station_min:.3f}.")
+        if round(last_end, 6) != round(station_max, 6):
+            errors.append(f"Last Region End STA must resolve to the last Stationing value {station_max:.3f}.")
+    previous_start: float | None = None
+    for row in rows:
+        region_id = str(getattr(row, "region_id", "") or "")
+        for attr, label in (("station_start", "Start STA"), ("station_end", "End STA")):
+            try:
+                station = float(getattr(row, attr, 0.0) or 0.0)
+            except Exception:
+                errors.append(f"{region_id} {label} is not numeric.")
+                continue
+            if round(station, 6) not in known:
+                errors.append(f"{region_id} {label} {station:.3f} is not in Stationing.")
+        current_start = float(getattr(row, "station_start", 0.0) or 0.0)
+        if previous_start is not None and current_start <= previous_start + 1.0e-9:
+            errors.append(f"{region_id} Start STA must be greater than the previous Region Start STA.")
+        previous_start = current_start
+    return errors
 
 
 def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs: list[str]) -> list[str]:
@@ -676,10 +816,24 @@ def _preset_region_rows(
         station_end = float(station_start) + span
     rows: list[RegionRow] = []
     for index, spec in enumerate(list(preset.get("rows", []) or []), start=1):
-        start_ratio = max(0.0, min(1.0, float(spec.get("start", 0.0) or 0.0)))
-        end_ratio = max(0.0, min(1.0, float(spec.get("end", 1.0) or 1.0)))
-        start_sta = float(station_start) + span * start_ratio
-        end_sta = float(station_start) + span * end_ratio
+        start_sta = _preset_station_value(
+            spec,
+            ratio_key="start",
+            absolute_key="start_sta",
+            default_ratio=0.0,
+            station_start=station_start,
+            station_end=station_end,
+            span=span,
+        )
+        end_sta = _preset_station_value(
+            spec,
+            ratio_key="end",
+            absolute_key="end_sta",
+            default_ratio=1.0,
+            station_start=station_start,
+            station_end=station_end,
+            span=span,
+        )
         if end_sta < start_sta:
             start_sta, end_sta = end_sta, start_sta
         rows.append(
@@ -701,19 +855,50 @@ def _preset_region_rows(
     return rows
 
 
+def _preset_station_value(
+    spec: dict,
+    *,
+    ratio_key: str,
+    absolute_key: str,
+    default_ratio: float,
+    station_start: float,
+    station_end: float,
+    span: float,
+) -> float:
+    lower = min(float(station_start), float(station_end))
+    upper = max(float(station_start), float(station_end))
+    if absolute_key in spec:
+        try:
+            absolute = float(spec.get(absolute_key))
+        except Exception:
+            absolute = lower
+        return min(max(absolute, lower), upper)
+    try:
+        raw = float(spec.get(ratio_key, default_ratio))
+    except Exception:
+        raw = float(default_ratio)
+    ratio = max(0.0, min(1.0, raw))
+    return float(station_start) + float(span) * ratio
+
+
 def _format_validation_result(
     result,
     region_model: RegionModel | None = None,
     assembly_refs: list[str] | None = None,
     structure_refs: list[str] | None = None,
+    station_errors: list[str] | None = None,
 ) -> str:
     del region_model, assembly_refs, structure_refs
-    lines = [f"Validation status: {getattr(result, 'status', '') or 'unknown'}"]
+    station_rows = list(station_errors or [])
+    status = "error" if station_rows else (getattr(result, "status", "") or "unknown")
+    lines = [f"Validation status: {status}"]
     diagnostics = list(getattr(result, "diagnostic_rows", []) or [])
-    if not diagnostics:
+    if not diagnostics and not station_rows:
         lines.append("No diagnostics.")
     else:
         lines.append("Diagnostics:")
+        for message in station_rows:
+            lines.append(f"- error: station_not_found: {message}")
         for row in diagnostics:
             lines.append(f"- {row.severity}: {row.kind}: {row.message}")
     return "\n".join(lines)

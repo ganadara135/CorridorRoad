@@ -94,7 +94,7 @@ class SurfaceTransitionValidationService:
                             )
                         )
 
-            if boundary_values:
+            if boundary_values and from_region != to_region:
                 covered = [value for value in boundary_values if station_start <= value <= station_end]
                 if not covered:
                     diagnostics.append(
