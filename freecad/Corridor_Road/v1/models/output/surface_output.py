@@ -43,6 +43,23 @@ class SurfaceComparisonOutputRow:
 
 
 @dataclass(frozen=True)
+class SurfaceSpanOutputRow:
+    """Station span metadata for surface output consumers."""
+
+    span_row_id: str
+    surface_ref: str
+    station_start: float
+    station_end: float
+    from_region_ref: str = ""
+    to_region_ref: str = ""
+    span_kind: str = "same_region"
+    transition_ref: str = ""
+    continuity_status: str = "ok"
+    diagnostic_refs: list[str] = field(default_factory=list)
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class SurfaceSummaryRow:
     """Minimal summary row for surface output."""
 
@@ -61,5 +78,6 @@ class SurfaceOutput(OutputModelBase):
     corridor_id: str = ""
     surface_rows: list[SurfaceRowOutput] = field(default_factory=list)
     boundary_rows: list[SurfaceBoundaryRow] = field(default_factory=list)
+    span_rows: list[SurfaceSpanOutputRow] = field(default_factory=list)
     comparison_rows: list[SurfaceComparisonOutputRow] = field(default_factory=list)
     summary_rows: list[SurfaceSummaryRow] = field(default_factory=list)

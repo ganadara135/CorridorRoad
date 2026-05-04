@@ -46,7 +46,7 @@ Available in the v1 release direction:
 - Assembly and Region source editing
 - Structure source editing and Structure Output packages
 - Applied Sections generation
-- Build Corridor preview surfaces and diagnostics
+- Build Corridor preview surfaces, Region Boundary review, Surface Transitions, and diagnostics
 - Cross Section, Plan/Profile, and Earthwork review surfaces
 
 In progress:

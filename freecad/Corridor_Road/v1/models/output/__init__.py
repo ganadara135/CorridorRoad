@@ -15,7 +15,7 @@ from .plan_output import PlanOutput
 from .profile_output import ProfileOutput
 from .quantity_output import QuantityOutput
 from .section_output import SectionOutput
-from .surface_output import SurfaceOutput
+from .surface_output import SurfaceOutput, SurfaceSpanOutputRow
 from .structure_solid_output import (
     StructureExportDiagnosticRow,
     StructureSolidOutput,
@@ -39,6 +39,7 @@ __all__ = [
     "QuantityOutput",
     "SectionOutput",
     "SurfaceOutput",
+    "SurfaceSpanOutputRow",
     "StructureExportDiagnosticRow",
     "StructureSolidOutput",
     "StructureSolidOutputRow",

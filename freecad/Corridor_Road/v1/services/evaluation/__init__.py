@@ -15,6 +15,10 @@ from .region_resolution_service import RegionResolutionService, RegionValidation
 from .section_earthwork_area_service import SectionEarthworkAreaService
 from .section_earthwork_volume_service import SectionEarthworkVolumeService
 from .structure_interaction_service import StructureInteractionService
+from .surface_transition_validation_service import (
+    SurfaceTransitionValidationResult,
+    SurfaceTransitionValidationService,
+)
 from .tin_section_sampling_service import TinSectionSamplingService
 from .tin_sampling_service import TinSamplingService
 
@@ -37,6 +41,8 @@ __all__ = [
     "SectionEarthworkAreaService",
     "SectionEarthworkVolumeService",
     "StructureInteractionService",
+    "SurfaceTransitionValidationResult",
+    "SurfaceTransitionValidationService",
     "TinSectionSamplingService",
     "TinSamplingService",
 ]

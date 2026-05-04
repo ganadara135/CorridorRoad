@@ -7,7 +7,7 @@ try:
 except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
     App = None
 
-from ..models.result.surface_model import SurfaceBuildRelation, SurfaceModel, SurfaceRow
+from ..models.result.surface_model import SurfaceBuildRelation, SurfaceModel, SurfaceRow, SurfaceSpanRow
 
 
 class V1SurfaceModelObject:
@@ -68,6 +68,16 @@ def ensure_v1_surface_model_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "BuildRelationKinds", "Build Relations", "relation kinds")
     _add_property(obj, "App::PropertyStringList", "BuildRelationInputRefs", "Build Relations", "input refs")
     _add_property(obj, "App::PropertyStringList", "BuildRelationSummaries", "Build Relations", "operation summaries")
+    _add_property(obj, "App::PropertyInteger", "SurfaceSpanCount", "Surface Spans", "surface span count")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanIds", "Surface Spans", "surface span ids")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanSurfaceRefs", "Surface Spans", "surface refs")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanStationRanges", "Surface Spans", "station ranges")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanRegionRefs", "Surface Spans", "region refs")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanKinds", "Surface Spans", "span kinds")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanTransitionRefs", "Surface Spans", "transition refs")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanContinuityStatuses", "Surface Spans", "continuity statuses")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanDiagnosticRefs", "Surface Spans", "diagnostic refs")
+    _add_property(obj, "App::PropertyStringList", "SurfaceSpanNotes", "Surface Spans", "span notes")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
@@ -132,6 +142,7 @@ def update_v1_surface_model_object(obj, surface_model: SurfaceModel, *, label: s
     ensure_v1_surface_model_properties(obj)
     rows = list(getattr(surface_model, "surface_rows", []) or [])
     relations = list(getattr(surface_model, "build_relation_rows", []) or [])
+    spans = list(getattr(surface_model, "span_rows", []) or [])
 
     obj.Label = label
     obj.SchemaVersion = int(getattr(surface_model, "schema_version", 1) or 1)
@@ -151,6 +162,16 @@ def update_v1_surface_model_object(obj, surface_model: SurfaceModel, *, label: s
     obj.BuildRelationKinds = [str(row.relation_kind) for row in relations]
     obj.BuildRelationInputRefs = [_join_refs(row.input_refs) for row in relations]
     obj.BuildRelationSummaries = [str(row.operation_summary) for row in relations]
+    obj.SurfaceSpanCount = len(spans)
+    obj.SurfaceSpanIds = [str(row.span_id) for row in spans]
+    obj.SurfaceSpanSurfaceRefs = [str(row.surface_ref) for row in spans]
+    obj.SurfaceSpanStationRanges = [f"{float(row.station_start):.12g}|{float(row.station_end):.12g}" for row in spans]
+    obj.SurfaceSpanRegionRefs = [f"{str(row.from_region_ref)}|{str(row.to_region_ref)}" for row in spans]
+    obj.SurfaceSpanKinds = [str(row.span_kind) for row in spans]
+    obj.SurfaceSpanTransitionRefs = [str(row.transition_ref) for row in spans]
+    obj.SurfaceSpanContinuityStatuses = [str(row.continuity_status) for row in spans]
+    obj.SurfaceSpanDiagnosticRefs = [_join_refs(row.diagnostic_refs) for row in spans]
+    obj.SurfaceSpanNotes = [str(row.notes) for row in spans]
     obj.SourceRefs = [str(ref) for ref in list(getattr(surface_model, "source_refs", []) or []) if str(ref)]
     try:
         obj.touch()
@@ -187,6 +208,23 @@ def to_surface_model(obj) -> SurfaceModel | None:
         )
         for index, _relation_id in enumerate(relation_ids)
     ]
+    span_ids = list(getattr(obj, "SurfaceSpanIds", []) or [])
+    span_rows = [
+        SurfaceSpanRow(
+            span_id=_list_value(span_ids, index, f"span:{index + 1}"),
+            surface_ref=_list_value(getattr(obj, "SurfaceSpanSurfaceRefs", []), index, ""),
+            station_start=_station_range_value(_list_value(getattr(obj, "SurfaceSpanStationRanges", []), index, ""), 0),
+            station_end=_station_range_value(_list_value(getattr(obj, "SurfaceSpanStationRanges", []), index, ""), 1),
+            from_region_ref=_span_region_value(_list_value(getattr(obj, "SurfaceSpanRegionRefs", []), index, ""), 0),
+            to_region_ref=_span_region_value(_list_value(getattr(obj, "SurfaceSpanRegionRefs", []), index, ""), 1),
+            span_kind=_list_value(getattr(obj, "SurfaceSpanKinds", []), index, "same_region"),
+            transition_ref=_list_value(getattr(obj, "SurfaceSpanTransitionRefs", []), index, ""),
+            continuity_status=_list_value(getattr(obj, "SurfaceSpanContinuityStatuses", []), index, "ok"),
+            diagnostic_refs=_split_refs(_list_value(getattr(obj, "SurfaceSpanDiagnosticRefs", []), index, "")),
+            notes=_list_value(getattr(obj, "SurfaceSpanNotes", []), index, ""),
+        )
+        for index, _span_id in enumerate(span_ids)
+    ]
     return SurfaceModel(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
@@ -197,6 +235,7 @@ def to_surface_model(obj) -> SurfaceModel | None:
         surface_rows=surface_rows,
         build_relation_rows=build_relation_rows,
         comparison_rows=[],
+        span_rows=span_rows,
     )
 
 
@@ -252,3 +291,19 @@ def _list_value(values, index: int, default: str = "") -> str:
         return str(values_list[index]) if index < len(values_list) else str(default)
     except Exception:
         return str(default)
+
+
+def _station_range_value(value: str, index: int) -> float:
+    try:
+        parts = str(value or "").split("|")
+        return float(parts[index]) if index < len(parts) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _span_region_value(value: str, index: int) -> str:
+    try:
+        parts = str(value or "").split("|")
+        return str(parts[index]) if index < len(parts) else ""
+    except Exception:
+        return ""

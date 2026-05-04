@@ -5,7 +5,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceBuildRelation, SurfaceModel, SurfaceRow
+from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceBuildRelation, SurfaceModel, SurfaceRow, SurfaceSpanRow
 from freecad.Corridor_Road.v1.objects.obj_surface import (
     create_or_update_v1_surface_model_object,
     find_v1_surface_model,
@@ -40,6 +40,20 @@ def _sample_surface() -> SurfaceModel:
                 operation_summary="Built from applied sections.",
             )
         ],
+        span_rows=[
+            SurfaceSpanRow(
+                "span:design:1",
+                "corridor:main:design",
+                0.0,
+                10.0,
+                from_region_ref="region-a",
+                to_region_ref="region-b",
+                span_kind="region_boundary",
+                continuity_status="needs_review",
+                diagnostic_refs=["region_context_change"],
+                notes="design span crosses Region boundary.",
+            )
+        ],
         source_refs=["corridor:main", "sections:main"],
     )
 
@@ -70,6 +84,10 @@ def test_v1_surface_model_roundtrips_summary_rows() -> None:
         assert model.corridor_id == "corridor:main"
         assert [row.surface_kind for row in model.surface_rows] == ["design_surface", "subgrade_surface"]
         assert model.build_relation_rows[0].input_refs == ["corridor:main", "sections:main"]
+        assert model.span_rows[0].span_kind == "region_boundary"
+        assert model.span_rows[0].from_region_ref == "region-a"
+        assert model.span_rows[0].to_region_ref == "region-b"
+        assert model.span_rows[0].diagnostic_refs == ["region_context_change"]
         assert find_v1_surface_model(doc) == obj
     finally:
         App.closeDocument(doc.Name)

@@ -1,5 +1,6 @@
 import FreeCAD as App
 
+import freecad.Corridor_Road.v1.commands.cmd_region_editor as region_editor_command
 from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_REGIONS,
     CorridorRoadProject,
@@ -7,6 +8,7 @@ from freecad.Corridor_Road.objects.obj_project import (
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
+    V1RegionEditorTaskPanel,
     apply_v1_region_model,
     region_assembly_reference_warnings,
     region_structure_reference_warnings,
@@ -15,6 +17,7 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     structure_model_ids,
     starter_region_model_from_document,
 )
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
@@ -24,6 +27,8 @@ from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 
+_QAPP = None
+
 
 def _new_project_doc():
     doc = App.newDocument("V1RegionEditorCommandTest")
@@ -31,6 +36,12 @@ def _new_project_doc():
     CorridorRoadProject(project)
     tree = ensure_project_tree(project, include_references=False)
     return doc, project, tree
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def test_starter_region_model_uses_generated_station_range() -> None:
@@ -72,6 +83,20 @@ def test_region_presets_offer_multiple_practical_region_sets() -> None:
         assert model.region_rows[1].structure_ref == "structure:bridge-01"
         assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
         assert model.region_rows[1].drainage_refs == ["drainage:deck-drain"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_control_preset_uses_fixed_100m_control_station() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
+
+        model = region_preset_model_from_document("Drainage Control", doc, project=project, alignment=alignment)
+
+        assert [row.station_start for row in model.region_rows] == [0.0, 100.0, max(list(stationing.StationValues))]
+        assert [row.primary_kind for row in model.region_rows] == ["normal_road", "drainage", "normal_road"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -176,6 +201,61 @@ def test_region_structure_reference_warnings_report_missing_refs() -> None:
     warnings = region_structure_reference_warnings(model, ["structure:bridge-01"])
 
     assert warnings == ["WARNING: region:missing references missing structure_ref structure:missing."]
+
+
+def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        stationing = create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        panel = V1RegionEditorTaskPanel(document=doc)
+
+        panel._add_region_row()
+
+        start_combo = panel._table.cellWidget(0, 0)
+        end_item = panel._table.item(0, 1)
+        assert start_combo is not None
+        assert end_item is not None
+        assert [start_combo.itemText(index) for index in range(start_combo.count())][:3] == [
+            f"{float(value):.3f}" for value in list(stationing.StationValues)[:3]
+        ]
+        assert end_item.text() == f"{float(list(stationing.StationValues)[-1]):.3f}"
+        start_combo.setCurrentText("60.000")
+        panel._add_region_row()
+        panel._table.cellWidget(1, 0).setCurrentText("120.000")
+        rows = panel._table_rows()
+        assert rows[0].station_start == 60.0
+        assert rows[0].station_end == 120.0
+        assert rows[1].station_start == 120.0
+        assert rows[1].station_end == max(list(stationing.StationValues))
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_editor_validate_and_apply_reject_station_values_missing_from_stationing() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        panel = V1RegionEditorTaskPanel(document=doc)
+        panel._add_region_row()
+
+        panel._table.cellWidget(0, 0).setCurrentText("60.932")
+        panel._validate()
+        original_show_message = region_editor_command._show_message
+        region_editor_command._show_message = lambda *_args, **_kwargs: None
+        try:
+            applied = panel._apply(close_after=False)
+        finally:
+            region_editor_command._show_message = original_show_message
+
+        assert applied is False
+        assert "station_not_found" in panel._status.toPlainText()
+        assert find_v1_region_model(doc) is None
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_apply_v1_region_model_creates_region_source_object_only() -> None:

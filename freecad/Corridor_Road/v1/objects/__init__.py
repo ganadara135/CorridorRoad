@@ -37,6 +37,12 @@ from .obj_surface import (
     find_v1_surface_model,
     to_surface_model,
 )
+from .obj_surface_transition import (
+    V1SurfaceTransitionModelObject,
+    create_or_update_v1_surface_transition_model_object,
+    find_v1_surface_transition_model,
+    to_surface_transition_model,
+)
 from .obj_profile import (
     V1ProfileObject,
     create_sample_v1_profile,
@@ -74,6 +80,7 @@ __all__ = [
     "V1StationingObject",
     "V1StructureModelObject",
     "V1SurfaceModelObject",
+    "V1SurfaceTransitionModelObject",
     "assembly_model_ids",
     "create_or_update_v1_assembly_model_object",
     "create_or_update_v1_applied_section_set_object",
@@ -82,6 +89,7 @@ __all__ = [
     "create_or_update_v1_corridor_model_object",
     "create_or_update_v1_exchange_package_object",
     "create_or_update_v1_surface_model_object",
+    "create_or_update_v1_surface_transition_model_object",
     "create_sample_v1_alignment",
     "create_sample_v1_profile",
     "create_v1_stationing",
@@ -91,6 +99,7 @@ __all__ = [
     "find_v1_corridor_model",
     "find_v1_exchange_package",
     "find_v1_surface_model",
+    "find_v1_surface_transition_model",
     "find_v1_profile",
     "find_v1_region_model",
     "find_v1_stationing",
@@ -102,6 +111,7 @@ __all__ = [
     "to_assembly_model",
     "to_corridor_model",
     "to_surface_model",
+    "to_surface_transition_model",
     "to_profile_model",
     "to_region_model",
     "to_structure_model",

@@ -238,6 +238,14 @@ Each `RegionRow` represents one station-bounded policy zone.
 
 Region rows must be defined in station space, not only by visual extents or 3D shapes.
 
+The Regions editor should manage continuity by `Start STA`.
+
+- Users select `Start STA` from Stationing values.
+- `station_end` is derived from the next Region row's `station_start`.
+- The final Region row ends at the final Stationing value.
+- Validate and Apply should reject Start stations that are not present in Stationing.
+- Region rows should cover the Stationing range without intentional gaps.
+
 One region row should reference one Assembly and zero or one Structure.
 
 If more than one Structure is needed over the same apparent station range, use separate Region rows so each row has one clear structure owner.
@@ -337,7 +345,9 @@ Available first-slice presets:
 
 Loading a preset only fills the editable Region table.
 
-Preset rows should scale to the current station range from v1 Stations or Alignment length.
+Preset rows should scale to the current station range from v1 Stations or Alignment length unless the preset explicitly defines a fixed station.
+
+`Drainage Control` uses `STA 100.000` as the drainage-control start station and uses the current final Stationing value as the closing Region start.
 
 It does not create Applied Sections, Corridor surfaces, solids, or viewer-only geometry.
 
