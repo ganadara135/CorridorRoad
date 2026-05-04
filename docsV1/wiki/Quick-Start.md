@@ -38,18 +38,21 @@ Drainage currently opens an under-development message. It is placed after Region
 4. Generate Stations.
 5. Edit Profile.
 6. Create or select an Assembly.
-7. Create a Region that references the Assembly.
+7. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
 8. Optionally open Drainage and confirm the planned-stage message.
 9. Run Applied Sections.
 10. Run Build Corridor.
-11. Open Cross Section Viewer.
-12. Open Plan/Profile Connection Review.
-13. Open Earthwork Viewer.
+11. Review Region Boundaries and Surface Transitions in Build Corridor.
+12. Open Cross Section Viewer.
+13. Open Plan/Profile Connection Review.
+14. Open Earthwork Viewer.
 
 ## 4. What To Check
 
 - No command registration errors appear.
 - Applied Sections are generated before Build Corridor.
 - Build Corridor consumes Applied Sections.
+- Region Boundaries show continuous source Region ranges.
+- Surface Transition `Spacing` and `Sample Count` match the intended transition density.
 - Review panels open without traceback errors.
 - Drainage clearly reports that it is still under development.
