@@ -7,6 +7,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+- Added Stationing-based Region editing where Region `Start STA` values are selected from generated station values and `End STA` is derived from the next Region start.
+- Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
+- Added Surface Transition controls in Build Corridor for selecting a Region STA, adjusting transition spacing, reviewing derived sample counts, enabling/disabling transition ranges, and updating transition records.
+- Added wiki documentation for Region continuity, Region Boundary review, Surface Transition spacing/update workflow, and troubleshooting guidance.
+
+### Changed
+- Updated the `Drainage Control` Region preset to use `STA 100.000` as the drainage-control start station and the current final Stationing value as the closing Region start.
+- Renamed the Surface Transition action button in Build Corridor from `Create / Update Transition` to `Update`.
+- Clarified Region and Surface Transition design documentation so transition intent remains source-level and generated geometry remains output.
+
 ## [1.0.0] - 2026-05-02
 
 ### Added

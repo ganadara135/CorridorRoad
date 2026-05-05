@@ -9,7 +9,9 @@ CorridorRoad is a FreeCAD workbench for corridor-style road design, review, and 
 
 CorridorRoad is developed as an open-source road design workbench for FreeCAD. If this project saves you time, helps your civil design workflow, or you want to support continued v1 development, please consider sponsoring the project:
 
-[Sponsor CorridorRoad on GitHub](https://github.com/sponsors/ganadara135)
+[Sponsor on GitHub](https://github.com/sponsors/ganadara135)
+[Sponsor on Patreon](https://patreon.com/kcod)
+[Sponsor on Ko-fi](https://ko-fi.com/ganadara135)
 
 Sponsorship helps fund focused work on the v1 workflow, documentation, testing, and practical road-design features that are difficult to sustain through spare-time development alone.
 
