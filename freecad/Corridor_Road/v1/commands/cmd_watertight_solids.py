@@ -18,6 +18,7 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from ..objects.obj_applied_section import find_v1_applied_section_set
 from ..objects.obj_applied_section import to_applied_section_set
 from ..objects.obj_corridor import find_v1_corridor_model, to_corridor_model
+from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import find_v1_surface_model
@@ -127,10 +128,12 @@ def discover_watertight_solid_targets(document=None):
     corridor_obj = find_v1_corridor_model(doc)
     region_obj = find_v1_region_model(doc)
     structure_obj = find_v1_structure_model(doc)
+    drainage_obj = find_v1_drainage_model(doc)
     applied = to_applied_section_set(applied_obj)
     corridor = to_corridor_model(corridor_obj)
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
+    drainage_model = to_drainage_model(drainage_obj)
     return SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
             project_id=str(getattr(applied, "project_id", "") or getattr(corridor, "project_id", "") or "corridorroad-v1"),
@@ -139,6 +142,7 @@ def discover_watertight_solid_targets(document=None):
             corridor_model=corridor,
             region_model=region_model,
             structure_model=structure_model,
+            drainage_model=drainage_model,
         )
     )
 
@@ -177,11 +181,12 @@ class V1WatertightSolidsTaskPanel:
         layout.addWidget(self._prerequisite_table)
         self._set_prerequisite_rows(self._status_model)
 
-        self._target_table = QtWidgets.QTableWidget(0, 13)
+        self._target_table = QtWidgets.QTableWidget(0, 14)
         self._target_table.setHorizontalHeaderLabels(
             [
                 "Enabled",
                 "Target",
+                "Family",
                 "Scope",
                 "Source",
                 "Status",
@@ -299,7 +304,8 @@ class V1WatertightSolidsTaskPanel:
             self._target_state_by_id[target_id] = state
             values = [
                 "Yes" if enabled else "No",
-                str(getattr(row, "target_family", "")),
+                _target_display_label(row),
+                _target_family_label(row),
                 _target_scope_text(row),
                 _target_source_text(row),
                 str(getattr(row, "readiness_status", "")),
@@ -337,7 +343,7 @@ class V1WatertightSolidsTaskPanel:
         lines.append(f"Target diagnostics: {diagnostic_count}")
         lines.append(f"Enabled targets: {enabled_count}")
         if selected_state is not None:
-            lines.append(f"Selected target: {str(getattr(selected_state.target_row, 'target_family', '') or selected_state.target_id)}")
+            lines.append(f"Selected target: {_target_display_label(selected_state.target_row)}")
             lines.append(
                 "Selected validation: "
                 f"{_validation_status_text(selected_state)}; "
@@ -547,7 +553,7 @@ class V1WatertightSolidsTaskPanel:
                 shape=getattr(part_result, "solid_shape", None),
                 project=find_project(self.document),
                 object_name=object_name,
-                label=f"Watertight Solid - {str(getattr(selected_state.target_row, 'target_family', '') or selected_state.target_id)}",
+                label=f"Watertight Solid - {_target_display_label(selected_state.target_row)}",
             )
             selected_state.watertight_output = output
             selected_state.output_object = obj
@@ -594,7 +600,10 @@ class V1WatertightSolidsTaskPanel:
             return
         visible_changed = _set_object_visibility(obj, True)
         suffix = "" if visible_changed else "; visibility=not_available"
-        self._status.setPlainText(self._status_text() + f"\n\nShown solid: {str(getattr(obj, 'Name', '') or '')}{suffix}")
+        self._status.setPlainText(
+            self._status_text()
+            + f"\n\nShown solid: {str(getattr(obj, 'Name', '') or '')}; {_target_context_text(state.target_row)}{suffix}"
+        )
 
     def _hide_selected_solid(self) -> None:
         state = self._selected_target_state()
@@ -604,7 +613,10 @@ class V1WatertightSolidsTaskPanel:
             return
         visible_changed = _set_object_visibility(obj, False)
         suffix = "" if visible_changed else "; visibility=not_available"
-        self._status.setPlainText(self._status_text() + f"\n\nHidden solid: {str(getattr(obj, 'Name', '') or '')}{suffix}")
+        self._status.setPlainText(
+            self._status_text()
+            + f"\n\nHidden solid: {str(getattr(obj, 'Name', '') or '')}; {_target_context_text(state.target_row)}{suffix}"
+        )
 
     def _focus_selected_solid(self) -> None:
         state = self._selected_target_state()
@@ -628,7 +640,7 @@ class V1WatertightSolidsTaskPanel:
         state_label = str(getattr(obj, "Name", "") or "")
         self._status.setPlainText(
             self._status_text()
-            + f"\n\nFocused solid: {state_label}; gui_focus={'yes' if focused else 'not_available'}"
+            + f"\n\nFocused solid: {state_label}; {_target_context_text(state.target_row)}; gui_focus={'yes' if focused else 'not_available'}"
         )
 
     def _target_state_from_item(self, item) -> WatertightSolidTargetPanelState | None:
@@ -664,14 +676,14 @@ class V1WatertightSolidsTaskPanel:
                 break
             values = {
                 0: "Yes" if state.enabled else "No",
-                5: _validation_status_text(state),
-                6: _count_text(state.profile_count),
-                7: _count_text(state.face_count),
-                8: _count_text(state.edge_count),
-                9: _build_status_text(state),
-                10: _volume_text(state.volume),
-                11: state.output_object_ref or "-",
-                12: _target_diagnostic_text(state.target_row, self._target_model, state),
+                6: _validation_status_text(state),
+                7: _count_text(state.profile_count),
+                8: _count_text(state.face_count),
+                9: _count_text(state.edge_count),
+                10: _build_status_text(state),
+                11: _volume_text(state.volume),
+                12: state.output_object_ref or "-",
+                13: _target_diagnostic_text(state.target_row, self._target_model, state),
             }
             for column, value in values.items():
                 cell = self._target_table.item(row_index, column)
@@ -729,6 +741,42 @@ def _target_id(row: object) -> str:
     )
 
 
+def _target_display_label(row: object) -> str:
+    family = str(getattr(row, "target_family", "") or "").strip().lower()
+    component_ref = str(getattr(row, "component_ref", "") or "").strip()
+    region_ref = str(getattr(row, "region_ref", "") or "").strip()
+    structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
+    drainage_ref = str(getattr(row, "drainage_ref", "") or "").strip()
+    if family == "road_body_envelope":
+        return "Road Body Envelope"
+    if family == "region_body":
+        return f"Region Body - {region_ref}" if region_ref else "Region Body"
+    if family == "pavement_layer_body":
+        return f"Pavement Layer - {component_ref}" if component_ref else "Pavement Layer"
+    if family == "subbase_body":
+        return f"Subbase - {component_ref}" if component_ref else "Subbase"
+    if family == "shoulder_body":
+        return f"Shoulder - {component_ref}" if component_ref else "Shoulder"
+    if family == "lined_ditch_body":
+        return f"Lined Ditch - {drainage_ref or component_ref}" if drainage_ref or component_ref else "Lined Ditch"
+    if family == "structure_body":
+        return f"Structure Body - {structure_ref}" if structure_ref else "Structure Body"
+    return str(getattr(row, "target_family", "") or _target_id(row))
+
+
+def _target_family_label(row: object) -> str:
+    family = str(getattr(row, "target_family", "") or "").strip().lower()
+    if family in {"road_body_envelope", "region_body"}:
+        return "Envelope"
+    if family in {"pavement_layer_body", "subbase_body", "shoulder_body"}:
+        return "Assembly Component"
+    if family in {"lined_ditch_body"}:
+        return "Drainage"
+    if family in {"structure_body"}:
+        return "Structure"
+    return family or "-"
+
+
 def _target_scope_text(row: object) -> str:
     scope = str(getattr(row, "scope_kind", "") or "")
     region_ref = str(getattr(row, "region_ref", "") or "")
@@ -746,9 +794,37 @@ def _target_source_text(row: object) -> str:
         str(getattr(row, "assembly_ref", "") or ""),
         str(getattr(row, "structure_ref", "") or ""),
         str(getattr(row, "drainage_ref", "") or ""),
+        str(getattr(row, "component_ref", "") or ""),
+        str(getattr(row, "material_ref", "") or ""),
     ]
     text = ", ".join(value for value in values if value)
     return text or ", ".join(str(value) for value in list(getattr(row, "source_refs", []) or []) if str(value))
+
+
+def _target_context_text(row: object) -> str:
+    values = [f"target={_target_display_label(row)}"]
+    drainage_ref = str(getattr(row, "drainage_ref", "") or "")
+    if drainage_ref:
+        values.append(f"drainage={drainage_ref}")
+        side = _side_from_ref(drainage_ref)
+        if side:
+            values.append(f"side={side}")
+    component_ref = str(getattr(row, "component_ref", "") or "")
+    if component_ref:
+        values.append(f"component={component_ref}")
+    material_ref = str(getattr(row, "material_ref", "") or "")
+    if material_ref:
+        values.append(f"material={material_ref}")
+    return "; ".join(values)
+
+
+def _side_from_ref(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if "right" in text:
+        return "right"
+    if "left" in text:
+        return "left"
+    return ""
 
 
 def _target_diagnostic_text(row: object, target_model: object, state: WatertightSolidTargetPanelState | None = None) -> str:

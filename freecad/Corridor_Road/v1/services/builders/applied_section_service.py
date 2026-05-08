@@ -197,6 +197,7 @@ class AppliedSectionService:
                     else []
                 )
             ),
+            drainage_refs=list(getattr(region_context, "drainage_refs", []) or []),
             bench_evaluations=bench_evaluations,
         )
         point_rows = self._build_point_rows(
@@ -206,6 +207,7 @@ class AppliedSectionService:
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
+            drainage_refs=list(getattr(region_context, "drainage_refs", []) or []),
             bench_evaluations=bench_evaluations,
         )
 
@@ -246,6 +248,7 @@ class AppliedSectionService:
                     request.structure_model.structure_model_id
                     if request.structure_model is not None
                     else "",
+                    *list(getattr(region_context, "drainage_refs", []) or []),
                 ]
                 if ref
             ],
@@ -377,6 +380,7 @@ class AppliedSectionService:
         region_id: str,
         override_ids: list[str],
         structure_ids: list[str],
+        drainage_refs: list[str],
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionComponentRow]:
         if template is None:
@@ -395,6 +399,8 @@ class AppliedSectionService:
                 material=str(getattr(component, "material", "") or ""),
                 override_ids=list(override_ids),
                 structure_ids=list(structure_ids),
+                drainage_refs=_component_drainage_refs(component, drainage_refs),
+                parameters=dict(getattr(component, "parameters", {}) or {}),
             )
             for component in template.component_rows
             if component.enabled
@@ -526,6 +532,7 @@ class AppliedSectionService:
         surface_left_width: float,
         surface_right_width: float,
         subgrade_depth: float,
+        drainage_refs: list[str] | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionPoint]:
         """Resolve first-slice FG, subgrade, and ditch section points from enabled components."""
@@ -564,6 +571,7 @@ class AppliedSectionService:
                 frame=frame,
                 surface_left_width=surface_left_width,
                 surface_right_width=surface_right_width,
+                drainage_refs=list(drainage_refs or []),
             )
         )
         output.extend(
@@ -663,6 +671,29 @@ def _region_structure_refs(region_context) -> list[str]:
     if structure_ref:
         return [structure_ref]
     return list(getattr(region_context, "structure_refs", []) or [])[:1]
+
+
+def _component_drainage_refs(component, drainage_refs: list[str]) -> list[str]:
+    if str(getattr(component, "kind", "") or "").strip().lower() not in {"ditch", "gutter", "swale", "channel"}:
+        return []
+    side = str(getattr(component, "side", "") or "center").strip().lower()
+    if side in {"left", "right"}:
+        return _unique_refs([_drainage_ref_for_side(drainage_refs, side)])
+    if side == "both":
+        return _unique_refs([_drainage_ref_for_side(drainage_refs, "left"), _drainage_ref_for_side(drainage_refs, "right")])
+    return _unique_refs(list(drainage_refs or []))
+
+
+def _drainage_ref_for_side(drainage_refs: list[str] | None, side: str) -> str:
+    refs = _unique_refs(list(drainage_refs or []))
+    if not refs:
+        return ""
+    side_text = str(side or "").strip().lower()
+    if side_text:
+        for ref in refs:
+            if side_text in str(ref or "").lower():
+                return ref
+    return refs[0] if len(refs) == 1 else ""
 
 
 def _bench_evaluations(
@@ -1530,6 +1561,7 @@ def _ditch_section_points(
     frame: AppliedSectionFrame,
     surface_left_width: float,
     surface_right_width: float,
+    drainage_refs: list[str] | None = None,
 ) -> list[AppliedSectionPoint]:
     """Return first-slice ditch surface strip points outside FG edges."""
 
@@ -1543,7 +1575,7 @@ def _ditch_section_points(
     base_z = float(getattr(frame, "z", 0.0) or 0.0)
     left_width = max(float(surface_left_width or 0.0), 0.0)
     right_width = max(float(surface_right_width or 0.0), 0.0)
-    rows: list[tuple[float, float, str]] = []
+    rows: list[tuple[float, float, str, str, str, str]] = []
     for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
         if not bool(getattr(component, "enabled", True)):
             continue
@@ -1553,12 +1585,31 @@ def _ditch_section_points(
         local_profile = _ditch_local_profile(component)
         if not local_profile:
             continue
+        component_ref = str(getattr(component, "component_id", "") or "")
         if side in {"left", "both", "center"}:
-            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=left_width, direction=1.0, side_label="left"))
+            rows.extend(
+                _oriented_ditch_rows(
+                    local_profile,
+                    edge_offset=left_width,
+                    direction=1.0,
+                    side_label="left",
+                    component_ref=component_ref,
+                    drainage_ref=_drainage_ref_for_side(drainage_refs, "left"),
+                )
+            )
         if side in {"right", "both", "center"}:
-            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=-right_width, direction=-1.0, side_label="right"))
+            rows.extend(
+                _oriented_ditch_rows(
+                    local_profile,
+                    edge_offset=-right_width,
+                    direction=-1.0,
+                    side_label="right",
+                    component_ref=component_ref,
+                    drainage_ref=_drainage_ref_for_side(drainage_refs, "right"),
+                )
+            )
     output: list[AppliedSectionPoint] = []
-    for index, (offset, z_delta, role) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
+    for index, (offset, z_delta, role, component_ref, side_label, drainage_ref) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:{role}:{index + 1}",
@@ -1567,6 +1618,9 @@ def _ditch_section_points(
                 z=base_z + z_delta,
                 point_role="ditch_surface",
                 lateral_offset=offset,
+                component_ref=component_ref,
+                side=side_label,
+                drainage_ref=drainage_ref,
             )
         )
     return output
@@ -1824,10 +1878,21 @@ def _oriented_ditch_rows(
     edge_offset: float,
     direction: float,
     side_label: str,
-) -> list[tuple[float, float, str]]:
+    component_ref: str = "",
+    drainage_ref: str = "",
+) -> list[tuple[float, float, str, str, str, str]]:
     rows = []
     for local_offset, z_delta, role in local_profile:
-        rows.append((float(edge_offset) + float(direction) * float(local_offset), float(z_delta), f"{side_label}:{role}"))
+        rows.append(
+            (
+                float(edge_offset) + float(direction) * float(local_offset),
+                float(z_delta),
+                f"{side_label}:{role}",
+                component_ref,
+                str(side_label or ""),
+                drainage_ref,
+            )
+        )
     return rows
 
 

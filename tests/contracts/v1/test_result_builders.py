@@ -654,7 +654,15 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
         project_id="proj-1",
         region_model_id="reg-ditch",
         alignment_id="align-ditch",
-        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch")],
+        region_rows=[
+            RegionRow(
+                "region-1",
+                0.0,
+                100.0,
+                template_ref="tmpl-ditch",
+                drainage_refs=["drainage:side-ditch-left", "drainage:side-ditch-right"],
+            )
+        ],
     )
     override_model = OverrideModel(
         schema_version=1,
@@ -680,6 +688,13 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
     ditch_points = [point for point in result.point_rows if point.point_role == "ditch_surface"]
     assert [round(point.lateral_offset, 1) for point in ditch_points] == [-4.5, -3.5, 3.5, 4.7]
     assert min(point.z for point in ditch_points) < result.frame.z
+    assert {point.component_ref for point in ditch_points} == {"ditch-left", "ditch-right"}
+    assert {point.side for point in ditch_points} == {"left", "right"}
+    assert {point.drainage_ref for point in ditch_points} == {"drainage:side-ditch-left", "drainage:side-ditch-right"}
+    ditch_components = [row for row in result.component_rows if row.kind == "ditch"]
+    assert [row.drainage_refs for row in ditch_components] == [["drainage:side-ditch-left"], ["drainage:side-ditch-right"]]
+    assert "drainage:side-ditch-left" in result.source_refs
+    assert "drainage:side-ditch-right" in result.source_refs
 
 
 def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -> None:
@@ -2530,7 +2545,9 @@ def test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist(
                 project_id="proj-1",
                 applied_section_id="sec-1",
                 frame=AppliedSectionFrame(station=0.0),
-                point_rows=[AppliedSectionPoint("ditch:1", 0.0, 0.0, 0.0, "ditch_surface", 0.0)],
+                point_rows=[
+                    AppliedSectionPoint("ditch:1", 0.0, 0.0, 0.0, "ditch_surface", 0.0, "ditch:right", "right", "drainage:right")
+                ],
             )
         ],
     )
@@ -2551,7 +2568,9 @@ def test_corridor_surface_service_adds_drainage_surface_when_ditch_points_exist(
         "drainage_surface",
     ]
     assert result.surface_rows[3].parent_surface_ref == "cor-1:design"
-    assert result.build_relation_rows[3].operation_summary == "Built from AppliedSection ditch_surface point rows."
+    assert result.build_relation_rows[3].operation_summary == "Built as a separate drainage surface from source-tagged AppliedSection ditch_surface point rows."
+    assert "drainage:right" in result.source_refs
+    assert "drainage:right" in result.build_relation_rows[3].input_refs
 
 
 def test_corridor_surface_geometry_service_builds_design_surface_ribbon() -> None:
@@ -2794,10 +2813,10 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
                 applied_section_id="sec-1",
                 frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
                 point_rows=[
-                    AppliedSectionPoint("ditch:r-flow", 0.0, -4.5, 9.8, "ditch_surface", -4.5),
-                    AppliedSectionPoint("ditch:r-edge", 0.0, -3.5, 10.0, "ditch_surface", -3.5),
-                    AppliedSectionPoint("ditch:l-edge", 0.0, 3.5, 10.0, "ditch_surface", 3.5),
-                    AppliedSectionPoint("ditch:l-flow", 0.0, 4.7, 9.8, "ditch_surface", 4.7),
+                    AppliedSectionPoint("ditch:r-flow", 0.0, -4.5, 9.8, "ditch_surface", -4.5, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:r-edge", 0.0, -3.5, 10.0, "ditch_surface", -3.5, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:l-edge", 0.0, 3.5, 10.0, "ditch_surface", 3.5, "ditch:left", "left", "drainage:left"),
+                    AppliedSectionPoint("ditch:l-flow", 0.0, 4.7, 9.8, "ditch_surface", 4.7, "ditch:left", "left", "drainage:left"),
                 ],
             ),
             AppliedSection(
@@ -2806,10 +2825,10 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
                 applied_section_id="sec-2",
                 frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.5, 0.0),
                 point_rows=[
-                    AppliedSectionPoint("ditch:r-flow", 10.0, -4.5, 10.3, "ditch_surface", -4.5),
-                    AppliedSectionPoint("ditch:r-edge", 10.0, -3.5, 10.5, "ditch_surface", -3.5),
-                    AppliedSectionPoint("ditch:l-edge", 10.0, 3.5, 10.5, "ditch_surface", 3.5),
-                    AppliedSectionPoint("ditch:l-flow", 10.0, 4.7, 10.3, "ditch_surface", 4.7),
+                    AppliedSectionPoint("ditch:r-flow", 10.0, -4.5, 10.3, "ditch_surface", -4.5, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:r-edge", 10.0, -3.5, 10.5, "ditch_surface", -3.5, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:l-edge", 10.0, 3.5, 10.5, "ditch_surface", 3.5, "ditch:left", "left", "drainage:left"),
+                    AppliedSectionPoint("ditch:l-flow", 10.0, 4.7, 10.3, "ditch_surface", 4.7, "ditch:left", "left", "drainage:left"),
                 ],
             ),
         ],
@@ -2828,8 +2847,80 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
     assert len(result.vertex_rows) == 8
     assert len(result.triangle_rows) == 6
     assert result.provenance_rows[0].source_kind == "applied_section_points"
+    assert set(result.source_refs) >= {"drainage:right", "drainage:left"}
     assert result.quality_rows[1].kind == "section_point_count"
     assert result.quality_rows[1].value == 4
+    quality = {row.kind: row.value for row in result.quality_rows}
+    assert quality["drainage_ref_count"] == 2
+    assert quality["drainage_source_missing_point_count"] == 0
+    assert "drainage_refs=drainage:right,drainage:left" in result.provenance_rows[0].notes
+    assert any("component_ref=ditch:right" in vertex.notes and "drainage_ref=drainage:right" in vertex.notes for vertex in result.vertex_rows)
+
+
+def test_corridor_surface_geometry_service_preserves_drainage_source_tags_on_supplemental_samples() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-drainage-source",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        sampling_policy=CorridorSamplingPolicy(
+            sampling_policy_id="sp-1",
+            station_interval=20.0,
+        ),
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-drainage-source",
+        corridor_id="cor-drainage-source",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-20", 20.0, "sec-20"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:r-flow", 0.0, -5.0, 9.8, "ditch_surface", -5.0, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:r-edge", 0.0, -4.0, 10.0, "ditch_surface", -4.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-20",
+                frame=AppliedSectionFrame(20.0, 20.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:r-flow", 20.0, -5.0, 9.8, "ditch_surface", -5.0, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:r-edge", 20.0, -4.0, 10.0, "ditch_surface", -4.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+        ],
+    )
+
+    result = CorridorSurfaceGeometryService().build_drainage_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-drainage-source:drainage",
+            supplemental_sampling_enabled=True,
+            supplemental_sampling_max_spacing=5.0,
+        )
+    )
+
+    quality = {row.kind: row.value for row in result.quality_rows}
+    supplemental_vertices = [vertex for vertex in result.vertex_rows if "supplemental" in vertex.source_point_ref]
+    assert supplemental_vertices
+    assert set(result.source_refs) >= {"drainage:right"}
+    assert quality["drainage_ref_count"] == 1
+    assert quality["drainage_source_missing_point_count"] == 0
+    assert all("drainage_ref=drainage:right" in vertex.notes for vertex in supplemental_vertices)
 
 
 def test_corridor_surface_geometry_service_builds_daylight_surface_from_side_slopes() -> None:
@@ -4207,6 +4298,75 @@ def test_quantity_build_service_adds_bench_and_slope_face_length_fragments() -> 
     assert rows["bench_surface_length"].measurement_kind == "section_side_slope_breakline"
     assert rows["bench_surface_length"].assembly_ref == "assembly-bench"
     assert rows["bench_surface_length"].region_ref == "region-bench"
+
+
+def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-drainage-qty",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-drainage-qty",
+        corridor_id="cor-drainage-qty",
+        alignment_id="align-1",
+        station_rows=[
+            AppliedSectionStationRow("sta-0", 0.0, "sec-0"),
+            AppliedSectionStationRow("sta-10", 10.0, "sec-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                corridor_id="cor-drainage-qty",
+                assembly_id="assembly:ditch",
+                station=0.0,
+                region_id="region:ditch",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -4.0, 10.0, "ditch_surface", -4.0, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -5.0, 9.8, "ditch_surface", -5.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-10",
+                corridor_id="cor-drainage-qty",
+                assembly_id="assembly:ditch",
+                station=10.0,
+                region_id="region:ditch",
+                frame=AppliedSectionFrame(10.0, 10.0, 0.0, 10.0, 0.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-edge", 10.0, -4.0, 10.0, "ditch_surface", -4.0, "ditch:right", "right", "drainage:right"),
+                    AppliedSectionPoint("ditch:right-flow", 10.0, -5.0, 9.8, "ditch_surface", -5.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="qty-drainage",
+        )
+    )
+
+    rows = {row.quantity_kind: row for row in result.fragment_rows}
+    assert abs(rows["drainage_ditch_length"].value - 10.0) < 1.0e-9
+    assert abs(rows["drainage_flowline_length"].value - 10.0) < 1.0e-9
+    assert rows["drainage_ditch_length"].measurement_kind == "drainage_applied_section_longitudinal"
+    assert rows["drainage_ditch_length"].drainage_ref == "drainage:right"
+    assert rows["drainage_ditch_length"].component_ref == "ditch:right"
+    assert "drainage:right" in result.source_refs
+    assert not any(row.kind == "missing_drainage_quantity_source_ref" for row in result.diagnostic_rows)
 
 
 def test_quantity_build_service_derives_earthwork_volumes_from_section_areas() -> None:

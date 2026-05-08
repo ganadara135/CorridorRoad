@@ -6,6 +6,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass
 
+from ...common.diagnostics import DiagnosticMessage
 from ...common.identity import new_entity_id
 from ...models.output.structure_solid_output import StructureSolidOutput
 from ...models.source.structure_model import StructureModel
@@ -40,10 +41,17 @@ class QuantityBuildService:
         """Create a minimal quantity model from one applied section set."""
 
         fragment_rows: list[QuantityFragment] = []
+        diagnostic_rows: list[DiagnosticMessage] = []
 
         for section in request.applied_section_set.sections:
             fragment_rows.extend(self._fragment_rows_for_section(section))
             fragment_rows.extend(_side_slope_surface_fragment_rows(section))
+        drainage_fragments, drainage_diagnostics, drainage_source_refs = _drainage_quantity_fragment_rows(
+            request.applied_section_set,
+            fragment_id_prefix=f"{request.quantity_model_id}:drainage",
+        )
+        fragment_rows.extend(drainage_fragments)
+        diagnostic_rows.extend(drainage_diagnostics)
         fragment_rows.extend(self._structure_solid_fragment_rows(request.structure_solid_output, request.structure_model))
         fragment_rows.extend(
             SectionEarthworkVolumeService().build(
@@ -74,15 +82,15 @@ class QuantityBuildService:
             label=request.corridor.label or "Corridor Quantity",
             unit_context=request.corridor.unit_context,
             coordinate_context=request.corridor.coordinate_context,
-            source_refs=[
-                ref
-                for ref in [
+            source_refs=_unique_refs(
+                [
                     request.corridor.corridor_id,
                     request.applied_section_set.applied_section_set_id,
                     str(getattr(request.structure_solid_output, "structure_solid_output_id", "") or ""),
                 ]
-                if ref
-            ],
+                + drainage_source_refs
+            ),
+            diagnostic_rows=diagnostic_rows,
             fragment_rows=fragment_rows,
             aggregate_rows=aggregate_rows,
             grouping_rows=[grouping_row],
@@ -340,6 +348,205 @@ def _section_segment_length(start, end) -> float:
     return math.sqrt(offset_delta * offset_delta + z_delta * z_delta)
 
 
+def _drainage_quantity_fragment_rows(
+    applied_section_set: AppliedSectionSet,
+    *,
+    fragment_id_prefix: str,
+) -> tuple[list[QuantityFragment], list[DiagnosticMessage], list[str]]:
+    sections = _station_ordered_sections(applied_section_set)
+    rows: list[QuantityFragment] = []
+    diagnostics: list[DiagnosticMessage] = []
+    drainage_refs = _drainage_refs_for_sections(sections)
+    missing_ref_count = _ditch_points_missing_drainage_ref_count(sections)
+    if missing_ref_count:
+        diagnostics.append(
+            DiagnosticMessage(
+                "warning",
+                "missing_drainage_quantity_source_ref",
+                f"{missing_ref_count} ditch_surface point row(s) cannot produce drainage-id quantities.",
+                "Add drainage_ref to Applied Section ditch_surface rows through Region/Drainage handoff.",
+            )
+        )
+    for drainage_ref in drainage_refs:
+        source_sections = [
+            section
+            for section in sections
+            if _ditch_points_for_drainage(section, drainage_ref=drainage_ref)
+        ]
+        if len(source_sections) < 2:
+            diagnostics.append(
+                DiagnosticMessage(
+                    "warning",
+                    "missing_drainage_quantity_span",
+                    f"Drainage ref {drainage_ref} has fewer than two section rows.",
+                    "At least two station rows are required to calculate longitudinal drainage length.",
+                )
+            )
+            continue
+        rows.extend(
+            _drainage_length_rows_for_ref(
+                source_sections,
+                drainage_ref=drainage_ref,
+                fragment_id_prefix=f"{fragment_id_prefix}:{_safe_id(drainage_ref)}",
+            )
+        )
+        if not any(row.quantity_kind == "drainage_flowline_length" and row.drainage_ref == drainage_ref for row in rows):
+            diagnostics.append(
+                DiagnosticMessage(
+                    "info",
+                    "missing_drainage_flowline_source_rows",
+                    f"Drainage ref {drainage_ref} has no paired flowline/invert point rows.",
+                    "First slice detects flowline rows from ditch_surface point ids containing flowline, flow, or invert.",
+                )
+            )
+    return rows, diagnostics, drainage_refs
+
+
+def _drainage_length_rows_for_ref(
+    sections: list[AppliedSection],
+    *,
+    drainage_ref: str,
+    fragment_id_prefix: str,
+) -> list[QuantityFragment]:
+    rows: list[QuantityFragment] = []
+    for index, (start_section, end_section) in enumerate(zip(sections[:-1], sections[1:]), start=1):
+        start_points = _ditch_points_for_drainage(start_section, drainage_ref=drainage_ref)
+        end_points = _ditch_points_for_drainage(end_section, drainage_ref=drainage_ref)
+        start_centroid = _representative_point_xyz(start_points)
+        end_centroid = _representative_point_xyz(end_points)
+        ditch_length = _xyz_distance(start_centroid, end_centroid)
+        if ditch_length > 1.0e-9:
+            rows.append(
+                QuantityFragment(
+                    fragment_id=f"{fragment_id_prefix}:ditch-length:{index}",
+                    quantity_kind="drainage_ditch_length",
+                    measurement_kind="drainage_applied_section_longitudinal",
+                    value=ditch_length,
+                    unit="m",
+                    station_start=_section_station(start_section),
+                    station_end=_section_station(end_section),
+                    component_ref=_joined_refs(_component_refs_for_points(start_points + end_points)),
+                    assembly_ref=str(getattr(start_section, "assembly_id", "") or ""),
+                    region_ref=str(getattr(start_section, "region_id", "") or ""),
+                    drainage_ref=drainage_ref,
+                )
+            )
+        start_flow = _flowline_points(start_points)
+        end_flow = _flowline_points(end_points)
+        if not start_flow or not end_flow:
+            continue
+        flowline_length = _xyz_distance(_representative_point_xyz(start_flow), _representative_point_xyz(end_flow))
+        if flowline_length <= 1.0e-9:
+            continue
+        rows.append(
+            QuantityFragment(
+                fragment_id=f"{fragment_id_prefix}:flowline-length:{index}",
+                quantity_kind="drainage_flowline_length",
+                measurement_kind="drainage_applied_section_flowline",
+                value=flowline_length,
+                unit="m",
+                station_start=_section_station(start_section),
+                station_end=_section_station(end_section),
+                component_ref=_joined_refs(_component_refs_for_points(start_flow + end_flow)),
+                assembly_ref=str(getattr(start_section, "assembly_id", "") or ""),
+                region_ref=str(getattr(start_section, "region_id", "") or ""),
+                drainage_ref=drainage_ref,
+            )
+        )
+    return rows
+
+
+def _station_ordered_sections(applied_section_set: AppliedSectionSet) -> list[AppliedSection]:
+    section_by_id = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
+    rows: list[AppliedSection] = []
+    for station_row in sorted(
+        list(getattr(applied_section_set, "station_rows", []) or []),
+        key=lambda row: float(getattr(row, "station", 0.0) or 0.0),
+    ):
+        section = section_by_id.get(str(getattr(station_row, "applied_section_id", "") or ""))
+        if section is not None:
+            rows.append(section)
+    if rows:
+        return rows
+    return sorted(list(getattr(applied_section_set, "sections", []) or []), key=_section_station)
+
+
+def _drainage_refs_for_sections(sections: list[AppliedSection]) -> list[str]:
+    refs: list[str] = []
+    for section in sections:
+        for point in list(getattr(section, "point_rows", []) or []):
+            if str(getattr(point, "point_role", "") or "") != "ditch_surface":
+                continue
+            refs.append(str(getattr(point, "drainage_ref", "") or ""))
+    return _unique_refs(refs)
+
+
+def _ditch_points_missing_drainage_ref_count(sections: list[AppliedSection]) -> int:
+    return sum(
+        1
+        for section in sections
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+        and not str(getattr(point, "drainage_ref", "") or "").strip()
+    )
+
+
+def _ditch_points_for_drainage(section: AppliedSection, *, drainage_ref: str) -> list[object]:
+    points = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+        and str(getattr(point, "drainage_ref", "") or "").strip() == drainage_ref
+    ]
+    return sorted(points, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+
+
+def _flowline_points(points: list[object]) -> list[object]:
+    output = []
+    for point in list(points or []):
+        point_id = str(getattr(point, "point_id", "") or "").lower()
+        if "flowline" in point_id or "flow" in point_id or "invert" in point_id:
+            output.append(point)
+    return output
+
+
+def _representative_point_xyz(points: list[object]) -> tuple[float, float, float]:
+    if not points:
+        return (0.0, 0.0, 0.0)
+    count = float(len(points))
+    return (
+        sum(float(getattr(point, "x", 0.0) or 0.0) for point in points) / count,
+        sum(float(getattr(point, "y", 0.0) or 0.0) for point in points) / count,
+        sum(float(getattr(point, "z", 0.0) or 0.0) for point in points) / count,
+    )
+
+
+def _xyz_distance(start: tuple[float, float, float], end: tuple[float, float, float]) -> float:
+    dx = float(end[0]) - float(start[0])
+    dy = float(end[1]) - float(start[1])
+    dz = float(end[2]) - float(start[2])
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
+def _section_station(section: AppliedSection) -> float:
+    frame = getattr(section, "frame", None)
+    try:
+        return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
+    except Exception:
+        return float(getattr(section, "station", 0.0) or 0.0)
+
+
+def _component_refs_for_points(points: list[object]) -> list[str]:
+    return _unique_refs(str(getattr(point, "component_ref", "") or "") for point in list(points or []))
+
+
+def _joined_refs(values) -> str:
+    return ",".join(_unique_refs(values))
+
+
 def _bridge_quantity_fragments(*, output_id: str, solid, bridge=None) -> list[QuantityFragment]:
     rows = [
         _structure_fragment(
@@ -582,6 +789,22 @@ def _first_ref(values) -> str:
         if text:
             return text
     return ""
+
+
+def _unique_refs(values) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
+
+
+def _safe_id(value: str) -> str:
+    return str(value or "").strip().replace(":", "-").replace("/", "-").replace("\\", "-").replace(" ", "-") or "unknown"
 
 
 def _positive(value, *, fallback: float = 0.0) -> float:

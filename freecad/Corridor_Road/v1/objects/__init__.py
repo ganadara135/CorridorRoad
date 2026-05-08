@@ -26,6 +26,12 @@ from .obj_corridor import (
     find_v1_corridor_model,
     to_corridor_model,
 )
+from .obj_drainage import (
+    V1DrainageModelObject,
+    create_or_update_v1_drainage_model_object,
+    find_v1_drainage_model,
+    to_drainage_model,
+)
 from .obj_exchange_package import (
     V1ExchangePackageObject,
     create_or_update_v1_exchange_package_object,
@@ -80,6 +86,7 @@ __all__ = [
     "V1AppliedSectionSetObject",
     "V1AssemblyModelObject",
     "V1CorridorModelObject",
+    "V1DrainageModelObject",
     "V1ExchangePackageObject",
     "V1ProfileObject",
     "V1RegionModelObject",
@@ -94,6 +101,7 @@ __all__ = [
     "create_or_update_v1_region_model_object",
     "create_or_update_v1_structure_model_object",
     "create_or_update_v1_corridor_model_object",
+    "create_or_update_v1_drainage_model_object",
     "create_or_update_v1_exchange_package_object",
     "create_or_update_v1_surface_model_object",
     "create_or_update_v1_surface_transition_model_object",
@@ -105,6 +113,7 @@ __all__ = [
     "find_v1_applied_section_set",
     "find_v1_assembly_model",
     "find_v1_corridor_model",
+    "find_v1_drainage_model",
     "find_v1_exchange_package",
     "find_v1_surface_model",
     "find_v1_surface_transition_model",
@@ -119,6 +128,7 @@ __all__ = [
     "to_applied_section_set",
     "to_assembly_model",
     "to_corridor_model",
+    "to_drainage_model",
     "to_surface_model",
     "to_surface_transition_model",
     "to_watertight_solid_output",

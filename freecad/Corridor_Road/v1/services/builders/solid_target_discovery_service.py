@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from ...models.result.applied_section_set import AppliedSectionSet
 from ...models.result.corridor_model import CorridorModel
+from ...models.source.drainage_model import DrainageModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
 from ...models.source.solid_target_model import (
@@ -25,6 +26,7 @@ class SolidTargetDiscoveryRequest:
     corridor_model: CorridorModel | None = None
     region_model: RegionModel | None = None
     structure_model: StructureModel | None = None
+    drainage_model: DrainageModel | None = None
 
 
 class SolidTargetDiscoveryService:
@@ -35,6 +37,7 @@ class SolidTargetDiscoveryService:
         corridor = request.corridor_model
         region_model = request.region_model
         structure_model = request.structure_model
+        drainage_model = request.drainage_model
         diagnostics: list[SolidTargetDiagnosticRow] = []
         target_rows: list[SolidTargetRow] = []
         station_start, station_end, station_count = _station_range(applied)
@@ -105,6 +108,14 @@ class SolidTargetDiscoveryService:
         )
         target_rows.extend(component_rows)
         diagnostics.extend(component_diagnostics)
+
+        lined_ditch_rows, lined_ditch_diagnostics = _lined_ditch_target_rows(
+            applied,
+            drainage_model=drainage_model,
+            source_refs=source_refs,
+        )
+        target_rows.extend(lined_ditch_rows)
+        diagnostics.extend(lined_ditch_diagnostics)
 
         structure_rows, structure_diagnostics = _structure_target_rows(
             structure_model,
@@ -244,54 +255,72 @@ def _component_target_rows(
 ) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
     if applied is None:
         return [], []
-    component_targets: dict[str, dict[str, object]] = {}
+    component_targets: dict[tuple[str, str], dict[str, object]] = {}
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
         for component in list(getattr(section, "component_rows", []) or []):
             kind = str(getattr(component, "kind", "") or "").strip().lower()
-            if kind not in {"pavement_layer", "subbase"}:
+            family = _component_target_family(kind)
+            if not family:
                 continue
             component_id = str(getattr(component, "component_id", "") or "").strip()
             width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
             thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
-            if not component_id or width <= 0.0 or thickness <= 0.0:
+            if not component_id:
                 continue
+            key = (family, component_id)
             data = component_targets.setdefault(
-                component_id,
+                key,
                 {
                     "stations": [],
                     "kind": kind,
+                    "family": family,
                     "material": str(getattr(component, "material", "") or ""),
                     "region_refs": [],
                     "assembly_refs": [],
+                    "invalid_dimension_stations": [],
                 },
             )
             data["stations"].append(station)
             data["region_refs"].append(str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""))
             data["assembly_refs"].append(str(getattr(section, "assembly_id", "") or ""))
+            if width <= 0.0 or thickness <= 0.0:
+                data["invalid_dimension_stations"].append(station)
             if not str(data.get("material", "") or ""):
                 data["material"] = str(getattr(component, "material", "") or "")
 
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
-    for component_id, data in sorted(component_targets.items()):
+    for (family, component_id), data in sorted(component_targets.items()):
         stations = sorted(float(value) for value in list(data.get("stations", []) or []))
         station_count = len(set(round(value, 6) for value in stations))
-        target_id = f"solid-target:pavement-layer:{_safe_id(component_id)}"
+        target_prefix = _component_target_prefix(family)
+        target_id = f"solid-target:{target_prefix}:{_safe_id(component_id)}"
         diagnostic_refs: list[str] = []
         if station_count < 2:
             diagnostic = _diagnostic(
                 "error",
                 "component_target_insufficient_profiles",
                 target_id,
-                f"Pavement layer component {component_id} needs at least two Applied Section profiles.",
+                f"Component {component_id} needs at least two Applied Section profiles before it can become a solid target.",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        invalid_stations = _unique_sorted_floats(list(data.get("invalid_dimension_stations", []) or []))
+        if invalid_stations:
+            diagnostic = _diagnostic(
+                "error",
+                "component_target_invalid_dimensions",
+                target_id,
+                f"Component {component_id} needs positive width and thickness at every target station.",
+                notes=f"stations={','.join(f'{station:g}' for station in invalid_stations)}",
             )
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
         rows.append(
             SolidTargetRow(
                 target_id=target_id,
-                target_family="pavement_layer_body",
+                target_family=family,
                 scope_kind="assembly_component",
                 station_start=min(stations) if stations else 0.0,
                 station_end=max(stations) if stations else 0.0,
@@ -300,13 +329,141 @@ def _component_target_rows(
                 component_ref=component_id,
                 enabled=False,
                 material_ref=str(data.get("material", "") or ""),
-                readiness_status="available" if station_count >= 2 else "blocked",
+                readiness_status="available" if station_count >= 2 and not invalid_stations else "blocked",
                 source_refs=source_refs + [component_id],
                 diagnostic_refs=diagnostic_refs,
-                notes=f"Pavement layer target discovered from Applied Section component rows; component_kind={data.get('kind', '')}.",
+                notes=f"{_component_target_label(family)} target discovered from Applied Section component rows; component_kind={data.get('kind', '')}.",
             )
         )
     return rows, diagnostics
+
+
+def _lined_ditch_target_rows(
+    applied: AppliedSectionSet | None,
+    *,
+    drainage_model: DrainageModel | None = None,
+    source_refs: list[str],
+) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
+    if applied is None:
+        return [], []
+    surface_stations_by_side: dict[str, list[float]] = {"left": [], "right": []}
+    component_data_by_side: dict[str, dict[str, object]] = {"left": {}, "right": {}}
+    drainage_owner_by_side = _drainage_lined_ditch_owner_by_side(drainage_model)
+    for section in list(getattr(applied, "sections", []) or []):
+        station = float(getattr(section, "station", 0.0) or 0.0)
+        section_sides = _ditch_surface_sides(section)
+        for side in section_sides:
+            surface_stations_by_side.setdefault(side, []).append(station)
+        for component in list(getattr(section, "component_rows", []) or []):
+            if str(getattr(component, "kind", "") or "").strip().lower() != "ditch":
+                continue
+            for side in _component_sides(component):
+                data = component_data_by_side.setdefault(side, {})
+                data.setdefault("stations", []).append(station)
+                data.setdefault("component_refs", []).append(str(getattr(component, "component_id", "") or ""))
+                data.setdefault("materials", []).append(str(getattr(component, "material", "") or ""))
+                data.setdefault("thicknesses", []).append(_ditch_lining_thickness(component))
+                data.setdefault("region_refs", []).append(str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""))
+                data.setdefault("assembly_refs", []).append(str(getattr(section, "assembly_id", "") or ""))
+
+    rows: list[SolidTargetRow] = []
+    diagnostics: list[SolidTargetDiagnosticRow] = []
+    for side in ("left", "right"):
+        surface_stations = _unique_sorted_floats(surface_stations_by_side.get(side, []))
+        component_data = component_data_by_side.get(side, {})
+        component_stations = _unique_sorted_floats(list(component_data.get("stations", []) or []))
+        all_stations = _unique_sorted_floats(surface_stations + component_stations)
+        if len(all_stations) < 2:
+            continue
+        target_id = f"solid-target:lined-ditch:{side}"
+        drainage_owner = drainage_owner_by_side.get(side)
+        drainage_ref = str(getattr(drainage_owner, "drainage_element_id", "") or "") if drainage_owner is not None else f"lined_ditch:{side}"
+        component_refs = _unique_refs(list(component_data.get("component_refs", []) or []))
+        materials = _unique_refs(list(component_data.get("materials", []) or []))
+        thicknesses = [float(value) for value in list(component_data.get("thicknesses", []) or [])]
+        has_surface = len(surface_stations) >= 2
+        has_material = len(materials) == 1 and bool(materials[0])
+        has_lining_thickness = bool(thicknesses) and all(value > 0.0 for value in thicknesses)
+        diagnostic_refs: list[str] = []
+        if not has_surface:
+            diagnostic = _diagnostic(
+                "error",
+                "lined_ditch_missing_surface_profile",
+                target_id,
+                f"Lined ditch {side} target needs ditch_surface points at two or more stations.",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        if not has_material or not has_lining_thickness:
+            diagnostic = _diagnostic(
+                "error",
+                "lined_ditch_missing_lining_policy",
+                target_id,
+                f"Lined ditch {side} target needs a material and positive lining thickness before it can become a solid.",
+                notes=f"material={'yes' if has_material else 'no'};thickness={'yes' if has_lining_thickness else 'no'}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        rows.append(
+            SolidTargetRow(
+                target_id=target_id,
+                target_family="lined_ditch_body",
+                scope_kind="drainage",
+                station_start=min(all_stations),
+                station_end=max(all_stations),
+                component_ref=_single_ref(component_refs),
+                drainage_ref=drainage_ref,
+                enabled=False,
+                material_ref=materials[0] if len(materials) == 1 else "",
+                readiness_status="available" if has_surface and has_material and has_lining_thickness else "blocked",
+                source_refs=_unique_refs(
+                    source_refs
+                    + component_refs
+                    + [f"ditch_surface:{side}"]
+                    + _drainage_owner_source_refs(drainage_model, drainage_owner)
+                ),
+                diagnostic_refs=diagnostic_refs,
+                notes=(
+                    f"Lined ditch {side} target discovered from ditch_surface rows and Assembly ditch component context."
+                    + (
+                        f" DrainageModel owner={drainage_ref}; policy={str(getattr(drainage_owner, 'policy_set_ref', '') or '')}."
+                        if drainage_owner is not None
+                        else ""
+                    )
+                ),
+            )
+        )
+    return rows, diagnostics
+
+
+def _drainage_lined_ditch_owner_by_side(drainage_model: DrainageModel | None) -> dict[str, object]:
+    if drainage_model is None:
+        return {}
+    output: dict[str, object] = {}
+    for row in list(getattr(drainage_model, "element_rows", []) or []):
+        kind = str(getattr(row, "element_kind", "") or "").strip().lower()
+        if kind not in {"ditch", "lined_ditch", "lined-ditch", "channel"}:
+            continue
+        side = _side_from_values(
+            str(getattr(row, "side", "") or ""),
+            str(getattr(row, "drainage_element_id", "") or ""),
+            str(getattr(row, "offset_rule", "") or ""),
+        )
+        if side and side not in output:
+            output[side] = row
+    return output
+
+
+def _drainage_owner_source_refs(drainage_model: DrainageModel | None, drainage_owner: object | None) -> list[str]:
+    if drainage_model is None or drainage_owner is None:
+        return []
+    return _unique_refs(
+        [
+            str(getattr(drainage_model, "drainage_model_id", "") or ""),
+            str(getattr(drainage_owner, "drainage_element_id", "") or ""),
+            str(getattr(drainage_owner, "policy_set_ref", "") or ""),
+        ]
+    )
 
 
 def _station_range(applied: AppliedSectionSet | None) -> tuple[float, float, int]:
@@ -337,13 +494,14 @@ def _source_refs(applied: AppliedSectionSet | None, corridor: CorridorModel | No
     return output
 
 
-def _diagnostic(severity: str, kind: str, source_ref: str, message: str) -> SolidTargetDiagnosticRow:
+def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: str = "") -> SolidTargetDiagnosticRow:
     return SolidTargetDiagnosticRow(
         diagnostic_id=f"solid-target:{kind}:{_safe_id(source_ref)}",
         severity=severity,
         kind=kind,
         source_ref=source_ref,
         message=message,
+        notes=str(notes or ""),
     )
 
 
@@ -359,3 +517,100 @@ def _single_ref(values) -> str:
         if text and text not in refs:
             refs.append(text)
     return refs[0] if len(refs) == 1 else ""
+
+
+def _unique_refs(values) -> list[str]:
+    refs: list[str] = []
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if text and text not in refs:
+            refs.append(text)
+    return refs
+
+
+def _component_target_family(kind: str) -> str:
+    text = str(kind or "").strip().lower()
+    if text == "pavement_layer":
+        return "pavement_layer_body"
+    if text == "subbase":
+        return "subbase_body"
+    if text == "shoulder":
+        return "shoulder_body"
+    return ""
+
+
+def _component_target_prefix(family: str) -> str:
+    text = str(family or "").strip().lower()
+    if text == "subbase_body":
+        return "subbase"
+    if text == "shoulder_body":
+        return "shoulder"
+    return "pavement-layer"
+
+
+def _component_target_label(family: str) -> str:
+    text = str(family or "").strip().lower()
+    if text == "subbase_body":
+        return "Subbase body"
+    if text == "shoulder_body":
+        return "Shoulder body"
+    return "Pavement layer"
+
+
+def _ditch_surface_sides(section) -> set[str]:
+    sides: set[str] = set()
+    for point in list(getattr(section, "point_rows", []) or []):
+        if str(getattr(point, "point_role", "") or "").strip().lower() != "ditch_surface":
+            continue
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        if offset > 0.0:
+            sides.add("left")
+        elif offset < 0.0:
+            sides.add("right")
+    return sides
+
+
+def _component_sides(component) -> list[str]:
+    side = str(getattr(component, "side", "") or "center").strip().lower()
+    if side in {"left", "right"}:
+        return [side]
+    if side in {"both", "center"}:
+        return ["left", "right"]
+    return []
+
+
+def _side_from_values(*values: str) -> str:
+    for value in values:
+        text = str(value or "").strip().lower()
+        if "right" in text:
+            return "right"
+        if "left" in text:
+            return "left"
+    return ""
+
+
+def _ditch_lining_thickness(component) -> float:
+    thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
+    if thickness > 0.0:
+        return thickness
+    params = dict(getattr(component, "parameters", {}) or {})
+    for key in ("lining_thickness", "wall_thickness"):
+        try:
+            value = max(float(params.get(key, 0.0) or 0.0), 0.0)
+        except Exception:
+            value = 0.0
+        if value > 0.0:
+            return value
+    return 0.0
+
+
+def _unique_sorted_floats(values: list[float]) -> list[float]:
+    output: list[float] = []
+    seen: set[float] = set()
+    for value in sorted(float(item) for item in list(values or [])):
+        key = round(value, 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(value)
+    return output

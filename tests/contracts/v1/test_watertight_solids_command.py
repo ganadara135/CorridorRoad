@@ -7,12 +7,15 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionComponentRow,
     AppliedSectionFrame,
+    AppliedSectionPoint,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel, CorridorSamplingPolicy, CorridorStationRow
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import create_or_update_v1_corridor_model_object
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_surface import create_or_update_v1_surface_model_object
 from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     CmdV1WatertightSolids,
@@ -40,7 +43,7 @@ def _new_project_doc(name: str):
     return doc, project
 
 
-def _sample_sections(*, include_component: bool = False) -> AppliedSectionSet:
+def _sample_sections(*, include_component: bool = False, include_lined_ditch: bool = False) -> AppliedSectionSet:
     component_rows = [
         AppliedSectionComponentRow(
             "pavement:base",
@@ -51,6 +54,27 @@ def _sample_sections(*, include_component: bool = False) -> AppliedSectionSet:
             material="asphalt",
         )
     ] if include_component else []
+    if include_lined_ditch:
+        component_rows.append(
+            AppliedSectionComponentRow(
+                "ditch:right",
+                "ditch",
+                side="right",
+                width=1.2,
+                material="concrete",
+                parameters={"lining_thickness": "0.15"},
+            )
+        )
+
+    def point_rows(station: float) -> list[AppliedSectionPoint]:
+        if not include_lined_ditch:
+            return []
+        return [
+            AppliedSectionPoint("ditch:right-edge", station, -5.0, 10.0, "ditch_surface", -5.0),
+            AppliedSectionPoint("ditch:right-mid", station, -5.6, 9.7, "ditch_surface", -5.6),
+            AppliedSectionPoint("ditch:right-flow", station, -6.2, 9.8, "ditch_surface", -6.2),
+        ]
+
     return AppliedSectionSet(
         schema_version=1,
         project_id="proj-1",
@@ -73,6 +97,7 @@ def _sample_sections(*, include_component: bool = False) -> AppliedSectionSet:
                 surface_left_width=5.0,
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
+                point_rows=point_rows(0.0),
                 component_rows=list(component_rows),
             ),
             AppliedSection(
@@ -86,6 +111,7 @@ def _sample_sections(*, include_component: bool = False) -> AppliedSectionSet:
                 surface_left_width=5.0,
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
+                point_rows=point_rows(20.0),
                 component_rows=list(component_rows),
             ),
         ],
@@ -121,11 +147,17 @@ def _sample_surface() -> SurfaceModel:
     )
 
 
-def _populate_ready_build_corridor_outputs(doc, project, *, include_component: bool = False) -> None:
+def _populate_ready_build_corridor_outputs(
+    doc,
+    project,
+    *,
+    include_component: bool = False,
+    include_lined_ditch: bool = False,
+) -> None:
     create_or_update_v1_applied_section_set_object(
         doc,
         project=project,
-        applied_section_set=_sample_sections(include_component=include_component),
+        applied_section_set=_sample_sections(include_component=include_component, include_lined_ditch=include_lined_ditch),
     )
     create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
     create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
@@ -239,10 +271,12 @@ def test_watertight_solids_panel_validate_builds_profile_and_edge_network_counts
         assert state.profile_count == 2
         assert state.face_count == 6
         assert state.edge_count == 12
-        assert panel._target_table.item(0, 5).text() == "ok"
-        assert panel._target_table.item(0, 6).text() == "2"
-        assert panel._target_table.item(0, 7).text() == "6"
-        assert panel._target_table.item(0, 8).text() == "12"
+        assert panel._target_table.item(0, 1).text() == "Road Body Envelope"
+        assert panel._target_table.item(0, 2).text() == "Envelope"
+        assert panel._target_table.item(0, 6).text() == "ok"
+        assert panel._target_table.item(0, 7).text() == "2"
+        assert panel._target_table.item(0, 8).text() == "6"
+        assert panel._target_table.item(0, 9).text() == "12"
         assert "Selected validation: ok; profiles=2; faces=6; edges=12" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
@@ -272,9 +306,9 @@ def test_watertight_solids_panel_build_selected_creates_output_object() -> None:
         assert list(obj.TargetIds) == ["solid-target:road-body-envelope"]
         tree = ensure_project_tree(project, include_references=False)
         assert obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
-        assert panel._target_table.item(0, 9).text() == "built"
-        assert panel._target_table.item(0, 10).text() != "-"
-        assert panel._target_table.item(0, 11).text() == state.output_object_ref
+        assert panel._target_table.item(0, 10).text() == "built"
+        assert panel._target_table.item(0, 11).text() != "-"
+        assert panel._target_table.item(0, 12).text() == state.output_object_ref
         assert panel._show_button.isEnabled() is True
         assert panel._hide_button.isEnabled() is True
         assert panel._focus_button.isEnabled() is True
@@ -326,6 +360,94 @@ def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() 
         assert panel._selected_target_id == "solid-target:road-body-envelope"
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_context() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsPanelLinedDitchFocusTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True)
+
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        lined_ditch_row = _target_table_row(panel, "solid-target:lined-ditch:right")
+        assert lined_ditch_row >= 0
+        assert panel._target_table.item(lined_ditch_row, 1).text() == "Lined Ditch - lined_ditch:right"
+        assert panel._target_table.item(lined_ditch_row, 2).text() == "Drainage"
+        assert "lined_ditch:right" in panel._target_table.item(lined_ditch_row, 4).text()
+        assert "ditch:right" in panel._target_table.item(lined_ditch_row, 4).text()
+        assert "concrete" in panel._target_table.item(lined_ditch_row, 4).text()
+
+        panel._target_table.selectRow(lined_ditch_row)
+        panel._validate_button.click()
+        panel._build_selected_button.click()
+
+        state = panel._target_state_by_id["solid-target:lined-ditch:right"]
+        obj = doc.getObject(state.output_object_ref)
+        assert state.build_status == "built"
+        assert obj is not None
+        assert obj.DrainageRefs == ["lined_ditch:right"]
+
+        panel._hide_button.click()
+        assert f"Hidden solid: {obj.Name}" in panel._status.toPlainText()
+        assert "drainage=lined_ditch:right" in panel._status.toPlainText()
+        assert "side=right" in panel._status.toPlainText()
+        assert "component=ditch:right" in panel._status.toPlainText()
+        assert "material=concrete" in panel._status.toPlainText()
+
+        panel._show_button.click()
+        assert f"Shown solid: {obj.Name}" in panel._status.toPlainText()
+        assert "drainage=lined_ditch:right" in panel._status.toPlainText()
+
+        panel._focus_target_row_output(panel._target_table.item(lined_ditch_row, 1))
+        assert panel._selected_target_id == "solid-target:lined-ditch:right"
+        assert f"Focused solid: {obj.Name}" in panel._status.toPlainText()
+        assert "side=right" in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_discovery_reads_document_drainage_model_owner() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsPanelDrainageOwnerTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project, include_lined_ditch=True)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:side-ditch-right",
+                        element_kind="ditch",
+                        station_start=0.0,
+                        station_end=20.0,
+                        offset_rule="right shoulder ditch",
+                        policy_set_ref="drainage-policy:lined-concrete",
+                    )
+                ],
+            ),
+        )
+
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        state = panel._target_state_by_id["solid-target:lined-ditch:right"]
+
+        assert state.target_row.drainage_ref == "drainage:side-ditch-right"
+        assert "drainage:main" in state.target_row.source_refs
+        assert "drainage-policy:lined-concrete" in state.target_row.source_refs
+        assert "drainage:side-ditch-right" in panel._target_table.item(_target_table_row(panel, state.target_id), 4).text()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def _target_table_row(panel, target_id: str) -> int:
+    for row_index in range(panel._target_table.rowCount()):
+        item = panel._target_table.item(row_index, 1)
+        if item is not None and str(item.data(QtCore.Qt.UserRole) or "") == target_id:
+            return row_index
+    return -1
 
 
 def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_independently() -> None:

@@ -54,13 +54,23 @@ def _sample_set() -> AppliedSectionSet:
                 daylight_right_slope=-0.4,
                 template_id="template:basic-road",
                 region_id="region:main",
-                component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
+                component_rows=[AppliedSectionComponentRow("lane-1", "lane", drainage_refs=["drainage:side-ditch-right"])],
                 active_structure_ids=["structure:bridge-01"],
                 active_structure_rule_ids=["rule:bridge-section"],
                 active_structure_influence_zone_ids=["zone:bridge-01"],
                 structure_diagnostic_rows=["info|structure|section:1|Structure context active."],
                 point_rows=[
-                    AppliedSectionPoint("fg:right", 100.0, 195.5, 9.9, "fg_surface", -4.5),
+                    AppliedSectionPoint(
+                        "fg:right",
+                        100.0,
+                        195.5,
+                        9.9,
+                        "fg_surface",
+                        -4.5,
+                        component_ref="lane-1",
+                        side="right",
+                        drainage_ref="drainage:side-ditch-right",
+                    ),
                     AppliedSectionPoint("fg:center", 100.0, 200.0, 10.0, "fg_surface", 0.0),
                     AppliedSectionPoint("fg:left", 100.0, 205.0, 9.9, "fg_surface", 5.0),
                 ],
@@ -161,6 +171,7 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [section.daylight_right_width for section in model.sections] == [2.5, 2.0]
         assert [section.component_rows[0].component_id for section in model.sections] == ["lane-1", "lane-1"]
         assert [section.component_rows[0].kind for section in model.sections] == ["lane", "lane"]
+        assert model.sections[0].component_rows[0].drainage_refs == ["drainage:side-ditch-right"]
         assert [len(section.point_rows) for section in model.sections] == [3, 3]
         assert model.sections[0].active_structure_ids == ["structure:bridge-01"]
         assert model.sections[0].active_structure_rule_ids == ["rule:bridge-section"]
@@ -168,6 +179,9 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert model.sections[0].structure_diagnostic_rows == ["info|structure|section:1|Structure context active."]
         assert model.sections[0].point_rows[0].point_role == "fg_surface"
         assert model.sections[0].point_rows[0].lateral_offset == -4.5
+        assert model.sections[0].point_rows[0].component_ref == "lane-1"
+        assert model.sections[0].point_rows[0].side == "right"
+        assert model.sections[0].point_rows[0].drainage_ref == "drainage:side-ditch-right"
         assert find_v1_applied_section_set(doc) == obj
     finally:
         App.closeDocument(doc.Name)

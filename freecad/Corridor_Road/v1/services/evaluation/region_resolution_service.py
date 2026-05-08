@@ -57,11 +57,13 @@ class RegionValidationService:
         *,
         known_assembly_refs: list[str] | None = None,
         known_structure_refs: list[str] | None = None,
+        known_drainage_refs: list[str] | None = None,
     ) -> RegionValidationResult:
         diagnostics: list[RegionDiagnosticRow] = []
         rows = list(getattr(region_model, "region_rows", []) or [])
         known_assembly_ref_set = _known_ref_set(known_assembly_refs)
         known_structure_ref_set = _known_ref_set(known_structure_refs)
+        known_drainage_ref_set = _known_ref_set(known_drainage_refs)
         seen_ids: set[str] = set()
         for index, row in enumerate(rows, start=1):
             region_id = str(getattr(row, "region_id", "") or "").strip()
@@ -145,6 +147,18 @@ class RegionValidationService:
                         f"Region references missing structure_ref {structure_ref}.",
                     )
                 )
+            if known_drainage_ref_set is not None:
+                for drainage_ref in list(getattr(row, "drainage_refs", []) or []):
+                    drainage_ref_text = str(drainage_ref or "").strip()
+                    if drainage_ref_text and drainage_ref_text not in known_drainage_ref_set:
+                        diagnostics.append(
+                            _diagnostic(
+                                "warning",
+                                "missing_drainage_ref",
+                                source_ref,
+                                f"Region references missing drainage_ref {drainage_ref_text}.",
+                            )
+                        )
 
         diagnostics.extend(_overlap_diagnostics(rows))
         status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
@@ -163,6 +177,7 @@ class RegionResolutionService:
         *,
         known_assembly_refs: list[str] | None = None,
         known_structure_refs: list[str] | None = None,
+        known_drainage_refs: list[str] | None = None,
     ) -> RegionValidationResult:
         """Validate a RegionModel using the shared validation service."""
 
@@ -170,6 +185,7 @@ class RegionResolutionService:
             region_model,
             known_assembly_refs=known_assembly_refs,
             known_structure_refs=known_structure_refs,
+            known_drainage_refs=known_drainage_refs,
         )
 
     def resolve_station(

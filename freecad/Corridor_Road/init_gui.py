@@ -42,6 +42,7 @@ def corridorroad_workflow_command_groups():
         ],
         "drainage": [
             "CorridorRoad_V1EditDrainage",
+            "CorridorRoad_V1DrainageReview",
         ],
         "corridor": [
             "CorridorRoad_V1AppliedSections",
@@ -100,6 +101,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_drainage_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_drainage_review  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_view_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401

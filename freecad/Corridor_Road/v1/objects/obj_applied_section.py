@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 
 try:
@@ -516,6 +517,9 @@ def _point_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[
                         f"{float(getattr(point, 'x', 0.0) or 0.0):.12g}",
                         f"{float(getattr(point, 'y', 0.0) or 0.0):.12g}",
                         f"{float(getattr(point, 'z', 0.0) or 0.0):.12g}",
+                        _escape_row_value(getattr(point, "component_ref", "")),
+                        _escape_row_value(getattr(point, "side", "")),
+                        _escape_row_value(getattr(point, "drainage_ref", "")),
                     ]
                 )
             )
@@ -546,6 +550,12 @@ def _component_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> l
                             for value in list(getattr(component, "structure_ids", []) or [])
                             if str(value or "")
                         ),
+                        ",".join(
+                            _escape_row_value(value)
+                            for value in list(getattr(component, "drainage_refs", []) or [])
+                            if str(value or "")
+                        ),
+                        _escape_row_value(json.dumps(dict(getattr(component, "parameters", {}) or {}), sort_keys=True)),
                     ]
                 )
             )
@@ -595,6 +605,9 @@ def _parse_point_rows(values) -> dict[str, list[AppliedSectionPoint]]:
                 x=_safe_float(parts[4]),
                 y=_safe_float(parts[5]),
                 z=_safe_float(parts[6]),
+                component_ref=_unescape_row_value(parts[7]) if len(parts) > 7 else "",
+                side=_unescape_row_value(parts[8]) if len(parts) > 8 else "",
+                drainage_ref=_unescape_row_value(parts[9]) if len(parts) > 9 else "",
             )
         )
     for rows in output.values():
@@ -618,6 +631,23 @@ def _parse_component_rows(values) -> dict[str, list[AppliedSectionComponentRow]]
                 for value in str(parts[10] or "").split(",")
                 if str(value or "")
             ]
+        drainage_refs = []
+        parameter_index = 11
+        parameters = {}
+        if len(parts) > 12:
+            drainage_refs = [
+                _unescape_row_value(value)
+                for value in str(parts[11] or "").split(",")
+                if str(value or "")
+            ]
+            parameter_index = 12
+        if len(parts) > parameter_index:
+            try:
+                parsed = json.loads(_unescape_row_value(parts[parameter_index]))
+                if isinstance(parsed, dict):
+                    parameters = parsed
+            except Exception:
+                parameters = {}
         output.setdefault(section_id, []).append(
             AppliedSectionComponentRow(
                 component_id=_unescape_row_value(parts[1]),
@@ -630,6 +660,8 @@ def _parse_component_rows(values) -> dict[str, list[AppliedSectionComponentRow]]
                 thickness=_safe_float(parts[8]),
                 material=_unescape_row_value(parts[9]),
                 structure_ids=structure_ids,
+                drainage_refs=drainage_refs,
+                parameters=parameters,
             )
         )
     return output

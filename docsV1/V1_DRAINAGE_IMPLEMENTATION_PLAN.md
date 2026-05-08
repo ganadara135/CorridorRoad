@@ -61,16 +61,15 @@ Implemented or partially available:
 - Assembly supports ditch components and shape-aware ditch parameters.
 - Applied Sections can emit `ditch_surface` point rows.
 - Build Corridor has Drainage diagnostics and a drainage surface preview from ditch points.
-- A `Drainage` toolbar/menu entry exists and shows a temporary under-development message.
+- A `Drainage` toolbar/menu entry opens the first Drainage editor task panel.
+- A `V1DrainageModel` document object can persist element, policy, collection, source reference, and validation diagnostic rows.
 
 Main gaps:
 
-- no real Drainage Editor task panel
-- no FreeCAD document object for persisted `DrainageModel`
-- no create/update workflow for drainage elements
-- no first-class link between drainage elements and Assembly ditch components
 - no separate Drainage Review viewer
 - no drainage quantity/report pipeline
+- no Applied Section drainage evaluation from `DrainageModel` rows yet
+- Region and Assembly references are currently text refs, not source-object pickers
 
 ## 5. Target Workflow
 
@@ -120,7 +119,6 @@ Required first-slice fields:
 - `offset_rule`
 - `policy_set_ref`
 - `structure_ref`
-- `notes`
 
 Recommended first-slice element kinds:
 
@@ -201,7 +199,7 @@ Acceptance criteria:
 
 ### D2. Document object persistence
 
-Status: pending
+Status: completed
 
 Tasks:
 
@@ -215,9 +213,18 @@ Acceptance criteria:
 - a document can store and reload one `DrainageModel`
 - validation messages are stable and readable
 
+Completed:
+
+- `V1DrainageModel` document object stores element, policy, and collection-region rows
+- `to_drainage_model` restores the source contract from the document object
+- `v1_drainage_model` routes to `05_Drainage`
+- Watertight Solid target discovery reads the document DrainageModel and can promote matching ditch/channel elements as lined ditch solid owners
+- `DrainageValidationService` reports duplicate element/policy/collection ids, invalid station ranges, missing policy ids, and missing policy refs
+- `V1DrainageModel` stores validation status and diagnostic rows on update
+
 ### D3. Drainage Editor shell
 
-Status: pending
+Status: first slice complete
 
 Tasks:
 
@@ -230,13 +237,25 @@ Tasks:
 
 Acceptance criteria:
 
-- opening the editor does not create sample data
+- opening the editor loads an existing `DrainageModel` or a non-persistent starter model
 - Apply creates or updates a `DrainageModel`
 - selected rows remain editable without generated geometry ownership
 
+Completed:
+
+- Drainage command opens `V1DrainageEditorTaskPanel`
+- editor shows element, policy, and collection tables
+- Validate runs `DrainageValidationService`
+- Apply persists `V1DrainageModel`
+- invalid rows block Apply and keep diagnostics visible
+
+Remaining:
+
+- source selectors for existing Region and Assembly refs
+
 ### D4. Basic element authoring
 
-Status: pending
+Status: first slice complete
 
 Tasks:
 
@@ -249,9 +268,22 @@ Acceptance criteria:
 - user can create a right-side ditch element for a station range
 - user can link it to an existing Region and Assembly ditch component id
 
+Completed:
+
+- `DrainageElementRow` now stores `side`, `region_ref`, and `assembly_component_ref`.
+- `V1DrainageModel` persists and restores side, Region refs, and Assembly component refs.
+- Drainage editor element rows expose Side, Region, Assembly Component, Offset Rule, Policy, and Structure columns.
+- Drainage editor includes left/right ditch default row actions.
+- Drainage validation warns when a drainage side is outside `left`, `right`, `both`, or `center`.
+- Watertight Solid lined-ditch target discovery uses `DrainageElementRow.side` before falling back to id/offset text.
+
+Remaining:
+
+- replace free-text Region and Assembly refs with source-object selectors
+
 ### D5. Region handoff
 
-Status: pending
+Status: first slice complete
 
 Tasks:
 
@@ -264,9 +296,22 @@ Acceptance criteria:
 - Region can reference one or more drainage elements
 - missing references are visible before Applied Sections
 
+Completed:
+
+- Region editor reads available Drainage element ids from `V1DrainageModel`.
+- Region editor provides an `Attach Drainage` action that appends the selected Drainage element id to the selected Region row.
+- Region validation can receive `known_drainage_refs` and reports missing `drainage_ref` values before Apply.
+- Existing `RegionRow.drainage_refs` persistence remains the source handoff contract.
+
+Remaining:
+
+- allow selecting multiple Drainage refs through a richer picker instead of a single append action
+- mirror the same Region handoff from the Drainage editor side
+- carry Drainage refs into Applied Section generated rows
+
 ### D6. Applied Section drainage evaluation
 
-Status: pending
+Status: first slice complete
 
 Tasks:
 
@@ -280,9 +325,23 @@ Acceptance criteria:
 - Cross Section Viewer can show ditch points with source drainage refs
 - Build Corridor drainage diagnostics can distinguish source-missing from geometry-missing cases
 
+Completed:
+
+- Applied Section generation reads active Region handoff `drainage_refs`.
+- Ditch component result rows preserve matching Drainage refs by side when available.
+- Generated `ditch_surface` points preserve `component_ref`, `side`, and `drainage_ref`.
+- Applied Section source refs include active Drainage refs for downstream review and exchange traceability.
+- `V1AppliedSectionSet` document persistence round-trips point and component Drainage context.
+
+Remaining:
+
+- add explicit flowline/invert point roles beyond the current shape roles
+- add diagnostics for Region drainage refs that do not match any active ditch component side
+- expose Drainage context directly in Cross Section Viewer labels/review tables
+
 ### D7. Drainage Review viewer
 
-Status: pending
+Status: first slice complete
 
 Tasks:
 
@@ -296,35 +355,54 @@ Acceptance criteria:
 - user can identify stations without drainage coverage
 - user can focus a drainage issue marker in the 3D view
 
+Completed:
+
+- `DrainageReviewMapper` builds a `DrainageOutput` payload from `DrainageModel`, `RegionModel`, and `AppliedSectionSet`.
+- Drainage Review command opens a read-only task panel after Drainage in the workflow toolbar.
+- Review tables show Drainage elements, Region handoff refs, Applied Section ditch context, and summary counts.
+- Region drainage refs missing from the active `DrainageModel` are surfaced as first-slice review warnings.
+- Applied Section `ditch_surface` point counts and Drainage ref coverage are visible without reading preview mesh geometry.
+
+Remaining:
+
+- add station issue markers and 3D focus for missing coverage rows
+- add handoff buttons back to Region, Drainage, Assembly, Profile, and Cross Section Viewer
+- add flowline continuity checks after explicit flowline/invert result roles exist
+
 ### D8. Corridor and surface integration
 
-Status: pending
+Status: complete first slice
 
-Tasks:
+Implemented:
 
-- make drainage surface generation consume source-tagged Applied Section rows
-- preserve drainage output rows separately from finished-grade and slope-face surfaces
-- avoid deriving drainage design intent from preview meshes
+- drainage surface generation consumes `ditch_surface` Applied Section point rows and preserves `drainage_ref`, `component_ref`, and `side` on generated TIN vertices
+- supplemental drainage surface sampling carries matching source context from the original Applied Section rows instead of reading preview meshes
+- `SurfaceModel` keeps drainage as a separate `drainage_surface` row and adds Drainage element refs to the drainage build relation
+- drainage TIN quality/provenance rows report Drainage source-ref counts and missing source coverage
 
 Acceptance criteria:
 
-- drainage surface follows Applied Section ditch/flowline rows
-- drainage surface diagnostics reference source drainage ids
+- [x] drainage surface follows Applied Section ditch rows
+- [x] drainage surface diagnostics reference source drainage ids
+- [ ] explicit flowline/invert rows remain a later refinement
 
 ### D9. Quantities and reports
 
-Status: pending
+Status: complete first slice
 
-Tasks:
+Implemented:
 
-- add drainage quantity fragments
-- add drainage output mapper
-- show drainage quantity summary in review/output surfaces
+- `QuantityBuildService` creates `drainage_ditch_length` fragments by Drainage element id from source-tagged Applied Section `ditch_surface` rows
+- `QuantityBuildService` creates `drainage_flowline_length` fragments when paired flowline/invert-style ditch point ids are available
+- `QuantityFragment` and `QuantityFragmentRow` preserve `drainage_ref`
+- `DrainageReviewMapper` can include drainage quantity rows and summary lengths when a `QuantityModel` is supplied
+- missing Drainage source refs or insufficient station spans are reported as quantity diagnostics
 
 Acceptance criteria:
 
-- ditch length and flowline length can be reported by drainage element id
-- diagnostics identify missing quantity source rows
+- [x] ditch length and flowline length can be reported by Drainage element id
+- [x] diagnostics identify missing quantity source rows
+- [ ] persisted document-level Drainage Review loading of the latest QuantityModel remains a later UI/output integration step
 
 ## 11. Manual QA
 

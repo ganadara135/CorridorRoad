@@ -44,6 +44,14 @@ class WatertightSolidOutputMapper:
             + list(getattr(request.edge_network, "diagnostic_rows", []) or [])
             + list(getattr(request.part_result, "diagnostic_rows", []) or []),
         )
+        diagnostics.extend(
+            _provenance_diagnostic_rows(
+                output_object_id,
+                target,
+                request.profile_set,
+                start_index=len(diagnostics) + 1,
+            )
+        )
         diagnostic_refs = [row.diagnostic_id for row in diagnostics]
         source_refs = _unique_refs(
             [
@@ -173,6 +181,96 @@ def _diagnostic_rows(output_object_id: str, rows: list[object]) -> list[Watertig
             )
         )
     return output
+
+
+def _provenance_diagnostic_rows(
+    output_object_id: str,
+    target: SolidTargetRow,
+    profile_set: AppliedSectionSolidProfileSet,
+    *,
+    start_index: int,
+) -> list[WatertightSolidOutputDiagnosticRow]:
+    target_family = str(getattr(target, "target_family", "") or "").strip().lower()
+    if target_family != "lined_ditch_body":
+        return []
+    profiles = list(getattr(profile_set, "profile_rows", []) or [])
+    if not profiles:
+        return []
+    first_profile = profiles[0]
+    first_notes = _note_pairs(str(getattr(first_profile, "notes", "") or ""))
+    top_nodes = [
+        node
+        for node in list(getattr(first_profile, "node_rows", []) or [])
+        if str(getattr(node, "semantic_role", "") or "").startswith("top")
+    ]
+    bottom_nodes = [
+        node
+        for node in list(getattr(first_profile, "node_rows", []) or [])
+        if str(getattr(node, "semantic_role", "") or "").startswith("bottom")
+    ]
+    station_values = _unique_refs(
+        [
+            f"{float(getattr(profile, 'station', 0.0) or 0.0):.12g}"
+            for profile in profiles
+        ]
+    )
+    top_source_refs = _unique_refs(
+        [
+            str(getattr(node, "source_point_ref", "") or "")
+            for node in top_nodes
+        ]
+    )
+    notes = ";".join(
+        [
+            f"target={str(getattr(target, 'target_id', '') or '')}",
+            f"drainage_ref={str(getattr(target, 'drainage_ref', '') or first_notes.get('drainage_ref', ''))}",
+            f"component_ref={str(getattr(target, 'component_ref', '') or first_notes.get('component_ref', ''))}",
+            f"side={first_notes.get('side', _side_from_ref(str(getattr(target, 'drainage_ref', '') or getattr(target, 'target_id', '') or '')))}",
+            f"material={str(getattr(target, 'material_ref', '') or first_notes.get('material', ''))}",
+            f"lining_thickness={first_notes.get('lining_thickness', '')}",
+            "offset_method=section_normal_polyline",
+            f"join_policy={first_notes.get('join_policy', '')}",
+            f"miter_limit={first_notes.get('miter_limit', '')}",
+            f"profile_count={len(profiles)}",
+            f"profile_node_count={len(list(getattr(first_profile, 'node_rows', []) or []))}",
+            f"top_point_count={len(top_nodes)}",
+            f"bottom_point_count={len(bottom_nodes)}",
+            f"stations={','.join(station_values)}",
+            f"top_source_point_refs={','.join(top_source_refs)}",
+        ]
+    )
+    return [
+        WatertightSolidOutputDiagnosticRow(
+            diagnostic_id=f"{output_object_id}:diagnostic:{int(start_index)}:lined-ditch-shape-provenance",
+            severity="info",
+            kind="lined_ditch_shape_provenance",
+            source_ref=output_object_id,
+            message="Lined ditch solid output records ditch shape and lining policy provenance.",
+            notes=notes,
+        )
+    ]
+
+
+def _note_pairs(notes: str) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for chunk in str(notes or "").split(";"):
+        if "=" not in chunk:
+            continue
+        key, value = chunk.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        pairs[key] = value.strip()
+    return pairs
+
+
+def _side_from_ref(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if "right" in text:
+        return "right"
+    if "left" in text:
+        return "left"
+    return ""
 
 
 def _unique_refs(values: list[str]) -> list[str]:

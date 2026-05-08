@@ -8,6 +8,7 @@ Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
 - `docsV1/V1_WATERTIGHT_SOLID_PLAN.md`
+- `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md`
 - `docsV1/V1_WATERTIGHT_SOLID_UI_EXECUTION_PLAN.md`
 - `docsV1/V1_CORRIDOR_MODEL.md`
 - `docsV1/V1_SECTION_MODEL.md`
@@ -124,6 +125,8 @@ Watertight Solids command
 The first code path should build a simple `road_body_envelope` target.
 
 Region, pavement layer, drainage, and structure targets should build on the same contracts after the envelope path is stable.
+
+Target-family expansion beyond the baseline envelope is detailed in `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md`.
 
 ## 6. Code Placement
 
@@ -479,9 +482,18 @@ Profile should use material layer thickness and component boundaries rather than
 
 ### 9.5 Lined ditch profile
 
-Deferred until material-specific ditch controls exist.
+First-slice profile generation is available when side-specific `ditch_surface` rows and lining policy are present.
 
 Profile should be closed by offsetting ditch surface roles according to lining thickness policy.
+
+Current first TS3 rule:
+
+- `ditch_surface` rows may discover side-specific `lined_ditch_body` target candidates.
+- candidates without material and positive lining thickness remain blocked.
+- candidates with surface rows and lining policy are available.
+- Applied Section component rows preserve ditch parameters such as `lining_thickness`.
+- the profile builder uses the side-specific ditch surface polyline plus section-normal lining-thickness offsets.
+- when intermediate ditch surface points are present, they are preserved as profile nodes and an info diagnostic records `lined_ditch_polyline_normal_offset`.
 
 ### 9.6 Structure body profile
 
@@ -837,7 +849,7 @@ Acceptance:
 
 ### Phase WS7: Component target expansion
 
-Status: Complete for first-slice pavement-layer/subbase target discovery, component-scoped closed profile building from Applied Section component width/thickness/side, independent topology/Part/output validation, StructureModel `structure_body` target discovery for review, and contract tests. Lined ditch target generation remains deferred until lining thickness/material policies are explicit.
+Status: Complete for first-slice pavement-layer, subbase, shoulder, and lined-ditch target discovery, component-scoped closed profile building from Applied Section component width/thickness/side, independent topology/Part/output validation, StructureModel `structure_body` target discovery for review, and contract tests. Lined ditch generation supports multi-point ditch surface polylines with section-normal lining offsets. Lined ditch output diagnostics now preserve shape and lining-policy provenance, exchange source context preserves drainage/material refs, panel show/hide/focus status keeps drainage side context visible, target discovery can promote a matching `DrainageModel` ditch/channel element to the lined ditch solid owner, persisted `V1DrainageModel` document objects feed Watertight Solid discovery, and component parameters can control `normal_average` versus `miter` join behavior with a miter limit fallback diagnostic.
 
 Tasks:
 

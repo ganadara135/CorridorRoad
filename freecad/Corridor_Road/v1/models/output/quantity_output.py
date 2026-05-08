@@ -23,6 +23,7 @@ class QuantityFragmentRow:
     assembly_ref: str = ""
     region_ref: str = ""
     structure_ref: str = ""
+    drainage_ref: str = ""
 
 
 @dataclass(frozen=True)

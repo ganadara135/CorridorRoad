@@ -1,5 +1,6 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
+    AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -218,3 +219,180 @@ def test_solid_profile_service_uses_fallback_depth_when_subgrade_points_are_miss
     bottom_right = profile_set.profile_rows[0].node_rows[2]
     assert bottom_right.z == 9.25
     assert any(row.kind == "fallback_profile_depth" for row in profile_set.diagnostic_rows)
+
+
+def test_solid_profile_service_builds_lined_ditch_profiles_from_ditch_surface_and_lining_policy() -> None:
+    def ditch_section(station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=f"section:{station:g}",
+            corridor_id="corridor:main",
+            station=station,
+            region_id="region:1",
+            frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0),
+            point_rows=[
+                AppliedSectionPoint("ditch:left-edge", station, 5.0, 10.0, "ditch_surface", 5.0),
+                AppliedSectionPoint("ditch:left-mid", station, 5.6, 9.7, "ditch_surface", 5.6),
+                AppliedSectionPoint("ditch:left-flow", station, 6.2, 9.8, "ditch_surface", 6.2),
+            ],
+            component_rows=[
+                AppliedSectionComponentRow(
+                    "ditch:left",
+                    "ditch",
+                    side="left",
+                    width=1.2,
+                    material="concrete",
+                    parameters={"lining_thickness": "0.15"},
+                )
+            ],
+        )
+
+    profile_set = AppliedSectionSolidProfileService().build(
+        SolidProfileBuildRequest(
+            project_id="proj-1",
+            solid_target=_target(
+                target_id="solid-target:lined-ditch:left",
+                target_family="lined_ditch_body",
+                scope_kind="drainage",
+                drainage_ref="lined_ditch:left",
+                component_ref="ditch:left",
+                material_ref="concrete",
+                station_start=0.0,
+                station_end=100.0,
+            ),
+            applied_section_set=_applied_set(ditch_section(0.0), ditch_section(100.0)),
+        )
+    )
+
+    first = profile_set.profile_rows[0]
+    offsets = [node.lateral_offset for node in first.node_rows]
+    elevations = [node.z for node in first.node_rows]
+    assert [row.station for row in profile_set.profile_rows] == [0.0, 100.0]
+    assert first.profile_role == "lined_ditch_body"
+    assert [node.semantic_role for node in first.node_rows] == [
+        "top_left",
+        "top_mid_001",
+        "top_right",
+        "bottom_right",
+        "bottom_mid_001",
+        "bottom_left",
+    ]
+    assert [round(value, 6) for value in offsets] == [6.2, 5.6, 5.0, 4.932918, 5.577696, 6.22466]
+    assert [round(value, 6) for value in elevations] == [9.8, 9.7, 10.0, 9.865836, 9.551668, 9.652041]
+    assert any(row.kind == "lined_ditch_boundary_cap_profiles" for row in profile_set.diagnostic_rows)
+    assert any(row.kind == "lined_ditch_polyline_normal_offset" for row in profile_set.diagnostic_rows)
+
+
+def test_solid_profile_service_can_use_lined_ditch_miter_join_policy() -> None:
+    def ditch_section(station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=f"section:{station:g}",
+            corridor_id="corridor:main",
+            station=station,
+            region_id="region:1",
+            frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0),
+            point_rows=[
+                AppliedSectionPoint("ditch:left-back", station, 6.0, 10.0, "ditch_surface", 6.0),
+                AppliedSectionPoint("ditch:left-corner", station, 5.0, 10.0, "ditch_surface", 5.0),
+                AppliedSectionPoint("ditch:left-flow", station, 5.0, 9.0, "ditch_surface", 5.0),
+            ],
+            component_rows=[
+                AppliedSectionComponentRow(
+                    "ditch:left",
+                    "ditch",
+                    side="left",
+                    width=1.0,
+                    material="concrete",
+                    parameters={
+                        "lining_thickness": "0.2",
+                        "lining_join_policy": "miter",
+                        "lining_miter_limit": "2.0",
+                    },
+                )
+            ],
+        )
+
+    profile_set = AppliedSectionSolidProfileService().build(
+        SolidProfileBuildRequest(
+            project_id="proj-1",
+            solid_target=_target(
+                target_id="solid-target:lined-ditch:left",
+                target_family="lined_ditch_body",
+                scope_kind="drainage",
+                drainage_ref="lined_ditch:left",
+                component_ref="ditch:left",
+                material_ref="concrete",
+                station_start=0.0,
+                station_end=100.0,
+            ),
+            applied_section_set=_applied_set(ditch_section(0.0), ditch_section(100.0)),
+        )
+    )
+
+    first = profile_set.profile_rows[0]
+    offsets = [round(node.lateral_offset, 6) for node in first.node_rows]
+    elevations = [round(node.z, 6) for node in first.node_rows]
+    assert offsets == [6.0, 5.0, 5.0, 4.8, 4.8, 6.0]
+    assert elevations == [10.0, 10.0, 9.0, 9.0, 9.8, 9.8]
+    assert "join_policy=miter" in first.notes
+    assert "miter_limit=2" in first.notes
+    assert any(row.kind == "lined_ditch_miter_join_offset" for row in profile_set.diagnostic_rows)
+    assert not any(row.kind == "lined_ditch_miter_limit_fallback" for row in profile_set.diagnostic_rows)
+
+
+def test_solid_profile_service_falls_back_when_lined_ditch_miter_limit_is_exceeded() -> None:
+    def ditch_section(station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=f"section:{station:g}",
+            corridor_id="corridor:main",
+            station=station,
+            region_id="region:1",
+            frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0),
+            point_rows=[
+                AppliedSectionPoint("ditch:left-back", station, 6.0, 10.0, "ditch_surface", 6.0),
+                AppliedSectionPoint("ditch:left-corner", station, 5.0, 10.0, "ditch_surface", 5.0),
+                AppliedSectionPoint("ditch:left-flow", station, 5.0, 9.0, "ditch_surface", 5.0),
+            ],
+            component_rows=[
+                AppliedSectionComponentRow(
+                    "ditch:left",
+                    "ditch",
+                    side="left",
+                    width=1.0,
+                    material="concrete",
+                    parameters={
+                        "lining_thickness": "0.2",
+                        "lining_join_policy": "miter",
+                        "lining_miter_limit": "1.0",
+                    },
+                )
+            ],
+        )
+
+    profile_set = AppliedSectionSolidProfileService().build(
+        SolidProfileBuildRequest(
+            project_id="proj-1",
+            solid_target=_target(
+                target_id="solid-target:lined-ditch:left",
+                target_family="lined_ditch_body",
+                scope_kind="drainage",
+                drainage_ref="lined_ditch:left",
+                component_ref="ditch:left",
+                material_ref="concrete",
+                station_start=0.0,
+                station_end=100.0,
+            ),
+            applied_section_set=_applied_set(ditch_section(0.0), ditch_section(100.0)),
+        )
+    )
+
+    first = profile_set.profile_rows[0]
+    bottom_mid = first.node_rows[4]
+    assert round(bottom_mid.lateral_offset, 6) == 4.858579
+    assert round(bottom_mid.z, 6) == 9.858579
+    assert any(row.kind == "lined_ditch_miter_limit_fallback" for row in profile_set.diagnostic_rows)

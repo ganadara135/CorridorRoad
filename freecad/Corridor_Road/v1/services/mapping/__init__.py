@@ -1,6 +1,7 @@
 """Mapping services for CorridorRoad v1."""
 
 from .cross_section_drawing_mapper import CrossSectionDrawingMapper
+from .drainage_review_mapper import DrainageReviewMapper
 from .earthwork_output_mapper import EarthworkOutputMapper
 from .exchange_output_mapper import ExchangeOutputMapper, ExchangePackageRequest
 from .plan_output_mapper import PlanOutputMapper
@@ -15,6 +16,7 @@ from .watertight_solid_output_mapper import WatertightSolidOutputMapper, Waterti
 
 __all__ = [
     "CrossSectionDrawingMapper",
+    "DrainageReviewMapper",
     "EarthworkOutputMapper",
     "ExchangeOutputMapper",
     "ExchangePackageRequest",

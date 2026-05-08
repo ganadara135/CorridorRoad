@@ -28,7 +28,7 @@ Use this order:
 12. Review
 13. Outputs
 
-Drainage currently opens an under-development message. It is placed after Region and before Applied Sections so the v1 workflow has the correct future position.
+Drainage opens a first-slice source editor. It is placed after Region and before Applied Sections so drainage intent can be stored before downstream corridor evaluation.
 
 ## 3. Minimal Smoke Workflow
 
@@ -39,7 +39,7 @@ Drainage currently opens an under-development message. It is placed after Region
 5. Edit Profile.
 6. Create or select an Assembly.
 7. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
-8. Optionally open Drainage and confirm the planned-stage message.
+8. Optionally open Drainage and apply starter drainage source rows.
 9. Run Applied Sections.
 10. Run Build Corridor.
 11. Review Region Boundaries and Surface Transitions in Build Corridor.
@@ -55,4 +55,4 @@ Drainage currently opens an under-development message. It is placed after Region
 - Region Boundaries show continuous source Region ranges.
 - Surface Transition `Spacing` and `Sample Count` match the intended transition density.
 - Review panels open without traceback errors.
-- Drainage clearly reports that it is still under development.
+- Drainage opens the source editor and can store a `V1DrainageModel`.

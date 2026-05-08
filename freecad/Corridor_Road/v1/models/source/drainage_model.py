@@ -45,6 +45,9 @@ class DrainageElementRow:
     ramp_ref: str = ""
     intersection_ref: str = ""
     structure_ref: str = ""
+    side: str = ""
+    region_ref: str = ""
+    assembly_component_ref: str = ""
     station_start: float = 0.0
     station_end: float = 0.0
     offset_rule: str = ""

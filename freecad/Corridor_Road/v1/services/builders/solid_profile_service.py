@@ -43,7 +43,9 @@ class AppliedSectionSolidProfileService:
         diagnostics: list[DiagnosticMessage] = []
         basis_by_station: dict[float, _ProfileBasis] = {}
         for section in sections:
-            if _is_component_target(target):
+            if _is_lined_ditch_target(target):
+                basis, section_diagnostics = _basis_from_lined_ditch_section(section, target=target)
+            elif _is_component_target(target):
                 basis, section_diagnostics = _basis_from_component_section(section, target=target)
             else:
                 basis, section_diagnostics = _basis_from_section(
@@ -63,6 +65,8 @@ class AppliedSectionSolidProfileService:
             is_region_target=_is_region_target(target),
             target_component_ref=str(getattr(target, "component_ref", "") or ""),
             is_component_target=_is_component_target(target),
+            target_drainage_ref=str(getattr(target, "drainage_ref", "") or ""),
+            is_lined_ditch_target=_is_lined_ditch_target(target),
             target_id=target_id,
         )
         diagnostics.extend(station_diagnostics)
@@ -128,7 +132,7 @@ class _ProfileBasis:
     applied_section_ref: str
     region_ref: str
     profile_role: str
-    nodes: tuple[_ProfileBasisNode, _ProfileBasisNode, _ProfileBasisNode, _ProfileBasisNode]
+    nodes: tuple[_ProfileBasisNode, ...]
     notes: str = ""
 
 
@@ -289,6 +293,98 @@ def _basis_from_component_section(
     )
 
 
+def _basis_from_lined_ditch_section(
+    section: AppliedSection,
+    *,
+    target: SolidTargetRow,
+) -> tuple[_ProfileBasis | None, list[DiagnosticMessage]]:
+    diagnostics: list[DiagnosticMessage] = []
+    target_id = str(getattr(target, "target_id", "") or "solid-target:lined-ditch")
+    side = _lined_ditch_side(target)
+    station = float(getattr(section, "station", 0.0) or 0.0)
+    frame = getattr(section, "frame", None)
+    if frame is None:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="error",
+                kind="missing_lined_ditch_profile_frame",
+                message="Lined ditch solid profile requires an Applied Section frame.",
+                notes=f"{target_id};station={station:g};side={side}",
+            )
+        )
+        return None, diagnostics
+    points = _ditch_surface_points(section, side)
+    if len(points) < 2:
+        return None, diagnostics
+    component = _ditch_component_for_side(
+        section,
+        side,
+        component_ref=str(getattr(target, "component_ref", "") or ""),
+    )
+    thickness = _ditch_lining_thickness(component)
+    if thickness <= 0.0:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="error",
+                kind="missing_lined_ditch_thickness",
+                message="Lined ditch solid profile requires positive lining thickness.",
+                notes=f"{target_id};station={station:g};side={side}",
+            )
+        )
+        return None, diagnostics
+    join_policy = _ditch_lining_join_policy(component)
+    miter_limit = _ditch_lining_miter_limit(component)
+    top_points = sorted(points, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0), reverse=True)
+    if abs(
+        float(getattr(top_points[0], "lateral_offset", 0.0) or 0.0)
+        - float(getattr(top_points[-1], "lateral_offset", 0.0) or 0.0)
+    ) <= 1.0e-9:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="error",
+                kind="degenerate_lined_ditch_profile_width",
+                message="Lined ditch profile top-left and top-right nodes resolve to the same lateral offset.",
+                notes=f"{target_id};station={station:g};side={side}",
+            )
+        )
+        return None, diagnostics
+    bottom_points, offset_diagnostics = _lined_ditch_bottom_points(
+        frame,
+        top_points,
+        thickness=thickness,
+        join_policy=join_policy,
+        miter_limit=miter_limit,
+        side=side,
+        target_id=target_id,
+        station=station,
+    )
+    diagnostics.extend(offset_diagnostics)
+    if len(bottom_points) != len(top_points):
+        return None, diagnostics
+    frame_z = float(getattr(frame, "z", 0.0) or 0.0)
+    component_ref = str(getattr(component, "component_id", "") or getattr(target, "component_ref", "") or "")
+    material = str(getattr(component, "material", "") or getattr(target, "material_ref", "") or "")
+    top_nodes = [
+        _basis_node(_lined_ditch_top_role(index, len(top_points)), point, frame_z)
+        for index, point in enumerate(top_points)
+    ]
+    bottom_nodes = [
+        _basis_node(_lined_ditch_bottom_role(index, len(bottom_points)), point, frame_z)
+        for index, point in enumerate(reversed(bottom_points))
+    ]
+    return (
+        _ProfileBasis(
+            station=station,
+            applied_section_ref=str(getattr(section, "applied_section_id", "") or f"station:{station:g}"),
+            region_ref=str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""),
+            profile_role="lined_ditch_body",
+            nodes=tuple(top_nodes + bottom_nodes),
+            notes=f"drainage_ref={str(getattr(target, 'drainage_ref', '') or '')};component_ref={component_ref};side={side};material={material};lining_thickness={thickness:g};join_policy={join_policy};miter_limit={miter_limit:g}",
+        ),
+        diagnostics,
+    )
+
+
 def _basis_at_station(
     station: float,
     basis_by_station: dict[float, _ProfileBasis],
@@ -370,23 +466,18 @@ def _profile_from_basis(basis: _ProfileBasis, *, target: SolidTargetRow) -> Appl
         )
         for node in basis.nodes
     ]
-    edge_specs = [
-        ("top_edge", "top_left", "top_right"),
-        ("right_side_edge", "top_right", "bottom_right"),
-        ("bottom_edge", "bottom_right", "bottom_left"),
-        ("left_side_edge", "bottom_left", "top_left"),
-    ]
-    node_by_role = {node.semantic_role: node.node_id for node in node_rows}
-    edge_rows = [
-        SolidProfileEdge(
-            edge_id=f"{safe_profile}:edge:{role}",
-            start_node_id=node_by_role[start_role],
-            end_node_id=node_by_role[end_role],
-            semantic_role=role,
-            source_ref=basis.applied_section_ref,
+    edge_rows = []
+    for index, (start_node, end_node) in enumerate(zip(node_rows, node_rows[1:] + node_rows[:1]), start=1):
+        edge_role = _profile_edge_role(start_node.semantic_role, end_node.semantic_role, index, len(node_rows))
+        edge_rows.append(
+            SolidProfileEdge(
+                edge_id=f"{safe_profile}:edge:{edge_role}",
+                start_node_id=start_node.node_id,
+                end_node_id=end_node.node_id,
+                semantic_role=edge_role,
+                source_ref=basis.applied_section_ref,
+            )
         )
-        for role, start_role, end_role in edge_specs
-    ]
     return AppliedSectionSolidProfile(
         profile_id=safe_profile,
         target_id=target_id,
@@ -402,6 +493,20 @@ def _profile_from_basis(basis: _ProfileBasis, *, target: SolidTargetRow) -> Appl
     )
 
 
+def _profile_edge_role(start_role: str, end_role: str, index: int, node_count: int) -> str:
+    if node_count == 4:
+        edge_by_roles = {
+            ("top_left", "top_right"): "top_edge",
+            ("top_right", "bottom_right"): "right_side_edge",
+            ("bottom_right", "bottom_left"): "bottom_edge",
+            ("bottom_left", "top_left"): "left_side_edge",
+        }
+        role = edge_by_roles.get((start_role, end_role))
+        if role:
+            return role
+    return f"profile_edge_{index:03d}"
+
+
 def _profile_stations(
     sections: list[AppliedSection],
     *,
@@ -411,6 +516,8 @@ def _profile_stations(
     is_region_target: bool = False,
     target_component_ref: str = "",
     is_component_target: bool = False,
+    target_drainage_ref: str = "",
+    is_lined_ditch_target: bool = False,
     target_id: str = "",
 ) -> tuple[list[float], list[DiagnosticMessage]]:
     if station_end < station_start:
@@ -418,12 +525,24 @@ def _profile_stations(
     diagnostics: list[DiagnosticMessage] = []
     region_ref = str(target_region_ref or "").strip()
     component_ref = str(target_component_ref or "").strip()
+    lined_ditch_side = _lined_ditch_side_from_refs(target_drainage_ref, target_id)
     values = [float(station_start), float(station_end)]
     matching_region_count = 0
     matching_component_count = 0
+    matching_lined_ditch_count = 0
     for section in list(sections or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
         if station < station_start or station > station_end:
+            continue
+        if is_lined_ditch_target and not _ditch_surface_points(section, lined_ditch_side):
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="info",
+                    kind="skipped_missing_lined_ditch_profile",
+                    message="A station profile inside the target range was skipped because the target lined ditch is not active.",
+                    notes=f"{target_id};station={station:g};side={lined_ditch_side}",
+                )
+            )
             continue
         if is_component_target and component_ref and _section_component(section, component_ref) is None:
             diagnostics.append(
@@ -450,6 +569,8 @@ def _profile_stations(
             matching_region_count += 1
         if is_component_target and component_ref:
             matching_component_count += 1
+        if is_lined_ditch_target:
+            matching_lined_ditch_count += 1
         values.append(station)
     if is_region_target and region_ref and matching_region_count == 0:
         diagnostics.append(
@@ -469,6 +590,15 @@ def _profile_stations(
                 notes=f"{target_id};component={component_ref};range={station_start:g}->{station_end:g}",
             )
         )
+    if is_lined_ditch_target and matching_lined_ditch_count == 0:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="warning",
+                kind="lined_ditch_target_no_matching_source_profiles",
+                message="Lined ditch solid target has no Applied Section ditch profiles inside its range.",
+                notes=f"{target_id};side={lined_ditch_side};range={station_start:g}->{station_end:g}",
+            )
+        )
     ordered = _unique_sorted_floats(values)
     if is_region_target and len(ordered) >= 2:
         diagnostics.append(
@@ -485,6 +615,15 @@ def _profile_stations(
                 severity="info",
                 kind="component_boundary_cap_profiles",
                 message="Component solid target uses target start/end stations as capped boundary profiles.",
+                notes=f"{target_id};start={ordered[0]:g};end={ordered[-1]:g};profile_count={len(ordered)}",
+            )
+        )
+    if is_lined_ditch_target and len(ordered) >= 2:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="info",
+                kind="lined_ditch_boundary_cap_profiles",
+                message="Lined ditch solid target uses target start/end stations as capped boundary profiles.",
                 notes=f"{target_id};start={ordered[0]:g};end={ordered[-1]:g};profile_count={len(ordered)}",
             )
         )
@@ -592,10 +731,33 @@ def _is_region_target(target: SolidTargetRow) -> bool:
 
 
 def _is_component_target(target: SolidTargetRow) -> bool:
+    family = str(getattr(target, "target_family", "") or "").strip().lower()
     return (
         str(getattr(target, "scope_kind", "") or "").strip().lower() == "assembly_component"
-        or str(getattr(target, "target_family", "") or "").strip().lower() == "pavement_layer_body"
+        or family in {"pavement_layer_body", "subbase_body", "shoulder_body"}
     )
+
+
+def _is_lined_ditch_target(target: SolidTargetRow) -> bool:
+    return str(getattr(target, "target_family", "") or "").strip().lower() == "lined_ditch_body"
+
+
+def _lined_ditch_side(target: SolidTargetRow) -> str:
+    return _lined_ditch_side_from_refs(
+        str(getattr(target, "drainage_ref", "") or ""),
+        str(getattr(target, "target_id", "") or ""),
+        str(getattr(target, "component_ref", "") or ""),
+    )
+
+
+def _lined_ditch_side_from_refs(*values: str) -> str:
+    for value in values:
+        text = str(value or "").strip().lower()
+        if "right" in text:
+            return "right"
+        if "left" in text:
+            return "left"
+    return "left"
 
 
 def _section_component(section: AppliedSection, component_ref: str):
@@ -616,6 +778,296 @@ def _component_offsets(component) -> tuple[float, float]:
     if side == "right":
         return 0.0, -width
     return width * 0.5, -width * 0.5
+
+
+def _ditch_surface_points(section: AppliedSection, side: str) -> list[AppliedSectionPoint]:
+    expected_side = str(side or "").strip().lower()
+    rows = []
+    for point in list(getattr(section, "point_rows", []) or []):
+        if str(getattr(point, "point_role", "") or "").strip().lower() != "ditch_surface":
+            continue
+        offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        if expected_side == "left" and offset > 0.0:
+            rows.append(point)
+        elif expected_side == "right" and offset < 0.0:
+            rows.append(point)
+    return sorted(rows, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+
+
+def _ditch_component_for_side(section: AppliedSection, side: str, *, component_ref: str = ""):
+    expected_ref = str(component_ref or "").strip()
+    expected_side = str(side or "").strip().lower()
+    fallback = None
+    for component in list(getattr(section, "component_rows", []) or []):
+        if str(getattr(component, "kind", "") or "").strip().lower() != "ditch":
+            continue
+        if expected_ref and str(getattr(component, "component_id", "") or "").strip() == expected_ref:
+            return component
+        component_side = str(getattr(component, "side", "") or "center").strip().lower()
+        if component_side == expected_side or component_side in {"both", "center"}:
+            fallback = component
+    return fallback
+
+
+def _ditch_lining_thickness(component) -> float:
+    if component is None:
+        return 0.0
+    thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
+    if thickness > 0.0:
+        return thickness
+    params = dict(getattr(component, "parameters", {}) or {})
+    for key in ("lining_thickness", "wall_thickness"):
+        try:
+            value = max(float(params.get(key, 0.0) or 0.0), 0.0)
+        except Exception:
+            value = 0.0
+        if value > 0.0:
+            return value
+    return 0.0
+
+
+def _ditch_lining_join_policy(component) -> str:
+    params = dict(getattr(component, "parameters", {}) or {}) if component is not None else {}
+    raw = str(
+        params.get("lining_join_policy", "")
+        or params.get("lining_join", "")
+        or params.get("join_policy", "")
+        or "normal_average"
+    ).strip().lower()
+    if raw in {"miter", "mitre"}:
+        return "miter"
+    return "normal_average"
+
+
+def _ditch_lining_miter_limit(component) -> float:
+    params = dict(getattr(component, "parameters", {}) or {}) if component is not None else {}
+    for key in ("lining_miter_limit", "miter_limit"):
+        try:
+            value = float(params.get(key, 0.0) or 0.0)
+        except Exception:
+            value = 0.0
+        if value > 0.0:
+            return value
+    return 2.0
+
+
+def _lined_ditch_bottom_points(
+    frame: AppliedSectionFrame,
+    top_points: list[AppliedSectionPoint],
+    *,
+    thickness: float,
+    join_policy: str,
+    miter_limit: float,
+    side: str,
+    target_id: str,
+    station: float,
+) -> tuple[list[AppliedSectionPoint], list[DiagnosticMessage]]:
+    diagnostics: list[DiagnosticMessage] = []
+    points = list(top_points or [])
+    if len(points) < 2:
+        return [], [
+            DiagnosticMessage(
+                severity="error",
+                kind="degenerate_lined_ditch_offset_normal",
+                message="Lined ditch profile cannot compute lining offset normals from fewer than two surface points.",
+                notes=f"{target_id};station={station:g};side={side}",
+            )
+        ]
+    offset_points: list[tuple[float, float]] = []
+    for index, point in enumerate(points):
+        adjacent_normals = []
+        if index > 0:
+            adjacent_normals.append(_downward_segment_normal(points[index - 1], point))
+        if index < len(points) - 1:
+            adjacent_normals.append(_downward_segment_normal(point, points[index + 1]))
+        adjacent_normals = [normal for normal in adjacent_normals if normal is not None]
+        if not adjacent_normals:
+            return [], [
+                DiagnosticMessage(
+                    severity="error",
+                    kind="degenerate_lined_ditch_offset_normal",
+                    message="Lined ditch profile cannot compute a lining offset normal from coincident surface points.",
+                    notes=f"{target_id};station={station:g};side={side};index={index + 1}",
+                )
+            ]
+        if str(join_policy or "").strip().lower() == "miter" and 0 < index < len(points) - 1:
+            miter_point = _miter_join_point(
+                points[index - 1],
+                point,
+                points[index + 1],
+                thickness=thickness,
+                miter_limit=miter_limit,
+            )
+            if miter_point is not None:
+                offset_points.append(miter_point)
+                continue
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="warning",
+                    kind="lined_ditch_miter_limit_fallback",
+                    message="Lined ditch miter join exceeded its limit or could not be solved, so normal-average offset was used.",
+                    notes=f"{target_id};station={station:g};side={side};index={index + 1};miter_limit={miter_limit:g}",
+                )
+            )
+        normal_offset, normal_z = _average_downward_normal(adjacent_normals)
+        offset_points.append(
+            (
+                float(getattr(point, "lateral_offset", 0.0) or 0.0) + normal_offset * float(thickness),
+                float(getattr(point, "z", 0.0) or 0.0) + normal_z * float(thickness),
+            )
+        )
+    if str(join_policy or "").strip().lower() == "miter" and len(points) > 2:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="info",
+                kind="lined_ditch_miter_join_offset",
+                message="Lined ditch solid profile used miter join offset where permitted by the miter limit.",
+                notes=f"{target_id};station={station:g};side={side};points={len(points)};thickness={thickness:g};miter_limit={miter_limit:g}",
+            )
+        )
+    elif len(points) > 2:
+        diagnostics.append(
+            DiagnosticMessage(
+                severity="info",
+                kind="lined_ditch_polyline_normal_offset",
+                message="Lined ditch solid profile used multi-point polyline normal offset.",
+                notes=f"{target_id};station={station:g};side={side};points={len(points)};thickness={thickness:g}",
+            )
+        )
+    output: list[AppliedSectionPoint] = []
+    for index, (offset, z) in enumerate(offset_points, start=1):
+        output.append(
+            _point_at_offset_and_z(
+                frame,
+                offset,
+                z,
+                point_id=f"lined-ditch:{side}:bottom:{index}",
+            )
+        )
+    return output, diagnostics
+
+
+def _average_downward_normal(normals: list[tuple[float, float]]) -> tuple[float, float]:
+    normal_offset = sum(normal[0] for normal in normals)
+    normal_z = sum(normal[1] for normal in normals)
+    length = math.hypot(normal_offset, normal_z)
+    if length <= 1.0e-12:
+        normal_offset, normal_z = normals[0]
+    else:
+        normal_offset /= length
+        normal_z /= length
+    if normal_z > 0.0:
+        normal_offset *= -1.0
+        normal_z *= -1.0
+    return normal_offset, normal_z
+
+
+def _miter_join_point(
+    previous_point: AppliedSectionPoint,
+    point: AppliedSectionPoint,
+    next_point: AppliedSectionPoint,
+    *,
+    thickness: float,
+    miter_limit: float,
+) -> tuple[float, float] | None:
+    previous_normal = _downward_segment_normal(previous_point, point)
+    next_normal = _downward_segment_normal(point, next_point)
+    if previous_normal is None or next_normal is None:
+        return None
+    vertex = _section_point_2d(point)
+    previous_a = _offset_2d(previous_point, previous_normal, thickness)
+    previous_b = _offset_2d(point, previous_normal, thickness)
+    next_a = _offset_2d(point, next_normal, thickness)
+    next_b = _offset_2d(next_point, next_normal, thickness)
+    intersection = _line_intersection(previous_a, previous_b, next_a, next_b)
+    if intersection is None:
+        return None
+    miter_length = math.hypot(intersection[0] - vertex[0], intersection[1] - vertex[1])
+    limit = max(float(thickness or 0.0), 0.0) * max(float(miter_limit or 0.0), 0.0)
+    if limit <= 0.0 or miter_length > limit + 1.0e-9:
+        return None
+    return intersection
+
+
+def _section_point_2d(point: AppliedSectionPoint) -> tuple[float, float]:
+    return (
+        float(getattr(point, "lateral_offset", 0.0) or 0.0),
+        float(getattr(point, "z", 0.0) or 0.0),
+    )
+
+
+def _offset_2d(point: AppliedSectionPoint, normal: tuple[float, float], thickness: float) -> tuple[float, float]:
+    offset, z = _section_point_2d(point)
+    return offset + normal[0] * float(thickness), z + normal[1] * float(thickness)
+
+
+def _line_intersection(
+    a1: tuple[float, float],
+    a2: tuple[float, float],
+    b1: tuple[float, float],
+    b2: tuple[float, float],
+) -> tuple[float, float] | None:
+    ax = a2[0] - a1[0]
+    ay = a2[1] - a1[1]
+    bx = b2[0] - b1[0]
+    by = b2[1] - b1[1]
+    denominator = ax * by - ay * bx
+    if abs(denominator) <= 1.0e-12:
+        return None
+    cx = b1[0] - a1[0]
+    cy = b1[1] - a1[1]
+    ratio = (cx * by - cy * bx) / denominator
+    return a1[0] + ax * ratio, a1[1] + ay * ratio
+
+
+def _downward_segment_normal(start: AppliedSectionPoint, end: AppliedSectionPoint) -> tuple[float, float] | None:
+    start_offset = float(getattr(start, "lateral_offset", 0.0) or 0.0)
+    end_offset = float(getattr(end, "lateral_offset", 0.0) or 0.0)
+    start_z = float(getattr(start, "z", 0.0) or 0.0)
+    end_z = float(getattr(end, "z", 0.0) or 0.0)
+    delta_offset = end_offset - start_offset
+    delta_z = end_z - start_z
+    length = math.hypot(delta_offset, delta_z)
+    if length <= 1.0e-12:
+        return None
+    normal_offset = delta_z / length
+    normal_z = -delta_offset / length
+    if normal_z > 0.0:
+        normal_offset *= -1.0
+        normal_z *= -1.0
+    return normal_offset, normal_z
+
+
+def _point_at_offset_and_z(frame: AppliedSectionFrame, offset: float, z: float, *, point_id: str) -> AppliedSectionPoint:
+    theta = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(theta)
+    normal_y = math.cos(theta)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    return AppliedSectionPoint(
+        point_id=point_id,
+        x=base_x + normal_x * float(offset),
+        y=base_y + normal_y * float(offset),
+        z=float(z),
+        point_role="lined_ditch_bottom_surface",
+        lateral_offset=float(offset),
+    )
+
+
+def _lined_ditch_top_role(index: int, count: int) -> str:
+    if index == 0:
+        return "top_left"
+    if index == count - 1:
+        return "top_right"
+    return f"top_mid_{index:03d}"
+
+
+def _lined_ditch_bottom_role(index: int, count: int) -> str:
+    if index == 0:
+        return "bottom_right"
+    if index == count - 1:
+        return "bottom_left"
+    return f"bottom_mid_{index:03d}"
 
 
 def _unique_sorted_floats(values: list[float]) -> list[float]:

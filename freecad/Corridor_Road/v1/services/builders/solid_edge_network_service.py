@@ -6,11 +6,7 @@ import math
 from dataclasses import dataclass
 
 from ...common.diagnostics import DiagnosticMessage
-from ...models.result.applied_section_solid_profile import (
-    AppliedSectionSolidProfile,
-    AppliedSectionSolidProfileSet,
-    SOLID_PROFILE_ORIENTATION,
-)
+from ...models.result.applied_section_solid_profile import AppliedSectionSolidProfile, AppliedSectionSolidProfileSet
 from ...models.result.solid_edge_network import (
     SolidEdgeNetwork,
     SolidFaceRow,
@@ -22,13 +18,12 @@ COORDINATE_MATCH_TOLERANCE_M = 1.0e-6
 SHORT_EDGE_WARNING_THRESHOLD_M = 1.0e-4
 TINY_FACE_AREA_WARNING_THRESHOLD_M2 = 1.0e-8
 
-_PROFILE_ROLES = ("top_left", "top_right", "bottom_right", "bottom_left")
-_STRIP_FACE_SPECS = (
-    ("top", "top_left", "top_right"),
-    ("right_side", "top_right", "bottom_right"),
-    ("bottom", "bottom_right", "bottom_left"),
-    ("left_side", "bottom_left", "top_left"),
-)
+_FOUR_NODE_FACE_KIND_BY_ROLES = {
+    ("top_left", "top_right"): "top",
+    ("top_right", "bottom_right"): "right_side",
+    ("bottom_right", "bottom_left"): "bottom",
+    ("bottom_left", "top_left"): "left_side",
+}
 
 
 @dataclass(frozen=True)
@@ -104,10 +99,13 @@ def _profile_diagnostics(profiles: list[AppliedSectionSolidProfile], *, target_i
         )
         return diagnostics
     last_station = None
-    expected_roles = list(_PROFILE_ROLES)
+    expected_roles: list[str] = []
+    expected_orientation = ""
     for profile in profiles:
         profile_id = str(getattr(profile, "profile_id", "") or "")
         station = float(getattr(profile, "station", 0.0) or 0.0)
+        nodes = list(getattr(profile, "node_rows", []) or [])
+        roles = [str(getattr(node, "semantic_role", "") or "") for node in nodes]
         if last_station is not None and station <= last_station:
             diagnostics.append(
                 DiagnosticMessage(
@@ -118,6 +116,9 @@ def _profile_diagnostics(profiles: list[AppliedSectionSolidProfile], *, target_i
                 )
             )
         last_station = station
+        if not expected_roles:
+            expected_roles = roles
+            expected_orientation = str(getattr(profile, "orientation", "") or "")
         if not bool(getattr(profile, "is_closed", False)):
             diagnostics.append(
                 DiagnosticMessage(
@@ -127,22 +128,39 @@ def _profile_diagnostics(profiles: list[AppliedSectionSolidProfile], *, target_i
                     notes=f"{target_id};profile={profile_id}",
                 )
             )
-        if str(getattr(profile, "orientation", "") or "") != SOLID_PROFILE_ORIENTATION:
+        if len(nodes) < 4:
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="error",
+                    kind="insufficient_profile_nodes",
+                    message="Solid profile requires at least four nodes.",
+                    notes=f"{target_id};profile={profile_id};node_count={len(nodes)}",
+                )
+            )
+        if len(set(roles)) != len(roles):
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="error",
+                    kind="duplicate_profile_node_roles",
+                    message="Solid profile semantic node roles must be unique inside one profile.",
+                    notes=f"{target_id};profile={profile_id};roles={','.join(roles)}",
+                )
+            )
+        if str(getattr(profile, "orientation", "") or "") != expected_orientation:
             diagnostics.append(
                 DiagnosticMessage(
                     severity="error",
                     kind="invalid_profile_orientation",
-                    message="Profile orientation does not match the watertight solid profile contract.",
+                    message="Profile orientation does not match the first profile in this target.",
                     notes=f"{target_id};profile={profile_id}",
                 )
             )
-        roles = [str(getattr(node, "semantic_role", "") or "") for node in list(getattr(profile, "node_rows", []) or [])]
         if roles != expected_roles:
             diagnostics.append(
                 DiagnosticMessage(
                     severity="error",
                     kind="invalid_profile_node_order",
-                    message="Profile semantic node order must be top_left, top_right, bottom_right, bottom_left.",
+                    message="Profile semantic node order must match the first profile in this target.",
                     notes=f"{target_id};profile={profile_id};roles={','.join(roles)}",
                 )
             )
@@ -152,18 +170,22 @@ def _profile_diagnostics(profiles: list[AppliedSectionSolidProfile], *, target_i
 def _face_rows_for_profiles(profiles: list[AppliedSectionSolidProfile], *, target_id: str) -> list[SolidFaceRow]:
     rows: list[SolidFaceRow] = []
     for index, (start, end) in enumerate(zip(profiles, profiles[1:]), start=1):
-        start_nodes = _nodes_by_role(start)
-        end_nodes = _nodes_by_role(end)
-        for face_kind, role_a, role_b in _STRIP_FACE_SPECS:
+        start_nodes = list(getattr(start, "node_rows", []) or [])
+        end_nodes = list(getattr(end, "node_rows", []) or [])
+        for edge_index, (start_a, start_b, end_a, end_b) in enumerate(
+            zip(start_nodes, start_nodes[1:] + start_nodes[:1], end_nodes, end_nodes[1:] + end_nodes[:1]),
+            start=1,
+        ):
             node_ids = [
-                start_nodes[role_a].node_id,
-                start_nodes[role_b].node_id,
-                end_nodes[role_b].node_id,
-                end_nodes[role_a].node_id,
+                start_a.node_id,
+                start_b.node_id,
+                end_b.node_id,
+                end_a.node_id,
             ]
+            face_kind = _profile_edge_face_kind(start_a, start_b, len(start_nodes))
             rows.append(
                 _face_row(
-                    face_id=f"solid-face:{_safe_id(target_id)}:span:{index}:{face_kind}",
+                    face_id=f"solid-face:{_safe_id(target_id)}:span:{index}:{edge_index}:{face_kind}",
                     target_id=target_id,
                     face_kind=face_kind,
                     node_ids=node_ids,
@@ -197,6 +219,14 @@ def _face_rows_for_profiles(profiles: list[AppliedSectionSolidProfile], *, targe
         )
     )
     return rows
+
+
+def _profile_edge_face_kind(start_node, end_node, node_count: int) -> str:
+    start_role = str(getattr(start_node, "semantic_role", "") or "")
+    end_role = str(getattr(end_node, "semantic_role", "") or "")
+    if int(node_count or 0) == 4:
+        return _FOUR_NODE_FACE_KIND_BY_ROLES.get((start_role, end_role), "transition")
+    return "transition"
 
 
 def _face_row(

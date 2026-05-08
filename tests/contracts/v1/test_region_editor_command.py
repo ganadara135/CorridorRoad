@@ -10,7 +10,9 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
     V1RegionEditorTaskPanel,
     apply_v1_region_model,
+    drainage_model_ids,
     region_assembly_reference_warnings,
+    region_drainage_reference_warnings,
     region_structure_reference_warnings,
     region_preset_model_from_document,
     region_preset_names,
@@ -19,10 +21,12 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to_region_model
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
@@ -203,6 +207,80 @@ def test_region_structure_reference_warnings_report_missing_refs() -> None:
     assert warnings == ["WARNING: region:missing references missing structure_ref structure:missing."]
 
 
+def test_region_editor_lists_v1_drainage_ids_for_drainage_selector() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-region-editor",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow("drainage:side-ditch-left", "ditch", side="left"),
+                    DrainageElementRow("drainage:side-ditch-right", "ditch", side="right"),
+                ],
+            ),
+        )
+
+        assert drainage_model_ids(doc) == ["drainage:side-ditch-left", "drainage:side-ditch-right"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_drainage_reference_warnings_report_missing_refs() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-region-editor",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:known",
+                station_start=0.0,
+                station_end=50.0,
+                drainage_refs=["drainage:side-ditch-left"],
+            ),
+            RegionRow(
+                region_id="region:missing",
+                station_start=50.0,
+                station_end=100.0,
+                drainage_refs=["drainage:missing"],
+            ),
+        ],
+    )
+
+    warnings = region_drainage_reference_warnings(model, ["drainage:side-ditch-left"])
+
+    assert warnings == ["WARNING: region:missing references missing drainage_ref drainage:missing."]
+
+
+def test_region_validation_reports_missing_drainage_refs() -> None:
+    model = RegionModel(
+        schema_version=1,
+        project_id="proj-region-editor",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:drainage",
+                station_start=0.0,
+                station_end=100.0,
+                assembly_ref="assembly:basic-road",
+                drainage_refs=["drainage:missing"],
+            )
+        ],
+    )
+
+    result = region_editor_command.RegionValidationService().validate(
+        model,
+        known_assembly_refs=["assembly:basic-road"],
+        known_drainage_refs=["drainage:side-ditch-left"],
+    )
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["missing_drainage_ref"]
+
+
 def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
@@ -229,6 +307,38 @@ def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() ->
         assert rows[0].station_end == 120.0
         assert rows[1].station_start == 120.0
         assert rows[1].station_end == max(list(stationing.StationValues))
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_editor_attach_selected_drainage_ref_to_selected_region() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-region-editor",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow("drainage:side-ditch-right", "ditch", side="right"),
+                ],
+            ),
+        )
+        panel = V1RegionEditorTaskPanel(document=doc)
+        panel._add_region_row()
+        panel._table.selectRow(0)
+        panel._drainage_combo.setCurrentText("drainage:side-ditch-right")
+
+        panel._attach_selected_drainage_ref()
+        rows = panel._table_rows()
+
+        assert rows[0].drainage_refs == ["drainage:side-ditch-right"]
+        assert "Attached drainage:side-ditch-right" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
 

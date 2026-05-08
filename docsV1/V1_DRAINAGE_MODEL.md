@@ -271,6 +271,10 @@ Drainage constraints make grading and comparison rules explicit.
 
 It should not directly become the editable generated section geometry.
 
+Applied Section `ditch_surface` rows may carry `drainage_ref`, `component_ref`, and `side` as result context. Corridor surface generation consumes those source-tagged rows to create the separate drainage surface and carries the source ids into TIN provenance and diagnostics.
+
+Drainage quantity generation uses the same source-tagged Applied Section rows. First-slice quantity outputs report `drainage_ditch_length` by `drainage_ref` and report `drainage_flowline_length` when paired flowline or invert point ids exist.
+
 ## 15. Relationship to Earthwork and AI
 
 Drainage-aware comparisons should be able to consider:

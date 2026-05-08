@@ -11,6 +11,8 @@ SOLID_TARGET_FAMILIES = {
     "road_body_envelope",
     "region_body",
     "pavement_layer_body",
+    "subbase_body",
+    "shoulder_body",
     "lined_ditch_body",
     "structure_body",
 }

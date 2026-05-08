@@ -33,11 +33,30 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added a dedicated `Watertight Solids` project-tree group under `09_Outputs & Exchange` and routed `v1_watertight_solid_output` objects there.
 - Added Watertight Solid topology quality warnings for short topology edges and tiny face areas without blocking otherwise closed shell validation.
 - Added Watertight Solid Part-face triangulation fallback for validated topology faces that FreeCAD cannot create as a single polygon face.
+- Added a Watertight Solid target expansion plan that separates the road body envelope from physical component, drainage, and structure solid targets.
+- Added terrain-inclusive whole-road simulation as a master-plan goal for Watertight Solid output, including independent target validation before optional final composition.
+- Added separated Watertight Solid component target families for subbase and shoulder bodies, with blocked diagnostics for invalid component dimensions and clearer panel labels for target families.
+- Added first TS3 lined-ditch Watertight Solid target discovery from `ditch_surface` rows, including blocked diagnostics when lining material or thickness policy is missing.
+- Added first-slice lined-ditch Watertight Solid profile/build support from `ditch_surface` endpoints and preserved lining policy.
+- Added lined-ditch Watertight Solid provenance diagnostics and exchange source-context refs for drainage, component, material, lining thickness, profile counts, and source ditch points.
+- Added side-specific Watertight Solids panel display/focus context for built lined-ditch solids.
+- Added optional DrainageModel ownership handoff for lined-ditch Watertight Solid target discovery.
+- Added lined-ditch lining join controls with optional miter joins, miter-limit fallback diagnostics, and output provenance for join policy.
+- Added first-slice `V1DrainageModel` document object persistence and connected persisted DrainageModel ownership into Watertight Solid target discovery.
+- Added DrainageModel validation diagnostics for duplicate ids, invalid station ranges, missing policy ids, and missing policy references.
+- Added the first Drainage editor task panel with editable element, policy, and collection tables plus Validate/Apply persistence.
+- Added first-slice Drainage element authoring fields for side, Region ref, Assembly component ref, and side-specific ditch defaults, with persistence into `V1DrainageModel` and Watertight Solid lined-ditch ownership.
+- Added first-slice Region-to-Drainage handoff in the Region editor, including available Drainage element selection, `Attach Drainage`, and missing `drainage_ref` validation.
+- Added first-slice Applied Section Drainage handoff so active Region drainage refs are preserved on ditch component rows, generated `ditch_surface` points, Applied Section source refs, and `V1AppliedSectionSet` persistence.
+- Added first-slice Drainage Review with a read-only task panel, normalized `DrainageOutput` mapping, Region missing-ref warnings, Applied Section ditch context tables, and toolbar placement after Drainage.
+- Added first-slice Build Corridor drainage surface source handoff so drainage TIN vertices, provenance, quality rows, and surface build relations preserve Applied Section `drainage_ref` context.
+- Added first-slice Drainage quantity handoff so ditch and flowline lengths can be reported by `drainage_ref` with missing source diagnostics and Drainage Review summary support.
 
 ### Changed
 - Updated the `Drainage Control` Region preset to use `STA 100.000` as the drainage-control start station and the current final Stationing value as the closing Region start.
 - Renamed the Surface Transition action button in Build Corridor from `Create / Update Transition` to `Update`.
 - Clarified Region and Surface Transition design documentation so transition intent remains source-level and generated geometry remains output.
+- Changed lined-ditch Watertight Solid profile generation from vertical lining offset to section-normal polyline offset, preserving intermediate ditch surface points as solid profile nodes.
 
 ## [1.0.0] - 2026-05-02
 

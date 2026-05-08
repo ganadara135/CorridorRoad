@@ -21,6 +21,7 @@ from ...objects.obj_project import (
 from ..models.source.region_model import REGION_PRIMARY_KINDS, RegionModel, RegionRow
 from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_assembly import assembly_model_ids, list_v1_assembly_models, to_assembly_model
+from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_region import (
     create_or_update_v1_region_model_object,
     find_v1_region_model,
@@ -308,6 +309,7 @@ class V1RegionEditorTaskPanel:
         self.region_obj = find_v1_region_model(self.document)
         self._assembly_refs = assembly_model_ids(self.document)
         self._structure_refs = structure_model_ids(self.document)
+        self._drainage_refs = drainage_model_ids(self.document)
         self._station_values = _document_station_values(self.document)
         self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
         self.form = self._build_ui()
@@ -388,6 +390,16 @@ class V1RegionEditorTaskPanel:
         sort_button = QtWidgets.QPushButton("Sort by Station")
         sort_button.clicked.connect(self._sort_rows)
         edit_row.addWidget(sort_button)
+        edit_row.addSpacing(12)
+        edit_row.addWidget(QtWidgets.QLabel("Drainage:"))
+        self._drainage_combo = QtWidgets.QComboBox()
+        self._drainage_combo.setEditable(True)
+        self._drainage_combo.addItem("")
+        self._drainage_combo.addItems(self._drainage_refs)
+        edit_row.addWidget(self._drainage_combo)
+        attach_drainage_button = QtWidgets.QPushButton("Attach Drainage")
+        attach_drainage_button.clicked.connect(self._attach_selected_drainage_ref)
+        edit_row.addWidget(attach_drainage_button)
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
 
@@ -551,9 +563,17 @@ class V1RegionEditorTaskPanel:
                 model,
                 known_assembly_refs=self._assembly_refs,
                 known_structure_refs=self._structure_refs,
+                known_drainage_refs=self._drainage_refs,
             )
             self._set_status(
-                _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+                _format_validation_result(
+                    result,
+                    model,
+                    self._assembly_refs,
+                    self._structure_refs,
+                    self._drainage_refs,
+                    station_errors=station_errors,
+                )
             )
         except Exception as exc:
             self._set_status(f"Region validation failed:\n{exc}")
@@ -566,16 +586,31 @@ class V1RegionEditorTaskPanel:
                 model,
                 known_assembly_refs=self._assembly_refs,
                 known_structure_refs=self._structure_refs,
+                known_drainage_refs=self._drainage_refs,
             )
             if result.status == "error" or station_errors:
                 self._set_status(
-                    _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+                    _format_validation_result(
+                        result,
+                        model,
+                        self._assembly_refs,
+                        self._structure_refs,
+                        self._drainage_refs,
+                        station_errors=station_errors,
+                    )
                 )
                 _show_message(self.form, "Regions", "Regions were not applied because validation has errors.")
                 return False
             self.region_obj = apply_v1_region_model(document=self.document, region_model=model)
             self._set_status(
-                _format_validation_result(result, model, self._assembly_refs, self._structure_refs, station_errors=station_errors)
+                _format_validation_result(
+                    result,
+                    model,
+                    self._assembly_refs,
+                    self._structure_refs,
+                    self._drainage_refs,
+                    station_errors=station_errors,
+                )
                 + f"\n\nApplied to: {self.region_obj.Label}"
             )
             _show_message(self.form, "Regions", f"Regions have been applied.\nRows: {len(model.region_rows)}")
@@ -681,7 +716,28 @@ class V1RegionEditorTaskPanel:
                     item.setText("")
 
     def _set_status(self, text: str) -> None:
-        self._status.setPlainText(str(text or ""))
+            self._status.setPlainText(str(text or ""))
+
+    def _attach_selected_drainage_ref(self) -> None:
+        drainage_ref = str(self._drainage_combo.currentText() if hasattr(self, "_drainage_combo") else "" or "").strip()
+        if not drainage_ref:
+            self._set_status("Select a Drainage element before attaching it to a Region.")
+            return
+        row_index = self._table.currentRow()
+        if row_index < 0:
+            row_index = 0 if self._table.rowCount() else -1
+        if row_index < 0:
+            self._set_status("Add or select a Region row before attaching Drainage.")
+            return
+        existing = _split_refs(_item_text(self._table, row_index, 6))
+        if drainage_ref not in existing:
+            existing.append(drainage_ref)
+        item = self._table.item(row_index, 6)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            self._table.setItem(row_index, 6, item)
+        item.setText(_join_refs(existing))
+        self._set_status(f"Attached {drainage_ref} to Region row {row_index + 1}.")
 
 
 class CmdV1RegionEditor:
@@ -802,6 +858,37 @@ def region_structure_reference_warnings(region_model: RegionModel, structure_ref
     return warnings
 
 
+def drainage_model_ids(document) -> list[str]:
+    """Return v1 Drainage element ids available for Region drainage_ref selection."""
+
+    drainage_obj = find_v1_drainage_model(document)
+    model = to_drainage_model(drainage_obj)
+    if model is None:
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for row in list(getattr(model, "element_rows", []) or []):
+        drainage_id = str(getattr(row, "drainage_element_id", "") or "").strip()
+        if not drainage_id or drainage_id in seen:
+            continue
+        seen.add(drainage_id)
+        output.append(drainage_id)
+    return output
+
+
+def region_drainage_reference_warnings(region_model: RegionModel, drainage_refs: list[str]) -> list[str]:
+    """Return Region editor warnings for Drainage refs that do not exist yet."""
+
+    known = {str(value).strip() for value in list(drainage_refs or []) if str(value).strip()}
+    warnings: list[str] = []
+    for row in list(getattr(region_model, "region_rows", []) or []):
+        for drainage_ref in list(getattr(row, "drainage_refs", []) or []):
+            drainage_ref_text = str(drainage_ref or "").strip()
+            if drainage_ref_text and drainage_ref_text not in known:
+                warnings.append(f"WARNING: {row.region_id} references missing drainage_ref {drainage_ref_text}.")
+    return warnings
+
+
 def _preset_region_rows(
     preset: dict,
     *,
@@ -886,9 +973,10 @@ def _format_validation_result(
     region_model: RegionModel | None = None,
     assembly_refs: list[str] | None = None,
     structure_refs: list[str] | None = None,
+    drainage_refs: list[str] | None = None,
     station_errors: list[str] | None = None,
 ) -> str:
-    del region_model, assembly_refs, structure_refs
+    del region_model, assembly_refs, structure_refs, drainage_refs
     station_rows = list(station_errors or [])
     status = "error" if station_rows else (getattr(result, "status", "") or "unknown")
     lines = [f"Validation status: {status}"]

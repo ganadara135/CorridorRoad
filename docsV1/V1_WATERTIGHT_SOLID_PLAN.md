@@ -6,6 +6,8 @@ Baseline: `docsV1/V1_MASTER_PLAN.md`
 
 Detailed implementation sequence: `docsV1/V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md`
 
+Target-family expansion sequence: `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md`
+
 ## 1. Purpose
 
 This document defines how CorridorRoad v1 should produce watertight solid outputs from accepted corridor results.

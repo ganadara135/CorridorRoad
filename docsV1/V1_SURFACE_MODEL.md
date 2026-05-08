@@ -125,7 +125,9 @@ Use surface representation for:
 - drainage grading surfaces where the result is terrain-like, such as ditch flowline influence, swale grading, or channel side grading
 - TIN preview and review meshes derived from normalized surface data
 
-Ditch drainage surfaces should derive from the point roles and shape rules in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+Ditch drainage surfaces should derive from Applied Section `ditch_surface` point roles and the shape rules in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+
+When those point rows carry `drainage_ref`, `component_ref`, and `side`, Build Corridor must preserve that context in drainage TIN provenance and diagnostics. It should not infer drainage design intent from preview meshes.
 
 Do not use surface representation as the durable model for:
 

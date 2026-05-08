@@ -387,6 +387,7 @@ def _build_surface_from_point_grid(
 ) -> TINSurface:
     vertices: list[TINVertex] = []
     triangles: list[TINTriangle] = []
+    source_summary = _point_grid_source_summary(point_grid)
     for section_index, points in enumerate(point_grid):
         section = sections[section_index]
         for point_index, point in enumerate(points):
@@ -397,6 +398,7 @@ def _build_surface_from_point_grid(
                     y=float(getattr(point, "y", 0.0) or 0.0),
                     z=float(getattr(point, "z", 0.0) or 0.0),
                     source_point_ref=f"{getattr(section, 'applied_section_id', '')}:{getattr(point, 'point_id', '')}",
+                    notes=_point_source_notes(point),
                 )
             )
     for section_index in range(len(point_grid) - 1):
@@ -417,10 +419,13 @@ def _build_surface_from_point_grid(
         surface_id=request.surface_id,
         surface_kind=surface_kind,
         label=f"{label_prefix} - {request.corridor.corridor_id}",
-        source_refs=[
-            str(getattr(request.corridor, "corridor_id", "") or ""),
-            str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-        ],
+        source_refs=_unique_text_rows(
+            [
+                str(getattr(request.corridor, "corridor_id", "") or ""),
+                str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+            ]
+            + source_summary["drainage_refs"]
+        ),
         vertex_rows=vertices,
         triangle_rows=triangles,
         boundary_refs=[f"{request.surface_id}:section-point-boundary"],
@@ -433,16 +438,101 @@ def _build_surface_from_point_grid(
             TINQualityRow(f"{request.surface_id}:right_width_max", "right_width_max", max(right_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
+            TINQualityRow(f"{request.surface_id}:component_ref_count", "component_ref_count", len(source_summary["component_refs"]), "count"),
+            TINQualityRow(f"{request.surface_id}:drainage_ref_count", "drainage_ref_count", len(source_summary["drainage_refs"]), "count"),
+            TINQualityRow(
+                f"{request.surface_id}:drainage_source_missing_point_count",
+                "drainage_source_missing_point_count",
+                source_summary["drainage_source_missing_point_count"],
+                "count",
+            ),
         ],
         provenance_rows=[
             TINProvenanceRow(
                 provenance_id=f"{request.surface_id}:provenance:applied-section-points",
                 source_kind="applied_section_points",
                 source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-                notes=f"Corridor {surface_kind} TIN built from evaluated AppliedSection point rows.",
+                notes=_point_grid_provenance_notes(surface_kind, source_summary),
             )
         ],
     )
+
+
+def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, object]:
+    component_refs: list[str] = []
+    drainage_refs: list[str] = []
+    sides: list[str] = []
+    missing_drainage_ref_count = 0
+    ditch_point_count = 0
+    for points in list(point_grid or []):
+        for point in list(points or []):
+            role = str(getattr(point, "point_role", "") or "")
+            component_ref = str(getattr(point, "component_ref", "") or "").strip()
+            drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
+            side = str(getattr(point, "side", "") or "").strip()
+            if component_ref:
+                component_refs.append(component_ref)
+            if drainage_ref:
+                drainage_refs.append(drainage_ref)
+            if side:
+                sides.append(side)
+            if role == "ditch_surface":
+                ditch_point_count += 1
+                if not drainage_ref:
+                    missing_drainage_ref_count += 1
+    return {
+        "component_refs": _unique_text_rows(component_refs),
+        "drainage_refs": _unique_text_rows(drainage_refs),
+        "sides": _unique_text_rows(sides),
+        "drainage_source_missing_point_count": missing_drainage_ref_count,
+        "ditch_point_count": ditch_point_count,
+    }
+
+
+def _point_grid_provenance_notes(surface_kind: str, source_summary: dict[str, object]) -> str:
+    notes = f"Corridor {surface_kind} TIN built from evaluated AppliedSection point rows."
+    drainage_refs = list(source_summary.get("drainage_refs", []) or [])
+    component_refs = list(source_summary.get("component_refs", []) or [])
+    sides = list(source_summary.get("sides", []) or [])
+    missing_count = int(source_summary.get("drainage_source_missing_point_count", 0) or 0)
+    if drainage_refs:
+        notes += f" drainage_refs={','.join(drainage_refs)}."
+    if component_refs:
+        notes += f" component_refs={','.join(component_refs)}."
+    if sides:
+        notes += f" sides={','.join(sides)}."
+    if missing_count:
+        notes += f" missing_drainage_refs={missing_count}."
+    return notes
+
+
+def _point_source_notes(point) -> str:
+    rows = []
+    role = str(getattr(point, "point_role", "") or "").strip()
+    component_ref = str(getattr(point, "component_ref", "") or "").strip()
+    side = str(getattr(point, "side", "") or "").strip()
+    drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
+    if role:
+        rows.append(f"role={role}")
+    if component_ref:
+        rows.append(f"component_ref={component_ref}")
+    if side:
+        rows.append(f"side={side}")
+    if drainage_ref:
+        rows.append(f"drainage_ref={drainage_ref}")
+    return ";".join(rows)
+
+
+def _unique_text_rows(values) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def _build_daylight_surface_from_side_slope_points(
@@ -1592,6 +1682,9 @@ def _interpolate_applied_section_points(first, second, ratio: float) -> list[App
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=first_role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+                component_ref=_interpolated_point_context(first_point, second_point, "component_ref"),
+                side=_interpolated_point_context(first_point, second_point, "side"),
+                drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
             )
         )
     return output
@@ -1623,9 +1716,24 @@ def _interpolate_matching_role_points(first, second, *, role: str, ratio: float)
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+                component_ref=_interpolated_point_context(first_point, second_point, "component_ref"),
+                side=_interpolated_point_context(first_point, second_point, "side"),
+                drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
             )
         )
     return output
+
+
+def _interpolated_point_context(first_point, second_point, attr: str) -> str:
+    first_value = str(getattr(first_point, attr, "") or "").strip()
+    second_value = str(getattr(second_point, attr, "") or "").strip()
+    if first_value == second_value:
+        return first_value
+    if first_value and not second_value:
+        return first_value
+    if second_value and not first_value:
+        return second_value
+    return ""
 
 
 def _role_points_for_interpolation(section, *, role: str) -> list[object]:
