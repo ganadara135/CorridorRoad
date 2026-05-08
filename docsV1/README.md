@@ -71,6 +71,9 @@ Baseline document:
 - [V1_EXCHANGE_OUTPUT_SCHEMA.md](./V1_EXCHANGE_OUTPUT_SCHEMA.md)
 - [V1_AI_ASSIST_PLAN.md](./V1_AI_ASSIST_PLAN.md)
 - [V1_AI_OUTPUT_SCHEMA.md](./V1_AI_OUTPUT_SCHEMA.md)
+- [V1_WATERTIGHT_SOLID_PLAN.md](./V1_WATERTIGHT_SOLID_PLAN.md)
+- [V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md](./V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md)
+- [V1_WATERTIGHT_SOLID_UI_EXECUTION_PLAN.md](./V1_WATERTIGHT_SOLID_UI_EXECUTION_PLAN.md)
 - [V1_PLAN_PROFILE_SHEET_PLAN.md](./V1_PLAN_PROFILE_SHEET_PLAN.md)
 - [V1_PLAN_OUTPUT_SCHEMA.md](./V1_PLAN_OUTPUT_SCHEMA.md)
 - [V1_PROFILE_OUTPUT_SCHEMA.md](./V1_PROFILE_OUTPUT_SCHEMA.md)
@@ -102,15 +105,19 @@ Preferred review workflow:
 - use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
+- use `Watertight Solids` as the final toolbar stage after `AI Assist`; it should remain disabled or blocked until Build Corridor has produced accepted corridor prerequisites
 - use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
+- use the representation strategy table in `V1_MASTER_PLAN.md` when deciding whether a subsystem should be semantic-first, geometry-first, topology-first, or contract-first
+- generate watertight solids through a topology-first pipeline: closed semantic Applied Section profiles, deterministic edge networks, face adjacency, shell validation, then Part solid geometry
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical
 - in the active workbench layout, keep the `Corridor` stage centered on `Build Corridor` rather than exposing low-level intermediate generators
 - in the active workbench layout, expose `Outputs & Exchange` and `AI Assist` as explicit top-level stages even before their detailed v1-native hubs are fully implemented
+- in the active workbench layout, place `Watertight Solids` after `AI Assist` as the final stage and gate it on successful Build Corridor prerequisites
 - in the active workbench layout, keep `Survey & Surface` aligned to the TIN-first strategy and avoid exposing DEM-first terrain workflow as a primary stage action
 
 UX reset rule:

@@ -14,9 +14,76 @@ ensure_package_on_sys_path()
 install_virtual_path_mappings(eager=True)
 
 _WB_ICON_PATH = icon_path("corridorroad_workbench.svg")
+_WORKBENCH_BASE = getattr(Gui, "Workbench", object)
 
 
-class CorridorRoadWorkbench(Gui.Workbench):
+def corridorroad_workflow_command_groups():
+    """Return the v1-oriented top-level command groups used by the workbench."""
+
+    return {
+        "project": [
+            "CorridorRoad_ProjectSetup",
+        ],
+        "terrain": [
+            "CorridorRoad_V1EditTIN",
+        ],
+        "alignment": [
+            "CorridorRoad_V1EditAlignment",
+        ],
+        "station_profile": [
+            "CorridorRoad_V1GenerateStations",
+            "CorridorRoad_V1EditProfile",
+            "CorridorRoad_ReviewPlanProfile",
+        ],
+        "assembly_region": [
+            "CorridorRoad_V1EditAssembly",
+            "CorridorRoad_V1EditStructures",
+            "CorridorRoad_V1EditRegions",
+        ],
+        "drainage": [
+            "CorridorRoad_V1EditDrainage",
+        ],
+        "corridor": [
+            "CorridorRoad_V1AppliedSections",
+            "CorridorRoad_GenerateCorridor",
+        ],
+        "review": [
+            "CorridorRoad_ViewCrossSection",
+            "CorridorRoad_GenerateCutFillCalc",
+        ],
+        "output": [
+            "CorridorRoad_OutputsExchange",
+            "CorridorRoad_V1StructureOutput",
+        ],
+        "ai": [
+            "CorridorRoad_AIAssist",
+        ],
+        "watertight_solid": [
+            "CorridorRoad_V1WatertightSolids",
+        ],
+    }
+
+
+def corridorroad_workflow_toolbar_commands():
+    """Return toolbar command ids in the intended workflow order."""
+
+    groups = corridorroad_workflow_command_groups()
+    return (
+        groups["project"]
+        + groups["terrain"]
+        + groups["alignment"]
+        + groups["station_profile"]
+        + groups["assembly_region"]
+        + groups["drainage"]
+        + groups["corridor"]
+        + groups["review"]
+        + groups["output"]
+        + groups["ai"]
+        + groups["watertight_solid"]
+    )
+
+
+class CorridorRoadWorkbench(_WORKBENCH_BASE):
     MenuText = "CorridorRoad"
     ToolTip = "CorridorRoad Workbench for road corridor design, review, and outputs"
     Icon = _WB_ICON_PATH if os.path.isfile(_WB_ICON_PATH) else ""
@@ -48,57 +115,22 @@ class CorridorRoadWorkbench(Gui.Workbench):
         import freecad.Corridor_Road.commands.cmd_generate_cut_fill_calc  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_outputs_exchange  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_ai_assist  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_watertight_solids  # noqa: F401
 
-        project_commands = [
-            "CorridorRoad_ProjectSetup",
-        ]
-        terrain_commands = [
-            "CorridorRoad_V1EditTIN",
-        ]
-        alignment_commands = [
-            "CorridorRoad_V1EditAlignment",
-        ]
-        station_profile_commands = [
-            "CorridorRoad_V1GenerateStations",
-            "CorridorRoad_V1EditProfile",
-            "CorridorRoad_ReviewPlanProfile",
-        ]
-        assembly_region_commands = [
-            "CorridorRoad_V1EditAssembly",
-            "CorridorRoad_V1EditStructures",
-            "CorridorRoad_V1EditRegions",
-        ]
-        drainage_commands = [
-            "CorridorRoad_V1EditDrainage",
-        ]
-        corridor_commands = [
-            "CorridorRoad_V1AppliedSections",
-            "CorridorRoad_GenerateCorridor",
-        ]
-        review_commands = [
-            "CorridorRoad_ViewCrossSection",
-            "CorridorRoad_GenerateCutFillCalc",
-        ]
-        output_commands = [
-            "CorridorRoad_OutputsExchange",
-            "CorridorRoad_V1StructureOutput",
-        ]
-        ai_commands = [
-            "CorridorRoad_AIAssist",
-        ]
+        groups = corridorroad_workflow_command_groups()
+        project_commands = groups["project"]
+        terrain_commands = groups["terrain"]
+        alignment_commands = groups["alignment"]
+        station_profile_commands = groups["station_profile"]
+        assembly_region_commands = groups["assembly_region"]
+        drainage_commands = groups["drainage"]
+        corridor_commands = groups["corridor"]
+        review_commands = groups["review"]
+        output_commands = groups["output"]
+        ai_commands = groups["ai"]
+        watertight_solid_commands = groups["watertight_solid"]
 
-        workflow_toolbar_commands = (
-            project_commands
-            + terrain_commands
-            + alignment_commands
-            + station_profile_commands
-            + assembly_region_commands
-            + drainage_commands
-            + corridor_commands
-            + review_commands
-            + output_commands
-            + ai_commands
-        )
+        workflow_toolbar_commands = corridorroad_workflow_toolbar_commands()
 
         self.appendToolbar("CorridorRoad", list(workflow_toolbar_commands))
 
@@ -112,6 +144,7 @@ class CorridorRoadWorkbench(Gui.Workbench):
         self.appendMenu(["CorridorRoad", "Review"], list(review_commands))
         self.appendMenu(["CorridorRoad", "Outputs & Exchange"], list(output_commands))
         self.appendMenu(["CorridorRoad", "AI Assist"], list(ai_commands))
+        self.appendMenu(["CorridorRoad", "Watertight Solids"], list(watertight_solid_commands))
 
     def ContextMenu(self, recipient):
         try:
@@ -159,6 +192,8 @@ class CorridorRoadWorkbench(Gui.Workbench):
 
 
 def register_workbench():
+    if not hasattr(Gui, "addWorkbench") or not hasattr(Gui, "Workbench"):
+        return
     if getattr(Gui, "_corridorroad_wb_registered", False):
         return
     Gui.addWorkbench(CorridorRoadWorkbench())

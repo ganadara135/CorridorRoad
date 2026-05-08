@@ -92,6 +92,7 @@ V1_TREE_DXF = "v1_dxf"
 V1_TREE_LANDXML = "v1_landxml"
 V1_TREE_IFC = "v1_ifc"
 V1_TREE_EXCHANGE_PACKAGES = "v1_exchange_packages"
+V1_TREE_WATERTIGHT_SOLIDS = "v1_watertight_solids"
 V1_TREE_AI_SUGGESTIONS = "v1_ai_suggestions"
 V1_TREE_AI_CHECKS = "v1_ai_checks"
 V1_TREE_AI_GENERATED_ALTERNATIVES = "v1_ai_generated_alternatives"
@@ -176,6 +177,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_LANDXML, "LandXML", "CRV1_LandXML"),
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_IFC, "IFC", "CRV1_IFC"),
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_EXCHANGE_PACKAGES, "Exchange Packages", "CRV1_Exchange_Packages"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_WATERTIGHT_SOLIDS, "Watertight Solids", "CRV1_Watertight_Solids"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_SUGGESTIONS, "Suggestions", "CRV1_AI_Suggestions"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_CHECKS, "Checks", "CRV1_AI_Checks"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_GENERATED_ALTERNATIVES, "Generated Alternatives", "CRV1_AI_Generated_Alternatives"),
@@ -1236,6 +1238,7 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1WatertightSolidOutput",
         ),
         name_prefixes=(
             "SheetOutput",
@@ -1244,6 +1247,7 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1WatertightSolidOutput",
         ),
     )
 
@@ -1294,6 +1298,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_applied_section_show_preview":
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
+    if record_kind == "v1_watertight_solid_output":
+        return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":
@@ -1383,6 +1389,8 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_IFC, None)
         if _is_type(child, proxy_types=("ExchangePackage",), name_prefixes=("ExchangePackage",)):
             return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+        if _is_type(child, proxy_types=("V1WatertightSolidOutput",), name_prefixes=("V1WatertightSolidOutput",)):
+            return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
         return tree.get(V1_TREE_OUTPUTS_EXCHANGE, None)
     if _is_v1_ai_assist(child):
         if _is_type(child, proxy_types=("AISuggestion",), name_prefixes=("AISuggestion",)):

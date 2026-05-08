@@ -10,6 +10,8 @@ from .section_output_mapper import SectionOutputMapper
 from .surface_output_mapper import SurfaceOutputMapper
 from .tin_mesh_preview_mapper import TINMeshPreviewMapper, TINMeshPreviewResult
 from .tin_review_summary import enrich_tin_review_preview, format_tin_review_summary
+from .watertight_solid_part_mapper import WatertightSolidPartMapper, WatertightSolidPartMappingResult
+from .watertight_solid_output_mapper import WatertightSolidOutputMapper, WatertightSolidOutputMappingRequest
 
 __all__ = [
     "CrossSectionDrawingMapper",
@@ -23,6 +25,10 @@ __all__ = [
     "SurfaceOutputMapper",
     "TINMeshPreviewMapper",
     "TINMeshPreviewResult",
+    "WatertightSolidPartMapper",
+    "WatertightSolidPartMappingResult",
+    "WatertightSolidOutputMapper",
+    "WatertightSolidOutputMappingRequest",
     "enrich_tin_review_preview",
     "format_tin_review_summary",
 ]

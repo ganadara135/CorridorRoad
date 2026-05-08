@@ -22,6 +22,12 @@ from .structure_solid_output import (
     StructureSolidOutputRow,
     StructureSolidSegmentRow,
 )
+from .watertight_solid_output import (
+    WatertightSolidOutput,
+    WatertightSolidOutputDiagnosticRow,
+    WatertightSolidOutputRow,
+    WatertightSolidSegmentRow,
+)
 
 __all__ = [
     "ContextReviewOutput",
@@ -44,4 +50,8 @@ __all__ = [
     "StructureSolidOutput",
     "StructureSolidOutputRow",
     "StructureSolidSegmentRow",
+    "WatertightSolidOutput",
+    "WatertightSolidOutputDiagnosticRow",
+    "WatertightSolidOutputRow",
+    "WatertightSolidSegmentRow",
 ]

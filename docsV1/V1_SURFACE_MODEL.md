@@ -152,8 +152,11 @@ Use solid representation for:
 
 Surface and solid outputs may be derived from the same `AppliedSectionSet`, but they must not replace each other.
 
+Use the representation strategy table in `docsV1/V1_MASTER_PLAN.md` as the baseline for deciding whether a subsystem is semantic-first, geometry-first, topology-first, or contract-first.
+
 - A surface is an open height field or TIN-family result.
 - A solid is a closed or component-like body with thickness, material, volume, or asset identity.
+- Watertight solid generation is topology-first and should derive from closed semantic profiles, edge networks, face adjacency, caps, and shell validation before Part solid geometry is accepted.
 - Viewer meshes generated from either one are presentation artifacts, not source truth.
 - Editing must return to source models, replayable TIN edits, region rules, assembly rules, or explicit overrides rather than mutating generated surface or solid display geometry.
 

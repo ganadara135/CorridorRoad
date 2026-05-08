@@ -47,6 +47,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_SURFACES,
     V1_TREE_SURVEY_POINTS,
     V1_TREE_TIN_REVIEW,
+    V1_TREE_WATERTIGHT_SOLIDS,
     V1_TREE_PLAN_PROFILE_REVIEW,
     V1_TREE_PROFILES,
     CorridorRoadProject,
@@ -335,10 +336,28 @@ def test_resolve_v1_target_container_routes_output_exchange_objects() -> None:
             ("LandXMLExport", V1_TREE_LANDXML),
             ("IFCExport", V1_TREE_IFC),
             ("ExchangePackage", V1_TREE_EXCHANGE_PACKAGES),
+            ("V1WatertightSolidOutput", V1_TREE_WATERTIGHT_SOLIDS),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)
             assert resolve_v1_target_container(project, obj) == tree[key]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_resolve_v1_target_container_routes_watertight_solid_record_kind() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        obj = doc.addObject("App::FeaturePython", "SomeSolidOutput")
+        obj.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        obj.CRRecordKind = "v1_watertight_solid_output"
+
+        folder = route_to_v1_tree(project, obj)
+
+        assert folder == tree[V1_TREE_WATERTIGHT_SOLIDS]
+        assert obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert tree[V1_TREE_WATERTIGHT_SOLIDS].Label == "Watertight Solids"
     finally:
         App.closeDocument(doc.Name)
 

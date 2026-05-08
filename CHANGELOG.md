@@ -14,6 +14,25 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
 - Added Surface Transition controls in Build Corridor for selecting a Region STA, adjusting transition spacing, reviewing derived sample counts, enabling/disabling transition ranges, and updating transition records.
 - Added wiki documentation for Region continuity, Region Boundary review, Surface Transition spacing/update workflow, and troubleshooting guidance.
+- Added v1 topology-first Watertight Solid planning and implementation sequencing for final toolbar placement, Build Corridor prerequisite gating, closed semantic profiles, edge networks, shell validation, target families, UI, tests, and output flow.
+- Added a v1 representation strategy baseline table covering semantic-first, geometry-first, topology-first, and contract-first subsystem decisions.
+- Added the initial `Watertight Solids` final-stage command placeholder after `AI Assist`, with Build Corridor prerequisite checks and a disabled WS0 panel shell.
+- Added `SolidTargetModel` and target discovery for Watertight Solids so whole-corridor and Region body targets appear in the final-stage panel with availability and diagnostic status.
+- Added Applied Section solid profile contracts and a closed-profile builder for Watertight Solids, including Region boundary interpolation and fallback-depth diagnostics without mutating Applied Sections.
+- Added Watertight Solid edge-network contracts and topology validation for deterministic face rows, canonical edge usage, closed shell readiness, and profile-order blocking before geometry mapping.
+- Added Watertight Solid Part mapping for validated topology networks, producing positive-volume FreeCAD Part solids while blocking invalid topology before shape creation.
+- Added Watertight Solid output contracts, output mapping, segment metadata, diagnostic preservation, and a v1 output object bridge that can store generated Part solid shapes and round-trip summary rows.
+- Added Region-body Watertight Solid generation support that filters Applied Section profiles to the selected Region, inserts capped boundary profiles, skips other-Region station profiles with diagnostics, and produces independent watertight Region outputs.
+- Added first-slice Watertight Solid component target expansion for pavement-layer/subbase targets, component-scoped profile building from Applied Section width/thickness semantics, independent component solid validation/output, and StructureModel body target discovery for review.
+- Added Watertight Solid quantity and exchange handoff, including accepted solid volume fragments, total volume aggregation, separate exchange payload rows/segments, source context rows, and metadata that keeps watertight solids distinct from structure solids.
+- Added first-slice Watertight Solids panel interaction for selecting a discovered target row, enabling `Validate` only for available targets, and tracking per-target `Enabled` state.
+- Added Watertight Solids panel validation execution that runs closed-profile and edge-network builders for the selected target and displays validation status plus profile, face, and edge counts without creating Part geometry.
+- Added Watertight Solids `Build Selected` execution for validated targets, creating/updating `V1WatertightSolidOutput` objects with generated Part solid shapes, volume, output object, and build status displayed in the panel.
+- Added Watertight Solids `Build Enabled` execution for bulk-building enabled available targets independently, with per-target output objects and a bulk summary of built, failed, target, and volume totals.
+- Added Watertight Solids display controls for showing, hiding, and focusing built output solids, including row double-click focus and headless-safe status reporting when GUI visibility APIs are unavailable.
+- Added a dedicated `Watertight Solids` project-tree group under `09_Outputs & Exchange` and routed `v1_watertight_solid_output` objects there.
+- Added Watertight Solid topology quality warnings for short topology edges and tiny face areas without blocking otherwise closed shell validation.
+- Added Watertight Solid Part-face triangulation fallback for validated topology faces that FreeCAD cannot create as a single polygon face.
 
 ### Changed
 - Updated the `Drainage Control` Region preset to use `STA 100.000` as the drainage-control start station and the current final Stationing value as the closing Region start.

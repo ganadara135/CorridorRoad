@@ -9,6 +9,7 @@ from ...models.output.quantity_output import (
     QuantityOutput,
     QuantitySummaryRow,
 )
+from ...models.output.watertight_solid_output import WatertightSolidOutput
 from ...models.result.quantity_model import QuantityModel
 
 
@@ -93,4 +94,82 @@ class QuantityOutputMapper:
             comparison_rows=comparison_rows,
             summary_rows=summary_rows,
             diagnostic_rows=list(quantity_model.diagnostic_rows),
+        )
+
+    def map_watertight_solid_output(self, watertight_solid_output: WatertightSolidOutput) -> QuantityOutput:
+        """Create volume quantity fragments from accepted watertight solid outputs."""
+
+        accepted_rows = [
+            row
+            for row in list(getattr(watertight_solid_output, "solid_rows", []) or [])
+            if bool(getattr(row, "is_watertight", False))
+            and bool(getattr(row, "is_valid_solid", False))
+            and str(getattr(row, "validation_status", "") or "") == "ok"
+            and float(getattr(row, "volume", 0.0) or 0.0) > 0.0
+        ]
+        fragment_rows = [
+            QuantityFragmentRow(
+                fragment_row_id=f"{row.output_object_id}:quantity:volume",
+                fragment_id=f"{row.output_object_id}:volume",
+                quantity_kind="watertight_solid_volume",
+                measurement_kind="part_solid_volume",
+                value=float(row.volume),
+                unit="m3",
+                station_start=float(row.station_start),
+                station_end=float(row.station_end),
+                component_ref=str(getattr(row, "component_ref", "") or ""),
+                assembly_ref=str(getattr(row, "assembly_ref", "") or ""),
+                region_ref=str(getattr(row, "region_ref", "") or ""),
+                structure_ref=str(getattr(row, "structure_ref", "") or ""),
+            )
+            for row in accepted_rows
+        ]
+        total_volume = sum(float(row.value) for row in fragment_rows)
+        aggregate_rows = []
+        if fragment_rows:
+            aggregate_rows.append(
+                QuantityAggregateRow(
+                    aggregate_row_id=f"{watertight_solid_output.watertight_solid_output_id}:quantity:total-volume",
+                    aggregate_id=f"{watertight_solid_output.watertight_solid_output_id}:total-volume",
+                    aggregate_kind="watertight_solid_total_volume",
+                    grouping_ref=str(getattr(watertight_solid_output, "watertight_solid_output_id", "") or ""),
+                    value=total_volume,
+                    unit="m3",
+                    fragment_refs=[row.fragment_id for row in fragment_rows],
+                )
+            )
+        summary_rows = [
+            QuantitySummaryRow(
+                summary_id=f"{watertight_solid_output.watertight_solid_output_id}:accepted-solid-count",
+                kind="accepted_watertight_solid_count",
+                label="Accepted Watertight Solid Count",
+                value=len(fragment_rows),
+            ),
+            QuantitySummaryRow(
+                summary_id=f"{watertight_solid_output.watertight_solid_output_id}:total-volume",
+                kind="accepted_watertight_solid_volume",
+                label="Accepted Watertight Solid Volume",
+                value=total_volume,
+                unit="m3",
+            ),
+        ]
+        return QuantityOutput(
+            schema_version=1,
+            project_id=watertight_solid_output.project_id,
+            quantity_output_id=f"{watertight_solid_output.watertight_solid_output_id}:quantities",
+            corridor_id=watertight_solid_output.corridor_id,
+            label=f"{watertight_solid_output.label or 'Watertight Solids'} Quantities",
+            unit_context=watertight_solid_output.unit_context,
+            coordinate_context=watertight_solid_output.coordinate_context,
+            selection_scope={
+                "scope_kind": "watertight_solid_quantities",
+                "source_output_id": watertight_solid_output.watertight_solid_output_id,
+            },
+            source_refs=list(watertight_solid_output.source_refs),
+            result_refs=[watertight_solid_output.watertight_solid_output_id],
+            fragment_rows=fragment_rows,
+            aggregate_rows=aggregate_rows,
+            comparison_rows=[],
+            summary_rows=summary_rows,
+            diagnostic_rows=list(watertight_solid_output.diagnostic_rows),
         )

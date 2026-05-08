@@ -412,6 +412,14 @@ Solid build results are engineering derivatives and export helpers, not durable 
 
 They should generally follow surface and applied-section evaluation, except for independent structure or drainage objects that are authored as source models and then linked back into the corridor.
 
+Watertight corridor solid generation should be topology-first.
+
+This follows the representation strategy table in `docsV1/V1_MASTER_PLAN.md`.
+
+The corridor solid path should establish closed semantic profiles, deterministic station-direction edge networks, face adjacency, start/end caps, and shell validation before creating or accepting FreeCAD Part solid geometry.
+
+Generated SurfaceModel meshes may provide review context, but they should not be stitched as the topology source for watertight corridor solids.
+
 ## 16. Surface and Solid Build Services
 
 Recommended service families:

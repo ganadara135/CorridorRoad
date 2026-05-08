@@ -37,6 +37,9 @@ from .earthwork_report_service import (
 )
 from .mass_haul_service import MassHaulBuildRequest, MassHaulService
 from .quantity_build_service import QuantityBuildRequest, QuantityBuildService
+from .solid_target_discovery_service import SolidTargetDiscoveryRequest, SolidTargetDiscoveryService
+from .solid_edge_network_service import SolidEdgeNetworkBuildRequest, SolidEdgeNetworkService
+from .solid_profile_service import SolidProfileBuildRequest, AppliedSectionSolidProfileService
 from .tin_build_service import TINBuildRequest, TINBuildService, TINPointInput
 
 __all__ = [
@@ -67,6 +70,12 @@ __all__ = [
     "MassHaulService",
     "QuantityBuildRequest",
     "QuantityBuildService",
+    "SolidTargetDiscoveryRequest",
+    "SolidTargetDiscoveryService",
+    "SolidProfileBuildRequest",
+    "AppliedSectionSolidProfileService",
+    "SolidEdgeNetworkBuildRequest",
+    "SolidEdgeNetworkService",
     "TINBuildRequest",
     "TINBuildService",
     "TINPointInput",

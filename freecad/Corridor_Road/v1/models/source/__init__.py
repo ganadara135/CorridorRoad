@@ -22,6 +22,7 @@ from .surface_transition_model import (
     SurfaceTransitionModel,
     SurfaceTransitionRange,
 )
+from .solid_target_model import SolidTargetDiagnosticRow, SolidTargetModel, SolidTargetRow
 from .tin_edit_model import TINEditOperation, TINEditSet
 
 __all__ = [
@@ -39,6 +40,9 @@ __all__ = [
     "RegionRow",
     "RegionPolicySet",
     "RegionDiagnosticRow",
+    "SolidTargetDiagnosticRow",
+    "SolidTargetModel",
+    "SolidTargetRow",
     "StructureModel",
     "StructureGeometrySpec",
     "BridgeGeometrySpec",

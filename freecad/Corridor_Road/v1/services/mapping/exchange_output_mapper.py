@@ -54,6 +54,8 @@ class ExchangeOutputMapper:
         source_context_rows = self._source_context_rows(request.outputs)
         diagnostic_rows = self._diagnostic_rows(request.outputs)
         surface_span_rows = self._surface_span_rows(request.outputs)
+        watertight_solid_rows = self._watertight_solid_rows(request.outputs)
+        watertight_solid_segment_rows = self._watertight_solid_segment_rows(request.outputs)
 
         return ExchangeOutput(
             schema_version=1,
@@ -76,6 +78,9 @@ class ExchangeOutputMapper:
                 "output_kinds": [row.output_kind for row in output_refs],
                 "structure_solid_count": self._structure_solid_count(request.outputs),
                 "structure_solid_segment_count": self._structure_solid_segment_count(request.outputs),
+                "watertight_solid_count": len(watertight_solid_rows),
+                "watertight_solid_segment_count": len(watertight_solid_segment_rows),
+                "watertight_solid_volume": self._watertight_solid_volume(watertight_solid_rows),
                 "source_context_count": len(source_context_rows),
                 "side_slope_source_context_count": self._source_context_count(
                     source_context_rows,
@@ -97,6 +102,8 @@ class ExchangeOutputMapper:
                 "output_ids": [row.output_id for row in output_refs],
                 "structure_solid_rows": self._structure_solid_rows(request.outputs),
                 "structure_solid_segment_rows": self._structure_solid_segment_rows(request.outputs),
+                "watertight_solid_rows": watertight_solid_rows,
+                "watertight_solid_segment_rows": watertight_solid_segment_rows,
                 "surface_span_rows": surface_span_rows,
                 "source_context_rows": source_context_rows,
                 "diagnostic_rows": diagnostic_rows,
@@ -123,6 +130,7 @@ class ExchangeOutputMapper:
             "earthwork_output_id",
             "mass_haul_output_id",
             "structure_solid_output_id",
+            "watertight_solid_output_id",
             "exchange_output_id",
         ):
             value = getattr(output, attribute_name, "")
@@ -143,14 +151,24 @@ class ExchangeOutputMapper:
         return ordered
 
     def _structure_solid_count(self, outputs: list[OutputModelBase]) -> int:
-        return sum(len(list(getattr(output, "solid_rows", []) or [])) for output in list(outputs or []))
+        return sum(
+            len(list(getattr(output, "solid_rows", []) or []))
+            for output in list(outputs or [])
+            if self._is_structure_solid_output(output)
+        )
 
     def _structure_solid_segment_count(self, outputs: list[OutputModelBase]) -> int:
-        return sum(len(list(getattr(output, "solid_segment_rows", []) or [])) for output in list(outputs or []))
+        return sum(
+            len(list(getattr(output, "solid_segment_rows", []) or []))
+            for output in list(outputs or [])
+            if self._is_structure_solid_output(output)
+        )
 
     def _structure_solid_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
         for output in list(outputs or []):
+            if not self._is_structure_solid_output(output):
+                continue
             output_id = self._output_id(output)
             for row in list(getattr(output, "solid_rows", []) or []):
                 payload = asdict(row)
@@ -161,12 +179,49 @@ class ExchangeOutputMapper:
     def _structure_solid_segment_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
         for output in list(outputs or []):
+            if not self._is_structure_solid_output(output):
+                continue
             output_id = self._output_id(output)
             for row in list(getattr(output, "solid_segment_rows", []) or []):
                 payload = asdict(row)
                 payload["output_ref"] = output_id
                 rows.append(payload)
         return rows
+
+    def _watertight_solid_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for output in list(outputs or []):
+            if not self._is_watertight_solid_output(output):
+                continue
+            output_id = self._output_id(output)
+            for row in list(getattr(output, "solid_rows", []) or []):
+                payload = asdict(row)
+                payload["output_ref"] = output_id
+                rows.append(payload)
+        return rows
+
+    def _watertight_solid_segment_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for output in list(outputs or []):
+            if not self._is_watertight_solid_output(output):
+                continue
+            output_id = self._output_id(output)
+            for row in list(getattr(output, "segment_rows", []) or []):
+                payload = asdict(row)
+                payload["output_ref"] = output_id
+                rows.append(payload)
+        return rows
+
+    def _watertight_solid_volume(self, rows: list[dict[str, object]]) -> float:
+        total = 0.0
+        for row in list(rows or []):
+            if not bool(row.get("is_watertight", False)) or not bool(row.get("is_valid_solid", False)):
+                continue
+            try:
+                total += float(row.get("volume", 0.0) or 0.0)
+            except Exception:
+                continue
+        return total
 
     def _surface_span_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -206,15 +261,32 @@ class ExchangeOutputMapper:
     def _source_context_payloads(self, output: OutputModelBase) -> list[dict[str, object]]:
         payloads: list[dict[str, object]] = []
         for row in list(getattr(output, "solid_rows", []) or []):
-            payloads.append(
-                {
-                    "context_kind": "structure_solid",
-                    "region_ref": str(getattr(row, "region_ref", "") or ""),
-                    "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
-                    "structure_ref": str(getattr(row, "structure_ref", "") or getattr(row, "structure_id", "") or ""),
-                    "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
-                }
-            )
+            if self._is_watertight_solid_output(output):
+                payloads.append(
+                    {
+                        "context_kind": "watertight_solid",
+                        "region_ref": str(getattr(row, "region_ref", "") or ""),
+                        "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
+                        "structure_ref": str(getattr(row, "structure_ref", "") or ""),
+                        "component_ref": str(getattr(row, "component_ref", "") or ""),
+                        "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
+                        "target_id": str(getattr(row, "target_id", "") or ""),
+                        "target_family": str(getattr(row, "target_family", "") or ""),
+                        "scope_kind": str(getattr(row, "scope_kind", "") or ""),
+                        "validation_status": str(getattr(row, "validation_status", "") or ""),
+                        "is_watertight": bool(getattr(row, "is_watertight", False)),
+                    }
+                )
+            elif self._is_structure_solid_output(output):
+                payloads.append(
+                    {
+                        "context_kind": "structure_solid",
+                        "region_ref": str(getattr(row, "region_ref", "") or ""),
+                        "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
+                        "structure_ref": str(getattr(row, "structure_ref", "") or getattr(row, "structure_id", "") or ""),
+                        "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
+                    }
+                )
         for row in list(getattr(output, "component_rows", []) or []):
             if not self._is_side_slope_component_row(row):
                 continue
@@ -269,8 +341,14 @@ class ExchangeOutputMapper:
         return [
             payload
             for payload in payloads
-            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref"))
+            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref", "component_ref"))
         ]
+
+    def _is_structure_solid_output(self, output: OutputModelBase) -> bool:
+        return bool(str(getattr(output, "structure_solid_output_id", "") or ""))
+
+    def _is_watertight_solid_output(self, output: OutputModelBase) -> bool:
+        return bool(str(getattr(output, "watertight_solid_output_id", "") or ""))
 
     def _is_side_slope_component_row(self, row: object) -> bool:
         kind = str(getattr(row, "kind", "") or "").strip().lower()
