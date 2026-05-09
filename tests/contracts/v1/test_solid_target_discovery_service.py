@@ -9,7 +9,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionStationRow,
 )
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructureGeometrySpec,
@@ -454,6 +454,14 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                 policy_set_ref="drainage-policy:lined-concrete",
             )
         ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:right",
+                from_element_ref="drainage:primary-lined-ditch",
+                to_element_ref="drainage:outfall-right",
+                outlet_ref="drainage:outfall-right",
+            )
+        ],
     )
 
     model = SolidTargetDiscoveryService().discover(
@@ -470,10 +478,13 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
     target = targets["solid-target:lined-ditch:right"]
     assert target.readiness_status == "available"
     assert target.drainage_ref == "drainage:primary-lined-ditch"
+    assert target.flow_route_ref == "flow-route:right"
     assert "drainage:main" in target.source_refs
     assert "drainage:primary-lined-ditch" in target.source_refs
+    assert "flow-route:right" in target.source_refs
     assert "drainage-policy:lined-concrete" in target.source_refs
     assert "DrainageModel owner=drainage:primary-lined-ditch" in target.notes
+    assert "flow_route=flow-route:right" in target.notes
 
 
 def test_solid_target_discovery_creates_structure_body_candidates() -> None:

@@ -20,13 +20,16 @@ This plan defines how CorridorRoad v1 should implement Drainage after the first 
 
 The goal is to make drainage design intent explicit, editable, reviewable, and traceable through Applied Sections, Corridor Build, quantities, and later exchange outputs.
 
+Detailed Flow Route graph implementation is tracked in `V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md`.
+
 ## 2. Scope
 
 This plan includes:
 
 - Drainage toolbar command and editor shell
 - `DrainageModel` object persistence
-- drainage element creation and editing
+- drainage element node creation and editing
+- flow-route edge creation and editing
 - Region-to-Drainage reference workflow
 - Assembly ditch shape connection to drainage intent
 - Applied Section drainage point and flowline evaluation
@@ -62,7 +65,7 @@ Implemented or partially available:
 - Applied Sections can emit `ditch_surface` point rows.
 - Build Corridor has Drainage diagnostics and a drainage surface preview from ditch points.
 - A `Drainage` toolbar/menu entry opens the first Drainage editor task panel.
-- A `V1DrainageModel` document object can persist element, policy, collection, source reference, and validation diagnostic rows.
+- A `V1DrainageModel` document object can persist element, policy, flow-route, source reference, and validation diagnostic rows.
 
 Main gaps:
 
@@ -78,13 +81,14 @@ The target user workflow is:
 1. Define TIN, Alignment, Profile, and Stations.
 2. Define Assembly ditch shapes when roadside drainage geometry is needed.
 3. Define Regions and station ranges.
-4. Open Drainage and create drainage elements.
+4. Open Drainage and create drainage Element nodes.
 5. Link drainage elements to Regions through `drainage_refs`.
-6. Run Applied Sections.
-7. Review ditch points, flowlines, and diagnostics.
-8. Build Corridor drainage surface from Applied Section outputs.
-9. Review Drainage diagnostics and quantities.
-10. Export drainage-aware outputs where supported.
+6. Create Flow Route edges between Elements where connection intent is needed.
+7. Run Applied Sections.
+8. Review ditch points, flowlines, and diagnostics.
+9. Build Corridor drainage surface from Applied Section outputs.
+10. Review Drainage diagnostics and quantities.
+11. Export drainage-aware outputs where supported.
 
 Toolbar order:
 
@@ -101,8 +105,15 @@ Required fields for the first implementation:
 - `label`
 - `element_rows`
 - `policy_rows`
-- `collection_region_rows`
+- `flow_route_rows`
 - `diagnostic_rows`
+
+Core graph rule:
+
+- `element_rows` are drainage nodes.
+- `flow_route_rows` are drainage edges.
+- Final outlets should be represented as `outfall_reference` Elements when possible.
+- Optional route-level `outlet_ref` is summary metadata, not the primary connection edge.
 
 ### 6.2 DrainageElementRow
 
@@ -136,9 +147,26 @@ Required first-slice fields:
 - `flow_intent`
 - `min_grade_rule`
 - `low_point_rule`
-- `collection_rule`
+- `route_rule`
 - `discharge_rule`
 - `earthwork_priority`
+
+### 6.4 DrainageFlowRoute
+
+Required first-slice fields:
+
+- `flow_route_id`
+- `from_element_ref`
+- `to_element_ref`
+- `direction`
+- `risk_level`
+- `notes`
+
+Optional first-slice field:
+
+- `outlet_ref`
+
+`from_element_ref -> to_element_ref` is the graph edge. `outlet_ref` is only used when the final outlet must be preserved for review or reporting without walking the graph.
 
 ## 7. Evaluation Flow
 
@@ -147,10 +175,11 @@ The evaluation flow should be:
 1. Resolve active Region at station.
 2. Read Region `drainage_refs`.
 3. Resolve referenced `DrainageElementRow` objects.
-4. Resolve Assembly ditch components linked by `assembly_component_ref`.
-5. Generate station-specific ditch surface points and flowline hints in `AppliedSection`.
-6. Preserve `drainage_ref`, `component_ref`, side, and role metadata on evaluated points.
-7. Build drainage surface and diagnostics from these result rows.
+4. Resolve Flow Route edges connected to the active elements.
+5. Resolve Assembly ditch components linked by `assembly_component_ref`.
+6. Generate station-specific ditch surface points and flowline hints in `AppliedSection`.
+7. Preserve `drainage_ref`, `component_ref`, side, and role metadata on evaluated points.
+8. Build drainage surface and diagnostics from these result rows.
 
 ## 8. Review Flow
 
@@ -162,6 +191,8 @@ Drainage Review should expose:
 - flowline continuity
 - low-point and minimum-grade warnings
 - missing outlet or discharge target
+- broken Flow Route edge references
+- cycles that prevent outlet tracing
 - culvert/reference coordination warnings
 - source references back to Region, Assembly, and DrainageModel rows
 
@@ -214,11 +245,11 @@ Acceptance criteria:
 
 Completed:
 
-- `V1DrainageModel` document object stores element, policy, and collection-region rows
+- `V1DrainageModel` document object stores element, policy, and flow-route rows
 - `to_drainage_model` restores the source contract from the document object
 - `v1_drainage_model` routes to `05_Drainage`
 - Watertight Solid target discovery reads the document DrainageModel and can promote matching ditch/channel elements as lined ditch solid owners
-- `DrainageValidationService` reports duplicate element/policy/collection ids, invalid station ranges, missing policy ids, and missing policy refs
+- `DrainageValidationService` reports duplicate element/policy/flow-route ids, invalid ranges, missing policy ids, and missing policy refs
 - `V1DrainageModel` stores validation status and diagnostic rows on update
 
 ### D3. Drainage Editor shell
@@ -231,7 +262,7 @@ Tasks:
 - show Drainage Source selector
 - add element table
 - add policy table
-- add collection/discharge table
+- add flow-route table
 - add Apply and Close behavior
 
 Acceptance criteria:
@@ -243,7 +274,7 @@ Acceptance criteria:
 Completed:
 
 - Drainage command opens `V1DrainageEditorTaskPanel`
-- editor shows element, policy, and collection tables
+- editor shows element, policy, and flow-route tables
 - editor provides Preset data for roadside ditch, dual side ditches, and culvert crossing source sets
 - Validate runs `DrainageValidationService`
 - Apply persists `V1DrainageModel`

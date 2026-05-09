@@ -59,6 +59,7 @@ class SolidTargetRow:
     component_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
+    flow_route_ref: str = ""
     enabled: bool = False
     priority: int = 10
     material_ref: str = ""

@@ -2,7 +2,7 @@
 
 Drainage is an active v1 source stage.
 
-The current editor shell can create and update a `V1DrainageModel` with drainage elements, policy rows, and collection/discharge regions.
+The current editor shell can create and update a `V1DrainageModel` with drainage elements, policy rows, and flow routes.
 
 ## Why Drainage Is In The Toolbar
 
@@ -42,7 +42,36 @@ Editable first-slice rows:
 - inlet reference
 - outfall reference
 
-The editor also stores policy intent and collection/discharge context.
+The editor also stores policy intent and flow-route context.
+
+Drainage uses a graph-style source model:
+
+- Elements are nodes.
+- Flow Routes are edges.
+- Outlet is represented by an `outfall_reference` Element, or by an optional route-level outlet ref when a final outlet summary is needed.
+
+Assembly-generated drainage geometry is currently limited to `ditch` components. Culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references, but they are connected through Flow Routes rather than generated as Assembly drainage components.
+
+Example:
+
+```text
+ditch:right-r2 -> culvert:01 -> outfall:right-01
+```
+
+Elements:
+
+```text
+ditch:right-r2      ditch
+culvert:01          culvert_reference
+outfall:right-01    outfall_reference
+```
+
+Flow Routes:
+
+```text
+edge:r2-01    from ditch:right-r2    to culvert:01
+edge:r2-02    from culvert:01        to outfall:right-01
+```
 
 Available first-slice presets:
 

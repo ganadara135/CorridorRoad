@@ -2,8 +2,8 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, V1_TREE_DRAINAGE, ensure_project_tree
 from freecad.Corridor_Road.v1.models.source.drainage_model import (
-    DrainageCollectionRegion,
     DrainageElementRow,
+    DrainageFlowRoute,
     DrainageModel,
     DrainagePolicySet,
 )
@@ -42,6 +42,16 @@ def _drainage_model() -> DrainageModel:
                 station_start=0.0,
                 station_end=100.0,
                 policy_set_ref="drainage-policy:lined-concrete",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outfall-main",
+                element_kind="outfall_reference",
+                structure_ref="outfall:1",
+                side="right",
+                region_ref="region:1",
+                station_start=99.0,
+                station_end=100.0,
+                policy_set_ref="drainage-policy:lined-concrete",
             )
         ],
         policy_rows=[
@@ -54,14 +64,13 @@ def _drainage_model() -> DrainageModel:
                 earthwork_priority="protect_lining",
             )
         ],
-        collection_region_rows=[
-            DrainageCollectionRegion(
-                collection_region_id="drainage-collection:1",
-                region_kind="roadside_collection",
-                station_start=0.0,
-                station_end=100.0,
-                alignment_ref="alignment:main",
-                expected_receiver_ref="outfall:1",
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:1",
+                from_element_ref="drainage:side-ditch-right",
+                to_element_ref="drainage:outfall-main",
+                outlet_ref="drainage:outfall-main",
+                direction="roadside_flow",
                 risk_level="medium",
             )
         ],
@@ -104,7 +113,10 @@ def test_v1_drainage_model_object_roundtrips_to_drainage_model() -> None:
         assert model.element_rows[0].region_ref == "region:1"
         assert model.element_rows[0].assembly_component_ref == "ditch:right"
         assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
-        assert model.collection_region_rows[0].expected_receiver_ref == "outfall:1"
+        assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
+        assert model.flow_route_rows[0].outlet_ref == "drainage:outfall-main"
+        assert list(obj.FlowRouteOutletRefs) == ["drainage:outfall-main"]
+        assert not hasattr(obj, "FlowRouteReceiverRefs")
         assert find_v1_drainage_model(doc) == obj
     finally:
         App.closeDocument(doc.Name)
@@ -183,18 +195,12 @@ def test_drainage_validation_reports_duplicate_ids_invalid_ranges_and_missing_po
                 flow_intent="collect_and_convey",
             ),
         ],
-        collection_region_rows=[
-            DrainageCollectionRegion(
-                collection_region_id="drainage-collection:1",
-                region_kind="roadside",
-                station_start=50.0,
-                station_end=50.0,
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:1",
             ),
-            DrainageCollectionRegion(
-                collection_region_id="drainage-collection:1",
-                region_kind="roadside",
-                station_start=0.0,
-                station_end=10.0,
+            DrainageFlowRoute(
+                flow_route_id="flow-route:1",
             ),
         ],
     )
@@ -209,9 +215,82 @@ def test_drainage_validation_reports_duplicate_ids_invalid_ranges_and_missing_po
     assert "missing_policy_ref" in kinds
     assert "duplicate_policy_set_id" in kinds
     assert "missing_flow_intent" in kinds
-    assert "duplicate_collection_region_id" in kinds
-    assert "invalid_collection_region_station_range" in kinds
+    assert "duplicate_flow_route_id" in kinds
     assert "unsupported_drainage_side" in kinds
+
+
+def test_drainage_validation_reports_flow_route_broken_refs_and_missing_outlet() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:ditch-a",
+                element_kind="ditch",
+                station_start=0.0,
+                station_end=10.0,
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:ditch-b",
+                element_kind="ditch",
+                station_start=10.0,
+                station_end=20.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:missing-from",
+                from_element_ref="drainage:missing",
+                to_element_ref="drainage:ditch-b",
+            ),
+            DrainageFlowRoute(
+                flow_route_id="flow-route:missing-to",
+                from_element_ref="drainage:ditch-a",
+                to_element_ref="drainage:missing",
+                outlet_ref="bad-outlet",
+            ),
+            DrainageFlowRoute(
+                flow_route_id="flow-route:no-outlet",
+                from_element_ref="drainage:ditch-a",
+                to_element_ref="drainage:ditch-b",
+            ),
+        ],
+    )
+
+    result = DrainageValidationService().validate(model)
+    kinds = [row.kind for row in result.diagnostic_rows]
+
+    assert result.status == "error"
+    assert "missing_flow_route_from_element" in kinds
+    assert "missing_flow_route_to_element" in kinds
+    assert "missing_flow_route_outlet_ref" in kinds
+    assert "flow_route_missing_outlet" in kinds
+
+
+def test_drainage_validation_reports_flow_route_self_loop_and_cycle() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow("drainage:a", "ditch", station_start=0.0, station_end=10.0),
+            DrainageElementRow("drainage:b", "ditch", station_start=10.0, station_end=20.0),
+            DrainageElementRow("drainage:c", "outfall_reference", station_start=20.0, station_end=21.0),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute("flow-route:self", "drainage:a", "drainage:a", "drainage:c"),
+            DrainageFlowRoute("flow-route:ab", "drainage:a", "drainage:b", "drainage:c"),
+            DrainageFlowRoute("flow-route:ba", "drainage:b", "drainage:a", "drainage:c"),
+        ],
+    )
+
+    result = DrainageValidationService().validate(model)
+    kinds = [row.kind for row in result.diagnostic_rows]
+
+    assert result.status == "error"
+    assert "flow_route_self_loop" in kinds
+    assert "flow_route_cycle" in kinds
 
 
 def test_drainage_validation_checks_element_station_range_against_region() -> None:
@@ -283,5 +362,30 @@ def test_v1_drainage_model_object_stores_validation_diagnostics() -> None:
         assert obj.ValidationStatus == "error"
         assert any("invalid_drainage_element_station_range" in row for row in list(obj.DiagnosticRows))
         assert any("missing_policy_set_ref" in row for row in list(obj.DiagnosticRows))
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_v1_drainage_model_object_removes_obsolete_route_properties() -> None:
+    doc, project = _new_project_doc("V1DrainageModelObjectObsoleteRoutePropertiesTest")
+    try:
+        obj = doc.addObject("App::FeaturePython", "V1DrainageModel")
+        obj.addProperty("App::PropertyStringList", "FlowRouteReceiverRefs", "Flow Routes", "receiver refs")
+        obj.addProperty("App::PropertyStringList", "CollectionRegionIds", "Flow Routes", "legacy collection ids")
+        obj.addProperty("App::PropertyFloatList", "CollectionStationStarts", "Flow Routes", "legacy collection starts")
+        obj.FlowRouteReceiverRefs = ["outfall:old"]
+        obj.CollectionRegionIds = ["drainage-collection:old"]
+        obj.CollectionStationStarts = [0.0]
+
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=_drainage_model(),
+        )
+
+        assert not hasattr(obj, "FlowRouteReceiverRefs")
+        assert not hasattr(obj, "CollectionRegionIds")
+        assert not hasattr(obj, "CollectionStationStarts")
+        assert list(obj.FlowRouteOutletRefs) == ["drainage:outfall-main"]
     finally:
         App.closeDocument(doc.Name)

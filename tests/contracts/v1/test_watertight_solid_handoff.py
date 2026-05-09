@@ -35,6 +35,8 @@ def _watertight_output() -> WatertightSolidOutput:
                 profile_count=2,
                 region_ref="region:1",
                 assembly_ref="assembly:road",
+                drainage_ref="drainage:right",
+                flow_route_ref="flow-route:right",
             ),
             WatertightSolidOutputRow(
                 output_object_id="watertight-solid:blocked",
@@ -76,6 +78,8 @@ def test_quantity_output_mapper_creates_volume_fragments_from_accepted_watertigh
     assert fragment.station_start == 10.0
     assert fragment.station_end == 30.0
     assert fragment.region_ref == "region:1"
+    assert fragment.drainage_ref == "drainage:right"
+    assert fragment.flow_route_ref == "flow-route:right"
     assert quantity_output.aggregate_rows[0].value == 120.0
     assert quantity_output.summary_rows[0].value == 1
 
@@ -105,4 +109,13 @@ def test_exchange_output_mapper_packages_watertight_solids_separately_from_struc
     assert exchange_output.format_payload["watertight_solid_segment_rows"][0]["profile_refs"] == ["profile:10", "profile:30"]
     context_rows = exchange_output.format_payload["source_context_rows"]
     assert any(row["context_kind"] == "watertight_solid" for row in context_rows)
-    assert any(row["context_kind"] == "quantity_fragment" for row in context_rows)
+    assert any(
+        row["context_kind"] == "watertight_solid"
+        and row["flow_route_ref"] == "flow-route:right"
+        for row in context_rows
+    )
+    assert any(
+        row["context_kind"] == "quantity_fragment"
+        and row["flow_route_ref"] == "flow-route:right"
+        for row in context_rows
+    )

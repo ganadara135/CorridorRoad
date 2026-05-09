@@ -260,6 +260,7 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
                 assembly_ref="assembly:road",
                 structure_ref="structure:bridge-01",
                 drainage_ref="drainage:side-ditch-right",
+                flow_route_ref="flow-route:right",
             )
         ],
         aggregate_rows=[
@@ -281,6 +282,7 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
     assert output.fragment_rows[0].assembly_ref == "assembly:road"
     assert output.fragment_rows[0].structure_ref == "structure:bridge-01"
     assert output.fragment_rows[0].drainage_ref == "drainage:side-ditch-right"
+    assert output.fragment_rows[0].flow_route_ref == "flow-route:right"
     assert output.aggregate_rows[0].fragment_refs == ["frag-1"]
 
 

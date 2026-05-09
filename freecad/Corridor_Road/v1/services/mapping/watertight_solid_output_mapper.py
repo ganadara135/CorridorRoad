@@ -59,6 +59,7 @@ class WatertightSolidOutputMapper:
                 str(getattr(request.profile_set, "profile_set_id", "") or ""),
                 str(getattr(request.edge_network, "edge_network_id", "") or ""),
                 *list(getattr(target, "source_refs", []) or []),
+                str(getattr(target, "flow_route_ref", "") or ""),
                 *list(getattr(request.profile_set, "source_refs", []) or []),
                 *list(getattr(request.edge_network, "source_refs", []) or []),
             ]
@@ -85,6 +86,7 @@ class WatertightSolidOutputMapper:
             component_ref=str(getattr(target, "component_ref", "") or ""),
             structure_ref=str(getattr(target, "structure_ref", "") or ""),
             drainage_ref=str(getattr(target, "drainage_ref", "") or ""),
+            flow_route_ref=str(getattr(target, "flow_route_ref", "") or ""),
             material_ref=str(getattr(target, "material_ref", "") or ""),
             notes=str(getattr(target, "notes", "") or ""),
         )
@@ -224,6 +226,7 @@ def _provenance_diagnostic_rows(
         [
             f"target={str(getattr(target, 'target_id', '') or '')}",
             f"drainage_ref={str(getattr(target, 'drainage_ref', '') or first_notes.get('drainage_ref', ''))}",
+            f"flow_route_ref={str(getattr(target, 'flow_route_ref', '') or first_notes.get('flow_route_ref', ''))}",
             f"component_ref={str(getattr(target, 'component_ref', '') or first_notes.get('component_ref', ''))}",
             f"side={first_notes.get('side', _side_from_ref(str(getattr(target, 'drainage_ref', '') or getattr(target, 'target_id', '') or '')))}",
             f"material={str(getattr(target, 'material_ref', '') or first_notes.get('material', ''))}",

@@ -34,6 +34,7 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
     CulvertGeometrySpec,
@@ -4351,6 +4352,35 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
             corridor=corridor,
             applied_section_set=applied_section_set,
             quantity_model_id="qty-drainage",
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:right",
+                        element_kind="ditch",
+                        side="right",
+                        station_start=0.0,
+                        station_end=10.0,
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:outfall-right",
+                        element_kind="outfall_reference",
+                        side="right",
+                        station_start=10.0,
+                        station_end=10.1,
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:right",
+                        from_element_ref="drainage:right",
+                        to_element_ref="drainage:outfall-right",
+                        outlet_ref="drainage:outfall-right",
+                    )
+                ],
+            ),
         )
     )
 
@@ -4359,6 +4389,8 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
     assert abs(rows["drainage_flowline_length"].value - 10.0) < 1.0e-9
     assert rows["drainage_ditch_length"].measurement_kind == "drainage_applied_section_longitudinal"
     assert rows["drainage_ditch_length"].drainage_ref == "drainage:right"
+    assert rows["drainage_ditch_length"].flow_route_ref == "flow-route:right"
+    assert rows["drainage_flowline_length"].flow_route_ref == "flow-route:right"
     assert rows["drainage_ditch_length"].component_ref == "ditch:right"
     assert "drainage:right" in result.source_refs
     assert not any(row.kind == "missing_drainage_quantity_source_ref" for row in result.diagnostic_rows)

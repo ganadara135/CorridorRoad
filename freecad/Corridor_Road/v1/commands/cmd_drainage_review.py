@@ -108,9 +108,11 @@ class V1DrainageReviewTaskPanel:
 
         self._tabs = QtWidgets.QTabWidget()
         self._element_table = _table(["Kind", "Label", "Start STA", "End STA", "Source", "Notes"])
+        self._flow_route_table = _table(["Flow Route", "From", "To", "Outlet", "Risk", "Chain", "Notes"])
         self._region_table = _table(["Region", "Start STA", "End STA", "Drainage Status", "Notes"])
         self._applied_table = _table(["Station", "Section", "Ditch Points", "Drainage Refs", "Notes"])
         self._tabs.addTab(self._element_table, "Elements")
+        self._tabs.addTab(self._flow_route_table, "Flow Routes")
         self._tabs.addTab(self._region_table, "Region Handoff")
         self._tabs.addTab(self._applied_table, "Applied Sections")
         layout.addWidget(self._tabs, 1)
@@ -135,6 +137,7 @@ class V1DrainageReviewTaskPanel:
         self.output = build_drainage_review_output(self.document)
         _populate_summary_table(self._summary_table, self.output.summary_rows)
         _populate_element_table(self._element_table, [row for row in self.output.element_rows if row.kind == "drainage_element"])
+        _populate_flow_route_table(self._flow_route_table, [row for row in self.output.element_rows if row.kind == "flow_route"])
         _populate_region_table(self._region_table, [row for row in self.output.element_rows if row.kind == "region_handoff"])
         _populate_applied_table(
             self._applied_table,
@@ -166,6 +169,23 @@ def _populate_element_table(table, rows) -> None:
     table.setRowCount(0)
     for row in list(rows or []):
         _append_items(table, [row.kind, row.label, _format_float(row.station_start), _format_float(row.station_end), row.source_ref, row.notes])
+
+
+def _populate_flow_route_table(table, rows) -> None:
+    table.setRowCount(0)
+    for row in list(rows or []):
+        _append_items(
+            table,
+            [
+                row.label,
+                _note_value(row.notes, "from_element_ref"),
+                _note_value(row.notes, "to_element_ref"),
+                _note_value(row.notes, "outlet_ref"),
+                _note_value(row.notes, "risk_level"),
+                _note_value(row.notes, "chain"),
+                row.notes,
+            ],
+        )
 
 
 def _populate_region_table(table, rows) -> None:
@@ -200,6 +220,7 @@ def _append_items(table, values: list[object]) -> None:
 def _status_text(output) -> str:
     summary = {row.summary_id: row.value for row in list(getattr(output, "summary_rows", []) or [])}
     missing = int(summary.get("summary:missing-region-refs", 0) or 0)
+    flow_routes = int(summary.get("summary:flow-routes", 0) or 0)
     ditch_points = int(summary.get("summary:ditch-surface-points", 0) or 0)
     ditch_with_refs = int(summary.get("summary:ditch-surface-points-with-drainage", 0) or 0)
     lines = [
@@ -208,6 +229,8 @@ def _status_text(output) -> str:
     ]
     if missing:
         lines.append(f"Warnings: {missing} Region drainage ref(s) are missing from the active DrainageModel.")
+    if flow_routes:
+        lines.append(f"Flow Routes: {flow_routes} source route(s) are available for review.")
     if ditch_points and ditch_with_refs < ditch_points:
         lines.append(f"Warnings: {ditch_points - ditch_with_refs} ditch_surface point(s) have no drainage_ref.")
     if len(lines) == 2:

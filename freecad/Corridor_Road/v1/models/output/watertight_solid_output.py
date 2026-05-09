@@ -32,6 +32,7 @@ class WatertightSolidOutputRow:
     component_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
+    flow_route_ref: str = ""
     material_ref: str = ""
     notes: str = ""
 

@@ -24,6 +24,8 @@ class DrainageReviewMapper:
         drainage_ids = _drainage_element_ids(drainage_model)
         rows: list[DrainageElementOutputRow] = []
         rows.extend(_drainage_element_rows(drainage_model))
+        flow_route_rows = _flow_route_rows(drainage_model)
+        rows.extend(flow_route_rows)
         region_rows, missing_region_ref_count = _region_handoff_rows(region_model, drainage_ids)
         rows.extend(region_rows)
         applied_rows, ditch_point_count, ditch_point_with_ref_count = _applied_section_rows(applied_section_set)
@@ -32,6 +34,7 @@ class DrainageReviewMapper:
         rows.extend(quantity_rows)
         summary_rows = [
             DrainageSummaryRow("summary:drainage-elements", "count", "Drainage elements", len(drainage_ids), "count"),
+            DrainageSummaryRow("summary:flow-routes", "count", "Flow Routes", len(flow_route_rows), "count"),
             DrainageSummaryRow("summary:region-handoffs", "count", "Region drainage handoffs", len(region_rows), "count"),
             DrainageSummaryRow("summary:missing-region-refs", "count", "Missing Region drainage refs", missing_region_ref_count, "count"),
             DrainageSummaryRow("summary:applied-sections", "count", "Applied Sections", _section_count(applied_section_set), "count"),
@@ -91,6 +94,75 @@ def _drainage_element_rows(drainage_model: DrainageModel | None) -> list[Drainag
             )
         )
     return rows
+
+
+def _flow_route_rows(drainage_model: DrainageModel | None) -> list[DrainageElementOutputRow]:
+    rows: list[DrainageElementOutputRow] = []
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    for index, route in enumerate(list(getattr(drainage_model, "flow_route_rows", []) or []), start=1):
+        route_id = str(getattr(route, "flow_route_id", "") or "").strip() or f"flow-route:{index}"
+        from_ref = str(getattr(route, "from_element_ref", "") or "").strip()
+        to_ref = str(getattr(route, "to_element_ref", "") or "").strip()
+        outlet_ref = str(getattr(route, "outlet_ref", "") or "").strip()
+        from_element = element_by_id.get(from_ref)
+        to_element = element_by_id.get(to_ref)
+        chain = _route_chain_text(from_ref, to_ref, outlet_ref)
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"flow-route:{_safe_id(route_id)}",
+                kind="flow_route",
+                station_start=_route_station_start(from_element, to_element),
+                station_end=_route_station_end(from_element, to_element),
+                label=route_id,
+                source_ref=route_id,
+                notes=";".join(
+                    value
+                    for value in [
+                        f"from_element_ref={from_ref}",
+                        f"to_element_ref={to_ref}",
+                        f"outlet_ref={outlet_ref}",
+                        f"risk_level={str(getattr(route, 'risk_level', '') or '')}",
+                        f"direction={str(getattr(route, 'direction', '') or '')}",
+                        f"chain={chain}",
+                        f"from_region_ref={str(getattr(from_element, 'region_ref', '') or '')}",
+                        f"to_region_ref={str(getattr(to_element, 'region_ref', '') or '')}",
+                        f"from_policy_set_ref={str(getattr(from_element, 'policy_set_ref', '') or '')}",
+                        f"to_policy_set_ref={str(getattr(to_element, 'policy_set_ref', '') or '')}",
+                    ]
+                    if value.split("=", 1)[-1]
+                ),
+            )
+        )
+    return rows
+
+
+def _route_chain_text(from_ref: str, to_ref: str, outlet_ref: str) -> str:
+    chain = [ref for ref in [from_ref, to_ref] if ref]
+    if outlet_ref and outlet_ref not in chain:
+        chain.append(outlet_ref)
+    return " -> ".join(chain)
+
+
+def _route_station_start(from_element: object | None, to_element: object | None) -> float:
+    values = [
+        float(getattr(row, "station_start", 0.0) or 0.0)
+        for row in [from_element, to_element]
+        if row is not None
+    ]
+    return min(values) if values else 0.0
+
+
+def _route_station_end(from_element: object | None, to_element: object | None) -> float:
+    values = [
+        float(getattr(row, "station_end", 0.0) or 0.0)
+        for row in [from_element, to_element]
+        if row is not None
+    ]
+    return max(values) if values else 0.0
 
 
 def _region_handoff_rows(region_model: RegionModel | None, drainage_ids: set[str]) -> tuple[list[DrainageElementOutputRow], int]:
@@ -184,7 +256,8 @@ def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageE
                     f"quantity_kind={quantity_kind};"
                     f"value={value:.6g};"
                     f"unit={str(getattr(row, 'unit', '') or '')};"
-                    f"component_ref={str(getattr(row, 'component_ref', '') or '')}"
+                    f"component_ref={str(getattr(row, 'component_ref', '') or '')};"
+                    f"flow_route_ref={str(getattr(row, 'flow_route_ref', '') or '')}"
                 ),
             )
         )

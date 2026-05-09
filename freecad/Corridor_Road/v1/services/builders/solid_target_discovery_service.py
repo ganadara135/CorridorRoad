@@ -349,6 +349,7 @@ def _lined_ditch_target_rows(
     surface_stations_by_side: dict[str, list[float]] = {"left": [], "right": []}
     component_data_by_side: dict[str, dict[str, object]] = {"left": {}, "right": {}}
     drainage_owner_by_side = _drainage_lined_ditch_owner_by_side(drainage_model)
+    flow_route_by_drainage_ref = _flow_route_by_drainage_ref(drainage_model)
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
         section_sides = _ditch_surface_sides(section)
@@ -378,6 +379,7 @@ def _lined_ditch_target_rows(
         target_id = f"solid-target:lined-ditch:{side}"
         drainage_owner = drainage_owner_by_side.get(side)
         drainage_ref = str(getattr(drainage_owner, "drainage_element_id", "") or "") if drainage_owner is not None else f"lined_ditch:{side}"
+        flow_route_ref = flow_route_by_drainage_ref.get(drainage_ref, "")
         component_refs = _unique_refs(list(component_data.get("component_refs", []) or []))
         materials = _unique_refs(list(component_data.get("materials", []) or []))
         thicknesses = [float(value) for value in list(component_data.get("thicknesses", []) or [])]
@@ -413,6 +415,7 @@ def _lined_ditch_target_rows(
                 station_end=max(all_stations),
                 component_ref=_single_ref(component_refs),
                 drainage_ref=drainage_ref,
+                flow_route_ref=flow_route_ref,
                 enabled=False,
                 material_ref=materials[0] if len(materials) == 1 else "",
                 readiness_status="available" if has_surface and has_material and has_lining_thickness else "blocked",
@@ -421,12 +424,13 @@ def _lined_ditch_target_rows(
                     + component_refs
                     + [f"ditch_surface:{side}"]
                     + _drainage_owner_source_refs(drainage_model, drainage_owner)
+                    + ([flow_route_ref] if flow_route_ref else [])
                 ),
                 diagnostic_refs=diagnostic_refs,
                 notes=(
                     f"Lined ditch {side} target discovered from ditch_surface rows and Assembly ditch component context."
                     + (
-                        f" DrainageModel owner={drainage_ref}; policy={str(getattr(drainage_owner, 'policy_set_ref', '') or '')}."
+                        f" DrainageModel owner={drainage_ref}; policy={str(getattr(drainage_owner, 'policy_set_ref', '') or '')}; flow_route={flow_route_ref}."
                         if drainage_owner is not None
                         else ""
                     )
@@ -463,6 +467,23 @@ def _drainage_owner_source_refs(drainage_model: DrainageModel | None, drainage_o
             str(getattr(drainage_owner, "policy_set_ref", "") or ""),
         ]
     )
+
+
+def _flow_route_by_drainage_ref(drainage_model: DrainageModel | None) -> dict[str, str]:
+    if drainage_model is None:
+        return {}
+    output: dict[str, str] = {}
+    for row in list(getattr(drainage_model, "flow_route_rows", []) or []):
+        route_id = str(getattr(row, "flow_route_id", "") or "").strip()
+        if not route_id:
+            continue
+        for ref in [
+            str(getattr(row, "from_element_ref", "") or "").strip(),
+            str(getattr(row, "to_element_ref", "") or "").strip(),
+        ]:
+            if ref and ref not in output:
+                output[ref] = route_id
+    return output
 
 
 def _station_range(applied: AppliedSectionSet | None) -> tuple[float, float, int]:

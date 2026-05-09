@@ -379,7 +379,12 @@ def _basis_from_lined_ditch_section(
             region_ref=str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""),
             profile_role="lined_ditch_body",
             nodes=tuple(top_nodes + bottom_nodes),
-            notes=f"drainage_ref={str(getattr(target, 'drainage_ref', '') or '')};component_ref={component_ref};side={side};material={material};lining_thickness={thickness:g};join_policy={join_policy};miter_limit={miter_limit:g}",
+            notes=(
+                f"drainage_ref={str(getattr(target, 'drainage_ref', '') or '')};"
+                f"flow_route_ref={str(getattr(target, 'flow_route_ref', '') or '')};"
+                f"component_ref={component_ref};side={side};material={material};"
+                f"lining_thickness={thickness:g};join_policy={join_policy};miter_limit={miter_limit:g}"
+            ),
         ),
         diagnostics,
     )

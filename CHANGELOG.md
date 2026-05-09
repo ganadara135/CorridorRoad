@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Added
+- Added a detailed Drainage Flow Route graph implementation plan covering Element nodes, Flow Route edges, Outlet terminology, UI behavior, validation, review handoff, and obsolete property removal.
 - Added Stationing-based Region editing where Region `Start STA` values are selected from generated station values and `End STA` is derived from the next Region start.
 - Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
 - Added Surface Transition controls in Build Corridor for selecting a Region STA, adjusting transition spacing, reviewing derived sample counts, enabling/disabling transition ranges, and updating transition records.
@@ -44,7 +45,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added lined-ditch lining join controls with optional miter joins, miter-limit fallback diagnostics, and output provenance for join policy.
 - Added first-slice `V1DrainageModel` document object persistence and connected persisted DrainageModel ownership into Watertight Solid target discovery.
 - Added DrainageModel validation diagnostics for duplicate ids, invalid station ranges, missing policy ids, and missing policy references.
-- Added the first Drainage editor task panel with editable element, policy, and collection tables plus Validate/Apply persistence.
+- Added the first Drainage editor task panel with editable element, policy, and flow-route tables plus Validate/Apply persistence.
 - Added first-slice Drainage element authoring fields for side, Region ref, Assembly component ref, and side-specific ditch defaults, with persistence into `V1DrainageModel` and Watertight Solid lined-ditch ownership.
 - Added first-slice Region-to-Drainage handoff in the Region editor, including row-level Drainage selection and missing `drainage_ref` validation.
 - Added first-slice Applied Section Drainage handoff so active Region drainage refs are preserved on ditch component rows, generated `ditch_surface` points, Applied Section source refs, and `V1AppliedSectionSet` persistence.
@@ -54,6 +55,14 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets.
 
 ### Changed
+- Documented Drainage Flow Routes as graph edges between Element nodes and standardized final discharge wording on `Outlet`.
+- Renamed the Drainage `Collections` editor tab to `Flow Routes` to separate drainage targets from connection/routing intent.
+- Changed the Drainage source contract from `collection_region_rows` to `flow_route_rows`, removed obsolete `Collection*` route fallback from active Drainage code, and replaced Flow Route receiver persistence with `FlowRouteOutletRefs`.
+- Changed the Drainage Flow Routes editor column from `Receiver` to `Outlet`.
+- Changed Drainage Flow Routes editing so `From Element`, `To Element`, and `Outlet` use row-level selectors populated from current Drainage Elements, with a route preview for the selected row.
+- Added Drainage Flow Route graph validation for missing From/To refs, broken Element refs, invalid Outlet refs, self-loops, cycles, and missing outlet context warnings.
+- Added Drainage Review Flow Routes handoff rows and a dedicated review tab showing From, To, Outlet, risk, chain preview, Region ownership, and Policy ownership context.
+- Added Flow Route provenance handoff into drainage quantities, quantity outputs, lined-ditch watertight solid targets, watertight solid outputs, persisted solid output objects, and exchange source-context rows.
 - Removed the optional `Offset Rule` field from the Drainage Elements editor and internal `DrainageElementRow` source contract.
 - Changed Applied Sections validation to report Drainage element rows that have an Element ID but no Region assignment.
 - Changed Drainage validation so element `Start STA` and `End STA` are checked against the selected Region boundary.

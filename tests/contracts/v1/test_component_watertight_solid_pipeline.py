@@ -234,6 +234,7 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
         target_family="lined_ditch_body",
         scope_kind="drainage",
         drainage_ref="lined_ditch:right",
+        flow_route_ref="flow-route:right",
         component_ref="ditch:right",
         material_ref="concrete",
         station_start=0.0,
@@ -275,11 +276,13 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
     assert output.solid_rows[0].target_family == "lined_ditch_body"
     assert output.solid_rows[0].scope_kind == "drainage"
     assert output.solid_rows[0].drainage_ref == "lined_ditch:right"
+    assert output.solid_rows[0].flow_route_ref == "flow-route:right"
     assert output.solid_rows[0].component_ref == "ditch:right"
     assert output.solid_rows[0].material_ref == "concrete"
     provenance_rows = [row for row in output.solid_diagnostic_rows if row.kind == "lined_ditch_shape_provenance"]
     assert len(provenance_rows) == 1
     assert "drainage_ref=lined_ditch:right" in provenance_rows[0].notes
+    assert "flow_route_ref=flow-route:right" in provenance_rows[0].notes
     assert "component_ref=ditch:right" in provenance_rows[0].notes
     assert "side=right" in provenance_rows[0].notes
     assert "material=concrete" in provenance_rows[0].notes
@@ -304,6 +307,7 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
     assert any(
         row["context_kind"] == "watertight_solid"
         and row["drainage_ref"] == "lined_ditch:right"
+        and row["flow_route_ref"] == "flow-route:right"
         and row["material_ref"] == "concrete"
         for row in context_rows
     )

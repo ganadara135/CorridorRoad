@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 
 from ...common.diagnostics import DiagnosticMessage
 from ...models.source.drainage_model import (
-    DrainageCollectionRegion,
     DrainageElementRow,
+    DrainageFlowRoute,
     DrainageModel,
 )
 from ...models.source.region_model import RegionModel
@@ -29,8 +29,8 @@ class DrainageResolutionResult:
     active_element_id: str = ""
     active_element_kind: str = ""
     active_policy_set_ref: str = ""
-    active_collection_region_id: str = ""
-    collection_risk_level: str = ""
+    active_flow_route_id: str = ""
+    flow_route_risk_level: str = ""
 
 
 class DrainageValidationService:
@@ -40,7 +40,7 @@ class DrainageValidationService:
         diagnostics: list[DiagnosticMessage] = []
         element_rows = list(getattr(drainage_model, "element_rows", []) or [])
         policy_rows = list(getattr(drainage_model, "policy_rows", []) or [])
-        collection_rows = list(getattr(drainage_model, "collection_region_rows", []) or [])
+        flow_route_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
         policy_ids = _policy_id_set(policy_rows)
         region_ranges = None if region_model is None else _region_station_ranges(region_model)
 
@@ -55,10 +55,10 @@ class DrainageValidationService:
         )
         diagnostics.extend(
             _duplicate_id_diagnostics(
-                collection_rows,
-                "collection_region_id",
-                "duplicate_collection_region_id",
-                "Drainage collection region id is duplicated.",
+                flow_route_rows,
+                "flow_route_id",
+                "duplicate_flow_route_id",
+                "Drainage flow route id is duplicated.",
             )
         )
 
@@ -112,26 +112,19 @@ class DrainageValidationService:
             if not str(getattr(row, "flow_intent", "") or "").strip():
                 diagnostics.append(_diagnostic("warning", "missing_flow_intent", source_ref, "Drainage policy flow_intent is not set."))
 
-        for index, row in enumerate(collection_rows, start=1):
-            region_id = str(getattr(row, "collection_region_id", "") or "").strip()
-            source_ref = region_id or f"drainage-collection:{index}"
-            if not region_id:
-                diagnostics.append(_diagnostic("error", "missing_collection_region_id", source_ref, "Drainage collection region id is required."))
-            station_diagnostic = _station_range_diagnostic(
-                row,
-                source_ref=source_ref,
-                kind="invalid_collection_region_station_range",
-                label="Drainage collection region",
-            )
-            if station_diagnostic is not None:
-                diagnostics.append(station_diagnostic)
+        for index, row in enumerate(flow_route_rows, start=1):
+            route_id = str(getattr(row, "flow_route_id", "") or "").strip()
+            source_ref = route_id or f"flow-route:{index}"
+            if not route_id:
+                diagnostics.append(_diagnostic("error", "missing_flow_route_id", source_ref, "Drainage flow route id is required."))
+        diagnostics.extend(_flow_route_graph_diagnostics(flow_route_rows, element_rows))
 
         status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
         return DrainageValidationResult(status=status, diagnostic_rows=diagnostics)
 
 
 class DrainageResolutionService:
-    """Resolve drainage element and collection-region context for a station."""
+    """Resolve drainage element and flow-route context for a station."""
 
     def __init__(self, *, validation_service: DrainageValidationService | None = None) -> None:
         self.validation_service = validation_service or DrainageValidationService()
@@ -149,15 +142,15 @@ class DrainageResolutionService:
         """Resolve the active drainage context covering the station."""
 
         element = self._find_active_element(drainage_model.element_rows, station)
-        region = self._find_active_region(drainage_model.collection_region_rows, station)
+        route = self._find_active_flow_route(getattr(drainage_model, "flow_route_rows", []) or [], element)
 
         return DrainageResolutionResult(
             station=station,
             active_element_id="" if element is None else element.drainage_element_id,
             active_element_kind="" if element is None else element.element_kind,
             active_policy_set_ref="" if element is None else element.policy_set_ref,
-            active_collection_region_id="" if region is None else region.collection_region_id,
-            collection_risk_level="" if region is None else region.risk_level,
+            active_flow_route_id="" if route is None else route.flow_route_id,
+            flow_route_risk_level="" if route is None else route.risk_level,
         )
 
     @staticmethod
@@ -171,12 +164,15 @@ class DrainageResolutionService:
         return None
 
     @staticmethod
-    def _find_active_region(
-        region_rows: list[DrainageCollectionRegion],
-        station: float,
-    ) -> DrainageCollectionRegion | None:
-        for row in region_rows:
-            if row.station_start <= station <= row.station_end:
+    def _find_active_flow_route(
+        route_rows: list[DrainageFlowRoute],
+        element: DrainageElementRow | None,
+    ) -> DrainageFlowRoute | None:
+        if element is None:
+            return None
+        element_id = str(getattr(element, "drainage_element_id", "") or "")
+        for row in route_rows:
+            if str(getattr(row, "from_element_ref", "") or "") == element_id:
                 return row
         return None
 
@@ -195,6 +191,141 @@ def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, messa
         if row_id in seen:
             diagnostics.append(_diagnostic("error", kind, row_id, message, notes=f"row_index={index}"))
         seen.add(row_id)
+    return diagnostics
+
+
+def _flow_route_graph_diagnostics(
+    flow_route_rows: list[DrainageFlowRoute],
+    element_rows: list[DrainageElementRow],
+) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(element_rows or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    element_ids = set(element_by_id)
+    structure_refs = {
+        str(getattr(row, "structure_ref", "") or "").strip()
+        for row in list(element_rows or [])
+        if str(getattr(row, "structure_ref", "") or "").strip()
+    }
+    adjacency: dict[str, list[tuple[str, str]]] = {}
+
+    for index, row in enumerate(list(flow_route_rows or []), start=1):
+        route_id = str(getattr(row, "flow_route_id", "") or "").strip()
+        source_ref = route_id or f"flow-route:{index}"
+        from_ref = str(getattr(row, "from_element_ref", "") or "").strip()
+        to_ref = str(getattr(row, "to_element_ref", "") or "").strip()
+        outlet_ref = str(getattr(row, "outlet_ref", "") or "").strip()
+
+        if not from_ref:
+            diagnostics.append(_diagnostic("error", "missing_flow_route_from_element_ref", source_ref, "Flow Route From Element is required."))
+        elif from_ref not in element_ids:
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "missing_flow_route_from_element",
+                    source_ref,
+                    f"Flow Route From Element does not exist: {from_ref}.",
+                    notes=f"from_element_ref={from_ref}",
+                )
+            )
+
+        if not to_ref:
+            diagnostics.append(_diagnostic("error", "missing_flow_route_to_element_ref", source_ref, "Flow Route To Element is required."))
+        elif to_ref not in element_ids:
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "missing_flow_route_to_element",
+                    source_ref,
+                    f"Flow Route To Element does not exist: {to_ref}.",
+                    notes=f"to_element_ref={to_ref}",
+                )
+            )
+
+        if from_ref and to_ref and from_ref == to_ref:
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "flow_route_self_loop",
+                    source_ref,
+                    f"Flow Route cannot connect an Element to itself: {from_ref}.",
+                    notes=f"from_element_ref={from_ref};to_element_ref={to_ref}",
+                )
+            )
+
+        if outlet_ref and not _known_outlet_ref(outlet_ref, element_ids=element_ids, structure_refs=structure_refs):
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "missing_flow_route_outlet_ref",
+                    source_ref,
+                    f"Flow Route Outlet does not exist or is not a named external outlet: {outlet_ref}.",
+                    notes=f"outlet_ref={outlet_ref}",
+                )
+            )
+
+        if from_ref and to_ref and from_ref in element_ids and to_ref in element_ids and from_ref != to_ref:
+            adjacency.setdefault(from_ref, []).append((to_ref, source_ref))
+            to_kind = str(getattr(element_by_id.get(to_ref), "element_kind", "") or "").strip().lower()
+            if not outlet_ref and to_kind != "outfall_reference":
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "flow_route_missing_outlet",
+                        source_ref,
+                        "Flow Route has no final Outlet context and does not end at an outfall_reference Element.",
+                        notes=f"to_element_ref={to_ref};to_element_kind={to_kind}",
+                    )
+                )
+
+    diagnostics.extend(_cycle_diagnostics(adjacency))
+    return diagnostics
+
+
+def _known_outlet_ref(outlet_ref: str, *, element_ids: set[str], structure_refs: set[str]) -> bool:
+    if outlet_ref in element_ids or outlet_ref in structure_refs:
+        return True
+    return outlet_ref.startswith(("outfall:", "outlet:", "structure:"))
+
+
+def _cycle_diagnostics(adjacency: dict[str, list[tuple[str, str]]]) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    stack: list[str] = []
+    reported: set[tuple[str, ...]] = set()
+
+    def visit(node: str) -> None:
+        if node in visiting:
+            cycle_nodes = stack[stack.index(node) :] + [node] if node in stack else [node]
+            key = tuple(cycle_nodes)
+            if key not in reported:
+                reported.add(key)
+                diagnostics.append(
+                    _diagnostic(
+                        "error",
+                        "flow_route_cycle",
+                        node,
+                        "Flow Route graph contains a cycle.",
+                        notes=f"chain={' -> '.join(cycle_nodes)}",
+                    )
+                )
+            return
+        if node in visited:
+            return
+        visiting.add(node)
+        stack.append(node)
+        for next_node, _route_id in list(adjacency.get(node, []) or []):
+            visit(next_node)
+        stack.pop()
+        visiting.remove(node)
+        visited.add(node)
+
+    for node in sorted(adjacency):
+        visit(node)
     return diagnostics
 
 

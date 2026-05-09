@@ -14,8 +14,8 @@ from freecad.Corridor_Road.objects.obj_project import find_project
 from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from ..models.source.drainage_model import (
-    DrainageCollectionRegion,
     DrainageElementRow,
+    DrainageFlowRoute,
     DrainageModel,
     DrainagePolicySet,
 )
@@ -34,6 +34,9 @@ SIDE_CHOICES = ["", "left", "right", "both", "center"]
 FLOW_INTENT_CHOICES = ["collect_and_convey", "edge_runoff_capture", "ditch_outfall", "cross_drainage_transfer"]
 ELEMENT_KIND_COLUMN = 1
 ELEMENT_STRUCTURE_COLUMN = 8
+FLOW_ROUTE_FROM_COLUMN = 1
+FLOW_ROUTE_TO_COLUMN = 2
+FLOW_ROUTE_OUTLET_COLUMN = 3
 DRAINAGE_PRESETS = {
     "Roadside Ditch": {
         "note": "One right-side roadside ditch across the available station range.",
@@ -45,6 +48,15 @@ DRAINAGE_PRESETS = {
                 "start": 0.0,
                 "end": 1.0,
                 "component": "ditch:right",
+                "policy": "drainage-policy:lined-concrete",
+            },
+            {
+                "id": "drainage:outfall-main",
+                "kind": "outfall_reference",
+                "side": "right",
+                "start": 0.98,
+                "end": 1.0,
+                "structure": "outfall:main",
                 "policy": "drainage-policy:lined-concrete",
             }
         ],
@@ -59,19 +71,21 @@ DRAINAGE_PRESETS = {
                 "earthwork": "preserve_conveyance",
             }
         ],
-        "collections": [
+        "flow_routes": [
             {
-                "id": "drainage-collection:main",
-                "kind": "roadside_collection",
+                "id": "flow-route:main",
+                "kind": "roadside_flow",
+                "from": "drainage:side-ditch-right",
+                "to": "drainage:outfall-main",
                 "start": 0.0,
                 "end": 1.0,
-                "receiver": "outfall:main",
+                "outlet": "drainage:outfall-main",
                 "risk": "medium",
             }
         ],
     },
     "Dual Side Ditches": {
-        "note": "Left and right roadside ditches with one shared collection policy.",
+        "note": "Left and right roadside ditches with one shared flow policy.",
         "elements": [
             {
                 "id": "drainage:side-ditch-left",
@@ -91,6 +105,24 @@ DRAINAGE_PRESETS = {
                 "component": "ditch:right",
                 "policy": "drainage-policy:lined-concrete",
             },
+            {
+                "id": "drainage:outfall-left",
+                "kind": "outfall_reference",
+                "side": "left",
+                "start": 0.98,
+                "end": 1.0,
+                "structure": "outfall:left",
+                "policy": "drainage-policy:lined-concrete",
+            },
+            {
+                "id": "drainage:outfall-right",
+                "kind": "outfall_reference",
+                "side": "right",
+                "start": 0.98,
+                "end": 1.0,
+                "structure": "outfall:right",
+                "policy": "drainage-policy:lined-concrete",
+            },
         ],
         "policies": [
             {
@@ -103,21 +135,25 @@ DRAINAGE_PRESETS = {
                 "earthwork": "preserve_conveyance",
             }
         ],
-        "collections": [
+        "flow_routes": [
             {
-                "id": "drainage-collection:left",
-                "kind": "roadside_collection",
+                "id": "flow-route:left",
+                "kind": "roadside_flow",
+                "from": "drainage:side-ditch-left",
+                "to": "drainage:outfall-left",
                 "start": 0.0,
                 "end": 1.0,
-                "receiver": "outfall:left",
+                "outlet": "drainage:outfall-left",
                 "risk": "medium",
             },
             {
-                "id": "drainage-collection:right",
-                "kind": "roadside_collection",
+                "id": "flow-route:right",
+                "kind": "roadside_flow",
+                "from": "drainage:side-ditch-right",
+                "to": "drainage:outfall-right",
                 "start": 0.0,
                 "end": 1.0,
-                "receiver": "outfall:right",
+                "outlet": "drainage:outfall-right",
                 "risk": "medium",
             },
         ],
@@ -174,13 +210,15 @@ DRAINAGE_PRESETS = {
                 "earthwork": "structure_control",
             },
         ],
-        "collections": [
+        "flow_routes": [
             {
-                "id": "drainage-collection:culvert-01",
-                "kind": "ditch_collection_region",
+                "id": "flow-route:culvert-01",
+                "kind": "ditch_to_structure",
+                "from": "drainage:side-ditch-left",
+                "to": "drainage:culvert-01",
                 "start": 0.45,
                 "end": 0.55,
-                "receiver": "structure:culvert-01",
+                "outlet": "structure:culvert-01",
                 "risk": "high",
             }
         ],
@@ -266,7 +304,7 @@ def drainage_preset_model_from_document(
         label=str(preset_name or "Drainage"),
         element_rows=_preset_element_rows(preset, station_start=station_start, station_end=station_end),
         policy_rows=_preset_policy_rows(preset),
-        collection_region_rows=_preset_collection_rows(preset, station_start=station_start, station_end=station_end),
+        flow_route_rows=_preset_flow_route_rows(preset),
     )
 
 
@@ -357,14 +395,21 @@ class V1DrainageEditorTaskPanel:
         self._policy_table = self._table(
             ["Policy ID", "Flow Intent", "Min Grade", "Low Point", "Collection", "Discharge", "Earthwork Priority"]
         )
-        self._collection_table = self._table(
-            ["Collection ID", "Kind", "Start STA", "End STA", "Receiver", "Risk", "Alignment"]
+        self._flow_route_table = self._table(
+            ["Flow Route ID", "From Element", "To Element", "Outlet", "Direction", "Risk", "Notes"]
         )
+        self._element_table.cellChanged.connect(lambda row, column: self._on_element_table_changed(row, column))
+        self._flow_route_table.cellChanged.connect(lambda _row, _column: self._update_flow_route_preview())
+        self._flow_route_table.itemSelectionChanged.connect(self._update_flow_route_preview)
         self._tabs.addTab(self._element_table, "Elements")
         self._tabs.addTab(self._policy_table, "Policies")
-        self._tabs.addTab(self._collection_table, "Collections")
+        self._tabs.addTab(self._flow_route_table, "Flow Routes")
         self._tabs.currentChanged.connect(lambda _index: self._update_tab_action_visibility())
         layout.addWidget(self._tabs, 1)
+
+        self._flow_route_preview = QtWidgets.QLabel("")
+        self._flow_route_preview.setWordWrap(True)
+        layout.addWidget(self._flow_route_preview)
 
         edit_row = QtWidgets.QHBoxLayout()
         self._add_element_button = QtWidgets.QPushButton("Add Element")
@@ -379,9 +424,9 @@ class V1DrainageEditorTaskPanel:
         self._add_policy_button = QtWidgets.QPushButton("Add Policy")
         self._add_policy_button.clicked.connect(self._add_policy_row)
         edit_row.addWidget(self._add_policy_button)
-        self._add_collection_button = QtWidgets.QPushButton("Add Collection")
-        self._add_collection_button.clicked.connect(self._add_collection_row)
-        edit_row.addWidget(self._add_collection_button)
+        self._add_flow_route_button = QtWidgets.QPushButton("Add Flow Route")
+        self._add_flow_route_button.clicked.connect(self._add_flow_route_row)
+        edit_row.addWidget(self._add_flow_route_button)
         delete_row = QtWidgets.QPushButton("Delete Selected")
         delete_row.clicked.connect(self._delete_selected_rows)
         edit_row.addWidget(delete_row)
@@ -458,9 +503,9 @@ class V1DrainageEditorTaskPanel:
         self._policy_table.setRowCount(0)
         for row in list(getattr(model, "policy_rows", []) or []):
             self._append_policy_row(row)
-        self._collection_table.setRowCount(0)
-        for row in list(getattr(model, "collection_region_rows", []) or []):
-            self._append_collection_row(row)
+        self._flow_route_table.setRowCount(0)
+        for row in list(getattr(model, "flow_route_rows", []) or []):
+            self._append_flow_route_row(row)
 
     def _append_element_row(self, row: DrainageElementRow | None = None) -> None:
         row = row or self._default_ditch_row("right")
@@ -485,7 +530,7 @@ class V1DrainageEditorTaskPanel:
                 combo.setCurrentText(str(value or "ditch"))
                 try:
                     combo.currentTextChanged.connect(
-                        lambda _text, row_index=index: self._update_element_structure_cell_state(row_index)
+                        lambda _text, row_index=index: self._on_element_kind_changed(row_index)
                     )
                 except Exception:
                     pass
@@ -506,6 +551,7 @@ class V1DrainageEditorTaskPanel:
             else:
                 self._element_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
         self._update_element_structure_cell_state(index)
+        self._refresh_flow_route_element_combos()
 
     def _default_ditch_row(self, side: str) -> DrainageElementRow:
         normalized_side = str(side or "right").strip().lower() or "right"
@@ -561,26 +607,29 @@ class V1DrainageEditorTaskPanel:
             else:
                 self._policy_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
 
-    def _append_collection_row(self, row: DrainageCollectionRegion | None = None) -> None:
-        row = row or DrainageCollectionRegion(
-            collection_region_id=f"drainage-collection:{self._collection_table.rowCount() + 1}",
-            region_kind="roadside_collection",
-            station_start=0.0,
-            station_end=100.0,
+    def _append_flow_route_row(self, row: DrainageFlowRoute | None = None) -> None:
+        row = row or DrainageFlowRoute(
+            flow_route_id=f"flow-route:{self._flow_route_table.rowCount() + 1}",
         )
-        index = self._collection_table.rowCount()
-        self._collection_table.insertRow(index)
+        index = self._flow_route_table.rowCount()
+        self._flow_route_table.insertRow(index)
         values = [
-            row.collection_region_id,
-            row.region_kind,
-            _format_float(row.station_start),
-            _format_float(row.station_end),
-            row.expected_receiver_ref,
+            row.flow_route_id,
+            row.from_element_ref,
+            row.to_element_ref,
+            row.outlet_ref,
+            row.direction,
             row.risk_level,
-            row.alignment_ref,
+            row.notes,
         ]
         for col, value in enumerate(values):
-            self._collection_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+            if col == FLOW_ROUTE_FROM_COLUMN or col == FLOW_ROUTE_TO_COLUMN:
+                self._set_combo_cell(self._flow_route_table, index, col, str(value), self._element_ref_choices())
+            elif col == FLOW_ROUTE_OUTLET_COLUMN:
+                self._set_combo_cell(self._flow_route_table, index, col, str(value), self._outlet_ref_choices())
+            else:
+                self._flow_route_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+        self._update_flow_route_preview()
 
     def _add_element_row(self) -> None:
         self._append_element_row()
@@ -595,9 +644,9 @@ class V1DrainageEditorTaskPanel:
         self._append_policy_row()
         self._set_status("Added Drainage policy row.")
 
-    def _add_collection_row(self) -> None:
-        self._append_collection_row()
-        self._set_status("Added Drainage collection row.")
+    def _add_flow_route_row(self) -> None:
+        self._append_flow_route_row()
+        self._set_status("Added Drainage flow route row.")
 
     def _delete_selected_rows(self) -> None:
         table = self._tabs.currentWidget()
@@ -608,13 +657,17 @@ class V1DrainageEditorTaskPanel:
             rows = [table.currentRow()]
         for row_index in rows:
             table.removeRow(row_index)
+        if table is self._element_table:
+            self._refresh_flow_route_element_combos()
+        if table is self._flow_route_table:
+            self._update_flow_route_preview()
         self._set_status(f"Deleted {len(rows)} row(s).")
 
     def _update_tab_action_visibility(self) -> None:
         current = self._tabs.currentWidget() if hasattr(self, "_tabs") else None
         is_elements = current is getattr(self, "_element_table", None)
         is_policies = current is getattr(self, "_policy_table", None)
-        is_collections = current is getattr(self, "_collection_table", None)
+        is_flow_routes = current is getattr(self, "_flow_route_table", None)
         for button in (
             getattr(self, "_add_element_button", None),
             getattr(self, "_add_left_ditch_button", None),
@@ -624,8 +677,8 @@ class V1DrainageEditorTaskPanel:
                 button.setVisible(is_elements)
         if getattr(self, "_add_policy_button", None) is not None:
             self._add_policy_button.setVisible(is_policies)
-        if getattr(self, "_add_collection_button", None) is not None:
-            self._add_collection_button.setVisible(is_collections)
+        if getattr(self, "_add_flow_route_button", None) is not None:
+            self._add_flow_route_button.setVisible(is_flow_routes)
 
     def _validate(self) -> None:
         try:
@@ -662,7 +715,7 @@ class V1DrainageEditorTaskPanel:
             label="Drainage",
             element_rows=self._element_rows(),
             policy_rows=self._policy_rows(),
-            collection_region_rows=self._collection_rows(),
+            flow_route_rows=self._flow_route_rows(),
         )
 
     def _element_rows(self) -> list[DrainageElementRow]:
@@ -708,18 +761,18 @@ class V1DrainageEditorTaskPanel:
             )
         return rows
 
-    def _collection_rows(self) -> list[DrainageCollectionRegion]:
-        rows: list[DrainageCollectionRegion] = []
-        for index in range(self._collection_table.rowCount()):
+    def _flow_route_rows(self) -> list[DrainageFlowRoute]:
+        rows: list[DrainageFlowRoute] = []
+        for index in range(self._flow_route_table.rowCount()):
             rows.append(
-                DrainageCollectionRegion(
-                    collection_region_id=_item_text(self._collection_table, index, 0) or f"drainage-collection:{index + 1}",
-                    region_kind=_item_text(self._collection_table, index, 1),
-                    station_start=_float_value(_item_text(self._collection_table, index, 2)),
-                    station_end=_float_value(_item_text(self._collection_table, index, 3)),
-                    expected_receiver_ref=_item_text(self._collection_table, index, 4),
-                    risk_level=_item_text(self._collection_table, index, 5),
-                    alignment_ref=_item_text(self._collection_table, index, 6),
+                DrainageFlowRoute(
+                    flow_route_id=_item_text(self._flow_route_table, index, 0) or f"flow-route:{index + 1}",
+                    from_element_ref=_item_text(self._flow_route_table, index, 1),
+                    to_element_ref=_item_text(self._flow_route_table, index, 2),
+                    outlet_ref=_item_text(self._flow_route_table, index, 3),
+                    direction=_item_text(self._flow_route_table, index, 4),
+                    risk_level=_item_text(self._flow_route_table, index, 5),
+                    notes=_item_text(self._flow_route_table, index, 6),
                 )
             )
         return rows
@@ -732,6 +785,96 @@ class V1DrainageEditorTaskPanel:
 
     def _region_model(self):
         return to_region_model(find_v1_region_model(self.document))
+
+    def _on_element_table_changed(self, row_index: int, column_index: int) -> None:
+        if column_index in {0, ELEMENT_KIND_COLUMN, ELEMENT_STRUCTURE_COLUMN}:
+            self._refresh_flow_route_element_combos()
+            self._update_flow_route_preview()
+
+    def _on_element_kind_changed(self, row_index: int) -> None:
+        self._update_element_structure_cell_state(row_index)
+        self._refresh_flow_route_element_combos()
+        self._update_flow_route_preview()
+
+    def _set_combo_cell(self, table, row: int, column: int, value: str, choices: list[str]) -> None:
+        combo = QtWidgets.QComboBox()
+        combo.setEditable(True)
+        for choice in _unique_texts(["", *choices, value]):
+            combo.addItem(choice)
+        combo.setCurrentText(str(value or ""))
+        try:
+            combo.currentTextChanged.connect(lambda _text: self._update_flow_route_preview())
+        except Exception:
+            pass
+        table.setCellWidget(row, column, combo)
+
+    def _refresh_flow_route_element_combos(self) -> None:
+        if not hasattr(self, "_flow_route_table"):
+            return
+        element_choices = self._element_ref_choices()
+        outlet_choices = self._outlet_ref_choices()
+        for index in range(self._flow_route_table.rowCount()):
+            self._set_combo_cell(
+                self._flow_route_table,
+                index,
+                FLOW_ROUTE_FROM_COLUMN,
+                _item_text(self._flow_route_table, index, FLOW_ROUTE_FROM_COLUMN),
+                element_choices,
+            )
+            self._set_combo_cell(
+                self._flow_route_table,
+                index,
+                FLOW_ROUTE_TO_COLUMN,
+                _item_text(self._flow_route_table, index, FLOW_ROUTE_TO_COLUMN),
+                element_choices,
+            )
+            self._set_combo_cell(
+                self._flow_route_table,
+                index,
+                FLOW_ROUTE_OUTLET_COLUMN,
+                _item_text(self._flow_route_table, index, FLOW_ROUTE_OUTLET_COLUMN),
+                outlet_choices,
+            )
+
+    def _element_ref_choices(self) -> list[str]:
+        choices: list[str] = []
+        for index in range(self._element_table.rowCount()):
+            element_id = _source_prefixed_id(_item_text(self._element_table, index, 0), "drainage:", f"element:{index + 1}")
+            if element_id:
+                choices.append(element_id)
+        return _unique_texts(choices)
+
+    def _outlet_ref_choices(self) -> list[str]:
+        choices: list[str] = []
+        for index in range(self._element_table.rowCount()):
+            element_id = _source_prefixed_id(_item_text(self._element_table, index, 0), "drainage:", f"element:{index + 1}")
+            element_kind = str(_item_text(self._element_table, index, ELEMENT_KIND_COLUMN) or "").strip().lower()
+            structure_ref = _item_text(self._element_table, index, ELEMENT_STRUCTURE_COLUMN)
+            if element_id and (element_kind == "outfall_reference" or element_kind.endswith("_reference")):
+                choices.append(element_id)
+            if structure_ref and element_kind != "ditch":
+                choices.append(structure_ref)
+        return _unique_texts(choices)
+
+    def _update_flow_route_preview(self) -> None:
+        if not hasattr(self, "_flow_route_preview"):
+            return
+        if self._flow_route_table.rowCount() <= 0:
+            self._flow_route_preview.setText("")
+            return
+        row = self._flow_route_table.currentRow()
+        if row < 0:
+            row = 0
+        route_id = _item_text(self._flow_route_table, row, 0) or f"flow-route:{row + 1}"
+        from_ref = _item_text(self._flow_route_table, row, FLOW_ROUTE_FROM_COLUMN) or "(from)"
+        to_ref = _item_text(self._flow_route_table, row, FLOW_ROUTE_TO_COLUMN)
+        outlet_ref = _item_text(self._flow_route_table, row, FLOW_ROUTE_OUTLET_COLUMN)
+        chain = [from_ref]
+        if to_ref:
+            chain.append(to_ref)
+        if outlet_ref and outlet_ref != to_ref:
+            chain.append(outlet_ref)
+        self._flow_route_preview.setText(f"{route_id}: {' -> '.join(chain)}")
 
     def _update_element_structure_cell_state(self, row_index: int) -> None:
         if row_index < 0 or row_index >= self._element_table.rowCount():
@@ -785,6 +928,18 @@ def _source_prefixed_id(value: object, prefix: str, default_suffix: str = "") ->
     if prefix and not text.startswith(prefix):
         return f"{prefix}{text}"
     return text
+
+
+def _unique_texts(values: list[object]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def _structure_disabled_for_kind(kind: object) -> bool:
@@ -847,17 +1002,16 @@ def _preset_policy_rows(preset: dict) -> list[DrainagePolicySet]:
     return rows
 
 
-def _preset_collection_rows(preset: dict, *, station_start: float, station_end: float) -> list[DrainageCollectionRegion]:
-    rows: list[DrainageCollectionRegion] = []
-    for index, spec in enumerate(list(preset.get("collections", []) or []), start=1):
+def _preset_flow_route_rows(preset: dict) -> list[DrainageFlowRoute]:
+    rows: list[DrainageFlowRoute] = []
+    for index, spec in enumerate(list(preset.get("flow_routes", []) or []), start=1):
         rows.append(
-            DrainageCollectionRegion(
-                collection_region_id=str(spec.get("id", "") or f"drainage-collection:{index}"),
-                region_kind=str(spec.get("kind", "") or "roadside_collection"),
-                station_start=_preset_station_value(spec.get("start", 0.0), station_start=station_start, station_end=station_end),
-                station_end=_preset_station_value(spec.get("end", 1.0), station_start=station_start, station_end=station_end),
-                alignment_ref=str(spec.get("alignment", "") or ""),
-                expected_receiver_ref=str(spec.get("receiver", "") or ""),
+            DrainageFlowRoute(
+                flow_route_id=str(spec.get("id", "") or f"flow-route:{index}"),
+                from_element_ref=str(spec.get("from", "") or ""),
+                to_element_ref=str(spec.get("to", "") or ""),
+                outlet_ref=str(spec.get("outlet", "") or ""),
+                direction=str(spec.get("kind", "") or "roadside_flow"),
                 risk_level=str(spec.get("risk", "") or ""),
             )
         )
@@ -896,7 +1050,7 @@ def _format_validation_result(result, model: DrainageModel) -> str:
         f"Validation: {result.status}",
         f"Elements: {len(model.element_rows)}",
         f"Policies: {len(model.policy_rows)}",
-        f"Collections: {len(model.collection_region_rows)}",
+        f"Flow Routes: {len(model.flow_route_rows)}",
         f"Diagnostics: {len(result.diagnostic_rows)}",
     ]
     for row in list(result.diagnostic_rows or [])[:6]:

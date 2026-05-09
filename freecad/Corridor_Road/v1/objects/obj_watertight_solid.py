@@ -75,6 +75,7 @@ def ensure_v1_watertight_solid_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "AssemblyRefs", "Solid Rows", "assembly refs")
     _add_property(obj, "App::PropertyStringList", "StructureRefs", "Solid Rows", "structure refs")
     _add_property(obj, "App::PropertyStringList", "DrainageRefs", "Solid Rows", "drainage refs")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteRefs", "Solid Rows", "flow route refs")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRefs", "Solid Rows", "diagnostic refs")
     _add_property(obj, "App::PropertyInteger", "SegmentCount", "Segments", "segment row count")
     _add_property(obj, "App::PropertyStringList", "SegmentIds", "Segments", "segment ids")
@@ -185,6 +186,7 @@ def update_v1_watertight_solid_output_object(
     obj.AssemblyRefs = [str(row.assembly_ref) for row in rows]
     obj.StructureRefs = [str(row.structure_ref) for row in rows]
     obj.DrainageRefs = [str(row.drainage_ref) for row in rows]
+    obj.FlowRouteRefs = [str(getattr(row, "flow_route_ref", "") or "") for row in rows]
     obj.DiagnosticRefs = [_join_refs(row.diagnostic_refs) for row in rows]
     obj.SegmentCount = len(segments)
     obj.SegmentIds = [str(row.segment_id) for row in segments]
@@ -239,6 +241,7 @@ def to_watertight_solid_output(obj) -> WatertightSolidOutput | None:
             assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
             structure_ref=_list_value(getattr(obj, "StructureRefs", []), index, ""),
             drainage_ref=_list_value(getattr(obj, "DrainageRefs", []), index, ""),
+            flow_route_ref=_list_value(getattr(obj, "FlowRouteRefs", []), index, ""),
         )
         for index, _output_id in enumerate(output_ids)
     ]

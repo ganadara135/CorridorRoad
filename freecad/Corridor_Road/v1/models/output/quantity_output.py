@@ -24,6 +24,7 @@ class QuantityFragmentRow:
     region_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
+    flow_route_ref: str = ""
 
 
 @dataclass(frozen=True)

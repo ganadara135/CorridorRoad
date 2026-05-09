@@ -12,7 +12,7 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.quantity_model import QuantityFragment, QuantityModel
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
@@ -46,10 +46,31 @@ def _drainage_model() -> DrainageModel:
                 drainage_element_id="drainage:side-ditch-right",
                 element_kind="ditch",
                 side="right",
+                region_ref="region:drainage",
                 station_start=0.0,
                 station_end=100.0,
                 assembly_component_ref="ditch:right",
                 policy_set_ref="drainage-policy:lined-concrete",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outfall-right",
+                element_kind="outfall_reference",
+                side="right",
+                region_ref="region:drainage",
+                structure_ref="outfall:right",
+                station_start=99.0,
+                station_end=100.0,
+                policy_set_ref="drainage-policy:lined-concrete",
+            )
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:right",
+                from_element_ref="drainage:side-ditch-right",
+                to_element_ref="drainage:outfall-right",
+                outlet_ref="drainage:outfall-right",
+                direction="roadside_flow",
+                risk_level="medium",
             )
         ],
     )
@@ -124,12 +145,18 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
 
     summary = {row.summary_id: row.value for row in output.summary_rows}
     region_rows = [row for row in output.element_rows if row.kind == "region_handoff"]
+    flow_route_rows = [row for row in output.element_rows if row.kind == "flow_route"]
     applied_rows = [row for row in output.element_rows if row.kind == "applied_section_ditch_context"]
 
-    assert summary["summary:drainage-elements"] == 1
+    assert summary["summary:drainage-elements"] == 2
+    assert summary["summary:flow-routes"] == 1
     assert summary["summary:missing-region-refs"] == 1
     assert summary["summary:ditch-surface-points"] == 2
     assert summary["summary:ditch-surface-points-with-drainage"] == 2
+    assert flow_route_rows[0].label == "flow-route:right"
+    assert "chain=drainage:side-ditch-right -> drainage:outfall-right" in flow_route_rows[0].notes
+    assert "from_region_ref=region:drainage" in flow_route_rows[0].notes
+    assert "from_policy_set_ref=drainage-policy:lined-concrete" in flow_route_rows[0].notes
     assert any("drainage_ref=drainage:missing;status=missing" in row.notes for row in region_rows)
     assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;component_refs=ditch:right;sides=right"
     assert output.source_refs == ["drainage:main", "regions:main", "applied:main"]
@@ -193,11 +220,16 @@ def test_drainage_review_panel_loads_document_context() -> None:
 
         panel = V1DrainageReviewTaskPanel(document=doc)
 
-        assert panel._summary_table.rowCount() == 6
-        assert panel._element_table.rowCount() == 1
+        assert panel._summary_table.rowCount() == 9
+        assert panel._element_table.rowCount() == 2
+        assert panel._flow_route_table.rowCount() == 1
+        assert panel._tabs.tabText(1) == "Flow Routes"
+        assert panel._flow_route_table.item(0, 0).text() == "flow-route:right"
+        assert panel._flow_route_table.item(0, 5).text() == "drainage:side-ditch-right -> drainage:outfall-right"
         assert panel._region_table.rowCount() == 2
         assert panel._applied_table.rowCount() == 1
         assert "Warnings: 1 Region drainage ref" in panel._status.toPlainText()
+        assert "Flow Routes: 1 source route" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
 
@@ -224,7 +256,7 @@ def test_build_drainage_review_output_reads_document_objects() -> None:
         output = build_drainage_review_output(doc)
 
         assert output.drainage_model_id == "drainage:main"
-        assert len(output.element_rows) == 4
+        assert len(output.element_rows) == 6
     finally:
         App.closeDocument(doc.Name)
 

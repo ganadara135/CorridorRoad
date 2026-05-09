@@ -34,6 +34,7 @@ class QuantityOutputMapper:
                 region_ref=row.region_ref,
                 structure_ref=row.structure_ref,
                 drainage_ref=getattr(row, "drainage_ref", ""),
+                flow_route_ref=getattr(row, "flow_route_ref", ""),
             )
             for row in quantity_model.fragment_rows
         ]
@@ -123,6 +124,7 @@ class QuantityOutputMapper:
                 region_ref=str(getattr(row, "region_ref", "") or ""),
                 structure_ref=str(getattr(row, "structure_ref", "") or ""),
                 drainage_ref=str(getattr(row, "drainage_ref", "") or ""),
+                flow_route_ref=str(getattr(row, "flow_route_ref", "") or ""),
             )
             for row in accepted_rows
         ]

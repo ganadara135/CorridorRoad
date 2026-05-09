@@ -44,15 +44,17 @@ def test_drainage_editor_resources_are_real_editor_entry() -> None:
     assert "drainage design intent" in resources["ToolTip"]
 
 
-def test_starter_drainage_model_has_element_policy_and_collection() -> None:
+def test_starter_drainage_model_has_element_policy_and_flow_route() -> None:
     model = starter_drainage_model_from_document()
 
     assert model.drainage_model_id == "drainage:main"
     assert model.element_rows[0].drainage_element_id == "drainage:side-ditch-right"
+    assert model.element_rows[1].drainage_element_id == "drainage:outfall-main"
     assert model.element_rows[0].side == "right"
     assert model.element_rows[0].assembly_component_ref == "ditch:right"
     assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
-    assert model.collection_region_rows[0].collection_region_id == "drainage-collection:main"
+    assert model.flow_route_rows[0].flow_route_id == "flow-route:main"
+    assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
 
 
 def test_drainage_presets_offer_practical_source_sets() -> None:
@@ -65,7 +67,7 @@ def test_drainage_presets_offer_practical_source_sets() -> None:
     model = drainage_preset_model_from_document("Culvert Crossing")
 
     assert model.drainage_model_id == "drainage:main"
-    assert [row.drainage_element_id for row in model.element_rows] == [
+    assert [row.drainage_element_id for row in model.element_rows[:3]] == [
         "drainage:side-ditch-left",
         "drainage:side-ditch-right",
         "drainage:culvert-01",
@@ -84,15 +86,23 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
 
-        assert panel._element_table.rowCount() == 1
+        assert panel._element_table.rowCount() == 2
         assert panel._policy_table.rowCount() == 1
-        assert panel._collection_table.rowCount() == 1
+        assert panel._flow_route_table.rowCount() == 1
         assert panel._element_table.item(0, 0).text() == "side-ditch-right"
         assert panel._element_table.horizontalHeaderItem(2).text() == "Region"
         assert panel._element_table.horizontalHeaderItem(3).text() == "Side"
         assert panel._element_table.horizontalHeaderItem(6).text() == "Assembly"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Policy"
         assert panel._element_table.horizontalHeaderItem(8).text() == "Structure"
+        assert panel._tabs.tabText(2) == "Flow Routes"
+        assert panel._flow_route_table.horizontalHeaderItem(0).text() == "Flow Route ID"
+        assert panel._flow_route_table.horizontalHeaderItem(3).text() == "Outlet"
+        assert panel._add_flow_route_button.text() == "Add Flow Route"
+        assert panel._flow_route_table.cellWidget(0, 1).currentText() == "drainage:side-ditch-right"
+        assert panel._flow_route_table.cellWidget(0, 2).currentText() == "drainage:outfall-main"
+        assert panel._flow_route_table.cellWidget(0, 3).currentText() == "drainage:outfall-main"
+        assert "drainage:side-ditch-right -> drainage:outfall-main" in panel._flow_route_preview.text()
         assert panel._element_table.item(0, 7).text() == "lined-concrete"
         assert panel._element_table.item(0, 8).text() == ""
         assert not bool(panel._element_table.item(0, 8).flags() & QtCore.Qt.ItemIsEnabled)
@@ -109,6 +119,9 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert model.element_rows[0].side == "right"
         assert model.element_rows[0].assembly_component_ref == "ditch:right"
         assert obj.ValidationStatus == "ok"
+        assert model.flow_route_rows[0].from_element_ref == "drainage:side-ditch-right"
+        assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
+        assert model.flow_route_rows[0].outlet_ref == "drainage:outfall-main"
         assert "Applied to:" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
@@ -154,21 +167,49 @@ def test_drainage_editor_add_buttons_follow_active_tab() -> None:
         assert panel._add_left_ditch_button.isHidden() is False
         assert panel._add_right_ditch_button.isHidden() is False
         assert panel._add_policy_button.isHidden() is True
-        assert panel._add_collection_button.isHidden() is True
+        assert panel._add_flow_route_button.isHidden() is True
 
         panel._tabs.setCurrentIndex(1)
         assert panel._add_element_button.isHidden() is True
         assert panel._add_left_ditch_button.isHidden() is True
         assert panel._add_right_ditch_button.isHidden() is True
         assert panel._add_policy_button.isHidden() is False
-        assert panel._add_collection_button.isHidden() is True
+        assert panel._add_flow_route_button.isHidden() is True
 
         panel._tabs.setCurrentIndex(2)
         assert panel._add_element_button.isHidden() is True
         assert panel._add_left_ditch_button.isHidden() is True
         assert panel._add_right_ditch_button.isHidden() is True
         assert panel._add_policy_button.isHidden() is True
-        assert panel._add_collection_button.isHidden() is False
+        assert panel._add_flow_route_button.isHidden() is False
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_flow_route_link_cells_use_element_combos() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc("V1DrainageEditorFlowRouteComboTest")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._add_ditch_row("left")
+
+        from_combo = panel._flow_route_table.cellWidget(0, 1)
+        to_combo = panel._flow_route_table.cellWidget(0, 2)
+        outlet_combo = panel._flow_route_table.cellWidget(0, 3)
+        from_items = [from_combo.itemText(index) for index in range(from_combo.count())]
+        to_items = [to_combo.itemText(index) for index in range(to_combo.count())]
+
+        assert "drainage:side-ditch-right" in from_items
+        assert "drainage:side-ditch-left" in from_items
+        assert "drainage:side-ditch-left" in to_items
+
+        to_combo.setCurrentText("drainage:side-ditch-left")
+        outlet_combo.setCurrentText("outfall:right")
+        model = panel._model_from_tables()
+
+        assert model.flow_route_rows[0].to_element_ref == "drainage:side-ditch-left"
+        assert model.flow_route_rows[0].outlet_ref == "outfall:right"
+        assert "drainage:side-ditch-right -> drainage:side-ditch-left -> outfall:right" in panel._flow_route_preview.text()
     finally:
         App.closeDocument(doc.Name)
 
@@ -316,8 +357,8 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
 
         assert panel._element_table.item(0, 0).text() == "side-ditch-left"
         assert panel._policy_table.item(0, 0).text() == "lined-concrete"
-        assert [row.side for row in model.element_rows] == ["left", "right"]
-        assert [row.assembly_component_ref for row in model.element_rows] == ["ditch:left", "ditch:right"]
+        assert [row.side for row in model.element_rows[:2]] == ["left", "right"]
+        assert [row.assembly_component_ref for row in model.element_rows[:2]] == ["ditch:left", "ditch:right"]
         assert panel._policy_table.rowCount() == 1
         assert "Drainage preset loaded: Dual Side Ditches" in panel._status.toPlainText()
     finally:
@@ -333,7 +374,8 @@ def test_drainage_editor_side_specific_ditch_defaults_keep_ids_unique() -> None:
         panel._add_ditch_row("right")
         model = panel._model_from_tables()
 
-        assert [row.drainage_element_id for row in model.element_rows] == [
+        ditch_ids = [row.drainage_element_id for row in model.element_rows if row.element_kind == "ditch"]
+        assert ditch_ids == [
             "drainage:side-ditch-right",
             "drainage:side-ditch-right:2",
         ]

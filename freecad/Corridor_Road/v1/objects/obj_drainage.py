@@ -8,12 +8,27 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
     App = None
 
 from ..models.source.drainage_model import (
-    DrainageCollectionRegion,
     DrainageElementRow,
+    DrainageFlowRoute,
     DrainageModel,
     DrainagePolicySet,
 )
 from ..services.evaluation.drainage_resolution_service import DrainageValidationService
+
+
+_OBSOLETE_FLOW_ROUTE_PROPERTIES = (
+    "CollectionRegionCount",
+    "CollectionStationStarts",
+    "CollectionStationEnds",
+    "CollectionAlignmentRefs",
+    "CollectionRampRefs",
+    "CollectionIntersectionRefs",
+    "FlowRouteReceiverRefs",
+    "CollectionRegionIds",
+    "CollectionExpectedReceiverRefs",
+    "CollectionRegionKinds",
+    "CollectionRiskLevels",
+)
 
 
 class V1DrainageModelObject:
@@ -82,16 +97,15 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "PolicyCollectionRules", "Policies", "collection rules")
     _add_property(obj, "App::PropertyStringList", "PolicyDischargeRules", "Policies", "discharge rules")
     _add_property(obj, "App::PropertyStringList", "PolicyEarthworkPriorities", "Policies", "earthwork priorities")
-    _add_property(obj, "App::PropertyInteger", "CollectionRegionCount", "Collection Regions", "collection region count")
-    _add_property(obj, "App::PropertyStringList", "CollectionRegionIds", "Collection Regions", "collection region ids")
-    _add_property(obj, "App::PropertyStringList", "CollectionRegionKinds", "Collection Regions", "collection region kinds")
-    _add_property(obj, "App::PropertyFloatList", "CollectionStationStarts", "Collection Regions", "collection start stations")
-    _add_property(obj, "App::PropertyFloatList", "CollectionStationEnds", "Collection Regions", "collection end stations")
-    _add_property(obj, "App::PropertyStringList", "CollectionAlignmentRefs", "Collection Regions", "alignment refs")
-    _add_property(obj, "App::PropertyStringList", "CollectionRampRefs", "Collection Regions", "ramp refs")
-    _add_property(obj, "App::PropertyStringList", "CollectionIntersectionRefs", "Collection Regions", "intersection refs")
-    _add_property(obj, "App::PropertyStringList", "CollectionExpectedReceiverRefs", "Collection Regions", "receiver refs")
-    _add_property(obj, "App::PropertyStringList", "CollectionRiskLevels", "Collection Regions", "risk levels")
+    _add_property(obj, "App::PropertyInteger", "FlowRouteCount", "Flow Routes", "flow route count")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteIds", "Flow Routes", "flow route ids")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteFromElementRefs", "Flow Routes", "from element refs")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteToElementRefs", "Flow Routes", "to element refs")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteOutletRefs", "Flow Routes", "outlet refs")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteDirections", "Flow Routes", "flow route directions")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteRiskLevels", "Flow Routes", "risk levels")
+    _add_property(obj, "App::PropertyStringList", "FlowRouteNotes", "Flow Routes", "notes")
+    _remove_obsolete_properties(obj, _OBSOLETE_FLOW_ROUTE_PROPERTIES)
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic rows")
@@ -156,7 +170,7 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     ensure_v1_drainage_properties(obj)
     element_rows = list(getattr(drainage_model, "element_rows", []) or [])
     policy_rows = list(getattr(drainage_model, "policy_rows", []) or [])
-    collection_rows = list(getattr(drainage_model, "collection_region_rows", []) or [])
+    flow_route_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
     validation = DrainageValidationService().validate(drainage_model)
 
     obj.Label = label
@@ -185,16 +199,14 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     obj.PolicyCollectionRules = [str(row.collection_rule) for row in policy_rows]
     obj.PolicyDischargeRules = [str(row.discharge_rule) for row in policy_rows]
     obj.PolicyEarthworkPriorities = [str(row.earthwork_priority) for row in policy_rows]
-    obj.CollectionRegionCount = len(collection_rows)
-    obj.CollectionRegionIds = [str(row.collection_region_id) for row in collection_rows]
-    obj.CollectionRegionKinds = [str(row.region_kind) for row in collection_rows]
-    obj.CollectionStationStarts = [float(row.station_start) for row in collection_rows]
-    obj.CollectionStationEnds = [float(row.station_end) for row in collection_rows]
-    obj.CollectionAlignmentRefs = [str(row.alignment_ref) for row in collection_rows]
-    obj.CollectionRampRefs = [str(row.ramp_ref) for row in collection_rows]
-    obj.CollectionIntersectionRefs = [str(row.intersection_ref) for row in collection_rows]
-    obj.CollectionExpectedReceiverRefs = [str(row.expected_receiver_ref) for row in collection_rows]
-    obj.CollectionRiskLevels = [str(row.risk_level) for row in collection_rows]
+    obj.FlowRouteCount = len(flow_route_rows)
+    obj.FlowRouteIds = [str(row.flow_route_id) for row in flow_route_rows]
+    obj.FlowRouteFromElementRefs = [str(row.from_element_ref) for row in flow_route_rows]
+    obj.FlowRouteToElementRefs = [str(row.to_element_ref) for row in flow_route_rows]
+    obj.FlowRouteOutletRefs = [str(row.outlet_ref) for row in flow_route_rows]
+    obj.FlowRouteDirections = [str(row.direction) for row in flow_route_rows]
+    obj.FlowRouteRiskLevels = [str(row.risk_level) for row in flow_route_rows]
+    obj.FlowRouteNotes = [str(row.notes) for row in flow_route_rows]
     obj.SourceRefs = [str(value) for value in list(getattr(drainage_model, "source_refs", []) or []) if str(value)]
     obj.ValidationStatus = validation.status
     obj.DiagnosticRows = [
@@ -253,26 +265,7 @@ def to_drainage_model(obj) -> DrainageModel | None:
         )
         for index in range(len(policy_ids))
     ]
-    collection_ids = list(getattr(obj, "CollectionRegionIds", []) or [])
-    collection_count = max(
-        len(collection_ids),
-        len(list(getattr(obj, "CollectionStationStarts", []) or [])),
-        len(list(getattr(obj, "CollectionStationEnds", []) or [])),
-    )
-    collection_rows = [
-        DrainageCollectionRegion(
-            collection_region_id=_list_value(collection_ids, index, f"drainage-collection:{index + 1}"),
-            region_kind=_list_value(getattr(obj, "CollectionRegionKinds", []), index, ""),
-            station_start=_float_list_value(getattr(obj, "CollectionStationStarts", []), index),
-            station_end=_float_list_value(getattr(obj, "CollectionStationEnds", []), index),
-            alignment_ref=_list_value(getattr(obj, "CollectionAlignmentRefs", []), index, ""),
-            ramp_ref=_list_value(getattr(obj, "CollectionRampRefs", []), index, ""),
-            intersection_ref=_list_value(getattr(obj, "CollectionIntersectionRefs", []), index, ""),
-            expected_receiver_ref=_list_value(getattr(obj, "CollectionExpectedReceiverRefs", []), index, ""),
-            risk_level=_list_value(getattr(obj, "CollectionRiskLevels", []), index, ""),
-        )
-        for index in range(collection_count)
-    ]
+    flow_route_rows = _flow_route_rows_from_object(obj)
     return DrainageModel(
         schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
@@ -281,7 +274,7 @@ def to_drainage_model(obj) -> DrainageModel | None:
         source_refs=[str(value) for value in list(getattr(obj, "SourceRefs", []) or []) if str(value)],
         element_rows=element_rows,
         policy_rows=policy_rows,
-        collection_region_rows=collection_rows,
+        flow_route_rows=flow_route_rows,
     )
 
 
@@ -310,6 +303,29 @@ def _is_v1_drainage_model(obj) -> bool:
     return proxy_type == "DrainageModel" or name.startswith("V1DrainageModel") or name.startswith("DrainageModel")
 
 
+def _flow_route_rows_from_object(obj) -> list[DrainageFlowRoute]:
+    route_ids = list(getattr(obj, "FlowRouteIds", []) or [])
+    route_from_refs = list(getattr(obj, "FlowRouteFromElementRefs", []) or [])
+    route_outlets = list(getattr(obj, "FlowRouteOutletRefs", []) or [])
+    route_count = max(
+        len(route_ids),
+        len(route_from_refs),
+        len(route_outlets),
+    )
+    return [
+        DrainageFlowRoute(
+            flow_route_id=_list_value(route_ids, index, f"flow-route:{index + 1}"),
+            from_element_ref=_list_value(getattr(obj, "FlowRouteFromElementRefs", []), index, ""),
+            to_element_ref=_list_value(getattr(obj, "FlowRouteToElementRefs", []), index, ""),
+            outlet_ref=_list_value(getattr(obj, "FlowRouteOutletRefs", []), index, ""),
+            direction=_list_value(getattr(obj, "FlowRouteDirections", []), index, ""),
+            risk_level=_list_value(getattr(obj, "FlowRouteRiskLevels", []), index, ""),
+            notes=_list_value(getattr(obj, "FlowRouteNotes", []), index, ""),
+        )
+        for index in range(route_count)
+    ]
+
+
 def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:
     if obj is None or hasattr(obj, name):
         return
@@ -317,6 +333,21 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         obj.addProperty(property_type, name, group, doc)
     except Exception:
         pass
+
+
+def _remove_obsolete_properties(obj, names: tuple[str, ...]) -> None:
+    if obj is None:
+        return
+    for name in names:
+        if not hasattr(obj, name):
+            continue
+        try:
+            obj.removeProperty(name)
+        except Exception:
+            try:
+                obj.delProperty(name)
+            except Exception:
+                pass
 
 
 def _project_id(project) -> str:

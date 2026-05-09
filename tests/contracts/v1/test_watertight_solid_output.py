@@ -159,3 +159,34 @@ def test_v1_watertight_solid_output_object_roundtrips_summary_and_shape() -> Non
         assert roundtrip.segment_rows[0].profile_refs == output.segment_rows[0].profile_refs
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_watertight_solid_output_object_roundtrips_flow_route_ref() -> None:
+    row = WatertightSolidOutputRow(
+        output_object_id="watertight-solid:lined-ditch",
+        target_id="solid-target:lined-ditch:right",
+        target_family="lined_ditch_body",
+        scope_kind="drainage",
+        station_start=0.0,
+        station_end=100.0,
+        drainage_ref="drainage:right",
+        flow_route_ref="flow-route:right",
+    )
+    output = WatertightSolidOutput(
+        schema_version=1,
+        project_id="proj-1",
+        watertight_solid_output_id="watertight-solids:flow-route-test",
+        solid_rows=[row],
+    )
+    doc = App.newDocument("V1WatertightSolidOutputFlowRouteTest")
+    try:
+        obj = create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=output,
+        )
+
+        assert list(obj.FlowRouteRefs) == ["flow-route:right"]
+        roundtrip = to_watertight_solid_output(obj)
+        assert roundtrip.solid_rows[0].flow_route_ref == "flow-route:right"
+    finally:
+        App.closeDocument(doc.Name)
