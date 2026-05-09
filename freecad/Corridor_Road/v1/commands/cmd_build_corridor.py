@@ -2598,7 +2598,7 @@ class V1BuildCorridorTaskPanel:
             self._summary.setPlainText(
                 "\n".join(
                     [
-                        "Drainage diagnostic marker shown.",
+                        "Drainage station highlight shown.",
                         f"Station: {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Station: n/a",
                         f"Status: {row.get('status', '')}",
                         f"Points: {row.get('ditch_point_count', 0)}",
@@ -2607,7 +2607,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Drainage diagnostic marker was not shown.\n{exc}")
+            _show_message(self.form, "Build Corridor", f"Drainage station highlight was not shown.\n{exc}")
 
     def _show_slope_face_issue_row(self, row_index: int) -> None:
         try:
@@ -4426,16 +4426,23 @@ def _create_drainage_review_marker(*, document=None, row: dict[str, object] | No
         "warn": (1.00, 0.72, 0.10),
         "missing": (1.00, 0.16, 0.12),
     }.get(status, (0.05, 0.65, 1.00))
-    obj = _create_marker_compound(
-        document=document,
-        object_name=name,
-        label=f"Drainage Diagnostic - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Diagnostic",
-        points=[point],
-        radius=0.8,
-        color=color,
-        surface=None,
-        corridor_model=None,
-    )
+    ditch_points = _drainage_review_row_ditch_points(document, row)
+    if ditch_points:
+        obj = _create_drainage_review_highlight_compound(
+            document=document,
+            object_name=name,
+            label=f"Drainage Highlight - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Highlight",
+            ditch_points=ditch_points,
+            color=color,
+        )
+    else:
+        obj = _create_drainage_review_point_marker(
+            document=document,
+            object_name=name,
+            label=f"Drainage Diagnostic - STA {float(row.get('station', 0.0) or 0.0):.3f}" if row.get("station", "") != "" else "Drainage Diagnostic",
+            point=point,
+            color=color,
+        )
     if obj is None:
         return None
     _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
@@ -4449,6 +4456,169 @@ def _create_drainage_review_marker(*, document=None, row: dict[str, object] | No
     except Exception:
         pass
     return obj
+
+
+def _drainage_review_row_ditch_points(document, row: dict[str, object]) -> list[object]:
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    if applied is None:
+        return []
+    section_id = str(row.get("section_id", "") or "")
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied, "sections", []) or [])
+    }
+    section = sections.get(section_id)
+    if section is None:
+        return []
+    return [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+    ]
+
+
+def _create_drainage_review_highlight_compound(
+    *,
+    document,
+    object_name: str,
+    label: str,
+    ditch_points: list[object],
+    color: tuple[float, float, float],
+):
+    try:
+        import Part
+        import FreeCAD as AppModule
+    except Exception:
+        return None
+    obj = document.getObject(object_name)
+    shapes = []
+    for side in ("L", "R", ""):
+        points = [
+            point
+            for point in list(ditch_points or [])
+            if _drainage_point_side(point) == side
+        ]
+        points.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+        if len(points) >= 2:
+            vectors = [
+                AppModule.Vector(
+                    float(getattr(point, "x", 0.0) or 0.0),
+                    float(getattr(point, "y", 0.0) or 0.0),
+                    float(getattr(point, "z", 0.0) or 0.0),
+                )
+                for point in points
+            ]
+            for start, end in zip(vectors[:-1], vectors[1:]):
+                shapes.append(Part.makeLine(start, end))
+        elif len(points) == 1:
+            shapes.extend(_drainage_point_cross_shapes(Part, AppModule, points[0], radius=0.25))
+    if not shapes:
+        return None
+    if obj is None:
+        obj = document.addObject("Part::Feature", object_name)
+    try:
+        obj.Shape = Part.makeCompound(shapes)
+        obj.Label = label
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
+    _set_preview_property(obj, "DisplayMode", "drainage_highlight")
+    _set_preview_integer_property(obj, "MarkerCount", len(list(ditch_points or [])))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.ShapeColor = color
+            vobj.PointColor = color
+            vobj.LineColor = color
+            vobj.LineWidth = 8.0
+            vobj.PointSize = 8.0
+            vobj.Transparency = 0
+    except Exception:
+        pass
+    return obj
+
+
+def _create_drainage_review_point_marker(
+    *,
+    document,
+    object_name: str,
+    label: str,
+    point: tuple[float, float, float],
+    color: tuple[float, float, float],
+):
+    try:
+        import Part
+        import FreeCAD as AppModule
+    except Exception:
+        return None
+    obj = document.getObject(object_name)
+    shapes = _point_cross_shapes(Part, AppModule, point, radius=0.35)
+    if not shapes:
+        return None
+    if obj is None:
+        obj = document.addObject("Part::Feature", object_name)
+    try:
+        obj.Shape = Part.makeCompound(shapes)
+        obj.Label = label
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "drainage_diagnostic")
+    _set_preview_property(obj, "DisplayMode", "drainage_point_marker")
+    _set_preview_integer_property(obj, "MarkerCount", 1)
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.ShapeColor = color
+            vobj.PointColor = color
+            vobj.LineColor = color
+            vobj.LineWidth = 5.0
+            vobj.PointSize = 6.0
+            vobj.Transparency = 0
+    except Exception:
+        pass
+    return obj
+
+
+def _drainage_point_cross_shapes(Part, AppModule, point, *, radius: float) -> list[object]:
+    return _point_cross_shapes(
+        Part,
+        AppModule,
+        (
+            float(getattr(point, "x", 0.0) or 0.0),
+            float(getattr(point, "y", 0.0) or 0.0),
+            float(getattr(point, "z", 0.0) or 0.0),
+        ),
+        radius=radius,
+    )
+
+
+def _point_cross_shapes(Part, AppModule, point: tuple[float, float, float], *, radius: float) -> list[object]:
+    x, y, z = point
+    r = max(float(radius or 0.0), 0.05)
+    center = AppModule.Vector(float(x), float(y), float(z))
+    vectors = [
+        (AppModule.Vector(float(x) - r, float(y), float(z)), AppModule.Vector(float(x) + r, float(y), float(z))),
+        (AppModule.Vector(float(x), float(y) - r, float(z)), AppModule.Vector(float(x), float(y) + r, float(z))),
+        (AppModule.Vector(float(x), float(y), float(z) - r), AppModule.Vector(float(x), float(y), float(z) + r)),
+    ]
+    shapes = []
+    for start, end in vectors:
+        try:
+            shapes.append(Part.makeLine(start, end))
+        except Exception:
+            pass
+    if not shapes:
+        try:
+            shapes.append(Part.Vertex(center))
+        except Exception:
+            pass
+    return shapes
 
 
 def _with_applied_section_review_summary(row: dict[str, object], summary: dict[str, object]) -> dict[str, object]:

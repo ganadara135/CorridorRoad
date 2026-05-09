@@ -483,6 +483,79 @@ def profile_preset_rows(name: str) -> list[dict[str, object]]:
     return [dict(row) for row in rows]
 
 
+def profile_preset_rows_for_station_rows(name: str, station_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Sample a Profile preset shape onto the current station rows."""
+
+    target_rows = _station_kind_rows(station_rows)
+    if not target_rows:
+        return profile_preset_rows(name)
+    preset_rows = _normalized_control_rows(None, profile_preset_rows(name))
+    if len(preset_rows) < 2:
+        return profile_preset_rows(name)
+    source_start = float(preset_rows[0]["station"])
+    source_end = float(preset_rows[-1]["station"])
+    target_start = float(target_rows[0]["station"])
+    target_end = float(target_rows[-1]["station"])
+    source_span = max(source_end - source_start, 1.0e-9)
+    target_span = max(target_end - target_start, 1.0e-9)
+    last_index = len(target_rows) - 1
+    sampled: list[dict[str, object]] = []
+    for index, row in enumerate(target_rows):
+        station = float(row["station"])
+        ratio = (station - target_start) / target_span
+        source_station = source_start + source_span * ratio
+        kind = str(row.get("kind", "") or "").strip()
+        if not kind:
+            kind = "grade_break" if index in {0, last_index} else "pvi"
+        sampled.append(
+            {
+                "control_point_id": str(row.get("control_point_id", "") or ""),
+                "station": station,
+                "elevation": _interpolated_preset_elevation(preset_rows, source_station),
+                "kind": kind,
+            }
+        )
+    return sampled
+
+
+def _station_kind_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    parsed: list[dict[str, object]] = []
+    seen: set[float] = set()
+    for index, row in enumerate(list(rows or [])):
+        station = _required_float(row.get("station", None), f"Preset target row {index + 1} station")
+        key = round(station, 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        parsed.append(
+            {
+                "control_point_id": str(row.get("control_point_id", "") or ""),
+                "station": station,
+                "kind": str(row.get("kind", "") or ""),
+            }
+        )
+    parsed.sort(key=lambda item: float(item["station"]))
+    return parsed
+
+
+def _interpolated_preset_elevation(preset_rows: list[dict[str, object]], station: float) -> float:
+    if not preset_rows:
+        return 0.0
+    if station <= float(preset_rows[0]["station"]):
+        return float(preset_rows[0]["elevation"])
+    if station >= float(preset_rows[-1]["station"]):
+        return float(preset_rows[-1]["elevation"])
+    for left, right in zip(preset_rows[:-1], preset_rows[1:]):
+        left_station = float(left["station"])
+        right_station = float(right["station"])
+        if not (left_station <= station <= right_station):
+            continue
+        span = max(right_station - left_station, 1.0e-9)
+        ratio = (station - left_station) / span
+        return float(left["elevation"]) + (float(right["elevation"]) - float(left["elevation"])) * ratio
+    return float(preset_rows[-1]["elevation"])
+
+
 def import_profile_control_rows_from_csv(path: str) -> list[dict[str, object]]:
     """Import v1 Profile PVI/control rows from CSV.
 
@@ -1445,10 +1518,14 @@ class V1ProfileEditorTaskPanel:
         if not ok or not name:
             return
         try:
-            rows = profile_preset_rows(str(name))
+            station_rows = self._table_station_kind_rows()
+            rows = profile_preset_rows_for_station_rows(str(name), station_rows)
             self._replace_table_rows(rows)
-            self._set_status(f"Loaded Profile preset data: {name}. Apply when ready.", ok=True)
-            self._show_message("Profile", f"Preset data loaded: {name}\nRows: {len(rows)}\nClick Apply to update the V1Profile.")
+            self._set_status(f"Loaded Profile preset data: {name} onto {len(rows)} current station row(s). Apply when ready.", ok=True)
+            self._show_message(
+                "Profile",
+                f"Preset data loaded: {name}\nRows: {len(rows)}\nStation rows were kept and elevations were sampled from the preset.\nClick Apply to update the V1Profile.",
+            )
         except Exception as exc:
             self._set_status(str(exc), ok=False)
             self._show_message("Profile", f"Preset data was not loaded.\n{exc}")

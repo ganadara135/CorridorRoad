@@ -451,7 +451,6 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                 station_start=0.0,
                 station_end=100.0,
                 assembly_component_ref="ditch:right",
-                offset_rule="shoulder ditch",
                 policy_set_ref="drainage-policy:lined-concrete",
             )
         ],

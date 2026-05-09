@@ -1043,7 +1043,8 @@ def test_corridor_drainage_review_rows_track_ditch_surface_points() -> None:
         assert marker.IssueKind == "drainage_diagnostic"
         assert marker.IssueStation == "0.000"
         assert marker.IssueStatus == "ready"
-        assert int(marker.MarkerCount) == 1
+        assert marker.DisplayMode == "drainage_highlight"
+        assert int(marker.MarkerCount) == 4
     finally:
         App.closeDocument(doc.Name)
 

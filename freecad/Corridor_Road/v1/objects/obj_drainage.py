@@ -73,7 +73,6 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ElementAssemblyComponentRefs", "Drainage Elements", "assembly component refs")
     _add_property(obj, "App::PropertyFloatList", "ElementStationStarts", "Drainage Elements", "element start stations")
     _add_property(obj, "App::PropertyFloatList", "ElementStationEnds", "Drainage Elements", "element end stations")
-    _add_property(obj, "App::PropertyStringList", "ElementOffsetRules", "Drainage Elements", "offset rules")
     _add_property(obj, "App::PropertyStringList", "ElementPolicySetRefs", "Drainage Elements", "policy set refs")
     _add_property(obj, "App::PropertyInteger", "PolicyCount", "Policies", "policy row count")
     _add_property(obj, "App::PropertyStringList", "PolicySetIds", "Policies", "policy set ids")
@@ -177,7 +176,6 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     obj.ElementAssemblyComponentRefs = [str(getattr(row, "assembly_component_ref", "") or "") for row in element_rows]
     obj.ElementStationStarts = [float(row.station_start) for row in element_rows]
     obj.ElementStationEnds = [float(row.station_end) for row in element_rows]
-    obj.ElementOffsetRules = [str(row.offset_rule) for row in element_rows]
     obj.ElementPolicySetRefs = [str(row.policy_set_ref) for row in element_rows]
     obj.PolicyCount = len(policy_rows)
     obj.PolicySetIds = [str(row.policy_set_id) for row in policy_rows]
@@ -238,7 +236,6 @@ def to_drainage_model(obj) -> DrainageModel | None:
             assembly_component_ref=_list_value(getattr(obj, "ElementAssemblyComponentRefs", []), index, ""),
             station_start=_float_list_value(getattr(obj, "ElementStationStarts", []), index),
             station_end=_float_list_value(getattr(obj, "ElementStationEnds", []), index),
-            offset_rule=_list_value(getattr(obj, "ElementOffsetRules", []), index, ""),
             policy_set_ref=_list_value(getattr(obj, "ElementPolicySetRefs", []), index, ""),
         )
         for index in range(element_count)

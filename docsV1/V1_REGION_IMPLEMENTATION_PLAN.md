@@ -27,8 +27,6 @@ Region rows are not single-purpose labels.
 
 Each region should be represented as:
 
-- one `primary_kind`
-- zero or more `applied_layers`
 - explicit references to assembly, structure, drainage, ramp, intersection, and override sources
 - station start and end values
 - priority and diagnostics
@@ -133,8 +131,6 @@ Minimum `RegionRow` fields:
 
 - `region_id`
 - `region_index`
-- `primary_kind`
-- `applied_layers`
 - `station_start`
 - `station_end`
 - `assembly_ref`
@@ -212,8 +208,6 @@ Resolution result fields:
 
 - `station`
 - `active_region_id`
-- `active_primary_kind`
-- `active_applied_layers`
 - `active_assembly_ref`
 - `active_template_ref`
 - `resolved_structure_ref`
@@ -232,8 +226,6 @@ Recommended columns:
 
 - `Start STA`
 - `End STA`
-- `Primary Kind`
-- `Layers`
 - `Assembly`
 - `Structure`
 - `Drainage`
@@ -372,8 +364,6 @@ Do not infer bridge, ramp, drainage, or intersection behavior from free-form not
 
 Use these Region fields as downstream references:
 
-- `primary_kind` selects the dominant station-range control mode.
-- `applied_layers` adds non-exclusive context such as `ditch`, `drainage`, `guardrail`, or `widening`.
 - `assembly_ref` points to the Assembly source to apply at the station.
 - `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
 - `structure_ref` points to the one Structure source to apply at the station.

@@ -146,7 +146,6 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
         region_rows=[
             RegionRow(
                 region_id="region-1",
-                region_kind="mainline_region",
                 station_start=0.0,
                 station_end=100.0,
                 template_ref="tmpl-1",
@@ -1012,7 +1011,6 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
         region_rows=[
             RegionRow(
                 region_id="region-assembly-ref",
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:basic-road",
@@ -1709,7 +1707,6 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch() -> None
         region_rows=[
             RegionRow(
                 region_id="region-mismatch",
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:other-road",
@@ -1784,7 +1781,6 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
         region_rows=[
             RegionRow(
                 region_id="region-main",
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:basic-road",
@@ -1877,7 +1873,7 @@ def test_applied_section_set_service_selects_region_specific_assembly_model() ->
         alignment_id="align-multi-assembly",
         region_rows=[
             RegionRow("region:road", 0.0, 50.0, assembly_ref="assembly:road"),
-            RegionRow("region:bridge", 50.0, 100.0, primary_kind="bridge", assembly_ref="assembly:bridge"),
+            RegionRow("region:bridge", 50.0, 100.0, assembly_ref="assembly:bridge"),
         ],
     )
     override_model = OverrideModel(
@@ -1959,7 +1955,6 @@ def test_applied_section_service_attaches_alignment_profile_frame() -> None:
         region_rows=[
             RegionRow(
                 region_id="region-1",
-                region_kind="mainline_region",
                 station_start=0.0,
                 station_end=100.0,
                 template_ref="tmpl-1",

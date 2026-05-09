@@ -422,9 +422,9 @@ def test_watertight_solids_discovery_reads_document_drainage_model_owner() -> No
                     DrainageElementRow(
                         drainage_element_id="drainage:side-ditch-right",
                         element_kind="ditch",
+                        side="right",
                         station_start=0.0,
                         station_end=20.0,
-                        offset_rule="right shoulder ditch",
                         policy_set_ref="drainage-policy:lined-concrete",
                     )
                 ],

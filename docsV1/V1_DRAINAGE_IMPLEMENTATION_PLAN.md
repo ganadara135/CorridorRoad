@@ -116,7 +116,6 @@ Required first-slice fields:
 - `alignment_ref`
 - `region_ref`
 - `assembly_component_ref`
-- `offset_rule`
 - `policy_set_ref`
 - `structure_ref`
 
@@ -245,6 +244,7 @@ Completed:
 
 - Drainage command opens `V1DrainageEditorTaskPanel`
 - editor shows element, policy, and collection tables
+- editor provides Preset data for roadside ditch, dual side ditches, and culvert crossing source sets
 - Validate runs `DrainageValidationService`
 - Apply persists `V1DrainageModel`
 - invalid rows block Apply and keep diagnostics visible
@@ -272,10 +272,10 @@ Completed:
 
 - `DrainageElementRow` now stores `side`, `region_ref`, and `assembly_component_ref`.
 - `V1DrainageModel` persists and restores side, Region refs, and Assembly component refs.
-- Drainage editor element rows expose Side, Region, Assembly Component, Offset Rule, Policy, and Structure columns.
+- Drainage editor element rows expose Side, Region, Assembly, Policy, and Structure columns.
 - Drainage editor includes left/right ditch default row actions.
 - Drainage validation warns when a drainage side is outside `left`, `right`, `both`, or `center`.
-- Watertight Solid lined-ditch target discovery uses `DrainageElementRow.side` before falling back to id/offset text.
+- Watertight Solid lined-ditch target discovery uses `DrainageElementRow.side` before falling back to Drainage element id text.
 
 Remaining:
 

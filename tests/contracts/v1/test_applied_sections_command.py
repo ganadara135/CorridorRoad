@@ -18,12 +18,14 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     show_applied_section_preview_object,
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_model_from_document
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     build_v1_applied_section_set_review_shape,
     find_v1_applied_section_set,
 )
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
@@ -144,10 +146,8 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         region_model.region_rows[0] = type(first)(
             region_id=first.region_id,
             region_index=first.region_index,
-            primary_kind=first.primary_kind,
             station_start=first.station_start,
             station_end=first.station_end,
-            applied_layers=["ditch", "drainage"],
             assembly_ref="assembly:drainage-ditch-road",
             template_ref="template:drainage-ditch-road",
             priority=first.priority,
@@ -197,7 +197,6 @@ def test_build_document_applied_section_set_uses_region_specific_assembly_object
         region_model.region_rows[0] = type(region_model.region_rows[0])(
             region_id="region:bridge-all",
             region_index=1,
-            primary_kind="bridge",
             station_start=0.0,
             station_end=100000.0,
             assembly_ref="assembly:bridge-interface",
@@ -284,6 +283,51 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         assert panel._progress.value() == 100
         assert panel._progress.format() == "Applied Sections complete"
         assert "Fast Evaluation" not in panel._summary.toPlainText()
+        assert panel._review_table.item(0, 5).text() == "basic-road"
+        assert panel._review_table.item(0, 6).text() == "basic-road"
+    finally:
+        applied_sections_command._show_message = original_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_applied_sections_validate_blocks_drainage_element_without_region() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = applied_sections_command._show_message
+    applied_sections_command._show_message = lambda *_args, **_kwargs: None
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:side-ditch-right",
+                        element_kind="ditch",
+                        station_start=0.0,
+                        station_end=90.0,
+                    )
+                ],
+            ),
+        )
+
+        panel = V1AppliedSectionsTaskPanel(document=doc)
+
+        assert panel._validate(show_message=False) is False
+        assert "drainage_element_missing_region_ref" in panel._summary.toPlainText()
+        assert "drainage:side-ditch-right" in panel._summary.toPlainText()
+        assert panel._apply(close_after=False) is False
+        assert find_v1_applied_section_set(doc) is None
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)

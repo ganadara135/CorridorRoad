@@ -23,7 +23,6 @@ def test_region_resolution_picks_covering_region() -> None:
         region_rows=[
             RegionRow(
                 region_id="region-a",
-                region_kind="mainline_region",
                 station_start=0.0,
                 station_end=50.0,
                 template_ref="tmpl-a",
@@ -31,7 +30,6 @@ def test_region_resolution_picks_covering_region() -> None:
             ),
             RegionRow(
                 region_id="region-b",
-                region_kind="mainline_region",
                 station_start=25.0,
                 station_end=75.0,
                 template_ref="tmpl-b",
@@ -46,7 +44,7 @@ def test_region_resolution_picks_covering_region() -> None:
     assert result.active_template_ref == "tmpl-b"
 
 
-def test_region_resolution_preserves_primary_layers_and_domain_refs() -> None:
+def test_region_resolution_preserves_domain_refs() -> None:
     region_model = RegionModel(
         schema_version=1,
         project_id="proj-1",
@@ -56,7 +54,6 @@ def test_region_resolution_preserves_primary_layers_and_domain_refs() -> None:
             RegionRow(
                 region_id="region-normal",
                 region_index=1,
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=200.0,
                 assembly_ref="assembly:road",
@@ -66,8 +63,6 @@ def test_region_resolution_preserves_primary_layers_and_domain_refs() -> None:
             RegionRow(
                 region_id="region-bridge",
                 region_index=2,
-                primary_kind="bridge",
-                applied_layers=["ditch", "drainage"],
                 station_start=120.0,
                 station_end=180.0,
                 assembly_ref="assembly:bridge-deck",
@@ -82,8 +77,6 @@ def test_region_resolution_preserves_primary_layers_and_domain_refs() -> None:
     result = RegionResolutionService().resolve_station(region_model, 150.0)
 
     assert result.active_region_id == "region-bridge"
-    assert result.active_primary_kind == "bridge"
-    assert result.active_applied_layers == ["ditch", "drainage"]
     assert result.active_assembly_ref == "assembly:bridge-deck"
     assert result.resolved_structure_ref == "structure:bridge-01"
     assert result.resolved_structure_refs == ["structure:bridge-01"]
@@ -101,7 +94,6 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
             RegionRow(
                 region_id="region-road",
                 region_index=1,
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:road",
@@ -110,7 +102,6 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
             RegionRow(
                 region_id="region-ramp",
                 region_index=2,
-                primary_kind="ramp",
                 station_start=100.0,
                 station_end=180.0,
                 assembly_ref="assembly:ramp",
@@ -123,7 +114,6 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
     rows = RegionResolutionService().resolve_handoff_rows(region_model, [50.0, 120.0])
 
     assert [row.region_id for row in rows] == ["region-road", "region-ramp"]
-    assert rows[1].primary_kind == "ramp"
     assert rows[1].ramp_ref == "ramp:entry-01"
 
 
@@ -137,7 +127,6 @@ def test_region_resolution_equal_priority_overlap_warns_and_uses_region_index() 
             RegionRow(
                 region_id="region-b",
                 region_index=2,
-                primary_kind="bridge",
                 station_start=0.0,
                 station_end=100.0,
                 template_ref="tmpl-b",
@@ -146,7 +135,6 @@ def test_region_resolution_equal_priority_overlap_warns_and_uses_region_index() 
             RegionRow(
                 region_id="region-a",
                 region_index=1,
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 template_ref="tmpl-a",
@@ -170,14 +158,12 @@ def test_region_validation_reports_invalid_range_and_equal_priority_overlap() ->
         region_rows=[
             RegionRow(
                 region_id="region-invalid",
-                primary_kind="normal_road",
                 station_start=10.0,
                 station_end=0.0,
                 priority=5,
             ),
             RegionRow(
                 region_id="region-a",
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=100.0,
                 template_ref="tmpl-a",
@@ -185,7 +171,6 @@ def test_region_validation_reports_invalid_range_and_equal_priority_overlap() ->
             ),
             RegionRow(
                 region_id="region-b",
-                primary_kind="bridge",
                 station_start=50.0,
                 station_end=120.0,
                 template_ref="tmpl-b",

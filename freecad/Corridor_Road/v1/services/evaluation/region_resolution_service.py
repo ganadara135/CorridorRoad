@@ -5,16 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...models.source.region_model import (
-    REGION_PRIMARY_KINDS,
     RegionDiagnosticRow,
     RegionModel,
     RegionRow,
-    normalize_region_primary_kind,
 )
 from ...models.result.region_context import RegionContextSummary
-
-
-STRUCTURE_REQUIRED_PRIMARY_KINDS = {"bridge", "culvert", "structure_influence"}
 
 
 @dataclass(frozen=True)
@@ -31,8 +26,6 @@ class RegionResolutionResult:
 
     station: float
     active_region_id: str = ""
-    active_primary_kind: str = ""
-    active_applied_layers: list[str] = field(default_factory=list)
     active_policy_set_id: str = ""
     active_template_ref: str = ""
     active_assembly_ref: str = ""
@@ -90,11 +83,6 @@ class RegionValidationService:
                     )
                 )
 
-            primary_kind = normalize_region_primary_kind(str(getattr(row, "primary_kind", "") or getattr(row, "region_kind", "")))
-            if primary_kind not in REGION_PRIMARY_KINDS:
-                diagnostics.append(
-                    _diagnostic("warning", "unsupported_primary_kind", source_ref, f"Unsupported primary kind: {primary_kind}.")
-                )
             if not str(getattr(row, "assembly_ref", "") or "").strip() and not str(getattr(row, "template_ref", "") or "").strip():
                 diagnostics.append(
                     _diagnostic(
@@ -129,15 +117,6 @@ class RegionValidationService:
                     )
                 )
             structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
-            if _primary_kind_requires_structure(primary_kind) and not structure_ref:
-                diagnostics.append(
-                    _diagnostic(
-                        "warning",
-                        "missing_required_structure_ref",
-                        source_ref,
-                        f"Region primary_kind {primary_kind} requires a structure_ref.",
-                    )
-                )
             if known_structure_ref_set is not None and structure_ref and structure_ref not in known_structure_ref_set:
                 diagnostics.append(
                     _diagnostic(
@@ -231,8 +210,6 @@ class RegionResolutionService:
         return RegionResolutionResult(
             station=station_value,
             active_region_id=active.region_id,
-            active_primary_kind=active.primary_kind,
-            active_applied_layers=list(active.applied_layers or []),
             active_policy_set_id=active.policy_set_ref,
             active_template_ref=active.template_ref,
             active_assembly_ref=active.assembly_ref,
@@ -290,8 +267,6 @@ class RegionResolutionService:
         return RegionContextSummary(
             station=result.station,
             region_id=result.active_region_id,
-            primary_kind=result.active_primary_kind,
-            applied_layers=list(result.active_applied_layers or []),
             assembly_ref=result.active_assembly_ref,
             template_ref=result.active_template_ref,
             policy_set_ref=result.active_policy_set_id,
@@ -375,10 +350,6 @@ def _known_ref_set(values: list[str] | None) -> set[str] | None:
     if values is None:
         return None
     return {str(value).strip() for value in list(values or []) if str(value).strip()}
-
-
-def _primary_kind_requires_structure(primary_kind: str) -> bool:
-    return str(primary_kind or "").strip() in STRUCTURE_REQUIRED_PRIMARY_KINDS
 
 
 def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: str = "") -> RegionDiagnosticRow:

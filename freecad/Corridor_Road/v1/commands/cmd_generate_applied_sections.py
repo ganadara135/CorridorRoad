@@ -30,6 +30,7 @@ from ..objects.obj_applied_section import (
     to_applied_section_set,
 )
 from ..objects.obj_assembly import find_v1_assembly_model, list_v1_assembly_models, to_assembly_model
+from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
@@ -361,6 +362,9 @@ class V1AppliedSectionsTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
         action_row.addWidget(refresh_button)
+        validate_button = QtWidgets.QPushButton("Validate")
+        validate_button.clicked.connect(self._validate)
+        action_row.addWidget(validate_button)
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
@@ -404,6 +408,9 @@ class V1AppliedSectionsTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            if not self._validate(show_message=False):
+                self._set_progress(0, "Applied Sections validation failed")
+                return False
             self._set_progress(0, "Preparing Applied Sections...")
             self._set_progress(15, "Reading v1 source models...")
             result = build_document_applied_section_set(self.document)
@@ -427,6 +434,27 @@ class V1AppliedSectionsTaskPanel:
             self._set_progress(0, "Applied Sections failed")
             self._summary.setPlainText(f"Applied Sections were not built:\n{exc}")
             _show_message(self.form, "Applied Sections", f"Applied Sections were not built.\n{exc}")
+            return False
+
+    def _validate(self, *, show_message: bool = True) -> bool:
+        try:
+            diagnostics = _applied_sections_source_diagnostics(self.document)
+            if diagnostics:
+                message = "Applied Sections validation failed:\n" + "\n".join(diagnostics)
+                self._summary.setPlainText(message)
+                if show_message:
+                    _show_message(self.form, "Applied Sections", message)
+                return False
+            message = "Applied Sections validation passed."
+            self._summary.setPlainText(message)
+            if show_message:
+                _show_message(self.form, "Applied Sections", message)
+            return True
+        except Exception as exc:
+            message = f"Applied Sections validation failed:\n{exc}"
+            self._summary.setPlainText(message)
+            if show_message:
+                _show_message(self.form, "Applied Sections", message)
             return False
 
     def _set_progress(self, value: int, text: str = "") -> None:
@@ -454,8 +482,8 @@ class V1AppliedSectionsTaskPanel:
                 _format_float(row.get("y", 0.0)),
                 _format_float(row.get("z", 0.0)),
                 str(row.get("region_id", "") or ""),
-                str(row.get("assembly_id", "") or ""),
-                str(row.get("template_id", "") or ""),
+                _display_source_id(row.get("assembly_id", ""), "assembly:"),
+                _display_source_id(row.get("template_id", ""), "template:"),
                 f"{_format_float(row.get('surface_left_width', 0.0))} / {_format_float(row.get('surface_right_width', 0.0))}",
                 str(row.get("component_summary", "") or str(int(row.get("component_count", 0) or 0))),
                 str(row.get("ditch_summary", "") or ""),
@@ -548,11 +576,37 @@ def _assembly_source_status(document) -> str:
     return f"{len(objs)} assembly model(s)"
 
 
+def _applied_sections_source_diagnostics(document) -> list[str]:
+    diagnostics: list[str] = []
+    drainage_model = to_drainage_model(find_v1_drainage_model(document))
+    if drainage_model is None:
+        return diagnostics
+    for index, row in enumerate(list(getattr(drainage_model, "element_rows", []) or []), start=1):
+        element_id = str(getattr(row, "drainage_element_id", "") or "").strip()
+        if not element_id:
+            continue
+        region_ref = str(getattr(row, "region_ref", "") or "").strip()
+        if region_ref:
+            continue
+        diagnostics.append(
+            "error: drainage_element_missing_region_ref: "
+            f"Drainage Element ID row {index} ({element_id}) has no Region assigned."
+        )
+    return diagnostics
+
+
 def _review_status_text(row: dict[str, object]) -> str:
     diagnostics = int(row.get("diagnostic_count", 0) or 0)
     if diagnostics:
         return f"WARN ({diagnostics})"
     return "OK"
+
+
+def _display_source_id(value: object, prefix: str) -> str:
+    text = str(value or "")
+    if prefix and text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
 
 
 def applied_section_review_row_color(status: object) -> tuple[int, int, int] | None:

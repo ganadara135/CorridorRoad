@@ -7,6 +7,7 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DrainageModel,
     DrainagePolicySet,
 )
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_drainage import (
     create_or_update_v1_drainage_model_object,
     find_v1_drainage_model,
@@ -40,7 +41,6 @@ def _drainage_model() -> DrainageModel:
                 assembly_component_ref="ditch:right",
                 station_start=0.0,
                 station_end=100.0,
-                offset_rule="right shoulder ditch",
                 policy_set_ref="drainage-policy:lined-concrete",
             )
         ],
@@ -103,7 +103,6 @@ def test_v1_drainage_model_object_roundtrips_to_drainage_model() -> None:
         assert model.element_rows[0].side == "right"
         assert model.element_rows[0].region_ref == "region:1"
         assert model.element_rows[0].assembly_component_ref == "ditch:right"
-        assert model.element_rows[0].offset_rule == "right shoulder ditch"
         assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
         assert model.collection_region_rows[0].expected_receiver_ref == "outfall:1"
         assert find_v1_drainage_model(doc) == obj
@@ -132,7 +131,6 @@ def test_create_or_update_v1_drainage_model_object_updates_existing_object() -> 
                     assembly_component_ref="ditch:left",
                     station_start=10.0,
                     station_end=50.0,
-                    offset_rule="left shoulder ditch",
                 )
             ],
         )
@@ -214,6 +212,50 @@ def test_drainage_validation_reports_duplicate_ids_invalid_ranges_and_missing_po
     assert "duplicate_collection_region_id" in kinds
     assert "invalid_collection_region_station_range" in kinds
     assert "unsupported_drainage_side" in kinds
+
+
+def test_drainage_validation_checks_element_station_range_against_region() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inside",
+                element_kind="ditch",
+                region_ref="region:1",
+                station_start=10.0,
+                station_end=40.0,
+                policy_set_ref="drainage-policy:1",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outside",
+                element_kind="ditch",
+                region_ref="region:1",
+                station_start=45.0,
+                station_end=70.0,
+                policy_set_ref="drainage-policy:1",
+            ),
+        ],
+        policy_rows=[
+            DrainagePolicySet(
+                policy_set_id="drainage-policy:1",
+                flow_intent="collect_and_convey",
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[RegionRow("region:1", 0.0, 50.0)],
+    )
+
+    result = DrainageValidationService().validate(model, region_model=region_model)
+
+    assert result.status == "error"
+    assert [row.kind for row in result.diagnostic_rows] == ["drainage_element_outside_region_station_range"]
+    assert "element_start=45" in result.diagnostic_rows[0].notes
 
 
 def test_v1_drainage_model_object_stores_validation_diagnostics() -> None:

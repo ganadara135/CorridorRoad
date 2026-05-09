@@ -50,7 +50,6 @@ class DrainageElementRow:
     assembly_component_ref: str = ""
     station_start: float = 0.0
     station_end: float = 0.0
-    offset_rule: str = ""
     policy_set_ref: str = ""
 
 

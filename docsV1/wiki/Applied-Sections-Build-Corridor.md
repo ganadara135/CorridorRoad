@@ -18,6 +18,14 @@ They resolve:
 
 Applied Sections are results. They are not the primary editing surface.
 
+The `Validate` action checks source handoff readiness before building result rows.
+
+Drainage readiness includes:
+
+- every Drainage element row with an `Element ID` must have a `Region` assigned
+- missing Drainage Region assignment is reported as `drainage_element_missing_region_ref`
+- correction happens in the Drainage editor, not in Applied Sections
+
 ## Build Corridor
 
 Build Corridor consumes Applied Sections and creates corridor preview surfaces and diagnostics.

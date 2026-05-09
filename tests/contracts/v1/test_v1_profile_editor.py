@@ -24,6 +24,7 @@ from freecad.Corridor_Road.v1.commands.cmd_profile_editor import (
     profile_control_rows,
     profile_preset_names,
     profile_preset_rows,
+    profile_preset_rows_for_station_rows,
     profile_rows_from_stationing,
     profile_station_check_rows,
     profile_station_check_lines,
@@ -709,6 +710,27 @@ def test_profile_preset_data_returns_copy_of_control_rows() -> None:
     rows[0]["station"] = 999.0
 
     assert profile_preset_rows("Starter Road")[0]["station"] == 0.0
+
+
+def test_profile_preset_data_samples_onto_current_station_rows() -> None:
+    rows = profile_preset_rows_for_station_rows(
+        "Starter Road",
+        [
+            {"station": 0.0, "kind": "grade_break"},
+            {"station": 50.0, "kind": "pvi"},
+            {"station": 100.0, "kind": "grade_break"},
+        ],
+    )
+
+    assert [row["station"] for row in rows] == [0.0, 50.0, 100.0]
+    assert [round(float(row["elevation"]), 6) for row in rows] == [12.0, 15.0, 13.5]
+    assert [row["kind"] for row in rows] == ["grade_break", "pvi", "grade_break"]
+
+
+def test_profile_preset_data_falls_back_to_source_rows_without_current_stations() -> None:
+    rows = profile_preset_rows_for_station_rows("Starter Road", [])
+
+    assert [row["station"] for row in rows] == [0.0, 90.0, 180.0]
 
 
 def test_profile_csv_import_accepts_v0_style_fg_headers() -> None:

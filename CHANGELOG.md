@@ -46,13 +46,22 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added DrainageModel validation diagnostics for duplicate ids, invalid station ranges, missing policy ids, and missing policy references.
 - Added the first Drainage editor task panel with editable element, policy, and collection tables plus Validate/Apply persistence.
 - Added first-slice Drainage element authoring fields for side, Region ref, Assembly component ref, and side-specific ditch defaults, with persistence into `V1DrainageModel` and Watertight Solid lined-ditch ownership.
-- Added first-slice Region-to-Drainage handoff in the Region editor, including available Drainage element selection, `Attach Drainage`, and missing `drainage_ref` validation.
+- Added first-slice Region-to-Drainage handoff in the Region editor, including row-level Drainage selection and missing `drainage_ref` validation.
 - Added first-slice Applied Section Drainage handoff so active Region drainage refs are preserved on ditch component rows, generated `ditch_surface` points, Applied Section source refs, and `V1AppliedSectionSet` persistence.
 - Added first-slice Drainage Review with a read-only task panel, normalized `DrainageOutput` mapping, Region missing-ref warnings, Applied Section ditch context tables, and toolbar placement after Drainage.
 - Added first-slice Build Corridor drainage surface source handoff so drainage TIN vertices, provenance, quality rows, and surface build relations preserve Applied Section `drainage_ref` context.
 - Added first-slice Drainage quantity handoff so ditch and flowline lengths can be reported by `drainage_ref` with missing source diagnostics and Drainage Review summary support.
+- Added Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets.
 
 ### Changed
+- Removed the optional `Offset Rule` field from the Drainage Elements editor and internal `DrainageElementRow` source contract.
+- Changed Applied Sections validation to report Drainage element rows that have an Element ID but no Region assignment.
+- Changed Drainage validation so element `Start STA` and `End STA` are checked against the selected Region boundary.
+- Changed Drainage Elements so `ditch` rows disable and clear the Structure cell in the editor.
+- Changed Drainage Elements so the Region column sits next to Kind and uses a row-level Region combo populated from the active RegionModel.
+- Removed Region `Primary Kind` and `Layers` from the Region source workflow; Region intent now comes from station spans and explicit Assembly/Structure/Drainage references.
+- Changed Profile `Preset Data` so selected example profiles are sampled onto the current station rows instead of replacing them with fixed preset stations.
+- Changed Build Corridor Drainage row focus to draw selected station ditch/drainage line highlights instead of large sphere diagnostic markers.
 - Updated the `Drainage Control` Region preset to use `STA 100.000` as the drainage-control start station and the current final Stationing value as the closing Region start.
 - Renamed the Surface Transition action button in Build Corridor from `Create / Update Transition` to `Update`.
 - Clarified Region and Surface Transition design documentation so transition intent remains source-level and generated geometry remains output.

@@ -8,27 +8,6 @@ from typing import Any
 from .base import SourceModelBase
 
 
-REGION_PRIMARY_KINDS = {
-    "normal_road",
-    "bridge",
-    "culvert",
-    "intersection",
-    "ramp",
-    "drainage",
-    "transition",
-    "structure_influence",
-    "daylight_control",
-    "temporary_candidate_region",
-}
-
-REGION_LEGACY_KIND_MAP = {
-    "mainline_region": "normal_road",
-    "transition_region": "transition",
-    "structure_influence_region": "structure_influence",
-    "daylight_control_region": "daylight_control",
-}
-
-
 @dataclass(frozen=True)
 class RegionDiagnosticRow:
     """Validation or resolution diagnostic row for Region workflows."""
@@ -84,17 +63,11 @@ class RegionPolicySet:
 
 @dataclass(frozen=True)
 class RegionRow:
-    """Station-bounded region policy row.
-
-    ``region_kind`` is retained as a compatibility alias for older v1 tests and
-    early services. New code should use ``primary_kind``.
-    """
+    """Station-bounded region policy row."""
 
     region_id: str
     station_start: float
     station_end: float
-    primary_kind: str = "normal_road"
-    applied_layers: list[str] = field(default_factory=list)
     region_index: int = 0
     assembly_ref: str = ""
     structure_ref: str = ""
@@ -109,15 +82,9 @@ class RegionRow:
     priority: int = 0
     source_ref: str = ""
     notes: str = ""
-    region_kind: str = ""
     policy_rows: list[RegionPolicyRow] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        primary_kind = normalize_region_primary_kind(self.primary_kind or self.region_kind)
-        object.__setattr__(self, "primary_kind", primary_kind)
-        if not self.region_kind:
-            object.__setattr__(self, "region_kind", primary_kind)
-        object.__setattr__(self, "applied_layers", normalize_region_layers(self.applied_layers))
         structure_ref = str(self.structure_ref or "").strip()
         structure_refs = normalize_region_refs(self.structure_refs)
         if structure_ref and structure_ref not in structure_refs:
@@ -141,32 +108,6 @@ class RegionModel(SourceModelBase):
     transition_rows: list[RegionTransition] = field(default_factory=list)
     constraint_rows: list[dict[str, Any]] = field(default_factory=list)
     diagnostic_rows: list[RegionDiagnosticRow] = field(default_factory=list)
-
-
-def normalize_region_primary_kind(value: str) -> str:
-    """Return a supported primary kind, preserving unknown text as lower snake."""
-
-    text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
-    text = REGION_LEGACY_KIND_MAP.get(text, text)
-    return text or "normal_road"
-
-
-def normalize_region_layers(values: list[object] | tuple[object, ...] | str) -> list[str]:
-    """Normalize applied layer names while preserving order."""
-
-    if isinstance(values, str):
-        raw_values = values.replace(";", ",").split(",")
-    else:
-        raw_values = list(values or [])
-    output: list[str] = []
-    seen: set[str] = set()
-    for value in raw_values:
-        text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-    return output
 
 
 def normalize_region_refs(values: list[object] | tuple[object, ...] | str) -> list[str]:

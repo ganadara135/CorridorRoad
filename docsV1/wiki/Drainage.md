@@ -19,9 +19,10 @@ Reason:
 Current drainage-related behavior appears through:
 
 - Drainage editor source rows
+- Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets
 - `V1DrainageModel` document persistence
 - side, Region ref, and Assembly component ref persistence on drainage elements
-- Region editor Drainage selector and `Attach Drainage` handoff into `RegionRow.drainage_refs`
+- Region editor row-level Drainage combo handoff into `RegionRow.drainage_refs`
 - Assembly ditch shapes
 - Applied Section `ditch_surface` rows with `component_ref`, `side`, and `drainage_ref`
 - Drainage Review read-only tables for source handoff and Applied Section context
@@ -43,19 +44,24 @@ Editable first-slice rows:
 
 The editor also stores policy intent and collection/discharge context.
 
+Available first-slice presets:
+
+- `Roadside Ditch`
+- `Dual Side Ditches`
+- `Culvert Crossing`
+
 Element rows now include:
 
+- Region ref as a combo box populated from the active `V1RegionModel`
 - Side
 - Start STA and End STA
-- Region ref
-- Assembly Component ref
-- Offset Rule
+- Assembly ref
 - Policy ref
-- Structure ref
+- Structure ref, disabled for `ditch` rows because open ditches are generated from Assembly drainage geometry rather than Structure references
 
 The `Add Left Ditch` and `Add Right Ditch` actions create first-slice ditch rows with matching side and default `ditch:left` or `ditch:right` Assembly component refs.
 
-Watertight Solid lined-ditch target discovery uses the Drainage element `side` field first. The older id/offset text inference remains only as fallback behavior.
+Watertight Solid lined-ditch target discovery uses the Drainage element `side` field first. Drainage element id text remains only as fallback behavior.
 
 ## Region Handoff
 
@@ -64,11 +70,15 @@ The Region editor can read Drainage element ids from the active `V1DrainageModel
 To link a Region to Drainage:
 
 - select a Region row
-- choose a Drainage element id
-- press `Attach Drainage`
+- choose a Drainage element id in that row's `Drainage` combo box
 - Validate before Apply
 
 Validation warns when a Region references a Drainage id that is not present in the current `V1DrainageModel`.
+
+Drainage validation also checks Drainage element station spans against the selected Region:
+
+- if an element has `Region` set, its `Start STA` and `End STA` must stay inside that Region's station boundary
+- if the referenced Region is missing, validation reports a missing Region reference warning
 
 ## Applied Section Handoff
 

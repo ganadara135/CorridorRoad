@@ -45,7 +45,7 @@ The Region panel includes practical preset data.
 
 `Drainage Control` starts the drainage-control Region at `STA 100.000` and closes the preset at the current final Stationing value.
 
-After loading any preset, review the Assembly, Structure, Drainage, and layer references before applying it to the project.
+After loading any preset, review the Assembly, Structure, and Drainage references before applying it to the project.
 
 ## Rule
 

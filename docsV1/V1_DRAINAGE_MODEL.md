@@ -162,7 +162,6 @@ Each `DrainageElementRow` represents one meaningful drainage element or referenc
 - optional `structure_ref`
 - `station_start`
 - `station_end`
-- optional `offset_rule`
 - `policy_set_ref`
 - `source_ref`
 - `notes`

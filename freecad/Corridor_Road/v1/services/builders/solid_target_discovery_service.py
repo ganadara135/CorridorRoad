@@ -447,7 +447,6 @@ def _drainage_lined_ditch_owner_by_side(drainage_model: DrainageModel | None) ->
         side = _side_from_values(
             str(getattr(row, "side", "") or ""),
             str(getattr(row, "drainage_element_id", "") or ""),
-            str(getattr(row, "offset_rule", "") or ""),
         )
         if side and side not in output:
             output[side] = row

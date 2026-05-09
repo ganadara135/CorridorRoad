@@ -58,7 +58,6 @@ def test_starter_region_model_uses_generated_station_range() -> None:
 
         stations = list(stationing.StationValues)
         assert len(model.region_rows) == 1
-        assert model.region_rows[0].primary_kind == "normal_road"
         assert model.region_rows[0].station_start == min(stations)
         assert model.region_rows[0].station_end == max(stations)
         assert model.region_rows[0].priority == 10
@@ -81,7 +80,6 @@ def test_region_presets_offer_multiple_practical_region_sets() -> None:
 
         stations = list(stationing.StationValues)
         assert len(model.region_rows) == 3
-        assert [row.primary_kind for row in model.region_rows] == ["normal_road", "bridge", "normal_road"]
         assert model.region_rows[0].station_start == min(stations)
         assert model.region_rows[-1].station_end == max(stations)
         assert model.region_rows[1].structure_ref == "structure:bridge-01"
@@ -100,7 +98,6 @@ def test_drainage_control_preset_uses_fixed_100m_control_station() -> None:
         model = region_preset_model_from_document("Drainage Control", doc, project=project, alignment=alignment)
 
         assert [row.station_start for row in model.region_rows] == [0.0, 100.0, max(list(stationing.StationValues))]
-        assert [row.primary_kind for row in model.region_rows] == ["normal_road", "drainage", "normal_road"]
     finally:
         App.closeDocument(doc.Name)
 
@@ -311,7 +308,7 @@ def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() ->
         App.closeDocument(doc.Name)
 
 
-def test_region_editor_attach_selected_drainage_ref_to_selected_region() -> None:
+def test_region_editor_uses_drainage_combo_in_region_row() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
@@ -331,14 +328,16 @@ def test_region_editor_attach_selected_drainage_ref_to_selected_region() -> None
         )
         panel = V1RegionEditorTaskPanel(document=doc)
         panel._add_region_row()
-        panel._table.selectRow(0)
-        panel._drainage_combo.setCurrentText("drainage:side-ditch-right")
+        drainage_combo = panel._table.cellWidget(0, 4)
 
-        panel._attach_selected_drainage_ref()
+        assert drainage_combo is not None
+        assert "drainage:side-ditch-right" in [drainage_combo.itemText(index) for index in range(drainage_combo.count())]
+        assert not hasattr(panel, "_drainage_combo")
+        assert not any(button.text() == "Attach Drainage" for button in panel.form.findChildren(QtWidgets.QPushButton))
+        drainage_combo.setCurrentText("drainage:side-ditch-right")
         rows = panel._table_rows()
 
         assert rows[0].drainage_refs == ["drainage:side-ditch-right"]
-        assert "Attached drainage:side-ditch-right" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
 
@@ -380,8 +379,6 @@ def test_apply_v1_region_model_creates_region_source_object_only() -> None:
                 RegionRow(
                     region_id="region:bridge-drainage",
                     region_index=1,
-                    primary_kind="bridge",
-                    applied_layers=["ditch", "drainage"],
                     station_start=100.0,
                     station_end=180.0,
                     assembly_ref="assembly:bridge",
@@ -400,8 +397,6 @@ def test_apply_v1_region_model_creates_region_source_object_only() -> None:
         assert obj.V1ObjectType == "V1RegionModel"
         assert obj.CRRecordKind == "v1_region_model"
         assert obj.RegionCount == 1
-        assert roundtrip.region_rows[0].primary_kind == "bridge"
-        assert roundtrip.region_rows[0].applied_layers == ["ditch", "drainage"]
         assert roundtrip.region_rows[0].structure_ref == "structure:bridge-01"
         assert roundtrip.region_rows[0].structure_refs == ["structure:bridge-01"]
         assert roundtrip.region_rows[0].drainage_refs == ["drainage:deck-drain"]
@@ -420,7 +415,6 @@ def test_apply_v1_region_model_reuses_existing_region_object() -> None:
             region_rows=[
                 RegionRow(
                     region_id="region:normal",
-                    primary_kind="normal_road",
                     station_start=0.0,
                     station_end=100.0,
                 )
@@ -433,7 +427,6 @@ def test_apply_v1_region_model_reuses_existing_region_object() -> None:
             region_rows=[
                 RegionRow(
                     region_id="region:ramp",
-                    primary_kind="ramp",
                     station_start=100.0,
                     station_end=160.0,
                     priority=70,

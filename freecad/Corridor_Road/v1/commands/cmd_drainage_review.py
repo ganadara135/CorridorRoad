@@ -23,7 +23,7 @@ class CmdV1DrainageReview:
 
     def GetResources(self):
         return {
-            "Pixmap": icon_path("drainage.svg"),
+            "Pixmap": icon_path("drainage_review.svg"),
             "MenuText": "Drainage Review",
             "ToolTip": "Review v1 drainage source handoff, Region refs, and Applied Section ditch context",
         }

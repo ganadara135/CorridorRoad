@@ -47,7 +47,7 @@ They must not become the durable editing source.
 
 `DrainageModel` may own the broader drainage purpose, collection, discharge, and constraint intent.
 
-`RegionRow.applied_layers` and `RegionRow.drainage_refs` decide where ditch and drainage behavior is active.
+`AssemblyModel` ditch components and `RegionRow.drainage_refs` decide where ditch and drainage behavior is active.
 
 `AppliedSection` stores station-specific evaluated ditch points.
 

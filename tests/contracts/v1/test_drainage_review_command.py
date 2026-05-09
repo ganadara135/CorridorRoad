@@ -234,5 +234,6 @@ def test_drainage_review_resources_and_toolbar_order() -> None:
     commands = corridorroad_workflow_toolbar_commands()
 
     assert resources["MenuText"] == "Drainage Review"
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("drainage_review.svg")
     assert commands.index("CorridorRoad_V1EditDrainage") < commands.index("CorridorRoad_V1DrainageReview")
     assert commands.index("CorridorRoad_V1DrainageReview") < commands.index("CorridorRoad_V1AppliedSections")

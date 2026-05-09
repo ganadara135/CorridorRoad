@@ -10,6 +10,7 @@ from ...models.source.drainage_model import (
     DrainageElementRow,
     DrainageModel,
 )
+from ...models.source.region_model import RegionModel
 
 
 @dataclass(frozen=True)
@@ -35,12 +36,13 @@ class DrainageResolutionResult:
 class DrainageValidationService:
     """Validate v1 drainage source rows without mutating them."""
 
-    def validate(self, drainage_model: DrainageModel) -> DrainageValidationResult:
+    def validate(self, drainage_model: DrainageModel, *, region_model: RegionModel | None = None) -> DrainageValidationResult:
         diagnostics: list[DiagnosticMessage] = []
         element_rows = list(getattr(drainage_model, "element_rows", []) or [])
         policy_rows = list(getattr(drainage_model, "policy_rows", []) or [])
         collection_rows = list(getattr(drainage_model, "collection_region_rows", []) or [])
         policy_ids = _policy_id_set(policy_rows)
+        region_ranges = None if region_model is None else _region_station_ranges(region_model)
 
         diagnostics.extend(_duplicate_id_diagnostics(policy_rows, "policy_set_id", "duplicate_policy_set_id", "Drainage policy id is duplicated."))
         diagnostics.extend(
@@ -86,6 +88,9 @@ class DrainageValidationService:
             )
             if station_diagnostic is not None:
                 diagnostics.append(station_diagnostic)
+            region_diagnostic = _element_region_station_diagnostic(row, source_ref=source_ref, region_ranges=region_ranges)
+            if region_diagnostic is not None:
+                diagnostics.append(region_diagnostic)
             policy_ref = str(getattr(row, "policy_set_ref", "") or "").strip()
             if not policy_ref:
                 diagnostics.append(_diagnostic("warning", "missing_policy_ref", source_ref, "Drainage element has no policy_set_ref."))
@@ -131,10 +136,10 @@ class DrainageResolutionService:
     def __init__(self, *, validation_service: DrainageValidationService | None = None) -> None:
         self.validation_service = validation_service or DrainageValidationService()
 
-    def validate(self, drainage_model: DrainageModel) -> DrainageValidationResult:
+    def validate(self, drainage_model: DrainageModel, *, region_model: RegionModel | None = None) -> DrainageValidationResult:
         """Validate a DrainageModel using the shared validation service."""
 
-        return self.validation_service.validate(drainage_model)
+        return self.validation_service.validate(drainage_model, region_model=region_model)
 
     def resolve_station(
         self,
@@ -205,6 +210,62 @@ def _station_range_diagnostic(row: object, *, source_ref: str, kind: str, label:
             kind,
             source_ref,
             f"{label} station_start must be lower than station_end: {station_start:g} >= {station_end:g}.",
+        )
+    return None
+
+
+def _region_station_ranges(region_model: RegionModel | None) -> dict[str, tuple[float, float]]:
+    ranges: dict[str, tuple[float, float]] = {}
+    if region_model is None:
+        return ranges
+    for row in list(getattr(region_model, "region_rows", []) or []):
+        region_id = str(getattr(row, "region_id", "") or "").strip()
+        if not region_id:
+            continue
+        try:
+            station_start = float(getattr(row, "station_start", 0.0) or 0.0)
+            station_end = float(getattr(row, "station_end", 0.0) or 0.0)
+        except Exception:
+            continue
+        ranges[region_id] = (min(station_start, station_end), max(station_start, station_end))
+    return ranges
+
+
+def _element_region_station_diagnostic(
+    row: object,
+    *,
+    source_ref: str,
+    region_ranges: dict[str, tuple[float, float]] | None,
+) -> DiagnosticMessage | None:
+    region_ref = str(getattr(row, "region_ref", "") or "").strip()
+    if not region_ref or region_ranges is None:
+        return None
+    region_range = region_ranges.get(region_ref)
+    if region_range is None:
+        return _diagnostic(
+            "warning",
+            "missing_drainage_element_region_ref",
+            source_ref,
+            f"Drainage element references missing Region {region_ref}.",
+            notes=f"region_ref={region_ref}",
+        )
+    try:
+        station_start = float(getattr(row, "station_start", 0.0) or 0.0)
+        station_end = float(getattr(row, "station_end", 0.0) or 0.0)
+    except Exception:
+        return None
+    lower, upper = region_range
+    tolerance = 1.0e-6
+    if station_start < lower - tolerance or station_end > upper + tolerance:
+        return _diagnostic(
+            "error",
+            "drainage_element_outside_region_station_range",
+            source_ref,
+            (
+                "Drainage element Start STA and End STA must stay inside the referenced Region boundary: "
+                f"{station_start:g}-{station_end:g} outside {region_ref} {lower:g}-{upper:g}."
+            ),
+            notes=f"region_ref={region_ref};region_start={lower:g};region_end={upper:g};element_start={station_start:g};element_end={station_end:g}",
         )
     return None
 

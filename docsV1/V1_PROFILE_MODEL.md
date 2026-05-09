@@ -181,6 +181,7 @@ Current editor rule:
 - if no generated `V1Stationing` rows exist, the editor leaves the PVI table empty and informs the user to run `Stations` first
 - the editor uses one task panel with `FG Profile`, `Vertical Curves`, `EG Reference`, and `Station Check` tabs
 - the Profile panel exposes `Preset Data`, `Import CSV`, `Export CSV`, and `Auto Interpolate Elevations` actions above the tab area for v1 PVI/control rows
+- `Preset Data` keeps the current station rows when they exist and samples the selected preset profile shape onto those stations, so example data fits the active `V1Stationing` range instead of replacing it with fixed example stations
 - `Auto Interpolate Elevations` fills blank FG elevation cells between user-entered station/elevation controls before `Apply`; it preserves entered elevations, requires bounded first/last elevation values, and writes only to the editable table until the user applies the profile source
 - Profile CSV uses `station,elevation,kind` as the standard export schema and accepts v0-style aliases such as `STA`, `FG`, `elevation`, and `z` on import
 - repository sample CSVs for manual checks are `tests/samples/profile_v1_pvi_rolling.csv` and `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`

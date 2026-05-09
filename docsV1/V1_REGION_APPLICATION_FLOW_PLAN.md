@@ -44,8 +44,6 @@ The preferred Region row shape is:
 - `region_id`
 - `station_start`
 - `station_end`
-- `primary_kind`
-- `applied_layers`
 - `assembly_ref`
 - `structure_ref`
 - `drainage_ref`
@@ -105,7 +103,7 @@ Use one of these approaches instead:
 
 - split the station range into multiple Region rows
 - create overlapping Region rows with different priorities when two structure effects must be reviewed separately
-- model minor non-structural effects as `applied_layers` or policy context
+- model minor non-structural effects through Assembly components, explicit refs, or policy context
 - keep the actual structure meaning in `StructureModel`
 
 If two major structures are truly active over the same station range, they should remain separate Region rows so each row has one clear structure owner.
@@ -209,7 +207,7 @@ Tasks:
 
 - [x] validate unknown Assembly refs against available Assembly source ids
 - [x] validate unknown Structure refs against available Structure source ids
-- [x] validate missing Structure refs when `primary_kind` requires a Structure
+- [x] validate missing or unknown Structure refs when a `structure_ref` is present
 - [x] validate more than one active Structure ref as an error or warning
 - [x] resolve active Assembly by winning Region row
 - [x] resolve active Structure by winning Region row
