@@ -85,8 +85,8 @@ def corridorroad_workflow_toolbar_commands():
 
 
 class CorridorRoadWorkbench(_WORKBENCH_BASE):
-    MenuText = "CorridorRoad"
-    ToolTip = "CorridorRoad Workbench for road corridor design, review, and outputs"
+    MenuText = "Parametric Road"
+    ToolTip = "Parametric Road workbench for parametric road corridor design, review, and outputs"
     Icon = _WB_ICON_PATH if os.path.isfile(_WB_ICON_PATH) else ""
 
     def Initialize(self):
@@ -134,19 +134,19 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
 
         workflow_toolbar_commands = corridorroad_workflow_toolbar_commands()
 
-        self.appendToolbar("CorridorRoad", list(workflow_toolbar_commands))
+        self.appendToolbar("Parametric Road", list(workflow_toolbar_commands))
 
-        self.appendMenu(["CorridorRoad", "Project"], list(project_commands))
-        self.appendMenu(["CorridorRoad", "Survey & Surface"], list(terrain_commands))
-        self.appendMenu(["CorridorRoad", "Alignment"], list(alignment_commands))
-        self.appendMenu(["CorridorRoad", "Stations & Profile"], list(station_profile_commands))
-        self.appendMenu(["CorridorRoad", "Assembly & Regions"], list(assembly_region_commands))
-        self.appendMenu(["CorridorRoad", "Drainage"], list(drainage_commands))
-        self.appendMenu(["CorridorRoad", "Corridor"], list(corridor_commands))
-        self.appendMenu(["CorridorRoad", "Review"], list(review_commands))
-        self.appendMenu(["CorridorRoad", "Outputs & Exchange"], list(output_commands))
-        self.appendMenu(["CorridorRoad", "AI Assist"], list(ai_commands))
-        self.appendMenu(["CorridorRoad", "Watertight Solids"], list(watertight_solid_commands))
+        self.appendMenu(["Parametric Road", "Project"], list(project_commands))
+        self.appendMenu(["Parametric Road", "Survey & Surface"], list(terrain_commands))
+        self.appendMenu(["Parametric Road", "Alignment"], list(alignment_commands))
+        self.appendMenu(["Parametric Road", "Stations & Profile"], list(station_profile_commands))
+        self.appendMenu(["Parametric Road", "Assembly & Regions"], list(assembly_region_commands))
+        self.appendMenu(["Parametric Road", "Drainage"], list(drainage_commands))
+        self.appendMenu(["Parametric Road", "Corridor"], list(corridor_commands))
+        self.appendMenu(["Parametric Road", "Review"], list(review_commands))
+        self.appendMenu(["Parametric Road", "Outputs & Exchange"], list(output_commands))
+        self.appendMenu(["Parametric Road", "AI Assist"], list(ai_commands))
+        self.appendMenu(["Parametric Road", "Watertight Solids"], list(watertight_solid_commands))
 
     def ContextMenu(self, recipient):
         try:
@@ -157,7 +157,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
             str(getattr(o, "Name", "") or "").startswith("CorridorRoadProject") for o in sel
         )
         if has_project:
-            self.appendContextMenu("CorridorRoad Project", ["CorridorRoad_ProjectSetup"])
+            self.appendContextMenu("Parametric Road Project", ["CorridorRoad_ProjectSetup"])
 
     def Activated(self):
         doc = App.ActiveDocument

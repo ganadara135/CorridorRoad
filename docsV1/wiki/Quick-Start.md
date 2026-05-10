@@ -1,12 +1,12 @@
 # Quick Start
 
-This page describes the basic CorridorRoad v1 workflow for `1.0.0`.
+This page describes the basic Parametric Road v1 workflow for `1.0.0`.
 
 ## 1. Install
 
 1. Place the `CorridorRoad` folder under your FreeCAD `Mod` directory.
 2. Restart FreeCAD.
-3. Select the `CorridorRoad` workbench.
+3. Select the `Parametric Road` workbench.
 
 If commands do not appear after an update, restart FreeCAD or reload the workbench.
 

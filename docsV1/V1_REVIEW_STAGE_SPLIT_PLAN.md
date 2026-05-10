@@ -1,4 +1,4 @@
-# CorridorRoad V1 Review Stage Split Plan
+# Parametric Road V1 Review Stage Split Plan
 
 Date: 2026-04-23
 Branch: `v1-dev`

@@ -1,4 +1,4 @@
-# CorridorRoad V1 Action Label Reset Plan
+# Parametric Road V1 Action Label Reset Plan
 
 Date: 2026-04-23
 Branch: `v1-dev`

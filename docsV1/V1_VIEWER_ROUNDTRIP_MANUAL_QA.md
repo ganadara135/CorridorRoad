@@ -1,4 +1,4 @@
-# CorridorRoad V1 Viewer Roundtrip Manual QA
+# Parametric Road V1 Viewer Roundtrip Manual QA
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -36,7 +36,7 @@ It does not cover:
 
 Before running the scenarios:
 
-1. open a real CorridorRoad FreeCAD document
+1. open a real Parametric Road FreeCAD document
 2. confirm the document has at least:
    - alignment
    - vertical profile

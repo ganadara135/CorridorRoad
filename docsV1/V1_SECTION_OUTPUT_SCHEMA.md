@@ -1,4 +1,4 @@
-# CorridorRoad V1 Section Output Schema
+# Parametric Road V1 Section Output Schema
 
 Date: 2026-04-25
 Branch: `v1-dev`

@@ -1,6 +1,6 @@
 # docsV1
 
-This folder contains the CorridorRoad v1 redesign documents.
+This folder contains the Parametric Road v1 redesign documents.
 
 Baseline document:
 

@@ -1,4 +1,4 @@
-# CorridorRoad V1 Cross Section Viewer Execution Plan
+# Parametric Road V1 Cross Section Viewer Execution Plan
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -314,6 +314,6 @@ After this plan, the next natural execution documents are:
 
 ## 16. Final Rule
 
-`Cross Section Viewer` should be the first screen where CorridorRoad clearly feels like v1.
+`Cross Section Viewer` should be the first screen where Parametric Road clearly feels like v1.
 
 If the team must choose between preserving the old review UX and strengthening the v1 review path, the v1 review path should win.

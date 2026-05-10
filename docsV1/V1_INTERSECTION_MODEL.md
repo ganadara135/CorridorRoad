@@ -1,4 +1,4 @@
-# CorridorRoad V1 Intersection Model
+# Parametric Road V1 Intersection Model
 
 Date: 2026-04-24
 Branch: `v1-dev`

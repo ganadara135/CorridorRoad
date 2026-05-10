@@ -45,7 +45,7 @@ def generate_v1_stations(
         except Exception:
             prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(prj)
-        prj.Label = "CorridorRoad Project"
+        prj.Label = "Parametric Road Project"
 
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)

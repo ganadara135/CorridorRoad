@@ -1,4 +1,4 @@
-# CorridorRoad V1 Cross Section 2D Viewer Design
+# Parametric Road V1 Cross Section 2D Viewer Design
 
 Date: 2026-04-28
 Status: Draft detail plan

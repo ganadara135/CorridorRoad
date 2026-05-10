@@ -1,4 +1,4 @@
-# CorridorRoad V1 Coordinate Import Policy
+# Parametric Road V1 Coordinate Import Policy
 
 Date: 2026-04-29
 Status: Active implementation rule

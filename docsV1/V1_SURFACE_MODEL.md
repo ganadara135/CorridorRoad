@@ -1,4 +1,4 @@
-# CorridorRoad V1 Surface Model
+# Parametric Road V1 Surface Model
 
 Date: 2026-04-23
 Branch: `v1-dev`

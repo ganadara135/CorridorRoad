@@ -1,4 +1,4 @@
-# CorridorRoad V1 Region Implementation Plan
+# Parametric Road V1 Region Implementation Plan
 
 Date: 2026-04-27
 Branch: `v1-dev`

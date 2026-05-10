@@ -1,4 +1,4 @@
-# CorridorRoad V1 Implementation Phase Plan
+# Parametric Road V1 Implementation Phase Plan
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -473,4 +473,4 @@ The recommended implementation order for v1 is:
 - then output contracts
 - then viewer, exchange, and AI consumers
 
-This is the safest path to keep CorridorRoad v1 aligned with its parametric 3D, TIN-first, source-traceable architecture.
+This is the safest path to keep Parametric Road v1 aligned with its parametric 3D, TIN-first, source-traceable architecture.

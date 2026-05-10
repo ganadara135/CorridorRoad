@@ -1,4 +1,4 @@
-# CorridorRoad V1 Wiki Drafts
+# Parametric Road V1 Wiki Drafts
 
 Target release: `v1.0.0`
 

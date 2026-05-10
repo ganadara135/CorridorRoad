@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
-<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+<!-- SPDX-FileNotice: Part of the Parametric Road addon. -->
 
 # Changelog
 
@@ -56,6 +56,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets.
 
 ### Changed
+- Renamed the user-facing product/workbench brand from `Corridor Road` / `CorridorRoad` to `Parametric Road` while keeping the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids unchanged.
 - Documented Drainage Flow Routes as graph edges between Element nodes and standardized final discharge wording on `Outlet`.
 - Changed Build Corridor `Drainage Flow` focus to use only a linear route-span highlight instead of adding separate cross marker geometry.
 - Documented the Region domain ownership redesign plan where Region owns station spans and Assembly only, while Structure and Drainage own their own Region assignments.

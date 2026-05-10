@@ -1,4 +1,4 @@
-# CorridorRoad V1 Region Surface Transition Plan
+# Parametric Road V1 Region Surface Transition Plan
 
 Date: 2026-05-03
 Status: Draft implementation plan

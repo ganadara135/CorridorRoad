@@ -1,4 +1,4 @@
-# CorridorRoad V1 Output Strategy
+# Parametric Road V1 Output Strategy
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -12,7 +12,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines how CorridorRoad v1 should approach deliverables and output artifacts.
+This document defines how Parametric Road v1 should approach deliverables and output artifacts.
 
 The goal is to avoid scattered, tool-specific export behavior and instead build a stable output system derived from the v1 source-of-truth model.
 

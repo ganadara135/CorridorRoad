@@ -1,4 +1,4 @@
-# CorridorRoad V1 Exchange Output Schema
+# Parametric Road V1 Exchange Output Schema
 
 Date: 2026-04-22
 Branch: `v1-dev`

@@ -1,4 +1,4 @@
-# CorridorRoad V1 UX Reset Plan
+# Parametric Road V1 UX Reset Plan
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -16,7 +16,7 @@ It explicitly does **not** start from:
 
 It starts from one question instead:
 
-- what is the simplest and least confusing workflow for a user designing a road corridor in CorridorRoad v1
+- what is the simplest and least confusing workflow for a user designing a road corridor in Parametric Road v1
 
 ## 2. Core Product Rule
 

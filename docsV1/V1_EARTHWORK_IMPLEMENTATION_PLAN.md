@@ -1,4 +1,4 @@
-# CorridorRoad V1 Earthwork Implementation Plan
+# Parametric Road V1 Earthwork Implementation Plan
 
 Date: 2026-05-02
 Status: Draft implementation plan
@@ -16,7 +16,7 @@ Depends on:
 
 ## 1. Purpose
 
-This plan defines how CorridorRoad v1 should implement earthwork analysis from accepted v1 corridor results.
+This plan defines how Parametric Road v1 should implement earthwork analysis from accepted v1 corridor results.
 
 The goal is to calculate cut, fill, balance, and mass-haul results from v1 source/result/output contracts rather than from temporary viewer geometry.
 

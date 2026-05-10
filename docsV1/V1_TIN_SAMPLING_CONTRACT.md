@@ -1,4 +1,4 @@
-# CorridorRoad V1 TIN Sampling Contract
+# Parametric Road V1 TIN Sampling Contract
 
 Date: 2026-04-23
 Branch: `v1-dev`

@@ -1,4 +1,4 @@
-# CorridorRoad V1 Drainage Implementation Plan
+# Parametric Road V1 Drainage Implementation Plan
 
 Date: 2026-05-02
 Status: Draft implementation plan
@@ -16,7 +16,7 @@ Depends on:
 
 ## 1. Purpose
 
-This plan defines how CorridorRoad v1 should implement Drainage after the first placeholder toolbar entry.
+This plan defines how Parametric Road v1 should implement Drainage after the first placeholder toolbar entry.
 
 The goal is to make drainage design intent explicit, editable, reviewable, and traceable through Applied Sections, Corridor Build, quantities, and later exchange outputs.
 

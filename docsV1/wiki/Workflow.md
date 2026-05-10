@@ -1,6 +1,6 @@
 # Workflow
 
-CorridorRoad v1 uses a source -> evaluation -> result -> output -> presentation structure.
+Parametric Road v1 uses a source -> evaluation -> result -> output -> presentation structure.
 
 ## Layering
 

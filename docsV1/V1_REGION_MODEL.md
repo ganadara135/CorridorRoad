@@ -1,4 +1,4 @@
-# CorridorRoad V1 Region Model
+# Parametric Road V1 Region Model
 
 Date: 2026-04-23
 Branch: `v1-dev`

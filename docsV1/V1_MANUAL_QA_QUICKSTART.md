@@ -1,4 +1,4 @@
-# CorridorRoad V1 Manual QA Quickstart
+# Parametric Road V1 Manual QA Quickstart
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -39,7 +39,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\launch_v1_manual_review.ps1 -
 
 ## 3. Five-Minute Flow
 
-1. Open FreeCAD and load one real CorridorRoad project document.
+1. Open FreeCAD and load one real Parametric Road project document.
 2. Run `CorridorRoad_ViewCrossSection`.
 3. Confirm the v1 `Cross Section Viewer` opens first.
    - if it says `Built from demo section viewer payload.`, count that as command routing success only, not as a real-document review pass

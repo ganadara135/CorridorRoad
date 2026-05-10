@@ -1,4 +1,4 @@
-# CorridorRoad V1 Ditch Shape Contract
+# Parametric Road V1 Ditch Shape Contract
 
 Date: 2026-04-28
 Status: Draft contract

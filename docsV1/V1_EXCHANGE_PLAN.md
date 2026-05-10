@@ -1,4 +1,4 @@
-# CorridorRoad V1 Exchange Plan
+# Parametric Road V1 Exchange Plan
 
 Date: 2026-04-24
 Branch: `v1-dev`

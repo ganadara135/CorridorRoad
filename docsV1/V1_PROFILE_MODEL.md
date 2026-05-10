@@ -1,4 +1,4 @@
-# CorridorRoad V1 Profile Model
+# Parametric Road V1 Profile Model
 
 Date: 2026-04-25
 Branch: `v1-dev`

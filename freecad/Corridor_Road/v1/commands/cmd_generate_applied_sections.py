@@ -134,7 +134,7 @@ def apply_v1_applied_section_set(
         except Exception:
             prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(prj)
-        prj.Label = "CorridorRoad Project"
+        prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
     if applied_section_set is None:

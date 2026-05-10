@@ -1,4 +1,4 @@
-# CorridorRoad V1 TIN Editing Plan
+# Parametric Road V1 TIN Editing Plan
 
 Date: 2026-04-27
 Branch: `v1-dev`

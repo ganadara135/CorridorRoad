@@ -2,10 +2,10 @@
 
 ## Commands Do Not Appear
 
-After updating CorridorRoad:
+After updating Parametric Road:
 
 1. Restart FreeCAD.
-2. Re-select the CorridorRoad workbench.
+2. Re-select the Parametric Road workbench.
 3. If the problem remains, check the FreeCAD report view for import errors.
 
 Missing command registration can happen when an updated command module was not loaded in the current FreeCAD session.
@@ -86,7 +86,7 @@ Check:
 If a review button reports a missing command:
 
 1. Restart FreeCAD.
-2. Activate the CorridorRoad workbench.
+2. Activate the Parametric Road workbench.
 3. Try the command again.
 
 If it still fails, report the traceback from the FreeCAD report view.

@@ -1,4 +1,4 @@
-# CorridorRoad V1 Module Layout
+# Parametric Road V1 Module Layout
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -11,7 +11,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines the recommended code and package layout for implementing CorridorRoad v1 inside the current repository.
+This document defines the recommended code and package layout for implementing Parametric Road v1 inside the current repository.
 
 It exists to answer:
 

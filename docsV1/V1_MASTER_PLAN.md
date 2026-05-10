@@ -1,4 +1,4 @@
-# CorridorRoad V1 Master Plan
+# Parametric Road V1 Master Plan
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -7,7 +7,7 @@ Audience: product planning, architecture, UI/UX, implementation, testing, releas
 
 ## 1. Purpose
 
-This document is the authoritative baseline for the CorridorRoad v1 redesign.
+This document is the authoritative baseline for the Parametric Road v1 redesign.
 
 All new documents under `docsV1/` should align with this plan unless they explicitly record and justify a change.
 
@@ -15,7 +15,7 @@ Legacy v0 documents are archived under `docsV0/`. They are reference material on
 
 ## 2. Executive Summary
 
-CorridorRoad v1 is a deliberate product reset.
+Parametric Road v1 is a deliberate product reset.
 
 The addon listing and repository link remain in place, but the internal architecture, data contracts, workflow model, and documentation will be redesigned around a stronger parametric 3D corridor concept.
 
@@ -42,7 +42,7 @@ Key product decisions:
 - addon publication path
 - repository URL
 - branch-based addon tracking model
-- FreeCAD workbench identity: `CorridorRoad`
+- FreeCAD workbench identity: `Parametric Road`
 - practical road-corridor focus
 
 ### 3.2 What resets
@@ -69,7 +69,7 @@ If limited migration tooling is added later, it should be explicitly marked as a
 
 ## 4. Vision
 
-CorridorRoad v1 should become a parametric civil-corridor workbench for concept-to-detail roadway modeling inside FreeCAD.
+Parametric Road v1 should become a parametric civil-corridor workbench for concept-to-detail roadway modeling inside FreeCAD.
 
 The product should let users:
 
@@ -159,7 +159,7 @@ Representation rule:
 
 ### 5.5 Representation Strategy By Scope
 
-CorridorRoad v1 should not force one representation strategy across every subsystem.
+Parametric Road v1 should not force one representation strategy across every subsystem.
 
 Use this table as the decision baseline when adding or refactoring v1 features.
 
@@ -1241,7 +1241,7 @@ The next recommended v1 documents are:
 
 ## 24. Final Direction Statement
 
-CorridorRoad v1 is not a patch release and not a compatibility maintenance cycle.
+Parametric Road v1 is not a patch release and not a compatibility maintenance cycle.
 
 It is a new parametric 3D corridor platform direction built inside the existing addon identity.
 

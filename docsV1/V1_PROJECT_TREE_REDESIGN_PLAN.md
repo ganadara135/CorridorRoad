@@ -1,4 +1,4 @@
-# CorridorRoad V1 Project Tree Redesign Plan
+# Parametric Road V1 Project Tree Redesign Plan
 
 Date: 2026-04-25
 Branch: `v1-dev`
@@ -15,7 +15,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines the v1 project tree structure for CorridorRoad.
+This document defines the v1 project tree structure for Parametric Road.
 
 The tree should express the project information model, not the old command layout.
 
@@ -91,7 +91,7 @@ The v1 tree should follow these rules:
 Recommended visible tree:
 
 ```text
-CorridorRoad Project
+Parametric Road Project
   00_Project Setup
     Project Settings
     Coordinate System
@@ -475,7 +475,7 @@ Current implementation:
 - review objects resolve to `08_Review` subfolders such as `Plan Profile Review`, `Section Review`, `TIN Review`, `Issues`, and `Bookmarks`
 - output and exchange objects resolve to `09_Outputs & Exchange` subfolders such as `Sheets`, `Reports`, `DXF`, `LandXML`, `IFC`, and `Exchange Packages`
 - AI assist objects resolve to `10_AI Assist` subfolders such as `Suggestions`, `Checks`, `Generated Alternatives`, and `User Decisions`
-- global adoption now prefers v1 folders for known CorridorRoad object families
+- global adoption now prefers v1 folders for known Parametric Road object families
 
 ## 9. Manual QA Scenario
 

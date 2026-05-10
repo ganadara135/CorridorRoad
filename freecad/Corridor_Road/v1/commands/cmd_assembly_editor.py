@@ -380,7 +380,7 @@ def apply_v1_assembly_model(
         except Exception:
             prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(prj)
-        prj.Label = "CorridorRoad Project"
+        prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
     target_name = str(object_name or getattr(assembly_obj, "Name", "") or "V1AssemblyModel")

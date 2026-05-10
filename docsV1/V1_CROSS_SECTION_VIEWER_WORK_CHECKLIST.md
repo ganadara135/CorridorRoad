@@ -1,4 +1,4 @@
-# CorridorRoad V1 Cross Section Viewer Work Checklist
+# Parametric Road V1 Cross Section Viewer Work Checklist
 
 Date: 2026-04-23
 Branch: `v1-dev`

@@ -1,8 +1,8 @@
-# CorridorRoad
+# Parametric Road
 
-CorridorRoad is a FreeCAD workbench for corridor-style road design, review, and output preparation.
+Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-CorridorRoad `1.0.0` is the first v1 workflow release. The v1 workflow is source-driven: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics and handoff context.
+Parametric Road `1.0.0` is the first v1 workflow release. The v1 workflow is source-driven: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics and handoff context.
 
 ## Start Here
 

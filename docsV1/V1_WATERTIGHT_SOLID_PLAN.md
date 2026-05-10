@@ -1,7 +1,7 @@
-# CorridorRoad V1 Watertight Solid Plan
+# Parametric Road V1 Watertight Solid Plan
 
-Status: Draft plan  
-Owner: CorridorRoad v1 output and geometry pipeline  
+Status: Draft plan
+Owner: Parametric Road v1 output and geometry pipeline
 Baseline: `docsV1/V1_MASTER_PLAN.md`
 
 Detailed implementation sequence: `docsV1/V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md`
@@ -10,7 +10,7 @@ Target-family expansion sequence: `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_P
 
 ## 1. Purpose
 
-This document defines how CorridorRoad v1 should produce watertight solid outputs from accepted corridor results.
+This document defines how Parametric Road v1 should produce watertight solid outputs from accepted corridor results.
 
 The final goal is to let users generate valid, reviewable watertight solids for selected areas such as:
 

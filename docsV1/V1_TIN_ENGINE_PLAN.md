@@ -1,4 +1,4 @@
-# CorridorRoad V1 TIN Engine Plan
+# Parametric Road V1 TIN Engine Plan
 
 Date: 2026-04-22
 Branch: `v1-dev`

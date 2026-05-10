@@ -1,6 +1,6 @@
 # Developer Guide
 
-CorridorRoad v1 development should follow the source -> evaluation -> result -> output -> presentation layering.
+Parametric Road v1 development should follow the source -> evaluation -> result -> output -> presentation layering.
 
 ## Key Directories
 

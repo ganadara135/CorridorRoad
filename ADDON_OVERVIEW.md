@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
-<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+<!-- SPDX-FileNotice: Part of the Parametric Road addon. -->
 
-# CorridorRoad Overview
+# Parametric Road Overview
 
-CorridorRoad is a FreeCAD workbench for corridor-style road design, review, and output preparation.
+Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
 The current development focus is the v1 workflow reset: clear source models, evaluated results, review viewers, and output packages instead of editing generated geometry directly.
 
@@ -11,7 +11,7 @@ The current development focus is the v1 workflow reset: clear source models, eva
 
 Typical v1 workflow:
 
-1. Create or open a CorridorRoad project.
+1. Create or open a Parametric Road project.
 2. Prepare TIN terrain data.
 3. Edit Alignment.
 4. Generate Stations.
@@ -47,7 +47,7 @@ Typical v1 workflow:
 
 ## Design Direction
 
-CorridorRoad v1 follows a source -> evaluation -> result -> output -> presentation structure.
+Parametric Road v1 follows a source -> evaluation -> result -> output -> presentation structure.
 
 - Source intent belongs in models such as Alignment, Profile, Assembly, Region, Structure, and Drainage.
 - Applied Sections and Corridor surfaces are generated results.
@@ -83,6 +83,6 @@ Online project resources:
 
 
 ## Screenshots
-![CorridorRoad screenshot 13](https://github.com/user-attachments/assets/180ea6e4-3444-4810-a350-091fd899e0ba)
-![CorridorRoad screenshot 14](https://github.com/user-attachments/assets/64e20bd5-941a-4a09-9efa-4d16e808cd84)
-![CorridorRoad screenshot 15](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)
+![Parametric Road screenshot 13](https://github.com/user-attachments/assets/180ea6e4-3444-4810-a350-091fd899e0ba)
+![Parametric Road screenshot 14](https://github.com/user-attachments/assets/64e20bd5-941a-4a09-9efa-4d16e808cd84)
+![Parametric Road screenshot 15](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)

@@ -1,4 +1,4 @@
-# CorridorRoad V1 Release 1.0.0 Plan
+# Parametric Road V1 Release 1.0.0 Plan
 
 Date: 2026-05-02
 Status: Draft release plan
@@ -18,7 +18,7 @@ Depends on:
 
 ## 1. Purpose
 
-This plan defines the release process for CorridorRoad `1.0.0`.
+This plan defines the release process for Parametric Road `1.0.0`.
 
 The release should present v1 as the supported workflow reset: source models, evaluated results, review viewers, and output packages are the main product direction.
 
@@ -120,7 +120,7 @@ Recommended test command pattern:
 Manual QA:
 
 1. Start a clean FreeCAD session.
-2. Activate the CorridorRoad workbench.
+2. Activate the Parametric Road workbench.
 3. Confirm toolbar order:
    `Project -> TIN -> Alignment -> Stations/Profile -> Assembly/Structures/Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
 4. Open each primary toolbar command.
@@ -154,7 +154,7 @@ The Wiki should be updated before publishing the GitHub release announcement.
 Recommended update order:
 
 1. `Home`
-   - describe CorridorRoad `1.0.0` as the v1 workflow release
+   - describe Parametric Road `1.0.0` as the v1 workflow release
    - link to Quick Start, Workflow, and Known Limitations
 2. `Quick Start`
    - update workflow to match the v1 toolbar order
@@ -197,11 +197,11 @@ Wiki acceptance criteria:
 
 Suggested GitHub release title:
 
-`CorridorRoad 1.0.0 - v1 Workflow Release`
+`Parametric Road 1.0.0 - v1 Workflow Release`
 
 Suggested short description:
 
-`CorridorRoad 1.0.0 introduces the v1 source-driven corridor workflow, including v1 Alignment, Stations, Profile, Assembly, Region, Applied Sections, Build Corridor review surfaces, Earthwork Review, and Structure Output. Drainage is exposed as a planned workflow stage and will continue after this release.`
+`Parametric Road 1.0.0 introduces the v1 source-driven corridor workflow, including v1 Alignment, Stations, Profile, Assembly, Region, Applied Sections, Build Corridor review surfaces, Earthwork Review, and Structure Output. Drainage is exposed as a planned workflow stage and will continue after this release.`
 
 Suggested sections:
 

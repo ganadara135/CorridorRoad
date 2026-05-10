@@ -1,4 +1,4 @@
-# CorridorRoad V1 Watertight Solid Target Expansion Plan
+# Parametric Road V1 Watertight Solid Target Expansion Plan
 
 Date: 2026-05-08  
 Status: Draft implementation plan  

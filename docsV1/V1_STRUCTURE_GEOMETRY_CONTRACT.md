@@ -1,4 +1,4 @@
-# CorridorRoad V1 Structure Geometry Contract
+# Parametric Road V1 Structure Geometry Contract
 
 Date: 2026-04-30
 Status: Draft contract
@@ -487,7 +487,7 @@ Current execution status:
   - Keep this as a normalized package export, not a full IFC writer.
 - [x] Add an IFC4 handoff adapter for persisted structure exchange packages.
   - Consume normalized structure solid rows from the persisted `ExchangePackage`.
-  - Emit deterministic `IfcBuildingElementProxy` rows with CorridorRoad property sets.
+  - Emit deterministic `IfcBuildingElementProxy` rows with Parametric Road property sets.
   - Add a Build Corridor panel action for IFC export.
 - [x] Add basic IFC shape representations.
   - Emit local placement, rectangle profile, extruded solid, shape representation, and product definition shape rows.
@@ -525,7 +525,7 @@ Acceptance criteria:
 
 - A structure crossing two AppliedSection frames records both start and end frame coordinates.
 - Existing exchange payloads include the new fields.
-- IFC export preserves start/end frame fields in CorridorRoad property sets.
+- IFC export preserves start/end frame fields in Parametric Road property sets.
 
 ### Phase 2: Segmented Structure Geometry
 
@@ -561,7 +561,7 @@ Scope:
 
 - Consume start/end or segment geometry from `StructureSolidOutput`.
 - Export segmented swept solids for curved/path-following structure rows.
-- Preserve `IfcBuildingElementProxy` and CorridorRoad property sets until a stricter IFC class mapping is ready.
+- Preserve `IfcBuildingElementProxy` and Parametric Road property sets until a stricter IFC class mapping is ready.
 - Add explicit export diagnostics for simplified geometry.
 
 Acceptance criteria:
@@ -724,7 +724,7 @@ First-slice implementation is acceptable when:
 
 ## 23. Non-goals
 
-This contract does not make CorridorRoad a structural design package.
+This contract does not make Parametric Road a structural design package.
 
 It does not replace bridge, culvert, or retaining wall engineering tools.
 

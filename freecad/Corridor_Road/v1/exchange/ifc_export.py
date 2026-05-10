@@ -70,7 +70,7 @@ def exchange_package_ifc_text(payload: dict[str, object]) -> str:
     lines.append(f"#{unit_assignment}=IFCUNITASSIGNMENT((#{length_unit},#{volume_unit}));")
     next_id += 1
     project = next_id
-    project_name = _step_string(str(payload.get("project_id", "") or "CorridorRoad Project"))
+    project_name = _step_string(str(payload.get("project_id", "") or "Parametric Road Project"))
     lines.append(
         f"#{project}=IFCPROJECT('{_ifc_guid(str(payload.get('exchange_output_id', '') or 'project'))}',$,'{project_name}',$,$,$,$,(#{context}),#{unit_assignment});"
     )
