@@ -171,6 +171,65 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_build_document_applied_sections_resolves_drainage_from_drainage_model_region_refs() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
+        assembly_model = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        first = region_model.region_rows[0]
+        region_model.region_rows[0] = type(first)(
+            region_id=first.region_id,
+            region_index=first.region_index,
+            station_start=first.station_start,
+            station_end=first.station_end,
+            assembly_ref="assembly:drainage-ditch-road",
+            template_ref="template:drainage-ditch-road",
+            priority=first.priority,
+        )
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        "drainage:plain-left",
+                        "ditch",
+                        side="left",
+                        region_ref=first.region_id,
+                        station_start=0.0,
+                        station_end=240.0,
+                    ),
+                    DrainageElementRow(
+                        "drainage:plain-right",
+                        "ditch",
+                        side="right",
+                        region_ref=first.region_id,
+                        station_start=0.0,
+                        station_end=240.0,
+                    ),
+                ],
+            ),
+        )
+
+        result = build_document_applied_section_set(doc, project=project)
+
+        ditch_components = [row for row in result.sections[0].component_rows if row.kind == "ditch"]
+        ditch_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_surface"]
+        assert [row.drainage_refs for row in ditch_components] == [["drainage:plain-left"], ["drainage:plain-right"]]
+        assert {row.drainage_ref for row in ditch_points} == {"drainage:plain-left", "drainage:plain-right"}
+        assert "drainage:main" in result.source_refs
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_build_document_applied_section_set_uses_region_specific_assembly_objects() -> None:
     doc, project = _new_project_doc()
     try:

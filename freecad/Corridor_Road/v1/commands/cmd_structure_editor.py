@@ -36,6 +36,7 @@ from ..models.source.structure_model import (
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_exchange_package import find_v1_exchange_package
+from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import (
     create_or_update_v1_structure_model_object,
@@ -115,6 +116,65 @@ STRUCTURE_PRESETS = {
             }
         ],
     },
+    "Drainage Structures": {
+        "note": "Drainage-related structures for connecting Drainage Element Structure Ref rows.",
+        "rows": [
+            {
+                "id": "structure:culvert-01",
+                "kind": "culvert",
+                "role": "clearance_control",
+                "start": 0.45,
+                "end": 0.55,
+                "offset": 0.0,
+                "geometry": "",
+                "spec": "geometry-spec:culvert-01",
+                "width": 3.0,
+                "height": 2.0,
+                "shape": "box",
+                "material": "concrete",
+                "culvert": {
+                    "barrel_shape": "box",
+                    "barrel_count": 1,
+                    "span": 3.0,
+                    "rise": 2.0,
+                    "wall_thickness": 0.3,
+                    "headwall_type": "straight",
+                    "wingwall_type": "short",
+                },
+                "notes": "Cross-drain culvert referenced by Drainage flow routes.",
+            },
+            {
+                "id": "structure:inlet-01",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.30,
+                "end": 0.32,
+                "offset": -4.5,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-01",
+                "width": 1.0,
+                "height": 1.0,
+                "shape": "inlet_box",
+                "material": "concrete",
+                "notes": "Drainage inlet/catch-basin reference structure.",
+            },
+            {
+                "id": "structure:outlet-01",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.88,
+                "end": 0.90,
+                "offset": -6.0,
+                "geometry": "",
+                "spec": "geometry-spec:outlet-01",
+                "width": 1.5,
+                "height": 1.2,
+                "shape": "outlet_headwall",
+                "material": "concrete",
+                "notes": "Drainage outlet/headwall reference structure.",
+            },
+        ],
+    },
     "Retaining Wall": {
         "note": "One retaining wall zone on the right side of the corridor.",
         "rows": [
@@ -152,6 +212,24 @@ def structure_preset_names() -> list[str]:
     """Return available v1 Structure preset names."""
 
     return list(STRUCTURE_PRESETS.keys())
+
+
+def region_model_ids(document) -> list[str]:
+    """Return v1 Region ids available for Structure placement region_ref selection."""
+
+    region_obj = find_v1_region_model(document)
+    model = to_region_model(region_obj)
+    if model is None:
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for row in list(getattr(model, "region_rows", []) or []):
+        region_id = str(getattr(row, "region_id", "") or "").strip()
+        if not region_id or region_id in seen:
+            continue
+        seen.add(region_id)
+        output.append(region_id)
+    return output
 
 
 def starter_structure_model_from_document(document=None, *, project=None, alignment=None) -> StructureModel:
@@ -290,6 +368,7 @@ class V1StructureEditorTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.structure_obj = find_v1_structure_model(self.document)
+        self._region_refs = region_model_ids(self.document)
         self._geometry_spec_rows: list[StructureGeometrySpec] = []
         self._bridge_geometry_spec_rows: list[BridgeGeometrySpec] = []
         self._culvert_geometry_spec_rows: list[CulvertGeometrySpec] = []
@@ -345,9 +424,9 @@ class V1StructureEditorTaskPanel:
         layout.addWidget(self._preset_note)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
 
-        self._table = QtWidgets.QTableWidget(0, 8)
+        self._table = QtWidgets.QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(
-            ["Structure Id", "Kind", "Role", "Start STA", "End STA", "Offset", "Geometry Ref", "Notes"]
+            ["Structure Id", "Kind", "Region", "Role", "Start STA", "End STA", "Offset", "Geometry Ref", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -529,8 +608,9 @@ class V1StructureEditorTaskPanel:
         index = self._table.rowCount()
         self._table.insertRow(index)
         values = [
-            row.structure_id,
+            _display_structure_ref(row.structure_id),
             row.structure_kind,
+            getattr(row.placement, "region_ref", "") or "",
             row.structure_role,
             _format_float(row.placement.station_start),
             _format_float(row.placement.station_end),
@@ -546,6 +626,13 @@ class V1StructureEditorTaskPanel:
                 combo.setCurrentText(str(value or "bridge"))
                 self._table.setCellWidget(index, col, combo)
             elif col == 2:
+                combo = QtWidgets.QComboBox()
+                combo.setEditable(True)
+                combo.addItem("")
+                combo.addItems(self._region_refs)
+                combo.setCurrentText(str(value or ""))
+                self._table.setCellWidget(index, col, combo)
+            elif col == 3:
                 combo = QtWidgets.QComboBox()
                 combo.setEditable(True)
                 combo.addItems(STRUCTURE_ROLE_CHOICES)
@@ -666,7 +753,7 @@ class V1StructureEditorTaskPanel:
             return
         spec_ref = self._ensure_row_geometry_spec_ref(self._table.currentRow(), row)
         kind = str(row.structure_kind or "").strip().lower()
-        self._detail_summary.setText(f"{row.structure_id} | {kind or 'custom'} | {spec_ref}")
+        self._detail_summary.setText(f"{_display_structure_ref(row.structure_id)} | {kind or 'custom'} | {spec_ref}")
         values = _kind_detail_values(
             kind,
             spec_ref,
@@ -733,7 +820,7 @@ class V1StructureEditorTaskPanel:
     def _apply(self, *, close_after: bool = False, show_preview: bool = True) -> bool:
         try:
             model = self._model_from_table()
-            diagnostics = validate_structure_model(model)
+            diagnostics = validate_structure_model(model, region_model=self._region_model())
             if any(str(row).startswith("error|") for row in diagnostics):
                 self._set_status(_format_validation_result(model, document=self.document))
                 _show_message(self.form, "Structures", "Structures were not applied because validation has errors.")
@@ -757,7 +844,7 @@ class V1StructureEditorTaskPanel:
     def _show_preview(self) -> None:
         try:
             model = self._model_from_table()
-            diagnostics = validate_structure_model(model)
+            diagnostics = validate_structure_model(model, region_model=self._region_model())
             if any(str(row).startswith("error|") for row in diagnostics):
                 self._set_status(_format_validation_result(model, document=self.document))
                 return
@@ -766,6 +853,9 @@ class V1StructureEditorTaskPanel:
             self._set_status(_format_validation_result(model, document=self.document) + f"\n\n3D Preview shown: {preview.Label}")
         except Exception as exc:
             self._set_status(f"Structure preview was not shown:\n{exc}")
+
+    def _region_model(self):
+        return to_region_model(find_v1_region_model(self.document))
 
     def _focus_preview_object(self, preview) -> None:
         if Gui is None or preview is None:
@@ -820,13 +910,14 @@ class V1StructureEditorTaskPanel:
         rows: list[StructureRow] = []
         alignment_id = _alignment_id(self.document)
         for row_index in range(self._table.rowCount()):
-            structure_id = _item_text(self._table, row_index, 0) or f"structure:{row_index + 1}"
+            structure_id = _source_structure_ref(_item_text(self._table, row_index, 0) or f"{row_index + 1}")
             kind = _item_text(self._table, row_index, 1) or "bridge"
-            role = _item_text(self._table, row_index, 2) or "interface"
-            station_start = _required_float(_item_text(self._table, row_index, 3), f"Row {row_index + 1} start STA")
-            station_end = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} end STA")
-            offset = _required_float(_item_text(self._table, row_index, 5) or "0", f"Row {row_index + 1} offset")
-            geometry_ref = _item_text(self._table, row_index, 6)
+            region_ref = _item_text(self._table, row_index, 2)
+            role = _item_text(self._table, row_index, 3) or "interface"
+            station_start = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} start STA")
+            station_end = _required_float(_item_text(self._table, row_index, 5), f"Row {row_index + 1} end STA")
+            offset = _required_float(_item_text(self._table, row_index, 6) or "0", f"Row {row_index + 1} offset")
+            geometry_ref = _item_text(self._table, row_index, 7)
             rows.append(
                 StructureRow(
                     structure_id=structure_id,
@@ -838,6 +929,7 @@ class V1StructureEditorTaskPanel:
                         station_start=station_start,
                         station_end=station_end,
                         offset=offset,
+                        region_ref=region_ref,
                     ),
                     geometry_spec_ref=_item_user_data(self._table, row_index, 0),
                     geometry_ref=geometry_ref,
@@ -860,13 +952,14 @@ class V1StructureEditorTaskPanel:
 
     def _structure_row_from_table_index(self, row_index: int) -> StructureRow:
         alignment_id = _alignment_id(self.document)
-        structure_id = _item_text(self._table, row_index, 0) or f"structure:{row_index + 1}"
+        structure_id = _source_structure_ref(_item_text(self._table, row_index, 0) or f"{row_index + 1}")
         kind = _item_text(self._table, row_index, 1) or "bridge"
-        role = _item_text(self._table, row_index, 2) or "interface"
-        station_start = _required_float(_item_text(self._table, row_index, 3), f"Row {row_index + 1} start STA")
-        station_end = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} end STA")
-        offset = _required_float(_item_text(self._table, row_index, 5) or "0", f"Row {row_index + 1} offset")
-        geometry_ref = _item_text(self._table, row_index, 6)
+        region_ref = _item_text(self._table, row_index, 2)
+        role = _item_text(self._table, row_index, 3) or "interface"
+        station_start = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} start STA")
+        station_end = _required_float(_item_text(self._table, row_index, 5), f"Row {row_index + 1} end STA")
+        offset = _required_float(_item_text(self._table, row_index, 6) or "0", f"Row {row_index + 1} offset")
+        geometry_ref = _item_text(self._table, row_index, 7)
         return StructureRow(
             structure_id=structure_id,
             structure_kind=kind,
@@ -877,6 +970,7 @@ class V1StructureEditorTaskPanel:
                 station_start=station_start,
                 station_end=station_end,
                 offset=offset,
+                region_ref=region_ref,
             ),
             geometry_spec_ref=_item_user_data(self._table, row_index, 0),
             geometry_ref=geometry_ref,
@@ -889,8 +983,9 @@ class V1StructureEditorTaskPanel:
         self._load_selected_detail()
 
     def _select_structure_id(self, structure_id: str) -> None:
+        expected = _source_structure_ref(structure_id)
         for row_index in range(self._table.rowCount()):
-            if _item_text(self._table, row_index, 0) == structure_id:
+            if _source_structure_ref(_item_text(self._table, row_index, 0)) == expected:
                 self._table.selectRow(row_index)
                 return
         self._select_first_structure_row()
@@ -1326,8 +1421,9 @@ def _document_station_range(document, alignment_obj=None) -> tuple[float, float]
 
 
 def _format_validation_result(structure_model: StructureModel, *, document=None) -> str:
-    diagnostics = validate_structure_model(structure_model)
-    lines = ["Validation status: " + ("warning" if diagnostics else "ok")]
+    diagnostics = validate_structure_model(structure_model, region_model=to_region_model(find_v1_region_model(document)))
+    status = "error" if any(str(row).startswith("error|") for row in diagnostics) else "warning" if diagnostics else "ok"
+    lines = ["Validation status: " + status]
     if not diagnostics:
         lines.append("No diagnostics.")
     else:
@@ -1734,6 +1830,19 @@ def _item_user_data(table, row: int, col: int) -> str:
         return str(item.data(QtCore.Qt.UserRole) or "").strip()
     except Exception:
         return ""
+
+
+def _display_structure_ref(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "structure:"
+    return text[len(prefix):] if text.startswith(prefix) else text
+
+
+def _source_structure_ref(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text if text.startswith("structure:") else f"structure:{text}"
 
 
 def _format_float(value: float) -> str:

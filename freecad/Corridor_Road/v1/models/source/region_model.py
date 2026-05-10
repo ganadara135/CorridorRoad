@@ -70,9 +70,6 @@ class RegionRow:
     station_end: float
     region_index: int = 0
     assembly_ref: str = ""
-    structure_ref: str = ""
-    structure_refs: list[str] = field(default_factory=list)
-    drainage_refs: list[str] = field(default_factory=list)
     ramp_ref: str = ""
     intersection_ref: str = ""
     policy_set_ref: str = ""
@@ -85,15 +82,6 @@ class RegionRow:
     policy_rows: list[RegionPolicyRow] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        structure_ref = str(self.structure_ref or "").strip()
-        structure_refs = normalize_region_refs(self.structure_refs)
-        if structure_ref and structure_ref not in structure_refs:
-            structure_refs = [structure_ref] + structure_refs
-        if not structure_ref and structure_refs:
-            structure_ref = structure_refs[0]
-        object.__setattr__(self, "structure_ref", structure_ref)
-        object.__setattr__(self, "structure_refs", structure_refs)
-        object.__setattr__(self, "drainage_refs", normalize_region_refs(self.drainage_refs))
         object.__setattr__(self, "override_refs", normalize_region_refs(self.override_refs))
 
 

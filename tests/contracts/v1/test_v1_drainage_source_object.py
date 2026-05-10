@@ -8,6 +8,7 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DrainagePolicySet,
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 from freecad.Corridor_Road.v1.objects.obj_drainage import (
     create_or_update_v1_drainage_model_object,
     find_v1_drainage_model,
@@ -293,6 +294,79 @@ def test_drainage_validation_reports_flow_route_self_loop_and_cycle() -> None:
     assert "flow_route_cycle" in kinds
 
 
+def test_drainage_validation_reports_cross_region_flow_route_warning() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                "drainage:a",
+                "ditch",
+                region_ref="region:1",
+                station_start=0.0,
+                station_end=10.0,
+                policy_set_ref="drainage-policy:1",
+            ),
+            DrainageElementRow(
+                "drainage:b",
+                "ditch",
+                region_ref="region:2",
+                station_start=10.0,
+                station_end=20.0,
+                policy_set_ref="drainage-policy:1",
+            ),
+            DrainageElementRow("drainage:outfall", "outfall_reference", station_start=20.0, station_end=21.0),
+        ],
+        policy_rows=[DrainagePolicySet("drainage-policy:1", "collect_and_convey")],
+        flow_route_rows=[DrainageFlowRoute("flow-route:ab", "drainage:a", "drainage:b", "drainage:outfall")],
+    )
+
+    result = DrainageValidationService().validate(model)
+    kinds = [row.kind for row in result.diagnostic_rows]
+
+    assert result.status == "warning"
+    assert "flow_route_cross_region" in kinds
+
+
+def test_drainage_validation_checks_structure_refs_against_structure_model() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:culvert",
+                element_kind="culvert_reference",
+                structure_ref="structure:missing",
+                station_start=10.0,
+                station_end=20.0,
+                policy_set_ref="drainage-policy:1",
+            )
+        ],
+        policy_rows=[DrainagePolicySet("drainage-policy:1", "cross_drainage_transfer")],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:culvert-01",
+                structure_kind="culvert",
+                structure_role="clearance_control",
+                placement=StructurePlacement("placement:culvert-01", "alignment:main", 10.0, 20.0),
+            )
+        ],
+    )
+
+    result = DrainageValidationService().validate(model, structure_model=structure_model)
+    kinds = [row.kind for row in result.diagnostic_rows]
+
+    assert result.status == "error"
+    assert "missing_drainage_structure_ref" in kinds
+
+
 def test_drainage_validation_checks_element_station_range_against_region() -> None:
     model = DrainageModel(
         schema_version=1,
@@ -335,6 +409,49 @@ def test_drainage_validation_checks_element_station_range_against_region() -> No
     assert result.status == "error"
     assert [row.kind for row in result.diagnostic_rows] == ["drainage_element_outside_region_station_range"]
     assert "element_start=45" in result.diagnostic_rows[0].notes
+
+
+def test_drainage_validation_allows_ui_precision_region_boundary_match() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:left",
+                element_kind="ditch",
+                region_ref="region:1",
+                station_start=0.0,
+                station_end=203.108,
+                policy_set_ref="drainage-policy:1",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:right",
+                element_kind="ditch",
+                region_ref="region:1",
+                station_start=0.0,
+                station_end=203.108,
+                policy_set_ref="drainage-policy:1",
+            ),
+        ],
+        policy_rows=[
+            DrainagePolicySet(
+                policy_set_id="drainage-policy:1",
+                flow_intent="collect_and_convey",
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[RegionRow("region:1", 0.0, 203.1075)],
+    )
+
+    result = DrainageValidationService().validate(model, region_model=region_model)
+
+    assert result.status == "ok"
+    assert not result.diagnostic_rows
 
 
 def test_v1_drainage_model_object_stores_validation_diagnostics() -> None:

@@ -15,7 +15,7 @@ CorridorRoad `1.0.0` is the first v1 workflow release. The v1 workflow is source
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile -> Assembly/Structures/Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
+`Project -> TIN -> Alignment -> Stations/Profile -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
 
 Main stages:
 

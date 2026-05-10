@@ -17,6 +17,7 @@ from ...objects.obj_project import CorridorRoadProject, ensure_project_propertie
 from ..exchange import export_exchange_package_to_ifc, export_exchange_package_to_json
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model
+from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_object, find_v1_exchange_package
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
@@ -42,6 +43,7 @@ from ..services.builders import (
     transition_augmented_applied_section_set,
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
+from ..services.evaluation.station_context_resolver import StationContextResolver
 from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
 
@@ -69,7 +71,8 @@ CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
     ("slope_issues", "3. Slope Face Issues", ("daylight",), "Check daylight tie-in fallbacks and EG hits."),
-    ("drainage", "4. Drainage", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
+    ("drainage", "4. Drainage Surface", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
+    ("drainage_flow", "5. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
 )
 BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
 BUILD_CORRIDOR_PANEL_MAX_WIDTH = 560
@@ -488,6 +491,7 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     review_by_role = {str(row.get("role", "") or ""): row for row in corridor_build_review_rows(doc)}
     issue_count = len(corridor_slope_face_issue_rows(doc))
+    drainage_flow_summary = corridor_drainage_flow_review_summary(doc)
     rows: list[dict[str, object]] = []
     for step_id, title, roles, default_notes in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
         if step_id == "slope_issues":
@@ -507,6 +511,10 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
                 status = str(drainage.get("status", status) or status)
                 notes = str(drainage.get("notes", notes) or notes)
                 focus = "Drainage Surface" if source.get("status") == "ready" else "Drainage Diagnostics"
+            elif step_id == "drainage_flow":
+                status = str(drainage_flow_summary.get("status", status) or status)
+                notes = str(drainage_flow_summary.get("notes", default_notes) or default_notes)
+                focus = str(drainage_flow_summary.get("focus", "Drainage Flow") or "Drainage Flow")
         rows.append(
             {
                 "step_id": step_id,
@@ -518,6 +526,140 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
             }
         )
     return rows
+
+
+def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]:
+    """Return Flow Route review rows for Build Corridor Guided Review."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
+    if drainage_model is None:
+        return [
+            {
+                "flow_route_id": "",
+                "status": "missing",
+                "from_element": "",
+                "to_element": "",
+                "outlet": "",
+                "structure_refs": "",
+                "station_start": "",
+                "station_end": "",
+                "notes": "DrainageModel is required before Drainage Flow review.",
+            }
+        ]
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or ""): row
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+    }
+    structure_model = to_structure_model(find_v1_structure_model(doc))
+    structure_by_id = {
+        str(getattr(row, "structure_id", "") or ""): row
+        for row in list(getattr(structure_model, "structure_rows", []) or [])
+    } if structure_model is not None else {}
+    rows: list[dict[str, object]] = []
+    for flow_row in list(getattr(drainage_model, "flow_route_rows", []) or []):
+        connected_elements = _drainage_flow_connected_elements(flow_row, element_by_id)
+        structure_refs = _drainage_flow_structure_refs(flow_row, connected_elements)
+        station_range = _drainage_flow_station_range(flow_row, connected_elements, structure_by_id)
+        route_id = str(getattr(flow_row, "flow_route_id", "") or "")
+        from_ref = str(getattr(flow_row, "from_element_ref", "") or "")
+        to_ref = str(getattr(flow_row, "to_element_ref", "") or "")
+        outlet_ref = str(getattr(flow_row, "outlet_ref", "") or "")
+        chain_values = [value for value in (from_ref, to_ref, outlet_ref) if value]
+        missing_refs = [
+            ref
+            for ref in (from_ref, to_ref)
+            if ref and ref.startswith("drainage:") and ref not in element_by_id
+        ]
+        if missing_refs:
+            status = "missing"
+            notes = "Broken Flow Route element refs: " + ", ".join(_display_source_ref(ref) for ref in missing_refs)
+        elif not chain_values:
+            status = "missing"
+            notes = "Flow Route has no From, To, or Outlet refs."
+        elif not structure_refs:
+            status = "warn"
+            notes = f"Route {' -> '.join(_display_source_ref(value) for value in chain_values)} has no linked Structure ref."
+        else:
+            status = "ready"
+            notes = (
+                f"Route {' -> '.join(_display_source_ref(value) for value in chain_values)}; "
+                f"structures={', '.join(_display_source_ref(ref) for ref in structure_refs)}"
+            )
+        rows.append(
+            {
+                "flow_route_id": route_id,
+                "status": status,
+                "from_element": from_ref,
+                "to_element": to_ref,
+                "outlet": outlet_ref,
+                "structure_refs": ", ".join(structure_refs),
+                "station_start": "" if station_range is None else station_range[0],
+                "station_end": "" if station_range is None else station_range[1],
+                "notes": notes,
+            }
+        )
+    if not rows:
+        return [
+            {
+                "flow_route_id": "",
+                "status": "missing",
+                "from_element": "",
+                "to_element": "",
+                "outlet": "",
+                "structure_refs": "",
+                "station_start": "",
+                "station_end": "",
+                "notes": "No Drainage Flow Route rows.",
+            }
+        ]
+    return rows
+
+
+def corridor_drainage_flow_review_summary(document=None) -> dict[str, object]:
+    """Return a compact Flow Route readiness summary for Guided Review."""
+
+    rows = corridor_drainage_flow_review_rows(document)
+    real_rows = [row for row in rows if row.get("flow_route_id")]
+    if not real_rows:
+        return {
+            "status": "missing",
+            "route_count": 0,
+            "structure_count": 0,
+            "focus": "Drainage Flow",
+            "notes": str(rows[0].get("notes", "No Drainage Flow Route rows.") if rows else "No Drainage Flow Route rows."),
+        }
+    ready = sum(1 for row in real_rows if row.get("status") == "ready")
+    warn = sum(1 for row in real_rows if row.get("status") == "warn")
+    missing = sum(1 for row in real_rows if row.get("status") == "missing")
+    structure_refs = sorted(
+        {
+            ref.strip()
+            for row in real_rows
+            for ref in str(row.get("structure_refs", "") or "").split(",")
+            if ref.strip()
+        }
+    )
+    route_labels = [_display_source_ref(row.get("flow_route_id", "")) for row in real_rows]
+    if missing:
+        status = "missing"
+        notes = f"{missing} Flow Route row(s) have broken or empty route refs."
+    elif warn:
+        status = "warn"
+        notes = f"{warn} Flow Route row(s) have no linked Structure ref."
+    else:
+        status = "ready"
+        notes = f"Flow Routes: {len(real_rows)}; structures: {', '.join(_display_source_ref(ref) for ref in structure_refs) or '-'}."
+    return {
+        "status": status,
+        "route_count": len(real_rows),
+        "ready_count": ready,
+        "warn_count": warn,
+        "missing_count": missing,
+        "structure_count": len(structure_refs),
+        "focus": ", ".join(route_labels[:3]) + ("..." if len(route_labels) > 3 else ""),
+        "notes": notes,
+    }
 
 
 def corridor_drainage_review_rows(document=None) -> list[dict[str, object]]:
@@ -677,9 +819,17 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
             }
         ]
     region_model = to_region_model(find_v1_region_model(doc))
+    structure_model = to_structure_model(find_v1_structure_model(doc))
+    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
     source_rows = _region_source_rows(region_model)
     if source_rows:
-        return _region_boundary_rows_from_source_regions(source_rows, sections)
+        return _region_boundary_rows_from_source_regions(
+            source_rows,
+            sections,
+            region_model=region_model,
+            structure_model=structure_model,
+            drainage_model=drainage_model,
+        )
     groups = _contiguous_region_groups(sections)
     rows: list[dict[str, object]] = []
     for index, group in enumerate(groups):
@@ -698,8 +848,16 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
                 "station_start": float(group.get("station_start", 0.0) or 0.0),
                 "station_end": float(group.get("station_end", 0.0) or 0.0),
                 "assembly": _unique_join(_section_text_values(group_sections, "assembly_id")),
-                "structure": _unique_join(_section_structure_values(group_sections)) or "-",
-                "drainage": _region_group_drainage_summary(group_sections),
+                "structure": _region_group_structure_summary(
+                    group_sections,
+                    region_model=region_model,
+                    structure_model=structure_model,
+                ),
+                "drainage": _region_group_drainage_summary(
+                    group_sections,
+                    region_model=region_model,
+                    drainage_model=drainage_model,
+                ),
                 "surface_status": _region_group_surface_status(group_sections),
                 "boundary_status": boundary_status,
                 "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
@@ -1147,6 +1305,8 @@ def focus_corridor_build_guided_review_step(document=None, step_id: str = "cente
         if daylight is not None:
             _select_and_fit_object(daylight)
             return daylight
+    if step[0] == "drainage_flow":
+        return focus_corridor_drainage_flow_review(doc)
     focus_role = str(list(step[2])[-1] if step[2] else "")
     obj = _corridor_build_preview_object(doc, focus_role)
     if obj is None:
@@ -1215,6 +1375,24 @@ def focus_corridor_drainage_review_row(document=None, row_index: int = 0):
     if obj is None:
         raise RuntimeError("Drainage diagnostic marker was not created.")
     set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    set_corridor_build_preview_visibility(doc, "drainage", True)
+    _set_object_visibility(obj, True)
+    _select_and_fit_object(obj)
+    return obj
+
+
+def focus_corridor_drainage_flow_review(document=None):
+    """Create/select a 3D highlight for Drainage Flow Route structure context."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = [row for row in corridor_drainage_flow_review_rows(doc) if row.get("flow_route_id")]
+    if not rows:
+        raise RuntimeError("No Drainage Flow Route rows are available.")
+    obj = _create_drainage_flow_review_highlight(document=doc, rows=rows)
+    if obj is None:
+        raise RuntimeError("Drainage Flow highlight was not created.")
+    set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
+    set_corridor_build_preview_visibility(doc, "centerline", True)
     set_corridor_build_preview_visibility(doc, "drainage", True)
     _set_object_visibility(obj, True)
     _select_and_fit_object(obj)
@@ -3054,7 +3232,14 @@ def _region_source_rows(region_model) -> list[object]:
     )
 
 
-def _region_boundary_rows_from_source_regions(source_rows: list[object], sections: list[object]) -> list[dict[str, object]]:
+def _region_boundary_rows_from_source_regions(
+    source_rows: list[object],
+    sections: list[object],
+    *,
+    region_model=None,
+    structure_model=None,
+    drainage_model=None,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     section_groups = [
         _sections_for_source_region_row(sections, row)
@@ -3080,8 +3265,16 @@ def _region_boundary_rows_from_source_regions(source_rows: list[object], section
                 "station_start": float(getattr(source_row, "station_start", 0.0) or 0.0),
                 "station_end": float(getattr(source_row, "station_end", 0.0) or 0.0),
                 "assembly": str(getattr(source_row, "assembly_ref", "") or "") or _unique_join(_section_text_values(group_sections, "assembly_id")),
-                "structure": _unique_join(list(getattr(source_row, "structure_refs", []) or [])) or _unique_join(_section_structure_values(group_sections)) or "-",
-                "drainage": _unique_join(list(getattr(source_row, "drainage_refs", []) or [])) or _region_group_drainage_summary(group_sections),
+                "structure": _region_group_structure_summary(
+                    group_sections,
+                    region_model=region_model,
+                    structure_model=structure_model,
+                ),
+                "drainage": _region_group_drainage_summary(
+                    group_sections,
+                    region_model=region_model,
+                    drainage_model=drainage_model,
+                ),
                 "surface_status": _region_group_surface_status(group_sections),
                 "boundary_status": boundary_status,
                 "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
@@ -3238,6 +3431,52 @@ def _section_structure_values(sections: list[object]) -> list[str]:
             if str(value or "").strip()
         )
     return values
+
+
+def _region_group_structure_summary(sections: list[object], *, region_model=None, structure_model=None) -> str:
+    values = list(_section_structure_values(sections))
+    if region_model is not None and structure_model is not None:
+        for context in _region_group_station_contexts(
+            sections,
+            region_model=region_model,
+            structure_model=structure_model,
+        ):
+            result = getattr(context, "structure_result", None)
+            values.extend(
+                str(value or "").strip()
+                for value in list(getattr(result, "active_structure_ids", []) or [])
+                if str(value or "").strip()
+            )
+    return _unique_join(values) or "-"
+
+
+def _region_group_station_contexts(
+    sections: list[object],
+    *,
+    region_model=None,
+    structure_model=None,
+    drainage_model=None,
+) -> list[object]:
+    if region_model is None or not sections:
+        return []
+    resolver = StationContextResolver()
+    contexts: list[object] = []
+    for section in list(sections or []):
+        try:
+            context = resolver.resolve(
+                region_model=region_model,
+                structure_model=structure_model,
+                drainage_model=drainage_model,
+                station=_section_station(section),
+            )
+        except Exception:
+            continue
+        section_region = _section_region_id(section)
+        context_region = str(getattr(getattr(context, "region_context", None), "region_id", "") or "")
+        if section_region and context_region and section_region != context_region:
+            continue
+        contexts.append(context)
+    return contexts
 
 
 def _unique_join(values: list[str], *, max_items: int = 3) -> str:
@@ -3527,7 +3766,7 @@ def _surface_transition_span_marker_points(applied_section_set, surface_model) -
     return points, refs
 
 
-def _surface_transition_span_marker_point(sections: list[object], station: float) -> tuple[float, float, float] | None:
+def _surface_transition_span_marker_point(sections: list[object], station: float, *, z_offset: float = 0.75) -> tuple[float, float, float] | None:
     if not sections:
         return None
     ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
@@ -3538,7 +3777,7 @@ def _surface_transition_span_marker_point(sections: list[object], station: float
         second_station = _section_station(second)
         if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
             ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (float(station) - first_station) / (second_station - first_station)
-            return _interpolate_section_frame_point(getattr(first, "frame", None), getattr(second, "frame", None), ratio, z_offset=0.75)
+            return _interpolate_section_frame_point(getattr(first, "frame", None), getattr(second, "frame", None), ratio, z_offset=z_offset)
     nearest = min(ordered, key=lambda section: abs(_section_station(section) - float(station)))
     frame = getattr(nearest, "frame", None)
     if frame is None:
@@ -3546,7 +3785,7 @@ def _surface_transition_span_marker_point(sections: list[object], station: float
     return (
         float(getattr(frame, "x", 0.0) or 0.0),
         float(getattr(frame, "y", 0.0) or 0.0),
-        float(getattr(frame, "z", 0.0) or 0.0) + 0.75,
+        float(getattr(frame, "z", 0.0) or 0.0) + float(z_offset or 0.0),
     )
 
 
@@ -3569,16 +3808,41 @@ def _lerp_value(first, second, ratio: float) -> float:
     return float(first or 0.0) + (float(second or 0.0) - float(first or 0.0)) * float(ratio)
 
 
-def _region_group_drainage_summary(sections: list[object]) -> str:
+def _region_group_drainage_summary(sections: list[object], *, region_model=None, drainage_model=None) -> str:
+    drainage_refs: list[str] = []
+    flow_route_refs: list[str] = []
+    if region_model is not None and drainage_model is not None:
+        for context in _region_group_station_contexts(
+            sections,
+            region_model=region_model,
+            drainage_model=drainage_model,
+        ):
+            drainage_refs.extend(
+                str(value or "").strip()
+                for value in list(getattr(context, "active_drainage_refs", []) or [])
+                if str(value or "").strip()
+            )
+            flow_route_refs.extend(
+                str(value or "").strip()
+                for value in list(getattr(context, "active_flow_route_refs", []) or [])
+                if str(value or "").strip()
+            )
     ditch_count = sum(
         1
         for section in list(sections or [])
         for point in list(getattr(section, "point_rows", []) or [])
         if str(getattr(point, "point_role", "") or "") == "ditch_surface"
     )
+    summary_parts: list[str] = []
+    drainage_summary = _unique_join(drainage_refs)
+    route_summary = _unique_join(flow_route_refs)
+    if drainage_summary:
+        summary_parts.append(drainage_summary)
+    if route_summary:
+        summary_parts.append(f"routes: {route_summary}")
     if ditch_count:
-        return f"ditch points: {ditch_count}"
-    return "-"
+        summary_parts.append(f"ditch points: {ditch_count}")
+    return "; ".join(summary_parts) if summary_parts else "-"
 
 
 def _region_group_surface_status(sections: list[object]) -> str:
@@ -3776,18 +4040,8 @@ def _create_or_update_region_preview_objects(
             keep_names.add(str(getattr(obj, "Name", "") or ""))
         elif document.getObject(spec["object_name"]) is not None:
             _remove_preview_object(document, spec["object_name"])
-    structure_obj = _create_or_update_region_structure_preview_object(
-        document=document,
-        project=project,
-        corridor_model=corridor_model,
-        row=row,
-        region_sections=build_sections,
-    )
     structure_name = _region_structure_preview_object_name(region_id)
-    if structure_obj is not None:
-        objects.append(structure_obj)
-        keep_names.add(str(getattr(structure_obj, "Name", "") or ""))
-    elif document.getObject(structure_name) is not None:
+    if document.getObject(structure_name) is not None:
         _remove_preview_object(document, structure_name)
     return objects
 
@@ -3861,69 +4115,6 @@ def _create_or_update_region_surface_preview_object(
         obj.Label = f"Corridor Region {str(surface_role_spec.get('label_role', role) or role).title()} - {region_id}"
     except Exception:
         pass
-    try:
-        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
-
-        route_to_v1_tree(project or find_project(document), obj)
-    except Exception:
-        pass
-    _style_region_preview_object(obj, selected=False)
-    return obj
-
-
-def _create_or_update_region_structure_preview_object(
-    *,
-    document=None,
-    project=None,
-    corridor_model=None,
-    row: dict[str, object],
-    region_sections: list[object],
-):
-    if document is None or not region_sections:
-        return None
-    structure_refs = _unique_refs(_section_structure_values(region_sections))
-    if not structure_refs:
-        return None
-    try:
-        import FreeCAD as AppModule
-        import Part
-    except Exception:
-        return None
-    region_id = str(row.get("region_id", "") or "")
-    object_name = _region_structure_preview_object_name(region_id)
-    shapes = []
-    for index, section in enumerate(region_sections):
-        frame = getattr(section, "frame", None)
-        if frame is None:
-            continue
-        width = max(float(getattr(section, "surface_left_width", 0.0) or 0.0) + float(getattr(section, "surface_right_width", 0.0) or 0.0), 2.0)
-        try:
-            x = float(getattr(frame, "x", 0.0) or 0.0) - 0.6
-            y = float(getattr(frame, "y", 0.0) or 0.0) - width * 0.5
-            z = float(getattr(frame, "z", 0.0) or 0.0) + REGION_SURFACE_DISPLAY_Z_OFFSET + 0.25
-            shapes.append(Part.makeBox(1.2, width, 0.6, AppModule.Vector(x, y, z)))
-        except Exception:
-            pass
-    if not shapes:
-        return None
-    obj = document.getObject(object_name)
-    if obj is None:
-        obj = document.addObject("Part::Feature", object_name)
-    try:
-        obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
-        obj.Label = f"Corridor Region Structure - {region_id}"
-    except Exception:
-        return obj
-    _set_preview_property(obj, "CRRecordKind", "v1_corridor_region_structure_preview")
-    _set_preview_property(obj, "V1ObjectType", "V1CorridorRegionStructure")
-    _set_preview_property(obj, "RegionRef", region_id)
-    _set_preview_property(obj, "RegionObjectRole", "structure")
-    _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
-    _set_preview_string_list_property(obj, "StructureRefs", structure_refs)
-    _set_preview_float_property(obj, "StationStart", float(row.get("station_start", 0.0) or 0.0))
-    _set_preview_float_property(obj, "StationEnd", float(row.get("station_end", 0.0) or 0.0))
-    _set_preview_integer_property(obj, "SectionCount", len(region_sections))
-    _set_preview_integer_property(obj, "StructureCount", len(structure_refs))
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -4406,6 +4597,182 @@ def _drainage_review_marker_point(section, ditch_points: list[object]) -> tuple[
 
 def _drainage_review_marker_name(row_index: int) -> str:
     return f"ReviewIssueDrainageStation{max(0, int(row_index)) + 1:03d}"
+
+
+def _drainage_flow_connected_elements(flow_row, element_by_id: dict[str, object]) -> list[object]:
+    elements: list[object] = []
+    seen: set[str] = set()
+    for ref in (
+        str(getattr(flow_row, "from_element_ref", "") or ""),
+        str(getattr(flow_row, "to_element_ref", "") or ""),
+        str(getattr(flow_row, "outlet_ref", "") or ""),
+    ):
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        element = element_by_id.get(ref)
+        if element is not None:
+            elements.append(element)
+    return elements
+
+
+def _drainage_flow_structure_refs(flow_row, connected_elements: list[object]) -> list[str]:
+    refs: list[str] = []
+    for element in list(connected_elements or []):
+        ref = str(getattr(element, "structure_ref", "") or "").strip()
+        if ref:
+            refs.append(ref)
+    outlet_ref = str(getattr(flow_row, "outlet_ref", "") or "").strip()
+    if outlet_ref.startswith("structure:"):
+        refs.append(outlet_ref)
+    return _unique_text_values(refs)
+
+
+def _drainage_flow_station_range(
+    flow_row,
+    connected_elements: list[object],
+    structure_by_id: dict[str, object],
+) -> tuple[float, float] | None:
+    stations: list[float] = []
+    for element in list(connected_elements or []):
+        stations.extend(
+            [
+                float(getattr(element, "station_start", 0.0) or 0.0),
+                float(getattr(element, "station_end", 0.0) or 0.0),
+            ]
+        )
+    for ref in _drainage_flow_structure_refs(flow_row, connected_elements):
+        structure = structure_by_id.get(ref)
+        placement = getattr(structure, "placement", None)
+        if placement is None:
+            continue
+        stations.extend(
+            [
+                float(getattr(placement, "station_start", 0.0) or 0.0),
+                float(getattr(placement, "station_end", 0.0) or 0.0),
+            ]
+        )
+    if not stations:
+        return None
+    return min(stations), max(stations)
+
+
+def _unique_text_values(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
+
+
+def _display_source_ref(value: object) -> str:
+    text = str(value or "").strip()
+    if ":" not in text:
+        return text
+    return text.split(":", 1)[1]
+
+
+def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str, object]] | None = None):
+    if document is None:
+        return None
+    try:
+        import FreeCAD as AppModule
+        import Part
+    except Exception:
+        return None
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    sections = sorted(list(getattr(applied, "sections", []) or []), key=lambda section: _section_station(section)) if applied is not None else []
+    shapes: list[object] = []
+    route_refs: list[str] = []
+    structure_refs: list[str] = []
+    for row in list(rows or []):
+        route_ref = str(row.get("flow_route_id", "") or "")
+        if route_ref:
+            route_refs.append(route_ref)
+        for ref in str(row.get("structure_refs", "") or "").split(","):
+            if ref.strip():
+                structure_refs.append(ref.strip())
+        start, end = _drainage_flow_row_station_range(row)
+        if start is None or end is None:
+            continue
+        points = _drainage_flow_highlight_points(sections, start, end)
+        for first, second in zip(points[:-1], points[1:]):
+            try:
+                shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
+            except Exception:
+                pass
+    if not shapes:
+        return None
+    obj = document.getObject("ReviewIssueDrainageFlowRoutes")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "ReviewIssueDrainageFlowRoutes")
+    try:
+        obj.Shape = Part.makeCompound(shapes)
+        obj.Label = "Drainage Flow Highlight"
+    except Exception:
+        return obj
+    _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
+    _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
+    _set_preview_property(obj, "IssueKind", "drainage_flow")
+    _set_preview_property(obj, "DisplayMode", "drainage_flow_highlight")
+    _set_preview_string_list_property(obj, "FlowRouteRefs", _unique_text_values(route_refs))
+    _set_preview_string_list_property(obj, "StructureRefs", _unique_text_values(structure_refs))
+    _set_preview_integer_property(obj, "MarkerCount", len(shapes))
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is not None:
+            vobj.Visibility = True
+            vobj.ShapeColor = (1.00, 0.68, 0.10)
+            vobj.PointColor = (1.00, 0.68, 0.10)
+            vobj.LineColor = (1.00, 0.68, 0.10)
+            vobj.LineWidth = 7.0
+            vobj.PointSize = 9.0
+            vobj.Transparency = 0
+    except Exception:
+        pass
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(document), obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _drainage_flow_row_station_range(row: dict[str, object]) -> tuple[float | None, float | None]:
+    try:
+        start = float(row.get("station_start", "") if row.get("station_start", "") != "" else "")
+        end = float(row.get("station_end", "") if row.get("station_end", "") != "" else "")
+        return min(start, end), max(start, end)
+    except Exception:
+        return None, None
+
+
+def _drainage_flow_highlight_points(sections: list[object], station_start: float, station_end: float) -> list[tuple[float, float, float]]:
+    stations = [float(station_start)]
+    for section in list(sections or []):
+        station = _section_station(section)
+        if min(station_start, station_end) < station < max(station_start, station_end):
+            stations.append(station)
+    stations.append(float(station_end))
+    points = [
+        point
+        for point in (_drainage_flow_station_point(sections, station) for station in stations)
+        if point is not None
+    ]
+    output: list[tuple[float, float, float]] = []
+    for point in points:
+        if not output or point != output[-1]:
+            output.append(point)
+    return output
+
+
+def _drainage_flow_station_point(sections: list[object], station: float, *, z_offset: float = 1.05) -> tuple[float, float, float] | None:
+    return _surface_transition_span_marker_point(sections, float(station), z_offset=z_offset)
 
 
 def _create_drainage_review_marker(*, document=None, row: dict[str, object] | None = None, object_name: str = ""):

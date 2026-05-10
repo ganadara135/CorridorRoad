@@ -254,6 +254,7 @@ The `Build Corridor` task panel should expose a compact review table for generat
 - `Subgrade Surface`
 - `Slope Face Surface`
 - `Drainage Surface`
+- `Drainage Flow`
 
 The table should show whether each output exists, its object label, vertex count, triangle or point count, role, and diagnostic notes.
 
@@ -272,6 +273,10 @@ Slope-face issue review should support previous/next issue navigation so reviewe
 Drainage review should show station-level `ditch_surface` point readiness, including point count and left/right side coverage.
 Double-clicking a Drainage diagnostic row should create or focus a station-level review marker in the 3D View.
 Build Corridor review UI should be organized into tabs for `Guided Review`, `Results`, `Slope Issues`, `Drainage`, and `Visibility`.
+
+`Guided Review` separates `Drainage Surface` from `Drainage Flow`.
+`Drainage Surface` reviews generated ditch/drainage surface handoff from Applied Section points.
+`Drainage Flow` reviews source-level Flow Route connections and linked Structure refs, and double-click focus should create a linear 3D highlight for the route station span without adding separate point or cross marker geometry.
 
 It does not generate final corridor solids.
 
@@ -459,7 +464,8 @@ Current implementation status:
 - [x] expose Slope Face issue rows in Build Corridor so station, side, reason, status, and row-specific 3D marker handoff are reviewable
 - [x] apply role-specific preview styling for Design, Subgrade, Slope Face, Drainage, and 3D Centerline review objects
 - [x] add Build Corridor preview visibility controls for layer-style show/hide review
-- [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, and Drainage
+- [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, Drainage Surface, and Drainage Flow
+- [x] add Build Corridor Drainage Flow guided review focus that summarizes Flow Route IDs, linked Structure refs, and creates a 3D route/structure highlight on double-click
 - [x] add previous/next navigation for Slope Face issue marker review
 - [x] add station-level Drainage diagnostics for `ditch_surface` source point coverage
 - [x] start slope-face/daylight surfaces from the outermost built Assembly edge, including `ditch_surface` points, instead of only the FG/shoulder edge

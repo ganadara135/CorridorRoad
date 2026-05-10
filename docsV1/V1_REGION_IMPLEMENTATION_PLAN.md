@@ -352,11 +352,13 @@ Tasks:
 Acceptance criteria:
 
 - [x] a future corridor service can ask for resolved region context at a station
-- [x] viewer summaries can show primary kind, layers, assembly, structure, and drainage references
+- [x] viewer summaries can show Region station span and base Assembly context
 
 ## 13.1 Downstream Handoff Contract
 
-Future corridor, section, assembly, structure, drainage, ramp, and intersection services should consume Region state through `RegionResolutionService.resolve_handoff`.
+Future corridor, section, assembly, ramp, and intersection services should consume Region state through `RegionResolutionService.resolve_handoff`.
+
+Structure and Drainage should resolve Region ownership through their own source models.
 
 Do not read Region editor table widgets as source truth.
 
@@ -366,9 +368,6 @@ Use these Region fields as downstream references:
 
 - `assembly_ref` points to the Assembly source to apply at the station.
 - `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
-- `structure_ref` points to the one Structure source to apply at the station.
-- `structure_refs` is compatibility storage and should have at most one active entry.
-- `drainage_refs` points to Drainage elements or collection/discharge context.
 - `ramp_ref` and `intersection_ref` point to Ramp and Intersection sources when the Region is tied to those domains.
 - `override_refs` points to station-specific or component-specific overrides.
 

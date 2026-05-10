@@ -64,6 +64,7 @@ def build_document_applied_section_set(
     region_obj = find_v1_region_model(doc)
     stationing_obj = find_v1_stationing(doc)
     structure_obj = find_v1_structure_model(doc)
+    drainage_obj = find_v1_drainage_model(doc)
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
@@ -71,6 +72,7 @@ def build_document_applied_section_set(
     assembly = assembly_models[0] if assembly_models else to_assembly_model(assembly_obj)
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
+    drainage_model = to_drainage_model(drainage_obj)
     stations = _station_values(stationing_obj)
 
     missing = []
@@ -105,6 +107,7 @@ def build_document_applied_section_set(
             assembly_models=assembly_models,
             region_model=region_model,
             structure_model=structure_model,
+            drainage_model=drainage_model,
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",

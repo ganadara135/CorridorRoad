@@ -5,18 +5,22 @@ from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     CmdV1StructureEditor,
+    V1StructureEditorTaskPanel,
     _bridge_spec_from_detail,
     _kind_detail_field_specs,
     _kind_detail_values,
     _replace_kind_spec,
     apply_v1_structure_model,
+    region_model_ids,
     show_v1_structure_preview_object,
     starter_structure_model_from_document,
     structure_preset_model_from_document,
     structure_preset_names,
 )
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
     StructureGeometrySpec,
@@ -29,7 +33,16 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSe
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_structure import find_v1_structure_model, to_structure_model
+
+_QAPP = None
+
+
+def _ensure_qapp():
+    global _QAPP
+    _QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return _QAPP
 
 
 def _new_project_doc():
@@ -67,6 +80,7 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
 
         assert "Bridge Segment" in names
         assert "Culvert Crossing" in names
+        assert "Drainage Structures" in names
         assert "Retaining Wall" in names
         model = structure_preset_model_from_document("Culvert Crossing", doc, project=project, alignment=alignment)
 
@@ -83,6 +97,52 @@ def test_structure_presets_offer_practical_structure_sets() -> None:
         assert model.culvert_geometry_spec_rows[0].barrel_shape == "box"
         assert model.culvert_geometry_spec_rows[0].wall_thickness == 0.3
         assert model.structure_rows[0].placement.station_start < model.structure_rows[0].placement.station_end
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_preset_drainage_structures_provides_outlet_and_culvert_refs() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
+
+        model = structure_preset_model_from_document("Drainage Structures", doc, project=project, alignment=alignment)
+
+        assert [row.structure_id for row in model.structure_rows] == [
+            "structure:culvert-01",
+            "structure:inlet-01",
+            "structure:outlet-01",
+        ]
+        assert [row.structure_kind for row in model.structure_rows] == ["culvert", "utility", "utility"]
+        assert [row.structure_ref for row in model.geometry_spec_rows] == [
+            "structure:culvert-01",
+            "structure:inlet-01",
+            "structure:outlet-01",
+        ]
+        assert model.geometry_spec_rows[2].shape_kind == "outlet_headwall"
+        assert model.culvert_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
+        assert model.culvert_geometry_spec_rows[0].headwall_type == "straight"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_editor_hides_structure_prefix_in_structure_id_rows() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
+        panel = V1StructureEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Bridge Segment")
+
+        panel._load_selected_preset()
+        rows = panel._table_rows()
+
+        assert panel._table.item(0, 0).text() == "bridge-01"
+        assert rows[0].structure_id == "structure:bridge-01"
+        assert "bridge-01" in panel._detail_summary.text()
+        assert "structure:bridge-01" not in panel._detail_summary.text()
     finally:
         App.closeDocument(doc.Name)
 
@@ -325,6 +385,69 @@ def test_structure_editor_command_resources_are_v1_structures() -> None:
 
     assert resources["MenuText"] == "Structures"
     assert "v1" in resources["ToolTip"]
+
+
+def test_structure_editor_region_column_uses_region_combo() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        create_or_update_v1_region_model_object(
+            doc,
+            project=project,
+            region_model=RegionModel(
+                schema_version=1,
+                project_id="proj-1",
+                region_model_id="regions:main",
+                region_rows=[
+                    RegionRow("region:normal", 0.0, 80.0),
+                    RegionRow("region:structure", 80.0, 160.0),
+                ],
+            ),
+        )
+        panel = V1StructureEditorTaskPanel(document=doc)
+        panel._append_row()
+        region_combo = panel._table.cellWidget(0, 2)
+
+        assert region_model_ids(doc) == ["region:normal", "region:structure"]
+        assert region_combo is not None
+        assert [region_combo.itemText(index) for index in range(region_combo.count())] == [
+            "",
+            "region:normal",
+            "region:structure",
+        ]
+        region_combo.setCurrentText("region:structure")
+        model = panel._model_from_table()
+
+        assert model.structure_rows[0].placement.region_ref == "region:structure"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_editor_validate_checks_region_station_boundary() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        create_or_update_v1_region_model_object(
+            doc,
+            project=project,
+            region_model=RegionModel(
+                schema_version=1,
+                project_id="proj-1",
+                region_model_id="regions:main",
+                region_rows=[RegionRow("region:structure", 20.0, 60.0)],
+            ),
+        )
+        panel = V1StructureEditorTaskPanel(document=doc)
+        panel._append_row()
+        panel._table.cellWidget(0, 2).setCurrentText("region:structure")
+        panel._table.item(0, 4).setText("10.000")
+        panel._table.item(0, 5).setText("50.000")
+
+        panel._validate()
+
+        assert "structure_outside_region_station_range" in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_structure_detail_helpers_update_kind_specific_bridge_spec() -> None:

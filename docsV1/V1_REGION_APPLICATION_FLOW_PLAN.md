@@ -106,26 +106,21 @@ Use one of these approaches instead:
 - model minor non-structural effects through Assembly components, explicit refs, or policy context
 - keep the actual structure meaning in `StructureModel`
 
-If two major structures are truly active over the same station range, they should remain separate Region rows so each row has one clear structure owner.
+If two major structures are active over the same station range, they should be represented by StructureModel rows that reference the owning Region.
 
 ## 9. Compatibility Strategy
 
-The current implementation may still expose list-shaped fields such as:
+Status: superseded by the Region domain ownership redesign.
 
-- `RegionRow.structure_refs`
-- `RegionRow.drainage_refs`
+The active v1 source contract no longer keeps Region-side Structure or Drainage compatibility fields.
 
-During migration, interpret `structure_refs` as a compatibility container.
+Removed from active RegionRow:
 
-The intended v1 behavior is:
+- `structure_ref`
+- `structure_refs`
+- `drainage_refs`
 
-- zero entries means no active Structure for the Region
-- one entry means the Region's active `structure_ref`
-- more than one entry should produce a validation diagnostic
-
-New code should prefer a singular `structure_ref` concept even if the storage bridge still uses `structure_refs`.
-
-`assembly_ref` remains singular.
+`assembly_ref` remains the singular base source reference on Region rows.
 
 ## 10. Resolution Rules
 
@@ -134,16 +129,13 @@ Region resolution should happen in this order:
 1. Resolve active `RegionRow` candidates by station.
 2. Sort candidate Regions by priority and region index.
 3. Read the winning Region's `assembly_ref`.
-4. Read the winning Region's singular active `structure_ref`.
-5. Preserve non-winning overlaps as diagnostics.
-6. Return a normalized handoff payload for `AppliedSectionService`, `Build Corridor`, viewers, and exchange flows.
+4. Preserve non-winning overlaps as diagnostics.
+5. Return a normalized context payload for `AppliedSectionService`, `Build Corridor`, viewers, and exchange flows.
 
 The handoff should expose:
 
 - active Region id
 - active Assembly ref
-- active Structure ref
-- active layers
 - unresolved references
 - overlap diagnostics
 - source traceability rows
@@ -158,12 +150,9 @@ Recommended UI structure:
 
 - one main Region table
 - one `Assembly` column
-- one `Structure` column
-- context columns for layers, drainage, ramp, intersection, policy, and notes
+- context columns for ramp, intersection, policy, priority, and notes
 - validation summary
-- source handoff summary
-
-The editor may keep list-like compatibility storage internally, but the user-facing Region row should present one Assembly and one optional Structure.
+- source context summary
 
 ## 12. Implementation Order
 
@@ -188,16 +177,13 @@ Acceptance criteria:
 
 Tasks:
 
-- [x] add or expose a singular `structure_ref` concept
-- [x] keep `structure_refs` as compatibility storage during migration
-- [x] validate that `structure_refs` has at most one active entry
+- [x] remove Region-side Structure/Drainage compatibility fields from active source rows
 - [x] keep `assembly_ref` singular
 - [x] add focused model contract tests
 
 Acceptance criteria:
 
 - [x] one Region can store one Assembly ref
-- [x] one Region can store zero or one Structure ref
 - [x] more than one Structure ref produces a diagnostic
 - [x] compatibility `structure_refs` still round-trips
 

@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Stationing-based Region editing where Region `Start STA` values are selected from generated station values and `End STA` is derived from the next Region start.
 - Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
 - Added Surface Transition controls in Build Corridor for selecting a Region STA, adjusting transition spacing, reviewing derived sample counts, enabling/disabling transition ranges, and updating transition records.
+- Added a separate Build Corridor Guided Review `Drainage Flow` row that summarizes Flow Route IDs and linked Structure refs, with double-click 3D highlight handoff.
 - Added wiki documentation for Region continuity, Region Boundary review, Surface Transition spacing/update workflow, and troubleshooting guidance.
 - Added v1 topology-first Watertight Solid planning and implementation sequencing for final toolbar placement, Build Corridor prerequisite gating, closed semantic profiles, edge networks, shell validation, target families, UI, tests, and output flow.
 - Added a v1 representation strategy baseline table covering semantic-first, geometry-first, topology-first, and contract-first subsystem decisions.
@@ -48,7 +49,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added the first Drainage editor task panel with editable element, policy, and flow-route tables plus Validate/Apply persistence.
 - Added first-slice Drainage element authoring fields for side, Region ref, Assembly component ref, and side-specific ditch defaults, with persistence into `V1DrainageModel` and Watertight Solid lined-ditch ownership.
 - Added first-slice Region-to-Drainage handoff in the Region editor, including row-level Drainage selection and missing `drainage_ref` validation.
-- Added first-slice Applied Section Drainage handoff so active Region drainage refs are preserved on ditch component rows, generated `ditch_surface` points, Applied Section source refs, and `V1AppliedSectionSet` persistence.
+- Added first-slice Applied Section Drainage handoff so resolved Drainage Element refs are preserved on ditch component rows, generated `ditch_surface` points, Applied Section source refs, and `V1AppliedSectionSet` persistence.
 - Added first-slice Drainage Review with a read-only task panel, normalized `DrainageOutput` mapping, Region missing-ref warnings, Applied Section ditch context tables, and toolbar placement after Drainage.
 - Added first-slice Build Corridor drainage surface source handoff so drainage TIN vertices, provenance, quality rows, and surface build relations preserve Applied Section `drainage_ref` context.
 - Added first-slice Drainage quantity handoff so ditch and flowline lengths can be reported by `drainage_ref` with missing source diagnostics and Drainage Review summary support.
@@ -56,6 +57,11 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Changed
 - Documented Drainage Flow Routes as graph edges between Element nodes and standardized final discharge wording on `Outlet`.
+- Changed Build Corridor `Drainage Flow` focus to use only a linear route-span highlight instead of adding separate cross marker geometry.
+- Documented the Region domain ownership redesign plan where Region owns station spans and Assembly only, while Structure and Drainage own their own Region assignments.
+- Changed the v1 workflow toolbar order so Structures appears after Regions and before Drainage.
+- Changed the Region editor to author Assembly-only Region rows by removing active Structure and Drainage columns and validation paths from the Region panel.
+- Changed the Structure editor to own Structure-to-Region assignment with a row-level Region combo, persisted placement `region_ref`, and Region-boundary station validation.
 - Renamed the Drainage `Collections` editor tab to `Flow Routes` to separate drainage targets from connection/routing intent.
 - Changed the Drainage source contract from `collection_region_rows` to `flow_route_rows`, removed obsolete `Collection*` route fallback from active Drainage code, and replaced Flow Route receiver persistence with `FlowRouteOutletRefs`.
 - Changed the Drainage Flow Routes editor column from `Receiver` to `Outlet`.
@@ -66,9 +72,29 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Removed the optional `Offset Rule` field from the Drainage Elements editor and internal `DrainageElementRow` source contract.
 - Changed Applied Sections validation to report Drainage element rows that have an Element ID but no Region assignment.
 - Changed Drainage validation so element `Start STA` and `End STA` are checked against the selected Region boundary.
+- Changed Drainage Region-boundary validation to honor the editor's station display precision and avoid false outside-range errors at matching Region endpoints.
 - Changed Drainage Elements so `ditch` rows disable and clear the Structure cell in the editor.
+- Changed Drainage Elements so non-`ditch` rows disable and clear the Assembly cell in the editor.
+- Changed Drainage Elements so Structure cells hide the `structure:` prefix in table rows while preserving source refs internally.
+- Changed Drainage Flow Routes so Flow Route ID, From Element, To Element, and Outlet hide source prefixes in table rows while preserving source refs internally.
+- Changed Drainage Elements so the Policy column uses row-level combos populated from the Policy tab's Policy ID rows while preserving source refs internally.
 - Changed Drainage Elements so the Region column sits next to Kind and uses a row-level Region combo populated from the active RegionModel.
-- Removed Region `Primary Kind` and `Layers` from the Region source workflow; Region intent now comes from station spans and explicit Assembly/Structure/Drainage references.
+- Changed Drainage Elements `Structure` column label to `Structure Ref` and added validation for missing referenced Structure IDs when a StructureModel is available.
+- Added Drainage Flow Route cross-Region diagnostics when From/To Elements belong to different Regions.
+- Changed Applied Sections to resolve active Structure and Drainage context from StructureModel/DrainageModel Region assignments instead of Region-owned Structure/Drainage refs.
+- Changed Build Corridor Region Boundaries, Drainage Review, and Region-body Watertight Solid target discovery to display/use resolved domain-owned Structure/Drainage context instead of Region-owned Structure/Drainage refs.
+- Changed Drainage quantity diagnostics and Cross Section Viewer source ownership rows to align with Drainage Element Region assignment.
+- Removed Region source compatibility fields for Region-owned Structure/Drainage refs, including `RegionRow.structure_ref`, `RegionRow.structure_refs`, `RegionRow.drainage_refs`, and the corresponding `V1RegionModel` persistence rows.
+- Added the first shared `StationContextResolver` slice so Applied Sections resolve Region, Structure, Drainage Element, and Flow Route context through one evaluation service.
+- Changed Build Corridor Region Boundaries to use `StationContextResolver` for live Structure, Drainage Element, and Flow Route summaries when source models are available.
+- Changed Cross Section Viewer source ownership rows to use `StationContextResolver` for selected-station Structure, Drainage Element, and Flow Route context when source models are available.
+- Changed Watertight Solid target discovery to use `StationContextResolver` for Region target context summaries and Region-aware lined-ditch Drainage owner selection.
+- Changed the Structures editor so Structure ID table rows hide the `structure:` prefix while preserving source refs internally.
+- Changed Drainage Elements `Structure Ref` cells to use Structure ID combos populated from the active Structures model while preserving source refs internally.
+- Removed the Region Boundary structure placeholder preview boxes so selected Regions no longer create repeated purple `V1CorridorRegionStructure_*` marker objects.
+- Changed Drainage preset Flow Route IDs to use `flowId-01` style values while preserving the internal `flow-route:` prefix.
+- Added a Structures editor `Drainage Structures` preset with culvert, inlet, and outlet/headwall Structure refs for Drainage Structure Ref selection.
+- Removed Region `Primary Kind` and `Layers` from the Region source workflow; Region intent now comes from station spans and base Assembly assignment, while Structures and Drainage own their Region assignments.
 - Changed Profile `Preset Data` so selected example profiles are sampled onto the current station rows instead of replacing them with fixed preset stations.
 - Changed Build Corridor Drainage row focus to draw selected station ditch/drainage line highlights instead of large sphere diagnostic markers.
 - Updated the `Drainage Control` Region preset to use `STA 100.000` as the drainage-control start station and the current final Stationing value as the closing Region start.

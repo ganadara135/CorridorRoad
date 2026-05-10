@@ -21,14 +21,12 @@ from ...objects.obj_project import (
 from ..models.source.region_model import RegionModel, RegionRow
 from ..objects.obj_alignment import find_v1_alignment
 from ..objects.obj_assembly import assembly_model_ids, list_v1_assembly_models, to_assembly_model
-from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_region import (
     create_or_update_v1_region_model_object,
     find_v1_region_model,
     to_region_model,
 )
 from ..objects.obj_stationing import find_v1_stationing
-from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.region_resolution_service import RegionValidationService
 
 
@@ -41,8 +39,6 @@ REGION_PRESETS = {
                 "kind": "normal_road",
                 "start": 0.0,
                 "end": 1.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Preset normal road region.",
             }
@@ -56,8 +52,6 @@ REGION_PRESETS = {
                 "kind": "normal_road",
                 "start": 0.0,
                 "end": 0.35,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Approach road before bridge.",
             },
@@ -66,18 +60,14 @@ REGION_PRESETS = {
                 "kind": "bridge",
                 "start": 0.35,
                 "end": 0.65,
-                "structures": ["structure:bridge-01"],
-                "drainage": ["drainage:deck-drain"],
                 "priority": 80,
-                "notes": "Bridge region with deck drainage reference.",
+                "notes": "Bridge work zone. Assign Structure and Drainage from their own panels.",
             },
             {
                 "id": "region:normal-after",
                 "kind": "normal_road",
                 "start": 0.65,
                 "end": 1.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Approach road after bridge.",
             },
@@ -91,8 +81,6 @@ REGION_PRESETS = {
                 "kind": "normal_road",
                 "start": 0.0,
                 "end": 0.40,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Mainline before intersection.",
             },
@@ -101,8 +89,6 @@ REGION_PRESETS = {
                 "kind": "intersection",
                 "start": 0.40,
                 "end": 0.60,
-                "structures": [],
-                "drainage": ["drainage:intersection-inlets"],
                 "priority": 70,
                 "notes": "At-grade intersection influence zone.",
             },
@@ -111,8 +97,6 @@ REGION_PRESETS = {
                 "kind": "normal_road",
                 "start": 0.60,
                 "end": 1.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Mainline after intersection.",
             },
@@ -126,8 +110,6 @@ REGION_PRESETS = {
                 "kind": "transition",
                 "start": 0.0,
                 "end": 0.25,
-                "structures": [],
-                "drainage": [],
                 "priority": 30,
                 "notes": "Ramp approach transition.",
             },
@@ -136,18 +118,14 @@ REGION_PRESETS = {
                 "kind": "ramp",
                 "start": 0.25,
                 "end": 0.75,
-                "structures": ["structure:retaining-wall-01"],
-                "drainage": ["drainage:ramp-ditch"],
                 "priority": 75,
-                "notes": "Ramp merge/diverge work zone.",
+                "notes": "Ramp merge/diverge work zone. Assign Structure and Drainage from their own panels.",
             },
             {
                 "id": "region:transition-out",
                 "kind": "transition",
                 "start": 0.75,
                 "end": 1.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 30,
                 "notes": "Ramp departure transition.",
             },
@@ -161,8 +139,6 @@ REGION_PRESETS = {
                 "kind": "normal_road",
                 "start": 0.0,
                 "end_sta": 100.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Normal road before drainage control.",
             },
@@ -171,18 +147,14 @@ REGION_PRESETS = {
                 "kind": "drainage",
                 "start_sta": 100.0,
                 "end": 1.0,
-                "structures": ["structure:culvert-01"],
-                "drainage": ["drainage:side-ditch-left", "drainage:culvert-01"],
                 "priority": 65,
-                "notes": "Drainage and culvert control region.",
+                "notes": "Drainage control zone. Assign Drainage Elements and Structure refs from their own panels.",
             },
             {
                 "id": "region:normal-after",
                 "kind": "normal_road",
                 "start": 1.0,
                 "end": 1.0,
-                "structures": [],
-                "drainage": [],
                 "priority": 10,
                 "notes": "Normal road after drainage control.",
             },
@@ -292,8 +264,6 @@ class V1RegionEditorTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.region_obj = find_v1_region_model(self.document)
         self._assembly_refs = assembly_model_ids(self.document)
-        self._structure_refs = structure_model_ids(self.document)
-        self._drainage_refs = drainage_model_ids(self.document)
         self._station_values = _document_station_values(self.document)
         self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
         self.form = self._build_ui()
@@ -325,7 +295,8 @@ class V1RegionEditorTaskPanel:
         layout.addWidget(title)
 
         note = QtWidgets.QLabel(
-            "Define station ranges with Assembly, Structure, Drainage, and priority references. "
+            "Define station ranges with one base Assembly and priority. "
+            "Structures and Drainage reference Regions from their own panels. "
             "Apply stores source rows only; it does not build corridor geometry."
         )
         note.setWordWrap(True)
@@ -347,9 +318,9 @@ class V1RegionEditorTaskPanel:
         layout.addWidget(self._preset_note)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
 
-        self._table = QtWidgets.QTableWidget(0, 7)
+        self._table = QtWidgets.QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["Start STA", "End STA (Auto)", "Assembly", "Structure", "Drainage", "Priority", "Notes"]
+            ["Start STA", "End STA (Auto)", "Assembly", "Priority", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -440,8 +411,6 @@ class V1RegionEditorTaskPanel:
             _format_float(row.station_start),
             _format_float(row.station_end),
             row.assembly_ref,
-            str(getattr(row, "structure_ref", "") or ""),
-            _join_refs(row.drainage_refs),
             str(int(row.priority)),
             row.notes,
         ]
@@ -468,20 +437,6 @@ class V1RegionEditorTaskPanel:
                 combo.setEditable(True)
                 combo.addItem("")
                 combo.addItems(self._assembly_refs)
-                combo.setCurrentText(str(value or ""))
-                self._table.setCellWidget(index, col, combo)
-            elif col == 3:
-                combo = QtWidgets.QComboBox()
-                combo.setEditable(True)
-                combo.addItem("")
-                combo.addItems(self._structure_refs)
-                combo.setCurrentText(str(value or ""))
-                self._table.setCellWidget(index, col, combo)
-            elif col == 4:
-                combo = QtWidgets.QComboBox()
-                combo.setEditable(True)
-                combo.addItem("")
-                combo.addItems(self._drainage_refs)
                 combo.setCurrentText(str(value or ""))
                 self._table.setCellWidget(index, col, combo)
             else:
@@ -534,16 +489,12 @@ class V1RegionEditorTaskPanel:
             result = RegionValidationService().validate(
                 model,
                 known_assembly_refs=self._assembly_refs,
-                known_structure_refs=self._structure_refs,
-                known_drainage_refs=self._drainage_refs,
             )
             self._set_status(
                 _format_validation_result(
                     result,
                     model,
                     self._assembly_refs,
-                    self._structure_refs,
-                    self._drainage_refs,
                     station_errors=station_errors,
                 )
             )
@@ -557,8 +508,6 @@ class V1RegionEditorTaskPanel:
             result = RegionValidationService().validate(
                 model,
                 known_assembly_refs=self._assembly_refs,
-                known_structure_refs=self._structure_refs,
-                known_drainage_refs=self._drainage_refs,
             )
             if result.status == "error" or station_errors:
                 self._set_status(
@@ -566,8 +515,6 @@ class V1RegionEditorTaskPanel:
                         result,
                         model,
                         self._assembly_refs,
-                        self._structure_refs,
-                        self._drainage_refs,
                         station_errors=station_errors,
                     )
                 )
@@ -579,8 +526,6 @@ class V1RegionEditorTaskPanel:
                     result,
                     model,
                     self._assembly_refs,
-                    self._structure_refs,
-                    self._drainage_refs,
                     station_errors=station_errors,
                 )
                 + f"\n\nApplied to: {self.region_obj.Label}"
@@ -615,16 +560,12 @@ class V1RegionEditorTaskPanel:
         for row_index in range(self._table.rowCount()):
             station_start = _required_float(_item_text(self._table, row_index, 0), f"Row {row_index + 1} start STA")
             assembly_ref = _item_text(self._table, row_index, 2)
-            structure_ref = _item_text(self._table, row_index, 3)
-            drainage_refs = _split_refs(_item_text(self._table, row_index, 4))
-            priority = int(_required_float(_item_text(self._table, row_index, 5) or "10", f"Row {row_index + 1} priority"))
-            notes = _item_text(self._table, row_index, 6)
+            priority = int(_required_float(_item_text(self._table, row_index, 3) or "10", f"Row {row_index + 1} priority"))
+            notes = _item_text(self._table, row_index, 4)
             specs.append(
                 {
                     "station_start": station_start,
                     "assembly_ref": assembly_ref,
-                    "structure_ref": structure_ref,
-                    "drainage_refs": drainage_refs,
                     "priority": priority,
                     "notes": notes,
                 }
@@ -641,8 +582,6 @@ class V1RegionEditorTaskPanel:
                     station_start=station_start,
                     station_end=station_end,
                     assembly_ref=str(spec["assembly_ref"]),
-                    structure_ref=str(spec["structure_ref"]),
-                    drainage_refs=list(spec["drainage_refs"]),
                     priority=int(spec["priority"]),
                     notes=str(spec["notes"]),
                 )
@@ -691,7 +630,7 @@ class CmdV1RegionEditor:
         return {
             "Pixmap": icon_path("edit_regions.svg"),
             "MenuText": "Regions",
-            "ToolTip": "Define v1 corridor regions by station range and source references",
+            "ToolTip": "Define v1 corridor regions by station range and base Assembly",
         }
 
     def IsActive(self):
@@ -772,67 +711,6 @@ def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs:
     return warnings
 
 
-def structure_model_ids(document) -> list[str]:
-    """Return v1 Structure ids available for Region structure_ref selection."""
-
-    structure_obj = find_v1_structure_model(document)
-    model = to_structure_model(structure_obj)
-    if model is None:
-        return []
-    output: list[str] = []
-    seen: set[str] = set()
-    for row in list(getattr(model, "structure_rows", []) or []):
-        structure_id = str(getattr(row, "structure_id", "") or "").strip()
-        if not structure_id or structure_id in seen:
-            continue
-        seen.add(structure_id)
-        output.append(structure_id)
-    return output
-
-
-def region_structure_reference_warnings(region_model: RegionModel, structure_refs: list[str]) -> list[str]:
-    """Return Region editor warnings for Structure refs that do not exist yet."""
-
-    known = {str(value).strip() for value in list(structure_refs or []) if str(value).strip()}
-    warnings: list[str] = []
-    for row in list(getattr(region_model, "region_rows", []) or []):
-        structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
-        if structure_ref and structure_ref not in known:
-            warnings.append(f"WARNING: {row.region_id} references missing structure_ref {structure_ref}.")
-    return warnings
-
-
-def drainage_model_ids(document) -> list[str]:
-    """Return v1 Drainage element ids available for Region drainage_ref selection."""
-
-    drainage_obj = find_v1_drainage_model(document)
-    model = to_drainage_model(drainage_obj)
-    if model is None:
-        return []
-    output: list[str] = []
-    seen: set[str] = set()
-    for row in list(getattr(model, "element_rows", []) or []):
-        drainage_id = str(getattr(row, "drainage_element_id", "") or "").strip()
-        if not drainage_id or drainage_id in seen:
-            continue
-        seen.add(drainage_id)
-        output.append(drainage_id)
-    return output
-
-
-def region_drainage_reference_warnings(region_model: RegionModel, drainage_refs: list[str]) -> list[str]:
-    """Return Region editor warnings for Drainage refs that do not exist yet."""
-
-    known = {str(value).strip() for value in list(drainage_refs or []) if str(value).strip()}
-    warnings: list[str] = []
-    for row in list(getattr(region_model, "region_rows", []) or []):
-        for drainage_ref in list(getattr(row, "drainage_refs", []) or []):
-            drainage_ref_text = str(drainage_ref or "").strip()
-            if drainage_ref_text and drainage_ref_text not in known:
-                warnings.append(f"WARNING: {row.region_id} references missing drainage_ref {drainage_ref_text}.")
-    return warnings
-
-
 def _preset_region_rows(
     preset: dict,
     *,
@@ -875,8 +753,6 @@ def _preset_region_rows(
                 station_end=end_sta,
                 assembly_ref=str(spec.get("assembly_ref", "") or assembly_ref or ""),
                 template_ref=str(spec.get("template_ref", "") or template_ref or ""),
-                structure_ref=_first_ref(spec.get("structures", []) or []),
-                drainage_refs=list(spec.get("drainage", []) or []),
                 priority=int(spec.get("priority", 10) or 10),
                 notes=str(spec.get("notes", "") or ""),
             )
@@ -914,11 +790,9 @@ def _format_validation_result(
     result,
     region_model: RegionModel | None = None,
     assembly_refs: list[str] | None = None,
-    structure_refs: list[str] | None = None,
-    drainage_refs: list[str] | None = None,
     station_errors: list[str] | None = None,
 ) -> str:
-    del region_model, assembly_refs, structure_refs, drainage_refs
+    del region_model, assembly_refs
     station_rows = list(station_errors or [])
     status = "error" if station_rows else (getattr(result, "status", "") or "unknown")
     lines = [f"Validation status: {status}"]
@@ -947,22 +821,6 @@ def _item_text(table, row: int, col: int) -> str:
         return str(widget.currentText() or "").strip()
     item = table.item(row, col)
     return str(item.text() if item is not None else "").strip()
-
-
-def _split_refs(value: object) -> list[str]:
-    return [token.strip() for token in str(value or "").replace(";", ",").split(",") if token.strip()]
-
-
-def _join_refs(values) -> str:
-    return ",".join(str(value).strip() for value in list(values or []) if str(value).strip())
-
-
-def _first_ref(values) -> str:
-    for value in list(values or []):
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
 
 
 def _format_float(value: float) -> str:

@@ -37,8 +37,8 @@ def corridorroad_workflow_command_groups():
         ],
         "assembly_region": [
             "CorridorRoad_V1EditAssembly",
-            "CorridorRoad_V1EditStructures",
             "CorridorRoad_V1EditRegions",
+            "CorridorRoad_V1EditStructures",
         ],
         "drainage": [
             "CorridorRoad_V1EditDrainage",

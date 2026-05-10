@@ -22,10 +22,9 @@ Current drainage-related behavior appears through:
 - Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets
 - `V1DrainageModel` document persistence
 - side, Region ref, and Assembly component ref persistence on drainage elements
-- Region editor row-level Drainage combo handoff into `RegionRow.drainage_refs`
 - Assembly ditch shapes
 - Applied Section `ditch_surface` rows with `component_ref`, `side`, and `drainage_ref`
-- Drainage Review read-only tables for source handoff and Applied Section context
+- Drainage Review read-only tables for source assignment and Applied Section context
 - Build Corridor drainage diagnostics
 - drainage surface preview where ditch points exist
 - drainage quantity fragments for ditch length and available flowline length by `drainage_ref`
@@ -50,7 +49,7 @@ Drainage uses a graph-style source model:
 - Flow Routes are edges.
 - Outlet is represented by an `outfall_reference` Element, or by an optional route-level outlet ref when a final outlet summary is needed.
 
-Assembly-generated drainage geometry is currently limited to `ditch` components. Culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references, but they are connected through Flow Routes rather than generated as Assembly drainage components.
+Assembly-generated drainage geometry is currently limited to `ditch` components. Culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references, but they are connected through Flow Routes rather than generated as Assembly drainage components. In the Drainage Elements table, the `Assembly` cell is active only for `ditch` rows and is cleared for other element kinds.
 
 Example:
 
@@ -86,32 +85,36 @@ Element rows now include:
 - Start STA and End STA
 - Assembly ref
 - Policy ref
-- Structure ref, disabled for `ditch` rows because open ditches are generated from Assembly drainage geometry rather than Structure references
+- Structure Ref, disabled for `ditch` rows because open ditches are generated from Assembly drainage geometry rather than Structure references
 
 The `Add Left Ditch` and `Add Right Ditch` actions create first-slice ditch rows with matching side and default `ditch:left` or `ditch:right` Assembly component refs.
 
 Watertight Solid lined-ditch target discovery uses the Drainage element `side` field first. Drainage element id text remains only as fallback behavior.
 
-## Region Handoff
+## Region Assignment
 
-The Region editor can read Drainage element ids from the active `V1DrainageModel`.
+Drainage owns its own Region assignment.
 
-To link a Region to Drainage:
+To link Drainage to a Region:
 
-- select a Region row
-- choose a Drainage element id in that row's `Drainage` combo box
-- Validate before Apply
-
-Validation warns when a Region references a Drainage id that is not present in the current `V1DrainageModel`.
+- open Drainage
+- create or select a Drainage Element row
+- choose the owning Region in the row's `Region` combo box
+- validate before Apply
 
 Drainage validation also checks Drainage element station spans against the selected Region:
 
 - if an element has `Region` set, its `Start STA` and `End STA` must stay inside that Region's station boundary
 - if the referenced Region is missing, validation reports a missing Region reference warning
+- if a Flow Route connects Elements in different Regions, validation reports a cross-Region warning
+
+Structure-backed drainage nodes use `Structure Ref`.
+
+When a StructureModel is available, Drainage validation checks that a non-empty `Structure Ref` points to a known Structure ID.
 
 ## Applied Section Handoff
 
-Applied Sections read the active Region drainage refs during section generation.
+Applied Sections should resolve Drainage context from `DrainageModel` Region assignments during section generation.
 
 For ditch components, generated result rows preserve:
 
@@ -129,11 +132,11 @@ Drainage Review is a read-only workflow check after Drainage and before Applied 
 It shows:
 
 - Drainage element rows
-- Region handoff refs and missing-ref status
+- Region assignment status from Drainage Element `Region` values
 - Applied Section ditch surface context
-- summary counts for elements, Region handoffs, ditch surface points, and Drainage ref coverage
+- summary counts for elements, Region assignments, ditch surface points, and Drainage ref coverage
 
-The first slice does not edit source rows. Corrections still happen in Drainage, Region, Assembly, or Applied Sections.
+The review does not read Region-owned Drainage refs. Corrections happen in Drainage, Region, Assembly, or Applied Sections depending on the source of the issue.
 
 When a QuantityModel is supplied to the review mapper, Drainage Review can also summarize drainage ditch length and flowline length by Drainage element id.
 
@@ -142,8 +145,8 @@ When a QuantityModel is supplied to the review mapper, Drainage Review can also 
 - hydraulic analysis
 - automatic pipe sizing
 - complete drainage report output
-- Region and Assembly reference selectors
-- multi-select Drainage handoff picker
+- Assembly reference selectors
+- multi-select Drainage assignment tools
 - explicit flowline/invert point roles and related review UI
 - Drainage Review issue markers and 3D focus actions
 

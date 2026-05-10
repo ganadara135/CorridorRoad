@@ -30,7 +30,7 @@ This plan includes:
 - `DrainageModel` object persistence
 - drainage element node creation and editing
 - flow-route edge creation and editing
-- Region-to-Drainage reference workflow
+- Drainage Element Region assignment workflow
 - Assembly ditch shape connection to drainage intent
 - Applied Section drainage point and flowline evaluation
 - Build Corridor drainage surface consumption
@@ -51,7 +51,7 @@ This plan excludes:
 
 Assembly owns reusable ditch section shape.
 
-Region owns where drainage intent is active.
+Drainage Elements own their Region assignment.
 
 Applied Sections, corridor surfaces, review markers, and reports are generated results or outputs. They must not become the durable editing source.
 
@@ -60,7 +60,6 @@ Applied Sections, corridor surfaces, review markers, and reports are generated r
 Implemented or partially available:
 
 - `DrainageModel` source dataclasses exist.
-- `RegionRow.drainage_refs` exists.
 - Assembly supports ditch components and shape-aware ditch parameters.
 - Applied Sections can emit `ditch_surface` point rows.
 - Build Corridor has Drainage diagnostics and a drainage surface preview from ditch points.
@@ -69,10 +68,8 @@ Implemented or partially available:
 
 Main gaps:
 
-- no separate Drainage Review viewer
 - no drainage quantity/report pipeline
-- no Applied Section drainage evaluation from `DrainageModel` rows yet
-- Region and Assembly references are currently text refs, not source-object pickers
+- Assembly references are currently text refs, not source-object pickers
 
 ## 5. Target Workflow
 
@@ -81,18 +78,19 @@ The target user workflow is:
 1. Define TIN, Alignment, Profile, and Stations.
 2. Define Assembly ditch shapes when roadside drainage geometry is needed.
 3. Define Regions and station ranges.
-4. Open Drainage and create drainage Element nodes.
-5. Link drainage elements to Regions through `drainage_refs`.
-6. Create Flow Route edges between Elements where connection intent is needed.
-7. Run Applied Sections.
-8. Review ditch points, flowlines, and diagnostics.
-9. Build Corridor drainage surface from Applied Section outputs.
-10. Review Drainage diagnostics and quantities.
-11. Export drainage-aware outputs where supported.
+4. Define Structures and assign them to Regions when structure context is needed.
+5. Open Drainage and create drainage Element nodes.
+6. Assign drainage elements to Regions from the Drainage panel.
+7. Create Flow Route edges between Elements where connection intent is needed.
+8. Run Applied Sections.
+9. Review ditch points, flowlines, and diagnostics.
+10. Build Corridor drainage surface from Applied Section outputs.
+11. Review Drainage diagnostics and quantities.
+12. Export drainage-aware outputs where supported.
 
 Toolbar order:
 
-`Assembly -> Structures -> Region -> Drainage -> Applied Sections -> Build Corridor`
+`Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor`
 
 ## 6. Source Contracts
 
@@ -173,8 +171,7 @@ Optional first-slice field:
 The evaluation flow should be:
 
 1. Resolve active Region at station.
-2. Read Region `drainage_refs`.
-3. Resolve referenced `DrainageElementRow` objects.
+2. Resolve active `DrainageElementRow` objects by `region_ref` and station span.
 4. Resolve Flow Route edges connected to the active elements.
 5. Resolve Assembly ditch components linked by `assembly_component_ref`.
 6. Generate station-specific ditch surface points and flowline hints in `AppliedSection`.
@@ -186,15 +183,16 @@ The evaluation flow should be:
 Drainage Review should expose:
 
 - element coverage by station range
-- missing or invalid `drainage_refs`
+- missing or invalid Drainage Element Region assignments
 - ditch point availability by station and side
 - flowline continuity
 - low-point and minimum-grade warnings
 - missing outlet or discharge target
 - broken Flow Route edge references
+- cross-Region Flow Route warnings
 - cycles that prevent outlet tracing
 - culvert/reference coordination warnings
-- source references back to Region, Assembly, and DrainageModel rows
+- source references back to Region, Structure, Assembly, and DrainageModel rows
 
 The review surface is read-only. Corrections should return users to Drainage, Region, Assembly, or Profile editors.
 
@@ -303,50 +301,50 @@ Completed:
 
 - `DrainageElementRow` now stores `side`, `region_ref`, and `assembly_component_ref`.
 - `V1DrainageModel` persists and restores side, Region refs, and Assembly component refs.
-- Drainage editor element rows expose Side, Region, Assembly, Policy, and Structure columns.
+- Drainage editor element rows expose Side, Region, Assembly, Policy, and Structure Ref columns.
 - Drainage editor includes left/right ditch default row actions.
 - Drainage validation warns when a drainage side is outside `left`, `right`, `both`, or `center`.
 - Watertight Solid lined-ditch target discovery uses `DrainageElementRow.side` before falling back to Drainage element id text.
 
 Remaining:
 
-- replace free-text Region and Assembly refs with source-object selectors
+- replace free-text Assembly refs with source-object selectors
 
-### D5. Region handoff
+### D5. Drainage-owned Region assignment
 
-Status: first slice complete
+Status: supersedes the old Region-to-Drainage handoff
 
 Tasks:
 
-- make Region editor show/select drainage refs when available
-- preserve `RegionRow.drainage_refs`
-- add diagnostics when a Region references missing drainage ids
+- keep Region selection in the Drainage Elements table
+- validate missing or invalid Region refs from Drainage
+- validate Drainage Element station ranges against the selected Region
+- report Flow Routes that intentionally cross Region boundaries
 
 Acceptance criteria:
 
-- Region can reference one or more drainage elements
-- missing references are visible before Applied Sections
+- Drainage Elements can reference Regions without editing Region rows
+- missing or invalid Region references are visible before Applied Sections
+- Flow Routes can connect Elements in different Regions with an explicit warning
 
 Completed:
 
-- Region editor reads available Drainage element ids from `V1DrainageModel`.
-- Region editor provides an `Attach Drainage` action that appends the selected Drainage element id to the selected Region row.
-- Region validation can receive `known_drainage_refs` and reports missing `drainage_ref` values before Apply.
-- Existing `RegionRow.drainage_refs` persistence remains the source handoff contract.
+- Drainage editor Region cells are row-level combos populated from `V1RegionModel`.
+- Drainage validation checks Element station ranges against selected Region boundaries.
+- Flow Route validation reports cross-Region Element connections as warnings.
+- Drainage `Structure Ref` values are validated against StructureModel when available.
 
 Remaining:
 
-- allow selecting multiple Drainage refs through a richer picker instead of a single append action
-- mirror the same Region handoff from the Drainage editor side
-- carry Drainage refs into Applied Section generated rows
+- update Applied Section generation to resolve Drainage from `DrainageModel.region_ref` instead of Region handoff refs
 
 ### D6. Applied Section drainage evaluation
 
-Status: first slice complete
+Status: first slice complete, Applied Section Region-assignment resolver implemented
 
 Tasks:
 
-- resolve Region drainage refs during Applied Section generation
+- resolve Drainage Elements by Region assignment during Applied Section generation
 - tag generated `ditch_surface` points with drainage refs where possible
 - emit flowline hint rows or point roles for invert/flowline points
 - preserve diagnostics for missing Assembly component refs or unsupported shape links
@@ -358,7 +356,7 @@ Acceptance criteria:
 
 Completed:
 
-- Applied Section generation reads active Region handoff `drainage_refs`.
+- Applied Section generation resolves Drainage Elements from `DrainageModel.region_ref` and station span.
 - Ditch component result rows preserve matching Drainage refs by side when available.
 - Generated `ditch_surface` points preserve `component_ref`, `side`, and `drainage_ref`.
 - Applied Section source refs include active Drainage refs for downstream review and exchange traceability.
@@ -367,7 +365,7 @@ Completed:
 Remaining:
 
 - add explicit flowline/invert point roles beyond the current shape roles
-- add diagnostics for Region drainage refs that do not match any active ditch component side
+- add diagnostics for Drainage Elements that do not match any active ditch component side
 - expose Drainage context directly in Cross Section Viewer labels/review tables
 
 ### D7. Drainage Review viewer
@@ -379,7 +377,7 @@ Tasks:
 - create read-only Drainage Review task panel
 - show station coverage, element rows, flowline continuity, and diagnostics
 - add marker focus for diagnostic rows
-- add handoff buttons to Region, Assembly, Profile, and Cross Section Viewer
+- add navigation buttons to Region, Assembly, Profile, and Cross Section Viewer
 
 Acceptance criteria:
 
@@ -390,14 +388,16 @@ Completed:
 
 - `DrainageReviewMapper` builds a `DrainageOutput` payload from `DrainageModel`, `RegionModel`, and `AppliedSectionSet`.
 - Drainage Review command opens a read-only task panel after Drainage in the workflow toolbar.
-- Review tables show Drainage elements, Region handoff refs, Applied Section ditch context, and summary counts.
-- Region drainage refs missing from the active `DrainageModel` are surfaced as first-slice review warnings.
+- Review tables show Drainage elements, Region assignment context, Applied Section ditch context, and summary counts.
+- Missing Drainage Region assignments and cross-Region Flow Routes are surfaced as first-slice review warnings.
 - Applied Section `ditch_surface` point counts and Drainage ref coverage are visible without reading preview mesh geometry.
+- Region assignment review reads Drainage Element `region_ref` values and no longer reads Region-owned Drainage refs.
+- Cross Section Viewer source ownership rows can expose Drainage context when a section carries Drainage Element refs.
 
 Remaining:
 
 - add station issue markers and 3D focus for missing coverage rows
-- add handoff buttons back to Region, Drainage, Assembly, Profile, and Cross Section Viewer
+- add navigation buttons back to Region, Drainage, Assembly, Profile, and Cross Section Viewer
 - add flowline continuity checks after explicit flowline/invert result roles exist
 
 ### D8. Corridor and surface integration
@@ -443,7 +443,7 @@ Minimum manual QA scenario:
 2. Create Assembly with ditch components.
 3. Create Region for a station range.
 4. Create Drainage element for the same range and side.
-5. Link Region to the Drainage element.
+5. Select the owning Region in the Drainage element row.
 6. Run Applied Sections.
 7. Confirm ditch/flowline rows carry drainage context.
 8. Build Corridor.
@@ -457,6 +457,7 @@ Minimum manual QA scenario:
 - Build Corridor may hide drainage problems if it only checks point counts.
 - Flowline continuity needs stable station ordering and side metadata.
 - Culvert references must stay coordinated with StructureModel without duplicating structure ownership.
+- Flow Routes that cross Region boundaries are valid when intentional, but they must be visible as review diagnostics.
 
 ## 13. Release Note
 

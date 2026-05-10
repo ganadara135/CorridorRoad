@@ -13,12 +13,14 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
 )
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 from freecad.Corridor_Road.v1.objects.obj_drainage import (
     create_or_update_v1_drainage_model_object,
     find_v1_drainage_model,
     to_drainage_model,
 )
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
+from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 
 _QAPP = None
 
@@ -53,7 +55,7 @@ def test_starter_drainage_model_has_element_policy_and_flow_route() -> None:
     assert model.element_rows[0].side == "right"
     assert model.element_rows[0].assembly_component_ref == "ditch:right"
     assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
-    assert model.flow_route_rows[0].flow_route_id == "flow-route:main"
+    assert model.flow_route_rows[0].flow_route_id == "flow-route:flowId-01"
     assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
 
 
@@ -94,19 +96,28 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.horizontalHeaderItem(3).text() == "Side"
         assert panel._element_table.horizontalHeaderItem(6).text() == "Assembly"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Policy"
-        assert panel._element_table.horizontalHeaderItem(8).text() == "Structure"
+        assert panel._element_table.horizontalHeaderItem(8).text() == "Structure Ref"
         assert panel._tabs.tabText(2) == "Flow Routes"
         assert panel._flow_route_table.horizontalHeaderItem(0).text() == "Flow Route ID"
         assert panel._flow_route_table.horizontalHeaderItem(3).text() == "Outlet"
         assert panel._add_flow_route_button.text() == "Add Flow Route"
-        assert panel._flow_route_table.cellWidget(0, 1).currentText() == "drainage:side-ditch-right"
-        assert panel._flow_route_table.cellWidget(0, 2).currentText() == "drainage:outfall-main"
-        assert panel._flow_route_table.cellWidget(0, 3).currentText() == "drainage:outfall-main"
-        assert "drainage:side-ditch-right -> drainage:outfall-main" in panel._flow_route_preview.text()
-        assert panel._element_table.item(0, 7).text() == "lined-concrete"
-        assert panel._element_table.item(0, 8).text() == ""
-        assert not bool(panel._element_table.item(0, 8).flags() & QtCore.Qt.ItemIsEnabled)
+        assert panel._flow_route_table.item(0, 0).text() == "flowId-01"
+        assert panel._flow_route_table.cellWidget(0, 1).currentText() == "side-ditch-right"
+        assert panel._flow_route_table.cellWidget(0, 2).currentText() == "outfall-main"
+        assert panel._flow_route_table.cellWidget(0, 3).currentText() == "outfall-main"
+        assert "flowId-01: side-ditch-right -> outfall-main" in panel._flow_route_preview.text()
+        assert panel._element_table.cellWidget(0, 7).currentText() == "lined-concrete"
+        assert panel._element_table.cellWidget(0, 8).currentText() == ""
+        assert not panel._element_table.cellWidget(0, 8).isEnabled()
+        assert panel._element_table.item(1, 0).text() == "outfall-main"
+        assert panel._element_table.item(1, 6).text() == ""
+        assert not bool(panel._element_table.item(1, 6).flags() & QtCore.Qt.ItemIsEnabled)
         assert panel._policy_table.item(0, 0).text() == "lined-concrete"
+        policy_items = [
+            panel._element_table.cellWidget(0, 7).itemText(index)
+            for index in range(panel._element_table.cellWidget(0, 7).count())
+        ]
+        assert "lined-concrete" in policy_items
 
         assert panel._apply(close_after=False) is True
         obj = find_v1_drainage_model(doc)
@@ -118,6 +129,7 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert model.element_rows[0].policy_set_ref == "drainage-policy:lined-concrete"
         assert model.element_rows[0].side == "right"
         assert model.element_rows[0].assembly_component_ref == "ditch:right"
+        assert model.element_rows[1].structure_ref == "outfall:main"
         assert obj.ValidationStatus == "ok"
         assert model.flow_route_rows[0].from_element_ref == "drainage:side-ditch-right"
         assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
@@ -133,26 +145,80 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
         kind_combo = panel._element_table.cellWidget(0, 1)
-        structure_item = panel._element_table.item(0, 8)
+        assembly_item = panel._element_table.item(0, 6)
+        structure_combo = panel._element_table.cellWidget(0, 8)
 
-        assert structure_item is not None
+        assert assembly_item is not None
+        assert structure_combo is not None
         assert kind_combo.currentText() == "ditch"
-        assert not bool(structure_item.flags() & QtCore.Qt.ItemIsEnabled)
-        assert structure_item.text() == ""
+        assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
+        assert not structure_combo.isEnabled()
+        assert structure_combo.currentText() == ""
 
         kind_combo.setCurrentText("culvert_reference")
-        structure_item = panel._element_table.item(0, 8)
-        assert bool(structure_item.flags() & QtCore.Qt.ItemIsEnabled)
-        structure_item.setText("structure:culvert-01")
+        assembly_item = panel._element_table.item(0, 6)
+        structure_combo = panel._element_table.cellWidget(0, 8)
+        assert not bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
+        assert assembly_item.text() == ""
+        assert structure_combo.isEnabled()
+        structure_combo.setCurrentText("culvert-01")
 
         model = panel._model_from_tables()
+        assert model.element_rows[0].assembly_component_ref == ""
         assert model.element_rows[0].structure_ref == "structure:culvert-01"
 
         kind_combo.setCurrentText("ditch")
-        structure_item = panel._element_table.item(0, 8)
-        assert not bool(structure_item.flags() & QtCore.Qt.ItemIsEnabled)
-        assert structure_item.text() == ""
+        assembly_item = panel._element_table.item(0, 6)
+        structure_combo = panel._element_table.cellWidget(0, 8)
+        assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
+        assembly_item.setText("ditch:right")
+        assert panel._model_from_tables().element_rows[0].assembly_component_ref == "ditch:right"
+        assert not structure_combo.isEnabled()
+        assert structure_combo.currentText() == ""
         assert panel._model_from_tables().element_rows[0].structure_ref == ""
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_structure_ref_uses_structure_id_combo() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorStructureRefComboTest")
+    try:
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="crossing",
+                        placement=StructurePlacement(
+                            placement_id="placement:culvert-01",
+                            alignment_id="alignment:main",
+                            station_start=40.0,
+                            station_end=60.0,
+                        ),
+                    )
+                ],
+            ),
+        )
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        kind_combo = panel._element_table.cellWidget(0, 1)
+        kind_combo.setCurrentText("culvert_reference")
+        structure_combo = panel._element_table.cellWidget(0, 8)
+        structure_items = [structure_combo.itemText(index) for index in range(structure_combo.count())]
+
+        assert structure_combo.isEnabled()
+        assert "culvert-01" in structure_items
+
+        structure_combo.setCurrentText("culvert-01")
+        model = panel._model_from_tables()
+
+        assert model.element_rows[0].structure_ref == "structure:culvert-01"
     finally:
         App.closeDocument(doc.Name)
 
@@ -199,17 +265,38 @@ def test_drainage_editor_flow_route_link_cells_use_element_combos() -> None:
         from_items = [from_combo.itemText(index) for index in range(from_combo.count())]
         to_items = [to_combo.itemText(index) for index in range(to_combo.count())]
 
-        assert "drainage:side-ditch-right" in from_items
-        assert "drainage:side-ditch-left" in from_items
-        assert "drainage:side-ditch-left" in to_items
+        assert "side-ditch-right" in from_items
+        assert "side-ditch-left" in from_items
+        assert "side-ditch-left" in to_items
 
-        to_combo.setCurrentText("drainage:side-ditch-left")
+        to_combo.setCurrentText("side-ditch-left")
         outlet_combo.setCurrentText("outfall:right")
         model = panel._model_from_tables()
 
         assert model.flow_route_rows[0].to_element_ref == "drainage:side-ditch-left"
         assert model.flow_route_rows[0].outlet_ref == "outfall:right"
-        assert "drainage:side-ditch-right -> drainage:side-ditch-left -> outfall:right" in panel._flow_route_preview.text()
+        assert "side-ditch-right -> side-ditch-left -> outfall:right" in panel._flow_route_preview.text()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_element_policy_uses_policy_id_combo() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc("V1DrainageEditorElementPolicyComboTest")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._policy_table.item(0, 0).setText("custom-policy")
+
+        policy_combo = panel._element_table.cellWidget(0, 7)
+        policy_items = [policy_combo.itemText(index) for index in range(policy_combo.count())]
+
+        assert "custom-policy" in policy_items
+
+        policy_combo.setCurrentText("custom-policy")
+        model = panel._model_from_tables()
+
+        assert model.policy_rows[0].policy_set_id == "drainage-policy:custom-policy"
+        assert model.element_rows[0].policy_set_ref == "drainage-policy:custom-policy"
     finally:
         App.closeDocument(doc.Name)
 
@@ -359,8 +446,26 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
         assert panel._policy_table.item(0, 0).text() == "lined-concrete"
         assert [row.side for row in model.element_rows[:2]] == ["left", "right"]
         assert [row.assembly_component_ref for row in model.element_rows[:2]] == ["ditch:left", "ditch:right"]
+        assert [row.flow_route_id for row in model.flow_route_rows] == ["flow-route:flowId-01", "flow-route:flowId-02"]
         assert panel._policy_table.rowCount() == 1
         assert "Drainage preset loaded: Dual Side Ditches" in panel._status.toPlainText()
+
+        panel._preset_combo.setCurrentText("Culvert Crossing")
+        panel._load_selected_preset()
+        model = panel._model_from_tables()
+
+        assert panel._element_table.cellWidget(2, 8).currentText() == "culvert-01"
+        assert panel._element_table.cellWidget(2, 7).currentText() == "cross-drain"
+        assert model.element_rows[2].structure_ref == "structure:culvert-01"
+        assert model.element_rows[2].policy_set_ref == "drainage-policy:cross-drain"
+        assert panel._flow_route_table.item(0, 0).text() == "flowId-01"
+        assert panel._flow_route_table.cellWidget(0, 1).currentText() == "side-ditch-left"
+        assert panel._flow_route_table.cellWidget(0, 2).currentText() == "culvert-01"
+        assert panel._flow_route_table.cellWidget(0, 3).currentText() == "culvert-01"
+        assert model.flow_route_rows[0].flow_route_id == "flow-route:flowId-01"
+        assert model.flow_route_rows[0].from_element_ref == "drainage:side-ditch-left"
+        assert model.flow_route_rows[0].to_element_ref == "drainage:culvert-01"
+        assert model.flow_route_rows[0].outlet_ref == "structure:culvert-01"
     finally:
         App.closeDocument(doc.Name)
 

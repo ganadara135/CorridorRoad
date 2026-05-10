@@ -19,7 +19,7 @@ class RegionContextReviewItem:
 
 @dataclass(frozen=True)
 class RegionContextSummary:
-    """Station-specific Region handoff contract for downstream services."""
+    """Station-specific Region context for downstream services."""
 
     station: float
     region_id: str = ""
@@ -27,9 +27,6 @@ class RegionContextSummary:
     template_ref: str = ""
     policy_set_ref: str = ""
     superelevation_ref: str = ""
-    structure_ref: str = ""
-    structure_refs: list[str] = field(default_factory=list)
-    drainage_refs: list[str] = field(default_factory=list)
     ramp_ref: str = ""
     intersection_ref: str = ""
     override_refs: list[str] = field(default_factory=list)
@@ -46,11 +43,6 @@ class RegionContextSummary:
         refs = []
         if self.assembly_ref:
             refs.append(f"assembly={self.assembly_ref}")
-        structure_ref = self.structure_ref or (self.structure_refs[0] if self.structure_refs else "")
-        if structure_ref:
-            refs.append(f"structure={structure_ref}")
-        if self.drainage_refs:
-            refs.append(f"drainage={','.join(self.drainage_refs)}")
         ref_text = f" | {'; '.join(refs)}" if refs else ""
         return f"STA {self.station:.3f}: {self.region_id}{ref_text}"
 
@@ -64,20 +56,6 @@ class RegionContextSummary:
                 kind="assembly",
                 label="Assembly",
                 value=self.assembly_ref,
-                source_ref=source_ref,
-            ),
-            RegionContextReviewItem(
-                row_id="region:structures",
-                kind="structure",
-                label="Structure",
-                value=self.structure_ref or (self.structure_refs[0] if self.structure_refs else ""),
-                source_ref=source_ref,
-            ),
-            RegionContextReviewItem(
-                row_id="region:drainage",
-                kind="drainage",
-                label="Drainage",
-                value=", ".join(self.drainage_refs),
                 source_ref=source_ref,
             ),
             RegionContextReviewItem(

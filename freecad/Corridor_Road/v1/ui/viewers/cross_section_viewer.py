@@ -53,11 +53,14 @@ def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     focused_label = _preview_focused_component_label(preview)
     focused_suffix = f" | Focus={focused_label}" if focused_label else ""
 
-    target_specs = (
+    target_specs = [
         ("Assembly", "assembly_model", inspector.get("template_label", "")),
         ("Regions", "region_model", inspector.get("region_label", "")),
         ("Structure", "structure_model", inspector.get("owner_structure", "") or inspector.get("structure_label", "")),
-    )
+    ]
+    drainage_owner = inspector.get("owner_drainage", "") or inspector.get("drainage_label", "")
+    if source_objects.get("drainage_model") is not None or str(drainage_owner or "").strip():
+        target_specs.append(("Drainage", "drainage_model", drainage_owner))
 
     rows: list[list[str]] = []
     for target_label, object_key, owner_label in target_specs:
@@ -450,6 +453,16 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
             "Structure context applied to this section, if any.",
         ),
     ]
+    if str(inspector.get("owner_drainage", "") or inspector.get("drainage_label", "") or "").strip():
+        specs.append(
+            (
+                "Drainage",
+                "drainage_status",
+                "drainage_label",
+                "owner_drainage",
+                "Drainage Element context resolved for this section, if any.",
+            )
+        )
     rows = []
     for owner, status_key, label_key, ref_key, notes in specs:
         status = str(inspector.get(status_key, "") or "").strip()
@@ -481,6 +494,7 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
         ("Owner Template Ref", "owner_template"),
         ("Owner Region Ref", "owner_region"),
         ("Owner Structure Ref", "owner_structure"),
+        ("Owner Drainage Ref", "owner_drainage"),
         ("Ownership Status", "ownership_status"),
     ]
     rows = []
@@ -1314,6 +1328,7 @@ class CrossSectionViewerTaskPanel:
             ("Open Assembly", "CorridorRoad_V1EditAssembly"),
             ("Open Regions", "CorridorRoad_V1EditRegions"),
             ("Open Structures", "CorridorRoad_V1EditStructures"),
+            ("Open Drainage", "CorridorRoad_V1EditDrainage"),
         ):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(
@@ -1405,6 +1420,10 @@ class CrossSectionViewerTaskPanel:
             lines.append(f"Top Edges: {viewer_context.get('top_profile_edge_summary', '')}")
         if viewer_context.get("structure_summary"):
             lines.append(f"Structure Summary: {viewer_context.get('structure_summary', '')}")
+        if viewer_context.get("active_drainage_ref"):
+            lines.append(f"Drainage Element: {viewer_context.get('active_drainage_ref', '')}")
+        if viewer_context.get("drainage_summary"):
+            lines.append(f"Drainage Summary: {viewer_context.get('drainage_summary', '')}")
         diagnostics = list(viewer_context.get("diagnostic_tokens", []) or [])
         if diagnostics:
             lines.append(f"Diagnostics: {', '.join(str(token) for token in diagnostics)}")
@@ -1476,12 +1495,14 @@ class CrossSectionViewerTaskPanel:
             ("Assembly Template Label", "template_label"),
             ("Region Label", "region_label"),
             ("Structure Label", "structure_label"),
+            ("Drainage Label", "drainage_label"),
             ("Component Id", "component_id"),
             ("Component Kind", "component_kind"),
             ("Component Side", "component_side"),
             ("Owner Assembly Template", "owner_template"),
             ("Owner Region", "owner_region"),
             ("Owner Structure", "owner_structure"),
+            ("Owner Drainage", "owner_drainage"),
             ("Ownership Status", "ownership_status"),
         ]
         rows = []
@@ -1614,6 +1635,8 @@ class CrossSectionViewerTaskPanel:
             ("Haul Zone", "haul_zone_summary"),
             ("Top Edges", "top_profile_edge_summary"),
             ("Structure Summary", "structure_summary"),
+            ("Drainage Summary", "drainage_summary"),
+            ("Flow Route Summary", "flow_route_summary"),
         ]
         for label, key in mapping:
             if label == "Focus Component":
@@ -1797,6 +1820,8 @@ class CrossSectionViewerTaskPanel:
             objects_to_select = [source_objects.get("region_model")]
         elif command_name == "CorridorRoad_V1EditStructures":
             objects_to_select = [source_objects.get("structure_model")]
+        elif command_name == "CorridorRoad_V1EditDrainage":
+            objects_to_select = [source_objects.get("drainage_model")]
         self._set_status_safely(f"Opening `{command_name}`.", ok=True)
         success, message = run_legacy_command(
             command_name,

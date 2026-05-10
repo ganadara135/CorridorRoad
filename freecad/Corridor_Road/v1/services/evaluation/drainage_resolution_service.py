@@ -11,6 +11,10 @@ from ...models.source.drainage_model import (
     DrainageModel,
 )
 from ...models.source.region_model import RegionModel
+from ...models.source.structure_model import StructureModel
+
+
+STATION_BOUNDARY_TOLERANCE = 1.0e-3
 
 
 @dataclass(frozen=True)
@@ -36,13 +40,20 @@ class DrainageResolutionResult:
 class DrainageValidationService:
     """Validate v1 drainage source rows without mutating them."""
 
-    def validate(self, drainage_model: DrainageModel, *, region_model: RegionModel | None = None) -> DrainageValidationResult:
+    def validate(
+        self,
+        drainage_model: DrainageModel,
+        *,
+        region_model: RegionModel | None = None,
+        structure_model: StructureModel | None = None,
+    ) -> DrainageValidationResult:
         diagnostics: list[DiagnosticMessage] = []
         element_rows = list(getattr(drainage_model, "element_rows", []) or [])
         policy_rows = list(getattr(drainage_model, "policy_rows", []) or [])
         flow_route_rows = list(getattr(drainage_model, "flow_route_rows", []) or [])
         policy_ids = _policy_id_set(policy_rows)
         region_ranges = None if region_model is None else _region_station_ranges(region_model)
+        structure_ids = None if structure_model is None else _structure_id_set(structure_model)
 
         diagnostics.extend(_duplicate_id_diagnostics(policy_rows, "policy_set_id", "duplicate_policy_set_id", "Drainage policy id is duplicated."))
         diagnostics.extend(
@@ -91,6 +102,9 @@ class DrainageValidationService:
             region_diagnostic = _element_region_station_diagnostic(row, source_ref=source_ref, region_ranges=region_ranges)
             if region_diagnostic is not None:
                 diagnostics.append(region_diagnostic)
+            structure_diagnostic = _element_structure_ref_diagnostic(row, source_ref=source_ref, structure_ids=structure_ids)
+            if structure_diagnostic is not None:
+                diagnostics.append(structure_diagnostic)
             policy_ref = str(getattr(row, "policy_set_ref", "") or "").strip()
             if not policy_ref:
                 diagnostics.append(_diagnostic("warning", "missing_policy_ref", source_ref, "Drainage element has no policy_set_ref."))
@@ -129,10 +143,16 @@ class DrainageResolutionService:
     def __init__(self, *, validation_service: DrainageValidationService | None = None) -> None:
         self.validation_service = validation_service or DrainageValidationService()
 
-    def validate(self, drainage_model: DrainageModel, *, region_model: RegionModel | None = None) -> DrainageValidationResult:
+    def validate(
+        self,
+        drainage_model: DrainageModel,
+        *,
+        region_model: RegionModel | None = None,
+        structure_model: StructureModel | None = None,
+    ) -> DrainageValidationResult:
         """Validate a DrainageModel using the shared validation service."""
 
-        return self.validation_service.validate(drainage_model, region_model=region_model)
+        return self.validation_service.validate(drainage_model, region_model=region_model, structure_model=structure_model)
 
     def resolve_station(
         self,
@@ -179,6 +199,16 @@ class DrainageResolutionService:
 
 def _policy_id_set(policy_rows: list[DrainagePolicySet]) -> set[str]:
     return {str(getattr(row, "policy_set_id", "") or "").strip() for row in list(policy_rows or []) if str(getattr(row, "policy_set_id", "") or "").strip()}
+
+
+def _structure_id_set(structure_model: StructureModel | None) -> set[str]:
+    if structure_model is None:
+        return set()
+    return {
+        str(getattr(row, "structure_id", "") or "").strip()
+        for row in list(getattr(structure_model, "structure_rows", []) or [])
+        if str(getattr(row, "structure_id", "") or "").strip()
+    }
 
 
 def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, message: str) -> list[DiagnosticMessage]:
@@ -255,6 +285,20 @@ def _flow_route_graph_diagnostics(
                     notes=f"from_element_ref={from_ref};to_element_ref={to_ref}",
                 )
             )
+
+        if from_ref in element_ids and to_ref in element_ids and from_ref != to_ref:
+            from_region = str(getattr(element_by_id.get(from_ref), "region_ref", "") or "").strip()
+            to_region = str(getattr(element_by_id.get(to_ref), "region_ref", "") or "").strip()
+            if from_region and to_region and from_region != to_region:
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "flow_route_cross_region",
+                        source_ref,
+                        "Flow Route connects Drainage Elements assigned to different Regions.",
+                        notes=f"from_element_ref={from_ref};from_region_ref={from_region};to_element_ref={to_ref};to_region_ref={to_region}",
+                    )
+                )
 
         if outlet_ref and not _known_outlet_ref(outlet_ref, element_ids=element_ids, structure_refs=structure_refs):
             diagnostics.append(
@@ -386,8 +430,7 @@ def _element_region_station_diagnostic(
     except Exception:
         return None
     lower, upper = region_range
-    tolerance = 1.0e-6
-    if station_start < lower - tolerance or station_end > upper + tolerance:
+    if station_start < lower - STATION_BOUNDARY_TOLERANCE or station_end > upper + STATION_BOUNDARY_TOLERANCE:
         return _diagnostic(
             "error",
             "drainage_element_outside_region_station_range",
@@ -397,6 +440,28 @@ def _element_region_station_diagnostic(
                 f"{station_start:g}-{station_end:g} outside {region_ref} {lower:g}-{upper:g}."
             ),
             notes=f"region_ref={region_ref};region_start={lower:g};region_end={upper:g};element_start={station_start:g};element_end={station_end:g}",
+        )
+    return None
+
+
+def _element_structure_ref_diagnostic(
+    row: object,
+    *,
+    source_ref: str,
+    structure_ids: set[str] | None,
+) -> DiagnosticMessage | None:
+    if structure_ids is None:
+        return None
+    structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
+    if not structure_ref:
+        return None
+    if structure_ref not in structure_ids:
+        return _diagnostic(
+            "error",
+            "missing_drainage_structure_ref",
+            source_ref,
+            f"Drainage element references missing Structure {structure_ref}.",
+            notes=f"structure_ref={structure_ref}",
         )
     return None
 

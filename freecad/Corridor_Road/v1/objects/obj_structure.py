@@ -75,6 +75,7 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "StructureRoles", "Structures", "structure roles")
     _add_property(obj, "App::PropertyStringList", "PlacementIds", "Placements", "placement ids")
     _add_property(obj, "App::PropertyStringList", "PlacementAlignmentIds", "Placements", "placement alignment ids")
+    _add_property(obj, "App::PropertyStringList", "PlacementRegionRefs", "Placements", "placement region refs")
     _add_property(obj, "App::PropertyFloatList", "StationStarts", "Placements", "structure start stations")
     _add_property(obj, "App::PropertyFloatList", "StationEnds", "Placements", "structure end stations")
     _add_property(obj, "App::PropertyFloatList", "Offsets", "Placements", "structure offsets")
@@ -196,6 +197,7 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.StructureRoles = [str(row.structure_role) for row in rows]
     obj.PlacementIds = [str(row.placement.placement_id) for row in rows]
     obj.PlacementAlignmentIds = [str(row.placement.alignment_id) for row in rows]
+    obj.PlacementRegionRefs = [str(getattr(row.placement, "region_ref", "") or "") for row in rows]
     obj.StationStarts = [float(row.placement.station_start) for row in rows]
     obj.StationEnds = [float(row.placement.station_end) for row in rows]
     obj.Offsets = [float(row.placement.offset) for row in rows]
@@ -264,6 +266,7 @@ def to_structure_model(obj) -> StructureModel | None:
             offset=_float_list_value(getattr(obj, "Offsets", []), index, 0.0),
             elevation_reference=_list_value(getattr(obj, "ElevationReferences", []), index, ""),
             orientation_mode=_list_value(getattr(obj, "OrientationModes", []), index, "alignment"),
+            region_ref=_list_value(getattr(obj, "PlacementRegionRefs", []), index, ""),
         )
         rows.append(
             StructureRow(
@@ -374,7 +377,7 @@ def find_v1_structure_model(document, preferred_structure_model=None):
     return None
 
 
-def validate_structure_model(structure_model: StructureModel) -> list[str]:
+def validate_structure_model(structure_model: StructureModel, *, region_model=None) -> list[str]:
     """Return compact diagnostics for obvious StructureModel authoring issues."""
 
     rows = list(getattr(structure_model, "structure_rows", []) or [])
@@ -398,6 +401,7 @@ def validate_structure_model(structure_model: StructureModel) -> list[str]:
         str(getattr(row, "geometry_spec_ref", "") or ""): row
         for row in retaining_wall_geometry_spec_rows
     }
+    region_ranges = _region_station_ranges(region_model)
     diagnostics: list[str] = []
     seen = set()
     for index, row in enumerate(rows, start=1):
@@ -431,6 +435,7 @@ def validate_structure_model(structure_model: StructureModel) -> list[str]:
         end = float(getattr(placement, "station_end", 0.0) or 0.0)
         if end < start:
             diagnostics.append(f"error|station_range|{structure_id or index}|Station end is before station start.")
+        diagnostics.extend(_placement_region_diagnostics(placement, structure_id or str(index), region_ranges))
     seen_specs = set()
     structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
     for index, spec in enumerate(geometry_spec_rows, start=1):
@@ -484,6 +489,53 @@ def validate_structure_model(structure_model: StructureModel) -> list[str]:
         if retained_side and retained_side not in {"left", "right", "inside", "outside"}:
             diagnostics.append(f"warning|wall_retained_side|{spec_ref}|Retaining wall retained side is not a recommended value.")
     return diagnostics
+
+
+def _region_station_ranges(region_model) -> dict[str, tuple[float, float]]:
+    ranges: dict[str, tuple[float, float]] = {}
+    if region_model is None:
+        return ranges
+    for row in list(getattr(region_model, "region_rows", []) or []):
+        region_id = str(getattr(row, "region_id", "") or "").strip()
+        if not region_id:
+            continue
+        try:
+            station_start = float(getattr(row, "station_start", 0.0) or 0.0)
+            station_end = float(getattr(row, "station_end", 0.0) or 0.0)
+        except Exception:
+            continue
+        ranges[region_id] = (min(station_start, station_end), max(station_start, station_end))
+    return ranges
+
+
+def _placement_region_diagnostics(placement, structure_id: str, region_ranges: dict[str, tuple[float, float]]) -> list[str]:
+    region_ref = str(getattr(placement, "region_ref", "") or "").strip()
+    if not region_ranges:
+        return []
+    if not region_ref:
+        return [
+            f"error|missing_structure_region_ref|{structure_id}|Structure placement must reference a Region."
+        ]
+    region_range = region_ranges.get(region_ref)
+    if region_range is None:
+        return [
+            f"error|missing_structure_region_ref|{structure_id}|Structure placement references missing Region {region_ref}."
+        ]
+    try:
+        station_start = float(getattr(placement, "station_start", 0.0) or 0.0)
+        station_end = float(getattr(placement, "station_end", 0.0) or 0.0)
+    except Exception:
+        return []
+    lower, upper = region_range
+    if station_start < lower - 1e-3 or station_end > upper + 1e-3:
+        return [
+            (
+                f"error|structure_outside_region_station_range|{structure_id}|"
+                "Structure Start STA and End STA must stay inside the referenced Region boundary: "
+                f"{station_start:g}-{station_end:g} outside {region_ref} {lower:g}-{upper:g}."
+            )
+        ]
+    return []
 
 
 def _validation_status(diagnostics: list[str]) -> str:

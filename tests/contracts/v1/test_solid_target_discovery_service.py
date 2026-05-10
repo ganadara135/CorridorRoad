@@ -161,7 +161,7 @@ def test_solid_target_discovery_creates_region_body_candidates() -> None:
         region_model_id="regions:main",
         region_rows=[
             RegionRow("region:1", 0.0, 50.0, assembly_ref="assembly:basic"),
-            RegionRow("region:2", 50.0, 100.0, structure_ref="structure:wall"),
+            RegionRow("region:2", 50.0, 100.0),
         ],
     )
 
@@ -179,7 +179,75 @@ def test_solid_target_discovery_creates_region_body_candidates() -> None:
     assert "solid-target:road-body-envelope" in targets
     assert targets["solid-target:region-body:region-1"].region_ref == "region:1"
     assert targets["solid-target:region-body:region-1"].readiness_status == "available"
-    assert targets["solid-target:region-body:region-2"].structure_ref == "structure:wall"
+    assert targets["solid-target:region-body:region-2"].assembly_ref == ""
+    assert targets["solid-target:region-body:region-2"].structure_ref == ""
+    assert "base Assembly only" in targets["solid-target:region-body:region-2"].notes
+
+
+def test_solid_target_discovery_adds_station_context_summary_to_region_body_notes() -> None:
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow("region:main", 0.0, 100.0, assembly_ref="assembly:basic"),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                "structure:culvert",
+                "culvert",
+                "crossing",
+                StructurePlacement("placement:culvert", "alignment:main", 40.0, 60.0, region_ref="region:main"),
+            )
+        ],
+    )
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:main-left",
+                element_kind="ditch",
+                side="left",
+                region_ref="region:main",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:main-left",
+                from_element_ref="drainage:main-left",
+                outlet_ref="drainage:outlet",
+            )
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=_applied_set(),
+            corridor_model=_corridor_model(),
+            region_model=region_model,
+            structure_model=structure_model,
+            drainage_model=drainage_model,
+        )
+    )
+
+    target = {row.target_id: row for row in model.target_rows}["solid-target:region-body:region-main"]
+    assert target.structure_ref == ""
+    assert target.drainage_ref == ""
+    assert "StationContext:" in target.notes
+    assert "structures=structure:culvert" in target.notes
+    assert "drainage=drainage:main-left" in target.notes
+    assert "flow_routes=flow-route:main-left" in target.notes
 
 
 def test_solid_target_discovery_creates_pavement_layer_component_candidates() -> None:
@@ -485,6 +553,120 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
     assert "drainage-policy:lined-concrete" in target.source_refs
     assert "DrainageModel owner=drainage:primary-lined-ditch" in target.notes
     assert "flow_route=flow-route:right" in target.notes
+
+
+def test_solid_target_discovery_uses_station_context_for_lined_ditch_drainage_owner() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="applied:main",
+        corridor_id="corridor:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:0",
+                station=0.0,
+                region_id="region:main",
+                frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
+                ],
+                component_rows=[
+                    AppliedSectionComponentRow(
+                        "ditch:right",
+                        "ditch",
+                        side="right",
+                        region_id="region:main",
+                        width=1.2,
+                        material="concrete",
+                        parameters={"lining_thickness": "0.15"},
+                    ),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:100",
+                station=100.0,
+                region_id="region:main",
+                frame=AppliedSectionFrame(100.0, 100.0, 0.0, 10.0),
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
+                    AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
+                ],
+                component_rows=[
+                    AppliedSectionComponentRow(
+                        "ditch:right",
+                        "ditch",
+                        side="right",
+                        region_id="region:main",
+                        width=1.2,
+                        material="concrete",
+                        parameters={"lining_thickness": "0.15"},
+                    ),
+                ],
+            ),
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow("region:main", 0.0, 100.0, assembly_ref="assembly:basic"),
+        ],
+    )
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:wrong-region",
+                element_kind="ditch",
+                side="right",
+                region_ref="region:other",
+                station_start=0.0,
+                station_end=100.0,
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:main-right",
+                element_kind="ditch",
+                side="right",
+                region_ref="region:main",
+                station_start=0.0,
+                station_end=100.0,
+                assembly_component_ref="ditch:right",
+                policy_set_ref="drainage-policy:lined-concrete",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:main-right",
+                from_element_ref="drainage:main-right",
+                outlet_ref="drainage:outlet",
+            )
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=applied,
+            corridor_model=_corridor_model(),
+            region_model=region_model,
+            drainage_model=drainage_model,
+        )
+    )
+
+    target = {row.target_id: row for row in model.target_rows}["solid-target:lined-ditch:right"]
+    assert target.drainage_ref == "drainage:main-right"
+    assert target.flow_route_ref == "flow-route:main-right"
+    assert "drainage:wrong-region" not in target.source_refs
+    assert "StationContext region=region:main" in target.notes
 
 
 def test_solid_target_discovery_creates_structure_body_candidates() -> None:

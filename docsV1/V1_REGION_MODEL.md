@@ -206,9 +206,6 @@ Each `RegionRow` represents one station-bounded policy zone.
 - `station_start`
 - `station_end`
 - `assembly_ref`
-- `structure_ref`
-- compatibility `structure_refs`
-- `drainage_refs`
 - optional `ramp_ref`
 - optional `intersection_ref`
 - `policy_set_ref`
@@ -231,11 +228,9 @@ The Regions editor should manage continuity by `Start STA`.
 - Validate and Apply should reject Start stations that are not present in Stationing.
 - Region rows should cover the Stationing range without intentional gaps.
 
-One region row should reference one Assembly and zero or one Structure.
+One region row should reference one base Assembly.
 
-If more than one Structure is needed over the same apparent station range, use separate Region rows so each row has one clear structure owner.
-
-`structure_refs` may remain in compatibility storage, but more than one active structure reference should produce a diagnostic.
+Structure and Drainage ownership is not stored on Region rows. Structure and Drainage source rows choose their owning Region from their own source models.
 
 ### 11.4 Source References
 
@@ -244,16 +239,16 @@ Region rows no longer carry separate `primary_kind` or `applied_layers` classifi
 The station range meaning is derived from explicit references:
 
 - `assembly_ref` and `template_ref` define the section source used in the range.
-- `structure_ref` defines the active Structure owner when the range is structure-controlled.
-- `drainage_refs` define Drainage handoff context.
+- StructureModel placement `region_ref` defines active Structure context.
+- DrainageElementRow `region_ref` defines active Drainage context.
 
 This avoids duplicate user-facing classification fields and keeps Region intent traceable to real source objects.
 
 Examples:
 
-- a bridge region with `assembly_ref`, `structure_ref`, and optional `drainage_refs`
+- a bridge region with `assembly_ref`; the bridge Structure row references that Region
 - a normal road region with only `assembly_ref`
-- a drainage-control region with `assembly_ref`, `structure_ref`, and `drainage_refs`
+- a drainage-control region with `assembly_ref`; Drainage Elements reference that Region
 - a ramp or intersection region with its dedicated source ref when those domains are available
 
 This keeps the region readable while allowing realistic overlap.
@@ -269,19 +264,16 @@ Recommended source shape:
   "station_start": 120.0,
   "station_end": 180.0,
   "assembly_ref": "assembly:bridge-deck",
-  "structure_ref": "structure:bridge-01",
-  "structure_refs": ["structure:bridge-01"],
-  "drainage_refs": ["drainage:deck-drain-left", "drainage:side-ditch-right"],
   "policy_set_ref": "region-policy:bridge-01",
   "override_refs": ["override:bridge-shoulder-narrowing"],
   "priority": 80,
-  "notes": "Bridge deck region with drainage and ditch treatment."
+  "notes": "Bridge deck region. Structure and Drainage are assigned from their own models."
 }
 ```
 
 Viewer display may compress this into one row:
 
-`STA 120.000 - 180.000 | Assembly: bridge-deck | Structure: bridge-01 | Drainage: deck-drain-left, side-ditch-right`
+`STA 120.000 - 180.000 | Assembly: bridge-deck`
 
 ### 11.7 Rule for Overlap
 

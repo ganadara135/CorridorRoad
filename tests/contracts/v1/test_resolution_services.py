@@ -5,6 +5,16 @@ from freecad.Corridor_Road.v1.models.source.override_model import (
     OverrideTarget,
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.drainage_model import (
+    DrainageElementRow,
+    DrainageFlowRoute,
+    DrainageModel,
+)
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.services.evaluation.override_resolution_service import (
     OverrideResolutionService,
 )
@@ -12,6 +22,7 @@ from freecad.Corridor_Road.v1.services.evaluation.region_resolution_service impo
     RegionResolutionService,
     RegionValidationService,
 )
+from freecad.Corridor_Road.v1.services.evaluation.station_context_resolver import StationContextResolver
 
 
 def test_region_resolution_picks_covering_region() -> None:
@@ -67,8 +78,6 @@ def test_region_resolution_preserves_domain_refs() -> None:
                 station_end=180.0,
                 assembly_ref="assembly:bridge-deck",
                 template_ref="tmpl-bridge",
-                structure_refs=["structure:bridge-01"],
-                drainage_refs=["drainage:deck-drain-left", "drainage:side-ditch-right"],
                 priority=80,
             ),
         ],
@@ -78,9 +87,6 @@ def test_region_resolution_preserves_domain_refs() -> None:
 
     assert result.active_region_id == "region-bridge"
     assert result.active_assembly_ref == "assembly:bridge-deck"
-    assert result.resolved_structure_ref == "structure:bridge-01"
-    assert result.resolved_structure_refs == ["structure:bridge-01"]
-    assert result.resolved_drainage_refs == ["drainage:deck-drain-left", "drainage:side-ditch-right"]
     assert result.overlap_region_ids == ["region-normal"]
 
 
@@ -115,6 +121,93 @@ def test_region_handoff_rows_are_station_ordered_context_contracts() -> None:
 
     assert [row.region_id for row in rows] == ["region-road", "region-ramp"]
     assert rows[1].ramp_ref == "ramp:entry-01"
+
+
+def test_station_context_resolver_combines_region_structure_and_drainage_by_region() -> None:
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow("region:road", 0.0, 50.0, assembly_ref="assembly:road"),
+            RegionRow("region:drainage", 50.0, 100.0, assembly_ref="assembly:ditch"),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:culvert",
+                structure_kind="culvert",
+                structure_role="crossing",
+                placement=StructurePlacement(
+                    placement_id="placement:culvert",
+                    alignment_id="",
+                    station_start=60.0,
+                    station_end=80.0,
+                    region_ref="region:drainage",
+                ),
+            ),
+            StructureRow(
+                structure_id="structure:other-region",
+                structure_kind="wall",
+                structure_role="retaining",
+                placement=StructurePlacement(
+                    placement_id="placement:wall",
+                    alignment_id="",
+                    station_start=60.0,
+                    station_end=80.0,
+                    region_ref="region:road",
+                ),
+            ),
+        ],
+    )
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:left",
+                element_kind="ditch",
+                side="left",
+                region_ref="region:drainage",
+                station_start=50.0,
+                station_end=100.0,
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:right",
+                element_kind="ditch",
+                side="right",
+                region_ref="region:road",
+                station_start=50.0,
+                station_end=100.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:left",
+                from_element_ref="drainage:left",
+                outlet_ref="drainage:outlet",
+            )
+        ],
+    )
+
+    context = StationContextResolver().resolve(
+        region_model=region_model,
+        structure_model=structure_model,
+        drainage_model=drainage_model,
+        station=70.0,
+    )
+
+    assert context.region_context.region_id == "region:drainage"
+    assert context.region_context.assembly_ref == "assembly:ditch"
+    assert context.structure_result.active_structure_ids == ["structure:culvert"]
+    assert context.active_drainage_refs == ["drainage:left"]
+    assert context.active_drainage_refs_by_side == {"left": ["drainage:left"]}
+    assert context.active_flow_route_refs == ["flow-route:left"]
 
 
 def test_region_resolution_equal_priority_overlap_warns_and_uses_region_index() -> None:

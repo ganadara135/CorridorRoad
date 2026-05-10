@@ -48,9 +48,9 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Assembly -> Structures -> Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
+`TIN -> Alignment -> Stations -> Profile -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
 
-Drainage is already visible in the workflow but remains a planned editor stage in `1.0.0`.
+Regions define station spans and the base Assembly. Structures and Drainage then choose their owning Region from their own source panels.
 
 ## Region And Transition Review Flow
 

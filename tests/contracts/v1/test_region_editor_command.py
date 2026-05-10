@@ -10,26 +10,18 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     CmdV1RegionEditor,
     V1RegionEditorTaskPanel,
     apply_v1_region_model,
-    drainage_model_ids,
     region_assembly_reference_warnings,
-    region_drainage_reference_warnings,
-    region_structure_reference_warnings,
     region_preset_model_from_document,
     region_preset_names,
-    structure_model_ids,
     starter_region_model_from_document,
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
-from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
-from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to_region_model
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
-from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 
 _QAPP = None
 
@@ -82,9 +74,9 @@ def test_region_presets_offer_multiple_practical_region_sets() -> None:
         assert len(model.region_rows) == 3
         assert model.region_rows[0].station_start == min(stations)
         assert model.region_rows[-1].station_end == max(stations)
-        assert model.region_rows[1].structure_ref == "structure:bridge-01"
-        assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
-        assert model.region_rows[1].drainage_refs == ["drainage:deck-drain"]
+        assert not hasattr(model.region_rows[1], "structure_ref")
+        assert not hasattr(model.region_rows[1], "drainage_refs")
+        assert "own panels" in model.region_rows[1].notes
     finally:
         App.closeDocument(doc.Name)
 
@@ -146,138 +138,6 @@ def test_region_assembly_reference_warnings_report_missing_refs() -> None:
     assert warnings == ["WARNING: region:missing references missing assembly_ref assembly:missing."]
 
 
-def test_region_editor_lists_v1_structure_ids_for_structure_selector() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        create_or_update_v1_structure_model_object(
-            doc,
-            project=project,
-            structure_model=StructureModel(
-                schema_version=1,
-                project_id="proj-region-editor",
-                structure_model_id="structures:main",
-                structure_rows=[
-                    StructureRow(
-                        "structure:bridge-01",
-                        "bridge",
-                        "interface",
-                        StructurePlacement("placement:bridge-01", "", 10.0, 20.0),
-                    ),
-                    StructureRow(
-                        "structure:wall-01",
-                        "retaining_wall",
-                        "interface",
-                        StructurePlacement("placement:wall-01", "", 30.0, 40.0),
-                    ),
-                ],
-            ),
-        )
-
-        assert structure_model_ids(doc) == ["structure:bridge-01", "structure:wall-01"]
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_region_structure_reference_warnings_report_missing_refs() -> None:
-    model = RegionModel(
-        schema_version=1,
-        project_id="proj-region-editor",
-        region_model_id="regions:main",
-        region_rows=[
-            RegionRow(
-                region_id="region:known",
-                station_start=0.0,
-                station_end=50.0,
-                structure_ref="structure:bridge-01",
-            ),
-            RegionRow(
-                region_id="region:missing",
-                station_start=50.0,
-                station_end=100.0,
-                structure_ref="structure:missing",
-            ),
-        ],
-    )
-
-    warnings = region_structure_reference_warnings(model, ["structure:bridge-01"])
-
-    assert warnings == ["WARNING: region:missing references missing structure_ref structure:missing."]
-
-
-def test_region_editor_lists_v1_drainage_ids_for_drainage_selector() -> None:
-    doc, project, _tree = _new_project_doc()
-    try:
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-region-editor",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow("drainage:side-ditch-left", "ditch", side="left"),
-                    DrainageElementRow("drainage:side-ditch-right", "ditch", side="right"),
-                ],
-            ),
-        )
-
-        assert drainage_model_ids(doc) == ["drainage:side-ditch-left", "drainage:side-ditch-right"]
-    finally:
-        App.closeDocument(doc.Name)
-
-
-def test_region_drainage_reference_warnings_report_missing_refs() -> None:
-    model = RegionModel(
-        schema_version=1,
-        project_id="proj-region-editor",
-        region_model_id="regions:main",
-        region_rows=[
-            RegionRow(
-                region_id="region:known",
-                station_start=0.0,
-                station_end=50.0,
-                drainage_refs=["drainage:side-ditch-left"],
-            ),
-            RegionRow(
-                region_id="region:missing",
-                station_start=50.0,
-                station_end=100.0,
-                drainage_refs=["drainage:missing"],
-            ),
-        ],
-    )
-
-    warnings = region_drainage_reference_warnings(model, ["drainage:side-ditch-left"])
-
-    assert warnings == ["WARNING: region:missing references missing drainage_ref drainage:missing."]
-
-
-def test_region_validation_reports_missing_drainage_refs() -> None:
-    model = RegionModel(
-        schema_version=1,
-        project_id="proj-region-editor",
-        region_model_id="regions:main",
-        region_rows=[
-            RegionRow(
-                region_id="region:drainage",
-                station_start=0.0,
-                station_end=100.0,
-                assembly_ref="assembly:basic-road",
-                drainage_refs=["drainage:missing"],
-            )
-        ],
-    )
-
-    result = region_editor_command.RegionValidationService().validate(
-        model,
-        known_assembly_refs=["assembly:basic-road"],
-        known_drainage_refs=["drainage:side-ditch-left"],
-    )
-
-    assert result.status == "warning"
-    assert [row.kind for row in result.diagnostic_rows] == ["missing_drainage_ref"]
-
-
 def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
@@ -308,36 +168,30 @@ def test_region_editor_uses_station_combo_for_start_sta_and_derives_end_sta() ->
         App.closeDocument(doc.Name)
 
 
-def test_region_editor_uses_drainage_combo_in_region_row() -> None:
+def test_region_editor_table_is_assembly_only_region_authoring() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        create_or_update_v1_drainage_model_object(
-            doc,
-            project=project,
-            drainage_model=DrainageModel(
-                schema_version=1,
-                project_id="proj-region-editor",
-                drainage_model_id="drainage:main",
-                element_rows=[
-                    DrainageElementRow("drainage:side-ditch-right", "ditch", side="right"),
-                ],
-            ),
-        )
         panel = V1RegionEditorTaskPanel(document=doc)
         panel._add_region_row()
-        drainage_combo = panel._table.cellWidget(0, 4)
 
-        assert drainage_combo is not None
-        assert "drainage:side-ditch-right" in [drainage_combo.itemText(index) for index in range(drainage_combo.count())]
-        assert not hasattr(panel, "_drainage_combo")
+        assert panel._table.columnCount() == 5
+        assert [panel._table.horizontalHeaderItem(index).text() for index in range(panel._table.columnCount())] == [
+            "Start STA",
+            "End STA (Auto)",
+            "Assembly",
+            "Priority",
+            "Notes",
+        ]
+        assert panel._table.cellWidget(0, 3) is None
         assert not any(button.text() == "Attach Drainage" for button in panel.form.findChildren(QtWidgets.QPushButton))
-        drainage_combo.setCurrentText("drainage:side-ditch-right")
         rows = panel._table_rows()
 
-        assert rows[0].drainage_refs == ["drainage:side-ditch-right"]
+        assert not hasattr(rows[0], "structure_ref")
+        assert not hasattr(rows[0], "structure_refs")
+        assert not hasattr(rows[0], "drainage_refs")
     finally:
         App.closeDocument(doc.Name)
 
@@ -382,10 +236,8 @@ def test_apply_v1_region_model_creates_region_source_object_only() -> None:
                     station_start=100.0,
                     station_end=180.0,
                     assembly_ref="assembly:bridge",
-                    structure_refs=["structure:bridge-01"],
-                    drainage_refs=["drainage:deck-drain"],
                     priority=80,
-                    notes="Bridge region with drainage and ditch layers.",
+                    notes="Bridge region. Structure and Drainage are assigned from their own panels.",
                 )
             ],
         )
@@ -397,9 +249,9 @@ def test_apply_v1_region_model_creates_region_source_object_only() -> None:
         assert obj.V1ObjectType == "V1RegionModel"
         assert obj.CRRecordKind == "v1_region_model"
         assert obj.RegionCount == 1
-        assert roundtrip.region_rows[0].structure_ref == "structure:bridge-01"
-        assert roundtrip.region_rows[0].structure_refs == ["structure:bridge-01"]
-        assert roundtrip.region_rows[0].drainage_refs == ["drainage:deck-drain"]
+        assert not hasattr(roundtrip.region_rows[0], "structure_ref")
+        assert not hasattr(roundtrip.region_rows[0], "structure_refs")
+        assert not hasattr(roundtrip.region_rows[0], "drainage_refs")
         assert obj.Name in _group_names(tree[V1_TREE_REGIONS])
     finally:
         App.closeDocument(doc.Name)
@@ -448,7 +300,7 @@ def test_region_editor_command_resources_are_v1_regions() -> None:
     resources = CmdV1RegionEditor().GetResources()
 
     assert resources["MenuText"] == "Regions"
-    assert "v1" in resources["ToolTip"]
+    assert "base Assembly" in resources["ToolTip"]
 
 
 def _group_names(folder) -> set[str]:

@@ -21,22 +21,21 @@ class DrainageReviewMapper:
         quantity_model: QuantityModel | None = None,
         project_id: str = "corridorroad-v1",
     ) -> DrainageOutput:
-        drainage_ids = _drainage_element_ids(drainage_model)
         rows: list[DrainageElementOutputRow] = []
         rows.extend(_drainage_element_rows(drainage_model))
         flow_route_rows = _flow_route_rows(drainage_model)
         rows.extend(flow_route_rows)
-        region_rows, missing_region_ref_count = _region_handoff_rows(region_model, drainage_ids)
+        region_rows, region_assignment_issue_count = _region_assignment_rows(drainage_model, region_model)
         rows.extend(region_rows)
         applied_rows, ditch_point_count, ditch_point_with_ref_count = _applied_section_rows(applied_section_set)
         rows.extend(applied_rows)
         quantity_rows, ditch_length, flowline_length = _quantity_rows(quantity_model)
         rows.extend(quantity_rows)
         summary_rows = [
-            DrainageSummaryRow("summary:drainage-elements", "count", "Drainage elements", len(drainage_ids), "count"),
+            DrainageSummaryRow("summary:drainage-elements", "count", "Drainage elements", len(_drainage_element_ids(drainage_model)), "count"),
             DrainageSummaryRow("summary:flow-routes", "count", "Flow Routes", len(flow_route_rows), "count"),
-            DrainageSummaryRow("summary:region-handoffs", "count", "Region drainage handoffs", len(region_rows), "count"),
-            DrainageSummaryRow("summary:missing-region-refs", "count", "Missing Region drainage refs", missing_region_ref_count, "count"),
+            DrainageSummaryRow("summary:region-assignments", "count", "Drainage Element Region assignments", len(region_rows), "count"),
+            DrainageSummaryRow("summary:region-assignment-issues", "count", "Drainage Element Region assignment issues", region_assignment_issue_count, "count"),
             DrainageSummaryRow("summary:applied-sections", "count", "Applied Sections", _section_count(applied_section_set), "count"),
             DrainageSummaryRow("summary:ditch-surface-points", "count", "Ditch surface points", ditch_point_count, "count"),
             DrainageSummaryRow(
@@ -165,30 +164,52 @@ def _route_station_end(from_element: object | None, to_element: object | None) -
     return max(values) if values else 0.0
 
 
-def _region_handoff_rows(region_model: RegionModel | None, drainage_ids: set[str]) -> tuple[list[DrainageElementOutputRow], int]:
+def _region_assignment_rows(
+    drainage_model: DrainageModel | None,
+    region_model: RegionModel | None,
+) -> tuple[list[DrainageElementOutputRow], int]:
     rows: list[DrainageElementOutputRow] = []
-    missing_count = 0
-    for region in list(getattr(region_model, "region_rows", []) or []):
-        region_id = str(getattr(region, "region_id", "") or "").strip()
-        for drainage_ref in list(getattr(region, "drainage_refs", []) or []):
-            ref = str(drainage_ref or "").strip()
-            if not ref:
-                continue
-            status = "ok" if ref in drainage_ids else "missing"
-            if status == "missing":
-                missing_count += 1
-            rows.append(
-                DrainageElementOutputRow(
-                    row_id=f"region-handoff:{_safe_id(region_id)}:{_safe_id(ref)}",
-                    kind="region_handoff",
-                    station_start=float(getattr(region, "station_start", 0.0) or 0.0),
-                    station_end=float(getattr(region, "station_end", 0.0) or 0.0),
-                    label=region_id,
-                    source_ref=region_id,
-                    notes=f"drainage_ref={ref};status={status}",
-                )
+    issue_count = 0
+    known_regions = {
+        str(getattr(region, "region_id", "") or "").strip(): region
+        for region in list(getattr(region_model, "region_rows", []) or [])
+        if str(getattr(region, "region_id", "") or "").strip()
+    }
+    for element in list(getattr(drainage_model, "element_rows", []) or []):
+        element_id = str(getattr(element, "drainage_element_id", "") or "").strip()
+        if not element_id:
+            continue
+        region_ref = str(getattr(element, "region_ref", "") or "").strip()
+        region = known_regions.get(region_ref)
+        status = "ok"
+        if not region_ref:
+            status = "missing_region"
+        elif region_model is not None and region is None:
+            status = "unknown_region"
+        if status != "ok":
+            issue_count += 1
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"region-assignment:{_safe_id(element_id)}",
+                kind="region_assignment",
+                station_start=float(getattr(element, "station_start", 0.0) or 0.0),
+                station_end=float(getattr(element, "station_end", 0.0) or 0.0),
+                label=region_ref,
+                source_ref=element_id,
+                notes=";".join(
+                    value
+                    for value in [
+                        f"element_ref={element_id}",
+                        f"region_ref={region_ref}",
+                        f"status={status}",
+                        f"region_start={float(getattr(region, 'station_start', 0.0) or 0.0):.3f}" if region is not None else "",
+                        f"region_end={float(getattr(region, 'station_end', 0.0) or 0.0):.3f}" if region is not None else "",
+                    ]
+                    if value
+                ),
             )
-    return rows, missing_count
+        )
+    return rows, issue_count
 
 
 def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tuple[list[DrainageElementOutputRow], int, int]:

@@ -369,7 +369,7 @@ def _drainage_quantity_fragment_rows(
                 "warning",
                 "missing_drainage_quantity_source_ref",
                 f"{missing_ref_count} ditch_surface point row(s) cannot produce drainage-id quantities.",
-                "Add drainage_ref to Applied Section ditch_surface rows through Region/Drainage handoff.",
+                "Rebuild Applied Sections after assigning Drainage Elements to Regions so ditch_surface rows carry drainage_ref.",
             )
         )
     for drainage_ref in drainage_refs:

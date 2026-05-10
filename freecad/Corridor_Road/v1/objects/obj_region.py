@@ -65,9 +65,6 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "AssemblyRefs", "References", "assembly refs")
     _add_property(obj, "App::PropertyStringList", "TemplateRefs", "References", "template refs")
     _add_property(obj, "App::PropertyStringList", "PolicySetRefs", "References", "policy set refs")
-    _add_property(obj, "App::PropertyStringList", "StructureRefs", "References", "singular structure refs")
-    _add_property(obj, "App::PropertyStringList", "StructureRefRows", "References", "comma-separated structure refs")
-    _add_property(obj, "App::PropertyStringList", "DrainageRefRows", "References", "comma-separated drainage refs")
     _add_property(obj, "App::PropertyStringList", "RampRefs", "References", "ramp refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionRefs", "References", "intersection refs")
     _add_property(obj, "App::PropertyStringList", "SuperelevationRefs", "References", "superelevation refs")
@@ -79,6 +76,9 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "region diagnostics")
     _remove_property(obj, "PrimaryKinds")
     _remove_property(obj, "AppliedLayerRows")
+    _remove_property(obj, "StructureRefs")
+    _remove_property(obj, "StructureRefRows")
+    _remove_property(obj, "DrainageRefRows")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1RegionModel"
@@ -155,9 +155,6 @@ def update_v1_region_model_object(obj, region_model: RegionModel, *, label: str 
     obj.AssemblyRefs = [str(row.assembly_ref) for row in rows]
     obj.TemplateRefs = [str(row.template_ref) for row in rows]
     obj.PolicySetRefs = [str(row.policy_set_ref) for row in rows]
-    obj.StructureRefs = [str(getattr(row, "structure_ref", "") or "") for row in rows]
-    obj.StructureRefRows = [_join_refs(row.structure_refs) for row in rows]
-    obj.DrainageRefRows = [_join_refs(row.drainage_refs) for row in rows]
     obj.RampRefs = [str(row.ramp_ref) for row in rows]
     obj.IntersectionRefs = [str(row.intersection_ref) for row in rows]
     obj.SuperelevationRefs = [str(row.superelevation_ref) for row in rows]
@@ -198,9 +195,6 @@ def to_region_model(obj) -> RegionModel | None:
                 assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
                 template_ref=_list_value(getattr(obj, "TemplateRefs", []), index, ""),
                 policy_set_ref=_list_value(getattr(obj, "PolicySetRefs", []), index, ""),
-                structure_ref=_list_value(getattr(obj, "StructureRefs", []), index, ""),
-                structure_refs=_split_refs(_list_value(getattr(obj, "StructureRefRows", []), index, "")),
-                drainage_refs=_split_refs(_list_value(getattr(obj, "DrainageRefRows", []), index, "")),
                 ramp_ref=_list_value(getattr(obj, "RampRefs", []), index, ""),
                 intersection_ref=_list_value(getattr(obj, "IntersectionRefs", []), index, ""),
                 superelevation_ref=_list_value(getattr(obj, "SuperelevationRefs", []), index, ""),

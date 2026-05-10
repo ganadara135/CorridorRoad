@@ -86,7 +86,6 @@ def _region_model() -> RegionModel:
                 region_id="region:drainage",
                 station_start=0.0,
                 station_end=100.0,
-                drainage_refs=["drainage:side-ditch-right", "drainage:missing"],
             )
         ],
     )
@@ -144,20 +143,26 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
     )
 
     summary = {row.summary_id: row.value for row in output.summary_rows}
-    region_rows = [row for row in output.element_rows if row.kind == "region_handoff"]
+    region_rows = [row for row in output.element_rows if row.kind == "region_assignment"]
     flow_route_rows = [row for row in output.element_rows if row.kind == "flow_route"]
     applied_rows = [row for row in output.element_rows if row.kind == "applied_section_ditch_context"]
 
     assert summary["summary:drainage-elements"] == 2
     assert summary["summary:flow-routes"] == 1
-    assert summary["summary:missing-region-refs"] == 1
+    assert summary["summary:region-assignments"] == 2
+    assert summary["summary:region-assignment-issues"] == 0
     assert summary["summary:ditch-surface-points"] == 2
     assert summary["summary:ditch-surface-points-with-drainage"] == 2
     assert flow_route_rows[0].label == "flow-route:right"
     assert "chain=drainage:side-ditch-right -> drainage:outfall-right" in flow_route_rows[0].notes
     assert "from_region_ref=region:drainage" in flow_route_rows[0].notes
     assert "from_policy_set_ref=drainage-policy:lined-concrete" in flow_route_rows[0].notes
-    assert any("drainage_ref=drainage:missing;status=missing" in row.notes for row in region_rows)
+    assert any(
+        row.source_ref == "drainage:side-ditch-right"
+        and "region_ref=region:drainage" in row.notes
+        and "status=ok" in row.notes
+        for row in region_rows
+    )
     assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;component_refs=ditch:right;sides=right"
     assert output.source_refs == ["drainage:main", "regions:main", "applied:main"]
 
@@ -226,9 +231,10 @@ def test_drainage_review_panel_loads_document_context() -> None:
         assert panel._tabs.tabText(1) == "Flow Routes"
         assert panel._flow_route_table.item(0, 0).text() == "flow-route:right"
         assert panel._flow_route_table.item(0, 5).text() == "drainage:side-ditch-right -> drainage:outfall-right"
+        assert panel._tabs.tabText(2) == "Region Assignments"
         assert panel._region_table.rowCount() == 2
         assert panel._applied_table.rowCount() == 1
-        assert "Warnings: 1 Region drainage ref" in panel._status.toPlainText()
+        assert "Region drainage ref" not in panel._status.toPlainText()
         assert "Flow Routes: 1 source route" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)
@@ -267,5 +273,7 @@ def test_drainage_review_resources_and_toolbar_order() -> None:
 
     assert resources["MenuText"] == "Drainage Review"
     assert str(resources["Pixmap"]).replace("\\", "/").endswith("drainage_review.svg")
+    assert commands.index("CorridorRoad_V1EditRegions") < commands.index("CorridorRoad_V1EditStructures")
+    assert commands.index("CorridorRoad_V1EditStructures") < commands.index("CorridorRoad_V1EditDrainage")
     assert commands.index("CorridorRoad_V1EditDrainage") < commands.index("CorridorRoad_V1DrainageReview")
     assert commands.index("CorridorRoad_V1DrainageReview") < commands.index("CorridorRoad_V1AppliedSections")

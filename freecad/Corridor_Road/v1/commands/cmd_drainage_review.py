@@ -25,7 +25,7 @@ class CmdV1DrainageReview:
         return {
             "Pixmap": icon_path("drainage_review.svg"),
             "MenuText": "Drainage Review",
-            "ToolTip": "Review v1 drainage source handoff, Region refs, and Applied Section ditch context",
+            "ToolTip": "Review v1 Drainage Elements, Region assignments, Flow Routes, and Applied Section ditch context",
         }
 
     def IsActive(self):
@@ -69,7 +69,7 @@ def build_drainage_review_output(document=None):
 
 
 class V1DrainageReviewTaskPanel:
-    """Read-only review panel for Drainage handoff context."""
+    """Read-only review panel for Drainage source and resolved section context."""
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -109,11 +109,11 @@ class V1DrainageReviewTaskPanel:
         self._tabs = QtWidgets.QTabWidget()
         self._element_table = _table(["Kind", "Label", "Start STA", "End STA", "Source", "Notes"])
         self._flow_route_table = _table(["Flow Route", "From", "To", "Outlet", "Risk", "Chain", "Notes"])
-        self._region_table = _table(["Region", "Start STA", "End STA", "Drainage Status", "Notes"])
+        self._region_table = _table(["Region", "Element", "Start STA", "End STA", "Status", "Notes"])
         self._applied_table = _table(["Station", "Section", "Ditch Points", "Drainage Refs", "Notes"])
         self._tabs.addTab(self._element_table, "Elements")
         self._tabs.addTab(self._flow_route_table, "Flow Routes")
-        self._tabs.addTab(self._region_table, "Region Handoff")
+        self._tabs.addTab(self._region_table, "Region Assignments")
         self._tabs.addTab(self._applied_table, "Applied Sections")
         layout.addWidget(self._tabs, 1)
 
@@ -138,7 +138,7 @@ class V1DrainageReviewTaskPanel:
         _populate_summary_table(self._summary_table, self.output.summary_rows)
         _populate_element_table(self._element_table, [row for row in self.output.element_rows if row.kind == "drainage_element"])
         _populate_flow_route_table(self._flow_route_table, [row for row in self.output.element_rows if row.kind == "flow_route"])
-        _populate_region_table(self._region_table, [row for row in self.output.element_rows if row.kind == "region_handoff"])
+        _populate_region_table(self._region_table, [row for row in self.output.element_rows if row.kind == "region_assignment"])
         _populate_applied_table(
             self._applied_table,
             [row for row in self.output.element_rows if row.kind == "applied_section_ditch_context"],
@@ -192,7 +192,7 @@ def _populate_region_table(table, rows) -> None:
     table.setRowCount(0)
     for row in list(rows or []):
         status = _note_value(row.notes, "status")
-        _append_items(table, [row.label, _format_float(row.station_start), _format_float(row.station_end), status, row.notes])
+        _append_items(table, [row.label, row.source_ref, _format_float(row.station_start), _format_float(row.station_end), status, row.notes])
 
 
 def _populate_applied_table(table, rows) -> None:
@@ -219,7 +219,7 @@ def _append_items(table, values: list[object]) -> None:
 
 def _status_text(output) -> str:
     summary = {row.summary_id: row.value for row in list(getattr(output, "summary_rows", []) or [])}
-    missing = int(summary.get("summary:missing-region-refs", 0) or 0)
+    region_issues = int(summary.get("summary:region-assignment-issues", 0) or 0)
     flow_routes = int(summary.get("summary:flow-routes", 0) or 0)
     ditch_points = int(summary.get("summary:ditch-surface-points", 0) or 0)
     ditch_with_refs = int(summary.get("summary:ditch-surface-points-with-drainage", 0) or 0)
@@ -227,8 +227,8 @@ def _status_text(output) -> str:
         f"Drainage Review rows: {len(list(getattr(output, 'element_rows', []) or []))}",
         f"Source refs: {', '.join(list(getattr(output, 'source_refs', []) or []))}",
     ]
-    if missing:
-        lines.append(f"Warnings: {missing} Region drainage ref(s) are missing from the active DrainageModel.")
+    if region_issues:
+        lines.append(f"Warnings: {region_issues} Drainage Element Region assignment issue(s).")
     if flow_routes:
         lines.append(f"Flow Routes: {flow_routes} source route(s) are available for review.")
     if ditch_points and ditch_with_refs < ditch_points:

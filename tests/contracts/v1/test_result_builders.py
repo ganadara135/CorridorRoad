@@ -660,8 +660,30 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
                 0.0,
                 100.0,
                 template_ref="tmpl-ditch",
-                drainage_refs=["drainage:side-ditch-left", "drainage:side-ditch-right"],
             )
+        ],
+    )
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                "drainage:side-ditch-left",
+                "ditch",
+                side="left",
+                region_ref="region-1",
+                station_start=0.0,
+                station_end=100.0,
+            ),
+            DrainageElementRow(
+                "drainage:side-ditch-right",
+                "ditch",
+                side="right",
+                region_ref="region-1",
+                station_start=0.0,
+                station_end=100.0,
+            ),
         ],
     )
     override_model = OverrideModel(
@@ -682,6 +704,7 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
             override_model=override_model,
             station=10.0,
             applied_section_id="sec-ditch",
+            drainage_model=drainage_model,
         )
     )
 
@@ -693,6 +716,7 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
     assert {point.drainage_ref for point in ditch_points} == {"drainage:side-ditch-left", "drainage:side-ditch-right"}
     ditch_components = [row for row in result.component_rows if row.kind == "ditch"]
     assert [row.drainage_refs for row in ditch_components] == [["drainage:side-ditch-left"], ["drainage:side-ditch-right"]]
+    assert "drainage:main" in result.source_refs
     assert "drainage:side-ditch-left" in result.source_refs
     assert "drainage:side-ditch-right" in result.source_refs
 
@@ -1015,7 +1039,6 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:basic-road",
-                structure_refs=["structure:wall-01"],
             )
         ],
     )
@@ -1044,7 +1067,7 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
     assert result.template_id == "template:basic-road"
     assert result.region_id == "region-assembly-ref"
     assert [row.component_id for row in result.component_rows] == ["lane-1"]
-    assert result.component_rows[0].structure_ids == ["structure:wall-01"]
+    assert result.component_rows[0].structure_ids == []
     assert result.diagnostic_rows == []
 
 
@@ -1100,7 +1123,13 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
                 "structure:bridge-01",
                 "bridge",
                 "interface",
-                StructurePlacement("placement:bridge-01", "align-structure-context", 20.0, 40.0),
+                StructurePlacement(
+                    "placement:bridge-01",
+                    "align-structure-context",
+                    20.0,
+                    40.0,
+                    region_ref="region:main",
+                ),
             )
         ],
         interaction_rule_rows=[
@@ -1183,7 +1212,6 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
                 station_start=0.0,
                 station_end=100.0,
                 assembly_ref="assembly:road",
-                structure_ref="structure:bridge-01",
             )
         ],
     )
@@ -1193,8 +1221,30 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
         structure_model_id="structures:main",
         alignment_id="align-structure-filter",
         structure_rows=[
-            StructureRow("structure:bridge-01", "bridge", "interface", StructurePlacement("placement:bridge", "align-structure-filter", 20.0, 40.0)),
-            StructureRow("structure:wall-01", "retaining_wall", "interface", StructurePlacement("placement:wall", "align-structure-filter", 20.0, 40.0)),
+            StructureRow(
+                "structure:bridge-01",
+                "bridge",
+                "interface",
+                StructurePlacement(
+                    "placement:bridge",
+                    "align-structure-filter",
+                    20.0,
+                    40.0,
+                    region_ref="region:main",
+                ),
+            ),
+            StructureRow(
+                "structure:wall-01",
+                "retaining_wall",
+                "interface",
+                StructurePlacement(
+                    "placement:wall",
+                    "align-structure-filter",
+                    20.0,
+                    40.0,
+                    region_ref="region:other",
+                ),
+            ),
         ],
         interaction_rule_rows=[
             StructureInteractionRule("rule:bridge", "structure:bridge-01", "section_handoff", "section"),
@@ -4394,6 +4444,52 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
     assert rows["drainage_ditch_length"].component_ref == "ditch:right"
     assert "drainage:right" in result.source_refs
     assert not any(row.kind == "missing_drainage_quantity_source_ref" for row in result.diagnostic_rows)
+
+
+def test_quantity_build_service_missing_drainage_ref_points_to_drainage_region_assignment() -> None:
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-drainage-missing-ref",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+    applied_section_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="set-drainage-missing-ref",
+        corridor_id="cor-drainage-missing-ref",
+        alignment_id="align-1",
+        station_rows=[AppliedSectionStationRow("sta-0", 0.0, "sec-0")],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="sec-0",
+                corridor_id="cor-drainage-missing-ref",
+                assembly_id="assembly:ditch",
+                station=0.0,
+                region_id="region:ditch",
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-edge", 0.0, -4.0, 10.0, "ditch_surface", -4.0, "ditch:right", "right"),
+                ],
+            ),
+        ],
+    )
+
+    result = QuantityBuildService().build(
+        QuantityBuildRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            quantity_model_id="qty-drainage-missing-ref",
+        )
+    )
+
+    diagnostics = [row for row in result.diagnostic_rows if row.kind == "missing_drainage_quantity_source_ref"]
+    assert len(diagnostics) == 1
+    assert "Drainage Elements to Regions" in diagnostics[0].notes
+    assert "Region/Drainage handoff" not in diagnostics[0].notes
 
 
 def test_quantity_build_service_derives_earthwork_volumes_from_section_areas() -> None:

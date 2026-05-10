@@ -72,6 +72,13 @@ The architectural distinction is:
 - `OverrideModel` defines narrow explicit exceptions
 - `StructureModel` defines structure presence and interaction context
 
+Active v1 ownership rule:
+
+- `RegionModel` owns station spans and base Assembly only
+- `StructureModel` owns structure identity, placement, geometry, and interaction meaning
+- `StructurePlacement.region_ref` records the owning Region for corridor-affecting structures
+- Region rows should not be edited to attach Structures
+
 Structures should not become:
 
 - hidden template replacements
@@ -197,6 +204,7 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 - `alignment_id`
 - `station_start`
 - `station_end`
+- `region_ref`
 - optional `station_reference`
 - `offset`
 - `elevation_reference`
@@ -206,6 +214,10 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 ### 11.3 Rule
 
 Placement should remain station-aware whenever possible, even if imported geometry also provides absolute coordinates.
+
+For active v1 corridor workflows, `region_ref` is the Structure-to-Region ownership link.
+
+Validate structure placement against the referenced Region boundary before applying source changes.
 
 ## 12. StructureInteractionRule
 

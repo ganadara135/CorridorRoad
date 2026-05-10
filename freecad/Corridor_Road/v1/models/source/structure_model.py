@@ -18,6 +18,7 @@ class StructurePlacement:
     offset: float = 0.0
     elevation_reference: str = ""
     orientation_mode: str = "alignment"
+    region_ref: str = ""
 
 
 @dataclass(frozen=True)
