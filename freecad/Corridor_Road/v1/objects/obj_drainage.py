@@ -83,6 +83,7 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ElementRampRefs", "Drainage Elements", "ramp refs")
     _add_property(obj, "App::PropertyStringList", "ElementIntersectionRefs", "Drainage Elements", "intersection refs")
     _add_property(obj, "App::PropertyStringList", "ElementStructureRefs", "Drainage Elements", "structure refs")
+    _add_property(obj, "App::PropertyStringList", "ElementConnectionPointRefs", "Drainage Elements", "structure connection point refs")
     _add_property(obj, "App::PropertyStringList", "ElementSides", "Drainage Elements", "element sides")
     _add_property(obj, "App::PropertyStringList", "ElementRegionRefs", "Drainage Elements", "region refs")
     _add_property(obj, "App::PropertyStringList", "ElementAssemblyComponentRefs", "Drainage Elements", "assembly component refs")
@@ -185,6 +186,7 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     obj.ElementRampRefs = [str(row.ramp_ref) for row in element_rows]
     obj.ElementIntersectionRefs = [str(row.intersection_ref) for row in element_rows]
     obj.ElementStructureRefs = [str(row.structure_ref) for row in element_rows]
+    obj.ElementConnectionPointRefs = [str(getattr(row, "connection_point_ref", "") or "") for row in element_rows]
     obj.ElementSides = [str(getattr(row, "side", "") or "") for row in element_rows]
     obj.ElementRegionRefs = [str(getattr(row, "region_ref", "") or "") for row in element_rows]
     obj.ElementAssemblyComponentRefs = [str(getattr(row, "assembly_component_ref", "") or "") for row in element_rows]
@@ -243,6 +245,7 @@ def to_drainage_model(obj) -> DrainageModel | None:
             ramp_ref=_list_value(getattr(obj, "ElementRampRefs", []), index, ""),
             intersection_ref=_list_value(getattr(obj, "ElementIntersectionRefs", []), index, ""),
             structure_ref=_list_value(getattr(obj, "ElementStructureRefs", []), index, ""),
+            connection_point_ref=_list_value(getattr(obj, "ElementConnectionPointRefs", []), index, ""),
             side=_list_value(getattr(obj, "ElementSides", []), index, ""),
             region_ref=_list_value(getattr(obj, "ElementRegionRefs", []), index, ""),
             assembly_component_ref=_list_value(getattr(obj, "ElementAssemblyComponentRefs", []), index, ""),

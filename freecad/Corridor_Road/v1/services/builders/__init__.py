@@ -41,6 +41,15 @@ from .solid_target_discovery_service import SolidTargetDiscoveryRequest, SolidTa
 from .solid_edge_network_service import SolidEdgeNetworkBuildRequest, SolidEdgeNetworkService
 from .solid_profile_service import SolidProfileBuildRequest, AppliedSectionSolidProfileService
 from .tin_build_service import TINBuildRequest, TINBuildService, TINPointInput
+from .watertight_simulation_qa_service import (
+    WatertightSimulationQaBuildRequest,
+    WatertightSimulationQaService,
+    WatertightSimulationQaSolidInput,
+)
+from .watertight_simulation_package_service import (
+    WatertightSimulationPackageBuildRequest,
+    WatertightSimulationPackageService,
+)
 
 __all__ = [
     "AppliedSectionBuildRequest",
@@ -79,4 +88,9 @@ __all__ = [
     "TINBuildRequest",
     "TINBuildService",
     "TINPointInput",
+    "WatertightSimulationQaBuildRequest",
+    "WatertightSimulationQaService",
+    "WatertightSimulationQaSolidInput",
+    "WatertightSimulationPackageBuildRequest",
+    "WatertightSimulationPackageService",
 ]

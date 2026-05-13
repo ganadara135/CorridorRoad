@@ -301,14 +301,47 @@ Main table fields:
 
 - `Structure Id`
 - `Kind`
+- `Region`
 - `Role`
 - `Start STA`
 - `End STA`
 - `Offset`
-- `Geometry Ref`
 - `Notes`
 
 Detail panel fields should change by `structure_kind`.
+
+External or detailed geometry references should be edited in the selected-row detail panel as `External Geometry Ref`.
+
+Native v1 geometry is edited in `Selected Structure Detail`.
+
+The visible `Geometry Specs` table is not part of the Structures panel UX.
+
+`StructureGeometrySpec` remains the internal source contract for common native dimensions and placement parameters.
+
+The detail panel should filter native-specific fields by `Native Type`.
+
+For example, `pipe_culvert` should show pipe diameter instead of box opening width and height, while `box_culvert` should show opening width and opening height.
+
+The first-slice 3D preview should also distinguish these practical profiles.
+
+`pipe_culvert` and circular culvert rows should render as a circular pipe envelope along the placement path.
+
+`box_culvert` rows may continue to render as a rectangular source envelope.
+
+Native drainage endpoint rows should derive connection point roles as source intent:
+
+- `inlet`: `inlet` and `pipe_out`
+- `outlet`: `pipe_in` and `discharge`
+- `headwall`: `pipe_in` and `discharge`
+
+The editor should expose this as a `Geometry Source` choice:
+
+- `Native`: simple parametric Structure body authored through practical dimensions.
+- `External Ref`: referenced FreeCAD/imported body with explicit connection point mapping when Drainage connectivity is needed.
+
+Drainage-ready external geometry must not connect directly to imported faces or edges.
+
+It should connect through stable Structure connection point rows owned by `StructureModel`.
 
 Do not place every possible bridge, culvert, and wall field in the main table.
 
@@ -442,6 +475,7 @@ Current execution status:
 - [x] Step 4: Add selected-row detail panel.
   - Keep the main Structures table compact.
   - Show kind-specific geometry controls only for the selected structure.
+  - Move optional external `geometry_ref` editing out of the main table into the selected-row detail area.
   - Preserve same-row selection after apply and rebuild where practical.
 - [x] Step 5: Make `V1StructureShowPreview` read geometry specs.
   - Use native spec dimensions before fallback preview sizes.

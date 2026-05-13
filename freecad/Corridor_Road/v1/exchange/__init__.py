@@ -2,10 +2,13 @@
 
 from .exchange_package_export import exchange_package_payload, export_exchange_package_to_json
 from .ifc_export import exchange_package_ifc_text, export_exchange_package_to_ifc
+from .simulation_package_export import simulation_package_payload, export_simulation_package_to_json
 
 __all__ = [
     "exchange_package_ifc_text",
     "exchange_package_payload",
     "export_exchange_package_to_ifc",
     "export_exchange_package_to_json",
+    "export_simulation_package_to_json",
+    "simulation_package_payload",
 ]

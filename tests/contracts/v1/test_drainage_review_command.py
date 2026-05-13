@@ -1,22 +1,29 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_commands
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import V1_TREE_DRAINAGE, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
     CmdV1DrainageReview,
     V1DrainageReviewTaskPanel,
     build_drainage_review_output,
     run_v1_drainage_review_command,
+    show_drainage_pipeline_candidate_preview_object,
+    show_drainage_pipeline_network_preview_object,
+    show_drainage_pipeline_segment_preview_object,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.quantity_model import QuantityFragment, QuantityModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.structure_model import StructureConnectionPoint, StructureModel, StructurePlacement, StructureRow
+from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment, to_alignment_model
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
+from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
+from freecad.Corridor_Road.v1.services.evaluation.drainage_resolution_service import build_drainage_pipeline_result
 from freecad.Corridor_Road.v1.services.mapping.drainage_review_mapper import DrainageReviewMapper
 
 _QAPP = None
@@ -72,6 +79,202 @@ def _drainage_model() -> DrainageModel:
                 direction="roadside_flow",
                 risk_level="medium",
             )
+        ],
+    )
+
+
+def _pipeline_drainage_model() -> DrainageModel:
+    return DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:pipeline",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                connection_point_ref="connection:inlet-01:pipe-out",
+                station_start=30.0,
+                station_end=32.0,
+                policy_set_ref="drainage-policy:pipe",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outlet-01",
+                element_kind="outfall_reference",
+                structure_ref="structure:outlet-01",
+                connection_point_ref="connection:outlet-01:pipe-in",
+                station_start=90.0,
+                station_end=92.0,
+                policy_set_ref="drainage-policy:pipe",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:pipe-01",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
+            )
+        ],
+    )
+
+
+def _pipeline_structure_model() -> StructureModel:
+    return StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:pipeline",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:inlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0),
+                native_type="inlet",
+            ),
+            StructureRow(
+                structure_id="structure:outlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:outlet-01", "alignment:main", 90.0, 92.0),
+                native_type="outlet",
+            ),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:pipe-out",
+                structure_ref="structure:inlet-01",
+                point_role="pipe_out",
+                station=32.0,
+                offset=-4.5,
+                invert_elevation=44.2,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:outlet-01:pipe-in",
+                structure_ref="structure:outlet-01",
+                point_role="pipe_in",
+                station=90.0,
+                offset=-6.0,
+                invert_elevation=43.6,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+        ],
+    )
+
+
+def _pipeline_network_drainage_model() -> DrainageModel:
+    return DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:pipeline-network",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                connection_point_ref="connection:inlet-01:pipe-out",
+                station_start=30.0,
+                station_end=32.0,
+                policy_set_ref="drainage-policy:pipe",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:junction-01",
+                element_kind="junction_reference",
+                structure_ref="structure:junction-01",
+                connection_point_ref="connection:junction-01:pipe",
+                station_start=60.0,
+                station_end=61.0,
+                policy_set_ref="drainage-policy:pipe",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outlet-01",
+                element_kind="outfall_reference",
+                structure_ref="structure:outlet-01",
+                connection_point_ref="connection:outlet-01:pipe-in",
+                station_start=90.0,
+                station_end=92.0,
+                policy_set_ref="drainage-policy:pipe",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:pipe-01",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:junction-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+            DrainageFlowRoute(
+                flow_route_id="flow-route:pipe-02",
+                from_element_ref="drainage:junction-01",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+        ],
+    )
+
+
+def _pipeline_network_structure_model() -> StructureModel:
+    return StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:pipeline-network",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:inlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0),
+                native_type="inlet",
+            ),
+            StructureRow(
+                structure_id="structure:junction-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:junction-01", "alignment:main", 60.0, 61.0),
+                native_type="junction",
+            ),
+            StructureRow(
+                structure_id="structure:outlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:outlet-01", "alignment:main", 90.0, 92.0),
+                native_type="outlet",
+            ),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:pipe-out",
+                structure_ref="structure:inlet-01",
+                point_role="pipe_out",
+                station=32.0,
+                offset=-4.5,
+                invert_elevation=44.2,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:junction-01:pipe",
+                structure_ref="structure:junction-01",
+                point_role="pipe_junction",
+                station=60.0,
+                offset=-5.2,
+                invert_elevation=43.9,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:outlet-01:pipe-in",
+                structure_ref="structure:outlet-01",
+                point_role="pipe_in",
+                station=90.0,
+                offset=-6.0,
+                invert_elevation=43.6,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
         ],
     )
 
@@ -149,6 +352,7 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
 
     assert summary["summary:drainage-elements"] == 2
     assert summary["summary:flow-routes"] == 1
+    assert summary["summary:pipeline-segment-candidates"] == 0
     assert summary["summary:region-assignments"] == 2
     assert summary["summary:region-assignment-issues"] == 0
     assert summary["summary:ditch-surface-points"] == 2
@@ -165,6 +369,256 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
     )
     assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;component_refs=ditch:right;sides=right"
     assert output.source_refs == ["drainage:main", "regions:main", "applied:main"]
+
+
+def test_drainage_review_mapper_reports_pipeline_segment_candidates_from_connection_points() -> None:
+    output = DrainageReviewMapper().map(
+        drainage_model=_pipeline_drainage_model(),
+        structure_model=_pipeline_structure_model(),
+        project_id="proj-review",
+    )
+
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+    pipeline_rows = [row for row in output.element_rows if row.kind == "pipeline_segment_candidate"]
+
+    assert summary["summary:pipeline-segment-candidates"] == 1
+    assert len(pipeline_rows) == 1
+    assert pipeline_rows[0].label == "flow-route:pipe-01"
+    assert pipeline_rows[0].station_start == 32.0
+    assert pipeline_rows[0].station_end == 90.0
+    assert "status=ready" in pipeline_rows[0].notes
+    assert "from_connection_point_ref=connection:inlet-01:pipe-out" in pipeline_rows[0].notes
+    assert "to_connection_point_ref=connection:outlet-01:pipe-in" in pipeline_rows[0].notes
+    assert "diameter=0.600" in pipeline_rows[0].notes
+    assert output.source_refs == ["drainage:pipeline", "structures:pipeline"]
+
+
+def test_drainage_pipeline_result_promotes_ready_candidates_to_segments() -> None:
+    result = build_drainage_pipeline_result(
+        _pipeline_drainage_model(),
+        _pipeline_structure_model(),
+        project_id="proj-review",
+    )
+
+    assert result.drainage_pipeline_result_id == "drainage-pipeline:main"
+    assert result.source_refs == ["drainage:pipeline", "structures:pipeline"]
+    assert len(result.segment_rows) == 1
+    segment = result.segment_rows[0]
+    assert segment.pipeline_segment_id == "pipeline-segment:flow-route-pipe-01"
+    assert segment.flow_route_ref == "flow-route:pipe-01"
+    assert segment.from_connection_point_ref == "connection:inlet-01:pipe-out"
+    assert segment.to_connection_point_ref == "connection:outlet-01:pipe-in"
+    assert segment.station_start == 32.0
+    assert segment.station_end == 90.0
+    assert segment.invert_start == 44.2
+    assert segment.invert_end == 43.6
+    assert segment.diameter == 0.6
+    assert result.diagnostic_rows == []
+
+
+def test_drainage_review_mapper_reports_pipeline_segment_output_rows() -> None:
+    output = DrainageReviewMapper().map(
+        drainage_model=_pipeline_drainage_model(),
+        structure_model=_pipeline_structure_model(),
+        project_id="proj-review",
+    )
+
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+    flow_route_rows = [row for row in output.element_rows if row.kind == "flow_route"]
+
+    assert summary["summary:pipeline-segments"] == 1
+    assert summary["summary:pipeline-geometries"] == 1
+    assert summary["summary:pipeline-solid-candidates"] == 1
+    assert summary["summary:pipeline-solid-length"] > 50.0
+    assert output.result_refs == ["drainage-pipeline:main"]
+    assert len(output.pipeline_segment_rows) == 1
+    segment = output.pipeline_segment_rows[0]
+    assert segment.pipeline_segment_id == "pipeline-segment:flow-route-pipe-01"
+    assert segment.flow_route_ref == "flow-route:pipe-01"
+    assert segment.from_connection_point_ref == "connection:inlet-01:pipe-out"
+    assert segment.to_connection_point_ref == "connection:outlet-01:pipe-in"
+    assert segment.shape_kind == "circular"
+    assert len(output.pipeline_geometry_rows) == 1
+    geometry = output.pipeline_geometry_rows[0]
+    assert geometry.pipeline_segment_id == "pipeline-segment:flow-route-pipe-01"
+    assert geometry.coordinate_mode == "station_offset_fallback"
+    assert len(geometry.centerline_points) > 2
+    assert geometry.centerline_points[0] == (32.0, -4.5, 44.2)
+    assert geometry.centerline_points[-1] == (90.0, -6.0, 43.6)
+    assert len(output.pipeline_solid_rows) == 1
+    solid = output.pipeline_solid_rows[0]
+    assert solid.pipeline_segment_id == "pipeline-segment:flow-route-pipe-01"
+    assert solid.flow_route_ref == "flow-route:pipe-01"
+    assert solid.is_capped is True
+    assert solid.cap_count == 2
+    assert solid.length > 50.0
+    assert solid.volume > 0.0
+    assert "pipeline_solid_status=ready" in flow_route_rows[0].notes
+    assert "pipeline_solid_caps=2" in flow_route_rows[0].notes
+
+
+def test_drainage_review_mapper_reports_pipeline_network_output_rows() -> None:
+    output = DrainageReviewMapper().map(
+        drainage_model=_pipeline_network_drainage_model(),
+        structure_model=_pipeline_network_structure_model(),
+        project_id="proj-review",
+    )
+
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+
+    assert summary["summary:pipeline-segments"] == 2
+    assert summary["summary:pipeline-solid-candidates"] == 2
+    assert summary["summary:pipeline-networks"] == 1
+    assert summary["summary:pipeline-network-length"] > 50.0
+    assert summary["summary:pipeline-junctions"] == 1
+    assert summary["summary:pipeline-terminals"] == 2
+    assert len(output.pipeline_network_rows) == 1
+    assert len(output.pipeline_junction_rows) == 3
+    network = output.pipeline_network_rows[0]
+    junctions = [row for row in output.pipeline_junction_rows if row.junction_kind == "junction"]
+    terminals = [row for row in output.pipeline_junction_rows if row.junction_kind == "terminal"]
+    assert network.network_id == "drainage-pipeline-network:main"
+    assert network.pipeline_segment_refs == [
+        "pipeline-segment:flow-route-pipe-01",
+        "pipeline-segment:flow-route-pipe-02",
+    ]
+    assert network.flow_route_refs == ["flow-route:pipe-01", "flow-route:pipe-02"]
+    assert network.segment_count == 2
+    assert network.junction_count == 1
+    assert network.volume > 0.0
+    assert network.validation_status == "ready"
+    assert "fuse_mode=compound_first_slice" in network.notes
+    assert len(junctions) == 1
+    assert len(terminals) == 2
+    assert junctions[0].degree == 2
+    assert junctions[0].pipeline_segment_refs == [
+        "pipeline-segment:flow-route-pipe-01",
+        "pipeline-segment:flow-route-pipe-02",
+    ]
+    assert "connection_point_refs=connection:junction-01:pipe" in junctions[0].notes
+    assert "structure_refs=structure:junction-01" in junctions[0].notes
+    assert "trim_status=pending" in junctions[0].notes
+    assert all("structure_connector_status=pending" in row.notes for row in terminals)
+    assert {row.notes for row in terminals} == {
+        "endpoint_count=1;connection_point_refs=connection:inlet-01:pipe-out;structure_refs=structure:inlet-01;trim_status=pending;structure_connector_status=pending",
+        "endpoint_count=1;connection_point_refs=connection:outlet-01:pipe-in;structure_refs=structure:outlet-01;trim_status=pending;structure_connector_status=pending",
+    }
+
+
+def test_show_drainage_pipeline_candidate_preview_object_creates_pipe_candidate() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineCandidatePreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+
+        preview = show_drainage_pipeline_candidate_preview_object(doc, row_index=0)
+
+        assert preview.Name == "V1DrainagePipelineCandidatePreview"
+        assert preview.CRRecordKind == "v1_drainage_pipeline_candidate_preview"
+        assert preview.V1ObjectType == "V1DrainagePipelineCandidatePreview"
+        assert preview.FlowRouteRef == "flow-route:pipe-01"
+        assert preview.CandidateStatus == "ready"
+        assert preview.CoordinateMode == "station_offset_fallback"
+        assert preview.FromConnectionPointRef == "connection:inlet-01:pipe-out"
+        assert preview.ToConnectionPointRef == "connection:outlet-01:pipe-in"
+        assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Shape.BoundBox.ZLength >= 0.5
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_segment_preview_object_creates_pipe_segment() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineSegmentPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+
+        preview = show_drainage_pipeline_segment_preview_object(doc, row_index=0)
+
+        assert preview.Name == "V1DrainagePipelineSegmentPreview"
+        assert preview.CRRecordKind == "v1_drainage_pipeline_segment_preview"
+        assert preview.V1ObjectType == "V1DrainagePipelineSegmentPreview"
+        assert preview.PipelineSegmentId == "pipeline-segment:flow-route-pipe-01"
+        assert preview.FlowRouteRef == "flow-route:pipe-01"
+        assert preview.CoordinateMode == "station_offset_fallback"
+        assert preview.FromConnectionPointRef == "connection:inlet-01:pipe-out"
+        assert preview.ToConnectionPointRef == "connection:outlet-01:pipe-in"
+        assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Shape.BoundBox.ZLength >= 0.5
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_segment_preview_uses_alignment_station_offset_frame() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineSegmentAlignmentPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_sample_v1_alignment(doc, project=project)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+
+        preview = show_drainage_pipeline_segment_preview_object(doc, row_index=0)
+
+        assert preview.CoordinateMode == "alignment_station_offset"
+        assert preview.Shape.BoundBox.XMin < 35.0
+        assert preview.Shape.BoundBox.XMax < 100.0
+        assert preview.Shape.BoundBox.YLength > 10.0
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_network_preview_object_creates_network_compound() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineNetworkPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_network_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_network_structure_model())
+
+        preview = show_drainage_pipeline_network_preview_object(doc, row_index=0)
+
+        assert preview.Name == "V1DrainagePipelineNetworkPreview"
+        assert preview.CRRecordKind == "v1_drainage_pipeline_network_preview"
+        assert preview.V1ObjectType == "V1DrainagePipelineNetworkPreview"
+        assert preview.NetworkId == "drainage-pipeline-network:main"
+        assert preview.FlowRouteRefs == "flow-route:pipe-01,flow-route:pipe-02"
+        assert preview.PipelineSegmentRefs == "pipeline-segment:flow-route-pipe-01,pipeline-segment:flow-route-pipe-02"
+        assert preview.CoordinateMode == "station_offset_fallback"
+        assert preview.FuseMode == "compound_first_slice"
+        assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Shape.BoundBox.ZLength >= 0.5
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_review_mapper_builds_alignment_based_pipeline_geometry_rows() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineGeometryOutputTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        output = DrainageReviewMapper().map(
+            drainage_model=_pipeline_drainage_model(),
+            alignment_model=to_alignment_model(alignment),
+            structure_model=_pipeline_structure_model(),
+            project_id="proj-review",
+        )
+
+        geometry = output.pipeline_geometry_rows[0]
+
+        assert geometry.coordinate_mode == "alignment_station_offset"
+        assert geometry.geometry_kind == "centerline_polyline"
+        assert output.alignment_id == alignment.AlignmentId
+        assert alignment.AlignmentId in output.source_refs
+        assert len(geometry.centerline_points) > 2
+        assert geometry.centerline_points[-1][0] < 100.0
+        assert geometry.centerline_points[-1][1] > 0.0
+        assert "point_count=" in geometry.notes
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_drainage_review_mapper_reports_drainage_quantity_summary() -> None:
@@ -225,13 +679,21 @@ def test_drainage_review_panel_loads_document_context() -> None:
 
         panel = V1DrainageReviewTaskPanel(document=doc)
 
-        assert panel._summary_table.rowCount() == 9
+        assert panel._summary_table.rowCount() == 18
         assert panel._element_table.rowCount() == 2
         assert panel._flow_route_table.rowCount() == 1
         assert panel._tabs.tabText(1) == "Flow Routes"
         assert panel._flow_route_table.item(0, 0).text() == "flow-route:right"
         assert panel._flow_route_table.item(0, 5).text() == "drainage:side-ditch-right -> drainage:outfall-right"
-        assert panel._tabs.tabText(2) == "Region Assignments"
+        assert panel._tabs.tabText(2) == "Pipeline Candidates"
+        assert panel._pipeline_table.rowCount() == 0
+        assert panel._tabs.tabText(3) == "Pipeline Segments"
+        assert panel._pipeline_segment_table.rowCount() == 0
+        assert panel._tabs.tabText(4) == "Pipeline Networks"
+        assert panel._pipeline_network_table.rowCount() == 0
+        assert panel._tabs.tabText(5) == "Pipeline Junctions"
+        assert panel._pipeline_junction_table.rowCount() == 0
+        assert panel._tabs.tabText(6) == "Region Assignments"
         assert panel._region_table.rowCount() == 2
         assert panel._applied_table.rowCount() == 1
         assert "Region drainage ref" not in panel._status.toPlainText()
@@ -277,3 +739,7 @@ def test_drainage_review_resources_and_toolbar_order() -> None:
     assert commands.index("CorridorRoad_V1EditStructures") < commands.index("CorridorRoad_V1EditDrainage")
     assert commands.index("CorridorRoad_V1EditDrainage") < commands.index("CorridorRoad_V1DrainageReview")
     assert commands.index("CorridorRoad_V1DrainageReview") < commands.index("CorridorRoad_V1AppliedSections")
+
+
+def _group_names(folder) -> set[str]:
+    return {str(getattr(child, "Name", "") or "") for child in list(getattr(folder, "Group", []) or [])}

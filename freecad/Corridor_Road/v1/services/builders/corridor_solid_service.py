@@ -50,6 +50,11 @@ class StructureSolidOutputService:
             str(row.geometry_spec_ref): row
             for row in list(getattr(request.structure_model, "retaining_wall_geometry_spec_rows", []) or [])
         }
+        connection_points_by_structure: dict[str, list[object]] = {}
+        for point in list(getattr(request.structure_model, "connection_point_rows", []) or []):
+            structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
+            if structure_ref:
+                connection_points_by_structure.setdefault(structure_ref, []).append(point)
 
         solid_rows: list[StructureSolidOutputRow] = []
         solid_segment_rows: list[StructureSolidSegmentRow] = []
@@ -84,6 +89,7 @@ class StructureSolidOutputService:
                 bridge=bridge_by_ref.get(spec_ref),
                 culvert=culvert_by_ref.get(spec_ref),
                 wall=wall_by_ref.get(spec_ref),
+                connection_points=connection_points_by_structure.get(structure_id, []),
             )
             solid_rows.append(solid_row)
             solid_segment_rows.extend(
@@ -140,8 +146,11 @@ def _solid_row_for_structure(
     bridge=None,
     culvert=None,
     wall=None,
+    connection_points: list[object] | None = None,
 ) -> StructureSolidOutputRow:
     kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    shape_kind = str(getattr(spec, "shape_kind", "") or "").strip().lower()
     station_start = float(getattr(row.placement, "station_start", 0.0) or 0.0)
     station_end = float(getattr(row.placement, "station_end", station_start) or station_start)
     if station_end < station_start:
@@ -152,6 +161,8 @@ def _solid_row_for_structure(
     material = str(getattr(spec, "material", "") or "")
     notes = ""
     context = _source_context_for_structure(applied_section_set, str(row.structure_id))
+    connection_points = list(connection_points or [])
+    drainage_native_kind = _drainage_native_kind(native_type, shape_kind, kind)
 
     if kind == "bridge":
         solid_kind = "bridge_deck_solid"
@@ -167,11 +178,14 @@ def _solid_row_for_structure(
         solid_kind = "retaining_wall_solid"
         width = float(getattr(wall, "wall_thickness", 0.0) or width)
         height = float(getattr(wall, "wall_height", 0.0) or height)
+    elif drainage_native_kind:
+        solid_kind = f"{drainage_native_kind}_body_solid"
+        notes = f"drainage_native_kind={drainage_native_kind}"
     else:
         solid_kind = "structure_envelope_solid"
 
     volume = max(width, 0.0) * max(height, 0.0) * max(length, 0.0)
-    offset = float(getattr(row.placement, "offset", 0.0) or 0.0)
+    offset = _native_structure_offset(row, connection_points, drainage_native_kind=drainage_native_kind)
     start_x, start_y, start_z, start_tangent_direction_deg = _placement_from_applied_sections(
         applied_section_set,
         station=station_start,
@@ -182,6 +196,10 @@ def _solid_row_for_structure(
         station=station_end,
         offset=offset,
     )
+    connection_z = _native_structure_connection_z(connection_points, drainage_native_kind=drainage_native_kind)
+    if connection_z is not None:
+        start_z = connection_z
+        end_z = connection_z
     return StructureSolidOutputRow(
         output_object_id=f"structure-solid:{row.structure_id}",
         structure_id=str(row.structure_id),
@@ -222,6 +240,52 @@ def _path_source(applied_section_set: AppliedSectionSet | None) -> str:
     if any(getattr(section, "frame", None) is not None for section in sections):
         return "3d_centerline"
     return "station_range"
+
+
+def _drainage_native_kind(native_type: str, shape_kind: str, structure_kind: str) -> str:
+    for value in (native_type, shape_kind, structure_kind):
+        text = str(value or "").strip().lower()
+        if text in {"inlet", "inlet_box", "catch_basin"}:
+            return "inlet"
+        if text in {"outlet", "outlet_headwall"}:
+            return "outlet"
+        if text == "headwall":
+            return "headwall"
+    return ""
+
+
+def _native_structure_offset(row: StructureRow, connection_points: list[object], *, drainage_native_kind: str) -> float:
+    explicit_offset = float(getattr(row.placement, "offset", 0.0) or 0.0)
+    if not drainage_native_kind or abs(explicit_offset) > 1.0e-9:
+        return explicit_offset
+    offsets = []
+    for point in list(connection_points or []):
+        try:
+            offsets.append(float(getattr(point, "offset", 0.0) or 0.0))
+        except Exception:
+            continue
+    if not offsets:
+        return explicit_offset
+    return sum(offsets) / len(offsets)
+
+
+def _native_structure_connection_z(connection_points: list[object], *, drainage_native_kind: str) -> float | None:
+    if not drainage_native_kind:
+        return None
+    values = []
+    for point in list(connection_points or []):
+        value = getattr(point, "invert_elevation", None)
+        if value is None:
+            value = getattr(point, "elevation", None)
+        if value is None:
+            continue
+        try:
+            values.append(float(value))
+        except Exception:
+            continue
+    if not values:
+        return None
+    return sum(values) / len(values)
 
 
 def _active_structure_refs(
@@ -573,9 +637,9 @@ def _interpolated_frame(applied_section_set: AppliedSectionSet | None, *, statio
     frames = sorted(frames, key=lambda frame: float(getattr(frame, "station", 0.0) or 0.0))
     target = float(station or 0.0)
     if target <= float(getattr(frames[0], "station", 0.0) or 0.0):
-        return frames[0]
+        return _projected_frame(frames[0], target)
     if target >= float(getattr(frames[-1], "station", 0.0) or 0.0):
-        return frames[-1]
+        return _projected_frame(frames[-1], target)
     for left, right in zip(frames, frames[1:]):
         left_station = float(getattr(left, "station", 0.0) or 0.0)
         right_station = float(getattr(right, "station", left_station) or left_station)
@@ -595,6 +659,20 @@ def _interpolated_frame(applied_section_set: AppliedSectionSet | None, *, statio
             ),
         )
     return frames[0]
+
+
+def _projected_frame(anchor, station: float):
+    anchor_station = float(getattr(anchor, "station", 0.0) or 0.0)
+    tangent = float(getattr(anchor, "tangent_direction_deg", 0.0) or 0.0)
+    theta = math.radians(tangent)
+    delta = float(station or 0.0) - anchor_station
+    return _InterpolatedFrame(
+        station=float(station or 0.0),
+        x=float(getattr(anchor, "x", 0.0) or 0.0) + math.cos(theta) * delta,
+        y=float(getattr(anchor, "y", 0.0) or 0.0) + math.sin(theta) * delta,
+        z=float(getattr(anchor, "z", 0.0) or 0.0),
+        tangent_direction_deg=tangent,
+    )
 
 
 @dataclass(frozen=True)

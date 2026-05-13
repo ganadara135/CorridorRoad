@@ -29,6 +29,7 @@ Baseline document:
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md)
 - [V1_STRUCTURE_MODEL.md](./V1_STRUCTURE_MODEL.md)
 - [V1_STRUCTURE_GEOMETRY_CONTRACT.md](./V1_STRUCTURE_GEOMETRY_CONTRACT.md)
+- [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md)
 - [V1_SURFACE_MODEL.md](./V1_SURFACE_MODEL.md)
 - [V1_QUANTITY_MODEL.md](./V1_QUANTITY_MODEL.md)
 - [V1_QUANTITY_OUTPUT_SCHEMA.md](./V1_QUANTITY_OUTPUT_SCHEMA.md)
@@ -111,6 +112,7 @@ Preferred review workflow:
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
 - use `Watertight Solids` as the final toolbar stage after `AI Assist`; it should remain disabled or blocked until Build Corridor has produced accepted corridor prerequisites
 - use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
+- before advanced Drainage Pipeline work, upgrade Structures into connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, and 3D review as described in `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity

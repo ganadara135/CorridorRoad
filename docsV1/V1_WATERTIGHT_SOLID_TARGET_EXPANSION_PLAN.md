@@ -24,6 +24,27 @@ The higher-level goal is to support terrain-inclusive whole-road simulation.
 
 That means the final output must be able to represent the road body, terrain boundary, drainage bodies, structure bodies, and physical component bodies as validated watertight solids where the simulation domain requires them.
 
+The Watertight Solids panel now includes a first-slice `Simulation QA` summary backed by `SimulationQaOutput` and `WatertightSimulationQaService`. It scans built `V1WatertightSolidOutput` objects and reports:
+
+- built output count and target-family coverage
+- road body, terrain, drainage, and structure readiness
+- invalid or zero-volume output counts
+- first-slice bounding-box contact diagnostics between road-body solids and drainage/structure solids
+- first-slice terrain-domain bounding-box diagnostics when a terrain shape provides a usable domain extent
+- first-slice pipe/structure port diagnostics that require built `structure_body` outputs and connection point provenance when Drainage pipeline solids reference Structures
+- total built solid volume
+- whether the current set is simulation-ready for the first road + terrain + drainage gate
+
+After a Watertight Solid build action, the same QA summary is persisted as a `V1SimulationQaOutput` report object routed under `Outputs & Exchange / Reports`. This keeps simulation-readiness evidence separate from generated solid geometry while preserving source refs back to the built watertight output objects.
+
+The panel also exposes this contract directly through `Simulation QA / Families` and `Simulation QA / Diagnostics` tables. The tables are read-only review surfaces; they do not edit generated geometry or source intent.
+
+The first simulation hand-off object is `SimulationPackageOutput`. It is a manifest, not a new geometric boolean result. It groups built `V1WatertightSolidOutput` object refs with the current `SimulationQaOutput`, records package status as `ready` or `blocked`, and routes the persisted `V1SimulationPackageOutput` object under `Outputs & Exchange / Exchange Packages`.
+
+The first hand-off export format is JSON. `Export Package` writes the persisted manifest with package status, QA ref, terrain context, packaged solid rows, target families, volume, diagnostics, and traceability refs. It also writes generic BREP files for included `V1WatertightSolidOutput` objects when their FreeCAD `Shape` is available, then records the relative geometry file path, object ref, format, and export status on each solid row. It does not export solver-specific meshes yet.
+
+When both a v1 surface model record and an actual terrain Shape/Mesh object are present, the package terrain context should prefer the terrain object that owns geometry. The v1 surface model can still satisfy workflow readiness, but the hand-off manifest should point to the geometric terrain reference and its bounding box when available.
+
 This plan defines how to expand solid targets from the current `road_body_envelope` baseline into physical corridor bodies:
 
 - road body envelope

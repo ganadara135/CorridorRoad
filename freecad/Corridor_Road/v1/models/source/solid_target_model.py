@@ -14,6 +14,8 @@ SOLID_TARGET_FAMILIES = {
     "subbase_body",
     "shoulder_body",
     "lined_ditch_body",
+    "drainage_pipeline_body",
+    "drainage_pipeline_network_body",
     "structure_body",
 }
 

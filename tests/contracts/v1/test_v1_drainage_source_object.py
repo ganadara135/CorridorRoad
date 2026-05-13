@@ -8,7 +8,12 @@ from freecad.Corridor_Road.v1.models.source.drainage_model import (
     DrainagePolicySet,
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
-from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureConnectionPoint,
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.objects.obj_drainage import (
     create_or_update_v1_drainage_model_object,
     find_v1_drainage_model,
@@ -48,6 +53,7 @@ def _drainage_model() -> DrainageModel:
                 drainage_element_id="drainage:outfall-main",
                 element_kind="outfall_reference",
                 structure_ref="outfall:1",
+                connection_point_ref="connection:outfall-1:pipe-in",
                 side="right",
                 region_ref="region:1",
                 station_start=99.0,
@@ -113,6 +119,8 @@ def test_v1_drainage_model_object_roundtrips_to_drainage_model() -> None:
         assert model.element_rows[0].side == "right"
         assert model.element_rows[0].region_ref == "region:1"
         assert model.element_rows[0].assembly_component_ref == "ditch:right"
+        assert model.element_rows[1].connection_point_ref == "connection:outfall-1:pipe-in"
+        assert list(obj.ElementConnectionPointRefs) == ["", "connection:outfall-1:pipe-in"]
         assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
         assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
         assert model.flow_route_rows[0].outlet_ref == "drainage:outfall-main"
@@ -365,6 +373,54 @@ def test_drainage_validation_checks_structure_refs_against_structure_model() -> 
 
     assert result.status == "error"
     assert "missing_drainage_structure_ref" in kinds
+
+
+def test_drainage_validation_checks_connection_point_refs_against_structure_model() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:culvert",
+                element_kind="culvert_reference",
+                structure_ref="structure:culvert-01",
+                connection_point_ref="connection:culvert-01:missing",
+                station_start=10.0,
+                station_end=20.0,
+                policy_set_ref="drainage-policy:1",
+            )
+        ],
+        policy_rows=[DrainagePolicySet("drainage-policy:1", "cross_drainage_transfer")],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:culvert-01",
+                structure_kind="culvert",
+                structure_role="clearance_control",
+                placement=StructurePlacement("placement:culvert-01", "alignment:main", 10.0, 20.0),
+            )
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:upstream",
+                structure_ref="structure:culvert-01",
+                point_role="upstream",
+                station=10.0,
+                offset=0.0,
+            )
+        ],
+    )
+
+    result = DrainageValidationService().validate(model, structure_model=structure_model)
+    kinds = [row.kind for row in result.diagnostic_rows]
+
+    assert result.status == "error"
+    assert "missing_drainage_connection_point_ref" in kinds
 
 
 def test_drainage_validation_checks_element_station_range_against_region() -> None:

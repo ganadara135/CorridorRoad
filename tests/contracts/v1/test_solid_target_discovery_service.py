@@ -12,6 +12,7 @@ from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureModel,
     StructurePlacement,
@@ -118,6 +119,84 @@ def _structure_model() -> StructureModel:
                 width=0.4,
                 height=3.0,
                 material="concrete",
+            )
+        ],
+    )
+
+
+def _pipeline_structure_model() -> StructureModel:
+    return StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:pipeline",
+        structure_rows=[
+            StructureRow(
+                "structure:inlet-01",
+                "utility",
+                "reference",
+                StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0),
+            ),
+            StructureRow(
+                "structure:outlet-01",
+                "utility",
+                "reference",
+                StructurePlacement("placement:outlet-01", "alignment:main", 90.0, 92.0),
+            ),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                "connection:inlet-01:pipe-out",
+                "structure:inlet-01",
+                "pipe_out",
+                station=32.0,
+                offset=-4.5,
+                invert_elevation=44.2,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                "connection:outlet-01:pipe-in",
+                "structure:outlet-01",
+                "pipe_in",
+                station=90.0,
+                offset=-6.0,
+                invert_elevation=43.6,
+                diameter=0.6,
+                shape_kind="circular",
+            ),
+        ],
+    )
+
+
+def _pipeline_drainage_model() -> DrainageModel:
+    return DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:pipeline",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                connection_point_ref="connection:inlet-01:pipe-out",
+                station_start=30.0,
+                station_end=32.0,
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outlet-01",
+                element_kind="outfall_reference",
+                structure_ref="structure:outlet-01",
+                connection_point_ref="connection:outlet-01:pipe-in",
+                station_start=90.0,
+                station_end=92.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:pipe-01",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
             )
         ],
     )
@@ -689,3 +768,120 @@ def test_solid_target_discovery_creates_structure_body_candidates() -> None:
     assert target.station_start == 20.0
     assert target.station_end == 80.0
     assert target.readiness_status == "available"
+
+
+def test_solid_target_discovery_allows_external_structure_body_candidates() -> None:
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:external",
+        structure_rows=[
+            StructureRow(
+                "structure:external",
+                "culvert",
+                "external_body",
+                StructurePlacement("placement:external", "alignment:main", 20.0, 30.0),
+                geometry_ref="ExternalStructureBody",
+                reference_mode="source_ref",
+                geometry_source_mode="external_ref",
+            )
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                "connection:external:pipe-in",
+                "structure:external",
+                "pipe_in",
+                station=20.0,
+                offset=-4.0,
+                invert_elevation=42.0,
+                diameter=0.8,
+                shape_kind="circular",
+            )
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=_applied_set(),
+            corridor_model=_corridor_model(),
+            structure_model=structure_model,
+        )
+    )
+
+    target = {row.target_id: row for row in model.target_rows}["solid-target:structure-body:structure-external"]
+    assert target.target_family == "structure_body"
+    assert target.structure_ref == "structure:external"
+    assert target.readiness_status == "available"
+    assert "ExternalStructureBody" in target.source_refs
+    assert "geometry_source_mode=external_ref" in target.notes
+    assert "connection_point_count=1" in target.notes
+
+
+def test_solid_target_discovery_blocks_external_drainage_structure_without_connection_points() -> None:
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:external",
+        structure_rows=[
+            StructureRow(
+                "structure:external",
+                "culvert",
+                "external_body",
+                StructurePlacement("placement:external", "alignment:main", 20.0, 30.0),
+                geometry_ref="ExternalStructureBody",
+                reference_mode="source_ref",
+                geometry_source_mode="external_ref",
+            )
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=_applied_set(),
+            corridor_model=_corridor_model(),
+            structure_model=structure_model,
+        )
+    )
+
+    target = {row.target_id: row for row in model.target_rows}["solid-target:structure-body:structure-external"]
+    assert target.readiness_status == "blocked"
+    assert {row.kind for row in model.target_diagnostic_rows} == {"missing_external_structure_connection_points"}
+
+
+def test_solid_target_discovery_creates_drainage_pipeline_body_candidates() -> None:
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=_applied_set(),
+            corridor_model=_corridor_model(),
+            structure_model=_pipeline_structure_model(),
+            drainage_model=_pipeline_drainage_model(),
+        )
+    )
+
+    targets = {row.target_id: row for row in model.target_rows}
+    target = targets["solid-target:drainage-pipeline:pipeline-segment-flow-route-pipe-01"]
+    network = targets["solid-target:drainage-pipeline-network:main"]
+    assert target.target_family == "drainage_pipeline_body"
+    assert target.scope_kind == "drainage"
+    assert target.drainage_ref == "pipeline-segment:flow-route-pipe-01"
+    assert target.flow_route_ref == "flow-route:pipe-01"
+    assert target.station_start == 32.0
+    assert target.station_end == 90.0
+    assert target.material_ref == "drainage-pipe"
+    assert target.readiness_status == "available"
+    assert "connection:inlet-01:pipe-out" in target.source_refs
+    assert "connection:outlet-01:pipe-in" in target.source_refs
+    assert network.target_family == "drainage_pipeline_network_body"
+    assert network.scope_kind == "drainage"
+    assert network.drainage_ref == "drainage-pipeline-network:main"
+    assert network.flow_route_ref == "flow-route:pipe-01"
+    assert network.station_start == 32.0
+    assert network.station_end == 90.0
+    assert network.readiness_status == "available"
+    assert "pipeline-segment:flow-route-pipe-01" in network.source_refs

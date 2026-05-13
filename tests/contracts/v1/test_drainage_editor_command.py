@@ -13,7 +13,12 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
 )
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
-from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureConnectionPoint,
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.objects.obj_drainage import (
     create_or_update_v1_drainage_model_object,
     find_v1_drainage_model,
@@ -97,6 +102,7 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.horizontalHeaderItem(6).text() == "Assembly"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Policy"
         assert panel._element_table.horizontalHeaderItem(8).text() == "Structure Ref"
+        assert panel._element_table.horizontalHeaderItem(9).text() == "Connection Point"
         assert panel._tabs.tabText(2) == "Flow Routes"
         assert panel._flow_route_table.horizontalHeaderItem(0).text() == "Flow Route ID"
         assert panel._flow_route_table.horizontalHeaderItem(3).text() == "Outlet"
@@ -109,6 +115,8 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.cellWidget(0, 7).currentText() == "lined-concrete"
         assert panel._element_table.cellWidget(0, 8).currentText() == ""
         assert not panel._element_table.cellWidget(0, 8).isEnabled()
+        assert panel._element_table.cellWidget(0, 9).currentText() == ""
+        assert not panel._element_table.cellWidget(0, 9).isEnabled()
         assert panel._element_table.item(1, 0).text() == "outfall-main"
         assert panel._element_table.item(1, 6).text() == ""
         assert not bool(panel._element_table.item(1, 6).flags() & QtCore.Qt.ItemIsEnabled)
@@ -147,6 +155,7 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo = panel._element_table.cellWidget(0, 1)
         assembly_item = panel._element_table.item(0, 6)
         structure_combo = panel._element_table.cellWidget(0, 8)
+        connection_combo = panel._element_table.cellWidget(0, 9)
 
         assert assembly_item is not None
         assert structure_combo is not None
@@ -154,13 +163,17 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
+        assert not connection_combo.isEnabled()
+        assert connection_combo.currentText() == ""
 
         kind_combo.setCurrentText("culvert_reference")
         assembly_item = panel._element_table.item(0, 6)
         structure_combo = panel._element_table.cellWidget(0, 8)
+        connection_combo = panel._element_table.cellWidget(0, 9)
         assert not bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert assembly_item.text() == ""
         assert structure_combo.isEnabled()
+        assert connection_combo.isEnabled()
         structure_combo.setCurrentText("culvert-01")
 
         model = panel._model_from_tables()
@@ -170,12 +183,16 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo.setCurrentText("ditch")
         assembly_item = panel._element_table.item(0, 6)
         structure_combo = panel._element_table.cellWidget(0, 8)
+        connection_combo = panel._element_table.cellWidget(0, 9)
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assembly_item.setText("ditch:right")
         assert panel._model_from_tables().element_rows[0].assembly_component_ref == "ditch:right"
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
+        assert not connection_combo.isEnabled()
+        assert connection_combo.currentText() == ""
         assert panel._model_from_tables().element_rows[0].structure_ref == ""
+        assert panel._model_from_tables().element_rows[0].connection_point_ref == ""
     finally:
         App.closeDocument(doc.Name)
 
@@ -204,21 +221,43 @@ def test_drainage_editor_structure_ref_uses_structure_id_combo() -> None:
                         ),
                     )
                 ],
+                connection_point_rows=[
+                    StructureConnectionPoint(
+                        connection_point_id="connection:culvert-01:upstream",
+                        structure_ref="structure:culvert-01",
+                        point_role="upstream",
+                        station=40.0,
+                        offset=0.0,
+                    ),
+                    StructureConnectionPoint(
+                        connection_point_id="connection:culvert-01:downstream",
+                        structure_ref="structure:culvert-01",
+                        point_role="downstream",
+                        station=60.0,
+                        offset=0.0,
+                    ),
+                ],
             ),
         )
         panel = V1DrainageEditorTaskPanel(document=doc)
         kind_combo = panel._element_table.cellWidget(0, 1)
         kind_combo.setCurrentText("culvert_reference")
         structure_combo = panel._element_table.cellWidget(0, 8)
+        connection_combo = panel._element_table.cellWidget(0, 9)
         structure_items = [structure_combo.itemText(index) for index in range(structure_combo.count())]
 
         assert structure_combo.isEnabled()
         assert "culvert-01" in structure_items
 
         structure_combo.setCurrentText("culvert-01")
+        connection_combo = panel._element_table.cellWidget(0, 9)
+        connection_items = [connection_combo.itemText(index) for index in range(connection_combo.count())]
+        assert "culvert-01:upstream" in connection_items
+        connection_combo.setCurrentText("culvert-01:upstream")
         model = panel._model_from_tables()
 
         assert model.element_rows[0].structure_ref == "structure:culvert-01"
+        assert model.element_rows[0].connection_point_ref == "connection:culvert-01:upstream"
     finally:
         App.closeDocument(doc.Name)
 

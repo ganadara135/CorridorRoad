@@ -251,6 +251,44 @@ First implementation slice:
 - Quantity output fragments preserve `flow_route_ref`.
 - Lined-ditch Watertight Solid targets preserve `flow_route_ref` from the owning Drainage Element.
 - Watertight Solid output rows, persisted output objects, and exchange source-context rows preserve `flow_route_ref`.
+- Drainage Review exposes first-slice `pipeline_segment_candidate` rows when Flow Route endpoints resolve to Structure connection points.
+- Pipeline candidates are generated from `from_element_ref.connection_point_ref` and `to_element_ref.connection_point_ref`; generated preview geometry is not used as source.
+- Drainage Review can create a 3D `V1DrainagePipelineCandidatePreview` object for a selected candidate.
+- Ready candidates are promoted into `DrainagePipelineResult.segment_rows` as `DrainagePipelineSegment` result records.
+- Drainage output exposes dedicated `pipeline_segment_rows` so downstream preview, quantity, solid, and exchange work can consume resolved segments without reading review candidate rows.
+- Drainage Review can create a 3D `V1DrainagePipelineSegmentPreview` object for a selected resolved segment.
+- Pipeline candidate and segment previews use the active v1 Alignment station/offset frame when available, with a documented station/offset fallback when no Alignment source exists.
+- Drainage output exposes dedicated `pipeline_geometry_rows` with centerline polyline points derived from `DrainagePipelineSegment` rows.
+- Pipeline segment preview consumes `pipeline_geometry_rows` instead of rebuilding segment geometry inside the UI panel.
+- Drainage output exposes dedicated `pipeline_solid_rows` with first-slice capped pipe solid candidate metadata, including length, volume, cap count, coordinate mode, and Flow Route provenance.
+- Flow Route review rows expose pipeline solid readiness and cap/length summary when a route resolves to a pipe candidate.
+- Drainage output exposes `pipeline_network_rows` that group ready pipe solid candidates into a first-slice pipeline network candidate.
+- Pipeline network rows preserve segment refs, Flow Route refs, solid row refs, total length, total candidate volume, junction count, coordinate mode, and validation status.
+- Drainage Review includes a `Pipeline Networks` tab so users can distinguish individual pipe segments from the grouped network candidate.
+- Drainage Review can create a 3D `V1DrainagePipelineNetworkPreview` object for a selected network row or network-table double-click.
+- Drainage output exposes `pipeline_junction_rows` for network endpoint topology, including junction/terminal kind, degree, coordinate point, segment refs, Flow Route refs, and `trim_status=pending`.
+- Pipeline junction rows preserve endpoint `connection_point_refs` when they can be traced back to Structure connection points.
+- Pipeline junction rows also preserve `structure_refs` resolved from those Structure connection points.
+- Drainage Review includes a `Pipeline Junctions` tab so trimming and structure-connection cleanup targets are visible before boolean editing is attempted.
+- Watertight Solid target discovery can expose a `drainage_pipeline_network_body` target for the grouped network.
+- Network build first tries a best-effort `boolean_fuse` across capped pipe segment solids and falls back to `compound_fallback` when FreeCAD cannot fuse the shapes robustly.
+- For degree greater than one junction rows, network build adds a small connector body at the junction point before boolean fuse so pipe segments have overlapping solid volume at the connection.
+- For terminal rows with Structure connection point refs, network build adds terminal connector bodies so pipe endpoints have explicit overlap volume for the later Structure-body boolean step.
+- Structure body targets can be built directly in Watertight Solids from the native StructureModel spec, producing reusable `structure_body` output shapes.
+- Pipeline network builds auto-build available matching `structure_body` targets before reading reusable Structure body output shapes.
+- `Build Enabled` orders Structure body targets before Drainage pipeline network targets so dependency shapes exist when both are enabled.
+- `pipe_culvert` and circular culvert Structure body dependencies build as cylindrical solids so Drainage network connections can fuse against a pipe-like body.
+- Circular culvert Structure body dependencies with `wall_thickness` build as hollow wall solids, preserving a pipe opening instead of a filled cylinder.
+- External Ref Structure body dependencies can reuse a referenced FreeCAD object's Shape when `geometry_ref` resolves in the document.
+- External Ref Structure body targets for Drainage-ready Structures are blocked until the Structure source has at least one mapped connection point.
+- External Ref Structure body validation blocks a build when mapped connection point coordinates sit outside the referenced Shape bounding box tolerance.
+- Native `inlet`, `outlet`, and `headwall` Structure body dependencies are placed from their connection point offset and invert/elevation when no explicit Structure placement offset is set, so the pipe endpoint can meet the body without a bridge connector.
+- Native `inlet` bodies include an internal chamber cut, and native `outlet`/`headwall` bodies include a pipe opening cut from connection point diameter when available.
+- When a Structure body exists but the pipe terminal point is outside that body, network build adds a first-slice port bridge connector from the terminal point toward the Structure body so boolean fuse has overlapping volume.
+- Port bridge connectors first use the Structure connection point diameter/width/height and direction when available, then fall back to pipe diameter and Structure body center targeting.
+- When a Structure-backed pipe terminal point starts inside a matched Structure body bounding box, network build trims that endpoint to the Structure body exit face before creating pipe and connector solids.
+- If matching `structure_body` Watertight Solid output objects already exist for the terminal `structure_refs`, network build includes those Structure body shapes in the same best-effort fuse input.
+- Detailed wingwalls, inlet grates, external face/port inference, and terrain boolean interaction remain later steps.
 
 ## Acceptance Criteria
 
@@ -262,6 +300,28 @@ First implementation slice:
 - Flow Route validation blocks broken Element references and cycles.
 - Flow Route validation warns when a route chain has no final outfall or outlet context.
 - Drainage Review can show at least one readable chain preview.
+- Drainage Review can show pipeline candidate status, endpoint connection point refs, station range, invert range, shape, and diameter.
+- Selected pipeline candidates can be reviewed as lightweight 3D pipe/line preview output.
+- Ready pipeline candidates are promoted to traceable result/output segment rows.
+- Selected resolved pipeline segments can be reviewed as lightweight 3D pipe preview output.
+- Pipeline preview objects record whether they were built from `alignment_station_offset` or `station_offset_fallback` coordinates.
+- Pipeline geometry rows preserve segment id, Flow Route ref, coordinate mode, centerline point list, diameter, and shape kind.
+- Pipeline solid rows preserve segment id, Flow Route ref, capped state, candidate volume, and derived length for later quantity and Watertight Solid handoff.
+- Watertight Solid target discovery can expose `drainage_pipeline_body` targets for ready pipeline segments.
+- Drainage output can expose a grouped pipeline network candidate with route/segment provenance and junction count.
+- Drainage output can expose endpoint junction rows so network trimming targets are explicit and traceable.
+- Selected pipeline networks can be reviewed as a 3D compound preview while keeping individual segment provenance.
+- Watertight Solid target discovery can expose `drainage_pipeline_network_body` for the grouped Drainage pipe network.
+- Network solid build records the actual fuse mode: `boolean_fuse`, `single_segment`, or `compound_fallback`.
+- `compound_fallback` keeps capped pipe segments traceable when boolean fuse is not robust enough for the current geometry.
+- Network solid build records `connector_count` so added junction connector bodies remain visible in output provenance.
+- Terminal connector bodies are output build helpers. They do not replace the StructureModel connection point source rows.
+- Watertight Solids can build `structure_body` targets from Structure native spec rows without going through road-body Applied Section profile logic.
+- Drainage pipeline network build records `dependencies_built` when it auto-builds matching Structure body targets before network fuse.
+- Drainage pipeline network build records `port_connector_count` and `port_connector_status` when first-slice port bridge bodies are added for Structure-backed terminals.
+- Drainage pipeline network build records `endpoint_trim_count` and `endpoint_trim_status` when Structure-backed pipe terminals are moved from an internal Structure point to the body exit face.
+- Watertight Solid pipeline network output preserves terminal `structure_refs` and `connection_point_refs` so the later Structure-body boolean step can target the correct source-owned Structures.
+- Watertight Solid pipeline network output records `structure_body_count`, `structure_body_object_refs`, and `structure_fuse_status` when it can include already built Structure body outputs.
 - Applied Sections and Build Corridor behavior remain compatible with existing ditch generation.
 
 ## Manual QA

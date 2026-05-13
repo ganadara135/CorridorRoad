@@ -31,6 +31,7 @@ from .cmd_structure_editor import (
     apply_v1_structure_model,
     run_v1_structure_editor_command,
     show_v1_structure_preview_object,
+    show_v1_structure_connection_points_preview_object,
     starter_structure_model_from_document,
 )
 from .cmd_review_plan_profile import run_v1_plan_profile_preview_command
@@ -62,6 +63,7 @@ __all__ = [
     "run_v1_structure_editor_command",
     "run_v1_structure_output_command",
     "show_v1_structure_preview_object",
+    "show_v1_structure_connection_points_preview_object",
     "run_v1_plan_profile_preview_command",
     "run_v1_stationing_review_command",
     "run_v1_tin_editor_command",

@@ -1238,6 +1238,7 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1SimulationPackageOutput",
             "V1WatertightSolidOutput",
         ),
         name_prefixes=(
@@ -1247,6 +1248,7 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1SimulationPackageOutput",
             "V1WatertightSolidOutput",
         ),
     )
@@ -1296,11 +1298,23 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
+    if record_kind == "v1_structure_connection_point_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_applied_section_show_preview":
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if record_kind == "v1_watertight_solid_output":
         return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
+    if record_kind == "v1_simulation_qa_output":
+        return tree.get(V1_TREE_REPORTS, None)
+    if record_kind == "v1_simulation_package_output":
+        return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
     if record_kind == "v1_drainage_model":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_candidate_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_segment_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_network_preview":
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
@@ -1390,6 +1404,8 @@ def resolve_v1_target_container(prj, child):
         if _is_type(child, proxy_types=("IFCExport",), name_prefixes=("IFCExport",)):
             return tree.get(V1_TREE_IFC, None)
         if _is_type(child, proxy_types=("ExchangePackage",), name_prefixes=("ExchangePackage",)):
+            return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+        if _is_type(child, proxy_types=("V1SimulationPackageOutput",), name_prefixes=("V1SimulationPackageOutput",)):
             return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
         if _is_type(child, proxy_types=("V1WatertightSolidOutput",), name_prefixes=("V1WatertightSolidOutput",)):
             return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)

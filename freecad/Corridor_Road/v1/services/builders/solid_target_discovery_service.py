@@ -14,6 +14,7 @@ from ...models.source.solid_target_model import (
     SolidTargetModel,
     SolidTargetRow,
 )
+from ..evaluation.drainage_resolution_service import build_drainage_pipeline_result
 from ..evaluation.station_context_resolver import StationContextResolver
 
 
@@ -121,6 +122,14 @@ class SolidTargetDiscoveryService:
         target_rows.extend(lined_ditch_rows)
         diagnostics.extend(lined_ditch_diagnostics)
 
+        pipeline_rows, pipeline_diagnostics = _drainage_pipeline_target_rows(
+            drainage_model,
+            structure_model=structure_model,
+            source_refs=source_refs,
+        )
+        target_rows.extend(pipeline_rows)
+        diagnostics.extend(pipeline_diagnostics)
+
         structure_rows, structure_diagnostics = _structure_target_rows(
             structure_model,
             source_refs=source_refs,
@@ -211,6 +220,11 @@ def _structure_target_rows(
         for row in list(getattr(structure_model, "geometry_spec_rows", []) or [])
         if str(getattr(row, "geometry_spec_id", "") or "")
     }
+    connection_points_by_structure: dict[str, list[object]] = {}
+    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
+        if structure_ref:
+            connection_points_by_structure.setdefault(structure_ref, []).append(point)
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
     for structure in list(getattr(structure_model, "structure_rows", []) or []):
@@ -223,16 +237,45 @@ def _structure_target_rows(
         if end < start:
             start, end = end, start
         spec_ref = str(getattr(structure, "geometry_spec_ref", "") or "").strip()
+        geometry_ref = str(getattr(structure, "geometry_ref", "") or "").strip()
+        geometry_source_mode = _structure_geometry_source_mode(structure)
         spec = geometry_by_id.get(spec_ref)
         target_id = f"solid-target:structure-body:{_safe_id(structure_id)}"
         diagnostic_refs: list[str] = []
-        ready = spec is not None and end > start
-        if spec is None:
+        connection_points = list(connection_points_by_structure.get(structure_id, []) or [])
+        needs_external_connection_points = (
+            geometry_source_mode == "external_ref"
+            and _structure_requires_connection_points(structure)
+        )
+        ready = (
+            (spec is not None or (geometry_source_mode == "external_ref" and bool(geometry_ref)))
+            and end > start
+            and (not needs_external_connection_points or bool(connection_points))
+        )
+        if spec is None and geometry_source_mode != "external_ref":
             diagnostic = _diagnostic(
                 "error",
                 "missing_structure_geometry_spec",
                 target_id,
                 f"Structure {structure_id} cannot produce a solid target without a native geometry spec.",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        if geometry_source_mode == "external_ref" and not geometry_ref:
+            diagnostic = _diagnostic(
+                "error",
+                "missing_structure_geometry_ref",
+                target_id,
+                f"Structure {structure_id} cannot produce an external solid target without a geometry_ref.",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        if needs_external_connection_points and not connection_points:
+            diagnostic = _diagnostic(
+                "error",
+                "missing_external_structure_connection_points",
+                target_id,
+                f"External Drainage-ready Structure {structure_id} needs at least one Structure connection point before it can be used as a solid target.",
             )
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
@@ -256,9 +299,14 @@ def _structure_target_rows(
                 enabled=False,
                 material_ref=str(getattr(spec, "material", "") or "") if spec is not None else "",
                 readiness_status="available" if ready else "blocked",
-                source_refs=source_refs + [str(getattr(structure_model, "structure_model_id", "") or ""), structure_id, spec_ref],
+                source_refs=source_refs + [str(getattr(structure_model, "structure_model_id", "") or ""), structure_id, spec_ref, geometry_ref],
                 diagnostic_refs=diagnostic_refs,
-                notes=f"Structure body target discovered from StructureModel; structure_kind={str(getattr(structure, 'structure_kind', '') or '')}.",
+                notes=(
+                    "Structure body target discovered from StructureModel; "
+                    f"structure_kind={str(getattr(structure, 'structure_kind', '') or '')}; "
+                    f"geometry_source_mode={geometry_source_mode}; "
+                    f"connection_point_count={len(connection_points)}."
+                ),
             )
         )
     return rows, diagnostics
@@ -464,6 +512,106 @@ def _lined_ditch_target_rows(
                     drainage_ref=drainage_ref,
                     flow_route_ref=flow_route_ref,
                     station_context=station_context,
+                ),
+            )
+        )
+    return rows, diagnostics
+
+
+def _drainage_pipeline_target_rows(
+    drainage_model: DrainageModel | None,
+    *,
+    structure_model: StructureModel | None,
+    source_refs: list[str],
+) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
+    if drainage_model is None or structure_model is None:
+        return [], []
+    pipeline_result = build_drainage_pipeline_result(drainage_model, structure_model)
+    rows: list[SolidTargetRow] = []
+    diagnostics: list[SolidTargetDiagnosticRow] = []
+    network_segments = []
+    for segment in list(getattr(pipeline_result, "segment_rows", []) or []):
+        segment_id = str(getattr(segment, "pipeline_segment_id", "") or "").strip()
+        flow_route_ref = str(getattr(segment, "flow_route_ref", "") or "").strip()
+        if not segment_id:
+            continue
+        target_id = f"solid-target:drainage-pipeline:{_safe_id(segment_id)}"
+        start = float(getattr(segment, "station_start", 0.0) or 0.0)
+        end = float(getattr(segment, "station_end", start) or start)
+        if end < start:
+            start, end = end, start
+        diameter = float(getattr(segment, "diameter", 0.0) or 0.0)
+        diagnostic_refs: list[str] = []
+        ready = end > start and diameter > 0.0
+        if ready:
+            network_segments.append(segment)
+        if not ready:
+            diagnostic = _diagnostic(
+                "error",
+                "drainage_pipeline_target_not_ready",
+                target_id,
+                "Drainage pipeline segment needs a positive station span and diameter before it can become a solid target.",
+                notes=f"flow_route_ref={flow_route_ref};diameter={diameter:g};station_start={start:g};station_end={end:g}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        rows.append(
+            SolidTargetRow(
+                target_id=target_id,
+                target_family="drainage_pipeline_body",
+                scope_kind="drainage",
+                station_start=start,
+                station_end=end,
+                drainage_ref=segment_id,
+                flow_route_ref=flow_route_ref,
+                enabled=False,
+                material_ref="drainage-pipe",
+                readiness_status="available" if ready else "blocked",
+                source_refs=_unique_refs(
+                    source_refs
+                    + list(getattr(pipeline_result, "source_refs", []) or [])
+                    + [
+                        segment_id,
+                        flow_route_ref,
+                        str(getattr(segment, "from_element_ref", "") or ""),
+                        str(getattr(segment, "to_element_ref", "") or ""),
+                        str(getattr(segment, "from_connection_point_ref", "") or ""),
+                        str(getattr(segment, "to_connection_point_ref", "") or ""),
+                    ]
+                ),
+                diagnostic_refs=diagnostic_refs,
+                notes=(
+                    "Drainage pipeline body target discovered from Flow Route endpoint Structure connection points. "
+                    f"segment={segment_id}; flow_route={flow_route_ref}; diameter={diameter:g}."
+                ),
+            )
+        )
+    if network_segments:
+        station_start = min(float(getattr(segment, "station_start", 0.0) or 0.0) for segment in network_segments)
+        station_end = max(float(getattr(segment, "station_end", 0.0) or 0.0) for segment in network_segments)
+        segment_refs = _unique_refs([str(getattr(segment, "pipeline_segment_id", "") or "") for segment in network_segments])
+        flow_route_refs = _unique_refs([str(getattr(segment, "flow_route_ref", "") or "") for segment in network_segments])
+        rows.append(
+            SolidTargetRow(
+                target_id="solid-target:drainage-pipeline-network:main",
+                target_family="drainage_pipeline_network_body",
+                scope_kind="drainage",
+                station_start=station_start,
+                station_end=station_end,
+                drainage_ref="drainage-pipeline-network:main",
+                flow_route_ref=",".join(flow_route_refs),
+                enabled=False,
+                material_ref="drainage-pipe",
+                readiness_status="available",
+                source_refs=_unique_refs(
+                    source_refs
+                    + list(getattr(pipeline_result, "source_refs", []) or [])
+                    + segment_refs
+                    + flow_route_refs
+                ),
+                notes=(
+                    "Drainage pipeline network target groups ready Flow Route pipe segments. "
+                    f"segments={len(segment_refs)}; flow_routes={len(flow_route_refs)}; fuse_mode=compound_first_slice."
                 ),
             )
         )
@@ -705,6 +853,38 @@ def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: 
 def _safe_id(value: str) -> str:
     text = str(value or "").strip().replace(" ", "-").replace(":", "-").replace("/", "-").replace("\\", "-")
     return text or "unknown"
+
+
+def _structure_geometry_source_mode(row) -> str:
+    mode = str(getattr(row, "geometry_source_mode", "") or "").strip().lower()
+    if mode in {"native", "external_ref"}:
+        return mode
+    reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
+    geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
+    if reference_mode in {"source_ref", "reference_geometry", "external_ref"} or geometry_ref:
+        return "external_ref"
+    return "native"
+
+
+def _structure_requires_connection_points(row) -> bool:
+    values = [
+        str(getattr(row, "structure_kind", "") or ""),
+        str(getattr(row, "structure_role", "") or ""),
+        str(getattr(row, "native_type", "") or ""),
+    ]
+    drainage_tokens = {
+        "box_culvert",
+        "culvert",
+        "drainage_crossing",
+        "drainage_node",
+        "headwall",
+        "inlet",
+        "junction_box",
+        "manhole",
+        "outlet",
+        "pipe_culvert",
+    }
+    return any(value.strip().lower() in drainage_tokens for value in values)
 
 
 def _single_ref(values) -> str:

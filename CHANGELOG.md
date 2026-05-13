@@ -10,6 +10,52 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Added
+- Added first-slice Drainage pipeline segment candidates that resolve Flow Route endpoints through Structure connection points and expose candidate status in Drainage Review.
+- Added a Drainage Review 3D preview for selected pipeline segment candidates, routed under Drainage in the v1 project tree.
+- Added `DrainagePipelineResult` and dedicated Drainage output segment rows so ready Flow Route candidates are promoted into traceable pipeline segment results.
+- Added a Drainage Review `Pipeline Segments` tab and 3D preview for resolved pipeline segment output rows.
+- Added Alignment station/offset frame support for Drainage pipeline candidate and segment previews, with `CoordinateMode` recorded on preview objects.
+- Added Drainage pipeline geometry output rows that derive centerline polylines from resolved pipeline segments and feed the segment preview path.
+- Added Drainage pipeline solid candidate output rows with capped pipe metadata, derived length, candidate volume, and Flow Route review status.
+- Added `drainage_pipeline_body` Watertight Solid target discovery and first-slice capped pipe solid build support for ready Drainage pipeline segments.
+- Added Drainage pipeline network output rows, a Drainage Review `Pipeline Networks` tab, and `drainage_pipeline_network_body` Watertight Solid target/build support using first-slice compound pipe solids.
+- Added a Drainage Review 3D preview for selected pipeline network rows, including project-tree routing under Drainage and recorded segment/Flow Route provenance.
+- Added best-effort boolean fuse for Drainage pipeline network Watertight Solid builds, with `single_segment` and `compound_fallback` fuse-mode provenance when full fuse is not applicable or robust.
+- Added Drainage pipeline junction output rows and a Drainage Review `Pipeline Junctions` tab to expose network junction/terminal degree, point, segment refs, Flow Route refs, and pending trim status.
+- Added first-slice Drainage pipeline junction connector bodies during network Watertight Solid builds, with `connector_count` provenance before boolean fuse/fallback.
+- Added Structure connection point provenance on Drainage pipeline junction rows and terminal connector bodies for Structure-backed pipe endpoints during network Watertight Solid builds.
+- Added Structure ref and connection point ref propagation from Drainage pipeline terminal rows into Watertight pipeline network output provenance.
+- Added reuse of already built `structure_body` Watertight Solid output shapes during Drainage pipeline network builds, with `structure_body_count`, `structure_body_object_refs`, and `structure_fuse_status` provenance.
+- Added direct first-slice `structure_body` Watertight Solid builds from StructureModel native geometry specs through the Structure solid output service.
+- Added automatic Structure body dependency builds for Drainage pipeline network Watertight Solid builds and ordered `Build Enabled` execution so Structure targets run before pipeline network targets.
+- Added first-slice Structure port bridge connector bodies for Drainage pipeline network builds, with `port_connector_count` and `port_connector_status` provenance when pipe terminals need overlap volume to fuse with Structure bodies.
+- Changed Structure port bridge connector generation to prefer Structure connection point diameter/width/height and direction before falling back to pipe diameter and Structure body center targeting.
+- Added first-slice Drainage pipeline endpoint trimming for Structure-backed terminals that start inside a matched Structure body, with `endpoint_trim_count` and `endpoint_trim_status` provenance.
+- Changed native `inlet`, `outlet`, and `headwall` Structure body placement to use source connection point offset and invert/elevation when the Structure placement has no explicit offset, reducing unnecessary Drainage port bridge connectors.
+- Added first-slice native Drainage endpoint body details: inlet bodies get an internal chamber cut, and outlet/headwall bodies get a pipe opening cut from connection point diameter when available.
+- Changed `pipe_culvert` and circular culvert `structure_body` Watertight Solid builds to use cylindrical Part geometry instead of rectangular envelope solids.
+- Added hollow circular culvert wall `structure_body` builds when `wall_thickness` is set, using an inner-cylinder cut from the outer pipe body.
+- Added External Ref Structure body reuse for Watertight Solids, allowing `structure_body` targets to reuse a referenced FreeCAD object's Shape via `geometry_ref`.
+- Added Watertight Solid target validation that blocks Drainage-ready External Ref Structures until they have at least one mapped Structure connection point.
+- Added External Ref Structure body validation that blocks Watertight Solid builds when mapped connection points are outside the referenced Shape bounding box tolerance.
+- Added a first-slice Watertight Solids `Simulation QA` status summary that reports built output family coverage, terrain readiness, invalid/zero-volume outputs, total volume, and first road + terrain + drainage readiness.
+- Added `SimulationQaOutput` and `WatertightSimulationQaService` so simulation-readiness reporting is reusable outside the Watertight Solids panel.
+- Added first-slice Simulation QA bounding-box contact diagnostics between road-body solids and drainage/structure solids.
+- Added a persisted `V1SimulationQaOutput` report object that stores Watertight Solids Simulation QA family coverage, readiness status, contact diagnostics, and source refs after build actions.
+- Added read-only Watertight Solids `Simulation QA` family and diagnostic tables for reviewing simulation-readiness coverage inside the panel.
+- Added first-slice Simulation QA terrain-domain bounding-box diagnostics for built solids when a terrain Shape extent is available.
+- Added first-slice Simulation QA pipe/structure port diagnostics that require Drainage pipeline Structure refs to have built `structure_body` outputs and connection point provenance.
+- Added first-slice `SimulationPackageOutput` and a Watertight Solids `Build Package` action that persists a `V1SimulationPackageOutput` manifest under Exchange Packages.
+- Added Watertight Solids Simulation Package JSON export for the persisted simulation hand-off manifest.
+- Added terrain context refs and optional terrain bounding-box metadata to Simulation Package manifests and JSON export.
+- Added generic BREP geometry file export refs to Simulation Package JSON export for packaged watertight solid outputs, with the export folder path reported in the Watertight Solids panel.
+- Changed Simulation Package terrain context resolution to prefer actual terrain Shape/Mesh objects over metadata-only surface model records when geometry is available.
+- Added a Structure Connection Node plan for upgrading Structures into Drainage-ready nodes with explicit Native/External geometry source modes, connection point mapping, invert context, validation, UI, and 3D review before Drainage Pipeline work.
+- Added the first Structures source-contract slice for explicit `geometry_source_mode`, `native_type`, and persisted `StructureConnectionPoint` rows.
+- Added a first-slice Structures editor `Connection Points` table with manual point editing and default derivation for drainage-ready Structure rows.
+- Added a first-slice Structures `Pick From 3D` action that maps the current FreeCAD 3D selection into connection point STA, offset, elevation, and invert fields.
+- Added a Structures connection point 3D review preview with `Preview Points`, row double-click focus, and project-tree routing under Structures.
+- Added Drainage Element `connection_point_ref` persistence, editor selection, and validation against Structure connection points.
 - Added a detailed Drainage Flow Route graph implementation plan covering Element nodes, Flow Route edges, Outlet terminology, UI behavior, validation, review handoff, and obsolete property removal.
 - Added Stationing-based Region editing where Region `Start STA` values are selected from generated station values and `End STA` is derived from the next Region start.
 - Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
@@ -56,6 +102,10 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Drainage editor Preset data for roadside ditch, dual side ditches, and culvert crossing source sets.
 
 ### Changed
+- Changed the Structures editor so common native geometry is edited in `Selected Structure Detail` instead of a separate visible `Geometry Specs` table, while preserving `StructureGeometrySpec` as the internal source contract.
+- Changed the Structures editor detail form to filter Native geometry fields by `Native Type`, including pipe culvert diameter fields and box culvert opening fields.
+- Changed Structure preview and default connection point derivation so circular/pipe culvert Native geometry uses pipe diameter instead of a rectangular envelope.
+- Changed Structures presets and default connection point derivation so inlet, outlet, and headwall Native rows produce pipeline-ready roles such as `pipe_out`, `pipe_in`, and `discharge`.
 - Renamed the user-facing product/workbench brand from `Corridor Road` / `CorridorRoad` to `Parametric Road` while keeping the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids unchanged.
 - Documented Drainage Flow Routes as graph edges between Element nodes and standardized final discharge wording on `Outlet`.
 - Changed Build Corridor `Drainage Flow` focus to use only a linear route-span highlight instead of adding separate cross marker geometry.
@@ -91,6 +141,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Changed Cross Section Viewer source ownership rows to use `StationContextResolver` for selected-station Structure, Drainage Element, and Flow Route context when source models are available.
 - Changed Watertight Solid target discovery to use `StationContextResolver` for Region target context summaries and Region-aware lined-ditch Drainage owner selection.
 - Changed the Structures editor so Structure ID table rows hide the `structure:` prefix while preserving source refs internally.
+- Changed the Structures editor so optional external `Geometry Ref` values move out of the main table and into the selected Structure detail area.
+- Changed the Structures editor selected detail area to expose `Geometry Source` and `Native Type` controls while preserving Native specs and External Ref values separately.
 - Changed Drainage Elements `Structure Ref` cells to use Structure ID combos populated from the active Structures model while preserving source refs internally.
 - Removed the Region Boundary structure placeholder preview boxes so selected Regions no longer create repeated purple `V1CorridorRegionStructure_*` marker objects.
 - Changed Drainage preset Flow Route IDs to use `flowId-01` style values while preserving the internal `flow-route:` prefix.

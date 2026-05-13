@@ -14,6 +14,7 @@ from ..models.source.structure_model import (
     BridgeGeometrySpec,
     CulvertGeometrySpec,
     RetainingWallGeometrySpec,
+    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureInfluenceZone,
     StructureInteractionRule,
@@ -100,6 +101,9 @@ def ensure_v1_structure_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "RetainingWallGeometrySpecRows", "Kind Geometry Specs", "retaining-wall-specific geometry spec rows")
     _add_property(obj, "App::PropertyStringList", "GeometryRefs", "References", "geometry refs")
     _add_property(obj, "App::PropertyStringList", "ReferenceModes", "References", "reference modes")
+    _add_property(obj, "App::PropertyStringList", "GeometrySourceModes", "References", "geometry source modes")
+    _add_property(obj, "App::PropertyStringList", "NativeTypes", "References", "native structure geometry types")
+    _add_property(obj, "App::PropertyStringList", "ConnectionPointRows", "Connection Points", "structure connection point rows")
     _add_property(obj, "App::PropertyStringList", "RuleIds", "Interaction Rules", "interaction rule ids")
     _add_property(obj, "App::PropertyStringList", "RuleStructureRefs", "Interaction Rules", "rule structure refs")
     _add_property(obj, "App::PropertyStringList", "RuleKinds", "Interaction Rules", "rule kinds")
@@ -181,6 +185,7 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
     culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
+    connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     rule_rows = list(getattr(structure_model, "interaction_rule_rows", []) or [])
     zone_rows = list(getattr(structure_model, "influence_zone_rows", []) or [])
     diagnostics = validate_structure_model(structure_model)
@@ -222,6 +227,9 @@ def update_v1_structure_model_object(obj, structure_model: StructureModel, *, la
     obj.RetainingWallGeometrySpecRows = [_json_row(row) for row in retaining_wall_geometry_spec_rows]
     obj.GeometryRefs = [str(row.geometry_ref) for row in rows]
     obj.ReferenceModes = [str(row.reference_mode) for row in rows]
+    obj.GeometrySourceModes = [str(getattr(row, "geometry_source_mode", "") or _geometry_source_mode(row)) for row in rows]
+    obj.NativeTypes = [str(getattr(row, "native_type", "") or "") for row in rows]
+    obj.ConnectionPointRows = [_json_row(row) for row in connection_point_rows]
     obj.RuleIds = [str(row.interaction_rule_id) for row in rule_rows]
     obj.RuleStructureRefs = [str(row.structure_ref) for row in rule_rows]
     obj.RuleKinds = [str(row.rule_kind) for row in rule_rows]
@@ -277,6 +285,8 @@ def to_structure_model(obj) -> StructureModel | None:
                 geometry_spec_ref=_list_value(getattr(obj, "GeometrySpecRefs", []), index, ""),
                 geometry_ref=_list_value(getattr(obj, "GeometryRefs", []), index, ""),
                 reference_mode=_list_value(getattr(obj, "ReferenceModes", []), index, "native"),
+                geometry_source_mode=_list_value(getattr(obj, "GeometrySourceModes", []), index, ""),
+                native_type=_list_value(getattr(obj, "NativeTypes", []), index, ""),
             )
         )
 
@@ -314,6 +324,10 @@ def to_structure_model(obj) -> StructureModel | None:
     retaining_wall_geometry_spec_rows = [
         RetainingWallGeometrySpec(**row)
         for row in _json_rows(getattr(obj, "RetainingWallGeometrySpecRows", []) or [])
+    ]
+    connection_point_rows = [
+        StructureConnectionPoint(**row)
+        for row in _json_rows(getattr(obj, "ConnectionPointRows", []) or [])
     ]
 
     rule_rows: list[StructureInteractionRule] = []
@@ -359,6 +373,7 @@ def to_structure_model(obj) -> StructureModel | None:
         bridge_geometry_spec_rows=bridge_geometry_spec_rows,
         culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=retaining_wall_geometry_spec_rows,
+        connection_point_rows=connection_point_rows,
         interaction_rule_rows=rule_rows,
         influence_zone_rows=zone_rows,
     )
@@ -385,6 +400,7 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
     bridge_geometry_spec_rows = list(getattr(structure_model, "bridge_geometry_spec_rows", []) or [])
     culvert_geometry_spec_rows = list(getattr(structure_model, "culvert_geometry_spec_rows", []) or [])
     retaining_wall_geometry_spec_rows = list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
+    connection_point_rows = list(getattr(structure_model, "connection_point_rows", []) or [])
     geometry_specs_by_id = {
         str(getattr(row, "geometry_spec_id", "") or ""): row
         for row in geometry_spec_rows
@@ -410,17 +426,20 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         geometry_spec_ref = str(getattr(row, "geometry_spec_ref", "") or "").strip()
         geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
         reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
+        geometry_source_mode = _geometry_source_mode(row)
         placement = getattr(row, "placement", None)
         if not structure_id:
             diagnostics.append(f"warning|structure_id|row:{index}|Structure id is empty.")
         elif structure_id in seen:
             diagnostics.append(f"warning|structure_id|{structure_id}|Structure id is duplicated.")
         seen.add(structure_id)
-        if reference_mode == "native" and not geometry_spec_ref:
+        if geometry_source_mode == "native" and not geometry_spec_ref:
             diagnostics.append(f"error|geometry_spec_missing|{structure_id or index}|Native structure is missing a geometry spec reference.")
+        if geometry_source_mode == "external_ref" and not geometry_ref:
+            diagnostics.append(f"error|external_geometry_ref_missing|{structure_id or index}|External Ref structure is missing an external geometry reference.")
         if geometry_spec_ref and geometry_spec_ref not in geometry_specs_by_id:
             diagnostics.append(f"error|geometry_spec_ref|{structure_id or index}|Structure references a missing geometry spec.")
-        if geometry_ref and geometry_spec_ref and reference_mode in {"native", "source_ref", "reference_geometry"}:
+        if geometry_ref and geometry_spec_ref and geometry_source_mode == "native":
             diagnostics.append(f"warning|geometry_reference_conflict|{structure_id or index}|Structure has both native geometry spec and external geometry reference.")
         if kind == "bridge" and geometry_spec_ref and geometry_spec_ref not in bridge_specs_by_ref:
             diagnostics.append(f"error|bridge_geometry_spec_missing|{structure_id or index}|Bridge structure is missing bridge-specific geometry spec fields.")
@@ -436,6 +455,7 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         if end < start:
             diagnostics.append(f"error|station_range|{structure_id or index}|Station end is before station start.")
         diagnostics.extend(_placement_region_diagnostics(placement, structure_id or str(index), region_ranges))
+        diagnostics.extend(_drainage_connection_point_diagnostics(row, connection_point_rows))
     seen_specs = set()
     structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
     for index, spec in enumerate(geometry_spec_rows, start=1):
@@ -488,6 +508,70 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         retained_side = str(getattr(spec, "retained_side", "") or "").strip().lower()
         if retained_side and retained_side not in {"left", "right", "inside", "outside"}:
             diagnostics.append(f"warning|wall_retained_side|{spec_ref}|Retaining wall retained side is not a recommended value.")
+    diagnostics.extend(_connection_point_row_diagnostics(connection_point_rows, structure_ids, region_ranges))
+    return diagnostics
+
+
+def _geometry_source_mode(row: StructureRow) -> str:
+    mode = str(getattr(row, "geometry_source_mode", "") or "").strip().lower()
+    if mode in {"native", "external_ref"}:
+        return mode
+    reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
+    geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
+    if reference_mode in {"source_ref", "reference_geometry", "external_ref"} or geometry_ref:
+        return "external_ref"
+    return "native"
+
+
+def _drainage_connection_point_diagnostics(row: StructureRow, connection_point_rows: list[StructureConnectionPoint]) -> list[str]:
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    if kind not in {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}:
+        return []
+    structure_id = str(getattr(row, "structure_id", "") or "").strip()
+    if not structure_id:
+        return []
+    points = [
+        point
+        for point in connection_point_rows
+        if str(getattr(point, "structure_ref", "") or "").strip() == structure_id
+    ]
+    if not points:
+        return [
+            f"warning|structure_connection_points_missing|{structure_id}|Drainage-ready structure has no connection points."
+        ]
+    roles = {str(getattr(point, "point_role", "") or "").strip().lower() for point in points}
+    if kind == "culvert" and not ({"upstream", "downstream"} <= roles or {"inlet", "outlet"} <= roles):
+        return [
+            f"warning|culvert_connection_points_incomplete|{structure_id}|Culvert should have upstream/downstream or inlet/outlet connection points."
+        ]
+    return []
+
+
+def _connection_point_row_diagnostics(
+    connection_point_rows: list[StructureConnectionPoint],
+    structure_ids: set[str],
+    region_ranges: dict[str, tuple[float, float]],
+) -> list[str]:
+    diagnostics: list[str] = []
+    seen = set()
+    for index, point in enumerate(connection_point_rows, start=1):
+        point_id = str(getattr(point, "connection_point_id", "") or "").strip()
+        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
+        if not point_id:
+            diagnostics.append(f"warning|connection_point_id|row:{index}|Connection point id is empty.")
+        elif point_id in seen:
+            diagnostics.append(f"warning|connection_point_id|{point_id}|Connection point id is duplicated.")
+        seen.add(point_id)
+        if structure_ref not in structure_ids:
+            diagnostics.append(f"error|connection_point_structure_ref|{point_id or index}|Connection point references a missing Structure.")
+        role = str(getattr(point, "point_role", "") or "").strip()
+        if not role:
+            diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is empty.")
+        if getattr(point, "invert_elevation", None) is None and getattr(point, "elevation", None) is None:
+            diagnostics.append(f"warning|connection_point_elevation|{point_id or index}|Connection point should define invert or connection elevation.")
+        region_ref = str(getattr(point, "region_ref", "") or "").strip()
+        if region_ref and region_ranges and region_ref not in region_ranges:
+            diagnostics.append(f"error|connection_point_region_ref|{point_id or index}|Connection point references a missing Region {region_ref}.")
     return diagnostics
 
 

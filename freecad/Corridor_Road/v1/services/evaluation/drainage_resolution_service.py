@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...common.diagnostics import DiagnosticMessage
+from ...models.result.drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from ...models.source.drainage_model import (
     DrainageElementRow,
     DrainageFlowRoute,
@@ -37,6 +38,28 @@ class DrainageResolutionResult:
     flow_route_risk_level: str = ""
 
 
+@dataclass(frozen=True)
+class DrainagePipelineSegmentCandidate:
+    """Physical pipeline segment candidate resolved from a Flow Route and Structure connection points."""
+
+    segment_id: str
+    flow_route_ref: str
+    from_element_ref: str = ""
+    to_element_ref: str = ""
+    from_connection_point_ref: str = ""
+    to_connection_point_ref: str = ""
+    status: str = "missing_connection_point_ref"
+    station_start: float = 0.0
+    station_end: float = 0.0
+    from_offset: float = 0.0
+    to_offset: float = 0.0
+    invert_start: float | None = None
+    invert_end: float | None = None
+    diameter: float = 0.0
+    shape_kind: str = ""
+    notes: str = ""
+
+
 class DrainageValidationService:
     """Validate v1 drainage source rows without mutating them."""
 
@@ -54,6 +77,8 @@ class DrainageValidationService:
         policy_ids = _policy_id_set(policy_rows)
         region_ranges = None if region_model is None else _region_station_ranges(region_model)
         structure_ids = None if structure_model is None else _structure_id_set(structure_model)
+        connection_point_refs = None if structure_model is None else _connection_point_ref_set(structure_model)
+        connection_point_structure_refs = None if structure_model is None else _connection_point_structure_ref_map(structure_model)
 
         diagnostics.extend(_duplicate_id_diagnostics(policy_rows, "policy_set_id", "duplicate_policy_set_id", "Drainage policy id is duplicated."))
         diagnostics.extend(
@@ -105,6 +130,14 @@ class DrainageValidationService:
             structure_diagnostic = _element_structure_ref_diagnostic(row, source_ref=source_ref, structure_ids=structure_ids)
             if structure_diagnostic is not None:
                 diagnostics.append(structure_diagnostic)
+            connection_point_diagnostic = _element_connection_point_ref_diagnostic(
+                row,
+                source_ref=source_ref,
+                connection_point_refs=connection_point_refs,
+                connection_point_structure_refs=connection_point_structure_refs,
+            )
+            if connection_point_diagnostic is not None:
+                diagnostics.append(connection_point_diagnostic)
             policy_ref = str(getattr(row, "policy_set_ref", "") or "").strip()
             if not policy_ref:
                 diagnostics.append(_diagnostic("warning", "missing_policy_ref", source_ref, "Drainage element has no policy_set_ref."))
@@ -197,6 +230,172 @@ class DrainageResolutionService:
         return None
 
 
+def build_drainage_pipeline_segment_candidates(
+    drainage_model: DrainageModel | None,
+    structure_model: StructureModel | None,
+) -> list[DrainagePipelineSegmentCandidate]:
+    """Resolve Flow Route rows into first-slice physical pipeline segment candidates."""
+
+    if drainage_model is None or structure_model is None:
+        return []
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    point_by_id = {
+        str(getattr(row, "connection_point_id", "") or "").strip(): row
+        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
+        if str(getattr(row, "connection_point_id", "") or "").strip()
+    } if structure_model is not None else {}
+    output: list[DrainagePipelineSegmentCandidate] = []
+    for index, route in enumerate(list(getattr(drainage_model, "flow_route_rows", []) or []), start=1):
+        route_id = str(getattr(route, "flow_route_id", "") or "").strip() or f"flow-route:{index}"
+        from_ref = str(getattr(route, "from_element_ref", "") or "").strip()
+        to_ref = str(getattr(route, "to_element_ref", "") or "").strip()
+        segment_id = f"pipeline-segment-candidate:{_safe_ref_id(route_id)}"
+        from_element = element_by_id.get(from_ref)
+        to_element = element_by_id.get(to_ref)
+        if from_element is None or to_element is None:
+            output.append(
+                DrainagePipelineSegmentCandidate(
+                    segment_id=segment_id,
+                    flow_route_ref=route_id,
+                    from_element_ref=from_ref,
+                    to_element_ref=to_ref,
+                    status="missing_element",
+                    notes=f"from_element_found={from_element is not None};to_element_found={to_element is not None}",
+                )
+            )
+            continue
+        from_point_ref = str(getattr(from_element, "connection_point_ref", "") or "").strip()
+        to_point_ref = str(getattr(to_element, "connection_point_ref", "") or "").strip()
+        if not from_point_ref or not to_point_ref:
+            output.append(
+                DrainagePipelineSegmentCandidate(
+                    segment_id=segment_id,
+                    flow_route_ref=route_id,
+                    from_element_ref=from_ref,
+                    to_element_ref=to_ref,
+                    from_connection_point_ref=from_point_ref,
+                    to_connection_point_ref=to_point_ref,
+                    status="missing_connection_point_ref",
+                    notes=f"from_connection_point_ref={from_point_ref};to_connection_point_ref={to_point_ref}",
+                )
+            )
+            continue
+        from_point = point_by_id.get(from_point_ref)
+        to_point = point_by_id.get(to_point_ref)
+        if from_point is None or to_point is None:
+            output.append(
+                DrainagePipelineSegmentCandidate(
+                    segment_id=segment_id,
+                    flow_route_ref=route_id,
+                    from_element_ref=from_ref,
+                    to_element_ref=to_ref,
+                    from_connection_point_ref=from_point_ref,
+                    to_connection_point_ref=to_point_ref,
+                    status="missing_connection_point",
+                    notes=f"from_point_found={from_point is not None};to_point_found={to_point is not None}",
+                )
+            )
+            continue
+        from_station = float(getattr(from_point, "station", 0.0) or 0.0)
+        to_station = float(getattr(to_point, "station", 0.0) or 0.0)
+        from_diameter = float(getattr(from_point, "diameter", 0.0) or 0.0)
+        to_diameter = float(getattr(to_point, "diameter", 0.0) or 0.0)
+        from_shape = str(getattr(from_point, "shape_kind", "") or "").strip()
+        to_shape = str(getattr(to_point, "shape_kind", "") or "").strip()
+        output.append(
+            DrainagePipelineSegmentCandidate(
+                segment_id=segment_id,
+                flow_route_ref=route_id,
+                from_element_ref=from_ref,
+                to_element_ref=to_ref,
+                from_connection_point_ref=from_point_ref,
+                to_connection_point_ref=to_point_ref,
+                status="ready",
+                station_start=min(from_station, to_station),
+                station_end=max(from_station, to_station),
+                from_offset=float(getattr(from_point, "offset", 0.0) or 0.0),
+                to_offset=float(getattr(to_point, "offset", 0.0) or 0.0),
+                invert_start=_optional_float(getattr(from_point, "invert_elevation", None)),
+                invert_end=_optional_float(getattr(to_point, "invert_elevation", None)),
+                diameter=max(from_diameter, to_diameter),
+                shape_kind=from_shape or to_shape,
+                notes=(
+                    f"from_role={str(getattr(from_point, 'point_role', '') or '')};"
+                    f"to_role={str(getattr(to_point, 'point_role', '') or '')}"
+                ),
+            )
+        )
+    return output
+
+
+def build_drainage_pipeline_result(
+    drainage_model: DrainageModel | None,
+    structure_model: StructureModel | None,
+    *,
+    project_id: str = "corridorroad-v1",
+) -> DrainagePipelineResult:
+    """Promote ready Flow Route connection candidates into pipeline result segments."""
+
+    candidates = build_drainage_pipeline_segment_candidates(drainage_model, structure_model)
+    segment_rows: list[DrainagePipelineSegment] = []
+    diagnostics: list[DiagnosticMessage] = []
+    for candidate in candidates:
+        status = str(getattr(candidate, "status", "") or "")
+        flow_route_ref = str(getattr(candidate, "flow_route_ref", "") or "")
+        if status != "ready":
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "drainage_pipeline_segment_not_ready",
+                    flow_route_ref,
+                    "Drainage Flow Route could not be promoted into a pipeline segment.",
+                    notes=f"status={status};{str(getattr(candidate, 'notes', '') or '')}",
+                )
+            )
+            continue
+        pipeline_segment_id = f"pipeline-segment:{_safe_ref_id(flow_route_ref)}"
+        segment_rows.append(
+            DrainagePipelineSegment(
+                pipeline_segment_id=pipeline_segment_id,
+                flow_route_ref=flow_route_ref,
+                from_element_ref=str(getattr(candidate, "from_element_ref", "") or ""),
+                to_element_ref=str(getattr(candidate, "to_element_ref", "") or ""),
+                from_connection_point_ref=str(getattr(candidate, "from_connection_point_ref", "") or ""),
+                to_connection_point_ref=str(getattr(candidate, "to_connection_point_ref", "") or ""),
+                station_start=float(getattr(candidate, "station_start", 0.0) or 0.0),
+                station_end=float(getattr(candidate, "station_end", 0.0) or 0.0),
+                from_offset=float(getattr(candidate, "from_offset", 0.0) or 0.0),
+                to_offset=float(getattr(candidate, "to_offset", 0.0) or 0.0),
+                invert_start=_optional_float(getattr(candidate, "invert_start", None)),
+                invert_end=_optional_float(getattr(candidate, "invert_end", None)),
+                diameter=float(getattr(candidate, "diameter", 0.0) or 0.0),
+                shape_kind=str(getattr(candidate, "shape_kind", "") or ""),
+                status="ready",
+                notes=str(getattr(candidate, "notes", "") or ""),
+            )
+        )
+    return DrainagePipelineResult(
+        schema_version=1,
+        project_id=str(project_id or getattr(drainage_model, "project_id", "") or getattr(structure_model, "project_id", "") or "corridorroad-v1"),
+        drainage_pipeline_result_id="drainage-pipeline:main",
+        drainage_model_id=str(getattr(drainage_model, "drainage_model_id", "") or ""),
+        structure_model_id=str(getattr(structure_model, "structure_model_id", "") or ""),
+        label="Drainage Pipeline",
+        segment_rows=segment_rows,
+        source_refs=_unique_refs(
+            [
+                str(getattr(drainage_model, "drainage_model_id", "") or ""),
+                str(getattr(structure_model, "structure_model_id", "") or ""),
+            ]
+        ),
+        diagnostic_rows=diagnostics,
+    )
+
+
 def _policy_id_set(policy_rows: list[DrainagePolicySet]) -> set[str]:
     return {str(getattr(row, "policy_set_id", "") or "").strip() for row in list(policy_rows or []) if str(getattr(row, "policy_set_id", "") or "").strip()}
 
@@ -208,6 +407,26 @@ def _structure_id_set(structure_model: StructureModel | None) -> set[str]:
         str(getattr(row, "structure_id", "") or "").strip()
         for row in list(getattr(structure_model, "structure_rows", []) or [])
         if str(getattr(row, "structure_id", "") or "").strip()
+    }
+
+
+def _connection_point_ref_set(structure_model: StructureModel | None) -> set[str]:
+    if structure_model is None:
+        return set()
+    return {
+        str(getattr(row, "connection_point_id", "") or "").strip()
+        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
+        if str(getattr(row, "connection_point_id", "") or "").strip()
+    }
+
+
+def _connection_point_structure_ref_map(structure_model: StructureModel | None) -> dict[str, str]:
+    if structure_model is None:
+        return {}
+    return {
+        str(getattr(row, "connection_point_id", "") or "").strip(): str(getattr(row, "structure_ref", "") or "").strip()
+        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
+        if str(getattr(row, "connection_point_id", "") or "").strip()
     }
 
 
@@ -466,6 +685,39 @@ def _element_structure_ref_diagnostic(
     return None
 
 
+def _element_connection_point_ref_diagnostic(
+    row: object,
+    *,
+    source_ref: str,
+    connection_point_refs: set[str] | None,
+    connection_point_structure_refs: dict[str, str] | None,
+) -> DiagnosticMessage | None:
+    if connection_point_refs is None:
+        return None
+    connection_point_ref = str(getattr(row, "connection_point_ref", "") or "").strip()
+    if not connection_point_ref:
+        return None
+    if connection_point_ref not in connection_point_refs:
+        return _diagnostic(
+            "error",
+            "missing_drainage_connection_point_ref",
+            source_ref,
+            f"Drainage element references missing Structure connection point {connection_point_ref}.",
+            notes=f"connection_point_ref={connection_point_ref}",
+        )
+    structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
+    point_structure_ref = (connection_point_structure_refs or {}).get(connection_point_ref, "")
+    if structure_ref and point_structure_ref and structure_ref != point_structure_ref:
+        return _diagnostic(
+            "error",
+            "drainage_connection_point_structure_mismatch",
+            source_ref,
+            "Drainage element Structure Ref and Connection Point Ref point to different Structures.",
+            notes=f"structure_ref={structure_ref};connection_point_ref={connection_point_ref};connection_point_structure_ref={point_structure_ref}",
+        )
+    return None
+
+
 def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: str = "") -> DiagnosticMessage:
     note_values = [f"source_ref={str(source_ref or '')}"]
     if str(notes or ""):
@@ -476,3 +728,28 @@ def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: 
         message=str(message or ""),
         notes=";".join(note_values),
     )
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _safe_ref_id(value: str) -> str:
+    return str(value or "").strip().replace(":", "-").replace("/", "-").replace("\\", "-").replace(" ", "-") or "unknown"
+
+
+def _unique_refs(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output

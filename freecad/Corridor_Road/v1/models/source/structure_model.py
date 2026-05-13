@@ -59,6 +59,8 @@ class StructureRow:
     geometry_spec_ref: str = ""
     geometry_ref: str = ""
     reference_mode: str = "native"
+    geometry_source_mode: str = "native"
+    native_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,27 @@ class RetainingWallGeometrySpec:
     drainage_layer_ref: str = ""
 
 
+@dataclass(frozen=True)
+class StructureConnectionPoint:
+    """Stable source endpoint for Structure-to-Drainage connectivity."""
+
+    connection_point_id: str
+    structure_ref: str
+    point_role: str
+    station: float
+    offset: float
+    elevation: float | None = None
+    invert_elevation: float | None = None
+    diameter: float = 0.0
+    width: float = 0.0
+    height: float = 0.0
+    shape_kind: str = ""
+    direction: str = ""
+    connection_order: int = 0
+    region_ref: str = ""
+    notes: str = ""
+
+
 @dataclass
 class StructureModel(SourceModelBase):
     """Durable structure source contract."""
@@ -144,5 +167,6 @@ class StructureModel(SourceModelBase):
     bridge_geometry_spec_rows: list[BridgeGeometrySpec] = field(default_factory=list)
     culvert_geometry_spec_rows: list[CulvertGeometrySpec] = field(default_factory=list)
     retaining_wall_geometry_spec_rows: list[RetainingWallGeometrySpec] = field(default_factory=list)
+    connection_point_rows: list[StructureConnectionPoint] = field(default_factory=list)
     interaction_rule_rows: list[StructureInteractionRule] = field(default_factory=list)
     influence_zone_rows: list[StructureInfluenceZone] = field(default_factory=list)

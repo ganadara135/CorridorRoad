@@ -121,6 +121,7 @@ Recommended primary object families:
 - `StructureRow`
 - `StructurePlacement`
 - `StructureGeometrySpec`
+- `StructureConnectionPoint`
 - `StructureInteractionRule`
 - `StructureInfluenceZone`
 - `StructureResolutionResult`
@@ -191,6 +192,10 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 `geometry_spec_ref` should point to native v1 geometry intent.
 
 `geometry_ref` should point to external, imported, or detailed reference geometry.
+
+Drainage-ready Structures should expose explicit connection points before Drainage Pipeline authoring consumes them.
+
+Connection-point planning is governed by `docsV1/V1_STRUCTURE_CONNECTION_NODE_PLAN.md`.
 
 ## 11. StructurePlacement
 

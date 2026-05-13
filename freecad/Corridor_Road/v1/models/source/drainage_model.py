@@ -43,6 +43,7 @@ class DrainageElementRow:
     ramp_ref: str = ""
     intersection_ref: str = ""
     structure_ref: str = ""
+    connection_point_ref: str = ""
     side: str = ""
     region_ref: str = ""
     assembly_component_ref: str = ""
