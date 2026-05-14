@@ -63,7 +63,12 @@ from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
-from freecad.Corridor_Road.v1.models.source.structure_model import StructureModel, StructurePlacement, StructureRow
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureConnectionPoint,
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 
 _QAPP = None
@@ -1294,6 +1299,137 @@ def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> No
         assert focused.FlowRouteRefs == ["flow-route:flowId-01"]
         assert focused.StructureRefs == ["structure:culvert-01"]
         assert focus_corridor_drainage_flow_review(doc).Name == "ReviewIssueDrainageFlowRoutes"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_flow_focus_connects_structure_connection_points_as_pipe_segments() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:inlet-01",
+                        structure_kind="utility",
+                        structure_role="reference",
+                        placement=StructurePlacement(
+                            "placement:inlet-01",
+                            "alignment:main",
+                            station_start=2.0,
+                            station_end=2.0,
+                        ),
+                    ),
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="clearance_control",
+                        placement=StructurePlacement(
+                            "placement:culvert-01",
+                            "alignment:main",
+                            station_start=10.0,
+                            station_end=12.0,
+                        ),
+                    ),
+                    StructureRow(
+                        structure_id="structure:outlet-01",
+                        structure_kind="utility",
+                        structure_role="reference",
+                        placement=StructurePlacement(
+                            "placement:outlet-01",
+                            "alignment:main",
+                            station_start=18.0,
+                            station_end=18.0,
+                        ),
+                    ),
+                ],
+                connection_point_rows=[
+                    StructureConnectionPoint(
+                        connection_point_id="connection:inlet-01:pipe-out",
+                        structure_ref="structure:inlet-01",
+                        point_role="pipe_out",
+                        station=2.0,
+                        offset=-4.0,
+                        diameter=0.6,
+                    ),
+                    StructureConnectionPoint(
+                        connection_point_id="connection:culvert-01:upstream",
+                        structure_ref="structure:culvert-01",
+                        point_role="upstream",
+                        station=10.0,
+                        offset=-1.0,
+                        width=3.0,
+                        height=2.0,
+                    ),
+                    StructureConnectionPoint(
+                        connection_point_id="connection:outlet-01:pipe-in",
+                        structure_ref="structure:outlet-01",
+                        point_role="pipe_in",
+                        station=18.0,
+                        offset=-5.0,
+                        diameter=0.8,
+                    ),
+                ],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:test",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:inlet-01",
+                        element_kind="inlet",
+                        structure_ref="structure:inlet-01",
+                        connection_point_ref="connection:inlet-01:pipe-out",
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:culvert-01",
+                        element_kind="culvert_reference",
+                        structure_ref="structure:culvert-01",
+                        connection_point_ref="connection:culvert-01:upstream",
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:outlet-01",
+                        element_kind="outfall_reference",
+                        structure_ref="structure:outlet-01",
+                        connection_point_ref="connection:outlet-01:pipe-in",
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:pipe-network-01",
+                        from_element_ref="drainage:inlet-01",
+                        to_element_ref="drainage:culvert-01",
+                        outlet_ref="drainage:outlet-01",
+                    )
+                ],
+            ),
+        )
+
+        focused = focus_corridor_drainage_flow_review(doc)
+
+        assert focused.Name == "ReviewIssueDrainageFlowRoutes"
+        assert int(focused.MarkerCount) == 2
+        assert focused.ConnectionPointRefs == [
+            "connection:inlet-01:pipe-out",
+            "connection:culvert-01:upstream",
+            "connection:outlet-01:pipe-in",
+        ]
+        assert focused.StructureRefs == [
+            "structure:inlet-01",
+            "structure:culvert-01",
+            "structure:outlet-01",
+        ]
     finally:
         App.closeDocument(doc.Name)
 

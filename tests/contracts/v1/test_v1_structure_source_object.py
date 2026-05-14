@@ -16,7 +16,6 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructurePlacement,
     StructureRow,
 )
-from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_structure import (
     create_or_update_v1_structure_model_object,
     find_v1_structure_model,
@@ -221,21 +220,7 @@ def test_structure_geometry_spec_validation_rejects_non_positive_dimensions() ->
     assert any(row.startswith("error|geometry_height|geometry-spec:bad|") for row in diagnostics)
 
 
-def test_structure_validation_checks_region_station_boundary() -> None:
-    model = _sample_structure_model()
-    region_model = RegionModel(
-        schema_version=1,
-        project_id="proj-1",
-        region_model_id="regions:main",
-        region_rows=[RegionRow("region:bridge", 120.0, 160.0)],
-    )
-
-    diagnostics = validate_structure_model(model, region_model=region_model)
-
-    assert any(row.startswith("error|structure_outside_region_station_range|structure:bridge-01|") for row in diagnostics)
-
-
-def test_structure_validation_requires_region_when_region_model_exists() -> None:
+def test_structure_validation_does_not_require_region_when_region_model_exists() -> None:
     model = _sample_structure_model()
     model.structure_rows = [
         StructureRow(
@@ -246,19 +231,13 @@ def test_structure_validation_requires_region_when_region_model_exists() -> None
             geometry_spec_ref="geometry-spec:bridge-01",
         )
     ]
-    region_model = RegionModel(
-        schema_version=1,
-        project_id="proj-1",
-        region_model_id="regions:main",
-        region_rows=[RegionRow("region:bridge", 80.0, 200.0)],
-    )
 
-    diagnostics = validate_structure_model(model, region_model=region_model)
+    diagnostics = validate_structure_model(model, region_model=object())
 
-    assert any(row.startswith("error|missing_structure_region_ref|structure:bridge-01|") for row in diagnostics)
+    assert not any("region_ref" in row or "Region" in row for row in diagnostics)
 
 
-def test_structure_validation_rejects_unknown_region_ref() -> None:
+def test_structure_validation_ignores_legacy_region_ref() -> None:
     model = _sample_structure_model()
     model.structure_rows = [
         StructureRow(
@@ -275,16 +254,10 @@ def test_structure_validation_rejects_unknown_region_ref() -> None:
             geometry_spec_ref="geometry-spec:bridge-01",
         )
     ]
-    region_model = RegionModel(
-        schema_version=1,
-        project_id="proj-1",
-        region_model_id="regions:main",
-        region_rows=[RegionRow("region:bridge", 80.0, 200.0)],
-    )
 
-    diagnostics = validate_structure_model(model, region_model=region_model)
+    diagnostics = validate_structure_model(model, region_model=object())
 
-    assert any(row.startswith("error|missing_structure_region_ref|structure:bridge-01|") for row in diagnostics)
+    assert not any("missing_structure_region_ref" in row for row in diagnostics)
 
 
 def test_structure_validation_reports_missing_native_and_kind_specs() -> None:

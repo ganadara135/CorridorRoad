@@ -117,7 +117,7 @@ class CorridorTaskPanel:
         main.addWidget(gb_opt)
 
         row_btn = QtWidgets.QHBoxLayout()
-        self.btn_build = QtWidgets.QPushButton("Build Corridor")
+        self.btn_build = QtWidgets.QPushButton("Build Parametric")
         self.btn_close = QtWidgets.QPushButton("Close")
         row_btn.addWidget(self.btn_build)
         row_btn.addWidget(self.btn_close)

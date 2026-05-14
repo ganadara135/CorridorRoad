@@ -1884,7 +1884,7 @@ class V1BuildCorridorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Build Corridor")
+        widget.setWindowTitle("CorridorRoad v1 - Build Parametric")
         try:
             widget.setMinimumWidth(BUILD_CORRIDOR_PANEL_MIN_WIDTH)
             widget.setMaximumWidth(BUILD_CORRIDOR_PANEL_MAX_WIDTH)
@@ -1893,7 +1893,7 @@ class V1BuildCorridorTaskPanel:
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
-        title = QtWidgets.QLabel("Build Corridor")
+        title = QtWidgets.QLabel("Build Parametric")
         font = title.font()
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
@@ -2170,15 +2170,15 @@ class V1BuildCorridorTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
         row.addWidget(refresh_button)
-        apply_button = QtWidgets.QPushButton("Apply")
-        apply_button.clicked.connect(lambda: self._apply(close_after=False))
-        row.addWidget(apply_button)
         focus_button = QtWidgets.QPushButton("Focus")
         focus_button.clicked.connect(self._show_selected_row)
         row.addWidget(focus_button)
         structure_output_button = QtWidgets.QPushButton("Structure Output")
         structure_output_button.clicked.connect(self._open_structure_output_panel)
         row.addWidget(structure_output_button)
+        apply_button = QtWidgets.QPushButton("Apply")
+        apply_button.clicked.connect(lambda: self._apply(close_after=False))
+        row.addWidget(apply_button)
         row.addStretch(1)
         layout.addLayout(row)
 
@@ -2200,7 +2200,7 @@ class V1BuildCorridorTaskPanel:
         applied_obj = find_v1_applied_section_set(self.document)
         applied = to_applied_section_set(applied_obj)
         if applied is None:
-            self._summary.setPlainText("Applied Sections: missing\nRun Applied Sections before Build Corridor.")
+            self._summary.setPlainText("Applied Sections: missing\nRun Applied Sections before Build Parametric.")
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(corridor_build_review_rows(self.document))
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
@@ -2267,14 +2267,14 @@ class V1BuildCorridorTaskPanel:
                     message + f"\nObject: {obj.Label}\nFocused: {getattr(focused, 'Label', getattr(focused, 'Name', ''))}"
                 )
             self._set_progress(100, "Corridor Build complete")
-            _show_message(self.form, "Build Corridor", message)
+            _show_message(self.form, "Build Parametric", message)
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
             return True
         except Exception as exc:
             self._set_progress(0, "Corridor Build failed")
             self._summary.setPlainText(f"CorridorModel was not built:\n{exc}")
-            _show_message(self.form, "Build Corridor", f"CorridorModel was not built.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"CorridorModel was not built.\n{exc}")
             return False
 
     def _set_progress(self, value: int, text: str = "") -> None:
@@ -2307,7 +2307,7 @@ class V1BuildCorridorTaskPanel:
             return True
         except Exception as exc:
             self._summary.setPlainText(f"Structure Output panel was not opened:\n{exc}")
-            _show_message(self.form, "Build Corridor", f"Structure Output panel was not opened.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Structure Output panel was not opened.\n{exc}")
             return False
 
     def _set_guided_review_rows(self, rows: list[dict[str, object]]) -> None:
@@ -2654,7 +2654,7 @@ class V1BuildCorridorTaskPanel:
     def _show_selected_region_boundary_row(self) -> None:
         rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
         if not rows:
-            _show_message(self.form, "Build Corridor", "Select one Region row first.")
+            _show_message(self.form, "Build Parametric", "Select one Region row first.")
             return
         self._show_region_boundary_row(int(rows[0].row()))
 
@@ -2680,12 +2680,12 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Region surface object was not selected.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Region surface object was not selected.\n{exc}")
 
     def _create_transition_from_selected_region_boundary(self) -> None:
         rows = self._region_table.selectionModel().selectedRows() if hasattr(self, "_region_table") else []
         if not rows:
-            _show_message(self.form, "Build Corridor", "Select one Region row first.")
+            _show_message(self.form, "Build Parametric", "Select one Region row first.")
             return
         try:
             row_index = int(rows[0].row())
@@ -2709,12 +2709,12 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Surface Transition range was not created.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Surface Transition range was not created.\n{exc}")
 
     def _create_transition_from_selected_boundary_option(self) -> None:
         combo = getattr(self, "_surface_transition_boundary_combo", None)
         if combo is None or combo.count() <= 0:
-            _show_message(self.form, "Build Corridor", "No Region boundary station is available.")
+            _show_message(self.form, "Build Parametric", "No Region boundary station is available.")
             return
         try:
             boundary_index = int(combo.currentIndex())
@@ -2740,12 +2740,12 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Surface Transition spacing was not stored.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Surface Transition spacing was not stored.\n{exc}")
 
     def _toggle_selected_surface_transition(self) -> None:
         rows = self._surface_transition_table.selectionModel().selectedRows() if hasattr(self, "_surface_transition_table") else []
         if not rows:
-            _show_message(self.form, "Build Corridor", "Select one Surface Transition row first.")
+            _show_message(self.form, "Build Parametric", "Select one Surface Transition row first.")
             return
         try:
             obj = toggle_corridor_surface_transition_enabled(self.document, int(rows[0].row()))
@@ -2761,7 +2761,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Surface Transition range was not updated.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Surface Transition range was not updated.\n{exc}")
 
     def _show_drainage_review_row(self, row_index: int) -> None:
         try:
@@ -2785,7 +2785,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Drainage station highlight was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Drainage station highlight was not shown.\n{exc}")
 
     def _show_slope_face_issue_row(self, row_index: int) -> None:
         try:
@@ -2809,7 +2809,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Slope Face issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Slope Face issue was not shown.\n{exc}")
 
     def _focus_adjacent_slope_face_issue(self, direction: int) -> None:
         try:
@@ -2838,7 +2838,7 @@ class V1BuildCorridorTaskPanel:
                 )
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Slope Face issue was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Slope Face issue was not shown.\n{exc}")
 
     def _selected_slope_face_issue_row_index(self) -> int:
         rows = self._slope_issue_table.selectionModel().selectedRows() if hasattr(self, "_slope_issue_table") else []
@@ -2849,7 +2849,7 @@ class V1BuildCorridorTaskPanel:
     def _show_selected_row(self) -> None:
         rows = self._review_table.selectionModel().selectedRows() if hasattr(self, "_review_table") else []
         if not rows:
-            _show_message(self.form, "Build Corridor", "Select one review row first.")
+            _show_message(self.form, "Build Parametric", "Select one review row first.")
             return
         self._show_review_row(int(rows[0].row()))
 
@@ -2858,7 +2858,7 @@ class V1BuildCorridorTaskPanel:
             obj = show_corridor_build_review_object(self.document, int(row_index))
             self._summary.setPlainText(f"Review object shown.\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}")
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Review object was not shown.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Review object was not shown.\n{exc}")
 
     def _focus_guided_review_row(self, row_index: int) -> None:
         try:
@@ -2870,7 +2870,7 @@ class V1BuildCorridorTaskPanel:
                 f"Guided review step focused.\nStep: {step_id}\nObject: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}"
             )
         except Exception as exc:
-            _show_message(self.form, "Build Corridor", f"Guided review step was not focused.\n{exc}")
+            _show_message(self.form, "Build Parametric", f"Guided review step was not focused.\n{exc}")
 
     def _set_preview_visibility(self, role: str, visible: bool) -> None:
         obj = set_corridor_build_preview_visibility(self.document, role, visible)
@@ -3102,7 +3102,7 @@ def corridor_applied_sections_review_summary(document=None) -> dict[str, object]
         return {
             "status": "missing",
             "summary": "Applied Sections: missing",
-            "diagnostics": "Run Applied Sections before Build Corridor.",
+            "diagnostics": "Run Applied Sections before Build Parametric.",
             "station_count": 0,
             "diagnostic_count": 0,
         }
@@ -4689,6 +4689,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     shapes: list[object] = []
     route_refs: list[str] = []
     structure_refs: list[str] = []
+    connection_point_refs: list[str] = []
     for row in list(rows or []):
         route_ref = str(row.get("flow_route_id", "") or "")
         if route_ref:
@@ -4696,6 +4697,19 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
         for ref in str(row.get("structure_refs", "") or "").split(","):
             if ref.strip():
                 structure_refs.append(ref.strip())
+        point_segments = _drainage_flow_connection_point_segments(document, sections, row)
+        if point_segments:
+            for segment in point_segments:
+                first, second, first_ref, second_ref, radius = segment
+                connection_point_refs.extend([first_ref, second_ref])
+                try:
+                    shapes.append(_make_drainage_pipe_segment_shape(Part, AppModule, first, second, radius))
+                except Exception:
+                    try:
+                        shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
+                    except Exception:
+                        pass
+            continue
         start, end = _drainage_flow_row_station_range(row)
         if start is None or end is None:
             continue
@@ -4721,6 +4735,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     _set_preview_property(obj, "DisplayMode", "drainage_flow_highlight")
     _set_preview_string_list_property(obj, "FlowRouteRefs", _unique_text_values(route_refs))
     _set_preview_string_list_property(obj, "StructureRefs", _unique_text_values(structure_refs))
+    _set_preview_string_list_property(obj, "ConnectionPointRefs", _unique_text_values(connection_point_refs))
     _set_preview_integer_property(obj, "MarkerCount", len(shapes))
     try:
         vobj = getattr(obj, "ViewObject", None)
@@ -4750,6 +4765,207 @@ def _drainage_flow_row_station_range(row: dict[str, object]) -> tuple[float | No
         return min(start, end), max(start, end)
     except Exception:
         return None, None
+
+
+def _drainage_flow_connection_point_segments(
+    document,
+    sections: list[object],
+    row: dict[str, object],
+) -> list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, float]]:
+    drainage_model = to_drainage_model(find_v1_drainage_model(document))
+    structure_model = to_structure_model(find_v1_structure_model(document))
+    if drainage_model is None or structure_model is None:
+        return []
+    route_ref = str(row.get("flow_route_id", "") or "")
+    flow_row = next(
+        (
+            candidate
+            for candidate in list(getattr(drainage_model, "flow_route_rows", []) or [])
+            if str(getattr(candidate, "flow_route_id", "") or "") == route_ref
+        ),
+        None,
+    )
+    if flow_row is None:
+        return []
+    element_by_id = {
+        str(getattr(element, "drainage_element_id", "") or ""): element
+        for element in list(getattr(drainage_model, "element_rows", []) or [])
+    }
+    point_by_id = {
+        str(getattr(point, "connection_point_id", "") or ""): point
+        for point in list(getattr(structure_model, "connection_point_rows", []) or [])
+    }
+    points_by_structure: dict[str, list[object]] = {}
+    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+        structure_ref = str(getattr(point, "structure_ref", "") or "")
+        if structure_ref:
+            points_by_structure.setdefault(structure_ref, []).append(point)
+    chain_refs = [
+        str(getattr(flow_row, "from_element_ref", "") or ""),
+        str(getattr(flow_row, "to_element_ref", "") or ""),
+        str(getattr(flow_row, "outlet_ref", "") or ""),
+    ]
+    chain_refs = [ref for ref in chain_refs if ref]
+    if len(chain_refs) < 2:
+        return []
+    resolved: list[tuple[object, str]] = []
+    for index, ref in enumerate(chain_refs):
+        direction = "out" if index == 0 else "in"
+        point = _drainage_flow_chain_connection_point(
+            ref,
+            element_by_id=element_by_id,
+            point_by_id=point_by_id,
+            points_by_structure=points_by_structure,
+            direction=direction,
+        )
+        if point is None:
+            return []
+        resolved.append((point, str(getattr(point, "connection_point_id", "") or "")))
+    segments: list[tuple[tuple[float, float, float], tuple[float, float, float], str, str, float]] = []
+    for (first_point, first_ref), (second_point, second_ref) in zip(resolved[:-1], resolved[1:]):
+        first_xyz = _drainage_connection_point_xyz(sections, first_point)
+        second_xyz = _drainage_connection_point_xyz(sections, second_point)
+        if first_xyz is None or second_xyz is None:
+            continue
+        radius = _drainage_pipe_segment_radius(first_point, second_point)
+        segments.append((first_xyz, second_xyz, first_ref, second_ref, radius))
+    return segments
+
+
+def _drainage_flow_chain_connection_point(
+    ref: str,
+    *,
+    element_by_id: dict[str, object],
+    point_by_id: dict[str, object],
+    points_by_structure: dict[str, list[object]],
+    direction: str,
+):
+    text = str(ref or "").strip()
+    if not text:
+        return None
+    if text.startswith("connection:"):
+        return point_by_id.get(text)
+    if text.startswith("structure:"):
+        return _preferred_structure_connection_point(text, points_by_structure, direction=direction)
+    element = element_by_id.get(text)
+    if element is None:
+        return None
+    point_ref = str(getattr(element, "connection_point_ref", "") or "").strip()
+    if point_ref:
+        point = point_by_id.get(point_ref)
+        if point is not None:
+            return point
+    structure_ref = str(getattr(element, "structure_ref", "") or "").strip()
+    if structure_ref:
+        return _preferred_structure_connection_point(structure_ref, points_by_structure, direction=direction)
+    return None
+
+
+def _preferred_structure_connection_point(
+    structure_ref: str,
+    points_by_structure: dict[str, list[object]],
+    *,
+    direction: str,
+):
+    points = list(points_by_structure.get(str(structure_ref or ""), []) or [])
+    if not points:
+        return None
+    role_priority = (
+        ["pipe_out", "downstream", "discharge", "outlet", "inlet", "pipe_in", "upstream"]
+        if direction == "out"
+        else ["pipe_in", "upstream", "inlet", "pipe_out", "downstream", "discharge", "outlet"]
+    )
+    by_role = {str(getattr(point, "point_role", "") or "").strip().lower(): point for point in points}
+    for role in role_priority:
+        if role in by_role:
+            return by_role[role]
+    return sorted(points, key=lambda point: int(getattr(point, "connection_order", 0) or 0))[0]
+
+
+def _drainage_connection_point_xyz(
+    sections: list[object],
+    point,
+    *,
+    z_offset: float = 1.15,
+) -> tuple[float, float, float] | None:
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    frame = _drainage_flow_station_frame(sections, station)
+    if frame is None:
+        return None
+    try:
+        import math as _math
+
+        offset = float(getattr(point, "offset", 0.0) or 0.0)
+        angle_rad = _math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+        x = float(getattr(frame, "x", 0.0) or 0.0) - _math.sin(angle_rad) * offset
+        y = float(getattr(frame, "y", 0.0) or 0.0) + _math.cos(angle_rad) * offset
+        z = float(getattr(frame, "z", 0.0) or 0.0) + float(z_offset or 0.0)
+        return x, y, z
+    except Exception:
+        return (
+            float(getattr(frame, "x", 0.0) or 0.0),
+            float(getattr(frame, "y", 0.0) or 0.0),
+            float(getattr(frame, "z", 0.0) or 0.0) + float(z_offset or 0.0),
+        )
+
+
+def _drainage_flow_station_frame(sections: list[object], station: float):
+    if not sections:
+        return None
+    ordered = sorted(list(sections or []), key=lambda section: _section_station(section))
+    for index in range(len(ordered) - 1):
+        first = ordered[index]
+        second = ordered[index + 1]
+        first_station = _section_station(first)
+        second_station = _section_station(second)
+        if min(first_station, second_station) - 1.0e-9 <= float(station) <= max(first_station, second_station) + 1.0e-9:
+            first_frame = getattr(first, "frame", None)
+            second_frame = getattr(second, "frame", None)
+            if first_frame is None:
+                return second_frame
+            if second_frame is None:
+                return first_frame
+            ratio = 0.0 if abs(second_station - first_station) <= 1.0e-9 else (float(station) - first_station) / (second_station - first_station)
+            return replace(
+                first_frame,
+                station=float(station),
+                x=_lerp_value(getattr(first_frame, "x", 0.0), getattr(second_frame, "x", 0.0), ratio),
+                y=_lerp_value(getattr(first_frame, "y", 0.0), getattr(second_frame, "y", 0.0), ratio),
+                z=_lerp_value(getattr(first_frame, "z", 0.0), getattr(second_frame, "z", 0.0), ratio),
+                tangent_direction_deg=_lerp_value(
+                    getattr(first_frame, "tangent_direction_deg", 0.0),
+                    getattr(second_frame, "tangent_direction_deg", 0.0),
+                    ratio,
+                ),
+            )
+    nearest = min(ordered, key=lambda section: abs(_section_station(section) - float(station)))
+    return getattr(nearest, "frame", None)
+
+
+def _drainage_pipe_segment_radius(first_point, second_point) -> float:
+    diameters = [
+        float(getattr(point, "diameter", 0.0) or 0.0)
+        for point in (first_point, second_point)
+        if float(getattr(point, "diameter", 0.0) or 0.0) > 0.0
+    ]
+    if diameters:
+        return max(0.08, min(sum(diameters) / len(diameters) * 0.5, 1.5))
+    sizes = [
+        max(float(getattr(point, "width", 0.0) or 0.0), float(getattr(point, "height", 0.0) or 0.0))
+        for point in (first_point, second_point)
+    ]
+    size = max(sizes or [0.0])
+    return max(0.12, min(float(size or 0.6) * 0.18, 1.0))
+
+
+def _make_drainage_pipe_segment_shape(part_module, app_module, first: tuple[float, float, float], second: tuple[float, float, float], radius: float):
+    start = app_module.Vector(*first)
+    end = app_module.Vector(*second)
+    vector = end.sub(start)
+    length = float(getattr(vector, "Length", 0.0) or 0.0)
+    if length <= 1.0e-6:
+        return part_module.makeSphere(float(radius or 0.2), start)
+    return part_module.makeCylinder(float(radius or 0.2), length, start, vector)
 
 
 def _drainage_flow_highlight_points(sections: list[object], station_start: float, station_end: float) -> list[tuple[float, float, float]]:

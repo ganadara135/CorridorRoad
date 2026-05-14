@@ -349,7 +349,7 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         App.closeDocument(doc.Name)
 
 
-def test_applied_sections_validate_blocks_drainage_element_without_region() -> None:
+def test_applied_sections_validate_allows_drainage_element_without_region() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc()
     original_show_message = applied_sections_command._show_message
@@ -382,11 +382,10 @@ def test_applied_sections_validate_blocks_drainage_element_without_region() -> N
 
         panel = V1AppliedSectionsTaskPanel(document=doc)
 
-        assert panel._validate(show_message=False) is False
-        assert "drainage_element_missing_region_ref" in panel._summary.toPlainText()
-        assert "drainage:side-ditch-right" in panel._summary.toPlainText()
-        assert panel._apply(close_after=False) is False
-        assert find_v1_applied_section_set(doc) is None
+        assert panel._validate(show_message=False) is True
+        assert "drainage_element_missing_region_ref" not in panel._summary.toPlainText()
+        assert panel._apply(close_after=False) is True
+        assert find_v1_applied_section_set(doc) is not None
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)

@@ -417,7 +417,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         str(getattr(row, "geometry_spec_ref", "") or ""): row
         for row in retaining_wall_geometry_spec_rows
     }
-    region_ranges = _region_station_ranges(region_model)
     diagnostics: list[str] = []
     seen = set()
     for index, row in enumerate(rows, start=1):
@@ -454,7 +453,6 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         end = float(getattr(placement, "station_end", 0.0) or 0.0)
         if end < start:
             diagnostics.append(f"error|station_range|{structure_id or index}|Station end is before station start.")
-        diagnostics.extend(_placement_region_diagnostics(placement, structure_id or str(index), region_ranges))
         diagnostics.extend(_drainage_connection_point_diagnostics(row, connection_point_rows))
     seen_specs = set()
     structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
@@ -508,7 +506,7 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         retained_side = str(getattr(spec, "retained_side", "") or "").strip().lower()
         if retained_side and retained_side not in {"left", "right", "inside", "outside"}:
             diagnostics.append(f"warning|wall_retained_side|{spec_ref}|Retaining wall retained side is not a recommended value.")
-    diagnostics.extend(_connection_point_row_diagnostics(connection_point_rows, structure_ids, region_ranges))
+    diagnostics.extend(_connection_point_row_diagnostics(connection_point_rows, structure_ids))
     return diagnostics
 
 
@@ -550,7 +548,6 @@ def _drainage_connection_point_diagnostics(row: StructureRow, connection_point_r
 def _connection_point_row_diagnostics(
     connection_point_rows: list[StructureConnectionPoint],
     structure_ids: set[str],
-    region_ranges: dict[str, tuple[float, float]],
 ) -> list[str]:
     diagnostics: list[str] = []
     seen = set()
@@ -569,57 +566,7 @@ def _connection_point_row_diagnostics(
             diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is empty.")
         if getattr(point, "invert_elevation", None) is None and getattr(point, "elevation", None) is None:
             diagnostics.append(f"warning|connection_point_elevation|{point_id or index}|Connection point should define invert or connection elevation.")
-        region_ref = str(getattr(point, "region_ref", "") or "").strip()
-        if region_ref and region_ranges and region_ref not in region_ranges:
-            diagnostics.append(f"error|connection_point_region_ref|{point_id or index}|Connection point references a missing Region {region_ref}.")
     return diagnostics
-
-
-def _region_station_ranges(region_model) -> dict[str, tuple[float, float]]:
-    ranges: dict[str, tuple[float, float]] = {}
-    if region_model is None:
-        return ranges
-    for row in list(getattr(region_model, "region_rows", []) or []):
-        region_id = str(getattr(row, "region_id", "") or "").strip()
-        if not region_id:
-            continue
-        try:
-            station_start = float(getattr(row, "station_start", 0.0) or 0.0)
-            station_end = float(getattr(row, "station_end", 0.0) or 0.0)
-        except Exception:
-            continue
-        ranges[region_id] = (min(station_start, station_end), max(station_start, station_end))
-    return ranges
-
-
-def _placement_region_diagnostics(placement, structure_id: str, region_ranges: dict[str, tuple[float, float]]) -> list[str]:
-    region_ref = str(getattr(placement, "region_ref", "") or "").strip()
-    if not region_ranges:
-        return []
-    if not region_ref:
-        return [
-            f"error|missing_structure_region_ref|{structure_id}|Structure placement must reference a Region."
-        ]
-    region_range = region_ranges.get(region_ref)
-    if region_range is None:
-        return [
-            f"error|missing_structure_region_ref|{structure_id}|Structure placement references missing Region {region_ref}."
-        ]
-    try:
-        station_start = float(getattr(placement, "station_start", 0.0) or 0.0)
-        station_end = float(getattr(placement, "station_end", 0.0) or 0.0)
-    except Exception:
-        return []
-    lower, upper = region_range
-    if station_start < lower - 1e-3 or station_end > upper + 1e-3:
-        return [
-            (
-                f"error|structure_outside_region_station_range|{structure_id}|"
-                "Structure Start STA and End STA must stay inside the referenced Region boundary: "
-                f"{station_start:g}-{station_end:g} outside {region_ref} {lower:g}-{upper:g}."
-            )
-        ]
-    return []
 
 
 def _validation_status(diagnostics: list[str]) -> str:

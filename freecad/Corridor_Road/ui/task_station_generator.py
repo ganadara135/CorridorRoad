@@ -54,9 +54,11 @@ class StationGeneratorTaskPanel:
         self.cmb_alignment = QtWidgets.QComboBox()
         self.cmb_target = QtWidgets.QComboBox()
         self.btn_refresh = QtWidgets.QPushButton("Refresh Context")
+        self.btn_generate = QtWidgets.QPushButton("Apply")
         fs.addRow("Alignment:", self.cmb_alignment)
         fs.addRow("Target Stationing:", self.cmb_target)
         fs.addRow(self.btn_refresh)
+        fs.addRow(self.btn_generate)
         main.addWidget(gb_src)
 
         gb_opt = QtWidgets.QGroupBox("Options")
@@ -75,9 +77,7 @@ class StationGeneratorTaskPanel:
         main.addWidget(gb_opt)
 
         row_btn = QtWidgets.QHBoxLayout()
-        self.btn_generate = QtWidgets.QPushButton("Generate Stations")
         self.btn_close = QtWidgets.QPushButton("Close")
-        row_btn.addWidget(self.btn_generate)
         row_btn.addWidget(self.btn_close)
         main.addLayout(row_btn)
 

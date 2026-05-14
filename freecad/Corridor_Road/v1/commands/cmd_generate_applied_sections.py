@@ -580,22 +580,7 @@ def _assembly_source_status(document) -> str:
 
 
 def _applied_sections_source_diagnostics(document) -> list[str]:
-    diagnostics: list[str] = []
-    drainage_model = to_drainage_model(find_v1_drainage_model(document))
-    if drainage_model is None:
-        return diagnostics
-    for index, row in enumerate(list(getattr(drainage_model, "element_rows", []) or []), start=1):
-        element_id = str(getattr(row, "drainage_element_id", "") or "").strip()
-        if not element_id:
-            continue
-        region_ref = str(getattr(row, "region_ref", "") or "").strip()
-        if region_ref:
-            continue
-        diagnostics.append(
-            "error: drainage_element_missing_region_ref: "
-            f"Drainage Element ID row {index} ({element_id}) has no Region assigned."
-        )
-    return diagnostics
+    return []
 
 
 def _review_status_text(row: dict[str, object]) -> str:

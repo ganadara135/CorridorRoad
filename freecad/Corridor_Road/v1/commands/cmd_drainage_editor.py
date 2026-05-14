@@ -24,7 +24,6 @@ from ..objects.obj_drainage import (
     find_v1_drainage_model,
     to_drainage_model,
 )
-from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.drainage_resolution_service import DrainageValidationService
@@ -34,10 +33,10 @@ ELEMENT_KIND_CHOICES = ["ditch", "gutter", "swale", "channel", "culvert_referenc
 SIDE_CHOICES = ["", "left", "right", "both", "center"]
 FLOW_INTENT_CHOICES = ["collect_and_convey", "edge_runoff_capture", "ditch_outfall", "cross_drainage_transfer"]
 ELEMENT_KIND_COLUMN = 1
-ELEMENT_ASSEMBLY_COLUMN = 6
-ELEMENT_POLICY_COLUMN = 7
-ELEMENT_STRUCTURE_COLUMN = 8
-ELEMENT_CONNECTION_POINT_COLUMN = 9
+ELEMENT_ASSEMBLY_COLUMN = 5
+ELEMENT_POLICY_COLUMN = 6
+ELEMENT_STRUCTURE_COLUMN = 7
+ELEMENT_CONNECTION_POINT_COLUMN = 8
 FLOW_ROUTE_FROM_COLUMN = 1
 FLOW_ROUTE_TO_COLUMN = 2
 FLOW_ROUTE_OUTLET_COLUMN = 3
@@ -60,7 +59,6 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.98,
                 "end": 1.0,
-                "structure": "outfall:main",
                 "policy": "drainage-policy:lined-concrete",
             }
         ],
@@ -115,7 +113,6 @@ DRAINAGE_PRESETS = {
                 "side": "left",
                 "start": 0.98,
                 "end": 1.0,
-                "structure": "outfall:left",
                 "policy": "drainage-policy:lined-concrete",
             },
             {
@@ -124,7 +121,6 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.98,
                 "end": 1.0,
-                "structure": "outfall:right",
                 "policy": "drainage-policy:lined-concrete",
             },
         ],
@@ -191,7 +187,6 @@ DRAINAGE_PRESETS = {
                 "end": 0.52,
                 "component": "",
                 "policy": "drainage-policy:cross-drain",
-                "structure": "structure:culvert-01",
             },
         ],
         "policies": [
@@ -222,7 +217,7 @@ DRAINAGE_PRESETS = {
                 "to": "drainage:culvert-01",
                 "start": 0.45,
                 "end": 0.55,
-                "outlet": "structure:culvert-01",
+                "outlet": "drainage:culvert-01",
                 "risk": "high",
             }
         ],
@@ -234,24 +229,6 @@ def drainage_preset_names() -> list[str]:
     """Return available v1 Drainage preset names."""
 
     return list(DRAINAGE_PRESETS.keys())
-
-
-def region_model_ids(document) -> list[str]:
-    """Return v1 Region ids available for Drainage element region_ref selection."""
-
-    region_obj = find_v1_region_model(document)
-    model = to_region_model(region_obj)
-    if model is None:
-        return []
-    output: list[str] = []
-    seen: set[str] = set()
-    for row in list(getattr(model, "region_rows", []) or []):
-        region_id = str(getattr(row, "region_id", "") or "").strip()
-        if not region_id or region_id in seen:
-            continue
-        seen.add(region_id)
-        output.append(region_id)
-    return output
 
 
 class CmdV1DrainageEditor:
@@ -331,7 +308,6 @@ class V1DrainageEditorTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.drainage_obj = find_v1_drainage_model(self.document)
-        self._region_refs = region_model_ids(self.document)
         self.form = self._build_ui()
         self._load_existing_or_starter()
 
@@ -387,7 +363,6 @@ class V1DrainageEditorTaskPanel:
             [
                 "Element ID",
                 "Kind",
-                "Region",
                 "Side",
                 "Start STA",
                 "End STA",
@@ -403,6 +378,7 @@ class V1DrainageEditorTaskPanel:
         self._flow_route_table = self._table(
             ["Flow Route ID", "From Element", "To Element", "Outlet", "Direction", "Risk", "Notes"]
         )
+        self._configure_flow_route_table()
         self._element_table.cellChanged.connect(lambda row, column: self._on_element_table_changed(row, column))
         self._policy_table.cellChanged.connect(lambda _row, _column: self._refresh_element_policy_combos())
         self._flow_route_table.cellChanged.connect(lambda _row, _column: self._update_flow_route_preview())
@@ -465,6 +441,8 @@ class V1DrainageEditorTaskPanel:
         table.setHorizontalHeaderLabels(headers)
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
@@ -475,6 +453,26 @@ class V1DrainageEditorTaskPanel:
         except Exception:
             pass
         return table
+
+    def _configure_flow_route_table(self) -> None:
+        widths = {
+            0: 120,
+            FLOW_ROUTE_FROM_COLUMN: 180,
+            FLOW_ROUTE_TO_COLUMN: 180,
+            FLOW_ROUTE_OUTLET_COLUMN: 180,
+            4: 120,
+            5: 90,
+            6: 220,
+        }
+        try:
+            self._flow_route_table.horizontalHeader().setMinimumSectionSize(90)
+        except Exception:
+            pass
+        for column, width in widths.items():
+            try:
+                self._flow_route_table.setColumnWidth(column, width)
+            except Exception:
+                pass
 
     def _load_existing_or_starter(self) -> None:
         model = to_drainage_model(self.drainage_obj)
@@ -520,7 +518,6 @@ class V1DrainageEditorTaskPanel:
         values = [
             _display_prefixed_id(row.drainage_element_id, "drainage:"),
             row.element_kind,
-            getattr(row, "region_ref", "") or "",
             getattr(row, "side", "") or "",
             _format_float(row.station_start),
             _format_float(row.station_end),
@@ -545,13 +542,6 @@ class V1DrainageEditorTaskPanel:
             elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.setEditable(True)
-                combo.addItem("")
-                combo.addItems(self._region_refs)
-                combo.setCurrentText(str(value or ""))
-                self._element_table.setCellWidget(index, col, combo)
-            elif col == 3:
-                combo = QtWidgets.QComboBox()
-                combo.setEditable(True)
                 combo.addItems(SIDE_CHOICES)
                 combo.setCurrentText(str(value or ""))
                 self._element_table.setCellWidget(index, col, combo)
@@ -572,6 +562,7 @@ class V1DrainageEditorTaskPanel:
                     _source_structure_ref(value),
                     self._structure_ref_choices(),
                     display_refs=True,
+                    include_current=False,
                 )
             elif col == ELEMENT_CONNECTION_POINT_COLUMN:
                 structure_ref = str(getattr(row, "structure_ref", "") or "")
@@ -723,7 +714,6 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
-                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
             self._set_status(_format_validation_result(result, model))
@@ -735,7 +725,6 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
-                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
             if result.status == "error":
@@ -776,10 +765,10 @@ class V1DrainageEditorTaskPanel:
                         f"element:{index + 1}",
                     ),
                     element_kind=element_kind,
-                    region_ref=_item_text(self._element_table, index, 2),
-                    side=_item_text(self._element_table, index, 3),
-                    station_start=_float_value(_item_text(self._element_table, index, 4)),
-                    station_end=_float_value(_item_text(self._element_table, index, 5)),
+                    region_ref="",
+                    side=_item_text(self._element_table, index, 2),
+                    station_start=_float_value(_item_text(self._element_table, index, 3)),
+                    station_end=_float_value(_item_text(self._element_table, index, 4)),
                     assembly_component_ref="" if _assembly_disabled_for_kind(element_kind) else _item_text(
                         self._element_table,
                         index,
@@ -861,9 +850,6 @@ class V1DrainageEditorTaskPanel:
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
 
-    def _region_model(self):
-        return to_region_model(find_v1_region_model(self.document))
-
     def _structure_model(self):
         return to_structure_model(find_v1_structure_model(self.document))
 
@@ -877,12 +863,27 @@ class V1DrainageEditorTaskPanel:
         self._refresh_flow_route_element_combos()
         self._update_flow_route_preview()
 
-    def _set_combo_cell(self, table, row: int, column: int, value: str, choices: list[str], *, display_refs: bool = False) -> None:
+    def _set_combo_cell(
+        self,
+        table,
+        row: int,
+        column: int,
+        value: str,
+        choices: list[str],
+        *,
+        display_refs: bool = False,
+        include_current: bool = True,
+    ) -> None:
         combo = QtWidgets.QComboBox()
         combo.setEditable(True)
+        combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(14)
         if display_refs:
             source_value = str(value or "").strip()
-            for choice in _unique_texts(["", *choices, source_value]):
+            combo_choices = ["", *choices]
+            if include_current:
+                combo_choices.append(source_value)
+            for choice in _unique_texts(combo_choices):
                 combo.addItem(_display_source_ref(choice), choice)
             selected_index = -1
             for item_index in range(combo.count()):
@@ -892,18 +893,78 @@ class V1DrainageEditorTaskPanel:
             if selected_index >= 0:
                 combo.setCurrentIndex(selected_index)
             else:
-                combo.setCurrentText(_display_source_ref(source_value))
+                combo.setCurrentText(_display_source_ref(source_value) if include_current else "")
         else:
             for choice in _unique_texts(["", *choices, value]):
                 combo.addItem(choice)
             combo.setCurrentText(str(value or ""))
+        combo.setToolTip(str(combo.currentText() or ""))
+        if table is self._flow_route_table and column in (
+            FLOW_ROUTE_FROM_COLUMN,
+            FLOW_ROUTE_TO_COLUMN,
+            FLOW_ROUTE_OUTLET_COLUMN,
+        ):
+            combo.setMinimumWidth(150)
         try:
             combo.currentTextChanged.connect(lambda _text: self._update_flow_route_preview())
+            combo.currentTextChanged.connect(lambda text, widget=combo: widget.setToolTip(str(text or "")))
+            if table is self._flow_route_table and column in (FLOW_ROUTE_FROM_COLUMN, FLOW_ROUTE_TO_COLUMN):
+                combo.currentTextChanged.connect(
+                    lambda _text, row_index=row, column_index=column: self._normalize_flow_route_link_cells(
+                        row_index,
+                        column_index,
+                    )
+                )
             if table is self._element_table and column == ELEMENT_STRUCTURE_COLUMN:
                 combo.currentTextChanged.connect(lambda _text, row_index=row: self._refresh_connection_point_combo(row_index))
         except Exception:
             pass
         table.setCellWidget(row, column, combo)
+
+    def _normalize_flow_route_link_cells(self, row_index: int, _changed_column: int) -> None:
+        if getattr(self, "_normalizing_flow_route_links", False):
+            return
+        if row_index < 0 or row_index >= self._flow_route_table.rowCount():
+            return
+        choices = self._element_ref_choices()
+        from_ref = _source_ref_from_display(
+            _combo_source_text(self._flow_route_table, row_index, FLOW_ROUTE_FROM_COLUMN),
+            choices,
+        )
+        to_ref = _source_ref_from_display(
+            _combo_source_text(self._flow_route_table, row_index, FLOW_ROUTE_TO_COLUMN),
+            choices,
+        )
+        if not from_ref or not to_ref or from_ref != to_ref:
+            return
+        replacement = next((choice for choice in choices if choice and choice != from_ref), "")
+        self._normalizing_flow_route_links = True
+        try:
+            self._set_combo_current_source(self._flow_route_table, row_index, FLOW_ROUTE_TO_COLUMN, replacement)
+        finally:
+            self._normalizing_flow_route_links = False
+        self._update_flow_route_preview()
+
+    def _set_combo_current_source(self, table, row: int, column: int, source_ref: str) -> None:
+        combo = table.cellWidget(row, column)
+        if combo is None or not hasattr(combo, "setCurrentText"):
+            return
+        text = _display_source_ref(source_ref)
+        try:
+            combo.blockSignals(True)
+            target_index = -1
+            if hasattr(combo, "itemData"):
+                for item_index in range(combo.count()):
+                    if str(combo.itemData(item_index) or "").strip() == str(source_ref or "").strip():
+                        target_index = item_index
+                        break
+            if target_index >= 0:
+                combo.setCurrentIndex(target_index)
+            else:
+                combo.setCurrentText(text)
+            combo.setToolTip(text)
+        finally:
+            combo.blockSignals(False)
 
     def _refresh_flow_route_element_combos(self) -> None:
         if not hasattr(self, "_flow_route_table"):
@@ -935,6 +996,7 @@ class V1DrainageEditorTaskPanel:
                 outlet_choices,
                 display_refs=True,
             )
+            self._normalize_flow_route_link_cells(index, FLOW_ROUTE_TO_COLUMN)
 
     def _refresh_element_policy_combos(self) -> None:
         if not hasattr(self, "_element_table"):
@@ -1094,6 +1156,7 @@ class V1DrainageEditorTaskPanel:
                 current,
                 self._structure_ref_choices(),
                 display_refs=True,
+                include_current=False,
             )
             if item is not None:
                 self._element_table.takeItem(row_index, ELEMENT_STRUCTURE_COLUMN)
@@ -1108,7 +1171,7 @@ class V1DrainageEditorTaskPanel:
                 widget.setStyleSheet("QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }")
             else:
                 widget.setEnabled(True)
-                widget.setToolTip("Select a Structure ID from the active Structures model, or type a custom source ref.")
+                widget.setToolTip("Select a Structure ID from the active Structures model.")
                 widget.setStyleSheet("")
                 self._refresh_connection_point_combo(row_index)
         except Exception:
@@ -1275,7 +1338,7 @@ def _preset_element_rows(preset: dict, *, station_start: float, station_end: flo
                 element_kind=str(spec.get("kind", "") or "ditch"),
                 side=str(spec.get("side", "") or ""),
                 structure_ref=str(spec.get("structure", "") or ""),
-                region_ref=str(spec.get("region", "") or ""),
+                region_ref="",
                 assembly_component_ref=str(spec.get("component", "") or ""),
                 station_start=_preset_station_value(spec.get("start", 0.0), station_start=station_start, station_end=station_end),
                 station_end=_preset_station_value(spec.get("end", 1.0), station_start=station_start, station_end=station_end),
