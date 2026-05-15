@@ -1,19 +1,22 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_commands
-from freecad.Corridor_Road.objects.obj_project import V1_TREE_DRAINAGE, CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import V1_TREE_DRAINAGE, V1_TREE_STRUCTURES, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
     CmdV1DrainageReview,
     V1DrainageReviewTaskPanel,
+    _geometry_rows_snapped_to_structure_previews,
     build_drainage_review_output,
     run_v1_drainage_review_command,
     show_drainage_pipeline_candidate_preview_object,
     show_drainage_pipeline_network_preview_object,
+    show_drainage_pipeline_networks_preview_object,
     show_drainage_pipeline_segment_preview_object,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
+from freecad.Corridor_Road.v1.models.output.drainage_output import DrainageOutput, DrainagePipelineGeometryOutputRow, DrainagePipelineSegmentOutputRow
 from freecad.Corridor_Road.v1.models.result.quantity_model import QuantityFragment, QuantityModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
@@ -281,6 +284,67 @@ def _pipeline_network_structure_model() -> StructureModel:
     )
 
 
+def _culvert_through_drainage_model() -> DrainageModel:
+    return DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:culvert-through",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                connection_point_ref="connection:inlet-01:pipe-out",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:culvert-01",
+                element_kind="culvert_reference",
+                structure_ref="structure:culvert-01",
+                connection_point_ref="connection:culvert-01:upstream",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outlet-01",
+                element_kind="outfall_reference",
+                structure_ref="structure:outlet-01",
+                connection_point_ref="connection:outlet-01:pipe-in",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:flowId-01",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:culvert-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+            DrainageFlowRoute(
+                flow_route_id="flow-route:flowId-02",
+                from_element_ref="drainage:culvert-01",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+        ],
+    )
+
+
+def _culvert_through_structure_model() -> StructureModel:
+    return StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:culvert-through",
+        structure_rows=[
+            StructureRow("structure:inlet-01", "utility", "reference", StructurePlacement("placement:inlet-01", "alignment:main", 30.0, 32.0), native_type="inlet"),
+            StructureRow("structure:culvert-01", "culvert", "crossing", StructurePlacement("placement:culvert-01", "alignment:main", 45.0, 55.0), native_type="pipe_culvert"),
+            StructureRow("structure:outlet-01", "utility", "reference", StructurePlacement("placement:outlet-01", "alignment:main", 70.0, 72.0), native_type="outlet"),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint("connection:inlet-01:pipe-out", "structure:inlet-01", "pipe_out", station=32.0, offset=-5.0, diameter=0.75),
+            StructureConnectionPoint("connection:culvert-01:upstream", "structure:culvert-01", "upstream", station=45.0, offset=-5.0, diameter=0.9),
+            StructureConnectionPoint("connection:culvert-01:downstream", "structure:culvert-01", "downstream", station=55.0, offset=5.8, diameter=0.9),
+            StructureConnectionPoint("connection:outlet-01:pipe-in", "structure:outlet-01", "pipe_in", station=70.0, offset=5.8, diameter=0.9),
+        ],
+    )
+
+
 def _region_model() -> RegionModel:
     return RegionModel(
         schema_version=1,
@@ -418,6 +482,160 @@ def test_drainage_pipeline_result_promotes_ready_candidates_to_segments() -> Non
     assert result.diagnostic_rows == []
 
 
+def test_drainage_pipeline_result_snaps_default_culvert_port_to_current_placement() -> None:
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:pipeline",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-03",
+                element_kind="inlet",
+                structure_ref="structure:inlet-03",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:culvert-01",
+                element_kind="culvert_reference",
+                structure_ref="structure:culvert-01",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:flowId-06",
+                from_element_ref="drainage:inlet-03",
+                to_element_ref="drainage:culvert-01",
+            )
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:pipeline",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:inlet-03",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:inlet-03", "alignment:main", 90.0, 92.0, offset=-5.2),
+                native_type="inlet",
+            ),
+            StructureRow(
+                structure_id="structure:culvert-01",
+                structure_kind="culvert",
+                structure_role="clearance_control",
+                placement=StructurePlacement("placement:culvert-01", "alignment:main", 120.0, 140.0, offset=0.0),
+                native_type="pipe_culvert",
+            ),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-03:pipe-out",
+                structure_ref="structure:inlet-03",
+                point_role="pipe_out",
+                station=92.0,
+                offset=-5.2,
+                diameter=1.2,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:custom-in-port",
+                structure_ref="structure:culvert-01",
+                point_role="pipe_in",
+                station=105.0,
+                offset=-3.0,
+                diameter=1.2,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:pipe-out",
+                structure_ref="structure:culvert-01",
+                point_role="pipe_out",
+                station=150.0,
+                offset=2.0,
+                diameter=1.2,
+                shape_kind="circular",
+            ),
+        ],
+    )
+
+    result = build_drainage_pipeline_result(drainage_model, structure_model, project_id="proj-review")
+
+    assert len(result.segment_rows) == 1
+    segment = result.segment_rows[0]
+    assert segment.to_connection_point_ref == "connection:culvert-01:custom-in-port"
+    assert segment.station_end == 120.0
+    assert segment.to_offset == 0.0
+
+
+def test_drainage_network_preview_geometry_snaps_culvert_endpoint_to_structure_preview() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelinePreviewSnapTest")
+    try:
+        create_sample_v1_alignment(doc, project=project)
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-review",
+                structure_model_id="structures:pipeline",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="clearance_control",
+                        placement=StructurePlacement("placement:culvert-01", "alignment:main", 120.0, 140.0, offset=0.0),
+                        native_type="pipe_culvert",
+                    )
+                ],
+                connection_point_rows=[
+                    StructureConnectionPoint(
+                        connection_point_id="connection:culvert-01:any-saved-in-port",
+                        structure_ref="structure:culvert-01",
+                        point_role="pipe_in",
+                        station=105.0,
+                        offset=-5.2,
+                        diameter=1.2,
+                        shape_kind="circular",
+                    )
+                ],
+            ),
+        )
+        output = DrainageOutput(
+            schema_version=1,
+            project_id="proj-review",
+            drainage_output_id="drainage-review:main",
+            pipeline_segment_rows=[
+                DrainagePipelineSegmentOutputRow(
+                    pipeline_segment_id="pipeline-segment:flow-route-flowId-06",
+                    flow_route_ref="flow-route:flowId-06",
+                    from_connection_point_ref="connection:inlet-03:pipe-out",
+                    to_connection_point_ref="connection:culvert-01:any-saved-in-port",
+                    station_start=95.0,
+                    station_end=105.0,
+                )
+            ],
+        )
+        rows = [
+            DrainagePipelineGeometryOutputRow(
+                geometry_row_id="pipeline-geometry:flow-route-flowId-06",
+                pipeline_segment_id="pipeline-segment:flow-route-flowId-06",
+                flow_route_ref="flow-route:flowId-06",
+                centerline_points=[(95.0, -5.2, 0.0), (105.0, -5.2, 0.0)],
+                diameter=1.2,
+                shape_kind="circular",
+            )
+        ]
+
+        snapped = _geometry_rows_snapped_to_structure_previews(doc, output, rows)
+
+        assert snapped[0].centerline_points[0] == (95.0, -5.2, 0.0)
+        assert snapped[0].centerline_points[-1] != (105.0, -5.2, 0.0)
+        assert snapped[0].centerline_points[-1][1] == 18.0
+        assert "preview_endpoint_snap=structure_culvert" in snapped[0].notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_drainage_review_mapper_reports_pipeline_segment_output_rows() -> None:
     output = DrainageReviewMapper().map(
         drainage_model=_pipeline_drainage_model(),
@@ -444,7 +662,7 @@ def test_drainage_review_mapper_reports_pipeline_segment_output_rows() -> None:
     geometry = output.pipeline_geometry_rows[0]
     assert geometry.pipeline_segment_id == "pipeline-segment:flow-route-pipe-01"
     assert geometry.coordinate_mode == "station_offset_fallback"
-    assert len(geometry.centerline_points) > 2
+    assert len(geometry.centerline_points) == 2
     assert geometry.centerline_points[0] == (32.0, -4.5, 44.2)
     assert geometry.centerline_points[-1] == (90.0, -6.0, 43.6)
     assert len(output.pipeline_solid_rows) == 1
@@ -507,6 +725,80 @@ def test_drainage_review_mapper_reports_pipeline_network_output_rows() -> None:
     }
 
 
+def test_drainage_pipeline_routes_through_culvert_upstream_and_downstream_points() -> None:
+    output = DrainageReviewMapper().map(
+        drainage_model=_culvert_through_drainage_model(),
+        structure_model=_culvert_through_structure_model(),
+        project_id="proj-review",
+    )
+
+    segments = output.pipeline_segment_rows
+
+    assert [row.flow_route_ref for row in segments] == ["flow-route:flowId-01", "flow-route:flowId-02"]
+    assert segments[0].from_connection_point_ref == "connection:inlet-01:pipe-out"
+    assert segments[0].to_connection_point_ref == "connection:culvert-01:upstream"
+    assert segments[1].from_connection_point_ref == "connection:culvert-01:downstream"
+    assert segments[1].to_connection_point_ref == "connection:outlet-01:pipe-in"
+    assert segments[1].station_start == 55.0
+
+
+def test_drainage_pipeline_geometry_preserves_from_to_connection_point_direction() -> None:
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:reverse-station",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:upper",
+                element_kind="inlet_reference",
+                structure_ref="structure:upper",
+                connection_point_ref="connection:upper:pipe-out",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:lower",
+                element_kind="outfall_reference",
+                structure_ref="structure:lower",
+                connection_point_ref="connection:lower:pipe-in",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:reverse",
+                from_element_ref="drainage:upper",
+                to_element_ref="drainage:lower",
+                outlet_ref="drainage:lower",
+            ),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:reverse-station",
+        structure_rows=[
+            StructureRow("structure:upper", "utility", "reference", StructurePlacement("placement:upper", "alignment:main", 100.0, 102.0), native_type="inlet"),
+            StructureRow("structure:lower", "utility", "reference", StructurePlacement("placement:lower", "alignment:main", 60.0, 62.0), native_type="outlet"),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint("connection:upper:pipe-out", "structure:upper", "pipe_out", station=100.0, offset=-4.0, invert_elevation=20.0, diameter=1.0),
+            StructureConnectionPoint("connection:lower:pipe-in", "structure:lower", "pipe_in", station=60.0, offset=5.0, invert_elevation=18.0, diameter=1.0),
+        ],
+    )
+
+    output = DrainageReviewMapper().map(
+        drainage_model=drainage_model,
+        structure_model=structure_model,
+        project_id="proj-review",
+    )
+    segment = output.pipeline_segment_rows[0]
+    geometry = output.pipeline_geometry_rows[0]
+
+    assert segment.station_start == 100.0
+    assert segment.station_end == 60.0
+    assert geometry.centerline_points[0] == (100.0, -4.0, 20.0)
+    assert geometry.centerline_points[-1] == (60.0, 5.0, 18.0)
+    assert geometry.centerline_points[0] != geometry.centerline_points[-1]
+
+
 def test_show_drainage_pipeline_candidate_preview_object_creates_pipe_candidate() -> None:
     doc, project = _new_project_doc("V1DrainagePipelineCandidatePreviewTest")
     try:
@@ -525,6 +817,7 @@ def test_show_drainage_pipeline_candidate_preview_object_creates_pipe_candidate(
         assert preview.FromConnectionPointRef == "connection:inlet-01:pipe-out"
         assert preview.ToConnectionPointRef == "connection:outlet-01:pipe-in"
         assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Shape.BoundBox.ZMin >= 43.55
         assert preview.Shape.BoundBox.ZLength >= 0.5
         assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
     finally:
@@ -549,6 +842,7 @@ def test_show_drainage_pipeline_segment_preview_object_creates_pipe_segment() ->
         assert preview.FromConnectionPointRef == "connection:inlet-01:pipe-out"
         assert preview.ToConnectionPointRef == "connection:outlet-01:pipe-in"
         assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Shape.BoundBox.ZMin >= 43.55
         assert preview.Shape.BoundBox.ZLength >= 0.5
         assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
     finally:
@@ -607,9 +901,42 @@ def test_drainage_review_output_prefers_centerline3d_result_for_pipeline_geometr
         geometry = output.pipeline_geometry_rows[0]
 
         assert geometry.coordinate_mode == "centerline3d_result"
-        assert len(geometry.centerline_points) > 2
+        assert len(geometry.centerline_points) == 2
         assert geometry.centerline_points[0][2] == 44.2
         assert geometry.centerline_points[-1][2] == 43.6
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_pipeline_geometry_uses_centerline_height_when_invert_is_missing() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineGeometryCenterlineHeightFallbackTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        drainage_model = _pipeline_drainage_model()
+        structure_model = _pipeline_structure_model()
+        structure_model.connection_point_rows = [
+            StructureConnectionPoint(
+                connection_point_id=row.connection_point_id,
+                structure_ref=row.structure_ref,
+                point_role=row.point_role,
+                station=row.station,
+                offset=row.offset,
+                diameter=row.diameter,
+                shape_kind=row.shape_kind,
+            )
+            for row in structure_model.connection_point_rows
+        ]
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=drainage_model)
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        output = build_drainage_review_output(doc)
+        geometry = output.pipeline_geometry_rows[0]
+
+        assert geometry.coordinate_mode == "centerline3d_result"
+        assert geometry.centerline_points[0][2] > 10.0
+        assert geometry.centerline_points[-1][2] > geometry.centerline_points[0][2]
     finally:
         App.closeDocument(doc.Name)
 
@@ -638,6 +965,47 @@ def test_show_drainage_pipeline_network_preview_object_creates_network_compound(
         App.closeDocument(doc.Name)
 
 
+def test_show_drainage_pipeline_networks_preview_object_creates_full_network_compound() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineNetworksPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_network_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_network_structure_model())
+
+        preview = show_drainage_pipeline_networks_preview_object(doc)
+
+        assert preview.Name == "V1DrainagePipelineNetworksPreview"
+        assert preview.CRRecordKind == "v1_drainage_pipeline_networks_preview"
+        assert preview.V1ObjectType == "V1DrainagePipelineNetworksPreview"
+        assert preview.NetworkIds == "drainage-pipeline-network:main"
+        assert preview.FlowRouteRefs == "flow-route:pipe-01,flow-route:pipe-02"
+        assert preview.PipelineSegmentRefs == "pipeline-segment:flow-route-pipe-01,pipeline-segment:flow-route-pipe-02"
+        assert preview.ConnectionPointRefs == "connection:inlet-01:pipe-out,connection:junction-01:pipe,connection:outlet-01:pipe-in"
+        assert preview.NetworkCount == "1"
+        assert preview.Shape.BoundBox.XLength > 50.0
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+        segment_preview = doc.getObject("V1DrainagePipelineSegment_pipeline_segment_flow_route_pipe_01")
+        assert segment_preview is not None
+        assert segment_preview.CRRecordKind == "v1_drainage_pipeline_segment_output_preview"
+        assert segment_preview.PipelineSegmentId == "pipeline-segment:flow-route-pipe-01"
+        assert segment_preview.FlowRouteRef == "flow-route:pipe-01"
+        assert segment_preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+        assert segment_preview.Name in preview.LinkedPreviewObjects
+        point_preview = doc.getObject("V1StructurePipeConnectionPoint_connection_inlet_01_pipe_out")
+        assert point_preview is not None
+        assert point_preview.CRRecordKind == "v1_structure_pipe_connection_point_preview"
+        assert point_preview.V1ObjectType == "V1StructurePipeConnectionPointPreview"
+        assert point_preview.ConnectionPointRef == "connection:inlet-01:pipe-out"
+        assert point_preview.PointRole == "pipe_out"
+        assert point_preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
+        assert point_preview.Name in preview.LinkedPreviewObjects
+        structure_preview = doc.getObject("V1StructurePreview_structure_inlet_01")
+        assert structure_preview is not None
+        assert structure_preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_drainage_review_mapper_builds_alignment_based_pipeline_geometry_rows() -> None:
     doc, project = _new_project_doc("V1DrainagePipelineGeometryOutputTest")
     try:
@@ -655,10 +1023,10 @@ def test_drainage_review_mapper_builds_alignment_based_pipeline_geometry_rows() 
         assert geometry.geometry_kind == "centerline_polyline"
         assert output.alignment_id == alignment.AlignmentId
         assert alignment.AlignmentId in output.source_refs
-        assert len(geometry.centerline_points) > 2
+        assert len(geometry.centerline_points) == 2
         assert geometry.centerline_points[-1][0] < 100.0
         assert geometry.centerline_points[-1][1] > 0.0
-        assert "point_count=" in geometry.notes
+        assert "point_count=2" in geometry.notes
     finally:
         App.closeDocument(doc.Name)
 

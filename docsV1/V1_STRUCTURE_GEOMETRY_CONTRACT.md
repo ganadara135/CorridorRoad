@@ -53,6 +53,7 @@ The ownership boundary is:
 - `StructureInteractionRule` owns how the structure affects section and corridor evaluation.
 - `StructureInfluenceZone` owns where the interaction applies beyond the physical structure footprint.
 - `V1StructureShowPreview` is presentation geometry only.
+- `V1StructurePipeConnectionPointPreview` is the Structure-owned Pipe In / Pipe Out review marker used by Drainage flow previews.
 - future structure corridor solids are output geometry only.
 
 ## 5. Design Goals
@@ -349,7 +350,7 @@ Do not place every possible bridge, culvert, and wall field in the main table.
 
 ## 16. Preview and Output Rule
 
-`V1StructureShowPreview` is a review output.
+`V1StructureShowPreview` is a review output. When the preview is created, the editor also creates linked per-row `V1StructurePreview_*` objects under the Structures tree so individual Structure source rows can be selected from the model tree without treating generated preview geometry as source truth.
 
 It may:
 

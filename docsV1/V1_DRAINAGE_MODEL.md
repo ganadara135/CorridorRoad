@@ -245,9 +245,9 @@ In the source contract, each Flow Route row is one graph edge. A complete draina
 
 Use `to_element_ref` for the next immediate drainage node.
 
-Use `outlet_ref` only when the route needs to preserve the final outlet for review or reporting.
+Use `outlet_ref` only on the route row whose `to_element_ref` is an outlet/outfall Element.
 
-If the final node is itself an `outfall_reference`, `outlet_ref` may be empty because the outlet is already represented as an Element node.
+Intermediate route rows should leave `outlet_ref` empty. The final outlet is discovered by following the graph edges instead of repeating the same outlet on every row.
 
 Example:
 
@@ -269,6 +269,24 @@ Flow route edges:
 edge:r2-01    from=ditch:right-r2    to=culvert:01
 edge:r2-02    from=culvert:01        to=outfall:right-01
 ```
+
+### 12.5 Ditch-to-Inlet Rule
+
+A Flow Route from a `ditch` Element to an `inlet_reference` Element records open-channel capture into the inlet.
+
+It is not a pipe body by itself.
+
+Example:
+
+```text
+side-ditch-right -> inlet-01      capture / intake relationship
+inlet-01 -> culvert-01            pipe connection
+culvert-01 -> outlet-01           pipe connection
+```
+
+The 3D pipe network should start from Structure-owned connection points, for example inlet `pipe_out`, culvert upstream/downstream, and outlet `pipe_in`.
+
+If a real short pipe is needed between the ditch and inlet, model it as a separate Structure-backed drainage element or connector rather than treating the open ditch row as a pipe.
 
 ## 13. Constraint Policy
 

@@ -2,9 +2,11 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups, corridorroad_workflow_toolbar_commands
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_CENTERLINE3D, CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_centerline3d import (
     CENTERLINE3D_COMMAND_ID,
     CmdV1Centerline3D,
+    V1Centerline3DTaskPanel,
     build_document_centerline3d_result,
     show_v1_centerline3d_preview_object,
     show_v1_centerline3d_station_markers,
@@ -22,6 +24,10 @@ def _new_project_doc():
     CorridorRoadProject(project)
     tree = ensure_project_tree(project, include_references=False)
     return doc, project, tree
+
+
+def _ensure_qapp():
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
 def test_centerline3d_result_samples_alignment_profile_stationing() -> None:
@@ -108,6 +114,19 @@ def test_centerline3d_frame_service_resolves_station_offset() -> None:
     assert frame.z == 11.0
     assert abs(frame.grade - 0.02) <= 1.0e-9
     assert frame.source_mode == "centerline3d_result"
+
+
+def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> None:
+    _ensure_qapp()
+    doc, _project, _tree = _new_project_doc()
+    try:
+        panel = V1Centerline3DTaskPanel(document=doc)
+        button_texts = [button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)]
+
+        assert "Refresh" not in button_texts
+        assert button_texts[-2:] == ["Apply", "Close"]
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_centerline3d_toolbar_order_follows_plan_profile_review() -> None:

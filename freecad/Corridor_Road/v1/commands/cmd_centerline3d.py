@@ -219,9 +219,6 @@ class V1Centerline3DTaskPanel:
         self._show_station_markers.stateChanged.connect(self._toggle_station_markers)
         layout.addWidget(self._show_station_markers)
         buttons = QtWidgets.QHBoxLayout()
-        refresh = QtWidgets.QPushButton("Refresh")
-        refresh.clicked.connect(self._refresh)
-        buttons.addWidget(refresh)
         show = QtWidgets.QPushButton("Show")
         show.clicked.connect(self._show)
         buttons.addWidget(show)
@@ -231,15 +228,18 @@ class V1Centerline3DTaskPanel:
         focus = QtWidgets.QPushButton("Focus")
         focus.clicked.connect(self._focus)
         buttons.addWidget(focus)
+        apply_button = QtWidgets.QPushButton("Apply")
+        apply_button.clicked.connect(self._apply)
+        buttons.addWidget(apply_button)
         close = QtWidgets.QPushButton("Close")
         close.clicked.connect(self.reject)
         buttons.addWidget(close)
         layout.addLayout(buttons)
         return widget
 
-    def _refresh(self) -> None:
+    def _apply(self) -> None:
         self._result = build_document_centerline3d_result(self.document)
-        self._refresh_ui()
+        self._show()
 
     def _show(self) -> None:
         try:

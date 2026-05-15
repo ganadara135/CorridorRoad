@@ -116,40 +116,69 @@ def test_structure_preset_drainage_structures_provides_outlet_and_culvert_refs()
 
         assert [row.structure_id for row in model.structure_rows] == [
             "structure:inlet-01",
+            "structure:inlet-02",
+            "structure:inlet-03",
             "structure:culvert-01",
             "structure:outlet-01",
         ]
-        assert [row.structure_kind for row in model.structure_rows] == ["utility", "culvert", "utility"]
-        assert [row.native_type for row in model.structure_rows] == ["inlet", "pipe_culvert", "outlet"]
+        assert [row.structure_kind for row in model.structure_rows] == ["utility", "utility", "utility", "culvert", "utility"]
+        assert [row.native_type for row in model.structure_rows] == ["inlet", "inlet", "inlet", "pipe_culvert", "outlet"]
         assert [row.structure_ref for row in model.geometry_spec_rows] == [
             "structure:inlet-01",
+            "structure:inlet-02",
+            "structure:inlet-03",
             "structure:culvert-01",
             "structure:outlet-01",
         ]
-        assert model.geometry_spec_rows[2].shape_kind == "outlet_headwall"
+        assert model.geometry_spec_rows[4].shape_kind == "outlet_headwall"
         assert model.culvert_geometry_spec_rows[0].geometry_spec_ref == "geometry-spec:culvert-01"
         assert model.culvert_geometry_spec_rows[0].barrel_shape == "circular"
-        assert model.culvert_geometry_spec_rows[0].diameter == 0.9
+        assert model.geometry_spec_rows[0].width == 1.8
+        assert model.geometry_spec_rows[0].height == 1.8
+        assert model.geometry_spec_rows[3].width == 1.2
+        assert model.geometry_spec_rows[3].height == 1.2
+        assert model.geometry_spec_rows[4].width == 2.8
+        assert model.geometry_spec_rows[4].height == 2.0
+        assert model.culvert_geometry_spec_rows[0].diameter == 1.2
+        assert model.culvert_geometry_spec_rows[0].wall_thickness == 0.15
         assert model.culvert_geometry_spec_rows[0].headwall_type == "flared"
         assert [row.connection_point_id for row in model.connection_point_rows] == [
             "connection:inlet-01:ditch-in",
             "connection:inlet-01:pipe-out",
-            "connection:culvert-01:upstream",
-            "connection:culvert-01:downstream",
+            "connection:inlet-02:ditch-in",
+            "connection:inlet-02:pipe-in",
+            "connection:inlet-02:pipe-out",
+            "connection:inlet-03:ditch-in",
+            "connection:inlet-03:pipe-in",
+            "connection:inlet-03:pipe-out",
+            "connection:culvert-01:pipe-in",
+            "connection:culvert-01:pipe-out",
             "connection:outlet-01:pipe-in",
             "connection:outlet-01:outfall",
         ]
         assert [row.point_role for row in model.connection_point_rows] == [
             "inlet",
             "pipe_out",
-            "upstream",
-            "downstream",
+            "inlet",
+            "pipe_in",
+            "pipe_out",
+            "inlet",
+            "pipe_in",
+            "pipe_out",
+            "pipe_in",
+            "pipe_out",
             "pipe_in",
             "discharge",
         ]
         assert [row.structure_ref for row in model.connection_point_rows] == [
             "structure:inlet-01",
             "structure:inlet-01",
+            "structure:inlet-02",
+            "structure:inlet-02",
+            "structure:inlet-02",
+            "structure:inlet-03",
+            "structure:inlet-03",
+            "structure:inlet-03",
             "structure:culvert-01",
             "structure:culvert-01",
             "structure:outlet-01",
@@ -158,13 +187,14 @@ def test_structure_preset_drainage_structures_provides_outlet_and_culvert_refs()
         assert model.connection_point_rows[0].station == model.structure_rows[0].placement.station_start
         assert model.connection_point_rows[1].station == model.structure_rows[0].placement.station_end
         assert model.connection_point_rows[0].shape_kind == "ditch_inlet"
-        assert model.connection_point_rows[1].diameter == 0.75
-        assert model.connection_point_rows[2].diameter == 0.9
-        assert model.connection_point_rows[2].offset == -5.2
-        assert model.connection_point_rows[3].offset == 5.8
-        assert model.connection_point_rows[4].diameter == 0.9
-        assert model.connection_point_rows[4].direction == "in"
-        assert model.connection_point_rows[5].shape_kind == "outfall"
+        assert model.connection_point_rows[1].diameter == 1.0
+        assert model.connection_point_rows[7].diameter == 1.2
+        assert model.connection_point_rows[8].diameter == 1.2
+        assert model.connection_point_rows[8].offset == 0.0
+        assert model.connection_point_rows[9].offset == 0.0
+        assert model.connection_point_rows[10].diameter == 1.2
+        assert model.connection_point_rows[10].direction == "in"
+        assert model.connection_point_rows[11].shape_kind == "outfall"
         assert all(row.region_ref == "" for row in model.connection_point_rows)
     finally:
         App.closeDocument(doc.Name)
@@ -338,7 +368,7 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         panel = V1StructureEditorTaskPanel(document=doc)
         panel._preset_combo.setCurrentText("Drainage Structures")
         panel._load_selected_preset()
-        panel._table.selectRow(2)
+        panel._table.selectRow(4)
         panel._load_selected_detail()
         panel._common_width_field.setText("1.700")
 
@@ -351,19 +381,21 @@ def test_structure_editor_reopens_with_applied_rows_and_selected_detail() -> Non
         finally:
             structure_editor_command._show_message = original_show_message
 
-        assert panel._table.rowCount() == 3
-        assert panel._table.currentRow() == 2
+        assert panel._table.rowCount() == 5
+        assert panel._table.currentRow() == 4
         assert "outlet-01" in panel._detail_summary.text()
         assert panel._common_width_field.text() == "1.700"
 
         reopened = V1StructureEditorTaskPanel(document=doc)
 
-        assert reopened._table.rowCount() == 3
+        assert reopened._table.rowCount() == 5
         assert reopened._table.item(0, 0).text() == "inlet-01"
-        assert reopened._table.item(1, 0).text() == "culvert-01"
-        assert reopened._table.item(2, 0).text() == "outlet-01"
+        assert reopened._table.item(1, 0).text() == "inlet-02"
+        assert reopened._table.item(2, 0).text() == "inlet-03"
+        assert reopened._table.item(3, 0).text() == "culvert-01"
+        assert reopened._table.item(4, 0).text() == "outlet-01"
 
-        reopened._table.selectRow(2)
+        reopened._table.selectRow(4)
         reopened._load_selected_detail()
 
         assert "outlet-01" in reopened._detail_summary.text()
@@ -577,8 +609,8 @@ def test_structure_editor_filters_detail_fields_by_native_type() -> None:
             "End Treatment",
         ]
         assert panel._common_shape_field.text() == "circular"
-        assert panel._common_width_field.text() == "1.000"
-        assert panel._common_height_field.text() == "1.000"
+        assert panel._common_width_field.text() == "1.200"
+        assert panel._common_height_field.text() == "1.200"
 
         panel._detail_fields[0].setText("2")
         panel._detail_fields[1].setText("1.200")
@@ -590,8 +622,8 @@ def test_structure_editor_filters_detail_fields_by_native_type() -> None:
         updated = panel._model_from_table()
 
         assert updated.geometry_spec_rows[0].shape_kind == "circular"
-        assert updated.geometry_spec_rows[0].width == 1.0
-        assert updated.geometry_spec_rows[0].height == 1.0
+        assert updated.geometry_spec_rows[0].width == 1.2
+        assert updated.geometry_spec_rows[0].height == 1.2
         assert updated.culvert_geometry_spec_rows[0].barrel_shape == "circular"
         assert updated.culvert_geometry_spec_rows[0].barrel_count == 2
         assert updated.culvert_geometry_spec_rows[0].diameter == 1.2
@@ -1228,6 +1260,12 @@ def test_show_v1_structure_preview_object_creates_visible_3d_preview() -> None:
         assert preview.Shape.BoundBox.XLength > 0.0
         assert preview.Shape.BoundBox.ZLength > 0.0
         assert preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
+        row_preview = doc.getObject("V1StructurePreview_structure_bridge_01")
+        assert row_preview is not None
+        assert row_preview.CRRecordKind == "v1_structure_row_preview"
+        assert row_preview.StructureRef == "structure:bridge-01"
+        assert row_preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
+        assert row_preview.Name in list(preview.LinkedPreviewObjects)
     finally:
         App.closeDocument(doc.Name)
 
@@ -1472,6 +1510,7 @@ def test_structure_preview_uses_pipe_culvert_circular_profile() -> None:
         preview = show_v1_structure_preview_object(doc, model, project=project)
 
         assert preview.PreviewGeometrySource == "geometry_spec"
+        assert len(list(preview.Shape.Solids)) == 1
         assert preview.Shape.BoundBox.ZMin >= 44.4
         assert preview.Shape.BoundBox.ZLength >= 1.1
         assert preview.Shape.BoundBox.ZLength < 1.4

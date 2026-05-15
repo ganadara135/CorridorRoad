@@ -140,30 +140,30 @@ STRUCTURE_PRESETS = {
         ],
     },
     "Drainage Structures": {
-        "note": "Practical roadside drainage chain: ditch inlet/catch basin collects flow, pipe culvert crosses the road, and outlet headwall discharges to the outfall.",
+        "note": "Practical station-banded roadside drainage chain: ditch sections drain to local inlets, inlet pipes connect to one pipe culvert, and the culvert discharges to an outlet headwall.",
         "rows": [
             {
                 "id": "structure:inlet-01",
                 "kind": "utility",
                 "role": "reference",
-                "start": 0.38,
-                "end": 0.40,
+                "start": 0.23,
+                "end": 0.25,
                 "offset": -5.2,
                 "geometry": "",
                 "spec": "geometry-spec:inlet-01",
                 "native_type": "inlet",
-                "width": 1.2,
-                "height": 1.4,
+                "width": 1.8,
+                "height": 1.8,
                 "shape": "catch_basin",
                 "material": "concrete",
-                "notes": "Roadside ditch inlet/catch basin collecting flow before the cross-drain.",
+                "notes": "Roadside inlet collecting the first ditch station band.",
                 "connection_points": [
                     {
                         "role": "inlet",
                         "id": "connection:inlet-01:ditch-in",
                         "at": "start",
-                        "width": 1.2,
-                        "height": 0.6,
+                        "width": 1.8,
+                        "height": 0.8,
                         "shape": "ditch_inlet",
                         "direction": "in",
                     },
@@ -171,7 +171,93 @@ STRUCTURE_PRESETS = {
                         "role": "pipe_out",
                         "id": "connection:inlet-01:pipe-out",
                         "at": "end",
-                        "diameter": 0.75,
+                        "diameter": 1.0,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:inlet-02",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.37,
+                "end": 0.39,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-02",
+                "native_type": "inlet",
+                "width": 1.8,
+                "height": 1.8,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside inlet collecting the second ditch station band.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-02:ditch-in",
+                        "at": "start",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:inlet-02:pipe-in",
+                        "at": "start",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-02:pipe-out",
+                        "at": "end",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:inlet-03",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.51,
+                "end": 0.53,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-03",
+                "native_type": "inlet",
+                "width": 1.8,
+                "height": 1.8,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside inlet collecting the third ditch station band before the culvert.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-03:ditch-in",
+                        "at": "start",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:inlet-03:pipe-in",
+                        "at": "start",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-03:pipe-out",
+                        "at": "end",
+                        "diameter": 1.2,
                         "shape": "circular",
                         "direction": "out",
                     },
@@ -181,21 +267,21 @@ STRUCTURE_PRESETS = {
                 "id": "structure:culvert-01",
                 "kind": "culvert",
                 "role": "clearance_control",
-                "start": 0.45,
-                "end": 0.55,
+                "start": 0.62,
+                "end": 0.72,
                 "offset": 0.0,
                 "geometry": "",
                 "spec": "geometry-spec:culvert-01",
                 "native_type": "pipe_culvert",
-                "width": 0.9,
-                "height": 0.9,
+                "width": 1.2,
+                "height": 1.2,
                 "shape": "circular_pipe",
                 "material": "concrete",
                 "culvert": {
                     "barrel_shape": "circular",
                     "barrel_count": 1,
-                    "diameter": 0.9,
-                    "wall_thickness": 0.12,
+                    "diameter": 1.2,
+                    "wall_thickness": 0.15,
                     "length": 12.0,
                     "headwall_type": "flared",
                     "wingwall_type": "short",
@@ -203,20 +289,20 @@ STRUCTURE_PRESETS = {
                 "notes": "Circular pipe culvert/cross-drain carrying collected ditch flow under the road.",
                 "connection_points": [
                     {
-                        "role": "upstream",
-                        "id": "connection:culvert-01:upstream",
+                        "role": "pipe_in",
+                        "id": "connection:culvert-01:pipe-in",
                         "at": "start",
-                        "offset": -5.2,
-                        "diameter": 0.9,
+                        "offset": 0.0,
+                        "diameter": 1.2,
                         "shape": "circular",
                         "direction": "in",
                     },
                     {
-                        "role": "downstream",
-                        "id": "connection:culvert-01:downstream",
+                        "role": "pipe_out",
+                        "id": "connection:culvert-01:pipe-out",
                         "at": "end",
-                        "offset": 5.8,
-                        "diameter": 0.9,
+                        "offset": 0.0,
+                        "diameter": 1.2,
                         "shape": "circular",
                         "direction": "out",
                     },
@@ -226,14 +312,14 @@ STRUCTURE_PRESETS = {
                 "id": "structure:outlet-01",
                 "kind": "utility",
                 "role": "reference",
-                "start": 0.58,
-                "end": 0.62,
+                "start": 0.78,
+                "end": 0.82,
                 "offset": 6.4,
                 "geometry": "",
                 "spec": "geometry-spec:outlet-01",
                 "native_type": "outlet",
-                "width": 2.0,
-                "height": 1.5,
+                "width": 2.8,
+                "height": 2.0,
                 "shape": "outlet_headwall",
                 "material": "concrete",
                 "notes": "Outlet headwall and outfall discharge point downstream of the culvert.",
@@ -242,7 +328,7 @@ STRUCTURE_PRESETS = {
                         "role": "pipe_in",
                         "id": "connection:outlet-01:pipe-in",
                         "at": "start",
-                        "diameter": 0.9,
+                        "diameter": 1.2,
                         "shape": "circular",
                         "direction": "in",
                     },
@@ -250,8 +336,8 @@ STRUCTURE_PRESETS = {
                         "role": "discharge",
                         "id": "connection:outlet-01:outfall",
                         "at": "end",
-                        "width": 1.8,
-                        "height": 0.8,
+                        "width": 2.4,
+                        "height": 1.0,
                         "shape": "outfall",
                         "direction": "out",
                     },
@@ -412,6 +498,14 @@ def show_v1_structure_preview_object(document, structure_model: StructureModel, 
     _set_preview_integer_property(obj, "GeometrySpecCount", len(context["geometry_specs"]))
     _set_preview_string_property(obj, "PreviewGeometrySource", "geometry_spec" if context["geometry_specs"] else "fallback")
     _set_preview_string_list_property(obj, "PreviewReviewNotes", _structure_preview_review_notes(structure_model, context))
+    row_preview_objects = _create_structure_row_preview_objects(
+        document,
+        structure_model,
+        path=_structure_preview_path_source(document),
+        context=context,
+        project=project,
+    )
+    _set_preview_string_list_property(obj, "LinkedPreviewObjects", [row.Name for row in row_preview_objects])
     _style_structure_preview_object(obj)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -424,6 +518,44 @@ def show_v1_structure_preview_object(document, structure_model: StructureModel, 
     except Exception:
         pass
     return obj
+
+
+def _create_structure_row_preview_objects(
+    document,
+    structure_model: StructureModel,
+    *,
+    path: dict[str, object],
+    context: dict[str, object],
+    project=None,
+) -> list[object]:
+    objects: list[object] = []
+    for row in list(getattr(structure_model, "structure_rows", []) or []):
+        structure_id = str(getattr(row, "structure_id", "") or "")
+        if not structure_id:
+            continue
+        shape = _structure_row_preview_shape(row, path, context)
+        if shape is None:
+            continue
+        object_name = "V1StructurePreview_" + _safe_object_suffix(structure_id)
+        obj = document.getObject(object_name)
+        if obj is None:
+            obj = document.addObject("Part::Feature", object_name)
+        obj.Label = "Structure - " + _display_structure_ref(structure_id)
+        obj.Shape = shape
+        _set_preview_string_property(obj, "CRRecordKind", "v1_structure_row_preview")
+        _set_preview_string_property(obj, "V1ObjectType", "V1StructureRowPreview")
+        _set_preview_string_property(obj, "StructureModelId", str(getattr(structure_model, "structure_model_id", "") or ""))
+        _set_preview_string_property(obj, "StructureRef", structure_id)
+        _set_preview_string_property(obj, "PreviewPathSource", str(path.get("source", "") or ""))
+        _style_structure_preview_object(obj)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(document), obj)
+        except Exception:
+            pass
+        objects.append(obj)
+    return objects
 
 
 def show_v1_structure_connection_points_preview_object(
@@ -2439,7 +2571,10 @@ def _structure_row_preview_shape(row: StructureRow, path: dict[str, object], con
     offset = float(getattr(placement, "offset", 0.0) or 0.0)
     profile = _structure_preview_profile(row, context)
     base_z = _structure_preview_base_z(row, context)
-    stations = _structure_preview_sample_stations(start_sta, end_sta, path)
+    if _structure_preview_uses_single_segment(row, profile):
+        stations = [start_sta, end_sta]
+    else:
+        stations = _structure_preview_sample_stations(start_sta, end_sta, path)
     points = [_station_offset_xyz(path, station, offset, base_z) for station in stations]
     segment_shapes = []
     for point0, point1 in zip(points, points[1:]):
@@ -2449,6 +2584,13 @@ def _structure_row_preview_shape(row: StructureRow, path: dict[str, object], con
     if not segment_shapes:
         return None
     return Part.Compound(segment_shapes)
+
+
+def _structure_preview_uses_single_segment(row: StructureRow, profile: dict[str, object]) -> bool:
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
+    return kind == "culvert" and (native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"})
 
 
 def _structure_segment_preview_shape(point0, point1, profile: dict[str, object]):
@@ -2927,6 +3069,14 @@ def _display_structure_ref(value: object) -> str:
     return text[len(prefix):] if text.startswith(prefix) else text
 
 
+def _safe_object_suffix(value: object) -> str:
+    text = str(value or "").strip()
+    output = []
+    for char in text:
+        output.append(char if char.isalnum() else "_")
+    return "".join(output).strip("_") or "unknown"
+
+
 def _source_structure_ref(value: object) -> str:
     text = str(value or "").strip()
     if not text:
@@ -3095,11 +3245,11 @@ def _connection_point_xyz(document, point: StructureConnectionPoint) -> tuple[fl
     if path is not None:
         try:
             x, y, centerline_z = _station_offset_xyz(path, station, offset, 0.0)
-            z = float(z_value if z_value is not None else centerline_z)
+            z = _connection_point_display_z(point, float(z_value if z_value is not None else centerline_z))
             return float(x), float(y), z
         except Exception:
             pass
-    z = float(z_value if z_value is not None else 0.0)
+    z = _connection_point_display_z(point, float(z_value if z_value is not None else 0.0))
     alignment = to_alignment_model(find_v1_alignment(document))
     if alignment is None:
         return station, offset, z
@@ -3110,35 +3260,28 @@ def _connection_point_xyz(document, point: StructureConnectionPoint) -> tuple[fl
         return station, offset, z
 
 
+def _connection_point_display_z(point: StructureConnectionPoint, z: float) -> float:
+    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
+    shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
+    if diameter <= 0.0:
+        return float(z)
+    if shape_kind and shape_kind not in {"circular", "pipe", "round", "circular_pipe"}:
+        return float(z)
+    return float(z) + diameter / 2.0
+
+
 def _connection_point_marker_radius(point: StructureConnectionPoint) -> float:
     diameter = float(getattr(point, "diameter", 0.0) or 0.0)
     width = float(getattr(point, "width", 0.0) or 0.0)
     height = float(getattr(point, "height", 0.0) or 0.0)
-    reference_size = max(diameter, width, height, 0.5)
-    return max(0.35, min(reference_size * 0.32, 2.2))
+    reference_size = max(diameter, width, height, 0.8)
+    return max(0.55, min(reference_size * 0.38, 2.2))
 
 
 def _connection_point_marker_shape(point: StructureConnectionPoint, x: float, y: float, z: float):
     radius = _connection_point_marker_radius(point)
     center = App.Vector(float(x), float(y), float(z))
-    shapes = [Part.makeSphere(radius, center)]
-    stem_radius = max(radius * 0.16, 0.06)
-    stem_height = max(radius * 3.0, 1.2)
-    shapes.append(
-        Part.makeCylinder(
-            stem_radius,
-            stem_height,
-            App.Vector(float(x), float(y), float(z) - stem_height / 2.0),
-            App.Vector(0.0, 0.0, 1.0),
-        )
-    )
-    try:
-        ring_radius = radius * 1.45
-        ring_tube_radius = max(radius * 0.08, 0.04)
-        shapes.append(Part.makeTorus(ring_radius, ring_tube_radius, center, App.Vector(0.0, 0.0, 1.0)))
-    except Exception:
-        pass
-    return Part.makeCompound(shapes)
+    return Part.makeSphere(radius, center)
 
 
 def _derive_default_connection_points_for_row(
@@ -3376,7 +3519,7 @@ def _default_geometry_width_for_native(native_type: str, structure_kind: str) ->
     if native == "box_culvert":
         return 3.0
     if native == "pipe_culvert":
-        return 1.0
+        return 1.2
     if native == "bridge_deck":
         return 10.0
     if native == "retaining_wall":
@@ -3384,9 +3527,9 @@ def _default_geometry_width_for_native(native_type: str, structure_kind: str) ->
     if native == "headwall":
         return 4.0
     if native == "inlet":
-        return 1.2
+        return 1.8
     if native == "outlet":
-        return 1.5
+        return 2.8
     return _default_geometry_width(structure_kind)
 
 
@@ -3408,7 +3551,7 @@ def _default_geometry_height_for_native(native_type: str, structure_kind: str) -
     if native == "box_culvert":
         return 2.0
     if native == "pipe_culvert":
-        return 1.0
+        return 1.2
     if native == "bridge_deck":
         return 1.2
     if native == "retaining_wall":
@@ -3416,9 +3559,9 @@ def _default_geometry_height_for_native(native_type: str, structure_kind: str) -
     if native == "headwall":
         return 2.0
     if native == "inlet":
-        return 1.2
+        return 1.8
     if native == "outlet":
-        return 1.2
+        return 2.0
     return _default_geometry_height(structure_kind)
 
 

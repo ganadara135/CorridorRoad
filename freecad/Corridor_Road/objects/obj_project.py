@@ -69,10 +69,6 @@ V1_TREE_APPLIED_SECTIONS = "v1_applied_sections"
 V1_TREE_RAMPS = "v1_ramps"
 V1_TREE_INTERSECTIONS = "v1_intersections"
 V1_TREE_OVERRIDES = "v1_overrides"
-V1_TREE_DITCHES = "v1_ditches"
-V1_TREE_CULVERTS = "v1_culverts"
-V1_TREE_INLETS = "v1_inlets"
-V1_TREE_FLOW_PATHS = "v1_flow_paths"
 V1_TREE_DRAINAGE_DIAGNOSTICS = "v1_drainage_diagnostics"
 V1_TREE_RETAINING_WALLS = "v1_retaining_walls"
 V1_TREE_BRIDGES = "v1_bridges"
@@ -155,10 +151,6 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_RAMPS, "Ramps", "CRV1_Ramps"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_INTERSECTIONS, "Intersections", "CRV1_Intersections"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_OVERRIDES, "Overrides", "CRV1_Overrides"),
-    (V1_TREE_DRAINAGE, V1_TREE_DITCHES, "Ditches", "CRV1_Ditches"),
-    (V1_TREE_DRAINAGE, V1_TREE_CULVERTS, "Culverts", "CRV1_Culverts"),
-    (V1_TREE_DRAINAGE, V1_TREE_INLETS, "Inlets", "CRV1_Inlets"),
-    (V1_TREE_DRAINAGE, V1_TREE_FLOW_PATHS, "Flow Paths", "CRV1_Flow_Paths"),
     (V1_TREE_DRAINAGE, V1_TREE_DRAINAGE_DIAGNOSTICS, "Drainage Diagnostics", "CRV1_Drainage_Diagnostics"),
     (V1_TREE_STRUCTURES, V1_TREE_RETAINING_WALLS, "Retaining Walls", "CRV1_Retaining_Walls"),
     (V1_TREE_STRUCTURES, V1_TREE_BRIDGES, "Bridges", "CRV1_Bridges"),
@@ -1306,6 +1298,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
+    if record_kind == "v1_structure_row_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_structure_connection_point_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
@@ -1324,6 +1318,12 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_drainage_pipeline_network_preview":
         return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_networks_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_segment_output_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_structure_pipe_connection_point_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":
@@ -1349,14 +1349,6 @@ def resolve_v1_target_container(prj, child):
     if _is_v1_intersection(child):
         return tree.get(V1_TREE_INTERSECTIONS, None)
     if _is_v1_drainage(child):
-        if _is_type(child, proxy_types=("DitchModel", "Ditch"), name_prefixes=("DitchModel", "Ditch")):
-            return tree.get(V1_TREE_DITCHES, None)
-        if _is_type(child, proxy_types=("CulvertModel", "Culvert"), name_prefixes=("CulvertModel", "Culvert")):
-            return tree.get(V1_TREE_CULVERTS, None)
-        if _is_type(child, proxy_types=("InletModel", "Inlet"), name_prefixes=("InletModel", "Inlet")):
-            return tree.get(V1_TREE_INLETS, None)
-        if _is_type(child, proxy_types=("FlowPathModel", "FlowPath"), name_prefixes=("FlowPathModel", "FlowPath")):
-            return tree.get(V1_TREE_FLOW_PATHS, None)
         return tree.get(V1_TREE_DRAINAGE, None)
     if _is_type(
         child,

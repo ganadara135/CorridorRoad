@@ -228,7 +228,7 @@ def test_drainage_validation_reports_duplicate_ids_invalid_ranges_and_missing_po
     assert "unsupported_drainage_side" in kinds
 
 
-def test_drainage_validation_reports_flow_route_broken_refs_and_missing_outlet() -> None:
+def test_drainage_validation_reports_flow_route_broken_refs_without_requiring_intermediate_outlet() -> None:
     model = DrainageModel(
         schema_version=1,
         project_id="proj-1",
@@ -274,7 +274,7 @@ def test_drainage_validation_reports_flow_route_broken_refs_and_missing_outlet()
     assert "missing_flow_route_from_element" in kinds
     assert "missing_flow_route_to_element" in kinds
     assert "missing_flow_route_outlet_ref" in kinds
-    assert "flow_route_missing_outlet" in kinds
+    assert "flow_route_missing_outlet" not in kinds
 
 
 def test_drainage_validation_reports_flow_route_self_loop_and_cycle() -> None:

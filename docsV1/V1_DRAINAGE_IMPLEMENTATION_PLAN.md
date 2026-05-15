@@ -82,6 +82,8 @@ The target user workflow is:
 5. Open Drainage and create drainage Element nodes.
 6. Assign drainage elements to Regions from the Drainage panel.
 7. Create Flow Route edges between Elements where connection intent is needed.
+8. Treat `ditch -> inlet_reference` Flow Routes as open-channel capture into the inlet, not as a pipe body.
+9. Start 3D pipe geometry from Structure-owned pipe connection points, such as inlet `pipe_out`, culvert upstream/downstream, and outlet `pipe_in`.
 8. Run Applied Sections.
 9. Review ditch points, flowlines, and diagnostics.
 10. Build Corridor drainage surface from Applied Section outputs.
@@ -164,7 +166,7 @@ Optional first-slice field:
 
 - `outlet_ref`
 
-`from_element_ref -> to_element_ref` is the graph edge. `outlet_ref` is only used when the final outlet must be preserved for review or reporting without walking the graph.
+`from_element_ref -> to_element_ref` is the graph edge. `outlet_ref` is only editable on rows where `to_element_ref` is an outlet/outfall Element; intermediate rows keep it empty.
 
 ## 7. Evaluation Flow
 
@@ -277,6 +279,7 @@ Completed:
 - Validate runs `DrainageValidationService`
 - Apply persists `V1DrainageModel`
 - invalid rows block Apply and keep diagnostics visible
+- `Show Flow Network` applies the current Drainage table state and creates a 3D `V1DrainagePipelineNetworksPreview` from resolved Structure connection points
 
 Remaining:
 

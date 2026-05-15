@@ -137,10 +137,6 @@ Parametric Road Project
     Intersections
     Overrides
   05_Drainage
-    Ditches
-    Culverts
-    Inlets
-    Flow Paths
     Drainage Diagnostics
   06_Structures
     Retaining Walls

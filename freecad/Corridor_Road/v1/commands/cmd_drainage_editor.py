@@ -27,6 +27,11 @@ from ..objects.obj_drainage import (
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.drainage_resolution_service import DrainageValidationService
+from .cmd_drainage_review import (
+    build_drainage_review_output,
+    show_drainage_pipeline_networks_preview_object,
+    show_drainage_pipeline_segment_preview_object,
+)
 
 
 ELEMENT_KIND_CHOICES = ["ditch", "gutter", "swale", "channel", "culvert_reference", "inlet_reference", "outfall_reference"]
@@ -217,9 +222,186 @@ DRAINAGE_PRESETS = {
                 "to": "drainage:culvert-01",
                 "start": 0.45,
                 "end": 0.55,
-                "outlet": "drainage:culvert-01",
+                "outlet": "",
                 "risk": "high",
             }
+        ],
+    },
+    "Drainage Structures Flow": {
+        "note": "Structure-backed station-band flow example matching the Structures preset: ditch sections drain to local inlets, inlet pipes connect to one culvert, then culvert discharges to outlet headwall/outfall.",
+        "elements": [
+            {
+                "id": "drainage:side-ditch-right-01",
+                "kind": "ditch",
+                "side": "right",
+                "start": 0.0,
+                "end": 0.24,
+                "component": "ditch:right",
+                "policy": "drainage-policy:roadside-ditch",
+            },
+            {
+                "id": "drainage:side-ditch-right-02",
+                "kind": "ditch",
+                "side": "right",
+                "start": 0.24,
+                "end": 0.38,
+                "component": "ditch:right",
+                "policy": "drainage-policy:roadside-ditch",
+            },
+            {
+                "id": "drainage:side-ditch-right-03",
+                "kind": "ditch",
+                "side": "right",
+                "start": 0.38,
+                "end": 0.52,
+                "component": "ditch:right",
+                "policy": "drainage-policy:roadside-ditch",
+            },
+            {
+                "id": "drainage:inlet-01",
+                "kind": "inlet_reference",
+                "side": "right",
+                "start": 0.23,
+                "end": 0.25,
+                "policy": "drainage-policy:structure-node",
+                "structure": "structure:inlet-01",
+                "connection_point": "connection:inlet-01:pipe-out",
+            },
+            {
+                "id": "drainage:inlet-02",
+                "kind": "inlet_reference",
+                "side": "right",
+                "start": 0.37,
+                "end": 0.39,
+                "policy": "drainage-policy:structure-node",
+                "structure": "structure:inlet-02",
+                "connection_point": "connection:inlet-02:pipe-out",
+            },
+            {
+                "id": "drainage:inlet-03",
+                "kind": "inlet_reference",
+                "side": "right",
+                "start": 0.51,
+                "end": 0.53,
+                "policy": "drainage-policy:structure-node",
+                "structure": "structure:inlet-03",
+                "connection_point": "connection:inlet-03:pipe-out",
+            },
+            {
+                "id": "drainage:culvert-01",
+                "kind": "culvert_reference",
+                "side": "center",
+                "start": 0.62,
+                "end": 0.72,
+                "policy": "drainage-policy:cross-drain",
+                "structure": "structure:culvert-01",
+            },
+            {
+                "id": "drainage:outlet-01",
+                "kind": "outfall_reference",
+                "side": "left",
+                "start": 0.78,
+                "end": 0.82,
+                "policy": "drainage-policy:outfall",
+                "structure": "structure:outlet-01",
+                "connection_point": "connection:outlet-01:pipe-in",
+            },
+        ],
+        "policies": [
+            {
+                "id": "drainage-policy:roadside-ditch",
+                "flow_intent": "collect_and_convey",
+                "min_grade": "0.005",
+                "low_point": "collect_at_inlet",
+                "collection": "right_side_ditch",
+                "discharge": "inlet",
+                "earthwork": "preserve_conveyance",
+            },
+            {
+                "id": "drainage-policy:structure-node",
+                "flow_intent": "edge_runoff_capture",
+                "min_grade": "",
+                "low_point": "catch_basin",
+                "collection": "ditch_inlet",
+                "discharge": "pipe_culvert",
+                "earthwork": "structure_control",
+            },
+            {
+                "id": "drainage-policy:cross-drain",
+                "flow_intent": "cross_drainage_transfer",
+                "min_grade": "",
+                "low_point": "must_connect_to_outfall",
+                "collection": "inlet_pipe",
+                "discharge": "outlet_headwall",
+                "earthwork": "structure_control",
+            },
+            {
+                "id": "drainage-policy:outfall",
+                "flow_intent": "ditch_outfall",
+                "min_grade": "",
+                "low_point": "free_discharge",
+                "collection": "culvert_outlet",
+                "discharge": "outfall",
+                "earthwork": "protect_outlet",
+            },
+        ],
+        "flow_routes": [
+            {
+                "id": "flow-route:flowId-01",
+                "kind": "ditch_to_inlet",
+                "from": "drainage:side-ditch-right-01",
+                "to": "drainage:inlet-01",
+                "outlet": "",
+                "risk": "medium",
+            },
+            {
+                "id": "flow-route:flowId-02",
+                "kind": "ditch_to_inlet",
+                "from": "drainage:side-ditch-right-02",
+                "to": "drainage:inlet-02",
+                "outlet": "",
+                "risk": "medium",
+            },
+            {
+                "id": "flow-route:flowId-03",
+                "kind": "ditch_to_inlet",
+                "from": "drainage:side-ditch-right-03",
+                "to": "drainage:inlet-03",
+                "outlet": "",
+                "risk": "medium",
+            },
+            {
+                "id": "flow-route:flowId-04",
+                "kind": "collector_pipe",
+                "from": "drainage:inlet-01",
+                "to": "drainage:inlet-02",
+                "outlet": "",
+                "risk": "high",
+            },
+            {
+                "id": "flow-route:flowId-05",
+                "kind": "collector_pipe",
+                "from": "drainage:inlet-02",
+                "to": "drainage:inlet-03",
+                "outlet": "",
+                "risk": "high",
+            },
+            {
+                "id": "flow-route:flowId-06",
+                "kind": "inlet_to_culvert",
+                "from": "drainage:inlet-03",
+                "to": "drainage:culvert-01",
+                "outlet": "",
+                "risk": "high",
+            },
+            {
+                "id": "flow-route:flowId-07",
+                "kind": "culvert_to_outfall",
+                "from": "drainage:culvert-01",
+                "to": "drainage:outlet-01",
+                "outlet": "drainage:outlet-01",
+                "risk": "medium",
+            },
         ],
     },
 }
@@ -383,6 +565,7 @@ class V1DrainageEditorTaskPanel:
         self._policy_table.cellChanged.connect(lambda _row, _column: self._refresh_element_policy_combos())
         self._flow_route_table.cellChanged.connect(lambda _row, _column: self._update_flow_route_preview())
         self._flow_route_table.itemSelectionChanged.connect(self._update_flow_route_preview)
+        self._flow_route_table.cellDoubleClicked.connect(lambda row, _column: self._show_flow_route_segment(row))
         self._tabs.addTab(self._element_table, "Elements")
         self._tabs.addTab(self._policy_table, "Policies")
         self._tabs.addTab(self._flow_route_table, "Flow Routes")
@@ -427,6 +610,9 @@ class V1DrainageEditorTaskPanel:
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
+        show_flow_network_button = QtWidgets.QPushButton("Show Flow Network")
+        show_flow_network_button.clicked.connect(self._show_flow_network)
+        action_row.addWidget(show_flow_network_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -524,7 +710,7 @@ class V1DrainageEditorTaskPanel:
             getattr(row, "assembly_component_ref", "") or "",
             _display_prefixed_id(row.policy_set_ref, "drainage-policy:"),
             _display_prefixed_id(row.structure_ref, "structure:"),
-            _display_prefixed_id(getattr(row, "connection_point_ref", "") or "", "connection:"),
+            getattr(row, "connection_point_ref", "") or "",
         ]
         for col, value in enumerate(values):
             if col == 1:
@@ -562,7 +748,6 @@ class V1DrainageEditorTaskPanel:
                     _source_structure_ref(value),
                     self._structure_ref_choices(),
                     display_refs=True,
-                    include_current=False,
                 )
             elif col == ELEMENT_CONNECTION_POINT_COLUMN:
                 structure_ref = str(getattr(row, "structure_ref", "") or "")
@@ -570,7 +755,7 @@ class V1DrainageEditorTaskPanel:
                     self._element_table,
                     index,
                     col,
-                    _source_connection_point_ref(value),
+                    _source_connection_point_ref(getattr(row, "connection_point_ref", "") or value),
                     self._connection_point_ref_choices(structure_ref=structure_ref),
                     display_refs=True,
                 )
@@ -656,6 +841,7 @@ class V1DrainageEditorTaskPanel:
                 self._set_combo_cell(self._flow_route_table, index, col, str(value), self._outlet_ref_choices(), display_refs=True)
             else:
                 self._flow_route_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+        self._update_flow_route_outlet_cell_state(index)
         self._update_flow_route_preview()
 
     def _add_element_row(self) -> None:
@@ -719,6 +905,91 @@ class V1DrainageEditorTaskPanel:
             self._set_status(_format_validation_result(result, model))
         except Exception as exc:
             self._set_status(f"Drainage validation failed:\n{exc}")
+
+    def _show_flow_network(self) -> None:
+        try:
+            model = self._model_from_tables()
+            result = DrainageValidationService().validate(
+                model,
+                structure_model=self._structure_model(),
+            )
+            if result.status == "error":
+                self._set_status(_format_validation_result(result, model))
+                _show_message(self.form, "Drainage", "Drainage Flow Network was not shown because validation has errors.")
+                return
+            self.drainage_obj = apply_v1_drainage_model(document=self.document, drainage_model=model)
+            output = build_drainage_review_output(self.document)
+            preview = show_drainage_pipeline_networks_preview_object(self.document, output=output)
+            network_count = len(list(getattr(output, "pipeline_network_rows", []) or []))
+            segment_count = len(list(getattr(output, "pipeline_segment_rows", []) or []))
+            self._set_status(
+                _format_validation_result(result, model)
+                + "\n\n"
+                + "\n".join(
+                    [
+                        "Drainage Flow Network preview shown.",
+                        f"Applied to: {self.drainage_obj.Label}",
+                        f"Preview object: {getattr(preview, 'Label', getattr(preview, 'Name', ''))}",
+                        f"Networks: {network_count}",
+                        f"Pipeline segments: {segment_count}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            self._set_status(f"Drainage Flow Network preview failed:\n{exc}")
+            _show_message(self.form, "Drainage", f"Drainage Flow Network preview failed.\n{exc}")
+
+    def _show_flow_route_segment(self, row_index: int) -> None:
+        try:
+            if row_index < 0 or row_index >= self._flow_route_table.rowCount():
+                return
+            route_ref = _source_prefixed_id(_item_text(self._flow_route_table, row_index, 0), "flow-route:")
+            model = self._model_from_tables()
+            result = DrainageValidationService().validate(
+                model,
+                structure_model=self._structure_model(),
+            )
+            if result.status == "error":
+                self._set_status(_format_validation_result(result, model))
+                _show_message(self.form, "Drainage", "Flow Route was not shown because validation has errors.")
+                return
+            self.drainage_obj = apply_v1_drainage_model(document=self.document, drainage_model=model)
+            output = build_drainage_review_output(self.document)
+            segment_rows = list(getattr(output, "pipeline_segment_rows", []) or [])
+            segment_index = next(
+                (
+                    index
+                    for index, segment in enumerate(segment_rows)
+                    if str(getattr(segment, "flow_route_ref", "") or "") == route_ref
+                ),
+                -1,
+            )
+            if segment_index < 0:
+                self._set_status(
+                    _format_validation_result(result, model)
+                    + f"\n\nFlow Route preview not available for {route_ref}.\n"
+                    + "This row does not resolve to a Structure-backed pipe segment."
+                )
+                return
+            preview = show_drainage_pipeline_segment_preview_object(
+                self.document,
+                row_index=segment_index,
+                output=output,
+            )
+            self._set_status(
+                _format_validation_result(result, model)
+                + "\n\n"
+                + "\n".join(
+                    [
+                        "Flow Route pipe segment preview shown.",
+                        f"Flow Route: {route_ref}",
+                        f"Preview object: {getattr(preview, 'Label', getattr(preview, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            self._set_status(f"Flow Route preview failed:\n{exc}")
+            _show_message(self.form, "Drainage", f"Flow Route preview failed.\n{exc}")
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
@@ -833,7 +1104,7 @@ class V1DrainageEditorTaskPanel:
                         self._element_ref_choices(),
                         default_prefix="drainage:",
                     ),
-                    outlet_ref=_source_ref_from_display(
+                    outlet_ref="" if not self._flow_route_outlet_enabled(index) else _source_ref_from_display(
                         _combo_source_text(self._flow_route_table, index, FLOW_ROUTE_OUTLET_COLUMN),
                         self._outlet_ref_choices(),
                     ),
@@ -884,7 +1155,7 @@ class V1DrainageEditorTaskPanel:
             if include_current:
                 combo_choices.append(source_value)
             for choice in _unique_texts(combo_choices):
-                combo.addItem(_display_source_ref(choice), choice)
+                combo.addItem(self._display_combo_source(choice, table=table, column=column), choice)
             selected_index = -1
             for item_index in range(combo.count()):
                 if str(combo.itemData(item_index) or "").strip() == source_value:
@@ -893,7 +1164,7 @@ class V1DrainageEditorTaskPanel:
             if selected_index >= 0:
                 combo.setCurrentIndex(selected_index)
             else:
-                combo.setCurrentText(_display_source_ref(source_value) if include_current else "")
+                combo.setCurrentText(self._display_combo_source(source_value, table=table, column=column) if include_current else "")
         else:
             for choice in _unique_texts(["", *choices, value]):
                 combo.addItem(choice)
@@ -915,11 +1186,20 @@ class V1DrainageEditorTaskPanel:
                         column_index,
                     )
                 )
+            if table is self._flow_route_table and column == FLOW_ROUTE_TO_COLUMN:
+                combo.currentTextChanged.connect(
+                    lambda _text, row_index=row: self._update_flow_route_outlet_cell_state(row_index)
+                )
             if table is self._element_table and column == ELEMENT_STRUCTURE_COLUMN:
                 combo.currentTextChanged.connect(lambda _text, row_index=row: self._refresh_connection_point_combo(row_index))
         except Exception:
             pass
         table.setCellWidget(row, column, combo)
+
+    def _display_combo_source(self, value: object, *, table, column: int) -> str:
+        if table is self._element_table and column == ELEMENT_CONNECTION_POINT_COLUMN:
+            return _display_connection_point_ref(value)
+        return _display_source_ref(value)
 
     def _normalize_flow_route_link_cells(self, row_index: int, _changed_column: int) -> None:
         if getattr(self, "_normalizing_flow_route_links", False):
@@ -943,6 +1223,7 @@ class V1DrainageEditorTaskPanel:
             self._set_combo_current_source(self._flow_route_table, row_index, FLOW_ROUTE_TO_COLUMN, replacement)
         finally:
             self._normalizing_flow_route_links = False
+        self._update_flow_route_outlet_cell_state(row_index)
         self._update_flow_route_preview()
 
     def _set_combo_current_source(self, table, row: int, column: int, source_ref: str) -> None:
@@ -992,11 +1273,14 @@ class V1DrainageEditorTaskPanel:
                 self._flow_route_table,
                 index,
                 FLOW_ROUTE_OUTLET_COLUMN,
-                _combo_source_text(self._flow_route_table, index, FLOW_ROUTE_OUTLET_COLUMN),
+                _combo_source_text(self._flow_route_table, index, FLOW_ROUTE_OUTLET_COLUMN)
+                if self._flow_route_outlet_enabled(index)
+                else "",
                 outlet_choices,
                 display_refs=True,
             )
             self._normalize_flow_route_link_cells(index, FLOW_ROUTE_TO_COLUMN)
+            self._update_flow_route_outlet_cell_state(index)
 
     def _refresh_element_policy_combos(self) -> None:
         if not hasattr(self, "_element_table"):
@@ -1092,6 +1376,53 @@ class V1DrainageEditorTaskPanel:
                 if connection_ref:
                     choices.append(connection_ref)
         return _unique_texts(choices)
+
+    def _flow_route_outlet_enabled(self, row_index: int) -> bool:
+        to_ref = _source_ref_from_display(
+            _combo_source_text(self._flow_route_table, row_index, FLOW_ROUTE_TO_COLUMN),
+            self._element_ref_choices(),
+            default_prefix="drainage:",
+        )
+        return _drainage_element_is_outlet_kind(self._element_kind_for_ref(to_ref))
+
+    def _element_kind_for_ref(self, element_ref: str) -> str:
+        expected = str(element_ref or "").strip()
+        if not expected:
+            return ""
+        for index in range(self._element_table.rowCount()):
+            element_id = _source_prefixed_id(_item_text(self._element_table, index, 0), "drainage:", f"element:{index + 1}")
+            if element_id == expected:
+                return str(_item_text(self._element_table, index, ELEMENT_KIND_COLUMN) or "").strip().lower()
+        return ""
+
+    def _update_flow_route_outlet_cell_state(self, row_index: int) -> None:
+        if row_index < 0 or row_index >= self._flow_route_table.rowCount():
+            return
+        widget = self._flow_route_table.cellWidget(row_index, FLOW_ROUTE_OUTLET_COLUMN)
+        enabled = self._flow_route_outlet_enabled(row_index)
+        if widget is None:
+            return
+        try:
+            if not enabled:
+                widget.blockSignals(True)
+                widget.setCurrentText("")
+                widget.setEnabled(False)
+                widget.setToolTip("Outlet is only edited when To Element is an outlet/outfall element.")
+                widget.setStyleSheet("QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }")
+                widget.blockSignals(False)
+            else:
+                widget.setEnabled(True)
+                widget.setStyleSheet("")
+                if not str(widget.currentText() or "").strip():
+                    to_ref = _source_ref_from_display(
+                        _combo_source_text(self._flow_route_table, row_index, FLOW_ROUTE_TO_COLUMN),
+                        self._element_ref_choices(),
+                        default_prefix="drainage:",
+                    )
+                    self._set_combo_current_source(self._flow_route_table, row_index, FLOW_ROUTE_OUTLET_COLUMN, to_ref)
+                widget.setToolTip(str(widget.currentText() or "Select the final outlet element."))
+        except Exception:
+            return
 
     def _update_flow_route_preview(self) -> None:
         if not hasattr(self, "_flow_route_preview"):
@@ -1225,7 +1556,10 @@ def _combo_source_text(table, row: int, column: int) -> str:
         current_text = str(widget.currentText() or "").strip() if hasattr(widget, "currentText") else ""
         data = widget.currentData()
         data_text = str(data or "").strip() if data is not None else ""
-        if data_text and _display_source_ref(data_text) == current_text:
+        if data_text and (
+            _display_source_ref(data_text) == current_text
+            or _display_connection_point_ref(data_text) == current_text
+        ):
             return data_text
     return _item_text(table, row, column)
 
@@ -1242,6 +1576,13 @@ def _display_source_ref(value: object) -> str:
     if ":" not in text:
         return text
     return text.split(":", 1)[1]
+
+
+def _display_connection_point_ref(value: object) -> str:
+    text = _display_prefixed_id(value, "connection:")
+    if ":" in text:
+        return text.rsplit(":", 1)[1]
+    return text
 
 
 def _source_prefixed_id(value: object, prefix: str, default_suffix: str = "") -> str:
@@ -1263,6 +1604,8 @@ def _source_ref_from_display(value: object, choices: list[str], *, default_prefi
         if str(choice or "").strip() == text:
             return str(choice or "").strip()
         if _display_source_ref(choice) == text:
+            return str(choice or "").strip()
+        if _display_connection_point_ref(choice) == text:
             return str(choice or "").strip()
     if ":" in text:
         return text
@@ -1305,6 +1648,11 @@ def _structure_disabled_for_kind(kind: object) -> bool:
     return str(kind or "").strip().lower() == "ditch"
 
 
+def _drainage_element_is_outlet_kind(kind: object) -> bool:
+    text = str(kind or "").strip().lower()
+    return text in {"outfall_reference", "outlet_reference"} or "outfall" in text or "outlet" in text
+
+
 def _assembly_disabled_for_kind(kind: object) -> bool:
     return str(kind or "").strip().lower() != "ditch"
 
@@ -1338,6 +1686,7 @@ def _preset_element_rows(preset: dict, *, station_start: float, station_end: flo
                 element_kind=str(spec.get("kind", "") or "ditch"),
                 side=str(spec.get("side", "") or ""),
                 structure_ref=str(spec.get("structure", "") or ""),
+                connection_point_ref=str(spec.get("connection_point", "") or ""),
                 region_ref="",
                 assembly_component_ref=str(spec.get("component", "") or ""),
                 station_start=_preset_station_value(spec.get("start", 0.0), station_start=station_start, station_end=station_end),

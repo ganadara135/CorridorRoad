@@ -14,8 +14,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_APPLIED_SECTIONS,
     V1_TREE_ASSEMBLIES,
     V1_TREE_BOOKMARKS,
-    V1_TREE_CULVERTS,
-    V1_TREE_DITCHES,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
@@ -26,7 +24,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_RESULT,
     V1_TREE_EXISTING_GROUND_TIN_SOURCE,
     V1_TREE_INTERSECTIONS,
-    V1_TREE_INLETS,
     V1_TREE_IFC,
     V1_TREE_ISSUES,
     V1_TREE_LANDXML,
@@ -264,9 +261,10 @@ def test_resolve_v1_target_container_routes_drainage_objects() -> None:
         tree = ensure_project_tree(project, include_references=False)
         cases = [
             ("DrainageModel", V1_TREE_DRAINAGE),
-            ("DitchModel", V1_TREE_DITCHES),
-            ("CulvertModel", V1_TREE_CULVERTS),
-            ("InletModel", V1_TREE_INLETS),
+            ("DitchModel", V1_TREE_DRAINAGE),
+            ("CulvertModel", V1_TREE_DRAINAGE),
+            ("InletModel", V1_TREE_DRAINAGE),
+            ("FlowPathModel", V1_TREE_DRAINAGE),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)

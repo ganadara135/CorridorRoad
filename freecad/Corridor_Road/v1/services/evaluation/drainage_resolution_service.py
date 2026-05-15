@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ...common.diagnostics import DiagnosticMessage
 from ...models.result.drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
@@ -248,6 +248,17 @@ def build_drainage_pipeline_segment_candidates(
         for row in list(getattr(structure_model, "connection_point_rows", []) or [])
         if str(getattr(row, "connection_point_id", "") or "").strip()
     } if structure_model is not None else {}
+    structure_by_id = {
+        str(getattr(row, "structure_id", "") or "").strip(): row
+        for row in list(getattr(structure_model, "structure_rows", []) or [])
+        if str(getattr(row, "structure_id", "") or "").strip()
+    } if structure_model is not None else {}
+    points_by_structure: dict[str, list[object]] = {}
+    if structure_model is not None:
+        for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+            structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
+            if structure_ref:
+                points_by_structure.setdefault(structure_ref, []).append(point)
     output: list[DrainagePipelineSegmentCandidate] = []
     for index, route in enumerate(list(getattr(drainage_model, "flow_route_rows", []) or []), start=1):
         route_id = str(getattr(route, "flow_route_id", "") or "").strip() or f"flow-route:{index}"
@@ -268,8 +279,22 @@ def build_drainage_pipeline_segment_candidates(
                 )
             )
             continue
-        from_point_ref = str(getattr(from_element, "connection_point_ref", "") or "").strip()
-        to_point_ref = str(getattr(to_element, "connection_point_ref", "") or "").strip()
+        from_point = _element_connection_point_for_direction(
+            from_element,
+            point_by_id=point_by_id,
+            points_by_structure=points_by_structure,
+            structure_by_id=structure_by_id,
+            direction="out",
+        )
+        to_point = _element_connection_point_for_direction(
+            to_element,
+            point_by_id=point_by_id,
+            points_by_structure=points_by_structure,
+            structure_by_id=structure_by_id,
+            direction="in",
+        )
+        from_point_ref = str(getattr(from_point, "connection_point_id", "") or "").strip()
+        to_point_ref = str(getattr(to_point, "connection_point_id", "") or "").strip()
         if not from_point_ref or not to_point_ref:
             output.append(
                 DrainagePipelineSegmentCandidate(
@@ -284,8 +309,6 @@ def build_drainage_pipeline_segment_candidates(
                 )
             )
             continue
-        from_point = point_by_id.get(from_point_ref)
-        to_point = point_by_id.get(to_point_ref)
         if from_point is None or to_point is None:
             output.append(
                 DrainagePipelineSegmentCandidate(
@@ -315,8 +338,8 @@ def build_drainage_pipeline_segment_candidates(
                 from_connection_point_ref=from_point_ref,
                 to_connection_point_ref=to_point_ref,
                 status="ready",
-                station_start=min(from_station, to_station),
-                station_end=max(from_station, to_station),
+                station_start=from_station,
+                station_end=to_station,
                 from_offset=float(getattr(from_point, "offset", 0.0) or 0.0),
                 to_offset=float(getattr(to_point, "offset", 0.0) or 0.0),
                 invert_start=_optional_float(getattr(from_point, "invert_elevation", None)),
@@ -430,6 +453,94 @@ def _connection_point_structure_ref_map(structure_model: StructureModel | None) 
     }
 
 
+def _element_connection_point_for_direction(
+    element,
+    *,
+    point_by_id: dict[str, object],
+    points_by_structure: dict[str, list[object]],
+    structure_by_id: dict[str, object],
+    direction: str,
+):
+    structure_ref = str(getattr(element, "structure_ref", "") or "").strip()
+    explicit_ref = str(getattr(element, "connection_point_ref", "") or "").strip()
+    explicit_point = point_by_id.get(explicit_ref) if explicit_ref else None
+    preferred = _preferred_structure_connection_point(structure_ref, points_by_structure, direction=direction)
+    structure = structure_by_id.get(structure_ref)
+    if explicit_point is None:
+        return _normalized_structure_endpoint_connection_point(preferred, structure=structure, direction=direction)
+    if preferred is None:
+        return _normalized_structure_endpoint_connection_point(explicit_point, structure=structure, direction=direction)
+    if _connection_point_matches_direction(explicit_point, direction):
+        return _normalized_structure_endpoint_connection_point(explicit_point, structure=structure, direction=direction)
+    return _normalized_structure_endpoint_connection_point(preferred, structure=structure, direction=direction)
+
+
+def _preferred_structure_connection_point(
+    structure_ref: str,
+    points_by_structure: dict[str, list[object]],
+    *,
+    direction: str,
+):
+    points = list(points_by_structure.get(str(structure_ref or ""), []) or [])
+    if not points:
+        return None
+    priority = (
+        ["pipe_out", "downstream", "outlet", "discharge", "pipe_junction", "pipe", "upstream", "pipe_in", "inlet"]
+        if direction == "out"
+        else ["pipe_in", "upstream", "inlet", "pipe_junction", "pipe", "pipe_out", "downstream", "outlet", "discharge"]
+    )
+    by_role: dict[str, object] = {}
+    for point in points:
+        role = str(getattr(point, "point_role", "") or "").strip().lower()
+        if role and role not in by_role:
+            by_role[role] = point
+    for role in priority:
+        if role in by_role:
+            return by_role[role]
+    return sorted(points, key=lambda point: int(getattr(point, "connection_order", 0) or 0))[0]
+
+
+def _connection_point_matches_direction(point, direction: str) -> bool:
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    if not role:
+        return True
+    if direction == "out":
+        return role in {"pipe_out", "downstream", "outlet", "discharge", "pipe_junction", "pipe"}
+    return role in {"pipe_in", "upstream", "inlet", "pipe_junction", "pipe"}
+
+
+def _normalized_structure_endpoint_connection_point(point, *, structure, direction: str):
+    if point is None or structure is None:
+        return point
+    if not _is_default_culvert_endpoint_point(point, structure):
+        return point
+    placement = getattr(structure, "placement", None)
+    if placement is None:
+        return point
+    start = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end = float(getattr(placement, "station_end", start) or start)
+    station = min(start, end) if direction == "in" else max(start, end)
+    offset = float(getattr(placement, "offset", getattr(point, "offset", 0.0)) or 0.0)
+    try:
+        return replace(point, station=station, offset=offset)
+    except Exception:
+        return point
+
+
+def _is_default_culvert_endpoint_point(point, structure) -> bool:
+    kind = str(getattr(structure, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(structure, "native_type", "") or "").strip().lower()
+    if kind != "culvert" and native_type not in {"box_culvert", "pipe_culvert"}:
+        return False
+    structure_ref = str(getattr(structure, "structure_id", "") or "").strip()
+    base_id = structure_ref.split(":")[-1]
+    point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    default_suffixes = {"pipe-in", "pipe_out", "pipe-out", "pipe_in", "upstream", "downstream"}
+    has_default_id = any(point_id == f"connection:{base_id}:{suffix}".lower() for suffix in default_suffixes)
+    return role in {"pipe_in", "pipe_out", "upstream", "downstream"} or has_default_id
+
+
 def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, message: str) -> list[DiagnosticMessage]:
     diagnostics: list[DiagnosticMessage] = []
     seen: set[str] = set()
@@ -532,18 +643,6 @@ def _flow_route_graph_diagnostics(
 
         if from_ref and to_ref and from_ref in element_ids and to_ref in element_ids and from_ref != to_ref:
             adjacency.setdefault(from_ref, []).append((to_ref, source_ref))
-            to_kind = str(getattr(element_by_id.get(to_ref), "element_kind", "") or "").strip().lower()
-            if not outlet_ref and to_kind != "outfall_reference":
-                diagnostics.append(
-                    _diagnostic(
-                        "warning",
-                        "flow_route_missing_outlet",
-                        source_ref,
-                        "Flow Route has no final Outlet context and does not end at an outfall_reference Element.",
-                        notes=f"to_element_ref={to_ref};to_element_kind={to_kind}",
-                    )
-                )
-
     diagnostics.extend(_cycle_diagnostics(adjacency))
     return diagnostics
 

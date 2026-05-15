@@ -73,6 +73,21 @@ Target fields:
 
 `from_element_ref` and `to_element_ref` define the real graph edge. `outlet_ref` is optional route-level final discharge context and should reference an outfall Element, Structure outlet, or named external outlet when the row needs explicit final discharge ownership.
 
+### Ditch-to-Inlet Interpretation
+
+A `ditch -> inlet_reference` Flow Route is an intake/capture edge.
+
+It records that open ditch flow reaches the inlet, but it does not create a separate 3D pipe body.
+
+Physical 3D pipe geometry starts when both route endpoints resolve to Structure-owned pipe connection points, such as:
+
+```text
+inlet pipe_out -> culvert upstream
+culvert downstream -> outlet pipe_in
+```
+
+If the design needs a real short connector pipe from a ditch end into an inlet, represent that connector as its own Structure-backed Element or dedicated connector row in a later slice.
+
 ### Terminology Migration
 
 Use `Outlet` everywhere in user-facing Drainage workflow.

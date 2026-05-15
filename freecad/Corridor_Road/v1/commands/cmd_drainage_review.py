@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 try:
     import FreeCAD as App
     import FreeCADGui as Gui
@@ -207,6 +209,287 @@ def show_drainage_pipeline_network_preview_object(document=None, row_index: int 
         pass
     _select_and_fit_object(obj)
     return obj
+
+
+def show_drainage_pipeline_networks_preview_object(document=None, output=None):
+    """Create or update a 3D review object for all resolved Drainage pipeline networks."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Drainage pipeline network preview.")
+    payload = output or build_drainage_review_output(doc)
+    rows = list(getattr(payload, "pipeline_network_rows", []) or [])
+    if not rows:
+        raise RuntimeError("No resolved Drainage pipeline network is available.")
+    _refresh_structure_preview_for_pipeline_network(doc)
+    shapes = []
+    network_ids: list[str] = []
+    flow_route_refs: list[str] = []
+    segment_refs: list[str] = []
+    coordinate_modes: list[str] = []
+    linked_objects: list[object] = []
+    linked_connection_points: list[object] = []
+    for row in rows:
+        geometry_rows = _pipeline_geometry_rows_for_network(payload, row)
+        geometry_rows = _geometry_rows_snapped_to_structure_previews(doc, payload, geometry_rows)
+        shape = _pipeline_network_geometry_shape(geometry_rows)
+        if shape is not None and not getattr(shape, "isNull", lambda: False)():
+            shapes.append(shape)
+        linked_objects.extend(_create_pipeline_geometry_preview_objects(doc, geometry_rows))
+        linked_connection_points.extend(_create_pipeline_connection_point_preview_objects(doc, payload, geometry_rows))
+        network_ids.append(str(getattr(row, "network_id", "") or ""))
+        flow_route_refs.extend(str(value) for value in list(getattr(row, "flow_route_refs", []) or []) if str(value))
+        segment_refs.extend(str(value) for value in list(getattr(row, "pipeline_segment_refs", []) or []) if str(value))
+        coordinate_modes.append(str(getattr(row, "coordinate_mode", "") or "station_offset_fallback"))
+    if not shapes:
+        raise RuntimeError("Drainage pipeline network geometry could not be built.")
+    obj = doc.getObject("V1DrainagePipelineNetworksPreview")
+    if obj is None:
+        obj = doc.addObject("Part::Feature", "V1DrainagePipelineNetworksPreview")
+    obj.Label = "Drainage Pipeline Networks"
+    obj.Shape = shapes[0] if len(shapes) == 1 else Part.Compound(shapes)
+    _set_preview_string_property(obj, "CRRecordKind", "v1_drainage_pipeline_networks_preview")
+    _set_preview_string_property(obj, "V1ObjectType", "V1DrainagePipelineNetworksPreview")
+    _set_preview_string_property(obj, "NetworkIds", ",".join(_unique_text_values(network_ids)))
+    _set_preview_string_property(obj, "FlowRouteRefs", ",".join(_unique_text_values(flow_route_refs)))
+    _set_preview_string_property(obj, "PipelineSegmentRefs", ",".join(_unique_text_values(segment_refs)))
+    _set_preview_string_property(obj, "ConnectionPointRefs", ",".join(_unique_text_values([str(getattr(item, "ConnectionPointRef", "") or "") for item in linked_connection_points])))
+    _set_preview_string_property(obj, "LinkedPreviewObjects", ",".join(_unique_text_values([item.Name for item in [*linked_objects, *linked_connection_points]])))
+    _set_preview_string_property(obj, "NetworkCount", str(len(rows)))
+    _set_preview_string_property(obj, "CoordinateMode", ",".join(_unique_text_values(coordinate_modes)))
+    _style_pipeline_network_preview(obj)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(doc), obj)
+    except Exception:
+        pass
+    try:
+        doc.recompute()
+    except Exception:
+        pass
+    _select_and_fit_object(obj)
+    return obj
+
+
+def _refresh_structure_preview_for_pipeline_network(document) -> None:
+    structure_model = to_structure_model(find_v1_structure_model(document))
+    if structure_model is None:
+        return
+    try:
+        from .cmd_structure_editor import show_v1_structure_preview_object
+
+        show_v1_structure_preview_object(document, structure_model, project=find_project(document))
+    except Exception:
+        pass
+
+
+def _geometry_rows_snapped_to_structure_previews(document, output, geometry_rows: list[object]) -> list[object]:
+    segment_by_id = {
+        str(getattr(row, "pipeline_segment_id", "") or ""): row
+        for row in list(getattr(output, "pipeline_segment_rows", []) or [])
+        if str(getattr(row, "pipeline_segment_id", "") or "")
+    }
+    structure_model = to_structure_model(find_v1_structure_model(document))
+    if structure_model is None:
+        return list(geometry_rows or [])
+    point_by_ref = {
+        str(getattr(point, "connection_point_id", "") or ""): point
+        for point in list(getattr(structure_model, "connection_point_rows", []) or [])
+        if str(getattr(point, "connection_point_id", "") or "")
+    }
+    structure_by_ref = {
+        str(getattr(row, "structure_id", "") or ""): row
+        for row in list(getattr(structure_model, "structure_rows", []) or [])
+        if str(getattr(row, "structure_id", "") or "")
+    }
+    if not point_by_ref or not structure_by_ref:
+        return list(geometry_rows or [])
+    try:
+        from .cmd_structure_editor import _station_offset_xyz as structure_station_offset_xyz
+        from .cmd_structure_editor import _structure_preview_path_source
+
+        path = _structure_preview_path_source(document)
+    except Exception:
+        return list(geometry_rows or [])
+    snapped_rows = []
+    for row in list(geometry_rows or []):
+        segment = segment_by_id.get(str(getattr(row, "pipeline_segment_id", "") or ""))
+        points = list(getattr(row, "centerline_points", []) or [])
+        if segment is None or len(points) < 2:
+            snapped_rows.append(row)
+            continue
+        first = _snapped_culvert_endpoint_point(
+            points[0],
+            str(getattr(segment, "from_connection_point_ref", "") or ""),
+            point_by_ref=point_by_ref,
+            structure_by_ref=structure_by_ref,
+            path=path,
+            station_offset_xyz=structure_station_offset_xyz,
+            direction="out",
+        )
+        last = _snapped_culvert_endpoint_point(
+            points[-1],
+            str(getattr(segment, "to_connection_point_ref", "") or ""),
+            point_by_ref=point_by_ref,
+            structure_by_ref=structure_by_ref,
+            path=path,
+            station_offset_xyz=structure_station_offset_xyz,
+            direction="in",
+        )
+        if first == points[0] and last == points[-1]:
+            snapped_rows.append(row)
+            continue
+        new_points = list(points)
+        new_points[0] = first
+        new_points[-1] = last
+        snapped_rows.append(
+            replace(
+                row,
+                centerline_points=new_points,
+                notes=(str(getattr(row, "notes", "") or "") + ";preview_endpoint_snap=structure_culvert").strip(";"),
+            )
+        )
+    return snapped_rows
+
+
+def _snapped_culvert_endpoint_point(
+    point_xyz,
+    connection_point_ref: str,
+    *,
+    point_by_ref: dict[str, object],
+    structure_by_ref: dict[str, object],
+    path: dict[str, object],
+    station_offset_xyz,
+    direction: str,
+):
+    point = point_by_ref.get(str(connection_point_ref or ""))
+    if point is None:
+        return point_xyz
+    structure = structure_by_ref.get(str(getattr(point, "structure_ref", "") or ""))
+    if not _is_culvert_endpoint_preview_point(point, structure):
+        return point_xyz
+    placement = getattr(structure, "placement", None)
+    if placement is None:
+        return point_xyz
+    start = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end = float(getattr(placement, "station_end", start) or start)
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    use_start = role in {"pipe_in", "upstream", "inlet"} or direction == "in"
+    station = min(start, end) if use_start else max(start, end)
+    offset = float(getattr(placement, "offset", getattr(point, "offset", 0.0)) or 0.0)
+    try:
+        x, y, _z = station_offset_xyz(path, station, offset, 0.0)
+    except Exception:
+        return point_xyz
+    original_z = float(point_xyz[2]) if len(point_xyz) >= 3 else 0.0
+    return (float(x), float(y), original_z)
+
+
+def _is_culvert_endpoint_preview_point(point, structure) -> bool:
+    if point is None or structure is None:
+        return False
+    kind = str(getattr(structure, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(structure, "native_type", "") or "").strip().lower()
+    if kind != "culvert" and native_type not in {"box_culvert", "pipe_culvert"}:
+        return False
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    return role in {"pipe_in", "pipe_out", "upstream", "downstream", "inlet", "outlet"}
+
+
+def _create_pipeline_geometry_preview_objects(document, geometry_rows: list[object]) -> list[object]:
+    objects: list[object] = []
+    for row in list(geometry_rows or []):
+        segment_id = str(getattr(row, "pipeline_segment_id", "") or "")
+        if not segment_id:
+            continue
+        shape = _pipeline_geometry_shape(row)
+        if shape is None or getattr(shape, "isNull", lambda: False)():
+            continue
+        object_name = "V1DrainagePipelineSegment_" + _safe_object_suffix(segment_id)
+        obj = document.getObject(object_name)
+        if obj is None:
+            obj = document.addObject("Part::Feature", object_name)
+        obj.Label = "Drainage Pipe - " + _display_source_ref(segment_id)
+        obj.Shape = shape
+        _set_preview_string_property(obj, "CRRecordKind", "v1_drainage_pipeline_segment_output_preview")
+        _set_preview_string_property(obj, "V1ObjectType", "V1DrainagePipelineSegmentOutputPreview")
+        _set_preview_string_property(obj, "PipelineSegmentId", segment_id)
+        _set_preview_string_property(obj, "FlowRouteRef", str(getattr(row, "flow_route_ref", "") or ""))
+        _set_preview_string_property(obj, "CoordinateMode", str(getattr(row, "coordinate_mode", "") or ""))
+        _style_pipeline_segment_preview(obj)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(find_project(document), obj)
+        except Exception:
+            pass
+        objects.append(obj)
+    return objects
+
+
+def _create_pipeline_connection_point_preview_objects(document, output, geometry_rows: list[object]) -> list[object]:
+    geometry_by_segment = {
+        str(getattr(row, "pipeline_segment_id", "") or ""): row
+        for row in list(geometry_rows or [])
+        if str(getattr(row, "pipeline_segment_id", "") or "")
+    }
+    point_by_ref = {
+        str(getattr(point, "connection_point_id", "") or ""): point
+        for point in list(getattr(to_structure_model(find_v1_structure_model(document)), "connection_point_rows", []) or [])
+        if str(getattr(point, "connection_point_id", "") or "")
+    }
+    marker_specs: dict[str, dict[str, object]] = {}
+    for segment in list(getattr(output, "pipeline_segment_rows", []) or []):
+        segment_id = str(getattr(segment, "pipeline_segment_id", "") or "")
+        geometry = geometry_by_segment.get(segment_id)
+        points = _pipeline_geometry_display_points(geometry) if geometry is not None else []
+        if not points:
+            continue
+        for ref, xyz, endpoint_kind in (
+            (str(getattr(segment, "from_connection_point_ref", "") or ""), points[0], "from"),
+            (str(getattr(segment, "to_connection_point_ref", "") or ""), points[-1], "to"),
+        ):
+            if not ref:
+                continue
+            marker_specs[ref] = {
+                "point": point_by_ref.get(ref),
+                "xyz": xyz,
+                "endpoint_kind": endpoint_kind,
+                "segment_id": segment_id,
+                "flow_route_ref": str(getattr(segment, "flow_route_ref", "") or ""),
+            }
+    objects: list[object] = []
+    for ref, spec in marker_specs.items():
+        xyz = spec.get("xyz", (0.0, 0.0, 0.0))
+        if len(xyz) < 3:
+            continue
+        point = spec.get("point")
+        role = str(getattr(point, "point_role", "") or spec.get("endpoint_kind", "") or "")
+        object_name = "V1StructurePipeConnectionPoint_" + _safe_object_suffix(ref)
+        obj = document.getObject(object_name)
+        if obj is None:
+            obj = document.addObject("Part::Feature", object_name)
+        obj.Label = _connection_point_preview_label(ref, role)
+        obj.Shape = _pipeline_connection_point_marker_shape(point, xyz)
+        _set_preview_string_property(obj, "CRRecordKind", "v1_structure_pipe_connection_point_preview")
+        _set_preview_string_property(obj, "V1ObjectType", "V1StructurePipeConnectionPointPreview")
+        _set_preview_string_property(obj, "ConnectionPointRef", ref)
+        _set_preview_string_property(obj, "PointRole", role)
+        _set_preview_string_property(obj, "StructureRef", str(getattr(point, "structure_ref", "") or ""))
+        _set_preview_string_property(obj, "PipelineSegmentId", str(spec.get("segment_id", "") or ""))
+        _set_preview_string_property(obj, "FlowRouteRef", str(spec.get("flow_route_ref", "") or ""))
+        _style_pipeline_connection_point_preview(obj, role)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(find_project(document), obj)
+        except Exception:
+            pass
+        objects.append(obj)
+    return objects
 
 
 class V1DrainageReviewTaskPanel:
@@ -499,8 +782,9 @@ def _pipeline_candidate_shape(row, *, adapter=None):
     invert_start = _note_float(row.notes, "invert_start", 0.0)
     invert_end = _note_float(row.notes, "invert_end", invert_start)
     diameter = max(_note_float(row.notes, "diameter", 0.0), 0.2)
-    point0 = _station_offset_vector(station_start, from_offset, invert_start, adapter=adapter)
-    point1 = _station_offset_vector(station_end, to_offset, invert_end, adapter=adapter)
+    axis_offset = diameter / 2.0
+    point0 = _station_offset_vector(station_start, from_offset, invert_start + axis_offset, adapter=adapter)
+    point1 = _station_offset_vector(station_end, to_offset, invert_end + axis_offset, adapter=adapter)
     direction = point1.sub(point0)
     length = direction.Length
     if length <= 1.0e-9:
@@ -515,11 +799,7 @@ def _pipeline_candidate_shape(row, *, adapter=None):
 
 
 def _pipeline_geometry_shape(row):
-    points = [
-        App.Vector(float(point[0]), float(point[1]), float(point[2]))
-        for point in list(getattr(row, "centerline_points", []) or [])
-        if len(point) >= 3
-    ]
+    points = [App.Vector(float(point[0]), float(point[1]), float(point[2])) for point in _pipeline_geometry_display_points(row)]
     diameter = max(float(getattr(row, "diameter", 0.0) or 0.0), 0.2)
     if not points:
         return Part.Shape()
@@ -543,6 +823,28 @@ def _pipeline_geometry_shape(row):
     if len(shapes) == 1:
         return shapes[0]
     return Part.Compound(shapes)
+
+
+def _pipeline_geometry_display_points(row) -> list[tuple[float, float, float]]:
+    if row is None:
+        return []
+    axis_offset = _pipeline_display_axis_z_offset(row)
+    points: list[tuple[float, float, float]] = []
+    for point in list(getattr(row, "centerline_points", []) or []):
+        if len(point) < 3:
+            continue
+        points.append((float(point[0]), float(point[1]), float(point[2]) + axis_offset))
+    return points
+
+
+def _pipeline_display_axis_z_offset(row) -> float:
+    diameter = float(getattr(row, "diameter", 0.0) or 0.0)
+    shape_kind = str(getattr(row, "shape_kind", "") or "").strip().lower()
+    if diameter <= 0.0:
+        return 0.0
+    if shape_kind and shape_kind not in {"circular", "pipe", "round", "circular_pipe"}:
+        return 0.0
+    return diameter / 2.0
 
 
 def _pipeline_geometry_row_for_segment(output, segment_row, document):
@@ -599,6 +901,28 @@ def _pipeline_network_geometry_shape(rows):
     return Part.Compound(shapes)
 
 
+def _pipeline_connection_point_marker_shape(point, xyz):
+    x, y, z = float(xyz[0]), float(xyz[1]), float(xyz[2])
+    radius = _pipeline_connection_point_marker_radius(point)
+    center = App.Vector(x, y, z)
+    try:
+        return Part.makeSphere(radius, center)
+    except Exception:
+        return Part.Vertex(center)
+
+
+def _pipeline_connection_point_marker_radius(point) -> float:
+    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
+    width = float(getattr(point, "width", 0.0) or 0.0)
+    height = float(getattr(point, "height", 0.0) or 0.0)
+    return max(0.55, min(max(diameter, width, height, 0.8) * 0.45, 2.5))
+
+
+def _connection_point_preview_label(connection_point_ref: str, role: str) -> str:
+    role_text = str(role or "").replace("_", " ").strip().title() or "Connection Point"
+    return f"{role_text} - {_display_source_ref(connection_point_ref)}"
+
+
 def _station_offset_adapter(document):
     return _station_offset_coordinate_frame(document).get("adapter")
 
@@ -633,9 +957,9 @@ def _centerline3d_coordinate_frame(document) -> dict[str, object] | None:
         return None
     frame_service = Centerline3DFrameService()
 
-    def _adapter(station: float, offset: float) -> tuple[float, float]:
+    def _adapter(station: float, offset: float) -> tuple[float, float, float]:
         frame = frame_service.resolve_station_offset(result, station, offset)
-        return float(frame.x), float(frame.y)
+        return float(frame.x), float(frame.y), float(frame.z)
 
     return {
         "adapter": _adapter,
@@ -683,6 +1007,29 @@ def _style_pipeline_segment_preview(obj) -> None:
         pass
 
 
+def _style_pipeline_connection_point_preview(obj, role: str) -> None:
+    role_text = str(role or "").strip().lower()
+    if role_text in {"pipe_in", "upstream", "inlet", "to"}:
+        color = (1.0, 0.65, 0.0)
+    elif role_text in {"pipe_out", "downstream", "outlet", "discharge", "from"}:
+        color = (0.1, 1.0, 0.25)
+    else:
+        color = (1.0, 1.0, 0.0)
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is None:
+            return
+        vobj.Visibility = True
+        vobj.ShapeColor = color
+        vobj.LineColor = color
+        vobj.PointColor = color
+        vobj.Transparency = 0
+        vobj.LineWidth = 5.0
+        vobj.PointSize = 12.0
+    except Exception:
+        pass
+
+
 def _style_pipeline_network_preview(obj) -> None:
     try:
         vobj = getattr(obj, "ViewObject", None)
@@ -696,6 +1043,33 @@ def _style_pipeline_network_preview(obj) -> None:
         vobj.LineWidth = 7.0
     except Exception:
         pass
+
+
+def _unique_text_values(values: list[object]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
+
+
+def _safe_object_suffix(value: object) -> str:
+    text = str(value or "").strip()
+    output = []
+    for char in text:
+        output.append(char if char.isalnum() else "_")
+    return "".join(output).strip("_") or "unknown"
+
+
+def _display_source_ref(value: object) -> str:
+    text = str(value or "").strip()
+    if ":" not in text:
+        return text
+    return text.split(":", 1)[1]
 
 
 def _set_preview_string_property(obj, name: str, value: str) -> None:

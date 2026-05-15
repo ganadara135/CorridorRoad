@@ -171,6 +171,30 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Changed Drainage Elements `Structure Ref` cells to use Structure ID combos populated from the active Structures model while preserving source refs internally.
 - Removed the Region Boundary structure placeholder preview boxes so selected Regions no longer create repeated purple `V1CorridorRegionStructure_*` marker objects.
 - Changed Drainage preset Flow Route IDs to use `flowId-01` style values while preserving the internal `flow-route:` prefix.
+- Increased the Structures `Drainage Structures` preset preview sizes for inlet, culvert, outlet, and their pipe connection diameters so the drainage chain is easier to inspect in 3D.
+- Changed the Structures `Drainage Structures` preset culvert connection point offsets to `0.000` for both upstream and downstream ports.
+- Changed circular pipe culvert Structure previews to use one start-to-end cylinder instead of segmented cylinders, avoiding broken-looking overlapping faces in 3D.
+- Changed Structure and Drainage Flow Network connection point previews to simple sphere markers so Pipe In / Pipe Out points read cleanly in 3D.
+- Changed Drainage Flow Network previews to display circular pipes on the pipe axis above invert elevation, matching Structure culvert previews and connection point markers.
+- Changed the `Drainage Structures Flow` preset so the culvert Element leaves its connection point blank and lets Flow Route direction resolve upstream/downstream ports.
+- Changed the Structures `Drainage Structures` and Drainage `Drainage Structures Flow` presets to use station-banded ditch sections with three matched inlet Structures before a shared culvert-to-outlet pipe chain.
+- Changed the `Drainage Structures Flow` pipe routes to chain `inlet-01 -> inlet-02 -> inlet-03 -> culvert-01 -> outlet-01`, with Pipe In ports on intermediate inlets so the last inlet connects directly to the culvert Pipe In port.
+- Changed the last inlet `pipe_out` in the Structures `Drainage Structures` preset to match the culvert pipe diameter, so `flowId-06` connects cleanly into the culvert Pipe In port in 3D.
+- Changed Drainage pipeline resolution so native culvert Pipe In/Pipe Out roles snap to the current culvert placement start/end regardless of the saved connection point ID, preventing stale connection point station values from leaving `inlet-03 -> culvert-01` preview gaps.
+- Changed Drainage `Show Flow Network` to refresh the current Structures preview first, so pipe previews and visible Structure bodies are drawn from the same source state.
+- Changed Drainage network preview geometry to snap culvert pipe endpoints to the Structure preview placement used for the culvert body, eliminating visual gaps caused by stale connection point station/offset values.
+- Changed Structure-backed Drainage pipeline geometry to use direct port-to-port 3D segments instead of sampling intermediate stations along the Alignment.
+- Added Flow Routes table double-click preview in the Drainage editor so a Structure-backed route highlights its 3D pipe segment directly.
+- Changed Drainage pipeline geometry to preserve Flow Route From/To direction, so 3D pipe endpoints stay attached to the resolved Structure Pipe Out and Pipe In connection points even when station order is reversed.
+- Changed Drainage Flow Routes so the `Outlet` cell is enabled only when `To Element` is an outlet/outfall element; intermediate route rows now keep Outlet empty.
+- Documented that `ditch -> inlet` Flow Routes are open-channel capture relationships, while 3D pipe geometry starts from Structure-owned Pipe In / Pipe Out connection points.
+- Added a Drainage editor `Drainage Structures Flow` preset aligned with the Structures `Drainage Structures` preset, including ditch, inlet, culvert, outlet, Structure refs, connection points, and Flow Routes.
+- Added Drainage editor `Show Flow Network`, which applies the current Drainage source rows and creates a 3D full-network pipe preview from resolved Structure connection points.
+- Changed Drainage pipeline network preview geometry so missing invert elevations fall back to the active 3D centerline/profile height instead of zero elevation.
+- Added linked tree-visible preview objects for individual Structure rows and Drainage pipeline segments, while keeping the aggregate preview objects available.
+- Removed the default v1 Drainage tree child folders `Ditches`, `Culverts`, `Inlets`, and `Flow Paths`; Drainage source/preview objects now route directly under `05_Drainage`.
+- Changed Drainage pipeline resolution so multi-connection Structures such as culverts use direction-aware endpoints: upstream/inlet when targeted by a route and downstream/outlet when starting the next route.
+- Added tree-visible Structure-owned Pipe In / Pipe Out connection point markers for `Show Flow Network`, routed under `06_Structures` while remaining linked to the generated Drainage pipe segment endpoints.
 - Added a Structures editor `Drainage Structures` preset with culvert, inlet, and outlet/headwall Structure refs for Drainage Structure Ref selection.
 - Removed Region `Primary Kind` and `Layers` from the Region source workflow; Region intent now comes from station spans and base Assembly assignment, while Structures and Drainage own their Region assignments.
 - Changed Profile `Preset Data` so selected example profiles are sampled onto the current station rows instead of replacing them with fixed preset stations.
