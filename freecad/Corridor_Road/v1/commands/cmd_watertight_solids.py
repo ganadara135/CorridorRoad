@@ -262,6 +262,8 @@ class V1WatertightSolidsTaskPanel:
         self._status.setPlainText(self._status_text())
         layout.addWidget(self._status)
 
+        button_group = QtWidgets.QVBoxLayout()
+        button_group.setSpacing(6)
         button_row = QtWidgets.QHBoxLayout()
         self._refresh_button = QtWidgets.QPushButton("Refresh")
         self._refresh_button.clicked.connect(self._refresh)
@@ -286,30 +288,36 @@ class V1WatertightSolidsTaskPanel:
         self._build_package_button.setToolTip("Create or update the Simulation Package manifest from built solids and Simulation QA.")
         self._build_package_button.clicked.connect(self._build_simulation_package)
         button_row.addWidget(self._build_package_button)
+        button_row.addStretch(1)
+        button_group.addLayout(button_row)
+
+        secondary_button_row = QtWidgets.QHBoxLayout()
         self._export_package_button = QtWidgets.QPushButton("Export Package")
         self._export_package_button.setEnabled(False)
         self._export_package_button.setToolTip("Export the persisted Simulation Package manifest to JSON.")
         self._export_package_button.clicked.connect(self._export_simulation_package_json)
-        button_row.addWidget(self._export_package_button)
+        secondary_button_row.addWidget(self._export_package_button)
         self._show_button = QtWidgets.QPushButton("Show Solid")
         self._show_button.setEnabled(False)
         self._show_button.setToolTip("Show the selected built solid output.")
         self._show_button.clicked.connect(self._show_selected_solid)
-        button_row.addWidget(self._show_button)
+        secondary_button_row.addWidget(self._show_button)
         self._hide_button = QtWidgets.QPushButton("Hide Solid")
         self._hide_button.setEnabled(False)
         self._hide_button.setToolTip("Hide the selected built solid output.")
         self._hide_button.clicked.connect(self._hide_selected_solid)
-        button_row.addWidget(self._hide_button)
+        secondary_button_row.addWidget(self._hide_button)
         self._focus_button = QtWidgets.QPushButton("Focus Solid")
         self._focus_button.setEnabled(False)
         self._focus_button.setToolTip("Select and focus the selected built solid output.")
         self._focus_button.clicked.connect(self._focus_selected_solid)
-        button_row.addWidget(self._focus_button)
+        secondary_button_row.addWidget(self._focus_button)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(_close_dialog)
-        button_row.addWidget(close_button)
-        layout.addLayout(button_row)
+        secondary_button_row.addWidget(close_button)
+        secondary_button_row.addStretch(1)
+        button_group.addLayout(secondary_button_row)
+        layout.addLayout(button_group)
 
         self._update_action_state()
         return widget
@@ -548,6 +556,7 @@ class V1WatertightSolidsTaskPanel:
                     corridor_ref=corridor_ref,
                 )
             )
+            profile_set = _profile_set_on_centerline3d(self.document, profile_set)
             edge_network = SolidEdgeNetworkService().build(
                 SolidEdgeNetworkBuildRequest(
                     project_id=project_id,
@@ -1656,11 +1665,48 @@ def _centerline3d_coordinate_frame(document) -> dict[str, object]:
         return {"adapter": None, "coordinate_mode": ""}
     frame_service = Centerline3DFrameService()
 
-    def _adapter(station: float, offset: float) -> tuple[float, float]:
+    def _adapter(station: float, offset: float) -> tuple[float, float, float]:
         frame = frame_service.resolve_station_offset(result, station, offset)
-        return float(frame.x), float(frame.y)
+        return float(frame.x), float(frame.y), float(frame.z)
 
     return {"adapter": _adapter, "coordinate_mode": "centerline3d_result"}
+
+
+def _profile_set_on_centerline3d(document, profile_set):
+    frame = _centerline3d_coordinate_frame(document)
+    adapter = frame.get("adapter")
+    if adapter is None:
+        return profile_set
+    converted_profiles = []
+    changed = False
+    for profile in list(getattr(profile_set, "profile_rows", []) or []):
+        station = float(getattr(profile, "station", 0.0) or 0.0)
+        converted_nodes = []
+        for node in list(getattr(profile, "node_rows", []) or []):
+            offset = float(getattr(node, "lateral_offset", 0.0) or 0.0)
+            vertical_offset = float(getattr(node, "vertical_offset", 0.0) or 0.0)
+            try:
+                x, y, center_z = adapter(station, offset)
+            except Exception:
+                converted_nodes.append(node)
+                continue
+            converted_nodes.append(
+                replace(
+                    node,
+                    x=float(x),
+                    y=float(y),
+                    z=float(center_z) + vertical_offset,
+                )
+            )
+            changed = True
+        notes = str(getattr(profile, "notes", "") or "")
+        if changed and "path_source=centerline3d_result" not in notes:
+            notes = (notes + ";path_source=centerline3d_result").strip(";")
+        converted_profiles.append(replace(profile, node_rows=converted_nodes, notes=notes))
+    if not changed:
+        return profile_set
+    source_refs = _unique_refs([*list(getattr(profile_set, "source_refs", []) or []), "centerline3d_result"])
+    return replace(profile_set, profile_rows=converted_profiles, source_refs=source_refs)
 
 
 def _structure_body_solid_shape(solid_row, *, structure_model=None):

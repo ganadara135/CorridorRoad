@@ -173,6 +173,7 @@ Step 8 result:
 - Road body and region solids from Applied Section profiles report `applied_section_frame`.
 - Structure body solids pass through the Structure Solid `path_source`.
 - Drainage pipeline and network solids report their resolved coordinate mode, including `centerline3d_result` when the shared 3D Centerline result is available.
+- Watertight Solid build now reprojects Applied Section based closed solid profiles, including lined ditch bodies, onto the shared `centerline3d_result` frame before topology and Part shape creation.
 
 Step 9 result:
 

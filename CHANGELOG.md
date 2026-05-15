@@ -184,6 +184,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Changed Drainage `Show Flow Network` to refresh the current Structures preview first, so pipe previews and visible Structure bodies are drawn from the same source state.
 - Changed Drainage network preview geometry to snap culvert pipe endpoints to the Structure preview placement used for the culvert body, eliminating visual gaps caused by stale connection point station/offset values.
 - Changed Structure-backed Drainage pipeline geometry to use direct port-to-port 3D segments instead of sampling intermediate stations along the Alignment.
+- Changed the Watertight Solids panel action area to wrap `Export Package` and later visibility/focus/close actions onto a second row for narrower panel widths.
+- Changed Watertight Solid Build for Applied Section based targets, including lined ditch bodies, to reproject closed solid profiles onto the active 3D Centerline frame before topology and Part shape creation.
 - Added Flow Routes table double-click preview in the Drainage editor so a Structure-backed route highlights its 3D pipe segment directly.
 - Changed Drainage pipeline geometry to preserve Flow Route From/To direction, so 3D pipe endpoints stay attached to the resolved Structure Pipe Out and Pipe In connection points even when station order is reversed.
 - Changed Drainage Flow Routes so the `Outlet` cell is enabled only when `To Element` is an outlet/outfall element; intermediate route rows now keep Outlet empty.

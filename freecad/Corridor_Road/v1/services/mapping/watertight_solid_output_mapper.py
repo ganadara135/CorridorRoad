@@ -279,6 +279,8 @@ def _side_from_ref(value: str) -> str:
 
 def _profile_path_source(profile_set: AppliedSectionSolidProfileSet) -> str:
     profiles = list(getattr(profile_set, "profile_rows", []) or [])
+    if any("path_source=centerline3d_result" in str(getattr(profile, "notes", "") or "") for profile in profiles):
+        return "centerline3d_result"
     if any(str(getattr(profile, "applied_section_ref", "") or "") for profile in profiles):
         return "applied_section_frame"
     return "station_range"

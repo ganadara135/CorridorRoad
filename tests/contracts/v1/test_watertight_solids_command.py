@@ -7,6 +7,7 @@ import FreeCAD as App
 import Part
 from types import SimpleNamespace
 
+import freecad.Corridor_Road.v1.commands.cmd_watertight_solids as watertight_cmd
 from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     V1_TREE_EXCHANGE_PACKAGES,
@@ -24,6 +25,11 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.corridor_model import CorridorModel, CorridorSamplingPolicy, CorridorStationRow
+from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import (
+    AppliedSectionSolidProfile,
+    AppliedSectionSolidProfileSet,
+    SolidProfileNode,
+)
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
@@ -49,6 +55,7 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     WATERTIGHT_SOLIDS_BLOCKED_MESSAGE,
     WATERTIGHT_SOLIDS_COMMAND_ID,
     _drainage_pipeline_network_solid_shape,
+    _profile_set_on_centerline3d,
     discover_watertight_solid_targets,
     export_document_simulation_package_json,
     watertight_solid_prerequisite_status,
@@ -503,6 +510,53 @@ def test_watertight_solids_panel_shows_blocked_state_and_disables_build_buttons(
         assert panel._focus_button.isEnabled() is False
     finally:
         App.closeDocument(doc.Name)
+
+
+def test_watertight_solid_profiles_are_reprojected_to_centerline3d_frame() -> None:
+    profile_set = AppliedSectionSolidProfileSet(
+        schema_version=1,
+        project_id="proj-1",
+        profile_set_id="solid-profiles:test",
+        target_ref="solid-target:lined-ditch",
+        source_refs=["applied:main"],
+        profile_rows=[
+            AppliedSectionSolidProfile(
+                profile_id="solid-profile:1",
+                target_id="solid-target:lined-ditch",
+                station=100.0,
+                applied_section_ref="applied-section:100",
+                node_rows=[
+                    SolidProfileNode(
+                        node_id="node:top",
+                        semantic_role="top",
+                        x=100.0,
+                        y=-5.0,
+                        z=1.0,
+                        lateral_offset=-5.0,
+                        vertical_offset=0.25,
+                    )
+                ],
+                is_closed=True,
+            )
+        ],
+    )
+    original_frame = watertight_cmd._centerline3d_coordinate_frame
+    try:
+        watertight_cmd._centerline3d_coordinate_frame = lambda _document: {
+            "adapter": lambda station, offset: (1000.0 + float(station), 2000.0 + float(offset), 30.0),
+            "coordinate_mode": "centerline3d_result",
+        }
+
+        converted = _profile_set_on_centerline3d(None, profile_set)
+    finally:
+        watertight_cmd._centerline3d_coordinate_frame = original_frame
+
+    node = converted.profile_rows[0].node_rows[0]
+    assert node.x == 1100.0
+    assert node.y == 1995.0
+    assert node.z == 30.25
+    assert "centerline3d_result" in converted.source_refs
+    assert "path_source=centerline3d_result" in converted.profile_rows[0].notes
 
 
 def test_watertight_solids_panel_selects_available_target_and_tracks_enabled_state() -> None:
