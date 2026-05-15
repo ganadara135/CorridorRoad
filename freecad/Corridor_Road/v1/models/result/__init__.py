@@ -9,6 +9,7 @@ from .applied_section_solid_profile import (
 )
 from .applied_section_set import AppliedSectionSet
 from .corridor_model import CorridorModel
+from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
 from .mass_haul_model import MassHaulModel
@@ -24,6 +25,8 @@ __all__ = [
     "AppliedSectionSolidProfile",
     "AppliedSectionSolidProfileSet",
     "AppliedSectionSet",
+    "Centerline3DPointRow",
+    "Centerline3DResult",
     "CorridorModel",
     "DrainagePipelineResult",
     "DrainagePipelineSegment",

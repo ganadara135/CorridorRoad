@@ -391,6 +391,28 @@ def test_applied_sections_validate_allows_drainage_element_without_region() -> N
         App.closeDocument(doc.Name)
 
 
+def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = applied_sections_command._show_message
+    applied_sections_command._show_message = lambda *_args, **_kwargs: None
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        panel = V1AppliedSectionsTaskPanel(document=doc)
+
+        assert panel._validate(show_message=False) is False
+        assert "missing_required_sources: Profile" in panel._summary.toPlainText()
+    finally:
+        applied_sections_command._show_message = original_show_message
+        App.closeDocument(doc.Name)
+
+
 def test_show_applied_section_preview_object_creates_selected_section_line() -> None:
     doc, project = _new_project_doc()
     try:
@@ -405,10 +427,16 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         result = build_document_applied_section_set(doc, project=project)
 
         obj = show_applied_section_preview_object(doc, result, 0)
+        marker = doc.getObject("V1AppliedSectionStationMarker")
 
         assert obj is not None
+        assert marker is not None
         assert obj.CRRecordKind == "v1_applied_section_show_preview"
         assert obj.V1ObjectType == "V1AppliedSectionShowPreview"
+        assert marker.CRRecordKind == "v1_applied_section_station_marker"
+        assert marker.V1ObjectType == "V1AppliedSectionStationMarker"
+        assert marker.Station == obj.Station
+        assert marker.Shape.BoundBox.XLength > 0.0
         assert obj.RegionId == "region:normal-01"
         assert obj.AssemblyId == "assembly:basic-road"
         assert obj.TemplateId == "template:basic-road"
@@ -416,6 +444,7 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         assert int(obj.PreviewPointCount) >= 4
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
+        assert marker.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)
 

@@ -65,11 +65,15 @@ They must not become:
 
 Recommended 3D review families:
 
+- `Centerline3DReview`
 - `PlanOverlay3D`
 - `ProfileOverlay3D`
 - `CurrentSectionOverlay3D`
 - `SectionSeriesOverlay3D`
 - `EarthworkOverlay3D`
+
+`Centerline3DReview` should be exposed as the independent `3D Centerline` toolbar stage after `Review Plan/Profile`.
+It is the shared station/offset/elevation baseline review used by Structures, Drainage, Applied Sections, and Build Corridor.
 
 ## 7. Plan Overlay 3D
 

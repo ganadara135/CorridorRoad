@@ -67,6 +67,12 @@ CORRIDOR_BUILD_REVIEW_OBJECTS = (
     ("daylight", "Slope Face Surface", "V1CorridorDaylightSurfacePreview"),
     ("drainage", "Drainage Surface", "V1CorridorDrainageSurfacePreview"),
 )
+CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS = {
+    "design": "V1CorridorDesignSurfacePreviewDiagnostic",
+    "subgrade": "V1CorridorSubgradeSurfacePreviewDiagnostic",
+    "daylight": "V1CorridorDaylightSurfacePreviewDiagnostic",
+    "drainage": "V1CorridorDrainageSurfacePreviewDiagnostic",
+}
 CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
@@ -94,6 +100,7 @@ CORRIDOR_BUILD_REVIEW_ROW_COLORS = {
     "ready": (220, 245, 224),
     "missing": (238, 238, 238),
     "empty": (255, 241, 205),
+    "error": (255, 210, 210),
 }
 CORRIDOR_BUILD_REVIEW_TEXT_COLOR = (20, 20, 20)
 CORRIDOR_CENTERLINE_PREVIEW_STYLE = {
@@ -459,9 +466,10 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
         obj = doc.getObject(object_name) if doc is not None else None
+        diagnostic = _corridor_build_preview_diagnostic_object(doc, role)
         rows.append(
             _with_applied_section_review_summary(
-                _corridor_build_review_row(role, title, object_name, obj),
+                _corridor_build_review_row(role, title, object_name, obj, diagnostic=diagnostic),
                 applied_summary,
             )
         )
@@ -1473,7 +1481,7 @@ def create_corridor_centerline_3d_preview(
     corridor_model=None,
     applied_section_set_ref: str = "",
 ):
-    """Create or update a spline-based 3D centerline preview from AppliedSection frames."""
+    """Create or update a 3D centerline preview from the shared Centerline3DResult."""
 
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None or corridor_model is None:
@@ -1488,7 +1496,10 @@ def create_corridor_centerline_3d_preview(
     except Exception:
         return None
 
-    points, stations = _centerline_points_from_applied_sections(applied_section_set, AppModule)
+    points, stations, source_mode, centerline_result_id = _corridor_centerline_preview_points(
+        doc,
+        AppModule,
+    )
     if len(points) < 2:
         return None
     shape, curve_kind = _make_centerline_shape(points, Part)
@@ -1503,6 +1514,8 @@ def create_corridor_centerline_3d_preview(
     _set_preview_property(obj, "CRRecordKind", "v1_corridor_centerline_preview")
     _set_preview_property(obj, "V1ObjectType", "V1CorridorCenterlinePreview")
     _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+    _set_preview_property(obj, "PreviewSource", source_mode)
+    _set_preview_property(obj, "Centerline3DResultId", centerline_result_id)
     _set_preview_property(
         obj,
         "AppliedSectionSetId",
@@ -1564,7 +1577,15 @@ def create_corridor_design_surface_preview(
                 surface_transition_model=transition_model,
             )
         )
-    except Exception:
+    except Exception as exc:
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="design",
+            surface_kind="design_surface",
+            status="error",
+            notes=f"Design Surface preview was not created: {exc}",
+            project=project or find_project(doc),
+        )
         return None
     result = TINMeshPreviewMapper().create_or_update_preview_object(
         doc,
@@ -1576,6 +1597,7 @@ def create_corridor_design_surface_preview(
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
+        _remove_corridor_build_preview_diagnostic(doc, "design")
         _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
         _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
@@ -1662,7 +1684,15 @@ def create_corridor_subgrade_surface_preview(
                 surface_transition_model=transition_model,
             )
         )
-    except Exception:
+    except Exception as exc:
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="subgrade",
+            surface_kind="subgrade_surface",
+            status="error",
+            notes=f"Subgrade Surface preview was not created: {exc}",
+            project=project or find_project(doc),
+        )
         return None
     result = TINMeshPreviewMapper().create_or_update_preview_object(
         doc,
@@ -1674,6 +1704,7 @@ def create_corridor_subgrade_surface_preview(
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
+        _remove_corridor_build_preview_diagnostic(doc, "subgrade")
         _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
         _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
@@ -1719,7 +1750,15 @@ def create_corridor_daylight_surface_preview(
                 surface_transition_model=transition_model,
             )
         )
-    except Exception:
+    except Exception as exc:
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="daylight",
+            surface_kind="daylight_surface",
+            status="error",
+            notes=f"Slope Face Surface preview was not created: {exc}",
+            project=project or find_project(doc),
+        )
         return None
     result = TINMeshPreviewMapper().create_or_update_preview_object(
         doc,
@@ -1731,6 +1770,7 @@ def create_corridor_daylight_surface_preview(
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
+        _remove_corridor_build_preview_diagnostic(doc, "daylight")
         _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
         _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
@@ -1774,6 +1814,14 @@ def create_corridor_drainage_surface_preview(
     surface_id = _surface_id(surface_model, "drainage_surface")
     if not surface_id:
         _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="drainage",
+            surface_kind="drainage_surface",
+            status="missing",
+            notes="Drainage Surface preview was not created because no drainage_surface row exists. Add Drainage ditch_surface points through Applied Sections before Build Parametric.",
+            project=project or find_project(doc),
+        )
         return None
     try:
         tin_surface = CorridorSurfaceGeometryService().build_drainage_surface(
@@ -1786,8 +1834,16 @@ def create_corridor_drainage_surface_preview(
                 surface_transition_model=transition_model,
             )
         )
-    except Exception:
+    except Exception as exc:
         _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="drainage",
+            surface_kind="drainage_surface",
+            status="error",
+            notes=f"Drainage Surface preview was not created: {exc}",
+            project=project or find_project(doc),
+        )
         return None
     result = TINMeshPreviewMapper().create_or_update_preview_object(
         doc,
@@ -1799,6 +1855,7 @@ def create_corridor_drainage_surface_preview(
     )
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
+        _remove_corridor_build_preview_diagnostic(doc, "drainage")
         _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
         _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
         _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
@@ -5219,21 +5276,25 @@ def _surface_id(surface_model, surface_kind: str) -> str:
     return ""
 
 
-def _corridor_build_review_row(role: str, title: str, object_name: str, obj) -> dict[str, object]:
+def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, diagnostic=None) -> dict[str, object]:
     if obj is None:
+        notes = str(getattr(diagnostic, "PreviewDiagnostic", "") or "Not built yet.")
+        status = str(getattr(diagnostic, "PreviewStatus", "") or "missing")
         return {
             "role": role,
             "result": title,
             "object_name": object_name,
             "object_label": "",
-            "status": "missing",
+            "status": status if status in {"missing", "empty", "error"} else "missing",
             "vertex_count": "",
             "triangle_or_point_count": "",
-            "notes": "Not built yet.",
+            "notes": notes,
         }
     if role == "centerline":
         point_count = int(getattr(obj, "PointCount", 0) or 0)
         curve_kind = str(getattr(obj, "DisplayCurveKind", "") or "")
+        preview_source = str(getattr(obj, "PreviewSource", "") or "")
+        source_note = f"; source={preview_source}" if preview_source else ""
         return {
             "role": role,
             "result": title,
@@ -5242,7 +5303,7 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj) -> 
             "status": "ready",
             "vertex_count": "",
             "triangle_or_point_count": point_count,
-            "notes": f"Curve: {curve_kind or 'unknown'}",
+            "notes": f"Curve: {curve_kind or 'unknown'}{source_note}",
         }
     vertex_count = int(getattr(obj, "VertexCount", 0) or 0)
     triangle_count = int(getattr(obj, "TriangleCount", 0) or 0)
@@ -5310,32 +5371,105 @@ def _remove_preview_object(document, object_name: str) -> None:
         pass
 
 
-def _centerline_points_from_applied_sections(applied_section_set, app_module):
-    sections = {
-        str(getattr(section, "applied_section_id", "") or ""): section
-        for section in list(getattr(applied_section_set, "sections", []) or [])
-    }
-    rows = sorted(
-        list(getattr(applied_section_set, "station_rows", []) or []),
-        key=lambda row: float(getattr(row, "station", 0.0) or 0.0),
-    )
+def _corridor_build_preview_diagnostic_object(document, role: str):
+    if document is None:
+        return None
+    name = CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS.get(str(role or ""))
+    if not name:
+        return None
+    try:
+        return document.getObject(name)
+    except Exception:
+        return None
+
+
+def _record_corridor_build_preview_diagnostic(
+    document,
+    *,
+    role: str,
+    surface_kind: str,
+    status: str,
+    notes: str,
+    project=None,
+):
+    if document is None:
+        return None
+    object_name = CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS.get(str(role or ""))
+    if not object_name:
+        return None
+    try:
+        obj = document.getObject(object_name)
+        if obj is None:
+            obj = document.addObject("App::FeaturePython", object_name)
+        obj.Label = f"{surface_kind or role} preview diagnostic"
+        _set_preview_property(obj, "CRRecordKind", "v1_corridor_surface_preview_diagnostic")
+        _set_preview_property(obj, "SurfaceRole", str(role or ""))
+        _set_preview_property(obj, "SurfaceKind", str(surface_kind or ""))
+        _set_preview_property(obj, "PreviewStatus", str(status or "missing"))
+        _set_preview_property(obj, "PreviewDiagnostic", str(notes or "Surface preview was not created."))
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(document), obj)
+        except Exception:
+            pass
+        return obj
+    except Exception:
+        return None
+
+
+def _remove_corridor_build_preview_diagnostic(document, role: str) -> None:
+    object_name = CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS.get(str(role or ""))
+    if object_name:
+        _remove_preview_object(document, object_name)
+
+
+def _corridor_centerline_preview_points(document, app_module):
+    centerline_result = _build_corridor_centerline3d_result(document)
+    points, stations, result_id = _centerline_points_from_centerline3d_result(centerline_result, app_module)
+    if len(points) >= 2:
+        return points, stations, "centerline3d_result", result_id
+    return [], [], "", ""
+
+
+def _build_corridor_centerline3d_result(document):
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+
+        return build_document_centerline3d_result(document)
+    except Exception:
+        return None
+
+
+def _centerline_points_from_centerline3d_result(centerline_result, app_module):
+    if str(getattr(centerline_result, "status", "") or "") != "ready":
+        return [], [], ""
+    try:
+        from ..services.evaluation import Centerline3DFrameService
+
+        frame_service = Centerline3DFrameService()
+    except Exception:
+        frame_service = None
     points = []
     stations = []
-    for row in rows:
-        section = sections.get(str(getattr(row, "applied_section_id", "") or ""))
-        frame = getattr(section, "frame", None) if section is not None else None
-        if frame is None:
-            continue
+    for row in sorted(
+        list(getattr(centerline_result, "point_rows", []) or []),
+        key=lambda value: float(getattr(value, "station", 0.0) or 0.0),
+    ):
         try:
-            point = app_module.Vector(float(frame.x), float(frame.y), float(frame.z))
-            station = float(getattr(frame, "station", getattr(row, "station", 0.0)) or 0.0)
+            station = float(getattr(row, "station", 0.0) or 0.0)
+            if frame_service is not None:
+                frame = frame_service.resolve_station(centerline_result, station)
+                point = app_module.Vector(float(frame.x), float(frame.y), float(frame.z))
+            else:
+                point = app_module.Vector(float(row.x), float(row.y), float(row.z))
         except Exception:
             continue
         if points and _same_centerline_point(points[-1], point):
             continue
         points.append(point)
         stations.append(station)
-    return points, stations
+    return points, stations, str(getattr(centerline_result, "centerline3d_result_id", "") or "")
 
 
 def _same_centerline_point(left, right, tolerance: float = 1.0e-7) -> bool:

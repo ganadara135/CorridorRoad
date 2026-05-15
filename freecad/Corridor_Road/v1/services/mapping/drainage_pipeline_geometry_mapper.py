@@ -11,13 +11,19 @@ def build_drainage_pipeline_geometry_rows(
     segment_rows: list[DrainagePipelineSegmentOutputRow],
     *,
     alignment_model: AlignmentModel | None = None,
+    station_offset_to_xy=None,
+    coordinate_mode: str = "",
     sample_spacing: float = 10.0,
 ) -> list[DrainagePipelineGeometryOutputRow]:
     """Build output-only centerline geometry rows for resolved pipeline segments."""
 
     adapter = None
+    requested_coordinate_mode = str(coordinate_mode or "")
     coordinate_mode = "station_offset_fallback"
-    if alignment_model is not None:
+    if station_offset_to_xy is not None:
+        adapter = station_offset_to_xy
+        coordinate_mode = requested_coordinate_mode or "station_offset_adapter"
+    elif alignment_model is not None:
         try:
             adapter = AlignmentEvaluationService().station_offset_adapter(alignment_model)
             coordinate_mode = "alignment_station_offset"
@@ -70,7 +76,7 @@ def _segment_centerline_points(
         ratio = _station_ratio(station, station_start, station_end)
         offset = from_offset + (to_offset - from_offset) * ratio
         z = invert_start + (invert_end - invert_start) * ratio
-        x, y, resolved_mode = _station_offset_xy(station, offset, adapter=adapter)
+        x, y, resolved_mode = _station_offset_xy(station, offset, adapter=adapter, coordinate_mode=coordinate_mode)
         if resolved_mode != coordinate_mode:
             mode = resolved_mode
         points.append((x, y, z))
@@ -103,11 +109,12 @@ def _station_ratio(station: float, station_start: float, station_end: float) -> 
     return min(max((float(station) - float(station_start)) / span, 0.0), 1.0)
 
 
-def _station_offset_xy(station: float, offset: float, *, adapter) -> tuple[float, float, str]:
+def _station_offset_xy(station: float, offset: float, *, adapter, coordinate_mode: str) -> tuple[float, float, str]:
     if adapter is not None:
         try:
-            x, y = adapter(float(station), float(offset))
-            return float(x), float(y), "alignment_station_offset"
+            values = adapter(float(station), float(offset))
+            x, y = values[0], values[1]
+            return float(x), float(y), str(coordinate_mode or "station_offset_adapter")
         except Exception:
             pass
     return float(station), float(offset), "station_offset_fallback"

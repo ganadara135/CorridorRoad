@@ -274,13 +274,15 @@ Generated polylines and solids are outputs.
 
 Structure preview and derived solids should follow this path priority:
 
-1. AppliedSection frames or generated 3D Centerline result when available.
-2. v1 Alignment evaluation when AppliedSection frames are unavailable.
-3. Station/offset fallback only when no evaluated path exists.
+1. Generated 3D Centerline result when available.
+2. AppliedSection frames when shared centerline result is unavailable during transition.
+3. v1 Alignment evaluation when AppliedSection frames are unavailable.
+4. Station/offset fallback only when no evaluated path exists.
 
 The preview should record the path source, for example:
 
-- `3d_centerline`
+- `centerline3d_result`
+- `applied_section_frame`
 - `alignment`
 - `station_offset_fallback`
 

@@ -10,6 +10,24 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 ## [Unreleased]
 
 ### Added
+- Added a v1 centerline ownership consolidation plan that makes `Centerline3DResult` the shared baseline owner and defines how Applied Sections should consume it without owning a second 3D centerline.
+- Added `Centerline3DFrameService` and changed Applied Sections frame generation to prefer the shared `Centerline3DResult` while keeping legacy Alignment/Profile fallback diagnostics during transition.
+- Added Applied Sections validation for required source availability and shared `Centerline3DResult` station coverage before section generation.
+- Changed Structures, Drainage, and Build Corridor shared-centerline preview paths to use `Centerline3DFrameService` for station and station/offset lookup instead of command-local interpolation.
+- Changed ambiguous `3d_centerline` provenance to explicit `centerline3d_result` or `applied_section_frame` path-source labels for Structures and structure solid outputs.
+- Removed Build Corridor's Applied Sections frame fallback for corridor centerline preview creation; the centerline review object now requires the shared `Centerline3DResult`.
+- Added persisted Watertight Solid row `path_source`/`PathSources` provenance so road, structure, and drainage solid outputs retain their baseline or coordinate source through object round-trip.
+- Updated Cross Section Viewer and output documentation so `Centerline3DResult` is the shared baseline owner and `AppliedSection.frame` is a derived station placement snapshot.
+- Changed the `3D Centerline` preview object routing so generated centerline objects appear under `02_Alignment & Profile -> 3D Centerline` in the v1 project tree.
+- Changed the `3D Centerline` preview shape from station-to-station polyline display to BSpline interpolation, with polyline retained only as a fallback.
+- Added optional `3D Centerline` station marker display so users can show or hide evaluated station markers separately from the smooth centerline curve.
+- Changed optional `3D Centerline` station markers from round spheres to high-contrast 3-axis cross markers so station points are easier to distinguish in 3D review.
+- Added a high-visibility selected station marker for Applied Sections row double-click review so the chosen STA is visible in the 3D View alongside the section preview.
+- Added a v1 `3D Centerline` toolbar-stage implementation plan for promoting the evaluated centerline into a read-only common baseline review stage after `Review Plan/Profile`.
+- Added the first v1 `3D Centerline` toolbar implementation with `Centerline3DResult`, Alignment/Profile/Stationing evaluation, read-only task panel, preview object routing, and contract tests.
+- Changed Structures preview and connection point preview to prefer the shared `Centerline3DResult` station/offset/elevation frame when available.
+- Changed Drainage pipeline geometry, segment preview, and Flow Route review output to prefer the shared `Centerline3DResult` station/offset frame before falling back to Alignment-only sampling.
+- Changed Build Corridor centerline preview and guided review to prefer the shared `Centerline3DResult` while preserving Applied Sections fallback behavior.
 - Added first-slice Drainage pipeline segment candidates that resolve Flow Route endpoints through Structure connection points and expose candidate status in Drainage Review.
 - Added a Drainage Review 3D preview for selected pipeline segment candidates, routed under Drainage in the v1 project tree.
 - Added `DrainagePipelineResult` and dedicated Drainage output segment rows so ready Flow Route candidates are promoted into traceable pipeline segment results.
@@ -61,6 +79,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Added Build Corridor Region Boundary review support for displaying the selected Region's built corridor objects, including design, subgrade, slope/daylight, drainage, and structure context where available.
 - Added Surface Transition controls in Build Corridor for selecting a Region STA, adjusting transition spacing, reviewing derived sample counts, enabling/disabling transition ranges, and updating transition records.
 - Added a separate Build Corridor Guided Review `Drainage Flow` row that summarizes Flow Route IDs and linked Structure refs, with double-click 3D highlight handoff.
+- Changed Build Parametric Drainage Surface generation so left/right ditch surface point groups are triangulated as separate strips instead of being bridged into one cross-road mesh.
+- Added Build Parametric surface preview diagnostics so missing or failed Design/Subgrade/Slope/Drainage surface creation records a visible review-table note instead of failing silently.
 - Added wiki documentation for Region continuity, Region Boundary review, Surface Transition spacing/update workflow, and troubleshooting guidance.
 - Added v1 topology-first Watertight Solid planning and implementation sequencing for final toolbar placement, Build Corridor prerequisite gating, closed semantic profiles, edge networks, shell validation, target families, UI, tests, and output flow.
 - Added a v1 representation strategy baseline table covering semantic-first, geometry-first, topology-first, and contract-first subsystem decisions.
@@ -143,6 +163,11 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Changed the Structures editor so Structure ID table rows hide the `structure:` prefix while preserving source refs internally.
 - Changed the Structures editor so optional external `Geometry Ref` values move out of the main table and into the selected Structure detail area.
 - Changed the Structures editor selected detail area to expose `Geometry Source` and `Native Type` controls while preserving Native specs and External Ref values separately.
+- Changed the Structures editor so selecting a Structure table row by single click refreshes `Selected Structure Detail`, including rows clicked through combo-box cells.
+- Changed Structures `Preview Points` connection markers to use larger solid high-contrast markers with thicker outlines for clearer 3D review.
+- Changed Structures editor action buttons from `Save` / `Save + Preview` to `Apply` / `Apply + Preview`.
+- Changed the Structures editor to reload applied `V1StructureModel` data back into the table/detail panel after Apply so reopening the panel shows the persisted rows.
+- Changed the Structures `Drainage Structures` preset into a more practical ditch inlet/catch basin, pipe culvert/cross-drain, and outlet headwall/outfall example with matching connection points.
 - Changed Drainage Elements `Structure Ref` cells to use Structure ID combos populated from the active Structures model while preserving source refs internally.
 - Removed the Region Boundary structure placeholder preview boxes so selected Regions no longer create repeated purple `V1CorridorRegionStructure_*` marker objects.
 - Changed Drainage preset Flow Route IDs to use `flowId-01` style values while preserving the internal `flow-route:` prefix.

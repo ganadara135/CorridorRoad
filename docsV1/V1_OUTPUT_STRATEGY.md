@@ -257,10 +257,17 @@ Primary sources:
 
 Derived result sources:
 
+- `Centerline3DResult`
 - `AppliedSection`
 - `AppliedSectionSet`
 - corridor surface results
 - quantity summaries
+
+`Centerline3DResult` is the shared generated baseline for downstream station/offset/elevation frame lookup.
+
+`AppliedSection.frame` is a derived placement snapshot created from that baseline for one station.
+
+Outputs may record `centerline3d_result` or `applied_section_frame` as provenance, but they should not treat Applied Sections as a second baseline generator.
 
 ## 7. Output Contracts
 

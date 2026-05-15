@@ -131,6 +131,7 @@ def test_watertight_solid_output_mapper_preserves_shape_metadata_and_refs() -> N
     assert row.edge_count == 12
     assert row.profile_count == 2
     assert "corridor:main" in row.source_refs
+    assert row.path_source == "applied_section_frame"
     assert output.segment_rows[0].station_start == 0.0
     assert output.segment_rows[0].station_end == 100.0
 
@@ -156,6 +157,7 @@ def test_v1_watertight_solid_output_object_roundtrips_summary_and_shape() -> Non
         assert roundtrip.solid_rows[0].target_id == "solid-target:road-body-envelope"
         assert roundtrip.solid_rows[0].validation_status == "ok"
         assert roundtrip.solid_rows[0].volume == output.solid_rows[0].volume
+        assert roundtrip.solid_rows[0].path_source == "applied_section_frame"
         assert roundtrip.segment_rows[0].profile_refs == output.segment_rows[0].profile_refs
     finally:
         App.closeDocument(doc.Name)

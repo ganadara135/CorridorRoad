@@ -88,6 +88,7 @@ class WatertightSolidOutputMapper:
             drainage_ref=str(getattr(target, "drainage_ref", "") or ""),
             flow_route_ref=str(getattr(target, "flow_route_ref", "") or ""),
             material_ref=str(getattr(target, "material_ref", "") or ""),
+            path_source=_profile_path_source(request.profile_set),
             notes=str(getattr(target, "notes", "") or ""),
         )
         segment_rows = _segment_rows(output_object_id, request.edge_network, request.profile_set)
@@ -274,6 +275,13 @@ def _side_from_ref(value: str) -> str:
     if "left" in text:
         return "left"
     return ""
+
+
+def _profile_path_source(profile_set: AppliedSectionSolidProfileSet) -> str:
+    profiles = list(getattr(profile_set, "profile_rows", []) or [])
+    if any(str(getattr(profile, "applied_section_ref", "") or "") for profile in profiles):
+        return "applied_section_frame"
+    return "station_range"
 
 
 def _unique_refs(values: list[str]) -> list[str]:

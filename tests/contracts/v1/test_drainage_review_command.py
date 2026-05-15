@@ -21,7 +21,9 @@ from freecad.Corridor_Road.v1.models.source.structure_model import StructureConn
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment, to_alignment_model
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
+from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.services.evaluation.drainage_resolution_service import build_drainage_pipeline_result
 from freecad.Corridor_Road.v1.services.mapping.drainage_review_mapper import DrainageReviewMapper
@@ -568,6 +570,46 @@ def test_show_drainage_pipeline_segment_preview_uses_alignment_station_offset_fr
         assert preview.Shape.BoundBox.XMax < 100.0
         assert preview.Shape.BoundBox.YLength > 10.0
         assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_segment_preview_prefers_centerline3d_result_frame() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineSegmentCenterline3DPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+
+        preview = show_drainage_pipeline_segment_preview_object(doc, row_index=0)
+
+        assert preview.CoordinateMode == "centerline3d_result"
+        assert preview.Shape.BoundBox.ZMin > 40.0
+        assert preview.Shape.BoundBox.YLength > 10.0
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_review_output_prefers_centerline3d_result_for_pipeline_geometry() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineGeometryCenterline3DOutputTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+
+        output = build_drainage_review_output(doc)
+        geometry = output.pipeline_geometry_rows[0]
+
+        assert geometry.coordinate_mode == "centerline3d_result"
+        assert len(geometry.centerline_points) > 2
+        assert geometry.centerline_points[0][2] == 44.2
+        assert geometry.centerline_points[-1][2] == 43.6
     finally:
         App.closeDocument(doc.Name)
 

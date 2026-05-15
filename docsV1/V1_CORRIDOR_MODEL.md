@@ -244,8 +244,13 @@ When `AppliedSectionSet` contains persisted FG or subgrade point rows, the desig
 
 If point rows are missing, the current implementation may fall back to the older left/right ribbon preview.
 
-It also creates a generated `Corridor 3D Centerline` preview from ordered `AppliedSectionSet` station frames.
-This preview is presentation geometry and should be rebuilt from the applied-section result, not edited as source intent.
+It also creates a generated `Corridor 3D Centerline` review row.
+
+The preferred source for that review row is the shared `Centerline3DResult`.
+
+During transition, existing `AppliedSectionSet` station frames may remain as fallback presentation input.
+
+They are derived placement snapshots, not a second 3D centerline owner.
 
 The `Build Corridor` task panel should expose a compact review table for generated presentation outputs:
 
@@ -456,7 +461,7 @@ Current implementation status:
 - [x] use Assembly-derived left/right applied-section widths for the first-slice design-surface preview
 - [x] create first-slice corridor subgrade-surface mesh preview from Assembly-derived subgrade depth
 - [x] create first-slice corridor slope-face mesh preview from Assembly-derived side-slope policy
-- [x] create spline-based corridor 3D centerline preview from `AppliedSectionSet` frames during `Build Corridor`
+- [x] create corridor 3D centerline preview from shared `Centerline3DResult`; do not generate a baseline from `AppliedSectionSet` frames
 - [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
 - [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers

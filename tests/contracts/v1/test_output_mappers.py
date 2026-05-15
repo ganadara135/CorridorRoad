@@ -467,7 +467,7 @@ def test_exchange_output_mapper_packages_structure_solid_output_geometry() -> No
                 solid_kind="bridge_deck_solid",
                 station_start=10.0,
                 station_end=30.0,
-                path_source="3d_centerline",
+                path_source="applied_section_frame",
                 material="concrete",
                 width=14.0,
                 height=1.5,

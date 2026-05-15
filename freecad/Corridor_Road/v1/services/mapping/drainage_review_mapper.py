@@ -33,6 +33,8 @@ class DrainageReviewMapper:
         *,
         drainage_model: DrainageModel | None = None,
         alignment_model: AlignmentModel | None = None,
+        station_offset_to_xy=None,
+        coordinate_mode: str = "",
         region_model: RegionModel | None = None,
         structure_model: StructureModel | None = None,
         applied_section_set: AppliedSectionSet | None = None,
@@ -43,7 +45,12 @@ class DrainageReviewMapper:
         rows.extend(_drainage_element_rows(drainage_model))
         pipeline_result = build_drainage_pipeline_result(drainage_model, structure_model, project_id=project_id)
         pipeline_segment_rows = _pipeline_segment_output_rows(pipeline_result)
-        pipeline_geometry_rows = _pipeline_geometry_output_rows(pipeline_segment_rows, alignment_model)
+        pipeline_geometry_rows = _pipeline_geometry_output_rows(
+            pipeline_segment_rows,
+            alignment_model,
+            station_offset_to_xy=station_offset_to_xy,
+            coordinate_mode=coordinate_mode,
+        )
         pipeline_solid_rows = _pipeline_solid_output_rows(pipeline_geometry_rows)
         pipeline_network_rows = _pipeline_network_output_rows(pipeline_geometry_rows, pipeline_solid_rows)
         pipeline_junction_rows = _pipeline_junction_output_rows(pipeline_geometry_rows, pipeline_solid_rows, pipeline_segment_rows, structure_model)
@@ -267,8 +274,16 @@ def _pipeline_segment_output_rows(pipeline_result: DrainagePipelineResult | None
 def _pipeline_geometry_output_rows(
     pipeline_segment_rows: list[DrainagePipelineSegmentOutputRow],
     alignment_model: AlignmentModel | None,
+    *,
+    station_offset_to_xy=None,
+    coordinate_mode: str = "",
 ) -> list[DrainagePipelineGeometryOutputRow]:
-    return build_drainage_pipeline_geometry_rows(pipeline_segment_rows, alignment_model=alignment_model)
+    return build_drainage_pipeline_geometry_rows(
+        pipeline_segment_rows,
+        alignment_model=alignment_model,
+        station_offset_to_xy=station_offset_to_xy,
+        coordinate_mode=coordinate_mode,
+    )
 
 
 def _pipeline_solid_output_rows(

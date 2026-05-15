@@ -13,6 +13,7 @@ from freecad.Corridor_Road.v1.models.result.corridor_model import (
     CorridorModel,
     CorridorSamplingPolicy,
 )
+from freecad.Corridor_Road.v1.models.result.centerline3d import Centerline3DPointRow, Centerline3DResult
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINSurface, TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.models.result.earthwork_balance_model import (
     EarthworkBalanceModel,
@@ -188,6 +189,86 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     assert [point.point_role for point in result.point_rows].count("fg_surface") >= 2
     assert [point.point_role for point in result.point_rows].count("subgrade_surface") >= 2
     assert min(point.lateral_offset for point in result.point_rows if point.point_role == "fg_surface") < 0.0
+
+
+def test_applied_section_service_uses_centerline3d_result_for_section_frame() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-1",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-1",
+        alignment_id="align-1",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-2", 100.0, 20.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-1",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-1",
+                template_kind="road",
+                component_rows=[
+                    TemplateComponent("lane:right", "lane", side="right", width=3.5, slope=-0.02),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions-1",
+        region_rows=[
+            RegionRow("region-1", station_start=0.0, station_end=100.0, assembly_ref="asm-1", template_ref="tmpl-1"),
+        ],
+    )
+    centerline = Centerline3DResult(
+        project_id="proj-1",
+        centerline3d_result_id="centerline3d:test",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        stationing_id="stationing:test",
+        status="ready",
+        point_rows=(
+            Centerline3DPointRow(0.0, 100.0, 10.0, 50.0, grade=0.05),
+            Centerline3DPointRow(20.0, 120.0, 20.0, 60.0, grade=0.10),
+        ),
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides-1"),
+            station=10.0,
+            applied_section_id="sec-1",
+            centerline3d_result=centerline,
+        )
+    )
+
+    assert result.frame is not None
+    assert result.frame.x == 110.0
+    assert result.frame.y == 15.0
+    assert result.frame.z == 55.0
+    assert result.frame.profile_grade == 0.07500000000000001
+    assert result.frame.tangent_direction_deg > 20.0
+    assert "source=centerline3d_result" in result.frame.notes
 
 
 def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
@@ -1355,7 +1436,7 @@ def test_structure_solid_output_service_builds_source_traceable_rows() -> None:
     assert output.solid_rows[0].solid_kind == "bridge_deck_solid"
     assert output.solid_rows[0].structure_id == "structure:bridge-01"
     assert output.solid_rows[0].geometry_spec_id == "geometry-spec:bridge-01"
-    assert output.solid_rows[0].path_source == "3d_centerline"
+    assert output.solid_rows[0].path_source == "applied_section_frame"
     assert output.solid_rows[0].width == 14.0
     assert output.solid_rows[0].height == 1.5
     assert output.solid_rows[0].volume == 420.0

@@ -69,9 +69,12 @@ def build_drainage_review_output(document=None):
         or str(getattr(applied_section_set, "project_id", "") or "")
         or "corridorroad-v1"
     )
+    coordinate_frame = _station_offset_coordinate_frame(doc)
     return DrainageReviewMapper().map(
         drainage_model=drainage_model,
         alignment_model=alignment_model,
+        station_offset_to_xy=coordinate_frame.get("adapter"),
+        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
         region_model=region_model,
         structure_model=structure_model,
         applied_section_set=applied_section_set,
@@ -92,7 +95,8 @@ def show_drainage_pipeline_candidate_preview_object(document=None, row_index: in
     if row_index < 0 or row_index >= len(rows):
         raise IndexError("Pipeline candidate row index is out of range.")
     row = rows[row_index]
-    adapter = _station_offset_adapter(doc)
+    coordinate_frame = _station_offset_coordinate_frame(doc)
+    adapter = coordinate_frame.get("adapter")
     shape = _pipeline_candidate_shape(row, adapter=adapter)
     obj = doc.getObject("V1DrainagePipelineCandidatePreview")
     if obj is None:
@@ -105,7 +109,7 @@ def show_drainage_pipeline_candidate_preview_object(document=None, row_index: in
     _set_preview_string_property(obj, "CandidateStatus", _note_value(row.notes, "status"))
     _set_preview_string_property(obj, "FromConnectionPointRef", _note_value(row.notes, "from_connection_point_ref"))
     _set_preview_string_property(obj, "ToConnectionPointRef", _note_value(row.notes, "to_connection_point_ref"))
-    _set_preview_string_property(obj, "CoordinateMode", "alignment_station_offset" if adapter is not None else "station_offset_fallback")
+    _set_preview_string_property(obj, "CoordinateMode", str(coordinate_frame.get("coordinate_mode", "") or "station_offset_fallback"))
     _style_pipeline_candidate_preview(obj)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -547,7 +551,13 @@ def _pipeline_geometry_row_for_segment(output, segment_row, document):
         if str(getattr(row, "pipeline_segment_id", "") or "") == segment_id:
             return row
     alignment_model = to_alignment_model(find_v1_alignment(document))
-    rows = build_drainage_pipeline_geometry_rows([segment_row], alignment_model=alignment_model)
+    coordinate_frame = _station_offset_coordinate_frame(document)
+    rows = build_drainage_pipeline_geometry_rows(
+        [segment_row],
+        alignment_model=alignment_model,
+        station_offset_to_xy=coordinate_frame.get("adapter"),
+        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
+    )
     if rows:
         return rows[0]
     raise RuntimeError("Pipeline segment geometry row could not be built.")
@@ -590,14 +600,47 @@ def _pipeline_network_geometry_shape(rows):
 
 
 def _station_offset_adapter(document):
+    return _station_offset_coordinate_frame(document).get("adapter")
+
+
+def _station_offset_coordinate_frame(document) -> dict[str, object]:
+    centerline_frame = _centerline3d_coordinate_frame(document)
+    if centerline_frame is not None:
+        return centerline_frame
     alignment_obj = find_v1_alignment(document)
     alignment_model = to_alignment_model(alignment_obj) if alignment_obj is not None else None
     if alignment_model is None:
-        return None
+        return {"adapter": None, "coordinate_mode": "station_offset_fallback"}
     try:
-        return AlignmentEvaluationService().station_offset_adapter(alignment_model)
+        return {
+            "adapter": AlignmentEvaluationService().station_offset_adapter(alignment_model),
+            "coordinate_mode": "alignment_station_offset",
+        }
+    except Exception:
+        return {"adapter": None, "coordinate_mode": "station_offset_fallback"}
+
+
+def _centerline3d_coordinate_frame(document) -> dict[str, object] | None:
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+        from ..services.evaluation import Centerline3DFrameService
+
+        result = build_document_centerline3d_result(document)
     except Exception:
         return None
+    point_rows = list(getattr(result, "point_rows", []) or [])
+    if str(getattr(result, "status", "") or "") != "ready" or len(point_rows) < 2:
+        return None
+    frame_service = Centerline3DFrameService()
+
+    def _adapter(station: float, offset: float) -> tuple[float, float]:
+        frame = frame_service.resolve_station_offset(result, station, offset)
+        return float(frame.x), float(frame.y)
+
+    return {
+        "adapter": _adapter,
+        "coordinate_mode": "centerline3d_result",
+    }
 
 
 def _station_offset_vector(station: float, offset: float, z: float, *, adapter=None):

@@ -238,7 +238,7 @@ def _path_source(applied_section_set: AppliedSectionSet | None) -> str:
         return "station_range"
     sections = list(getattr(applied_section_set, "sections", []) or [])
     if any(getattr(section, "frame", None) is not None for section in sections):
-        return "3d_centerline"
+        return "applied_section_frame"
     return "station_range"
 
 
@@ -424,7 +424,7 @@ def _structure_export_readiness_diagnostics(
                     message="Structure output length must be greater than zero before IFC export.",
                 )
             )
-        if str(getattr(row, "path_source", "") or "") != "3d_centerline":
+        if str(getattr(row, "path_source", "") or "") not in {"centerline3d_result", "applied_section_frame"}:
             diagnostics.append(
                 _export_diagnostic(
                     "warning",

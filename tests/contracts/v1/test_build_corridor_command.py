@@ -51,9 +51,12 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSectionPoint,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
+from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
+from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
 from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
@@ -410,11 +413,7 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(preview.VertexCount) == 10
         assert int(preview.TriangleCount) == 8
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
-        assert centerline is not None
-        assert centerline.CRRecordKind == "v1_corridor_centerline_preview"
-        assert centerline.V1ObjectType == "V1CorridorCenterlinePreview"
-        assert centerline.DisplayCurveKind == "line"
-        assert int(centerline.PointCount) == 2
+        assert centerline is None
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
         assert subgrade_preview is not None
         assert subgrade_preview.CRRecordKind == "v1_corridor_surface_preview"
@@ -1014,8 +1013,8 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         rows = corridor_build_review_rows(doc)
 
         assert [row["role"] for row in rows] == ["centerline", "design", "subgrade", "daylight", "drainage"]
-        assert [row["status"] for row in rows] == ["ready", "ready", "ready", "ready", "missing"]
-        assert rows[0]["triangle_or_point_count"] == 2
+        assert [row["status"] for row in rows] == ["missing", "ready", "ready", "ready", "missing"]
+        assert rows[0]["triangle_or_point_count"] == ""
         assert rows[1]["vertex_count"] == 10
         assert rows[1]["triangle_or_point_count"] == 8
         assert "2 STA" in str(rows[1]["applied_section_summary"])
@@ -1024,6 +1023,7 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         assert "no EG TIN: 10" in str(rows[3]["notes"])
         assert "STA 0.000 L no EG TIN" in str(rows[3]["notes"])
         assert "STA 20.000 R no EG TIN" in str(rows[3]["notes"])
+        assert "no drainage_surface row exists" in str(rows[4]["notes"])
         assert preferred_corridor_build_review_row_index(rows) == 1
 
         shown = show_corridor_build_review_object(doc, 1)
@@ -1450,6 +1450,7 @@ def test_corridor_build_review_row_colors_are_dark_theme_readable() -> None:
     assert corridor_build_review_row_color("ready") == (220, 245, 224)
     assert corridor_build_review_row_color("missing") == (238, 238, 238)
     assert corridor_build_review_row_color("empty") == (255, 241, 205)
+    assert corridor_build_review_row_color("error") == (255, 210, 210)
     assert corridor_build_review_row_color("unknown") is None
 
 
@@ -1604,15 +1605,17 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.SurfaceRole == "drainage"
         assert drainage_preview.SurfaceKind == "drainage_surface"
         assert int(drainage_preview.VertexCount) == 20
-        assert int(drainage_preview.TriangleCount) == 24
+        assert int(drainage_preview.TriangleCount) == 16
         rows = corridor_build_review_rows(doc)
+        assert rows[3]["status"] == "error"
+        assert "Slope Face Surface preview was not created" in str(rows[3]["notes"])
         assert rows[4]["status"] == "ready"
         assert rows[4]["vertex_count"] == 20
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_apply_v1_corridor_model_creates_spline_centerline_preview() -> None:
+def test_apply_v1_corridor_model_does_not_create_centerline_preview_from_applied_section_frames() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_centerline_curve())
@@ -1620,12 +1623,30 @@ def test_apply_v1_corridor_model_creates_spline_centerline_preview() -> None:
         apply_v1_corridor_model(document=doc, project=project)
 
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
+        assert centerline is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        centerline = doc.getObject("V1CorridorCenterline3DPreview")
         assert centerline is not None
-        assert centerline.DisplayCurveKind == "spline"
-        assert int(centerline.PointCount) == 3
-        shape = centerline.Shape
-        assert len(shape.Edges) == 1
-        assert "BSpline" in type(shape.Edges[0].Curve).__name__
+        assert centerline.PreviewSource == "centerline3d_result"
+        assert centerline.Centerline3DResultId == "centerline3d:main"
+        assert int(centerline.PointCount) > 2
+        rows = corridor_build_review_rows(doc)
+        centerline_row = [row for row in rows if row["role"] == "centerline"][0]
+        assert centerline_row["status"] == "ready"
+        assert "source=centerline3d_result" in centerline_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 

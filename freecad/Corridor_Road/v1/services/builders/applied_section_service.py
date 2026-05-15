@@ -13,6 +13,7 @@ from ...models.result.applied_section import (
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...models.result.tin_surface import TINSurface
+from ...models.result.centerline3d import Centerline3DResult
 from ...common.diagnostics import DiagnosticMessage
 from ...models.source.alignment_model import AlignmentModel
 from ...models.source.assembly_model import (
@@ -28,6 +29,10 @@ from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
 from ...services.evaluation.alignment_evaluation_service import (
     AlignmentEvaluationService,
+)
+from ...services.evaluation.centerline3d_frame_service import (
+    Centerline3DFrame,
+    Centerline3DFrameService,
 )
 from ...services.evaluation.override_resolution_service import (
     OverrideResolutionService,
@@ -62,6 +67,7 @@ class AppliedSectionBuildRequest:
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     existing_ground_surface: TINSurface | None = None
+    centerline3d_result: Centerline3DResult | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,7 @@ class AppliedSectionSetBuildRequest:
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     existing_ground_surface: TINSurface | None = None
+    centerline3d_result: Centerline3DResult | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +114,7 @@ class AppliedSectionService:
         structure_service: StructureInteractionService | None = None,
         station_context_resolver: StationContextResolver | None = None,
         tin_sampling_service: TinSamplingService | None = None,
+        centerline_frame_service: Centerline3DFrameService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
@@ -118,6 +126,7 @@ class AppliedSectionService:
             structure_service=self.structure_service,
         )
         self.tin_sampling_service = tin_sampling_service or TinSamplingService()
+        self.centerline_frame_service = centerline_frame_service or Centerline3DFrameService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -167,10 +176,12 @@ class AppliedSectionService:
             template=template,
         )
 
+        centerline_frame = self.centerline_frame_service.resolve_station(request.centerline3d_result, request.station)
         frame = self._build_frame(
             station=request.station,
             alignment_result=alignment_result,
             profile_result=profile_result,
+            centerline_frame=centerline_frame,
         )
         active_structure_ids = list(getattr(structure_result, "active_structure_ids", []) or []) if structure_result is not None else []
         active_rule_ids = list(getattr(structure_result, "active_rule_ids", []) or []) if structure_result is not None else []
@@ -293,12 +304,38 @@ class AppliedSectionService:
         station: float,
         alignment_result,
         profile_result,
+        centerline_frame: Centerline3DFrame | None = None,
     ) -> AppliedSectionFrame:
+        if centerline_frame is not None and str(getattr(centerline_frame, "status", "") or "") in {"ok", "warning"}:
+            centerline_notes = "; ".join(
+                text
+                for text in [
+                    "source=centerline3d_result",
+                    *list(getattr(centerline_frame, "diagnostic_rows", []) or []),
+                ]
+                if text
+            )
+            return AppliedSectionFrame(
+                station=float(station),
+                x=float(getattr(centerline_frame, "x", 0.0) or 0.0),
+                y=float(getattr(centerline_frame, "y", 0.0) or 0.0),
+                z=float(getattr(centerline_frame, "z", 0.0) or 0.0),
+                tangent_direction_deg=float(getattr(centerline_frame, "tangent_direction_deg", 0.0) or 0.0),
+                profile_grade=float(getattr(centerline_frame, "grade", 0.0) or 0.0),
+                alignment_status=str(getattr(alignment_result, "status", "") or ""),
+                profile_status=str(getattr(profile_result, "status", "") or ""),
+                active_alignment_element_id=str(getattr(alignment_result, "active_element_id", "") or ""),
+                active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
+                active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
+                active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
+                notes=centerline_notes,
+            )
         notes = "; ".join(
             text
             for text in [
                 str(getattr(alignment_result, "notes", "") or "").strip(),
                 str(getattr(profile_result, "notes", "") or "").strip(),
+                *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
             ]
             if text
         )
@@ -632,6 +669,7 @@ class AppliedSectionSetService:
                     structure_model=request.structure_model,
                     drainage_model=request.drainage_model,
                     existing_ground_surface=request.existing_ground_surface,
+                    centerline3d_result=request.centerline3d_result,
                 )
             )
             sections.append(section)
@@ -667,6 +705,9 @@ class AppliedSectionSetService:
                     else "",
                     request.drainage_model.drainage_model_id
                     if request.drainage_model is not None
+                    else "",
+                    request.centerline3d_result.centerline3d_result_id
+                    if request.centerline3d_result is not None
                     else "",
                 ]
                 if ref

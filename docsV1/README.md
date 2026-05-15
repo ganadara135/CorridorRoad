@@ -57,6 +57,8 @@ Baseline document:
 - [V1_CROSS_SECTION_2D_MANUAL_QA.md](./V1_CROSS_SECTION_2D_MANUAL_QA.md)
 - [V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md](./V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md)
 - [V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md](./V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md)
+- [V1_3D_CENTERLINE_TOOLBAR_PLAN.md](./V1_3D_CENTERLINE_TOOLBAR_PLAN.md)
+- [V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md](./V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md)
 - [V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md](./V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md)
 - [V1_REVIEW_WORKFLOW_STAGE_MAP.md](./V1_REVIEW_WORKFLOW_STAGE_MAP.md)
 - [V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md](./V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md)
@@ -97,6 +99,8 @@ Preferred review workflow:
 
 - start section review from the v1 `Cross Section Viewer`
 - start plan/profile connection review from the v1 `Plan/Profile Connection Review`
+- expose `3D Centerline` after `Review Plan/Profile` as a read-only common baseline review stage for Structures, Drainage, Applied Sections, and Build Corridor
+- use `Centerline3DResult` as the owner of the shared station/offset/elevation baseline; Applied Sections consume it and keep only derived per-section placement frames
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
 - keep Design Standard editing in `New/Project Setup`; Alignment displays the project standard and applies it as a criteria snapshot

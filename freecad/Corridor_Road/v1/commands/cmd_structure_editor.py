@@ -140,8 +140,43 @@ STRUCTURE_PRESETS = {
         ],
     },
     "Drainage Structures": {
-        "note": "Drainage-related structures for connecting Drainage Element Structure Ref rows.",
+        "note": "Practical roadside drainage chain: ditch inlet/catch basin collects flow, pipe culvert crosses the road, and outlet headwall discharges to the outfall.",
         "rows": [
+            {
+                "id": "structure:inlet-01",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.38,
+                "end": 0.40,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-01",
+                "native_type": "inlet",
+                "width": 1.2,
+                "height": 1.4,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside ditch inlet/catch basin collecting flow before the cross-drain.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-01:ditch-in",
+                        "at": "start",
+                        "width": 1.2,
+                        "height": 0.6,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-01:pipe-out",
+                        "at": "end",
+                        "diameter": 0.75,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
             {
                 "id": "structure:culvert-01",
                 "kind": "culvert",
@@ -151,48 +186,37 @@ STRUCTURE_PRESETS = {
                 "offset": 0.0,
                 "geometry": "",
                 "spec": "geometry-spec:culvert-01",
-                "native_type": "box_culvert",
-                "width": 3.0,
-                "height": 2.0,
-                "shape": "box",
+                "native_type": "pipe_culvert",
+                "width": 0.9,
+                "height": 0.9,
+                "shape": "circular_pipe",
                 "material": "concrete",
                 "culvert": {
-                    "barrel_shape": "box",
+                    "barrel_shape": "circular",
                     "barrel_count": 1,
-                    "span": 3.0,
-                    "rise": 2.0,
-                    "wall_thickness": 0.3,
-                    "headwall_type": "straight",
+                    "diameter": 0.9,
+                    "wall_thickness": 0.12,
+                    "length": 12.0,
+                    "headwall_type": "flared",
                     "wingwall_type": "short",
                 },
-                "notes": "Cross-drain culvert referenced by Drainage flow routes.",
+                "notes": "Circular pipe culvert/cross-drain carrying collected ditch flow under the road.",
                 "connection_points": [
-                    {"role": "upstream", "at": "start", "direction": "upstream"},
-                    {"role": "downstream", "at": "end", "direction": "downstream"},
-                ],
-            },
-            {
-                "id": "structure:inlet-01",
-                "kind": "utility",
-                "role": "reference",
-                "start": 0.30,
-                "end": 0.32,
-                "offset": -4.5,
-                "geometry": "",
-                "spec": "geometry-spec:inlet-01",
-                "native_type": "inlet",
-                "width": 1.0,
-                "height": 1.0,
-                "shape": "inlet_box",
-                "material": "concrete",
-                "notes": "Drainage inlet/catch-basin reference structure.",
-                "connection_points": [
-                    {"role": "inlet", "at": "start", "shape": "inlet", "direction": "in"},
                     {
-                        "role": "pipe_out",
-                        "id": "connection:inlet-01:pipe-out",
+                        "role": "upstream",
+                        "id": "connection:culvert-01:upstream",
+                        "at": "start",
+                        "offset": -5.2,
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "downstream",
+                        "id": "connection:culvert-01:downstream",
                         "at": "end",
-                        "diameter": 0.6,
+                        "offset": 5.8,
+                        "diameter": 0.9,
                         "shape": "circular",
                         "direction": "out",
                     },
@@ -202,27 +226,35 @@ STRUCTURE_PRESETS = {
                 "id": "structure:outlet-01",
                 "kind": "utility",
                 "role": "reference",
-                "start": 0.88,
-                "end": 0.90,
-                "offset": -6.0,
+                "start": 0.58,
+                "end": 0.62,
+                "offset": 6.4,
                 "geometry": "",
                 "spec": "geometry-spec:outlet-01",
                 "native_type": "outlet",
-                "width": 1.5,
-                "height": 1.2,
+                "width": 2.0,
+                "height": 1.5,
                 "shape": "outlet_headwall",
                 "material": "concrete",
-                "notes": "Drainage outlet/headwall reference structure.",
+                "notes": "Outlet headwall and outfall discharge point downstream of the culvert.",
                 "connection_points": [
                     {
                         "role": "pipe_in",
                         "id": "connection:outlet-01:pipe-in",
                         "at": "start",
-                        "diameter": 0.8,
+                        "diameter": 0.9,
                         "shape": "circular",
                         "direction": "in",
                     },
-                    {"role": "discharge", "at": "end", "shape": "outlet", "direction": "out"},
+                    {
+                        "role": "discharge",
+                        "id": "connection:outlet-01:outfall",
+                        "at": "end",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "outfall",
+                        "direction": "out",
+                    },
                 ],
             },
         ],
@@ -418,8 +450,7 @@ def show_v1_structure_connection_points_preview_object(
     shapes = []
     for point in points:
         x, y, z = _connection_point_xyz(document, point)
-        radius = _connection_point_marker_radius(point)
-        shapes.append(Part.makeSphere(radius, App.Vector(float(x), float(y), float(z))))
+        shapes.append(_connection_point_marker_shape(point, float(x), float(y), float(z)))
     shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
     obj = document.getObject("V1StructureConnectionPointPreview")
     if obj is None:
@@ -540,6 +571,8 @@ class V1StructureEditorTaskPanel:
             | QtWidgets.QAbstractItemView.AnyKeyPressed
         )
         self._table.itemSelectionChanged.connect(self._load_selected_detail)
+        self._table.cellClicked.connect(self._activate_structure_detail_row)
+        self._table.currentCellChanged.connect(self._handle_structure_current_cell_changed)
         self._table.cellDoubleClicked.connect(self._activate_structure_detail_row)
         try:
             self._table.horizontalHeader().setStretchLastSection(True)
@@ -718,16 +751,16 @@ class V1StructureEditorTaskPanel:
         validate_button = QtWidgets.QPushButton("Validate")
         validate_button.clicked.connect(self._validate)
         action_row.addWidget(validate_button)
-        self._save_button = QtWidgets.QPushButton("Save")
-        self._save_button.setToolTip("Save the current Structure source rows without creating a 3D preview.")
+        self._save_button = QtWidgets.QPushButton("Apply")
+        self._save_button.setToolTip("Apply the current Structure source rows without creating a 3D preview.")
         self._save_button.clicked.connect(lambda: self._apply(close_after=False, show_preview=False))
         action_row.addWidget(self._save_button)
         self._preview_button = QtWidgets.QPushButton("Preview 3D")
-        self._preview_button.setToolTip("Create a temporary 3D preview from the current panel values without saving.")
+        self._preview_button.setToolTip("Create a temporary 3D preview from the current panel values without applying.")
         self._preview_button.clicked.connect(self._show_preview)
         action_row.addWidget(self._preview_button)
-        self._save_preview_button = QtWidgets.QPushButton("Save + Preview")
-        self._save_preview_button.setToolTip("Save the current Structure source rows, then create a 3D preview.")
+        self._save_preview_button = QtWidgets.QPushButton("Apply + Preview")
+        self._save_preview_button.setToolTip("Apply the current Structure source rows, then create a 3D preview.")
         self._save_preview_button.clicked.connect(lambda: self._apply(close_after=False, show_preview=True))
         action_row.addWidget(self._save_preview_button)
         action_row.addStretch(1)
@@ -739,6 +772,7 @@ class V1StructureEditorTaskPanel:
         return widget
 
     def _load_existing_rows(self) -> None:
+        self.structure_obj = find_v1_structure_model(self.document, preferred_structure_model=self.structure_obj)
         model = to_structure_model(self.structure_obj)
         if model is None:
             return
@@ -747,10 +781,31 @@ class V1StructureEditorTaskPanel:
         self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
         self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
         self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
+        self._active_detail_structure_id = ""
+        self._active_detail_spec_ref = ""
         self._replace_rows(model.structure_rows)
         self._replace_geometry_specs(self._geometry_spec_rows)
         self._select_first_structure_row()
         self._set_status(f"Loaded {len(model.structure_rows)} Structure row(s) from {self.structure_obj.Label}.")
+
+    def _reload_existing_rows(self, *, selected_structure_id: str = "") -> None:
+        self.structure_obj = find_v1_structure_model(self.document, preferred_structure_model=self.structure_obj)
+        model = to_structure_model(self.structure_obj)
+        if model is None:
+            return
+        self._geometry_spec_rows = list(getattr(model, "geometry_spec_rows", []) or [])
+        self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
+        self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
+        self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
+        self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
+        self._active_detail_structure_id = ""
+        self._active_detail_spec_ref = ""
+        self._replace_rows(model.structure_rows)
+        self._replace_geometry_specs(self._geometry_spec_rows)
+        if selected_structure_id:
+            self._select_structure_id(selected_structure_id)
+        else:
+            self._select_first_structure_row()
 
     def _load_selected_preset(self) -> None:
         try:
@@ -814,12 +869,14 @@ class V1StructureEditorTaskPanel:
                 combo.setEditable(True)
                 combo.addItems(STRUCTURE_KIND_CHOICES)
                 combo.setCurrentText(str(value or "bridge"))
+                self._bind_structure_row_widget(combo)
                 self._table.setCellWidget(index, col, combo)
             elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.setEditable(True)
                 combo.addItems(STRUCTURE_ROLE_CHOICES)
                 combo.setCurrentText(str(value or "interface"))
+                self._bind_structure_row_widget(combo)
                 self._table.setCellWidget(index, col, combo)
             else:
                 item = QtWidgets.QTableWidgetItem(str(value))
@@ -1139,6 +1196,39 @@ class V1StructureEditorTaskPanel:
             self._table.blockSignals(False)
         self._load_selected_detail()
 
+    def _handle_structure_current_cell_changed(self, row_index: int, _column: int, previous_row: int, _previous_column: int) -> None:
+        if row_index < 0 or row_index == previous_row:
+            return
+        self._activate_structure_detail_row(row_index, _column)
+
+    def _bind_structure_row_widget(self, widget) -> None:
+        try:
+            original_mouse_press = widget.mousePressEvent
+
+            def mouse_press_event(event, row_widget=widget, original=original_mouse_press):
+                self._activate_structure_detail_widget(row_widget)
+                original(event)
+
+            widget.mousePressEvent = mouse_press_event
+        except Exception:
+            pass
+        try:
+            widget.currentIndexChanged.connect(lambda _index, row_widget=widget: self._activate_structure_detail_widget(row_widget))
+        except Exception:
+            pass
+
+    def _activate_structure_detail_widget(self, widget) -> None:
+        row_index = self._structure_table_widget_row(widget)
+        if row_index >= 0:
+            self._activate_structure_detail_row(row_index, 0)
+
+    def _structure_table_widget_row(self, widget) -> int:
+        for row_index in range(self._table.rowCount()):
+            for col_index in range(self._table.columnCount()):
+                if self._table.cellWidget(row_index, col_index) is widget:
+                    return row_index
+        return -1
+
     def _load_selected_detail(self) -> None:
         if not self._loading_selected_detail and self._active_detail_structure_id:
             self._sync_common_geometry_detail_to_specs(self._active_detail_structure_id, self._active_detail_spec_ref)
@@ -1393,7 +1483,9 @@ class V1StructureEditorTaskPanel:
                 self._set_status(_format_validation_result(model, document=self.document))
                 _show_message(self.form, "Structures", "Structures were not applied because validation has errors.")
                 return False
+            selected_structure_id = self._current_structure_id()
             self.structure_obj = apply_v1_structure_model(document=self.document, structure_model=model)
+            self._reload_existing_rows(selected_structure_id=selected_structure_id)
             preview_text = ""
             if show_preview and list(model.structure_rows or []):
                 preview = show_v1_structure_preview_object(self.document, model)
@@ -2416,6 +2508,9 @@ def _structure_segment_cylinder(point0, point1, diameter: float):
 
 
 def _structure_preview_path_source(document) -> dict[str, object]:
+    centerline_result = _centerline3d_result_path_source(document)
+    if centerline_result is not None:
+        return centerline_result
     centerline = _applied_section_centerline_path_source(document)
     if centerline is not None:
         return centerline
@@ -2435,6 +2530,30 @@ def _structure_preview_path_source(document) -> dict[str, object]:
 
 def _structure_preview_path_source_name(document) -> str:
     return str(_structure_preview_path_source(document).get("source", "") or "")
+
+
+def _centerline3d_result_path_source(document) -> dict[str, object] | None:
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+        from ..services.evaluation import Centerline3DFrameService
+
+        result = build_document_centerline3d_result(document)
+    except Exception:
+        return None
+    point_rows = list(getattr(result, "point_rows", []) or [])
+    if str(getattr(result, "status", "") or "") != "ready" or len(point_rows) < 2:
+        return None
+    frame_service = Centerline3DFrameService()
+
+    def _adapter(station: float, offset: float) -> tuple[float, float, float]:
+        frame = frame_service.resolve_station_offset(result, station, offset)
+        return float(frame.x), float(frame.y), float(frame.z)
+
+    return {
+        "source": "centerline3d_result",
+        "adapter": _adapter,
+        "stations": [float(getattr(row, "station", 0.0) or 0.0) for row in point_rows],
+    }
 
 
 def _applied_section_centerline_path_source(document) -> dict[str, object] | None:
@@ -2464,7 +2583,7 @@ def _applied_section_centerline_path_source(document) -> dict[str, object] | Non
         return _interpolate_centerline_station_offset(frames, station, offset)
 
     return {
-        "source": "3d_centerline",
+        "source": "applied_section_frame",
         "adapter": _adapter,
         "stations": [row["station"] for row in frames],
     }
@@ -2718,11 +2837,16 @@ def _style_connection_point_preview_object(obj) -> None:
         if vobj is None:
             return
         vobj.Visibility = True
-        vobj.ShapeColor = (0.15, 0.95, 0.65)
-        vobj.LineColor = (0.02, 0.35, 0.20)
-        vobj.PointColor = (0.95, 0.95, 0.20)
-        vobj.Transparency = 10
-        vobj.LineWidth = 2.0
+        vobj.ShapeColor = (1.0, 0.68, 0.05)
+        vobj.LineColor = (0.05, 0.05, 0.02)
+        vobj.PointColor = (1.0, 0.95, 0.05)
+        vobj.Transparency = 0
+        vobj.LineWidth = 4.0
+        vobj.PointSize = 8.0
+        try:
+            vobj.DisplayMode = "Shaded"
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -2967,6 +3091,14 @@ def _connection_point_xyz(document, point: StructureConnectionPoint) -> tuple[fl
     z_value = getattr(point, "invert_elevation", None)
     if z_value is None:
         z_value = getattr(point, "elevation", None)
+    path = _centerline3d_result_path_source(document)
+    if path is not None:
+        try:
+            x, y, centerline_z = _station_offset_xyz(path, station, offset, 0.0)
+            z = float(z_value if z_value is not None else centerline_z)
+            return float(x), float(y), z
+        except Exception:
+            pass
     z = float(z_value if z_value is not None else 0.0)
     alignment = to_alignment_model(find_v1_alignment(document))
     if alignment is None:
@@ -2983,7 +3115,30 @@ def _connection_point_marker_radius(point: StructureConnectionPoint) -> float:
     width = float(getattr(point, "width", 0.0) or 0.0)
     height = float(getattr(point, "height", 0.0) or 0.0)
     reference_size = max(diameter, width, height, 0.5)
-    return max(0.2, min(reference_size * 0.2, 1.5))
+    return max(0.35, min(reference_size * 0.32, 2.2))
+
+
+def _connection_point_marker_shape(point: StructureConnectionPoint, x: float, y: float, z: float):
+    radius = _connection_point_marker_radius(point)
+    center = App.Vector(float(x), float(y), float(z))
+    shapes = [Part.makeSphere(radius, center)]
+    stem_radius = max(radius * 0.16, 0.06)
+    stem_height = max(radius * 3.0, 1.2)
+    shapes.append(
+        Part.makeCylinder(
+            stem_radius,
+            stem_height,
+            App.Vector(float(x), float(y), float(z) - stem_height / 2.0),
+            App.Vector(0.0, 0.0, 1.0),
+        )
+    )
+    try:
+        ring_radius = radius * 1.45
+        ring_tube_radius = max(radius * 0.08, 0.04)
+        shapes.append(Part.makeTorus(ring_radius, ring_tube_radius, center, App.Vector(0.0, 0.0, 1.0)))
+    except Exception:
+        pass
+    return Part.makeCompound(shapes)
 
 
 def _derive_default_connection_points_for_row(

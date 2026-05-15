@@ -210,9 +210,10 @@ Instead, review tools should help users find the right source editor quickly and
 6. Author section templates, intersection assemblies, and ramp rules
 7. Assign regions, junction policies, and localized rules
 8. Add structures, drainage elements, and interaction rules
-9. Build corridor network
-10. Review sections, intersections, drainage, surfaces, and quantities
-11. Export required deliverables
+9. Review the 3D Centerline baseline where Structures, Drainage, Applied Sections, and Build Corridor will share station/offset/elevation context
+10. Build corridor network
+11. Review sections, intersections, drainage, surfaces, and quantities
+12. Export required deliverables
 
 ### 6.2 Alternative design workflow
 

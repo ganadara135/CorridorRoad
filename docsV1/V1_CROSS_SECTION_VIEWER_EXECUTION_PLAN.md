@@ -94,6 +94,14 @@ The first promoted v1 viewer should reuse the v0 viewer as a visual reference on
 
 It should consume v1 payloads derived from `AppliedSectionSet`, `SectionOutput`, and corridor review rows.
 
+Baseline provenance rule:
+
+- the viewer reviews `AppliedSection` and `SectionOutput` station data
+- the viewer does not build or own the 3D baseline centerline
+- station-local frames should be presented as derived from `Centerline3DResult` when that provenance is available
+- persisted `AppliedSection.frame` values may be shown as `applied_section_frame` placement snapshots
+- any baseline warning should point users back to the `3D Centerline` stage, not to direct section-output editing
+
 The first promoted viewer does not yet need:
 
 - full multi-panel report layout
@@ -188,6 +196,7 @@ The promoted viewer must rely on:
 
 - `SectionOutput`
 - `station_row`
+- baseline provenance metadata such as `centerline3d_result` or `applied_section_frame`
 - source ownership data
 - terrain rows
 - structure rows

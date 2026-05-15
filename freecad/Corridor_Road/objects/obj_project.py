@@ -55,6 +55,7 @@ V1_TREE_ALIGNMENTS = "v1_alignments"
 V1_TREE_PROFILES = "v1_profiles"
 V1_TREE_STATIONS = "v1_stations"
 V1_TREE_SUPERELEVATION = "v1_superelevation"
+V1_TREE_CENTERLINE3D = "v1_centerline3d"
 V1_TREE_EXISTING_GROUND_TIN = "v1_existing_ground_tin"
 V1_TREE_EXISTING_GROUND_TIN_SOURCE = "v1_existing_ground_tin_source"
 V1_TREE_EXISTING_GROUND_TIN_RESULT = "v1_existing_ground_tin_result"
@@ -140,6 +141,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_STATIONS, "Stations", "CRV1_Stations"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_PROFILES, "Profiles", "CRV1_Profiles"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_SUPERELEVATION, "Superelevation", "CRV1_Superelevation"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_CENTERLINE3D, "3D Centerline", "CRV1_3D_Centerline"),
     (V1_TREE_SURFACES, V1_TREE_EXISTING_GROUND_TIN, "Existing Ground TIN", "CRV1_Existing_Ground_TIN"),
     (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_SOURCE, "Source", "CRV1_EG_TIN_Source"),
     (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_RESULT, "TIN Result", "CRV1_EG_TIN_Result"),
@@ -1211,6 +1213,8 @@ def _is_v1_review(child):
             "PlanProfileReview",
             "SectionReview",
             "TINReview",
+            "V1Centerline3DReview",
+            "Centerline3DReview",
             "ReviewIssue",
             "ReviewBookmark",
             "Issue",
@@ -1220,6 +1224,8 @@ def _is_v1_review(child):
             "PlanProfileReview",
             "SectionReview",
             "TINReview",
+            "V1Centerline3DPreview",
+            "Centerline3DReview",
             "ReviewIssue",
             "ReviewBookmark",
             "Issue",
@@ -1294,13 +1300,15 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_REGIONS, None)
     if record_kind == "v1_corridor_centerline_preview":
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
+        return tree.get(V1_TREE_CENTERLINE3D, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_structure_connection_point_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
-    if record_kind == "v1_applied_section_show_preview":
+    if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if record_kind == "v1_watertight_solid_output":
         return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
@@ -1387,6 +1395,8 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_SECTION_REVIEW, None)
         if _is_type(child, proxy_types=("TINReview",), name_prefixes=("TINReview",)):
             return tree.get(V1_TREE_TIN_REVIEW, None)
+        if _is_type(child, proxy_types=("V1Centerline3DReview", "Centerline3DReview"), name_prefixes=("V1Centerline3DPreview", "Centerline3DReview")):
+            return tree.get(V1_TREE_CENTERLINE3D, None)
         if _is_type(child, proxy_types=("ReviewIssue", "Issue"), name_prefixes=("ReviewIssue", "Issue")):
             return tree.get(V1_TREE_ISSUES, None)
         if _is_type(child, proxy_types=("ReviewBookmark", "Bookmark"), name_prefixes=("ReviewBookmark", "Bookmark")):

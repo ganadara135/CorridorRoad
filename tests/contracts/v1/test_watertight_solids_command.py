@@ -911,6 +911,8 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
         assert obj.StructureRefs == ["structure:culvert-01"]
         assert obj.Shape.Volume > 0.0
         assert state.watertight_output.solid_rows[0].material_ref == "concrete"
+        assert state.watertight_output.solid_rows[0].path_source == "applied_section_frame"
+        assert list(obj.PathSources) == ["applied_section_frame"]
     finally:
         App.closeDocument(doc.Name)
 

@@ -1570,11 +1570,14 @@ def _drainage_pipeline_output_context(document, target_row):
     structure_model = to_structure_model(find_v1_structure_model(document))
     if drainage_model is None or structure_model is None:
         raise RuntimeError("DrainageModel and StructureModel are required for Drainage pipeline solid output.")
+    coordinate_frame = _centerline3d_coordinate_frame(document)
     output = DrainageReviewMapper().map(
         drainage_model=drainage_model,
         alignment_model=alignment_model,
         structure_model=structure_model,
         project_id=str(getattr(drainage_model, "project_id", "") or "corridorroad-v1"),
+        station_offset_to_xy=coordinate_frame.get("adapter"),
+        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
     )
     segment_ref = str(getattr(target_row, "drainage_ref", "") or "").strip()
     flow_route_ref = str(getattr(target_row, "flow_route_ref", "") or "").strip()
@@ -1604,11 +1607,14 @@ def _drainage_pipeline_network_output_context(document, target_row):
     structure_model = to_structure_model(find_v1_structure_model(document))
     if drainage_model is None or structure_model is None:
         raise RuntimeError("DrainageModel and StructureModel are required for Drainage pipeline network solid output.")
+    coordinate_frame = _centerline3d_coordinate_frame(document)
     output = DrainageReviewMapper().map(
         drainage_model=drainage_model,
         alignment_model=alignment_model,
         structure_model=structure_model,
         project_id=str(getattr(drainage_model, "project_id", "") or "corridorroad-v1"),
+        station_offset_to_xy=coordinate_frame.get("adapter"),
+        coordinate_mode=str(coordinate_frame.get("coordinate_mode", "") or ""),
     )
     network_ref = str(getattr(target_row, "drainage_ref", "") or "").strip() or "drainage-pipeline-network:main"
     network_row = None
@@ -1635,6 +1641,26 @@ def _drainage_pipeline_network_output_context(document, target_row):
         if str(getattr(row, "network_ref", "") or "") == network_ref
     ]
     return output, network_row, geometry_rows, solid_rows, junction_rows
+
+
+def _centerline3d_coordinate_frame(document) -> dict[str, object]:
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+        from ..services.evaluation import Centerline3DFrameService
+
+        result = build_document_centerline3d_result(document)
+    except Exception:
+        return {"adapter": None, "coordinate_mode": ""}
+    point_rows = list(getattr(result, "point_rows", []) or [])
+    if str(getattr(result, "status", "") or "") != "ready" or len(point_rows) < 2:
+        return {"adapter": None, "coordinate_mode": ""}
+    frame_service = Centerline3DFrameService()
+
+    def _adapter(station: float, offset: float) -> tuple[float, float]:
+        frame = frame_service.resolve_station_offset(result, station, offset)
+        return float(frame.x), float(frame.y)
+
+    return {"adapter": _adapter, "coordinate_mode": "centerline3d_result"}
 
 
 def _structure_body_solid_shape(solid_row, *, structure_model=None):
@@ -1957,6 +1983,7 @@ def _structure_body_watertight_output(
         assembly_ref=str(getattr(solid_row, "assembly_ref", "") or ""),
         structure_ref=structure_ref,
         material_ref=str(getattr(target_row, "material_ref", "") or getattr(solid_row, "material", "") or ""),
+        path_source=str(getattr(solid_row, "path_source", "") or ""),
         notes=(
             f"Structure body solid from {str(getattr(solid_row, 'output_object_id', '') or '')}; "
             f"solid_kind={str(getattr(solid_row, 'solid_kind', '') or '')}; "
@@ -2658,6 +2685,7 @@ def _drainage_pipeline_watertight_output(
         drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
         flow_route_ref=str(getattr(target_row, "flow_route_ref", "") or ""),
         material_ref=str(getattr(target_row, "material_ref", "") or ""),
+        path_source=str(getattr(solid_row, "coordinate_mode", "") or ""),
         notes=(
             f"Drainage pipeline solid candidate from {str(getattr(solid_row, 'solid_row_id', '') or '')}; "
             f"coordinate_mode={str(getattr(solid_row, 'coordinate_mode', '') or '')}; "
@@ -2757,6 +2785,7 @@ def _drainage_pipeline_network_watertight_output(
         drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
         flow_route_ref=",".join(flow_route_refs),
         material_ref=str(getattr(target_row, "material_ref", "") or ""),
+        path_source=str(getattr(network_row, "coordinate_mode", "") or ""),
         notes=(
             f"Drainage pipeline network solid candidate from {str(getattr(network_row, 'network_id', '') or '')}; "
             f"segments={len(segment_refs)}; junctions={int(getattr(network_row, 'junction_count', 0) or 0)}; "
@@ -2847,6 +2876,7 @@ def _external_structure_body_watertight_output(
         edge_count=_shape_count(shape, "Edges"),
         profile_count=1,
         structure_ref=structure_ref,
+        path_source="external_ref",
         notes=(
             "External Structure body shape reused; "
             f"geometry_ref={geometry_ref}; "
