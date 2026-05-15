@@ -9,7 +9,10 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-15
+
 ### Added
+- Added current release-preparation documentation covering the post-`1.0.0` v1 scope, manual QA checklist, release-note draft, and tag readiness items.
 - Added a v1 centerline ownership consolidation plan that makes `Centerline3DResult` the shared baseline owner and defines how Applied Sections should consume it without owning a second 3D centerline.
 - Added `Centerline3DFrameService` and changed Applied Sections frame generation to prefer the shared `Centerline3DResult` while keeping legacy Alignment/Profile fallback diagnostics during transition.
 - Added Applied Sections validation for required source availability and shared `Centerline3DResult` station coverage before section generation.
@@ -209,6 +212,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Renamed the Surface Transition action button in Build Corridor from `Create / Update Transition` to `Update`.
 - Clarified Region and Surface Transition design documentation so transition intent remains source-level and generated geometry remains output.
 - Changed lined-ditch Watertight Solid profile generation from vertical lining offset to section-normal polyline offset, preserving intermediate ditch surface points as solid profile nodes.
+- Updated README, Addon overview, and Wiki draft pages so Drainage is described as an active source stage with Flow Routes and Structure-backed network preview instead of an under-development placeholder.
 
 ## [1.0.0] - 2026-05-02
 

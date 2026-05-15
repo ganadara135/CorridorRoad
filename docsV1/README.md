@@ -7,6 +7,7 @@ Baseline document:
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
+- [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
 - [V1_ARCHITECTURE.md](./V1_ARCHITECTURE.md)
@@ -112,6 +113,7 @@ Preferred review workflow:
 - model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
 - use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
 - order the source-authoring toolbar as `Assembly -> Regions -> Structures -> Drainage`, so Structures can reference accepted Regions and Drainage can reference both Regions and Structure refs when needed
+- treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
 - use `Watertight Solids` as the final toolbar stage after `AI Assist`; it should remain disabled or blocked until Build Corridor has produced accepted corridor prerequisites

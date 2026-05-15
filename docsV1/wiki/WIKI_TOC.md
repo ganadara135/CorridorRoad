@@ -23,5 +23,7 @@ Recommended publish order:
 Release rule:
 
 - v1 is the primary workflow.
-- Drainage is visible as a planned stage, but the full Drainage Editor is still under development in `1.0.0`.
+- Drainage is an active source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review.
+- Advanced hydraulic analysis and automatic pipe sizing remain future work.
+- Watertight Solids is the final output stage after AI Assist and is gated on Build Corridor prerequisites.
 - Generated geometry, preview meshes, markers, and reports are outputs, not source truth.

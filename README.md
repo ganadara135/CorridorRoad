@@ -27,12 +27,13 @@ Parametric Road v1 provides a staged road corridor workflow:
 2. Edit Alignment.
 3. Generate Stations.
 4. Edit Profile.
-5. Define Assembly, Structures, and Regions.
-6. Prepare Drainage references where applicable.
-7. Generate Applied Sections.
-8. Build Corridor preview surfaces.
-9. Review Cross Sections, Plan/Profile, and Earthwork.
-10. Prepare structure output and exchange handoff data where available.
+5. Review Plan/Profile and generate the shared 3D Centerline.
+6. Define Assembly and Regions.
+7. Add Structures and Drainage source rows.
+8. Generate Applied Sections.
+9. Build Corridor preview surfaces.
+10. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
+11. Prepare Watertight Solids, structure output, and exchange handoff data where available.
 
 The workbench is built around a v1 source -> evaluation -> result -> output -> presentation structure.
 
@@ -82,24 +83,25 @@ Important v1 references:
 - `Alignment`
 - `Stations`
 - `Profile`
+- `Review Plan/Profile`
+- `3D Centerline`
 - `Assembly`
-- `Structures`
 - `Region`
+- `Structures`
 - `Drainage`
+- `Drainage Review`
 - `Applied Sections`
 - `Build Corridor`
 - `Cross Section Viewer`
-- `Plan/Profile Connection Review`
 - `Earthwork Viewer`
 - `Structure Output`
 - `Outputs & Exchange`
 - `AI Assist`
+- `Watertight Solids`
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile -> Assembly/Structures/Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
-
-Drainage currently has a toolbar/menu entry and planning document. The full Drainage Editor is still under development.
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 ## Current V1 Areas
 
@@ -108,23 +110,27 @@ Drainage currently has a toolbar/menu entry and planning document. The full Drai
 - Alignment editing
 - Station generation
 - Profile editing with PVI rows, CSV support, and auto interpolation
+- shared 3D Centerline review for downstream station/offset/elevation context
 - Assembly editor with ditch, side slope, bench, and preset support
 - Structure editor for bridge, culvert, retaining wall, and related source intent
-- Region editor with assembly, structure, and drainage references
+- Structure connection points, native inlet/outlet/culvert preview details, and Structure Output packages
+- Region editor with continuous station spans and Assembly assignment
+- Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
+- Drainage Review for source rows, pipeline candidates, pipeline segments, networks, and junctions
 - Applied Sections result generation
 - Build Corridor preview surfaces and diagnostics
 - Cross Section Viewer
 - Plan/Profile Connection Review
 - Earthwork Viewer and v1-native earthwork report path
-- Structure Output packages and export-readiness diagnostics
 - Outputs & Exchange entry point
 - AI Assist entry point
+- Watertight Solids final-stage panel for selected road, component, drainage, and structure solid targets
 
 ## In Progress
 
-- Drainage editing is planned but not complete in `1.0.0`.
-- Drainage currently appears through Assembly ditch shapes, Applied Section `ditch_surface` rows, Build Corridor drainage diagnostics, and the planned `DrainageModel` workflow.
-- Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and full exchange output coverage are outside the current release scope.
+- Advanced hydraulic analysis and automatic pipe sizing are future work.
+- Complete drawing-sheet production and full exchange output coverage remain incremental.
+- Watertight Solid composition is evolving from independent validated targets toward simulation-ready packages.
 
 ## Install And Run
 

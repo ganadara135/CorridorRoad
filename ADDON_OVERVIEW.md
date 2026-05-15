@@ -16,12 +16,13 @@ Typical v1 workflow:
 3. Edit Alignment.
 4. Generate Stations.
 5. Edit Profile.
-6. Edit Assembly and Region definitions.
-7. Optionally prepare Structures and Drainage references.
-8. Generate Applied Sections.
-9. Build Corridor preview surfaces.
-10. Review Cross Sections, Plan/Profile, and Earthwork.
-11. Prepare Structure Output and exchange handoff data where available.
+6. Review Plan/Profile and generate the shared 3D Centerline.
+7. Edit Assembly and Region definitions.
+8. Prepare Structures and Drainage source rows.
+9. Generate Applied Sections.
+10. Build Corridor preview surfaces.
+11. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
+12. Prepare Watertight Solids, Structure Output, and exchange handoff data where available.
 
 ## Available Areas
 
@@ -29,21 +30,24 @@ Typical v1 workflow:
 - TIN editing and review
 - Alignment, station, and profile workflow
 - Assembly editor with ditch, side slope, bench, and preset support
-- Region editor with assembly, structure, and drainage references
+- shared 3D Centerline review for station/offset/elevation context
+- Region editor with continuous station spans and Assembly assignment
+- Structure editor with connection points and native drainage-structure preview details
+- Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
 - Applied Sections generation and review handoff
 - Build Corridor preview surfaces and diagnostics
 - Cross Section Viewer
 - Plan/Profile Connection Review
 - Earthwork Viewer and v1-native earthwork report pipeline
 - Structure editor and Structure Output package workflow
+- Watertight Solids final-stage workflow for selected road, component, drainage, and structure solid targets
 - Outputs & Exchange entry point
 - AI Assist entry point
 
 ## In Progress
 
-- Drainage has a toolbar/menu entry and a planning document, but the full Drainage Editor is still under development.
-- Drainage currently appears mainly through Assembly ditch shapes, Applied Section `ditch_surface` points, Build Corridor drainage diagnostics, and planned `DrainageModel` integration.
 - Advanced hydraulic analysis, automatic pipe sizing, and full drainage report output are not part of the current release scope.
+- Watertight Solid package composition is continuing toward terrain-inclusive simulation handoff.
 
 ## Design Direction
 

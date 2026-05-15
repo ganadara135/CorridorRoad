@@ -10,11 +10,15 @@ After updating Parametric Road:
 
 Missing command registration can happen when an updated command module was not loaded in the current FreeCAD session.
 
-## Drainage Opens An Under-Development Message
+## Drainage Flow Network Does Not Appear
 
-This is expected in `1.0.0`.
+Check:
 
-Drainage is visible as a planned v1 stage, but the full Drainage Editor is not complete yet.
+- Drainage Elements reference valid Structure rows where pipe geometry is expected
+- Structure rows have connection points such as `pipe_in`, `pipe_out`, `upstream`, or `downstream`
+- `ditch -> inlet` Flow Routes are capture-only relationships and do not create pipe bodies
+- Apply Structures, then Apply Drainage, then use `Show Flow Network`
+- run 3D Centerline first when you want Drainage preview geometry to follow the shared profile frame
 
 ## Applied Sections Cannot Run
 
@@ -62,6 +66,17 @@ If a selected Region only shows the design surface, check whether the Region act
 
 Rebuild Applied Sections, then Build Corridor, and review the Build Corridor diagnostics.
 
+## Structure Preview Looks Too Simple
+
+Native Structure previews are review geometry.
+
+For drainage-ready previews, check:
+
+- Native Type is set to `inlet`, `pipe_culvert`, `outlet`, or `headwall`
+- connection points are present for pipe ports
+- pipe culvert `headwall_type` or `wingwall_type` is set if endpoint headwall/wingwall details should appear
+- run `Apply + Preview` from the Structures panel after editing source rows
+
 ## Surface Transition Spacing Does Not Change The Surface
 
 Check:
@@ -80,6 +95,16 @@ Check:
 - existing-ground TIN exists
 - station rows cover the corridor range
 - Earthwork Viewer diagnostics
+
+## Watertight Solids Are Disabled Or Empty
+
+Check:
+
+- Applied Sections were generated
+- Build Corridor was run successfully
+- target rows are available and enabled
+- Structure or Drainage targets have the required source refs and connection point context
+- `Build Selected` is used for the selected target, or `Build Enabled` is used for enabled rows
 
 ## Review Handoff Error
 
