@@ -2581,6 +2581,7 @@ def _structure_row_preview_shape(row: StructureRow, path: dict[str, object], con
         segment = _structure_segment_preview_shape(point0, point1, profile)
         if segment is not None:
             segment_shapes.append(segment)
+    segment_shapes.extend(_structure_native_detail_preview_shapes(row, path, context, profile, base_z=base_z))
     if not segment_shapes:
         return None
     return Part.Compound(segment_shapes)
@@ -2810,6 +2811,11 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
         str(row.geometry_spec_id): row
         for row in list(getattr(structure_model, "geometry_spec_rows", []) or [])
     }
+    connection_points_by_structure: dict[str, list[StructureConnectionPoint]] = {}
+    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+        structure_ref = str(getattr(point, "structure_ref", "") or "")
+        if structure_ref:
+            connection_points_by_structure.setdefault(structure_ref, []).append(point)
     return {
         "geometry_specs": geometry_specs,
         "bridge_specs": {
@@ -2824,6 +2830,7 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
         },
+        "connection_points_by_structure": connection_points_by_structure,
     }
 
 
@@ -2956,6 +2963,357 @@ def _structure_preview_base_z(row: StructureRow, context: dict[str, object] | No
         return float(value)
     except Exception:
         return 0.0
+
+
+def _structure_native_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
+    if native_type == "inlet" or shape_kind in {"inlet", "catch_basin"}:
+        return _inlet_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    if native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"}:
+        return _pipe_culvert_endpoint_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    if native_type in {"outlet", "headwall"} or shape_kind in {"outlet", "outlet_headwall", "headwall"}:
+        return _outlet_headwall_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    return []
+
+
+def _inlet_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, length = frame
+    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.6)
+    height = max(float(profile.get("height", 0.0) or 0.0), 0.6)
+    top_z = max(float(point0[2]), float(point1[2])) + height
+    shapes: list[object] = []
+
+    lid = _structure_segment_prism(
+        (point0[0], point0[1], top_z),
+        (point1[0], point1[1], top_z),
+        half_width * 0.92,
+        0.08,
+    )
+    if lid is not None:
+        shapes.append(lid)
+
+    grate_count = 3
+    for index in range(1, grate_count + 1):
+        ratio = index / float(grate_count + 1)
+        center = (
+            float(point0[0]) + tangent[0] * length * ratio,
+            float(point0[1]) + tangent[1] * length * ratio,
+            top_z + 0.10,
+        )
+        bar = _preview_cylinder_between(
+            (
+                center[0] - normal[0] * half_width * 0.78,
+                center[1] - normal[1] * half_width * 0.78,
+                center[2],
+            ),
+            (
+                center[0] + normal[0] * half_width * 0.78,
+                center[1] + normal[1] * half_width * 0.78,
+                center[2],
+            ),
+            0.035,
+        )
+        if bar is not None:
+            shapes.append(bar)
+
+    structure_id = str(getattr(row, "structure_id", "") or "")
+    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
+    for point in connection_points:
+        role = str(getattr(point, "point_role", "") or "").strip().lower()
+        point_sta = float(getattr(point, "station", end_sta) or end_sta)
+        point_offset = float(getattr(point, "offset", offset) or offset)
+        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
+        diameter = max(float(getattr(point, "diameter", 0.0) or 0.0), 0.0)
+        if role in {"pipe_in", "pipe_out"}:
+            direction = tangent if role == "pipe_out" else (-tangent[0], -tangent[1])
+            radius = max(diameter / 2.0, 0.18)
+            stub_length = max(min(radius * 1.2, 0.8), 0.35)
+            z = _connection_point_display_z(point, float(pz)) + radius
+            stub = _preview_cylinder_between(
+                (px, py, z),
+                (px + direction[0] * stub_length, py + direction[1] * stub_length, z),
+                radius,
+            )
+            if stub is not None:
+                shapes.append(stub)
+        elif role in {"inlet", "ditch_in", "ditch-in"}:
+            mouth_center_z = float(pz) + height * 0.45
+            mouth = _structure_segment_prism(
+                (
+                    px - normal[0] * half_width * 0.65,
+                    py - normal[1] * half_width * 0.65,
+                    mouth_center_z,
+                ),
+                (
+                    px + normal[0] * half_width * 0.65,
+                    py + normal[1] * half_width * 0.65,
+                    mouth_center_z,
+                ),
+                0.08,
+                0.18,
+            )
+            if mouth is not None:
+                shapes.append(mouth)
+    return shapes
+
+
+def _outlet_headwall_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, length = frame
+    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.8)
+    height = max(float(profile.get("height", 0.0) or 0.0), 0.8)
+    shapes: list[object] = []
+
+    headwall_center = (
+        float(point1[0]) - tangent[0] * min(length * 0.15, 0.6),
+        float(point1[1]) - tangent[1] * min(length * 0.15, 0.6),
+        float(point1[2]),
+    )
+    wall = _structure_segment_prism(
+        (
+            headwall_center[0] - normal[0] * half_width,
+            headwall_center[1] - normal[1] * half_width,
+            headwall_center[2],
+        ),
+        (
+            headwall_center[0] + normal[0] * half_width,
+            headwall_center[1] + normal[1] * half_width,
+            headwall_center[2],
+        ),
+        0.12,
+        height * 1.12,
+    )
+    if wall is not None:
+        shapes.append(wall)
+
+    apron_length = max(min(length * 0.45, 2.2), 0.8)
+    apron_width = half_width * 0.75
+    apron = _structure_segment_prism(
+        (
+            float(point1[0]),
+            float(point1[1]),
+            float(point1[2]) - 0.04,
+        ),
+        (
+            float(point1[0]) + tangent[0] * apron_length,
+            float(point1[1]) + tangent[1] * apron_length,
+            float(point1[2]) - 0.04,
+        ),
+        apron_width,
+        0.08,
+    )
+    if apron is not None:
+        shapes.append(apron)
+
+    for side in (-1.0, 1.0):
+        sidewall = _structure_segment_prism(
+            (
+                float(point1[0]) + normal[0] * apron_width * side,
+                float(point1[1]) + normal[1] * apron_width * side,
+                float(point1[2]),
+            ),
+            (
+                float(point1[0]) + tangent[0] * apron_length + normal[0] * apron_width * side * 1.25,
+                float(point1[1]) + tangent[1] * apron_length + normal[1] * apron_width * side * 1.25,
+                float(point1[2]),
+            ),
+            0.06,
+            height * 0.35,
+        )
+        if sidewall is not None:
+            shapes.append(sidewall)
+
+    structure_id = str(getattr(row, "structure_id", "") or "")
+    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
+    for point in connection_points:
+        role = str(getattr(point, "point_role", "") or "").strip().lower()
+        point_sta = float(getattr(point, "station", start_sta if role == "pipe_in" else end_sta) or 0.0)
+        point_offset = float(getattr(point, "offset", offset) or offset)
+        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
+        if role == "pipe_in":
+            radius = max(float(getattr(point, "diameter", 0.0) or 0.0) / 2.0, 0.18)
+            z = _connection_point_display_z(point, float(pz)) + radius
+            stub = _preview_cylinder_between(
+                (px - tangent[0] * radius * 1.2, py - tangent[1] * radius * 1.2, z),
+                (px + tangent[0] * radius * 0.8, py + tangent[1] * radius * 0.8, z),
+                radius,
+            )
+            if stub is not None:
+                shapes.append(stub)
+        elif role in {"discharge", "outlet"}:
+            mouth_width = max(float(getattr(point, "width", 0.0) or 0.0), half_width)
+            mouth_height = max(float(getattr(point, "height", 0.0) or 0.0), height * 0.35)
+            mouth_z = _connection_point_display_z(point, float(pz)) + mouth_height * 0.35
+            mouth = _structure_segment_prism(
+                (
+                    px - normal[0] * mouth_width * 0.5,
+                    py - normal[1] * mouth_width * 0.5,
+                    mouth_z,
+                ),
+                (
+                    px + normal[0] * mouth_width * 0.5,
+                    py + normal[1] * mouth_width * 0.5,
+                    mouth_z,
+                ),
+                0.10,
+                mouth_height * 0.45,
+            )
+            if mouth is not None:
+                shapes.append(mouth)
+    return shapes
+
+
+def _pipe_culvert_endpoint_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
+    headwall_type = str(getattr(culvert, "headwall_type", "") or "").strip().lower() if culvert is not None else ""
+    wingwall_type = str(getattr(culvert, "wingwall_type", "") or "").strip().lower() if culvert is not None else ""
+    if not headwall_type and not wingwall_type:
+        return []
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, _length = frame
+    diameter = max(float(profile.get("diameter", 0.0) or profile.get("height", 0.0) or 0.0), 0.4)
+    half_width = max(diameter * 0.9, 0.6)
+    wall_height = max(diameter * 1.45, 0.9)
+    shapes: list[object] = []
+
+    endpoints = [
+        (point0, (-tangent[0], -tangent[1])),
+        (point1, tangent),
+    ]
+    for endpoint, outward in endpoints:
+        wall = _structure_segment_prism(
+            (
+                float(endpoint[0]) - normal[0] * half_width,
+                float(endpoint[1]) - normal[1] * half_width,
+                float(endpoint[2]) - diameter * 0.08,
+            ),
+            (
+                float(endpoint[0]) + normal[0] * half_width,
+                float(endpoint[1]) + normal[1] * half_width,
+                float(endpoint[2]) - diameter * 0.08,
+            ),
+            0.14,
+            wall_height,
+        )
+        if wall is not None:
+            shapes.append(wall)
+
+        if wingwall_type and wingwall_type not in {"none", "no", "false"}:
+            wing_length = max(diameter * (1.35 if wingwall_type in {"flared", "long"} else 0.95), 0.8)
+            wing_height = wall_height * 0.62
+            for side in (-1.0, 1.0):
+                wing = _structure_segment_prism(
+                    (
+                        float(endpoint[0]) + normal[0] * half_width * side,
+                        float(endpoint[1]) + normal[1] * half_width * side,
+                        float(endpoint[2]) - diameter * 0.05,
+                    ),
+                    (
+                        float(endpoint[0]) + outward[0] * wing_length + normal[0] * half_width * side * 1.35,
+                        float(endpoint[1]) + outward[1] * wing_length + normal[1] * half_width * side * 1.35,
+                        float(endpoint[2]) - diameter * 0.05,
+                    ),
+                    0.07,
+                    wing_height,
+                )
+                if wing is not None:
+                    shapes.append(wing)
+    return shapes
+
+
+def _preview_segment_frame(point0, point1) -> tuple[tuple[float, float], tuple[float, float], float] | None:
+    dx = float(point1[0]) - float(point0[0])
+    dy = float(point1[1]) - float(point0[1])
+    length = math.hypot(dx, dy)
+    if length <= 1.0e-9:
+        return None
+    tangent = (dx / length, dy / length)
+    normal = (-tangent[1], tangent[0])
+    return tangent, normal, length
+
+
+def _preview_cylinder_between(point0, point1, radius: float):
+    base = App.Vector(float(point0[0]), float(point0[1]), float(point0[2]))
+    direction = App.Vector(
+        float(point1[0]) - float(point0[0]),
+        float(point1[1]) - float(point0[1]),
+        float(point1[2]) - float(point0[2]),
+    )
+    if direction.Length <= 1.0e-9:
+        return None
+    try:
+        return Part.makeCylinder(max(float(radius), 0.02), direction.Length, base, direction)
+    except Exception:
+        try:
+            return Part.makePolygon([base, base.add(direction)])
+        except Exception:
+            return None
 
 
 def _style_structure_preview_object(obj) -> None:

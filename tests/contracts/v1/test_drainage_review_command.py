@@ -482,6 +482,77 @@ def test_drainage_pipeline_result_promotes_ready_candidates_to_segments() -> Non
     assert result.diagnostic_rows == []
 
 
+def test_ditch_to_inlet_flow_route_is_capture_only_not_pipe_warning() -> None:
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:capture",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:side-ditch-right-01",
+                element_kind="ditch",
+                station_start=0.0,
+                station_end=50.0,
+                assembly_component_ref="ditch:right",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                station_start=48.0,
+                station_end=52.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:flowId-01",
+                from_element_ref="drainage:side-ditch-right-01",
+                to_element_ref="drainage:inlet-01",
+            )
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-review",
+        structure_model_id="structures:capture",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:inlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:inlet-01", "alignment:main", 48.0, 52.0, offset=-5.2),
+                native_type="inlet",
+            )
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:pipe-out",
+                structure_ref="structure:inlet-01",
+                point_role="pipe_out",
+                station=52.0,
+                offset=-5.2,
+                diameter=0.9,
+            )
+        ],
+    )
+
+    output = DrainageReviewMapper().map(
+        drainage_model=drainage_model,
+        structure_model=structure_model,
+        project_id="proj-review",
+    )
+    result = build_drainage_pipeline_result(drainage_model, structure_model, project_id="proj-review")
+    candidates = [row for row in output.element_rows if row.kind == "pipeline_segment_candidate"]
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+
+    assert len(candidates) == 1
+    assert "status=capture_only" in candidates[0].notes
+    assert "flow_relationship=capture" in candidates[0].notes
+    assert summary["summary:pipeline-segments"] == 0
+    assert result.segment_rows == []
+    assert result.diagnostic_rows == []
+
+
 def test_drainage_pipeline_result_snaps_default_culvert_port_to_current_placement() -> None:
     drainage_model = DrainageModel(
         schema_version=1,

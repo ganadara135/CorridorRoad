@@ -279,6 +279,25 @@ def build_drainage_pipeline_segment_candidates(
                 )
             )
             continue
+        if _is_capture_only_flow_route(from_element, to_element):
+            output.append(
+                DrainagePipelineSegmentCandidate(
+                    segment_id=segment_id,
+                    flow_route_ref=route_id,
+                    from_element_ref=from_ref,
+                    to_element_ref=to_ref,
+                    status="capture_only",
+                    station_start=float(getattr(from_element, "station_start", 0.0) or 0.0),
+                    station_end=float(getattr(to_element, "station_end", getattr(to_element, "station_start", 0.0)) or 0.0),
+                    notes=(
+                        "flow_relationship=capture;"
+                        f"from_kind={str(getattr(from_element, 'element_kind', '') or '')};"
+                        f"to_kind={str(getattr(to_element, 'element_kind', '') or '')};"
+                        "reason=ditch_to_inlet_open_channel_capture"
+                    ),
+                )
+            )
+            continue
         from_point = _element_connection_point_for_direction(
             from_element,
             point_by_id=point_by_id,
@@ -369,6 +388,8 @@ def build_drainage_pipeline_result(
     for candidate in candidates:
         status = str(getattr(candidate, "status", "") or "")
         flow_route_ref = str(getattr(candidate, "flow_route_ref", "") or "")
+        if status == "capture_only":
+            continue
         if status != "ready":
             diagnostics.append(
                 _diagnostic(
@@ -417,6 +438,18 @@ def build_drainage_pipeline_result(
         ),
         diagnostic_rows=diagnostics,
     )
+
+
+def _is_capture_only_flow_route(from_element, to_element) -> bool:
+    """Return true for open-channel capture rows that should not create pipe geometry."""
+
+    from_kind = str(getattr(from_element, "element_kind", "") or "").strip().lower()
+    to_kind = str(getattr(to_element, "element_kind", "") or "").strip().lower()
+    if from_kind not in {"ditch", "gutter", "swale", "channel", "lined_ditch", "lined-ditch"}:
+        return False
+    if to_kind not in {"inlet", "inlet_reference", "catch_basin", "catch-basin"}:
+        return False
+    return True
 
 
 def _policy_id_set(policy_rows: list[DrainagePolicySet]) -> set[str]:

@@ -85,9 +85,11 @@ inlet-03 -> culvert-01            pipe from last inlet Pipe Out to culvert Pipe 
 culvert-01 -> outlet-01           pipe from culvert Pipe Out to outlet Pipe In
 ```
 
-The ditch rows record that open ditch flow reaches each inlet. They do not create separate 3D pipes from ditch sections to inlets. The physical 3D pipe network starts where Structure connection points exist, then continues through inlet `pipe_out` / `pipe_in` collector ports, culvert `pipe_in` / `pipe_out`, and outlet `pipe_in`.
+The ditch rows record that open ditch flow reaches each inlet. They are resolved as `capture_only` Flow Route relationships, not failed pipe candidates. They do not create separate 3D pipes from ditch sections to inlets. The physical 3D pipe network starts where Structure connection points exist, then continues through inlet `pipe_out` / `pipe_in` collector ports, culvert `pipe_in` / `pipe_out`, and outlet `pipe_in`.
 
 Structure-backed pipe segments are drawn as direct 3D connections between resolved connection points. They do not sample intermediate stations along the road alignment, because buried pipe runs should connect port-to-port unless a later source model explicitly defines bends or intermediate pipe nodes.
+
+Native inlet Structures are shown as catch-basin style bodies in 3D review. The preview adds a top grate, a ditch intake mouth, and short circular pipe port stubs for `pipe_in` / `pipe_out` connection points. Native pipe culverts with `headwall_type` or `wingwall_type` show endpoint headwall slabs and wingwalls. Native outlet/headwall Structures show a headwall slab, outfall apron, side guide walls, a pipe-in stub, and a discharge mouth. These details are review geometry for making the drainage chain readable; the durable source remains the Structure row and its connection point rows.
 
 Available first-slice presets:
 
@@ -115,7 +117,7 @@ Before drawing the pipe network, `Show Flow Network` also refreshes the current 
 
 For final 3D display, culvert pipe endpoints are snapped once more against the same Structure preview placement used to draw the culvert body. This preview-level snap prevents an old Structure connection point station or offset from leaving a visual gap between `inlet-03 -> culvert-01` and the culvert body.
 
-In the Drainage editor, double-clicking a Flow Routes row previews the resolved 3D pipe segment for that route when both ends resolve to Structure connection points. Capture-only rows such as ditch-to-inlet do not create a pipe segment.
+In the Drainage editor, double-clicking a Flow Routes row previews the resolved 3D pipe segment for that route when both ends resolve to Structure connection points. Capture-only rows such as ditch-to-inlet do not create a pipe segment and are not treated as pipeline warnings.
 
 The v1 project tree keeps Drainage source and preview objects directly under `05_Drainage`. The older child folders `Ditches`, `Culverts`, `Inlets`, and `Flow Paths` are not created for new trees because those concepts are now represented as Drainage Elements and Flow Routes in one `V1DrainageModel`.
 

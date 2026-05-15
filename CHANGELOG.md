@@ -188,6 +188,10 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Changed Watertight Solid Build for Applied Section based targets, including lined ditch bodies, to reproject closed solid profiles onto the active 3D Centerline frame before topology and Part shape creation.
 - Added Flow Routes table double-click preview in the Drainage editor so a Structure-backed route highlights its 3D pipe segment directly.
 - Changed Drainage pipeline geometry to preserve Flow Route From/To direction, so 3D pipe endpoints stay attached to the resolved Structure Pipe Out and Pipe In connection points even when station order is reversed.
+- Changed Drainage pipeline resolution so `ditch -> inlet` Flow Routes are reported as `capture_only` open-channel intake relationships instead of failed pipe candidates, keeping pipe warnings focused on Structure-backed routes.
+- Changed native inlet Structure previews to add catch-basin review details: top grate bars, ditch intake mouth geometry, and short pipe port stubs for `pipe_in` / `pipe_out` connection points.
+- Changed native outlet/headwall Structure previews to add drainage review details: headwall slab, outfall apron, side guide walls, pipe-in stub, and discharge mouth geometry.
+- Changed native pipe culvert Structure previews to add endpoint headwall slabs and wingwalls when source `headwall_type` or `wingwall_type` values are set.
 - Changed Drainage Flow Routes so the `Outlet` cell is enabled only when `To Element` is an outlet/outfall element; intermediate route rows now keep Outlet empty.
 - Documented that `ditch -> inlet` Flow Routes are open-channel capture relationships, while 3D pipe geometry starts from Structure-owned Pipe In / Pipe Out connection points.
 - Added a Drainage editor `Drainage Structures Flow` preset aligned with the Structures `Drainage Structures` preset, including ditch, inlet, culvert, outlet, Structure refs, connection points, and Flow Routes.

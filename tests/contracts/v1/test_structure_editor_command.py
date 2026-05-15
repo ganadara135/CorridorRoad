@@ -1519,6 +1519,203 @@ def test_structure_preview_uses_pipe_culvert_circular_profile() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_structure_preview_adds_pipe_culvert_headwall_wingwall_details() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-preview",
+            structure_model_id="structures:main",
+            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:pipe-culvert-01",
+                    structure_kind="culvert",
+                    structure_role="drainage",
+                    placement=StructurePlacement(
+                        placement_id="placement:pipe-culvert-01",
+                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+                        station_start=20.0,
+                        station_end=50.0,
+                    ),
+                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
+                    geometry_source_mode="native",
+                    native_type="pipe_culvert",
+                )
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:pipe-culvert-01",
+                    structure_ref="structure:pipe-culvert-01",
+                    shape_kind="circular",
+                    width=1.2,
+                    height=1.2,
+                )
+            ],
+            culvert_geometry_spec_rows=[
+                CulvertGeometrySpec(
+                    geometry_spec_ref="geometry-spec:pipe-culvert-01",
+                    barrel_shape="circular",
+                    diameter=1.2,
+                    invert_elevation=44.5,
+                    headwall_type="flared",
+                    wingwall_type="short",
+                )
+            ],
+        )
+
+        preview = show_v1_structure_preview_object(doc, model, project=project)
+        row_preview = doc.getObject("V1StructurePreview_structure_pipe_culvert_01")
+
+        assert preview.PreviewGeometrySource == "geometry_spec"
+        assert row_preview is not None
+        assert len(list(row_preview.Shape.Solids)) >= 7
+        assert row_preview.Shape.BoundBox.ZLength > 1.6
+        assert row_preview.Shape.BoundBox.YLength > 2.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_preview_adds_native_inlet_detail_geometry() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-preview",
+            structure_model_id="structures:main",
+            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:inlet-01",
+                    structure_kind="utility",
+                    structure_role="reference",
+                    placement=StructurePlacement(
+                        placement_id="placement:inlet-01",
+                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+                        station_start=20.0,
+                        station_end=22.0,
+                        offset=-5.2,
+                    ),
+                    geometry_spec_ref="geometry-spec:inlet-01",
+                    geometry_source_mode="native",
+                    native_type="inlet",
+                )
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:inlet-01",
+                    structure_ref="structure:inlet-01",
+                    shape_kind="catch_basin",
+                    width=1.8,
+                    height=1.8,
+                )
+            ],
+            connection_point_rows=[
+                StructureConnectionPoint(
+                    connection_point_id="connection:inlet-01:ditch-in",
+                    structure_ref="structure:inlet-01",
+                    point_role="inlet",
+                    station=20.0,
+                    offset=-5.2,
+                    width=1.8,
+                    height=0.8,
+                    shape_kind="ditch_inlet",
+                ),
+                StructureConnectionPoint(
+                    connection_point_id="connection:inlet-01:pipe-out",
+                    structure_ref="structure:inlet-01",
+                    point_role="pipe_out",
+                    station=22.0,
+                    offset=-5.2,
+                    diameter=0.9,
+                    shape_kind="circular",
+                ),
+            ],
+        )
+
+        preview = show_v1_structure_preview_object(doc, model, project=project)
+        row_preview = doc.getObject("V1StructurePreview_structure_inlet_01")
+
+        assert preview.PreviewGeometrySource == "geometry_spec"
+        assert row_preview is not None
+        assert len(list(row_preview.Shape.Solids)) >= 6
+        assert row_preview.Shape.BoundBox.ZLength > 1.9
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_preview_adds_native_outlet_headwall_detail_geometry() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-preview",
+            structure_model_id="structures:main",
+            alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:outlet-01",
+                    structure_kind="utility",
+                    structure_role="reference",
+                    placement=StructurePlacement(
+                        placement_id="placement:outlet-01",
+                        alignment_id=str(getattr(alignment, "AlignmentId", "") or ""),
+                        station_start=70.0,
+                        station_end=74.0,
+                        offset=6.4,
+                    ),
+                    geometry_spec_ref="geometry-spec:outlet-01",
+                    geometry_source_mode="native",
+                    native_type="outlet",
+                )
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:outlet-01",
+                    structure_ref="structure:outlet-01",
+                    shape_kind="outlet_headwall",
+                    width=2.8,
+                    height=2.0,
+                )
+            ],
+            connection_point_rows=[
+                StructureConnectionPoint(
+                    connection_point_id="connection:outlet-01:pipe-in",
+                    structure_ref="structure:outlet-01",
+                    point_role="pipe_in",
+                    station=70.0,
+                    offset=6.4,
+                    diameter=1.2,
+                    shape_kind="circular",
+                ),
+                StructureConnectionPoint(
+                    connection_point_id="connection:outlet-01:outfall",
+                    structure_ref="structure:outlet-01",
+                    point_role="discharge",
+                    station=74.0,
+                    offset=6.4,
+                    width=2.4,
+                    height=1.0,
+                    shape_kind="outfall",
+                ),
+            ],
+        )
+
+        preview = show_v1_structure_preview_object(doc, model, project=project)
+        row_preview = doc.getObject("V1StructurePreview_structure_outlet_01")
+
+        assert preview.PreviewGeometrySource == "geometry_spec"
+        assert row_preview is not None
+        assert len(list(row_preview.Shape.Solids)) >= 6
+        assert row_preview.Shape.BoundBox.XLength > preview.Shape.BoundBox.XLength * 0.5
+        assert row_preview.Shape.BoundBox.ZLength > 2.1
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_structure_editor_command_resources_are_v1_structures() -> None:
     resources = CmdV1StructureEditor().GetResources()
 
