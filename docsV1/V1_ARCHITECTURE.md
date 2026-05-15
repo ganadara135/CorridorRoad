@@ -1,4 +1,4 @@
-# CorridorRoad V1 Architecture
+# Parametric Road V1 Architecture
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -25,7 +25,7 @@ This document should be treated as the main architectural reference for all foll
 
 ## 2. Architectural Intent
 
-CorridorRoad v1 is a parametric corridor platform, not a loose collection of FreeCAD task panels.
+Parametric Road v1 is a parametric corridor platform, not a loose collection of FreeCAD task panels.
 
 The architecture should make it possible to:
 

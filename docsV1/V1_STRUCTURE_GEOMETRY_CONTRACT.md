@@ -1,4 +1,4 @@
-# CorridorRoad V1 Structure Geometry Contract
+# Parametric Road V1 Structure Geometry Contract
 
 Date: 2026-04-30
 Status: Draft contract
@@ -53,6 +53,7 @@ The ownership boundary is:
 - `StructureInteractionRule` owns how the structure affects section and corridor evaluation.
 - `StructureInfluenceZone` owns where the interaction applies beyond the physical structure footprint.
 - `V1StructureShowPreview` is presentation geometry only.
+- `V1StructurePipeConnectionPointPreview` is the Structure-owned Pipe In / Pipe Out review marker used by Drainage flow previews.
 - future structure corridor solids are output geometry only.
 
 ## 5. Design Goals
@@ -274,13 +275,15 @@ Generated polylines and solids are outputs.
 
 Structure preview and derived solids should follow this path priority:
 
-1. AppliedSection frames or generated 3D Centerline result when available.
-2. v1 Alignment evaluation when AppliedSection frames are unavailable.
-3. Station/offset fallback only when no evaluated path exists.
+1. Generated 3D Centerline result when available.
+2. AppliedSection frames when shared centerline result is unavailable during transition.
+3. v1 Alignment evaluation when AppliedSection frames are unavailable.
+4. Station/offset fallback only when no evaluated path exists.
 
 The preview should record the path source, for example:
 
-- `3d_centerline`
+- `centerline3d_result`
+- `applied_section_frame`
 - `alignment`
 - `station_offset_fallback`
 
@@ -301,20 +304,53 @@ Main table fields:
 
 - `Structure Id`
 - `Kind`
+- `Region`
 - `Role`
 - `Start STA`
 - `End STA`
 - `Offset`
-- `Geometry Ref`
 - `Notes`
 
 Detail panel fields should change by `structure_kind`.
+
+External or detailed geometry references should be edited in the selected-row detail panel as `External Geometry Ref`.
+
+Native v1 geometry is edited in `Selected Structure Detail`.
+
+The visible `Geometry Specs` table is not part of the Structures panel UX.
+
+`StructureGeometrySpec` remains the internal source contract for common native dimensions and placement parameters.
+
+The detail panel should filter native-specific fields by `Native Type`.
+
+For example, `pipe_culvert` should show pipe diameter instead of box opening width and height, while `box_culvert` should show opening width and opening height.
+
+The first-slice 3D preview should also distinguish these practical profiles.
+
+`pipe_culvert` and circular culvert rows should render as a circular pipe envelope along the placement path.
+
+`box_culvert` rows may continue to render as a rectangular source envelope.
+
+Native drainage endpoint rows should derive connection point roles as source intent:
+
+- `inlet`: `inlet` and `pipe_out`
+- `outlet`: `pipe_in` and `discharge`
+- `headwall`: `pipe_in` and `discharge`
+
+The editor should expose this as a `Geometry Source` choice:
+
+- `Native`: simple parametric Structure body authored through practical dimensions.
+- `External Ref`: referenced FreeCAD/imported body with explicit connection point mapping when Drainage connectivity is needed.
+
+Drainage-ready external geometry must not connect directly to imported faces or edges.
+
+It should connect through stable Structure connection point rows owned by `StructureModel`.
 
 Do not place every possible bridge, culvert, and wall field in the main table.
 
 ## 16. Preview and Output Rule
 
-`V1StructureShowPreview` is a review output.
+`V1StructureShowPreview` is a review output. When the preview is created, the editor also creates linked per-row `V1StructurePreview_*` objects under the Structures tree so individual Structure source rows can be selected from the model tree without treating generated preview geometry as source truth.
 
 It may:
 
@@ -442,6 +478,7 @@ Current execution status:
 - [x] Step 4: Add selected-row detail panel.
   - Keep the main Structures table compact.
   - Show kind-specific geometry controls only for the selected structure.
+  - Move optional external `geometry_ref` editing out of the main table into the selected-row detail area.
   - Preserve same-row selection after apply and rebuild where practical.
 - [x] Step 5: Make `V1StructureShowPreview` read geometry specs.
   - Use native spec dimensions before fallback preview sizes.
@@ -487,7 +524,7 @@ Current execution status:
   - Keep this as a normalized package export, not a full IFC writer.
 - [x] Add an IFC4 handoff adapter for persisted structure exchange packages.
   - Consume normalized structure solid rows from the persisted `ExchangePackage`.
-  - Emit deterministic `IfcBuildingElementProxy` rows with CorridorRoad property sets.
+  - Emit deterministic `IfcBuildingElementProxy` rows with Parametric Road property sets.
   - Add a Build Corridor panel action for IFC export.
 - [x] Add basic IFC shape representations.
   - Emit local placement, rectangle profile, extruded solid, shape representation, and product definition shape rows.
@@ -525,7 +562,7 @@ Acceptance criteria:
 
 - A structure crossing two AppliedSection frames records both start and end frame coordinates.
 - Existing exchange payloads include the new fields.
-- IFC export preserves start/end frame fields in CorridorRoad property sets.
+- IFC export preserves start/end frame fields in Parametric Road property sets.
 
 ### Phase 2: Segmented Structure Geometry
 
@@ -561,7 +598,7 @@ Scope:
 
 - Consume start/end or segment geometry from `StructureSolidOutput`.
 - Export segmented swept solids for curved/path-following structure rows.
-- Preserve `IfcBuildingElementProxy` and CorridorRoad property sets until a stricter IFC class mapping is ready.
+- Preserve `IfcBuildingElementProxy` and Parametric Road property sets until a stricter IFC class mapping is ready.
 - Add explicit export diagnostics for simplified geometry.
 
 Acceptance criteria:
@@ -724,7 +761,7 @@ First-slice implementation is acceptable when:
 
 ## 23. Non-goals
 
-This contract does not make CorridorRoad a structural design package.
+This contract does not make Parametric Road a structural design package.
 
 It does not replace bridge, culvert, or retaining wall engineering tools.
 

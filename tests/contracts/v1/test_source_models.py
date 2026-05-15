@@ -86,11 +86,8 @@ def test_source_models_can_be_instantiated() -> None:
         region_rows=[
             RegionRow(
                 region_id="region-1",
-                region_kind="mainline_region",
                 station_start=0.0,
                 station_end=100.0,
-                applied_layers="ditch, drainage",
-                structure_refs=["structure:bridge-01"],
                 template_ref="tmpl-1",
             )
         ],
@@ -137,10 +134,8 @@ def test_source_models_can_be_instantiated() -> None:
     assert profile.control_rows[0].elevation == 10.0
     assert assembly.template_rows[0].component_rows[0].kind == "lane"
     assert region.region_rows[0].template_ref == "tmpl-1"
-    assert region.region_rows[0].primary_kind == "normal_road"
-    assert region.region_rows[0].applied_layers == ["ditch", "drainage"]
-    assert region.region_rows[0].structure_ref == "structure:bridge-01"
-    assert region.region_rows[0].structure_refs == ["structure:bridge-01"]
+    assert not hasattr(region.region_rows[0], "structure_ref")
+    assert not hasattr(region.region_rows[0], "structure_refs")
     assert override_model.override_model_id == "ovr-1"
     assert structure_model.structure_model_id == "str-1"
     assert structure_model.geometry_spec_rows[0].shape_kind == "deck_slab"

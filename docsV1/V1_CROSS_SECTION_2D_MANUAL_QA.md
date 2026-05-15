@@ -1,4 +1,4 @@
-# CorridorRoad V1 Cross Section 2D Manual QA
+# Parametric Road V1 Cross Section 2D Manual QA
 
 Date: 2026-04-29
 Status: Manual QA procedure, execution pending real document
@@ -25,7 +25,7 @@ The goal is to confirm that v1 preserves the useful visual behavior:
 
 ## 2. Required Setup
 
-Use a real CorridorRoad project document with:
+Use a real Parametric Road project document with:
 
 - Alignment generated
 - Stations generated
@@ -43,7 +43,7 @@ If the viewer says `Built from demo section viewer payload.`, record the command
 ## 3. Launch Steps
 
 1. Open FreeCAD.
-2. Open the real CorridorRoad project document.
+2. Open the real Parametric Road project document.
 3. Run the v1 `Cross Section Viewer` command.
 4. Confirm the viewer opens without falling back to the old v0 review screen.
 5. Select or navigate to at least three stations:

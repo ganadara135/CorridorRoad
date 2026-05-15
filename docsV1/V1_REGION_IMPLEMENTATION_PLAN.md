@@ -1,4 +1,4 @@
-# CorridorRoad V1 Region Implementation Plan
+# Parametric Road V1 Region Implementation Plan
 
 Date: 2026-04-27
 Branch: `v1-dev`
@@ -27,8 +27,6 @@ Region rows are not single-purpose labels.
 
 Each region should be represented as:
 
-- one `primary_kind`
-- zero or more `applied_layers`
 - explicit references to assembly, structure, drainage, ramp, intersection, and override sources
 - station start and end values
 - priority and diagnostics
@@ -133,8 +131,6 @@ Minimum `RegionRow` fields:
 
 - `region_id`
 - `region_index`
-- `primary_kind`
-- `applied_layers`
 - `station_start`
 - `station_end`
 - `assembly_ref`
@@ -212,8 +208,6 @@ Resolution result fields:
 
 - `station`
 - `active_region_id`
-- `active_primary_kind`
-- `active_applied_layers`
 - `active_assembly_ref`
 - `active_template_ref`
 - `resolved_structure_ref`
@@ -232,8 +226,6 @@ Recommended columns:
 
 - `Start STA`
 - `End STA`
-- `Primary Kind`
-- `Layers`
 - `Assembly`
 - `Structure`
 - `Drainage`
@@ -360,11 +352,13 @@ Tasks:
 Acceptance criteria:
 
 - [x] a future corridor service can ask for resolved region context at a station
-- [x] viewer summaries can show primary kind, layers, assembly, structure, and drainage references
+- [x] viewer summaries can show Region station span and base Assembly context
 
 ## 13.1 Downstream Handoff Contract
 
-Future corridor, section, assembly, structure, drainage, ramp, and intersection services should consume Region state through `RegionResolutionService.resolve_handoff`.
+Future corridor, section, assembly, ramp, and intersection services should consume Region state through `RegionResolutionService.resolve_handoff`.
+
+Structure and Drainage should resolve Region ownership through their own source models.
 
 Do not read Region editor table widgets as source truth.
 
@@ -372,13 +366,8 @@ Do not infer bridge, ramp, drainage, or intersection behavior from free-form not
 
 Use these Region fields as downstream references:
 
-- `primary_kind` selects the dominant station-range control mode.
-- `applied_layers` adds non-exclusive context such as `ditch`, `drainage`, `guardrail`, or `widening`.
 - `assembly_ref` points to the Assembly source to apply at the station.
 - `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
-- `structure_ref` points to the one Structure source to apply at the station.
-- `structure_refs` is compatibility storage and should have at most one active entry.
-- `drainage_refs` points to Drainage elements or collection/discharge context.
 - `ramp_ref` and `intersection_ref` point to Ramp and Intersection sources when the Region is tied to those domains.
 - `override_refs` points to station-specific or component-specific overrides.
 

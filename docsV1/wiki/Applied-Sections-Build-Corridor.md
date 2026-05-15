@@ -18,6 +18,14 @@ They resolve:
 
 Applied Sections are results. They are not the primary editing surface.
 
+The `Validate` action checks source handoff readiness before building result rows.
+
+Drainage readiness includes:
+
+- every Drainage element row with an `Element ID` must have a `Region` assigned
+- missing Drainage Region assignment is reported as `drainage_element_missing_region_ref`
+- correction happens in the Drainage editor, not in Applied Sections
+
 ## Build Corridor
 
 Build Corridor consumes Applied Sections and creates corridor preview surfaces and diagnostics.
@@ -44,9 +52,11 @@ The Region display is based on the selected Region's corridor objects, not a sep
 - subgrade surface
 - slope/daylight surface
 - drainage surface
-- structure object context where a Structure reference exists
+- structure object context where Applied Sections resolved active Structure rows
 
-If only part of the Region appears, rebuild Applied Sections and Build Corridor, then check the Region row's surface and structure diagnostics.
+The Structure and Drainage columns are read-only resolved summaries from Applied Sections. They are not Region source fields.
+
+If only part of the Region appears, rebuild Applied Sections and Build Corridor, then check the Region row's surface, structure, and drainage diagnostics.
 
 ## Surface Transitions
 

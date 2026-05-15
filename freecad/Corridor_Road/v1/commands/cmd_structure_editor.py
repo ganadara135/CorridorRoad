@@ -26,6 +26,7 @@ from ..models.source.structure_model import (
     BridgeGeometrySpec,
     CulvertGeometrySpec,
     RetainingWallGeometrySpec,
+    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureInfluenceZone,
     StructureInteractionRule,
@@ -46,10 +47,31 @@ from ..objects.obj_structure import (
 from ..services.evaluation import AlignmentEvaluationService
 
 
+STRUCTURE_GEOMETRY_SPEC_REF_ROLE = QtCore.Qt.UserRole
+try:
+    STRUCTURE_GEOMETRY_REF_ROLE = int(QtCore.Qt.UserRole) + 1
+    STRUCTURE_GEOMETRY_SOURCE_ROLE = int(QtCore.Qt.UserRole) + 2
+    STRUCTURE_NATIVE_TYPE_ROLE = int(QtCore.Qt.UserRole) + 3
+except Exception:  # pragma: no cover - PySide enum compatibility fallback.
+    STRUCTURE_GEOMETRY_REF_ROLE = 257
+    STRUCTURE_GEOMETRY_SOURCE_ROLE = 258
+    STRUCTURE_NATIVE_TYPE_ROLE = 259
+
 STRUCTURE_KIND_CHOICES = ["bridge", "culvert", "retaining_wall", "wall", "utility", "custom"]
 STRUCTURE_ROLE_CHOICES = ["active", "interface", "clearance_control", "split_zone", "reference"]
 LENGTH_MODE_CHOICES = ["station_range", "explicit_length", "reference_geometry"]
 VERTICAL_POSITION_MODE_CHOICES = ["profile_frame", "absolute_elevation", "terrain_relative", "structure_reference"]
+GEOMETRY_SOURCE_CHOICES = ["native", "external_ref"]
+NATIVE_TYPE_CHOICES = [
+    "",
+    "box_culvert",
+    "pipe_culvert",
+    "bridge_deck",
+    "retaining_wall",
+    "headwall",
+    "inlet",
+    "outlet",
+]
 
 
 STRUCTURE_PRESETS = {
@@ -69,6 +91,7 @@ STRUCTURE_PRESETS = {
                 "offset": 0.0,
                 "geometry": "",
                 "spec": "geometry-spec:bridge-01",
+                "native_type": "bridge_deck",
                 "width": 10.0,
                 "height": 1.2,
                 "shape": "deck_slab",
@@ -98,6 +121,7 @@ STRUCTURE_PRESETS = {
                 "offset": 0.0,
                 "geometry": "",
                 "spec": "geometry-spec:culvert-01",
+                "native_type": "box_culvert",
                 "width": 3.0,
                 "height": 2.0,
                 "shape": "box",
@@ -115,6 +139,212 @@ STRUCTURE_PRESETS = {
             }
         ],
     },
+    "Drainage Structures": {
+        "note": "Practical station-banded roadside drainage chain: ditch sections drain to local inlets, inlet pipes connect to one pipe culvert, and the culvert discharges to an outlet headwall.",
+        "rows": [
+            {
+                "id": "structure:inlet-01",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.23,
+                "end": 0.25,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-01",
+                "native_type": "inlet",
+                "width": 1.8,
+                "height": 1.8,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside inlet collecting the first ditch station band.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-01:ditch-in",
+                        "at": "start",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-01:pipe-out",
+                        "at": "end",
+                        "diameter": 1.0,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:inlet-02",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.37,
+                "end": 0.39,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-02",
+                "native_type": "inlet",
+                "width": 1.8,
+                "height": 1.8,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside inlet collecting the second ditch station band.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-02:ditch-in",
+                        "at": "start",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:inlet-02:pipe-in",
+                        "at": "start",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-02:pipe-out",
+                        "at": "end",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:inlet-03",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.51,
+                "end": 0.53,
+                "offset": -5.2,
+                "geometry": "",
+                "spec": "geometry-spec:inlet-03",
+                "native_type": "inlet",
+                "width": 1.8,
+                "height": 1.8,
+                "shape": "catch_basin",
+                "material": "concrete",
+                "notes": "Roadside inlet collecting the third ditch station band before the culvert.",
+                "connection_points": [
+                    {
+                        "role": "inlet",
+                        "id": "connection:inlet-03:ditch-in",
+                        "at": "start",
+                        "width": 1.8,
+                        "height": 0.8,
+                        "shape": "ditch_inlet",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:inlet-03:pipe-in",
+                        "at": "start",
+                        "diameter": 0.9,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:inlet-03:pipe-out",
+                        "at": "end",
+                        "diameter": 1.2,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:culvert-01",
+                "kind": "culvert",
+                "role": "clearance_control",
+                "start": 0.62,
+                "end": 0.72,
+                "offset": 0.0,
+                "geometry": "",
+                "spec": "geometry-spec:culvert-01",
+                "native_type": "pipe_culvert",
+                "width": 1.2,
+                "height": 1.2,
+                "shape": "circular_pipe",
+                "material": "concrete",
+                "culvert": {
+                    "barrel_shape": "circular",
+                    "barrel_count": 1,
+                    "diameter": 1.2,
+                    "wall_thickness": 0.15,
+                    "length": 12.0,
+                    "headwall_type": "flared",
+                    "wingwall_type": "short",
+                },
+                "notes": "Circular pipe culvert/cross-drain carrying collected ditch flow under the road.",
+                "connection_points": [
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:culvert-01:pipe-in",
+                        "at": "start",
+                        "offset": 0.0,
+                        "diameter": 1.2,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "pipe_out",
+                        "id": "connection:culvert-01:pipe-out",
+                        "at": "end",
+                        "offset": 0.0,
+                        "diameter": 1.2,
+                        "shape": "circular",
+                        "direction": "out",
+                    },
+                ],
+            },
+            {
+                "id": "structure:outlet-01",
+                "kind": "utility",
+                "role": "reference",
+                "start": 0.78,
+                "end": 0.82,
+                "offset": 6.4,
+                "geometry": "",
+                "spec": "geometry-spec:outlet-01",
+                "native_type": "outlet",
+                "width": 2.8,
+                "height": 2.0,
+                "shape": "outlet_headwall",
+                "material": "concrete",
+                "notes": "Outlet headwall and outfall discharge point downstream of the culvert.",
+                "connection_points": [
+                    {
+                        "role": "pipe_in",
+                        "id": "connection:outlet-01:pipe-in",
+                        "at": "start",
+                        "diameter": 1.2,
+                        "shape": "circular",
+                        "direction": "in",
+                    },
+                    {
+                        "role": "discharge",
+                        "id": "connection:outlet-01:outfall",
+                        "at": "end",
+                        "width": 2.4,
+                        "height": 1.0,
+                        "shape": "outfall",
+                        "direction": "out",
+                    },
+                ],
+            },
+        ],
+    },
     "Retaining Wall": {
         "note": "One retaining wall zone on the right side of the corridor.",
         "rows": [
@@ -127,6 +357,7 @@ STRUCTURE_PRESETS = {
                 "offset": 7.5,
                 "geometry": "",
                 "spec": "geometry-spec:retaining-wall-01",
+                "native_type": "retaining_wall",
                 "width": 0.9,
                 "height": 3.0,
                 "shape": "wall",
@@ -179,22 +410,31 @@ def structure_preset_model_from_document(
     alignment_obj = alignment or find_v1_alignment(doc)
     station_start, station_end = _document_station_range(doc, alignment_obj)
     alignment_id = str(getattr(alignment_obj, "AlignmentId", "") or "")
+    structure_rows = _preset_structure_rows(
+        preset,
+        station_start=station_start,
+        station_end=station_end,
+        alignment_id=alignment_id,
+    )
+    geometry_spec_rows = _preset_geometry_spec_rows(preset)
+    culvert_geometry_spec_rows = _preset_culvert_geometry_spec_rows(preset)
     return StructureModel(
         schema_version=1,
         project_id=_project_id(prj),
         structure_model_id="structures:main",
         alignment_id=alignment_id,
         label="Structures",
-        structure_rows=_preset_structure_rows(
-            preset,
-            station_start=station_start,
-            station_end=station_end,
-            alignment_id=alignment_id,
-        ),
-        geometry_spec_rows=_preset_geometry_spec_rows(preset),
+        structure_rows=structure_rows,
+        geometry_spec_rows=geometry_spec_rows,
         bridge_geometry_spec_rows=_preset_bridge_geometry_spec_rows(preset),
-        culvert_geometry_spec_rows=_preset_culvert_geometry_spec_rows(preset),
+        culvert_geometry_spec_rows=culvert_geometry_spec_rows,
         retaining_wall_geometry_spec_rows=_preset_retaining_wall_geometry_spec_rows(preset),
+        connection_point_rows=_preset_connection_point_rows(
+            preset,
+            structure_rows=structure_rows,
+            geometry_spec_rows=geometry_spec_rows,
+            culvert_geometry_spec_rows=culvert_geometry_spec_rows,
+        ),
         interaction_rule_rows=[],
         influence_zone_rows=[],
     )
@@ -218,7 +458,7 @@ def apply_v1_structure_model(
         except Exception:
             prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(prj)
-        prj.Label = "CorridorRoad Project"
+        prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
     obj = create_or_update_v1_structure_model_object(
@@ -258,7 +498,109 @@ def show_v1_structure_preview_object(document, structure_model: StructureModel, 
     _set_preview_integer_property(obj, "GeometrySpecCount", len(context["geometry_specs"]))
     _set_preview_string_property(obj, "PreviewGeometrySource", "geometry_spec" if context["geometry_specs"] else "fallback")
     _set_preview_string_list_property(obj, "PreviewReviewNotes", _structure_preview_review_notes(structure_model, context))
+    row_preview_objects = _create_structure_row_preview_objects(
+        document,
+        structure_model,
+        path=_structure_preview_path_source(document),
+        context=context,
+        project=project,
+    )
+    _set_preview_string_list_property(obj, "LinkedPreviewObjects", [row.Name for row in row_preview_objects])
     _style_structure_preview_object(obj)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(project or find_project(document), obj)
+    except Exception:
+        pass
+    try:
+        document.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def _create_structure_row_preview_objects(
+    document,
+    structure_model: StructureModel,
+    *,
+    path: dict[str, object],
+    context: dict[str, object],
+    project=None,
+) -> list[object]:
+    objects: list[object] = []
+    for row in list(getattr(structure_model, "structure_rows", []) or []):
+        structure_id = str(getattr(row, "structure_id", "") or "")
+        if not structure_id:
+            continue
+        shape = _structure_row_preview_shape(row, path, context)
+        if shape is None:
+            continue
+        object_name = "V1StructurePreview_" + _safe_object_suffix(structure_id)
+        obj = document.getObject(object_name)
+        if obj is None:
+            obj = document.addObject("Part::Feature", object_name)
+        obj.Label = "Structure - " + _display_structure_ref(structure_id)
+        obj.Shape = shape
+        _set_preview_string_property(obj, "CRRecordKind", "v1_structure_row_preview")
+        _set_preview_string_property(obj, "V1ObjectType", "V1StructureRowPreview")
+        _set_preview_string_property(obj, "StructureModelId", str(getattr(structure_model, "structure_model_id", "") or ""))
+        _set_preview_string_property(obj, "StructureRef", structure_id)
+        _set_preview_string_property(obj, "PreviewPathSource", str(path.get("source", "") or ""))
+        _style_structure_preview_object(obj)
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(document), obj)
+        except Exception:
+            pass
+        objects.append(obj)
+    return objects
+
+
+def show_v1_structure_connection_points_preview_object(
+    document,
+    structure_model: StructureModel,
+    *,
+    structure_ref: str = "",
+    connection_point_ref: str = "",
+    project=None,
+):
+    """Create or update a 3D review object for Structure connection points."""
+
+    if document is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Structure connection point preview.")
+    points = _filtered_connection_points(
+        list(getattr(structure_model, "connection_point_rows", []) or []),
+        structure_ref=structure_ref,
+        connection_point_ref=connection_point_ref,
+    )
+    if not points:
+        raise ValueError("Connection point preview requires at least one connection point row.")
+    shapes = []
+    for point in points:
+        x, y, z = _connection_point_xyz(document, point)
+        shapes.append(_connection_point_marker_shape(point, float(x), float(y), float(z)))
+    shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+    obj = document.getObject("V1StructureConnectionPointPreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1StructureConnectionPointPreview")
+    obj.Label = "Structure Connection Points"
+    obj.Shape = shape
+    _set_preview_string_property(obj, "CRRecordKind", "v1_structure_connection_point_preview")
+    _set_preview_string_property(obj, "V1ObjectType", "V1StructureConnectionPointPreview")
+    _set_preview_string_property(obj, "StructureModelId", str(getattr(structure_model, "structure_model_id", "") or ""))
+    _set_preview_string_property(obj, "StructureRef", str(structure_ref or ""))
+    _set_preview_string_property(obj, "ConnectionPointRef", str(connection_point_ref or ""))
+    _set_preview_integer_property(obj, "ConnectionPointCount", len(points))
+    _set_preview_string_list_property(
+        obj,
+        "ConnectionPointIds",
+        [str(getattr(point, "connection_point_id", "") or "") for point in points],
+    )
+    _style_connection_point_preview_object(obj)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -294,6 +636,10 @@ class V1StructureEditorTaskPanel:
         self._bridge_geometry_spec_rows: list[BridgeGeometrySpec] = []
         self._culvert_geometry_spec_rows: list[CulvertGeometrySpec] = []
         self._retaining_wall_geometry_spec_rows: list[RetainingWallGeometrySpec] = []
+        self._connection_point_rows: list[StructureConnectionPoint] = []
+        self._active_detail_structure_id = ""
+        self._active_detail_spec_ref = ""
+        self._loading_selected_detail = False
         self.form = self._build_ui()
         self._load_existing_rows()
 
@@ -345,9 +691,9 @@ class V1StructureEditorTaskPanel:
         layout.addWidget(self._preset_note)
         self._preset_combo.currentIndexChanged.connect(self._update_preset_note)
 
-        self._table = QtWidgets.QTableWidget(0, 8)
+        self._table = QtWidgets.QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(
-            ["Structure Id", "Kind", "Role", "Start STA", "End STA", "Offset", "Geometry Ref", "Notes"]
+            ["Structure Id", "Kind", "Role", "Start STA", "End STA", "Offset", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -357,6 +703,9 @@ class V1StructureEditorTaskPanel:
             | QtWidgets.QAbstractItemView.AnyKeyPressed
         )
         self._table.itemSelectionChanged.connect(self._load_selected_detail)
+        self._table.cellClicked.connect(self._activate_structure_detail_row)
+        self._table.currentCellChanged.connect(self._handle_structure_current_cell_changed)
+        self._table.cellDoubleClicked.connect(self._activate_structure_detail_row)
         try:
             self._table.horizontalHeader().setStretchLastSection(True)
         except Exception:
@@ -375,10 +724,6 @@ class V1StructureEditorTaskPanel:
         edit_row.addWidget(sort_button)
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
-
-        geometry_label = QtWidgets.QLabel("Geometry Specs")
-        geometry_label.setToolTip("Native v1 source dimensions linked from Structure rows.")
-        layout.addWidget(geometry_label)
 
         self._geometry_table = QtWidgets.QTableWidget(0, 12)
         self._geometry_table.setHorizontalHeaderLabels(
@@ -408,23 +753,54 @@ class V1StructureEditorTaskPanel:
             self._geometry_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
             pass
-        layout.addWidget(self._geometry_table, 1)
-
-        geometry_edit_row = QtWidgets.QHBoxLayout()
-        add_specs_button = QtWidgets.QPushButton("Add Missing Specs")
-        add_specs_button.clicked.connect(self._add_missing_geometry_specs)
-        geometry_edit_row.addWidget(add_specs_button)
-        delete_specs_button = QtWidgets.QPushButton("Delete Selected Spec")
-        delete_specs_button.clicked.connect(self._delete_selected_geometry_specs)
-        geometry_edit_row.addWidget(delete_specs_button)
-        geometry_edit_row.addStretch(1)
-        layout.addLayout(geometry_edit_row)
+        self._geometry_table.setVisible(False)
 
         detail_group = QtWidgets.QGroupBox("Selected Structure Detail")
         detail_layout = QtWidgets.QVBoxLayout(detail_group)
         self._detail_summary = QtWidgets.QLabel("No structure row is selected.")
         detail_layout.addWidget(self._detail_summary)
         detail_form = QtWidgets.QFormLayout()
+        self._geometry_source_combo = QtWidgets.QComboBox()
+        self._geometry_source_combo.addItems(GEOMETRY_SOURCE_CHOICES)
+        self._geometry_source_combo.setToolTip("Native creates a simple Parametric Road body. External Ref uses a referenced body plus explicit connection-point mapping.")
+        self._geometry_source_combo.currentIndexChanged.connect(self._handle_geometry_source_changed)
+        detail_form.addRow("Geometry Source", self._geometry_source_combo)
+        self._native_type_combo = QtWidgets.QComboBox()
+        self._native_type_combo.addItems(NATIVE_TYPE_CHOICES)
+        self._native_type_combo.setToolTip("Simple native structure type used to drive practical dimensions and default connection points.")
+        self._native_type_combo.currentIndexChanged.connect(self._handle_native_type_changed)
+        detail_form.addRow("Native Type", self._native_type_combo)
+        self._geometry_ref_field = QtWidgets.QLineEdit()
+        self._geometry_ref_field.setToolTip("Optional external or detailed geometry reference. Native geometry dimensions are edited in this detail area.")
+        self._geometry_ref_field.textEdited.connect(lambda _text: self._sync_selected_detail_to_row())
+        detail_form.addRow("External Geometry Ref", self._geometry_ref_field)
+        self._common_shape_label = QtWidgets.QLabel("Shape (auto)")
+        self._common_shape_label.setToolTip("Auto-filled from Native Type. Edit only when a custom native shape key is needed.")
+        self._common_shape_field = QtWidgets.QLineEdit()
+        self._common_shape_field.setPlaceholderText("Auto from Native Type")
+        self._common_shape_field.setToolTip(
+            "Auto-filled from Native Type and used by generated structure geometry. "
+            "Leave the default unless this structure needs a custom native shape key."
+        )
+        detail_form.addRow(self._common_shape_label, self._common_shape_field)
+        self._common_width_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Width", self._common_width_field)
+        self._common_height_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Height", self._common_height_field)
+        self._common_vertical_mode_combo = QtWidgets.QComboBox()
+        self._common_vertical_mode_combo.setEditable(True)
+        self._common_vertical_mode_combo.addItems(VERTICAL_POSITION_MODE_CHOICES)
+        detail_form.addRow("Vertical Mode", self._common_vertical_mode_combo)
+        self._common_base_elev_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Base Elev", self._common_base_elev_field)
+        self._common_top_elev_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Top Elev", self._common_top_elev_field)
+        self._common_skew_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Skew", self._common_skew_field)
+        self._common_material_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Material", self._common_material_field)
+        self._common_notes_field = QtWidgets.QLineEdit()
+        detail_form.addRow("Geometry Notes", self._common_notes_field)
         self._detail_labels = []
         self._detail_fields = []
         for _index in range(10):
@@ -434,10 +810,65 @@ class V1StructureEditorTaskPanel:
             self._detail_labels.append(label)
             self._detail_fields.append(field)
         detail_layout.addLayout(detail_form)
+
+        self._connection_label = QtWidgets.QLabel("Drainage Connection Points")
+        self._connection_label.setToolTip("Stable source endpoints for Drainage pipe/channel connectivity.")
+        detail_layout.addWidget(self._connection_label)
+        self._connection_table = QtWidgets.QTableWidget(0, 12)
+        self._connection_table.setHorizontalHeaderLabels(
+            [
+                "Point ID",
+                "Role",
+                "STA",
+                "Offset",
+                "Elev",
+                "Invert",
+                "Shape",
+                "Width",
+                "Height",
+                "Diameter",
+                "Direction",
+                "Notes",
+            ]
+        )
+        self._connection_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._connection_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._connection_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.AnyKeyPressed
+        )
+        self._connection_table.cellDoubleClicked.connect(lambda row_index, _col: self._preview_connection_point_row(row_index))
+        try:
+            self._connection_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        detail_layout.addWidget(self._connection_table, 1)
+
+        connection_action_row = QtWidgets.QHBoxLayout()
+        add_point_button = QtWidgets.QPushButton("Add Point")
+        add_point_button.clicked.connect(self._add_connection_point)
+        connection_action_row.addWidget(add_point_button)
+        delete_point_button = QtWidgets.QPushButton("Delete Point")
+        delete_point_button.clicked.connect(self._delete_connection_points)
+        connection_action_row.addWidget(delete_point_button)
+        pick_point_button = QtWidgets.QPushButton("Pick From 3D")
+        pick_point_button.clicked.connect(self._pick_connection_point_from_3d)
+        connection_action_row.addWidget(pick_point_button)
+        derive_points_button = QtWidgets.QPushButton("Derive Defaults")
+        derive_points_button.clicked.connect(self._derive_default_connection_points)
+        connection_action_row.addWidget(derive_points_button)
+        preview_points_button = QtWidgets.QPushButton("Preview Points")
+        preview_points_button.clicked.connect(self._preview_connection_points)
+        connection_action_row.addWidget(preview_points_button)
+        connection_action_row.addStretch(1)
+        detail_layout.addLayout(connection_action_row)
+
         detail_action_row = QtWidgets.QHBoxLayout()
-        apply_detail_button = QtWidgets.QPushButton("Apply Detail")
-        apply_detail_button.clicked.connect(self._apply_selected_detail)
-        detail_action_row.addWidget(apply_detail_button)
+        self._apply_detail_button = QtWidgets.QPushButton("Apply Selected Detail")
+        self._apply_detail_button.setToolTip("Apply geometry detail and Drainage Connection Points for the selected Structure row.")
+        self._apply_detail_button.clicked.connect(self._apply_selected_detail)
+        detail_action_row.addWidget(self._apply_detail_button)
         detail_action_row.addStretch(1)
         detail_layout.addLayout(detail_action_row)
         layout.addWidget(detail_group)
@@ -452,15 +883,18 @@ class V1StructureEditorTaskPanel:
         validate_button = QtWidgets.QPushButton("Validate")
         validate_button.clicked.connect(self._validate)
         action_row.addWidget(validate_button)
-        apply_button = QtWidgets.QPushButton("Apply")
-        apply_button.clicked.connect(lambda: self._apply(close_after=False))
-        action_row.addWidget(apply_button)
-        show_button = QtWidgets.QPushButton("Show in 3D")
-        show_button.clicked.connect(self._show_preview)
-        action_row.addWidget(show_button)
-        apply_show_button = QtWidgets.QPushButton("Apply + Show")
-        apply_show_button.clicked.connect(lambda: self._apply(close_after=False, show_preview=True))
-        action_row.addWidget(apply_show_button)
+        self._save_button = QtWidgets.QPushButton("Apply")
+        self._save_button.setToolTip("Apply the current Structure source rows without creating a 3D preview.")
+        self._save_button.clicked.connect(lambda: self._apply(close_after=False, show_preview=False))
+        action_row.addWidget(self._save_button)
+        self._preview_button = QtWidgets.QPushButton("Preview 3D")
+        self._preview_button.setToolTip("Create a temporary 3D preview from the current panel values without applying.")
+        self._preview_button.clicked.connect(self._show_preview)
+        action_row.addWidget(self._preview_button)
+        self._save_preview_button = QtWidgets.QPushButton("Apply + Preview")
+        self._save_preview_button.setToolTip("Apply the current Structure source rows, then create a 3D preview.")
+        self._save_preview_button.clicked.connect(lambda: self._apply(close_after=False, show_preview=True))
+        action_row.addWidget(self._save_preview_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -470,6 +904,7 @@ class V1StructureEditorTaskPanel:
         return widget
 
     def _load_existing_rows(self) -> None:
+        self.structure_obj = find_v1_structure_model(self.document, preferred_structure_model=self.structure_obj)
         model = to_structure_model(self.structure_obj)
         if model is None:
             return
@@ -477,10 +912,32 @@ class V1StructureEditorTaskPanel:
         self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
         self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
         self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
+        self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
+        self._active_detail_structure_id = ""
+        self._active_detail_spec_ref = ""
         self._replace_rows(model.structure_rows)
         self._replace_geometry_specs(self._geometry_spec_rows)
         self._select_first_structure_row()
         self._set_status(f"Loaded {len(model.structure_rows)} Structure row(s) from {self.structure_obj.Label}.")
+
+    def _reload_existing_rows(self, *, selected_structure_id: str = "") -> None:
+        self.structure_obj = find_v1_structure_model(self.document, preferred_structure_model=self.structure_obj)
+        model = to_structure_model(self.structure_obj)
+        if model is None:
+            return
+        self._geometry_spec_rows = list(getattr(model, "geometry_spec_rows", []) or [])
+        self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
+        self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
+        self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
+        self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
+        self._active_detail_structure_id = ""
+        self._active_detail_spec_ref = ""
+        self._replace_rows(model.structure_rows)
+        self._replace_geometry_specs(self._geometry_spec_rows)
+        if selected_structure_id:
+            self._select_structure_id(selected_structure_id)
+        else:
+            self._select_first_structure_row()
 
     def _load_selected_preset(self) -> None:
         try:
@@ -490,6 +947,7 @@ class V1StructureEditorTaskPanel:
             self._bridge_geometry_spec_rows = list(getattr(model, "bridge_geometry_spec_rows", []) or [])
             self._culvert_geometry_spec_rows = list(getattr(model, "culvert_geometry_spec_rows", []) or [])
             self._retaining_wall_geometry_spec_rows = list(getattr(model, "retaining_wall_geometry_spec_rows", []) or [])
+            self._connection_point_rows = list(getattr(model, "connection_point_rows", []) or [])
             self._replace_rows(model.structure_rows)
             self._replace_geometry_specs(self._geometry_spec_rows)
             self._select_first_structure_row()
@@ -529,13 +987,12 @@ class V1StructureEditorTaskPanel:
         index = self._table.rowCount()
         self._table.insertRow(index)
         values = [
-            row.structure_id,
+            _display_structure_ref(row.structure_id),
             row.structure_kind,
             row.structure_role,
             _format_float(row.placement.station_start),
             _format_float(row.placement.station_end),
             _format_float(row.placement.offset),
-            row.geometry_ref,
             "",
         ]
         for col, value in enumerate(values):
@@ -544,17 +1001,22 @@ class V1StructureEditorTaskPanel:
                 combo.setEditable(True)
                 combo.addItems(STRUCTURE_KIND_CHOICES)
                 combo.setCurrentText(str(value or "bridge"))
+                self._bind_structure_row_widget(combo)
                 self._table.setCellWidget(index, col, combo)
             elif col == 2:
                 combo = QtWidgets.QComboBox()
                 combo.setEditable(True)
                 combo.addItems(STRUCTURE_ROLE_CHOICES)
                 combo.setCurrentText(str(value or "interface"))
+                self._bind_structure_row_widget(combo)
                 self._table.setCellWidget(index, col, combo)
             else:
                 item = QtWidgets.QTableWidgetItem(str(value))
                 if col == 0:
-                    item.setData(QtCore.Qt.UserRole, str(getattr(row, "geometry_spec_ref", "") or ""))
+                    item.setData(STRUCTURE_GEOMETRY_SPEC_REF_ROLE, str(getattr(row, "geometry_spec_ref", "") or ""))
+                    item.setData(STRUCTURE_GEOMETRY_REF_ROLE, str(getattr(row, "geometry_ref", "") or ""))
+                    item.setData(STRUCTURE_GEOMETRY_SOURCE_ROLE, _geometry_source_mode(row))
+                    item.setData(STRUCTURE_NATIVE_TYPE_ROLE, str(getattr(row, "native_type", "") or ""))
                 self._table.setItem(index, col, item)
 
     def _append_geometry_spec(self, row: StructureGeometrySpec | None = None) -> None:
@@ -644,6 +1106,207 @@ class V1StructureEditorTaskPanel:
             self._geometry_table.removeRow(row_index)
         self._set_status(f"Deleted {len(rows)} Geometry Spec row(s).")
 
+    def _add_connection_point(self) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before adding a connection point.")
+            return
+        self._append_connection_point(
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{str(row.structure_id).split(':')[-1]}:{self._connection_table.rowCount() + 1}",
+                structure_ref=str(row.structure_id),
+                point_role="inlet",
+                station=float(getattr(row.placement, "station_start", 0.0) or 0.0),
+                offset=float(getattr(row.placement, "offset", 0.0) or 0.0),
+                region_ref="",
+            )
+        )
+        self._set_status(f"Added a connection point for {row.structure_id}.")
+
+    def _delete_connection_points(self) -> None:
+        rows = sorted({item.row() for item in list(self._connection_table.selectedItems() or [])}, reverse=True)
+        if not rows and self._connection_table.currentRow() >= 0:
+            rows = [self._connection_table.currentRow()]
+        for row_index in rows:
+            self._connection_table.removeRow(row_index)
+        if self._active_detail_structure_id:
+            self._sync_connection_points_from_table(self._active_detail_structure_id)
+        self._set_status(f"Deleted {len(rows)} connection point row(s).")
+
+    def _derive_default_connection_points(self) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before deriving connection points.")
+            return
+        points = _derive_default_connection_points_for_row(row, self._geometry_spec_for_structure(row), self._culvert_spec_for_structure(row))
+        if not points:
+            self._set_status(f"No default connection point rule is defined for {row.structure_kind}.")
+            return
+        self._replace_connection_points(points)
+        self._sync_connection_points_from_table(str(row.structure_id))
+        self._set_status(f"Derived {len(points)} connection point row(s) for {row.structure_id}.")
+
+    def _pick_connection_point_from_3d(self) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before picking a connection point.")
+            return
+        try:
+            point = _selected_3d_point()
+            station, offset = _station_offset_from_point(self.document, point)
+            target_row = self._connection_table.currentRow()
+            if target_row < 0:
+                self._add_connection_point()
+                target_row = self._connection_table.rowCount() - 1
+            self._set_connection_cell(target_row, 2, _format_float(station))
+            self._set_connection_cell(target_row, 3, _format_float(offset))
+            self._set_connection_cell(target_row, 4, _format_float(float(getattr(point, "z", 0.0) or 0.0)))
+            self._set_connection_cell(target_row, 5, _format_float(float(getattr(point, "z", 0.0) or 0.0)))
+            notes = _item_text(self._connection_table, target_row, 11)
+            if "picked_from_3d" not in notes:
+                self._set_connection_cell(target_row, 11, (notes + "; " if notes else "") + "picked_from_3d")
+            self._sync_connection_points_from_table(str(row.structure_id))
+            self._set_status(
+                "Picked 3D point into connection point row: "
+                f"STA {station:.3f}, Offset {offset:.3f}, Elev {float(getattr(point, 'z', 0.0) or 0.0):.3f}."
+            )
+        except Exception as exc:
+            self._set_status(f"3D point was not picked:\n{exc}")
+
+    def _preview_connection_points(self) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before previewing connection points.")
+            return
+        try:
+            model = self._model_from_table()
+            preview = show_v1_structure_connection_points_preview_object(
+                self.document,
+                model,
+                structure_ref=str(row.structure_id),
+            )
+            self._focus_preview_object(preview)
+            self._set_status(f"Connection point preview shown for {row.structure_id}.")
+        except Exception as exc:
+            self._set_status(f"Connection point preview was not shown:\n{exc}")
+
+    def _preview_connection_point_row(self, row_index: int) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before previewing a connection point.")
+            return
+        try:
+            model = self._model_from_table()
+            connection_ref = _item_text(self._connection_table, row_index, 0)
+            preview = show_v1_structure_connection_points_preview_object(
+                self.document,
+                model,
+                structure_ref=str(row.structure_id),
+                connection_point_ref=connection_ref,
+            )
+            self._focus_preview_object(preview)
+            self._set_status(f"Connection point preview shown: {connection_ref}.")
+        except Exception as exc:
+            self._set_status(f"Connection point preview was not shown:\n{exc}")
+
+    def _connection_points_for_structure(self, structure_ref: str) -> list[StructureConnectionPoint]:
+        expected = str(structure_ref or "")
+        return [
+            row
+            for row in list(self._connection_point_rows or [])
+            if str(getattr(row, "structure_ref", "") or "") == expected
+        ]
+
+    def _replace_connection_points(self, rows: list[StructureConnectionPoint]) -> None:
+        self._connection_table.setRowCount(0)
+        for row in rows:
+            self._append_connection_point(row)
+
+    def _append_connection_point(self, row: StructureConnectionPoint) -> None:
+        index = self._connection_table.rowCount()
+        self._connection_table.insertRow(index)
+        values = [
+            row.connection_point_id,
+            row.point_role,
+            _format_float(row.station),
+            _format_float(row.offset),
+            _format_optional_float(row.elevation),
+            _format_optional_float(row.invert_elevation),
+            row.shape_kind,
+            _format_float(row.width),
+            _format_float(row.height),
+            _format_float(row.diameter),
+            row.direction,
+            row.notes,
+        ]
+        for col, value in enumerate(values):
+            self._connection_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
+
+    def _set_connection_cell(self, row_index: int, col: int, value: str) -> None:
+        item = self._connection_table.item(row_index, col)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            self._connection_table.setItem(row_index, col, item)
+        item.setText(str(value or ""))
+
+    def _sync_connection_points_from_table(self, structure_ref: str) -> None:
+        structure_ref = str(structure_ref or "")
+        if not structure_ref:
+            return
+        retained = [
+            row
+            for row in list(self._connection_point_rows or [])
+            if str(getattr(row, "structure_ref", "") or "") != structure_ref
+        ]
+        retained.extend(self._connection_point_table_rows(structure_ref))
+        self._connection_point_rows = retained
+
+    def _connection_point_table_rows(self, structure_ref: str) -> list[StructureConnectionPoint]:
+        rows: list[StructureConnectionPoint] = []
+        for row_index in range(self._connection_table.rowCount()):
+            point_id = _item_text(self._connection_table, row_index, 0) or f"connection:{structure_ref.split(':')[-1]}:{row_index + 1}"
+            rows.append(
+                StructureConnectionPoint(
+                    connection_point_id=point_id,
+                    structure_ref=structure_ref,
+                    point_role=_item_text(self._connection_table, row_index, 1) or "inlet",
+                    station=_required_float(_item_text(self._connection_table, row_index, 2), f"Connection point row {row_index + 1} STA"),
+                    offset=_required_float(_item_text(self._connection_table, row_index, 3) or "0", f"Connection point row {row_index + 1} offset"),
+                    elevation=_optional_float_text(_item_text(self._connection_table, row_index, 4)),
+                    invert_elevation=_optional_float_text(_item_text(self._connection_table, row_index, 5)),
+                    shape_kind=_item_text(self._connection_table, row_index, 6),
+                    width=_required_float(_item_text(self._connection_table, row_index, 7) or "0", f"Connection point row {row_index + 1} width"),
+                    height=_required_float(_item_text(self._connection_table, row_index, 8) or "0", f"Connection point row {row_index + 1} height"),
+                    diameter=_required_float(_item_text(self._connection_table, row_index, 9) or "0", f"Connection point row {row_index + 1} diameter"),
+                    direction=_item_text(self._connection_table, row_index, 10),
+                    connection_order=row_index + 1,
+                    region_ref="",
+                    notes=_item_text(self._connection_table, row_index, 11),
+                )
+            )
+        return rows
+
+    def _structure_row_by_id(self, structure_ref: str) -> StructureRow | None:
+        expected = str(structure_ref or "")
+        for row_index in range(self._table.rowCount()):
+            if _source_structure_ref(_item_text(self._table, row_index, 0)) == expected:
+                return self._structure_row_from_table_index(row_index)
+        return None
+
+    def _geometry_spec_for_structure(self, row: StructureRow) -> StructureGeometrySpec | None:
+        spec_ref = str(getattr(row, "geometry_spec_ref", "") or "")
+        for spec in self._geometry_spec_table_rows(allow_blank=True):
+            if str(getattr(spec, "geometry_spec_id", "") or "") == spec_ref:
+                return spec
+        return None
+
+    def _culvert_spec_for_structure(self, row: StructureRow) -> CulvertGeometrySpec | None:
+        spec_ref = str(getattr(row, "geometry_spec_ref", "") or "")
+        for spec in list(self._culvert_geometry_spec_rows or []):
+            if str(getattr(spec, "geometry_spec_ref", "") or "") == spec_ref:
+                return spec
+        return None
+
     def _sort_rows(self) -> None:
         try:
             current_id = self._current_structure_id()
@@ -654,27 +1317,179 @@ class V1StructureEditorTaskPanel:
         except Exception as exc:
             self._set_status(f"Structure rows were not sorted:\n{exc}")
 
+    def _activate_structure_detail_row(self, row_index: int, _column: int = 0) -> None:
+        if row_index < 0 or row_index >= self._table.rowCount():
+            return
+        try:
+            self._table.blockSignals(True)
+            self._table.setCurrentCell(row_index, 0)
+            self._table.selectRow(row_index)
+        finally:
+            self._table.blockSignals(False)
+        self._load_selected_detail()
+
+    def _handle_structure_current_cell_changed(self, row_index: int, _column: int, previous_row: int, _previous_column: int) -> None:
+        if row_index < 0 or row_index == previous_row:
+            return
+        self._activate_structure_detail_row(row_index, _column)
+
+    def _bind_structure_row_widget(self, widget) -> None:
+        try:
+            original_mouse_press = widget.mousePressEvent
+
+            def mouse_press_event(event, row_widget=widget, original=original_mouse_press):
+                self._activate_structure_detail_widget(row_widget)
+                original(event)
+
+            widget.mousePressEvent = mouse_press_event
+        except Exception:
+            pass
+        try:
+            widget.currentIndexChanged.connect(lambda _index, row_widget=widget: self._activate_structure_detail_widget(row_widget))
+        except Exception:
+            pass
+
+    def _activate_structure_detail_widget(self, widget) -> None:
+        row_index = self._structure_table_widget_row(widget)
+        if row_index >= 0:
+            self._activate_structure_detail_row(row_index, 0)
+
+    def _structure_table_widget_row(self, widget) -> int:
+        for row_index in range(self._table.rowCount()):
+            for col_index in range(self._table.columnCount()):
+                if self._table.cellWidget(row_index, col_index) is widget:
+                    return row_index
+        return -1
+
     def _load_selected_detail(self) -> None:
+        if not self._loading_selected_detail and self._active_detail_structure_id:
+            self._sync_common_geometry_detail_to_specs(self._active_detail_structure_id, self._active_detail_spec_ref)
+            self._sync_connection_points_from_table(self._active_detail_structure_id)
+        self._loading_selected_detail = True
+        try:
+            row = self._current_structure_row()
+            if row is None:
+                self._active_detail_structure_id = ""
+                self._active_detail_spec_ref = ""
+                self._detail_summary.setText("No structure row is selected.")
+                self._geometry_source_combo.setEnabled(False)
+                self._native_type_combo.setEnabled(False)
+                self._geometry_source_combo.setCurrentText("native")
+                self._native_type_combo.setCurrentText("")
+                self._geometry_ref_field.setText("")
+                self._geometry_ref_field.setEnabled(False)
+                self._load_common_geometry_detail(None, "")
+                self._connection_table.setRowCount(0)
+                for label, field in zip(self._detail_labels, self._detail_fields):
+                    label.setText("")
+                    label.hide()
+                    field.setText("")
+                    field.hide()
+                return
+            source_mode = _geometry_source_mode(row)
+            native_type = str(getattr(row, "native_type", "") or "")
+            self._geometry_source_combo.setEnabled(True)
+            self._geometry_source_combo.setCurrentText(source_mode)
+            self._native_type_combo.setEnabled(source_mode == "native")
+            self._native_type_combo.setCurrentText(native_type if native_type in NATIVE_TYPE_CHOICES else "")
+            self._geometry_ref_field.setEnabled(source_mode != "native")
+            self._geometry_ref_field.setText(str(getattr(row, "geometry_ref", "") or ""))
+            spec_ref = self._ensure_row_geometry_spec_ref(self._table.currentRow(), row)
+            self._active_detail_structure_id = str(row.structure_id)
+            self._active_detail_spec_ref = spec_ref
+            self._load_common_geometry_detail(row, spec_ref)
+            self._replace_connection_points(self._connection_points_for_structure(row.structure_id))
+            kind = str(row.structure_kind or "").strip().lower()
+            self._detail_summary.setText(f"{_display_structure_ref(row.structure_id)} | {kind or 'custom'} | {spec_ref}")
+            self._load_type_specific_detail(row, spec_ref)
+        finally:
+            self._loading_selected_detail = False
+
+    def _apply_selected_detail(self) -> None:
+        try:
+            row_index = self._table.currentRow()
+            row = self._current_structure_row()
+            if row is None or row_index < 0:
+                self._set_status("Select a Structure row before applying detail fields.")
+                return
+            self._set_row_geometry_source_mode(row_index, str(self._geometry_source_combo.currentText() or "native"))
+            self._set_row_native_type(row_index, str(self._native_type_combo.currentText() or ""))
+            self._set_row_geometry_ref(row_index, str(self._geometry_ref_field.text() or "").strip())
+            spec_ref = self._ensure_row_geometry_spec_ref(row_index, row)
+            self._add_or_update_common_spec_for_row(row, spec_ref)
+            kind = str(row.structure_kind or "").strip().lower()
+            native_type = str(self._native_type_combo.currentText() or "").strip().lower()
+            detail_family = _detail_spec_family(native_type, kind)
+            fields = _native_detail_field_specs(native_type, kind)
+            values = {
+                key: str(self._detail_fields[index].text() or "").strip()
+                for index, (key, _label) in enumerate(fields)
+            }
+            values = _detail_values_with_native_defaults(native_type, values)
+            if not fields:
+                self._sync_connection_points_from_table(str(row.structure_id))
+                self._load_selected_detail()
+                self._set_status(
+                    f"Selected detail applied for {row.structure_id}. Apply the model to persist changes."
+                )
+                return
+            if detail_family == "bridge":
+                self._bridge_geometry_spec_rows = _replace_kind_spec(
+                    self._bridge_geometry_spec_rows,
+                    _bridge_spec_from_detail(spec_ref, values),
+                )
+            elif detail_family == "culvert":
+                self._culvert_geometry_spec_rows = _replace_kind_spec(
+                    self._culvert_geometry_spec_rows,
+                    _culvert_spec_from_detail(spec_ref, values),
+                )
+            elif detail_family == "retaining_wall":
+                self._retaining_wall_geometry_spec_rows = _replace_kind_spec(
+                    self._retaining_wall_geometry_spec_rows,
+                    _retaining_wall_spec_from_detail(spec_ref, values),
+                )
+            else:
+                self._set_status(f"No kind-specific detail fields are defined for {kind or 'custom'}.")
+                return
+            self._sync_connection_points_from_table(str(row.structure_id))
+            self._load_selected_detail()
+            self._set_status(
+                f"Selected detail applied for {row.structure_id}. Apply the model to persist changes."
+            )
+        except Exception as exc:
+            self._set_status(f"Structure detail was not applied:\n{exc}")
+
+    def _handle_native_type_changed(self, _index: int) -> None:
+        if getattr(self, "_loading_selected_detail", False):
+            return
+        self._sync_selected_detail_to_row()
         row = self._current_structure_row()
         if row is None:
-            self._detail_summary.setText("No structure row is selected.")
-            for label, field in zip(self._detail_labels, self._detail_fields):
-                label.setText("")
-                label.hide()
-                field.setText("")
-                field.hide()
             return
         spec_ref = self._ensure_row_geometry_spec_ref(self._table.currentRow(), row)
+        self._apply_native_type_common_defaults(row)
+        self._load_type_specific_detail(row, spec_ref)
+
+    def _handle_geometry_source_changed(self, _index: int) -> None:
+        source_mode = str(self._geometry_source_combo.currentText() or "native")
+        self._geometry_ref_field.setEnabled(source_mode != "native")
+        self._native_type_combo.setEnabled(source_mode == "native")
+        self._set_common_geometry_detail_enabled(source_mode == "native")
+        self._sync_selected_detail_to_row()
+
+    def _load_type_specific_detail(self, row: StructureRow, spec_ref: str) -> None:
         kind = str(row.structure_kind or "").strip().lower()
-        self._detail_summary.setText(f"{row.structure_id} | {kind or 'custom'} | {spec_ref}")
+        native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+        detail_family = _detail_spec_family(native_type, kind)
         values = _kind_detail_values(
-            kind,
+            detail_family,
             spec_ref,
             self._bridge_geometry_spec_rows,
             self._culvert_geometry_spec_rows,
             self._retaining_wall_geometry_spec_rows,
         )
-        fields = _kind_detail_field_specs(kind)
+        values = _detail_values_with_native_defaults(native_type, values)
+        fields = _native_detail_field_specs(native_type, kind)
         for index, (key, label_text) in enumerate(fields):
             self._detail_labels[index].setText(label_text)
             self._detail_labels[index].show()
@@ -686,42 +1501,104 @@ class V1StructureEditorTaskPanel:
             self._detail_fields[index].setText("")
             self._detail_fields[index].hide()
 
-    def _apply_selected_detail(self) -> None:
-        try:
-            row_index = self._table.currentRow()
-            row = self._current_structure_row()
-            if row is None or row_index < 0:
-                self._set_status("Select a Structure row before applying detail fields.")
+    def _common_geometry_fields(self):
+        return [
+            self._common_shape_field,
+            self._common_width_field,
+            self._common_height_field,
+            self._common_vertical_mode_combo,
+            self._common_base_elev_field,
+            self._common_top_elev_field,
+            self._common_skew_field,
+            self._common_material_field,
+            self._common_notes_field,
+        ]
+
+    def _set_common_geometry_detail_enabled(self, enabled: bool) -> None:
+        for field in self._common_geometry_fields():
+            try:
+                field.setEnabled(enabled)
+            except Exception:
+                pass
+
+    def _load_common_geometry_detail(self, row: StructureRow | None, spec_ref: str) -> None:
+        if row is None:
+            self._common_shape_field.setText("")
+            self._common_width_field.setText("")
+            self._common_height_field.setText("")
+            self._common_vertical_mode_combo.setCurrentText("profile_frame")
+            self._common_base_elev_field.setText("")
+            self._common_top_elev_field.setText("")
+            self._common_skew_field.setText("")
+            self._common_material_field.setText("")
+            self._common_notes_field.setText("")
+            self._set_common_geometry_detail_enabled(False)
+            return
+        spec = self._common_geometry_spec_for_ref(spec_ref)
+        native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+        self._set_common_geometry_detail_enabled(_geometry_source_mode(row) == "native")
+        self._common_shape_field.setText(str(getattr(spec, "shape_kind", "") or _default_shape_kind_for_native(native_type, row.structure_kind)))
+        self._common_width_field.setText(_format_float(getattr(spec, "width", 0.0) or _default_geometry_width_for_native(native_type, row.structure_kind)))
+        self._common_height_field.setText(_format_float(getattr(spec, "height", 0.0) or _default_geometry_height_for_native(native_type, row.structure_kind)))
+        self._common_vertical_mode_combo.setCurrentText(str(getattr(spec, "vertical_position_mode", "") or "profile_frame"))
+        self._common_base_elev_field.setText(_format_optional_float(getattr(spec, "base_elevation", None)))
+        self._common_top_elev_field.setText(_format_optional_float(getattr(spec, "top_elevation", None)))
+        self._common_skew_field.setText(_format_float(getattr(spec, "skew_angle_deg", 0.0) or 0.0))
+        self._common_material_field.setText(str(getattr(spec, "material", "") or ""))
+        self._common_notes_field.setText(str(getattr(spec, "notes", "") or ""))
+
+    def _common_geometry_spec_for_ref(self, spec_ref: str) -> StructureGeometrySpec | None:
+        for spec in self._geometry_spec_table_rows(allow_blank=True):
+            if str(getattr(spec, "geometry_spec_id", "") or "") == str(spec_ref or ""):
+                return spec
+        return None
+
+    def _sync_common_geometry_detail_to_specs(self, structure_ref: str, spec_ref: str) -> None:
+        if getattr(self, "_loading_selected_detail", False):
+            return
+        if not structure_ref or not spec_ref or not hasattr(self, "_common_shape_field"):
+            return
+        row = self._current_structure_row()
+        if row is None or str(getattr(row, "structure_id", "") or "") != str(structure_ref):
+            row = None
+            for candidate in self._table_rows():
+                if str(candidate.structure_id) == str(structure_ref):
+                    row = candidate
+                    break
+        if row is None:
+            return
+        existing = self._common_geometry_spec_for_ref(spec_ref)
+        spec = StructureGeometrySpec(
+            geometry_spec_id=spec_ref,
+            structure_ref=structure_ref,
+            shape_kind=str(self._common_shape_field.text() or "").strip() or _default_shape_kind_for_native(getattr(row, "native_type", ""), row.structure_kind),
+            width=_required_float(str(self._common_width_field.text() or ""), "Selected Structure Detail Width"),
+            height=_required_float(str(self._common_height_field.text() or ""), "Selected Structure Detail Height"),
+            length_mode=str(getattr(existing, "length_mode", "") or "station_range"),
+            skew_angle_deg=_required_float(str(self._common_skew_field.text() or "0"), "Selected Structure Detail Skew"),
+            vertical_position_mode=str(self._common_vertical_mode_combo.currentText() or "profile_frame"),
+            base_elevation=_optional_float_text(str(self._common_base_elev_field.text() or "")),
+            top_elevation=_optional_float_text(str(self._common_top_elev_field.text() or "")),
+            material=str(self._common_material_field.text() or "").strip(),
+            style_role=str(getattr(existing, "style_role", "") or row.structure_kind),
+            notes=str(self._common_notes_field.text() or "").strip(),
+        )
+        specs = self._geometry_spec_table_rows(allow_blank=True)
+        for index, candidate in enumerate(specs):
+            if str(candidate.geometry_spec_id) == str(spec_ref):
+                specs[index] = spec
+                self._replace_geometry_specs(specs)
                 return
-            spec_ref = self._ensure_row_geometry_spec_ref(row_index, row)
-            self._add_or_update_common_spec_for_row(row, spec_ref)
-            kind = str(row.structure_kind or "").strip().lower()
-            values = {
-                key: str(self._detail_fields[index].text() or "").strip()
-                for index, (key, _label) in enumerate(_kind_detail_field_specs(kind))
-            }
-            if kind == "bridge":
-                self._bridge_geometry_spec_rows = _replace_kind_spec(
-                    self._bridge_geometry_spec_rows,
-                    _bridge_spec_from_detail(spec_ref, values),
-                )
-            elif kind == "culvert":
-                self._culvert_geometry_spec_rows = _replace_kind_spec(
-                    self._culvert_geometry_spec_rows,
-                    _culvert_spec_from_detail(spec_ref, values),
-                )
-            elif kind in {"retaining_wall", "wall"}:
-                self._retaining_wall_geometry_spec_rows = _replace_kind_spec(
-                    self._retaining_wall_geometry_spec_rows,
-                    _retaining_wall_spec_from_detail(spec_ref, values),
-                )
-            else:
-                self._set_status(f"No kind-specific detail fields are defined for {kind or 'custom'}.")
-                return
-            self._load_selected_detail()
-            self._set_status(f"Detail fields applied for {row.structure_id}. Apply the model to persist changes.")
-        except Exception as exc:
-            self._set_status(f"Structure detail was not applied:\n{exc}")
+        specs.append(spec)
+        self._replace_geometry_specs(specs)
+
+    def _apply_native_type_common_defaults(self, row: StructureRow) -> None:
+        native_type = str(self._native_type_combo.currentText() or "").strip().lower()
+        if not native_type:
+            return
+        self._common_shape_field.setText(_default_shape_kind_for_native(native_type, row.structure_kind))
+        self._common_width_field.setText(_format_float(_default_geometry_width_for_native(native_type, row.structure_kind)))
+        self._common_height_field.setText(_format_float(_default_geometry_height_for_native(native_type, row.structure_kind)))
 
     def _validate(self) -> None:
         try:
@@ -730,7 +1607,7 @@ class V1StructureEditorTaskPanel:
         except Exception as exc:
             self._set_status(f"Structure validation failed:\n{exc}")
 
-    def _apply(self, *, close_after: bool = False, show_preview: bool = True) -> bool:
+    def _apply(self, *, close_after: bool = False, show_preview: bool = False) -> bool:
         try:
             model = self._model_from_table()
             diagnostics = validate_structure_model(model)
@@ -738,7 +1615,9 @@ class V1StructureEditorTaskPanel:
                 self._set_status(_format_validation_result(model, document=self.document))
                 _show_message(self.form, "Structures", "Structures were not applied because validation has errors.")
                 return False
+            selected_structure_id = self._current_structure_id()
             self.structure_obj = apply_v1_structure_model(document=self.document, structure_model=model)
+            self._reload_existing_rows(selected_structure_id=selected_structure_id)
             preview_text = ""
             if show_preview and list(model.structure_rows or []):
                 preview = show_v1_structure_preview_object(self.document, model)
@@ -783,6 +1662,10 @@ class V1StructureEditorTaskPanel:
             pass
 
     def _model_from_table(self) -> StructureModel:
+        self._sync_selected_detail_to_row()
+        if self._active_detail_structure_id:
+            self._sync_common_geometry_detail_to_specs(self._active_detail_structure_id, self._active_detail_spec_ref)
+            self._sync_connection_points_from_table(self._active_detail_structure_id)
         existing = to_structure_model(self.structure_obj)
         alignment = find_v1_alignment(self.document)
         structure_rows = self._table_rows()
@@ -812,6 +1695,11 @@ class V1StructureEditorTaskPanel:
                 self._retaining_wall_geometry_spec_rows or getattr(existing, "retaining_wall_geometry_spec_rows", []),
                 geometry_spec_rows,
             ),
+            connection_point_rows=[
+                row
+                for row in self._connection_point_rows
+                if str(getattr(row, "structure_ref", "") or "") in structure_ids
+            ],
             interaction_rule_rows=[],
             influence_zone_rows=[],
         )
@@ -820,13 +1708,14 @@ class V1StructureEditorTaskPanel:
         rows: list[StructureRow] = []
         alignment_id = _alignment_id(self.document)
         for row_index in range(self._table.rowCount()):
-            structure_id = _item_text(self._table, row_index, 0) or f"structure:{row_index + 1}"
+            structure_id = _source_structure_ref(_item_text(self._table, row_index, 0) or f"{row_index + 1}")
             kind = _item_text(self._table, row_index, 1) or "bridge"
             role = _item_text(self._table, row_index, 2) or "interface"
             station_start = _required_float(_item_text(self._table, row_index, 3), f"Row {row_index + 1} start STA")
             station_end = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} end STA")
             offset = _required_float(_item_text(self._table, row_index, 5) or "0", f"Row {row_index + 1} offset")
-            geometry_ref = _item_text(self._table, row_index, 6)
+            geometry_ref = self._row_geometry_ref(row_index)
+            geometry_source_mode = self._row_geometry_source_mode(row_index)
             rows.append(
                 StructureRow(
                     structure_id=structure_id,
@@ -838,10 +1727,13 @@ class V1StructureEditorTaskPanel:
                         station_start=station_start,
                         station_end=station_end,
                         offset=offset,
+                        region_ref="",
                     ),
-                    geometry_spec_ref=_item_user_data(self._table, row_index, 0),
+                    geometry_spec_ref=_item_user_data(self._table, row_index, 0, STRUCTURE_GEOMETRY_SPEC_REF_ROLE),
                     geometry_ref=geometry_ref,
-                    reference_mode="native" if not geometry_ref else "source_ref",
+                    reference_mode="native" if geometry_source_mode == "native" else "source_ref",
+                    geometry_source_mode=geometry_source_mode,
+                    native_type=self._row_native_type(row_index),
                 )
             )
         return rows
@@ -860,13 +1752,14 @@ class V1StructureEditorTaskPanel:
 
     def _structure_row_from_table_index(self, row_index: int) -> StructureRow:
         alignment_id = _alignment_id(self.document)
-        structure_id = _item_text(self._table, row_index, 0) or f"structure:{row_index + 1}"
+        structure_id = _source_structure_ref(_item_text(self._table, row_index, 0) or f"{row_index + 1}")
         kind = _item_text(self._table, row_index, 1) or "bridge"
         role = _item_text(self._table, row_index, 2) or "interface"
         station_start = _required_float(_item_text(self._table, row_index, 3), f"Row {row_index + 1} start STA")
         station_end = _required_float(_item_text(self._table, row_index, 4), f"Row {row_index + 1} end STA")
         offset = _required_float(_item_text(self._table, row_index, 5) or "0", f"Row {row_index + 1} offset")
-        geometry_ref = _item_text(self._table, row_index, 6)
+        geometry_ref = self._row_geometry_ref(row_index)
+        geometry_source_mode = self._row_geometry_source_mode(row_index)
         return StructureRow(
             structure_id=structure_id,
             structure_kind=kind,
@@ -877,10 +1770,13 @@ class V1StructureEditorTaskPanel:
                 station_start=station_start,
                 station_end=station_end,
                 offset=offset,
+                region_ref="",
             ),
-            geometry_spec_ref=_item_user_data(self._table, row_index, 0),
+            geometry_spec_ref=_item_user_data(self._table, row_index, 0, STRUCTURE_GEOMETRY_SPEC_REF_ROLE),
             geometry_ref=geometry_ref,
-            reference_mode="native" if not geometry_ref else "source_ref",
+            reference_mode="native" if geometry_source_mode == "native" else "source_ref",
+            geometry_source_mode=geometry_source_mode,
+            native_type=self._row_native_type(row_index),
         )
 
     def _select_first_structure_row(self) -> None:
@@ -889,8 +1785,9 @@ class V1StructureEditorTaskPanel:
         self._load_selected_detail()
 
     def _select_structure_id(self, structure_id: str) -> None:
+        expected = _source_structure_ref(structure_id)
         for row_index in range(self._table.rowCount()):
-            if _item_text(self._table, row_index, 0) == structure_id:
+            if _source_structure_ref(_item_text(self._table, row_index, 0)) == expected:
                 self._table.selectRow(row_index)
                 return
         self._select_first_structure_row()
@@ -901,10 +1798,50 @@ class V1StructureEditorTaskPanel:
             spec_ref = f"geometry-spec:{str(row.structure_id).split(':')[-1]}"
             item = self._table.item(row_index, 0)
             if item is not None:
-                item.setData(QtCore.Qt.UserRole, spec_ref)
+                item.setData(STRUCTURE_GEOMETRY_SPEC_REF_ROLE, spec_ref)
         return spec_ref
 
+    def _row_geometry_ref(self, row_index: int) -> str:
+        return _item_user_data(self._table, row_index, 0, STRUCTURE_GEOMETRY_REF_ROLE)
+
+    def _set_row_geometry_ref(self, row_index: int, geometry_ref: str) -> None:
+        item = self._table.item(row_index, 0)
+        if item is not None:
+            item.setData(STRUCTURE_GEOMETRY_REF_ROLE, str(geometry_ref or "").strip())
+
+    def _row_geometry_source_mode(self, row_index: int) -> str:
+        mode = _item_user_data(self._table, row_index, 0, STRUCTURE_GEOMETRY_SOURCE_ROLE)
+        return mode if mode in GEOMETRY_SOURCE_CHOICES else "native"
+
+    def _set_row_geometry_source_mode(self, row_index: int, mode: str) -> None:
+        item = self._table.item(row_index, 0)
+        if item is not None:
+            item.setData(STRUCTURE_GEOMETRY_SOURCE_ROLE, mode if mode in GEOMETRY_SOURCE_CHOICES else "native")
+
+    def _row_native_type(self, row_index: int) -> str:
+        return _item_user_data(self._table, row_index, 0, STRUCTURE_NATIVE_TYPE_ROLE)
+
+    def _set_row_native_type(self, row_index: int, native_type: str) -> None:
+        item = self._table.item(row_index, 0)
+        if item is not None:
+            item.setData(STRUCTURE_NATIVE_TYPE_ROLE, str(native_type or "").strip())
+
+    def _sync_selected_detail_to_row(self) -> None:
+        row_index = self._table.currentRow()
+        if row_index < 0 or row_index >= self._table.rowCount():
+            return
+        if getattr(self, "_loading_selected_detail", False):
+            return
+        if not hasattr(self, "_geometry_ref_field"):
+            return
+        self._set_row_geometry_source_mode(row_index, str(self._geometry_source_combo.currentText() or "native"))
+        self._set_row_native_type(row_index, str(self._native_type_combo.currentText() or ""))
+        self._set_row_geometry_ref(row_index, str(self._geometry_ref_field.text() or "").strip())
+
     def _add_or_update_common_spec_for_row(self, row: StructureRow, spec_ref: str) -> None:
+        if str(row.structure_id) == str(self._active_detail_structure_id or ""):
+            self._sync_common_geometry_detail_to_specs(str(row.structure_id), spec_ref)
+            return
         specs = self._geometry_spec_table_rows(allow_blank=True)
         for index, spec in enumerate(specs):
             if spec.geometry_spec_id == spec_ref:
@@ -1020,6 +1957,8 @@ def _preset_structure_rows(
                 geometry_spec_ref=str(spec.get("spec", "") or ""),
                 geometry_ref=str(spec.get("geometry", "") or ""),
                 reference_mode="native",
+                geometry_source_mode="native",
+                native_type=str(spec.get("native_type", "") or _native_type_from_preset_spec(spec)),
             )
         )
     return rows
@@ -1125,6 +2064,131 @@ def _preset_retaining_wall_geometry_spec_rows(preset: dict) -> list[RetainingWal
     return rows
 
 
+def _preset_connection_point_rows(
+    preset: dict,
+    *,
+    structure_rows: list[StructureRow],
+    geometry_spec_rows: list[StructureGeometrySpec],
+    culvert_geometry_spec_rows: list[CulvertGeometrySpec],
+) -> list[StructureConnectionPoint]:
+    rows: list[StructureConnectionPoint] = []
+    structure_by_ref = {str(getattr(row, "structure_id", "") or ""): row for row in structure_rows}
+    geometry_by_ref = {str(getattr(row, "structure_ref", "") or ""): row for row in geometry_spec_rows}
+    culvert_by_ref = {
+        str(getattr(row, "geometry_spec_ref", "") or ""): row for row in culvert_geometry_spec_rows
+    }
+    for spec in list(preset.get("rows", []) or []):
+        structure_ref = str(spec.get("id", "") or "")
+        structure_row = structure_by_ref.get(structure_ref)
+        if structure_row is None:
+            continue
+        geometry_spec = geometry_by_ref.get(structure_ref)
+        culvert_spec = culvert_by_ref.get(str(getattr(structure_row, "geometry_spec_ref", "") or ""))
+        point_specs = list(spec.get("connection_points", []) or [])
+        if not point_specs:
+            continue
+        for order, point_spec in enumerate(point_specs, start=1):
+            point = _preset_connection_point_from_spec(
+                point_spec,
+                structure_row=structure_row,
+                geometry_spec=geometry_spec,
+                culvert_spec=culvert_spec,
+                connection_order=order,
+            )
+            if point is not None:
+                rows.append(point)
+    return rows
+
+
+def _preset_connection_point_from_spec(
+    spec: dict,
+    *,
+    structure_row: StructureRow,
+    geometry_spec: StructureGeometrySpec | None,
+    culvert_spec: CulvertGeometrySpec | None,
+    connection_order: int,
+) -> StructureConnectionPoint | None:
+    role = str(spec.get("role", "") or "").strip()
+    structure_ref = str(getattr(structure_row, "structure_id", "") or "")
+    placement = getattr(structure_row, "placement", None)
+    if not role or not structure_ref or placement is None:
+        return None
+    start = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end = float(getattr(placement, "station_end", start) or start)
+    at = str(spec.get("at", "") or "center").strip().lower()
+    if at == "start":
+        station = start
+    elif at == "end":
+        station = end
+    else:
+        station = (start + end) * 0.5
+    station = float(spec.get("station", station) or station)
+    offset = float(spec.get("offset", getattr(placement, "offset", 0.0)) or 0.0)
+    width = float(spec.get("width", getattr(geometry_spec, "width", 0.0)) or 0.0)
+    height = float(spec.get("height", getattr(geometry_spec, "height", 0.0)) or 0.0)
+    diameter = float(spec.get("diameter", 0.0) or 0.0)
+    shape = str(spec.get("shape", getattr(geometry_spec, "shape_kind", "")) or "")
+    if culvert_spec is not None and not diameter:
+        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower()
+        diameter = float(getattr(culvert_spec, "diameter", 0.0) or 0.0)
+        if barrel_shape == "circular" or diameter:
+            shape = shape or "circular"
+            width = 0.0
+            height = 0.0
+        else:
+            width = float(getattr(culvert_spec, "span", 0.0) or width)
+            height = float(getattr(culvert_spec, "rise", 0.0) or height)
+            shape = shape or "box"
+    if diameter:
+        width = float(spec.get("width", 0.0) or 0.0)
+        height = float(spec.get("height", 0.0) or 0.0)
+    base_id = structure_ref.split(":")[-1]
+    point_id = str(spec.get("id", "") or f"connection:{base_id}:{role.replace('_', '-')}")
+    invert = spec.get("invert_elevation", None)
+    return StructureConnectionPoint(
+        connection_point_id=point_id,
+        structure_ref=structure_ref,
+        point_role=role,
+        station=station,
+        offset=offset,
+        elevation=_optional_float_text(spec.get("elevation", "")),
+        invert_elevation=_optional_float_text(invert) if invert is not None else None,
+        diameter=diameter,
+        width=width,
+        height=height,
+        shape_kind=shape,
+        direction=str(spec.get("direction", "") or ""),
+        connection_order=connection_order,
+        region_ref="",
+        notes=str(spec.get("notes", "") or ""),
+    )
+
+
+def _native_type_from_preset_spec(spec: dict) -> str:
+    explicit = str(spec.get("native_type", "") or "").strip()
+    if explicit:
+        return explicit
+    kind = str(spec.get("kind", "") or "").strip().lower()
+    shape = str(spec.get("shape", "") or "").strip().lower()
+    culvert = dict(spec.get("culvert", {}) or {})
+    if kind == "bridge":
+        return "bridge_deck"
+    if kind in {"retaining_wall", "wall"}:
+        return "retaining_wall"
+    if kind == "culvert":
+        barrel_shape = str(culvert.get("barrel_shape", "") or "").strip().lower()
+        if barrel_shape == "circular" or shape == "circular":
+            return "pipe_culvert"
+        return "box_culvert"
+    if "inlet" in shape:
+        return "inlet"
+    if "outlet" in shape:
+        return "outlet"
+    if "headwall" in shape:
+        return "headwall"
+    return ""
+
+
 def _filter_kind_specs(rows, geometry_spec_rows: list[StructureGeometrySpec]) -> list:
     geometry_spec_ids = {str(row.geometry_spec_id) for row in geometry_spec_rows}
     return [
@@ -1191,6 +2255,141 @@ def _kind_detail_field_specs(structure_kind: str) -> list[tuple[str, str]]:
             ("drainage_layer_ref", "Drainage Layer Ref"),
         ]
     return []
+
+
+def _native_detail_field_specs(native_type: str, structure_kind: str) -> list[tuple[str, str]]:
+    native = str(native_type or "").strip().lower()
+    if native == "box_culvert":
+        return [
+            ("barrel_count", "Barrel Count"),
+            ("span", "Opening Width"),
+            ("rise", "Opening Height"),
+            ("wall_thickness", "Wall Thickness"),
+            ("length", "Length"),
+            ("invert_elevation", "Invert Elevation"),
+            ("headwall_type", "Headwall Type"),
+            ("wingwall_type", "Wingwall Type"),
+        ]
+    if native == "pipe_culvert":
+        return [
+            ("barrel_count", "Barrel Count"),
+            ("diameter", "Pipe Diameter"),
+            ("wall_thickness", "Wall Thickness"),
+            ("length", "Length"),
+            ("invert_elevation", "Invert Elevation"),
+            ("headwall_type", "End Treatment"),
+        ]
+    if native == "bridge_deck":
+        return [
+            ("deck_width", "Deck Width"),
+            ("deck_thickness", "Deck Thickness"),
+            ("girder_depth", "Girder Depth"),
+            ("barrier_height", "Barrier Height"),
+            ("clearance_height", "Clearance Height"),
+            ("approach_slab_length", "Approach Slab Length"),
+        ]
+    if native == "retaining_wall":
+        return [
+            ("wall_height", "Wall Height"),
+            ("wall_thickness", "Wall Thickness"),
+            ("footing_width", "Footing Width"),
+            ("footing_thickness", "Footing Thickness"),
+            ("retained_side", "Retained Side"),
+            ("batter_slope", "Batter Slope"),
+            ("coping_height", "Coping Height"),
+        ]
+    if native == "headwall":
+        return [
+            ("span", "Opening Width"),
+            ("rise", "Opening Height"),
+            ("wall_thickness", "Wall Thickness"),
+            ("invert_elevation", "Invert Elevation"),
+            ("headwall_type", "Headwall Type"),
+            ("wingwall_type", "Wingwall Type"),
+        ]
+    if native == "inlet":
+        return [
+            ("span", "Inlet Width"),
+            ("rise", "Inlet Depth"),
+            ("diameter", "Outlet Pipe Diameter"),
+            ("wall_thickness", "Wall Thickness"),
+            ("invert_elevation", "Invert Elevation"),
+            ("headwall_type", "Grate/Cover Type"),
+        ]
+    if native == "outlet":
+        return [
+            ("span", "Outlet Width"),
+            ("rise", "Outlet Height"),
+            ("diameter", "Inlet Pipe Diameter"),
+            ("wall_thickness", "Wall Thickness"),
+            ("invert_elevation", "Invert Elevation"),
+            ("wingwall_type", "Apron/Wingwall Type"),
+        ]
+    return _kind_detail_field_specs(structure_kind)
+
+
+def _detail_spec_family(native_type: str, structure_kind: str) -> str:
+    native = str(native_type or "").strip().lower()
+    if native in {"box_culvert", "pipe_culvert", "headwall", "inlet", "outlet"}:
+        return "culvert"
+    if native == "bridge_deck":
+        return "bridge"
+    if native == "retaining_wall":
+        return "retaining_wall"
+    kind = str(structure_kind or "").strip().lower()
+    if kind in {"wall", "retaining_wall"}:
+        return "retaining_wall"
+    return kind
+
+
+def _detail_values_with_native_defaults(native_type: str, values: dict[str, str]) -> dict[str, str]:
+    native = str(native_type or "").strip().lower()
+    output = dict(values or {})
+    if native == "box_culvert":
+        output["barrel_shape"] = "box"
+        output["diameter"] = "0"
+    elif native == "pipe_culvert":
+        output["barrel_shape"] = "circular"
+        output["span"] = "0"
+        output["rise"] = "0"
+    elif native == "headwall":
+        output["barrel_shape"] = "box"
+        output.setdefault("length", "0")
+        output["diameter"] = "0"
+    elif native == "inlet":
+        output["barrel_shape"] = "inlet"
+        output.setdefault("length", "0")
+    elif native == "outlet":
+        output["barrel_shape"] = "outlet"
+        output.setdefault("length", "0")
+        output.setdefault("headwall_type", "")
+    return output
+
+
+def _effective_native_type(
+    row: StructureRow,
+    geometry_spec: StructureGeometrySpec | None = None,
+    culvert_spec: CulvertGeometrySpec | None = None,
+) -> str:
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    if native_type:
+        return native_type
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    shape = str(getattr(geometry_spec, "shape_kind", "") or "").strip().lower() if geometry_spec is not None else ""
+    if kind == "bridge":
+        return "bridge_deck"
+    if kind in {"retaining_wall", "wall"}:
+        return "retaining_wall"
+    if kind == "culvert":
+        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower() if culvert_spec is not None else ""
+        return "pipe_culvert" if barrel_shape == "circular" or shape == "circular" else "box_culvert"
+    if "inlet" in shape:
+        return "inlet"
+    if "outlet" in shape:
+        return "outlet"
+    if "headwall" in shape:
+        return "headwall"
+    return ""
 
 
 def _kind_detail_values(
@@ -1327,7 +2526,8 @@ def _document_station_range(document, alignment_obj=None) -> tuple[float, float]
 
 def _format_validation_result(structure_model: StructureModel, *, document=None) -> str:
     diagnostics = validate_structure_model(structure_model)
-    lines = ["Validation status: " + ("warning" if diagnostics else "ok")]
+    status = "error" if any(str(row).startswith("error|") for row in diagnostics) else "warning" if diagnostics else "ok"
+    lines = ["Validation status: " + status]
     if not diagnostics:
         lines.append("No diagnostics.")
     else:
@@ -1369,18 +2569,41 @@ def _structure_row_preview_shape(row: StructureRow, path: dict[str, object], con
     if end_sta < start_sta:
         start_sta, end_sta = end_sta, start_sta
     offset = float(getattr(placement, "offset", 0.0) or 0.0)
-    half_width, height = _structure_preview_size(row, context)
+    profile = _structure_preview_profile(row, context)
     base_z = _structure_preview_base_z(row, context)
-    stations = _structure_preview_sample_stations(start_sta, end_sta, path)
+    if _structure_preview_uses_single_segment(row, profile):
+        stations = [start_sta, end_sta]
+    else:
+        stations = _structure_preview_sample_stations(start_sta, end_sta, path)
     points = [_station_offset_xyz(path, station, offset, base_z) for station in stations]
     segment_shapes = []
     for point0, point1 in zip(points, points[1:]):
-        segment = _structure_segment_prism(point0, point1, half_width, height)
+        segment = _structure_segment_preview_shape(point0, point1, profile)
         if segment is not None:
             segment_shapes.append(segment)
+    segment_shapes.extend(_structure_native_detail_preview_shapes(row, path, context, profile, base_z=base_z))
     if not segment_shapes:
         return None
     return Part.Compound(segment_shapes)
+
+
+def _structure_preview_uses_single_segment(row: StructureRow, profile: dict[str, object]) -> bool:
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
+    return kind == "culvert" and (native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"})
+
+
+def _structure_segment_preview_shape(point0, point1, profile: dict[str, object]):
+    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
+    if shape_kind in {"circular", "pipe", "round"}:
+        return _structure_segment_cylinder(point0, point1, float(profile.get("diameter", 0.0) or 0.0))
+    return _structure_segment_prism(
+        point0,
+        point1,
+        float(profile.get("half_width", 0.0) or 0.0),
+        float(profile.get("height", 0.0) or 0.0),
+    )
 
 
 def _structure_segment_prism(point0, point1, half_width: float, height: float):
@@ -1412,7 +2635,25 @@ def _structure_segment_prism(point0, point1, half_width: float, height: float):
             return None
 
 
+def _structure_segment_cylinder(point0, point1, diameter: float):
+    x0, y0, z0 = point0
+    x1, y1, z1 = point1
+    radius = max(float(diameter) / 2.0, 0.1)
+    base = App.Vector(float(x0), float(y0), float(z0) + radius)
+    direction = App.Vector(float(x1) - float(x0), float(y1) - float(y0), float(z1) - float(z0))
+    length = direction.Length
+    if length <= 1.0e-9:
+        return None
+    try:
+        return Part.makeCylinder(radius, length, base, direction)
+    except Exception:
+        return _structure_segment_prism(point0, point1, radius, radius * 2.0)
+
+
 def _structure_preview_path_source(document) -> dict[str, object]:
+    centerline_result = _centerline3d_result_path_source(document)
+    if centerline_result is not None:
+        return centerline_result
     centerline = _applied_section_centerline_path_source(document)
     if centerline is not None:
         return centerline
@@ -1432,6 +2673,30 @@ def _structure_preview_path_source(document) -> dict[str, object]:
 
 def _structure_preview_path_source_name(document) -> str:
     return str(_structure_preview_path_source(document).get("source", "") or "")
+
+
+def _centerline3d_result_path_source(document) -> dict[str, object] | None:
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+        from ..services.evaluation import Centerline3DFrameService
+
+        result = build_document_centerline3d_result(document)
+    except Exception:
+        return None
+    point_rows = list(getattr(result, "point_rows", []) or [])
+    if str(getattr(result, "status", "") or "") != "ready" or len(point_rows) < 2:
+        return None
+    frame_service = Centerline3DFrameService()
+
+    def _adapter(station: float, offset: float) -> tuple[float, float, float]:
+        frame = frame_service.resolve_station_offset(result, station, offset)
+        return float(frame.x), float(frame.y), float(frame.z)
+
+    return {
+        "source": "centerline3d_result",
+        "adapter": _adapter,
+        "stations": [float(getattr(row, "station", 0.0) or 0.0) for row in point_rows],
+    }
 
 
 def _applied_section_centerline_path_source(document) -> dict[str, object] | None:
@@ -1461,7 +2726,7 @@ def _applied_section_centerline_path_source(document) -> dict[str, object] | Non
         return _interpolate_centerline_station_offset(frames, station, offset)
 
     return {
-        "source": "3d_centerline",
+        "source": "applied_section_frame",
         "adapter": _adapter,
         "stations": [row["station"] for row in frames],
     }
@@ -1546,6 +2811,11 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
         str(row.geometry_spec_id): row
         for row in list(getattr(structure_model, "geometry_spec_rows", []) or [])
     }
+    connection_points_by_structure: dict[str, list[StructureConnectionPoint]] = {}
+    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+        structure_ref = str(getattr(point, "structure_ref", "") or "")
+        if structure_ref:
+            connection_points_by_structure.setdefault(structure_ref, []).append(point)
     return {
         "geometry_specs": geometry_specs,
         "bridge_specs": {
@@ -1560,6 +2830,7 @@ def _structure_preview_context(structure_model: StructureModel) -> dict[str, obj
             str(row.geometry_spec_ref): row
             for row in list(getattr(structure_model, "retaining_wall_geometry_spec_rows", []) or [])
         },
+        "connection_points_by_structure": connection_points_by_structure,
     }
 
 
@@ -1607,31 +2878,67 @@ def _structure_preview_review_notes(structure_model: StructureModel, context: di
 
 
 def _structure_preview_size(row: StructureRow, context: dict[str, object] | None = None) -> tuple[float, float]:
+    profile = _structure_preview_profile(row, context)
+    return float(profile.get("half_width", 0.0) or 0.0), float(profile.get("height", 0.0) or 0.0)
+
+
+def _structure_preview_profile(row: StructureRow, context: dict[str, object] | None = None) -> dict[str, object]:
     context = context or {}
     spec = _structure_geometry_spec_for_row(row, context)
+    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
     width = float(getattr(spec, "width", 0.0) or 0.0) if spec is not None else 0.0
     height = float(getattr(spec, "height", 0.0) or 0.0) if spec is not None else 0.0
+    shape_kind = str(getattr(spec, "shape_kind", "") or "")
     kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    native_type = _effective_native_type(row, spec, culvert)
     if kind == "bridge":
         bridge = _kind_spec_for_ref(context.get("bridge_specs", {}), getattr(row, "geometry_spec_ref", ""))
         width = float(getattr(bridge, "deck_width", 0.0) or width or 10.0) if bridge is not None else width
         height = float(getattr(bridge, "deck_thickness", 0.0) or height or 1.2) if bridge is not None else height
-        return max(width, 10.0) / 2.0, max(height, 1.2)
+        return {"shape_kind": shape_kind or "deck_slab", "half_width": max(width, 10.0) / 2.0, "height": max(height, 1.2)}
     if kind == "culvert":
-        culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
+        diameter = 0.0
         if culvert is not None:
-            width = float(getattr(culvert, "span", 0.0) or getattr(culvert, "diameter", 0.0) or width or 3.0)
-            height = float(getattr(culvert, "rise", 0.0) or getattr(culvert, "diameter", 0.0) or height or 1.5)
-        return max(width, 3.0) / 2.0, max(height, 1.5)
+            barrel_shape = str(getattr(culvert, "barrel_shape", "") or "").strip().lower()
+            diameter = float(getattr(culvert, "diameter", 0.0) or 0.0)
+            if barrel_shape == "circular" or native_type == "pipe_culvert" or shape_kind == "circular":
+                diameter = diameter or width or height or 1.0
+                return {
+                    "shape_kind": "circular",
+                    "diameter": max(diameter, 0.2),
+                    "half_width": max(diameter, 0.2) / 2.0,
+                    "height": max(diameter, 0.2),
+                }
+            width = float(getattr(culvert, "span", 0.0) or width or 3.0)
+            height = float(getattr(culvert, "rise", 0.0) or height or 1.5)
+            shape_kind = barrel_shape or shape_kind
+        if native_type == "pipe_culvert" or shape_kind == "circular":
+            diameter = width or height or 1.0
+            return {
+                "shape_kind": "circular",
+                "diameter": max(diameter, 0.2),
+                "half_width": max(diameter, 0.2) / 2.0,
+                "height": max(diameter, 0.2),
+            }
+        return {"shape_kind": shape_kind or "box", "half_width": max(width, 3.0) / 2.0, "height": max(height, 1.5)}
+    if native_type in {"headwall", "inlet", "outlet"}:
+        if culvert is not None:
+            width = float(getattr(culvert, "span", 0.0) or width or _default_geometry_width_for_native(native_type, kind))
+            height = float(getattr(culvert, "rise", 0.0) or height or _default_geometry_height_for_native(native_type, kind))
+        return {
+            "shape_kind": native_type,
+            "half_width": max(width, _default_geometry_width_for_native(native_type, kind)) / 2.0,
+            "height": max(height, _default_geometry_height_for_native(native_type, kind)),
+        }
     if kind in {"retaining_wall", "wall"}:
         wall = _kind_spec_for_ref(context.get("retaining_wall_specs", {}), getattr(row, "geometry_spec_ref", ""))
         if wall is not None:
             width = float(getattr(wall, "wall_thickness", 0.0) or width or 0.9)
             height = float(getattr(wall, "wall_height", 0.0) or height or 3.0)
-        return max(width, 0.9) / 2.0, max(height, 3.0)
+        return {"shape_kind": shape_kind or "wall", "half_width": max(width, 0.9) / 2.0, "height": max(height, 3.0)}
     if kind == "utility":
-        return max(width, 1.5) / 2.0, max(height, 0.75)
-    return max(width, 4.0) / 2.0, max(height, 1.0)
+        return {"shape_kind": shape_kind or "envelope", "half_width": max(width, 1.5) / 2.0, "height": max(height, 0.75)}
+    return {"shape_kind": shape_kind or "envelope", "half_width": max(width, 4.0) / 2.0, "height": max(height, 1.0)}
 
 
 def _structure_preview_base_z(row: StructureRow, context: dict[str, object] | None = None) -> float:
@@ -1643,12 +2950,370 @@ def _structure_preview_base_z(row: StructureRow, context: dict[str, object] | No
             return float(base_elevation)
         except Exception:
             pass
+    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
+    invert_elevation = getattr(culvert, "invert_elevation", None) if culvert is not None else None
+    if invert_elevation is not None:
+        try:
+            return float(invert_elevation)
+        except Exception:
+            pass
     placement = getattr(row, "placement", None)
     value = str(getattr(placement, "elevation_reference", "") or "").strip() if placement is not None else ""
     try:
         return float(value)
     except Exception:
         return 0.0
+
+
+def _structure_native_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    shape_kind = str(profile.get("shape_kind", "") or "").strip().lower()
+    if native_type == "inlet" or shape_kind in {"inlet", "catch_basin"}:
+        return _inlet_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    if native_type == "pipe_culvert" or shape_kind in {"circular", "pipe", "round"}:
+        return _pipe_culvert_endpoint_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    if native_type in {"outlet", "headwall"} or shape_kind in {"outlet", "outlet_headwall", "headwall"}:
+        return _outlet_headwall_detail_preview_shapes(row, path, context, profile, base_z=base_z)
+    return []
+
+
+def _inlet_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, length = frame
+    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.6)
+    height = max(float(profile.get("height", 0.0) or 0.0), 0.6)
+    top_z = max(float(point0[2]), float(point1[2])) + height
+    shapes: list[object] = []
+
+    lid = _structure_segment_prism(
+        (point0[0], point0[1], top_z),
+        (point1[0], point1[1], top_z),
+        half_width * 0.92,
+        0.08,
+    )
+    if lid is not None:
+        shapes.append(lid)
+
+    grate_count = 3
+    for index in range(1, grate_count + 1):
+        ratio = index / float(grate_count + 1)
+        center = (
+            float(point0[0]) + tangent[0] * length * ratio,
+            float(point0[1]) + tangent[1] * length * ratio,
+            top_z + 0.10,
+        )
+        bar = _preview_cylinder_between(
+            (
+                center[0] - normal[0] * half_width * 0.78,
+                center[1] - normal[1] * half_width * 0.78,
+                center[2],
+            ),
+            (
+                center[0] + normal[0] * half_width * 0.78,
+                center[1] + normal[1] * half_width * 0.78,
+                center[2],
+            ),
+            0.035,
+        )
+        if bar is not None:
+            shapes.append(bar)
+
+    structure_id = str(getattr(row, "structure_id", "") or "")
+    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
+    for point in connection_points:
+        role = str(getattr(point, "point_role", "") or "").strip().lower()
+        point_sta = float(getattr(point, "station", end_sta) or end_sta)
+        point_offset = float(getattr(point, "offset", offset) or offset)
+        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
+        diameter = max(float(getattr(point, "diameter", 0.0) or 0.0), 0.0)
+        if role in {"pipe_in", "pipe_out"}:
+            direction = tangent if role == "pipe_out" else (-tangent[0], -tangent[1])
+            radius = max(diameter / 2.0, 0.18)
+            stub_length = max(min(radius * 1.2, 0.8), 0.35)
+            z = _connection_point_display_z(point, float(pz)) + radius
+            stub = _preview_cylinder_between(
+                (px, py, z),
+                (px + direction[0] * stub_length, py + direction[1] * stub_length, z),
+                radius,
+            )
+            if stub is not None:
+                shapes.append(stub)
+        elif role in {"inlet", "ditch_in", "ditch-in"}:
+            mouth_center_z = float(pz) + height * 0.45
+            mouth = _structure_segment_prism(
+                (
+                    px - normal[0] * half_width * 0.65,
+                    py - normal[1] * half_width * 0.65,
+                    mouth_center_z,
+                ),
+                (
+                    px + normal[0] * half_width * 0.65,
+                    py + normal[1] * half_width * 0.65,
+                    mouth_center_z,
+                ),
+                0.08,
+                0.18,
+            )
+            if mouth is not None:
+                shapes.append(mouth)
+    return shapes
+
+
+def _outlet_headwall_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, length = frame
+    half_width = max(float(profile.get("half_width", 0.0) or 0.0), 0.8)
+    height = max(float(profile.get("height", 0.0) or 0.0), 0.8)
+    shapes: list[object] = []
+
+    headwall_center = (
+        float(point1[0]) - tangent[0] * min(length * 0.15, 0.6),
+        float(point1[1]) - tangent[1] * min(length * 0.15, 0.6),
+        float(point1[2]),
+    )
+    wall = _structure_segment_prism(
+        (
+            headwall_center[0] - normal[0] * half_width,
+            headwall_center[1] - normal[1] * half_width,
+            headwall_center[2],
+        ),
+        (
+            headwall_center[0] + normal[0] * half_width,
+            headwall_center[1] + normal[1] * half_width,
+            headwall_center[2],
+        ),
+        0.12,
+        height * 1.12,
+    )
+    if wall is not None:
+        shapes.append(wall)
+
+    apron_length = max(min(length * 0.45, 2.2), 0.8)
+    apron_width = half_width * 0.75
+    apron = _structure_segment_prism(
+        (
+            float(point1[0]),
+            float(point1[1]),
+            float(point1[2]) - 0.04,
+        ),
+        (
+            float(point1[0]) + tangent[0] * apron_length,
+            float(point1[1]) + tangent[1] * apron_length,
+            float(point1[2]) - 0.04,
+        ),
+        apron_width,
+        0.08,
+    )
+    if apron is not None:
+        shapes.append(apron)
+
+    for side in (-1.0, 1.0):
+        sidewall = _structure_segment_prism(
+            (
+                float(point1[0]) + normal[0] * apron_width * side,
+                float(point1[1]) + normal[1] * apron_width * side,
+                float(point1[2]),
+            ),
+            (
+                float(point1[0]) + tangent[0] * apron_length + normal[0] * apron_width * side * 1.25,
+                float(point1[1]) + tangent[1] * apron_length + normal[1] * apron_width * side * 1.25,
+                float(point1[2]),
+            ),
+            0.06,
+            height * 0.35,
+        )
+        if sidewall is not None:
+            shapes.append(sidewall)
+
+    structure_id = str(getattr(row, "structure_id", "") or "")
+    connection_points = list(context.get("connection_points_by_structure", {}).get(structure_id, []) or [])
+    for point in connection_points:
+        role = str(getattr(point, "point_role", "") or "").strip().lower()
+        point_sta = float(getattr(point, "station", start_sta if role == "pipe_in" else end_sta) or 0.0)
+        point_offset = float(getattr(point, "offset", offset) or offset)
+        px, py, pz = _station_offset_xyz(path, point_sta, point_offset, base_z)
+        if role == "pipe_in":
+            radius = max(float(getattr(point, "diameter", 0.0) or 0.0) / 2.0, 0.18)
+            z = _connection_point_display_z(point, float(pz)) + radius
+            stub = _preview_cylinder_between(
+                (px - tangent[0] * radius * 1.2, py - tangent[1] * radius * 1.2, z),
+                (px + tangent[0] * radius * 0.8, py + tangent[1] * radius * 0.8, z),
+                radius,
+            )
+            if stub is not None:
+                shapes.append(stub)
+        elif role in {"discharge", "outlet"}:
+            mouth_width = max(float(getattr(point, "width", 0.0) or 0.0), half_width)
+            mouth_height = max(float(getattr(point, "height", 0.0) or 0.0), height * 0.35)
+            mouth_z = _connection_point_display_z(point, float(pz)) + mouth_height * 0.35
+            mouth = _structure_segment_prism(
+                (
+                    px - normal[0] * mouth_width * 0.5,
+                    py - normal[1] * mouth_width * 0.5,
+                    mouth_z,
+                ),
+                (
+                    px + normal[0] * mouth_width * 0.5,
+                    py + normal[1] * mouth_width * 0.5,
+                    mouth_z,
+                ),
+                0.10,
+                mouth_height * 0.45,
+            )
+            if mouth is not None:
+                shapes.append(mouth)
+    return shapes
+
+
+def _pipe_culvert_endpoint_detail_preview_shapes(
+    row: StructureRow,
+    path: dict[str, object],
+    context: dict[str, object],
+    profile: dict[str, object],
+    *,
+    base_z: float,
+) -> list[object]:
+    culvert = _kind_spec_for_ref(context.get("culvert_specs", {}), getattr(row, "geometry_spec_ref", ""))
+    headwall_type = str(getattr(culvert, "headwall_type", "") or "").strip().lower() if culvert is not None else ""
+    wingwall_type = str(getattr(culvert, "wingwall_type", "") or "").strip().lower() if culvert is not None else ""
+    if not headwall_type and not wingwall_type:
+        return []
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    start_sta = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end_sta = float(getattr(placement, "station_end", start_sta) or start_sta)
+    if end_sta < start_sta:
+        start_sta, end_sta = end_sta, start_sta
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    point0 = _station_offset_xyz(path, start_sta, offset, base_z)
+    point1 = _station_offset_xyz(path, end_sta, offset, base_z)
+    frame = _preview_segment_frame(point0, point1)
+    if frame is None:
+        return []
+    tangent, normal, _length = frame
+    diameter = max(float(profile.get("diameter", 0.0) or profile.get("height", 0.0) or 0.0), 0.4)
+    half_width = max(diameter * 0.9, 0.6)
+    wall_height = max(diameter * 1.45, 0.9)
+    shapes: list[object] = []
+
+    endpoints = [
+        (point0, (-tangent[0], -tangent[1])),
+        (point1, tangent),
+    ]
+    for endpoint, outward in endpoints:
+        wall = _structure_segment_prism(
+            (
+                float(endpoint[0]) - normal[0] * half_width,
+                float(endpoint[1]) - normal[1] * half_width,
+                float(endpoint[2]) - diameter * 0.08,
+            ),
+            (
+                float(endpoint[0]) + normal[0] * half_width,
+                float(endpoint[1]) + normal[1] * half_width,
+                float(endpoint[2]) - diameter * 0.08,
+            ),
+            0.14,
+            wall_height,
+        )
+        if wall is not None:
+            shapes.append(wall)
+
+        if wingwall_type and wingwall_type not in {"none", "no", "false"}:
+            wing_length = max(diameter * (1.35 if wingwall_type in {"flared", "long"} else 0.95), 0.8)
+            wing_height = wall_height * 0.62
+            for side in (-1.0, 1.0):
+                wing = _structure_segment_prism(
+                    (
+                        float(endpoint[0]) + normal[0] * half_width * side,
+                        float(endpoint[1]) + normal[1] * half_width * side,
+                        float(endpoint[2]) - diameter * 0.05,
+                    ),
+                    (
+                        float(endpoint[0]) + outward[0] * wing_length + normal[0] * half_width * side * 1.35,
+                        float(endpoint[1]) + outward[1] * wing_length + normal[1] * half_width * side * 1.35,
+                        float(endpoint[2]) - diameter * 0.05,
+                    ),
+                    0.07,
+                    wing_height,
+                )
+                if wing is not None:
+                    shapes.append(wing)
+    return shapes
+
+
+def _preview_segment_frame(point0, point1) -> tuple[tuple[float, float], tuple[float, float], float] | None:
+    dx = float(point1[0]) - float(point0[0])
+    dy = float(point1[1]) - float(point0[1])
+    length = math.hypot(dx, dy)
+    if length <= 1.0e-9:
+        return None
+    tangent = (dx / length, dy / length)
+    normal = (-tangent[1], tangent[0])
+    return tangent, normal, length
+
+
+def _preview_cylinder_between(point0, point1, radius: float):
+    base = App.Vector(float(point0[0]), float(point0[1]), float(point0[2]))
+    direction = App.Vector(
+        float(point1[0]) - float(point0[0]),
+        float(point1[1]) - float(point0[1]),
+        float(point1[2]) - float(point0[2]),
+    )
+    if direction.Length <= 1.0e-9:
+        return None
+    try:
+        return Part.makeCylinder(max(float(radius), 0.02), direction.Length, base, direction)
+    except Exception:
+        try:
+            return Part.makePolygon([base, base.add(direction)])
+        except Exception:
+            return None
 
 
 def _style_structure_preview_object(obj) -> None:
@@ -1662,6 +3327,26 @@ def _style_structure_preview_object(obj) -> None:
         vobj.PointColor = (0.95, 0.85, 0.20)
         vobj.Transparency = 35
         vobj.LineWidth = 2.0
+    except Exception:
+        pass
+
+
+def _style_connection_point_preview_object(obj) -> None:
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is None:
+            return
+        vobj.Visibility = True
+        vobj.ShapeColor = (1.0, 0.68, 0.05)
+        vobj.LineColor = (0.05, 0.05, 0.02)
+        vobj.PointColor = (1.0, 0.95, 0.05)
+        vobj.Transparency = 0
+        vobj.LineWidth = 4.0
+        vobj.PointSize = 8.0
+        try:
+            vobj.DisplayMode = "Shaded"
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -1726,14 +3411,403 @@ def _item_text(table, row: int, col: int) -> str:
     return str(item.text() if item is not None else "").strip()
 
 
-def _item_user_data(table, row: int, col: int) -> str:
+def _item_user_data(table, row: int, col: int, role=QtCore.Qt.UserRole) -> str:
     item = table.item(row, col)
     if item is None:
         return ""
     try:
-        return str(item.data(QtCore.Qt.UserRole) or "").strip()
+        return str(item.data(role) or "").strip()
     except Exception:
         return ""
+
+
+def _display_structure_ref(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "structure:"
+    return text[len(prefix):] if text.startswith(prefix) else text
+
+
+def _safe_object_suffix(value: object) -> str:
+    text = str(value or "").strip()
+    output = []
+    for char in text:
+        output.append(char if char.isalnum() else "_")
+    return "".join(output).strip("_") or "unknown"
+
+
+def _source_structure_ref(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text if text.startswith("structure:") else f"structure:{text}"
+
+
+def _geometry_source_mode(row: StructureRow) -> str:
+    mode = str(getattr(row, "geometry_source_mode", "") or "").strip().lower()
+    if mode in GEOMETRY_SOURCE_CHOICES:
+        return mode
+    reference_mode = str(getattr(row, "reference_mode", "") or "").strip().lower()
+    geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
+    if reference_mode in {"source_ref", "reference_geometry", "external_ref"} or geometry_ref:
+        return "external_ref"
+    return "native"
+
+
+def _selected_3d_point():
+    if Gui is None:
+        raise RuntimeError("FreeCAD GUI selection is required for Pick From 3D.")
+    selection_ex = []
+    try:
+        selection_ex = list(Gui.Selection.getSelectionEx() or [])
+    except Exception:
+        selection_ex = []
+    for selection in selection_ex:
+        for sub_object in list(getattr(selection, "SubObjects", []) or []):
+            point = _point_from_shape_like(sub_object)
+            if point is not None:
+                return point
+        obj = getattr(selection, "Object", None)
+        point = _point_from_shape_like(getattr(obj, "Shape", None))
+        if point is not None:
+            return point
+        point = _point_from_shape_like(obj)
+        if point is not None:
+            return point
+    try:
+        for obj in list(Gui.Selection.getSelection() or []):
+            point = _point_from_shape_like(getattr(obj, "Shape", None))
+            if point is not None:
+                return point
+            point = _point_from_shape_like(obj)
+            if point is not None:
+                return point
+    except Exception:
+        pass
+    raise RuntimeError("Select a vertex, edge, face, or object in the 3D View first.")
+
+
+def _point_from_shape_like(value):
+    if value is None:
+        return None
+    point = getattr(value, "Point", None)
+    if point is not None:
+        return point
+    center = getattr(value, "CenterOfMass", None)
+    if center is not None:
+        return center
+    vertexes = list(getattr(value, "Vertexes", []) or [])
+    if vertexes:
+        return getattr(vertexes[0], "Point", None)
+    bound_box = getattr(value, "BoundBox", None)
+    if bound_box is not None:
+        center = getattr(bound_box, "Center", None)
+        if center is not None:
+            return center
+    placement = getattr(value, "Placement", None)
+    base = getattr(placement, "Base", None)
+    if base is not None:
+        return base
+    return None
+
+
+def _station_offset_from_point(document, point) -> tuple[float, float]:
+    alignment = to_alignment_model(find_v1_alignment(document))
+    if alignment is None:
+        return float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0)
+    projected = _project_xy_to_alignment(alignment, float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0))
+    if projected is None:
+        return float(getattr(point, "x", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0)
+    return projected
+
+
+def _project_xy_to_alignment(alignment, x: float, y: float) -> tuple[float, float] | None:
+    best = None
+    for element in list(getattr(alignment, "geometry_sequence", []) or []):
+        x_values = _numeric_values(getattr(element, "geometry_payload", {}).get("x_values", []))
+        y_values = _numeric_values(getattr(element, "geometry_payload", {}).get("y_values", []))
+        points = list(zip(x_values, y_values))
+        if len(points) < 2:
+            continue
+        geometry_length = _polyline_length(points)
+        station_length = float(getattr(element, "station_end", 0.0) or 0.0) - float(getattr(element, "station_start", 0.0) or 0.0)
+        if geometry_length <= 1.0e-12 or station_length <= 1.0e-12:
+            continue
+        traversed = 0.0
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):
+            dx = float(x1) - float(x0)
+            dy = float(y1) - float(y0)
+            seg_len_sq = dx * dx + dy * dy
+            if seg_len_sq <= 1.0e-12:
+                continue
+            raw_t = ((float(x) - float(x0)) * dx + (float(y) - float(y0)) * dy) / seg_len_sq
+            t = min(max(raw_t, 0.0), 1.0)
+            px = float(x0) + dx * t
+            py = float(y0) + dy * t
+            dist_sq = (float(x) - px) ** 2 + (float(y) - py) ** 2
+            seg_len = seg_len_sq ** 0.5
+            geometry_offset = traversed + seg_len * t
+            station = float(getattr(element, "station_start", 0.0) or 0.0) + (geometry_offset / geometry_length) * station_length
+            normal_x = -dy / seg_len
+            normal_y = dx / seg_len
+            offset = (float(x) - px) * normal_x + (float(y) - py) * normal_y
+            if best is None or dist_sq < best[0]:
+                best = (dist_sq, station, offset)
+            traversed += seg_len
+    if best is None:
+        return None
+    return float(best[1]), float(best[2])
+
+
+def _numeric_values(values) -> list[float]:
+    result: list[float] = []
+    for value in list(values or []):
+        try:
+            result.append(float(value))
+        except Exception:
+            continue
+    return result
+
+
+def _polyline_length(points: list[tuple[float, float]]) -> float:
+    total = 0.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        total += ((float(x1) - float(x0)) ** 2 + (float(y1) - float(y0)) ** 2) ** 0.5
+    return total
+
+
+def _filtered_connection_points(
+    rows: list[StructureConnectionPoint],
+    *,
+    structure_ref: str = "",
+    connection_point_ref: str = "",
+) -> list[StructureConnectionPoint]:
+    structure_ref = str(structure_ref or "")
+    connection_point_ref = str(connection_point_ref or "")
+    output = []
+    for row in list(rows or []):
+        if structure_ref and str(getattr(row, "structure_ref", "") or "") != structure_ref:
+            continue
+        if connection_point_ref and str(getattr(row, "connection_point_id", "") or "") != connection_point_ref:
+            continue
+        output.append(row)
+    return output
+
+
+def _connection_point_xyz(document, point: StructureConnectionPoint) -> tuple[float, float, float]:
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    offset = float(getattr(point, "offset", 0.0) or 0.0)
+    z_value = getattr(point, "invert_elevation", None)
+    if z_value is None:
+        z_value = getattr(point, "elevation", None)
+    path = _centerline3d_result_path_source(document)
+    if path is not None:
+        try:
+            x, y, centerline_z = _station_offset_xyz(path, station, offset, 0.0)
+            z = _connection_point_display_z(point, float(z_value if z_value is not None else centerline_z))
+            return float(x), float(y), z
+        except Exception:
+            pass
+    z = _connection_point_display_z(point, float(z_value if z_value is not None else 0.0))
+    alignment = to_alignment_model(find_v1_alignment(document))
+    if alignment is None:
+        return station, offset, z
+    try:
+        x, y = AlignmentEvaluationService().station_offset_to_xy(alignment, station, offset)
+        return float(x), float(y), z
+    except Exception:
+        return station, offset, z
+
+
+def _connection_point_display_z(point: StructureConnectionPoint, z: float) -> float:
+    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
+    shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
+    if diameter <= 0.0:
+        return float(z)
+    if shape_kind and shape_kind not in {"circular", "pipe", "round", "circular_pipe"}:
+        return float(z)
+    return float(z) + diameter / 2.0
+
+
+def _connection_point_marker_radius(point: StructureConnectionPoint) -> float:
+    diameter = float(getattr(point, "diameter", 0.0) or 0.0)
+    width = float(getattr(point, "width", 0.0) or 0.0)
+    height = float(getattr(point, "height", 0.0) or 0.0)
+    reference_size = max(diameter, width, height, 0.8)
+    return max(0.55, min(reference_size * 0.38, 2.2))
+
+
+def _connection_point_marker_shape(point: StructureConnectionPoint, x: float, y: float, z: float):
+    radius = _connection_point_marker_radius(point)
+    center = App.Vector(float(x), float(y), float(z))
+    return Part.makeSphere(radius, center)
+
+
+def _derive_default_connection_points_for_row(
+    row: StructureRow,
+    geometry_spec: StructureGeometrySpec | None,
+    culvert_spec: CulvertGeometrySpec | None,
+) -> list[StructureConnectionPoint]:
+    structure_ref = str(getattr(row, "structure_id", "") or "")
+    if not structure_ref:
+        return []
+    placement = getattr(row, "placement", None)
+    if placement is None:
+        return []
+    kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
+    start = float(getattr(placement, "station_start", 0.0) or 0.0)
+    end = float(getattr(placement, "station_end", start) or start)
+    offset = float(getattr(placement, "offset", 0.0) or 0.0)
+    region_ref = ""
+    base_id = structure_ref.split(":")[-1]
+    width = float(getattr(geometry_spec, "width", 0.0) or 0.0)
+    height = float(getattr(geometry_spec, "height", 0.0) or 0.0)
+    shape = str(getattr(geometry_spec, "shape_kind", "") or "")
+    invert = getattr(culvert_spec, "invert_elevation", None) if culvert_spec is not None else None
+    diameter = 0.0
+    native_type = _effective_native_type(row, geometry_spec, culvert_spec)
+    if culvert_spec is not None:
+        barrel_shape = str(getattr(culvert_spec, "barrel_shape", "") or "").strip().lower()
+        diameter = float(getattr(culvert_spec, "diameter", 0.0) or 0.0)
+        if barrel_shape == "circular" or native_type == "pipe_culvert":
+            shape = "circular"
+            diameter = float(diameter or width or height or 0.0)
+            width = 0.0
+            height = 0.0
+        else:
+            shape = shape or "box"
+            width = float(getattr(culvert_spec, "span", 0.0) or width)
+            height = float(getattr(culvert_spec, "rise", 0.0) or height)
+    if kind == "culvert" or native_type in {"box_culvert", "pipe_culvert"}:
+        return [
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:upstream",
+                structure_ref=structure_ref,
+                point_role="upstream",
+                station=start,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=diameter,
+                width=width,
+                height=height,
+                shape_kind=shape or "box",
+                direction="upstream",
+                connection_order=1,
+                region_ref=region_ref,
+            ),
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:downstream",
+                structure_ref=structure_ref,
+                point_role="downstream",
+                station=end,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=diameter,
+                width=width,
+                height=height,
+                shape_kind=shape or "box",
+                direction="downstream",
+                connection_order=2,
+                region_ref=region_ref,
+            ),
+        ]
+    if kind == "inlet" or native_type == "inlet":
+        return [
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:inlet",
+                structure_ref=structure_ref,
+                point_role="inlet",
+                station=start,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=0.0,
+                width=width,
+                height=height,
+                shape_kind=shape or "box",
+                direction="in",
+                connection_order=1,
+                region_ref=region_ref,
+            ),
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:pipe-out",
+                structure_ref=structure_ref,
+                point_role="pipe_out",
+                station=end,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=diameter,
+                width=0.0 if diameter else width,
+                height=0.0 if diameter else height,
+                shape_kind="circular" if diameter else shape or "box",
+                direction="out",
+                connection_order=2,
+                region_ref=region_ref,
+            ),
+        ]
+    if kind == "headwall" or native_type == "headwall":
+        return [
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:pipe-in",
+                structure_ref=structure_ref,
+                point_role="pipe_in",
+                station=start,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=diameter,
+                width=0.0 if diameter else width,
+                height=0.0 if diameter else height,
+                shape_kind="circular" if diameter else shape or "box",
+                direction="in",
+                connection_order=1,
+                region_ref=region_ref,
+            ),
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:discharge",
+                structure_ref=structure_ref,
+                point_role="discharge",
+                station=end,
+                offset=offset,
+                invert_elevation=invert,
+                width=width,
+                height=height,
+                shape_kind=shape or "headwall",
+                direction="out",
+                connection_order=2,
+                region_ref=region_ref,
+            ),
+        ]
+    if kind == "outlet" or native_type == "outlet":
+        return [
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:pipe-in",
+                structure_ref=structure_ref,
+                point_role="pipe_in",
+                station=start,
+                offset=offset,
+                invert_elevation=invert,
+                diameter=diameter,
+                width=0.0 if diameter else width,
+                height=0.0 if diameter else height,
+                shape_kind="circular" if diameter else shape or "box",
+                direction="in",
+                connection_order=1,
+                region_ref=region_ref,
+            ),
+            StructureConnectionPoint(
+                connection_point_id=f"connection:{base_id}:discharge",
+                structure_ref=structure_ref,
+                point_role="discharge",
+                station=end,
+                offset=offset,
+                invert_elevation=invert,
+                width=width,
+                height=height,
+                shape_kind=shape or "box",
+                direction="out",
+                connection_order=2,
+                region_ref=region_ref,
+            ),
+        ]
+    return []
 
 
 def _format_float(value: float) -> str:
@@ -1766,6 +3840,25 @@ def _default_shape_kind(structure_kind: str) -> str:
     return "envelope"
 
 
+def _default_shape_kind_for_native(native_type: str, structure_kind: str) -> str:
+    native = str(native_type or "").strip().lower()
+    if native == "box_culvert":
+        return "box"
+    if native == "pipe_culvert":
+        return "circular"
+    if native == "bridge_deck":
+        return "deck_slab"
+    if native == "retaining_wall":
+        return "wall"
+    if native == "headwall":
+        return "headwall"
+    if native == "inlet":
+        return "inlet"
+    if native == "outlet":
+        return "outlet"
+    return _default_shape_kind(structure_kind)
+
+
 def _default_geometry_width(structure_kind: str) -> float:
     kind = str(structure_kind or "").strip().lower()
     if kind == "bridge":
@@ -1779,6 +3872,25 @@ def _default_geometry_width(structure_kind: str) -> float:
     return 4.0
 
 
+def _default_geometry_width_for_native(native_type: str, structure_kind: str) -> float:
+    native = str(native_type or "").strip().lower()
+    if native == "box_culvert":
+        return 3.0
+    if native == "pipe_culvert":
+        return 1.2
+    if native == "bridge_deck":
+        return 10.0
+    if native == "retaining_wall":
+        return 0.9
+    if native == "headwall":
+        return 4.0
+    if native == "inlet":
+        return 1.8
+    if native == "outlet":
+        return 2.8
+    return _default_geometry_width(structure_kind)
+
+
 def _default_geometry_height(structure_kind: str) -> float:
     kind = str(structure_kind or "").strip().lower()
     if kind == "bridge":
@@ -1790,6 +3902,25 @@ def _default_geometry_height(structure_kind: str) -> float:
     if kind == "utility":
         return 1.5
     return 1.0
+
+
+def _default_geometry_height_for_native(native_type: str, structure_kind: str) -> float:
+    native = str(native_type or "").strip().lower()
+    if native == "box_culvert":
+        return 2.0
+    if native == "pipe_culvert":
+        return 1.2
+    if native == "bridge_deck":
+        return 1.2
+    if native == "retaining_wall":
+        return 3.0
+    if native == "headwall":
+        return 2.0
+    if native == "inlet":
+        return 1.8
+    if native == "outlet":
+        return 2.0
+    return _default_geometry_height(structure_kind)
 
 
 def _show_message(parent, title: str, message: str) -> None:

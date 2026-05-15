@@ -1,4 +1,4 @@
-# CorridorRoad V1 Corridor Model
+# Parametric Road V1 Corridor Model
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -244,8 +244,13 @@ When `AppliedSectionSet` contains persisted FG or subgrade point rows, the desig
 
 If point rows are missing, the current implementation may fall back to the older left/right ribbon preview.
 
-It also creates a generated `Corridor 3D Centerline` preview from ordered `AppliedSectionSet` station frames.
-This preview is presentation geometry and should be rebuilt from the applied-section result, not edited as source intent.
+It also creates a generated `Corridor 3D Centerline` review row.
+
+The preferred source for that review row is the shared `Centerline3DResult`.
+
+During transition, existing `AppliedSectionSet` station frames may remain as fallback presentation input.
+
+They are derived placement snapshots, not a second 3D centerline owner.
 
 The `Build Corridor` task panel should expose a compact review table for generated presentation outputs:
 
@@ -254,6 +259,7 @@ The `Build Corridor` task panel should expose a compact review table for generat
 - `Subgrade Surface`
 - `Slope Face Surface`
 - `Drainage Surface`
+- `Drainage Flow`
 
 The table should show whether each output exists, its object label, vertex count, triangle or point count, role, and diagnostic notes.
 
@@ -272,6 +278,10 @@ Slope-face issue review should support previous/next issue navigation so reviewe
 Drainage review should show station-level `ditch_surface` point readiness, including point count and left/right side coverage.
 Double-clicking a Drainage diagnostic row should create or focus a station-level review marker in the 3D View.
 Build Corridor review UI should be organized into tabs for `Guided Review`, `Results`, `Slope Issues`, `Drainage`, and `Visibility`.
+
+`Guided Review` separates `Drainage Surface` from `Drainage Flow`.
+`Drainage Surface` reviews generated ditch/drainage surface handoff from Applied Section points.
+`Drainage Flow` reviews source-level Flow Route connections and linked Structure refs, and double-click focus should create a linear 3D highlight for the route station span without adding separate point or cross marker geometry.
 
 It does not generate final corridor solids.
 
@@ -412,6 +422,14 @@ Solid build results are engineering derivatives and export helpers, not durable 
 
 They should generally follow surface and applied-section evaluation, except for independent structure or drainage objects that are authored as source models and then linked back into the corridor.
 
+Watertight corridor solid generation should be topology-first.
+
+This follows the representation strategy table in `docsV1/V1_MASTER_PLAN.md`.
+
+The corridor solid path should establish closed semantic profiles, deterministic station-direction edge networks, face adjacency, start/end caps, and shell validation before creating or accepting FreeCAD Part solid geometry.
+
+Generated SurfaceModel meshes may provide review context, but they should not be stitched as the topology source for watertight corridor solids.
+
 ## 16. Surface and Solid Build Services
 
 Recommended service families:
@@ -443,7 +461,7 @@ Current implementation status:
 - [x] use Assembly-derived left/right applied-section widths for the first-slice design-surface preview
 - [x] create first-slice corridor subgrade-surface mesh preview from Assembly-derived subgrade depth
 - [x] create first-slice corridor slope-face mesh preview from Assembly-derived side-slope policy
-- [x] create spline-based corridor 3D centerline preview from `AppliedSectionSet` frames during `Build Corridor`
+- [x] create corridor 3D centerline preview from shared `Centerline3DResult`; do not generate a baseline from `AppliedSectionSet` frames
 - [x] tie first-slice slope-face outer points to sampled existing-ground TIN where an EG TIN preview is available
 - [x] resolve actual slope-face intersection points against existing-ground TIN within the configured side-slope search width
 - [x] expose slope-face EG intersection, outer-edge sample, and fallback diagnostics on the preview object and as 3D review markers
@@ -451,7 +469,8 @@ Current implementation status:
 - [x] expose Slope Face issue rows in Build Corridor so station, side, reason, status, and row-specific 3D marker handoff are reviewable
 - [x] apply role-specific preview styling for Design, Subgrade, Slope Face, Drainage, and 3D Centerline review objects
 - [x] add Build Corridor preview visibility controls for layer-style show/hide review
-- [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, and Drainage
+- [x] add guided Build Corridor review order for Centerline, Design Surface, Slope Face Issues, Drainage Surface, and Drainage Flow
+- [x] add Build Corridor Drainage Flow guided review focus that summarizes Flow Route IDs, linked Structure refs, and creates a 3D route/structure highlight on double-click
 - [x] add previous/next navigation for Slope Face issue marker review
 - [x] add station-level Drainage diagnostics for `ditch_surface` source point coverage
 - [x] start slope-face/daylight surfaces from the outermost built Assembly edge, including `ditch_surface` points, instead of only the FG/shoulder edge

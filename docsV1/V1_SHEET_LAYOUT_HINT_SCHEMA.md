@@ -1,4 +1,4 @@
-# CorridorRoad V1 Sheet Layout Hint Schema
+# Parametric Road V1 Sheet Layout Hint Schema
 
 Date: 2026-04-23
 Branch: `v1-dev`

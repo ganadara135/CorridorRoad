@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#12384a"/>
+      <stop offset="100%" stop-color="#1f6a7a"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8ef4ff"/>
+      <stop offset="100%" stop-color="#19aeea"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="12" ry="12" fill="url(#bg)" stroke="#0b2530" stroke-width="2"/>
+  <path d="M10 19c8 0 9 7 17 7s9-7 17-7 9 7 10 7" fill="none" stroke="#dff8ff" stroke-width="5" stroke-linecap="round" opacity="0.95"/>
+  <path d="M10 31c8 0 9 7 17 7s9-7 17-7" fill="none" stroke="url(#water)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M15 49h25" stroke="#dff8ff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M17 49l-5-9M38 49l4-8" stroke="#dff8ff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="44" cy="43" r="11" fill="#203445" stroke="#dff8ff" stroke-width="3"/>
+  <path d="M52 51l7 7" stroke="#dff8ff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M38 43l4 4 8-9" fill="none" stroke="#8cff9d" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

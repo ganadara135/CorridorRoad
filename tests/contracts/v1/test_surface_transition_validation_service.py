@@ -99,6 +99,25 @@ def test_surface_transition_validation_warns_for_missing_region_reference() -> N
     assert [row.kind for row in result.diagnostic_rows] == ["missing_region_ref"]
 
 
+def test_surface_transition_validation_warns_for_missing_boundary_refs() -> None:
+    model = SurfaceTransitionModel(
+        schema_version=1,
+        project_id="proj-1",
+        transition_ranges=[
+            SurfaceTransitionRange(
+                "transition:missing-boundary-refs",
+                95.0,
+                105.0,
+            )
+        ],
+    )
+
+    result = SurfaceTransitionValidationService().validate(model, boundary_stations=[100.0])
+
+    assert result.status == "warning"
+    assert [row.kind for row in result.diagnostic_rows] == ["missing_region_boundary_refs"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

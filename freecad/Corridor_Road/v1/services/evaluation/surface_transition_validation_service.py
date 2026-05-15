@@ -77,7 +77,7 @@ class SurfaceTransitionValidationService:
                 diagnostics.append(
                     _diagnostic(
                         "warning",
-                        "missing_region_handoff",
+                        "missing_region_boundary_refs",
                         source_ref,
                         "Transition should reference both from_region_ref and to_region_ref.",
                     )

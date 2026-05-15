@@ -30,11 +30,13 @@ from ..objects.obj_applied_section import (
     to_applied_section_set,
 )
 from ..objects.obj_assembly import find_v1_assembly_model, list_v1_assembly_models, to_assembly_model
+from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
+from ..services.evaluation import Centerline3DFrameService
 
 
 APPLIED_SECTION_REVIEW_ROW_COLORS = {
@@ -63,6 +65,7 @@ def build_document_applied_section_set(
     region_obj = find_v1_region_model(doc)
     stationing_obj = find_v1_stationing(doc)
     structure_obj = find_v1_structure_model(doc)
+    drainage_obj = find_v1_drainage_model(doc)
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
@@ -70,6 +73,7 @@ def build_document_applied_section_set(
     assembly = assembly_models[0] if assembly_models else to_assembly_model(assembly_obj)
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
+    drainage_model = to_drainage_model(drainage_obj)
     stations = _station_values(stationing_obj)
 
     missing = []
@@ -87,6 +91,7 @@ def build_document_applied_section_set(
         raise RuntimeError("Required v1 sources are missing: " + ", ".join(missing))
 
     project_id = _project_id(project or find_project(doc))
+    centerline3d_result = _build_applied_sections_centerline3d_result(doc)
     override_model = OverrideModel(
         schema_version=1,
         project_id=project_id,
@@ -104,10 +109,12 @@ def build_document_applied_section_set(
             assembly_models=assembly_models,
             region_model=region_model,
             structure_model=structure_model,
+            drainage_model=drainage_model,
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",
             existing_ground_surface=existing_ground_surface,
+            centerline3d_result=centerline3d_result,
         )
     )
 
@@ -130,7 +137,7 @@ def apply_v1_applied_section_set(
         except Exception:
             prj = doc.addObject("App::FeaturePython", "CorridorRoadProject")
         CorridorRoadProject(prj)
-        prj.Label = "CorridorRoad Project"
+        prj.Label = "Parametric Road Project"
     ensure_project_properties(prj)
     ensure_project_tree(prj, include_references=False)
     if applied_section_set is None:
@@ -226,10 +233,12 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     _set_preview_integer_property(obj, "PreviewPointCount", _applied_section_preview_point_count(section))
     _set_preview_float_property(obj, "Station", station)
     _style_applied_section_preview_object(obj)
+    marker = show_applied_section_station_marker_object(document, section, station=station)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
         route_to_v1_tree(find_project(document), obj)
+        route_to_v1_tree(find_project(document), marker)
     except Exception:
         pass
     try:
@@ -237,6 +246,35 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     except Exception:
         pass
     return obj
+
+
+def show_applied_section_station_marker_object(document, section, *, station: float | None = None):
+    """Create or update a clear marker at the selected Applied Section station."""
+
+    if document is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Applied Section station marker.")
+    frame = getattr(section, "frame", None)
+    if frame is None:
+        raise ValueError("Applied Section station marker requires a station frame.")
+    center = App.Vector(float(getattr(frame, "x", 0.0) or 0.0), float(getattr(frame, "y", 0.0) or 0.0), float(getattr(frame, "z", 0.0) or 0.0))
+    radius = _applied_section_station_marker_radius(section)
+    marker = document.getObject("V1AppliedSectionStationMarker")
+    if marker is None:
+        marker = document.addObject("Part::Feature", "V1AppliedSectionStationMarker")
+    active_station = float(station if station is not None else getattr(section, "station", 0.0) or 0.0)
+    marker.Label = f"Applied Section Station - STA {active_station:.3f}"
+    marker.Shape = Part.makeSphere(radius, center)
+    _set_preview_string_property(marker, "CRRecordKind", "v1_applied_section_station_marker")
+    _set_preview_string_property(marker, "V1ObjectType", "V1AppliedSectionStationMarker")
+    _set_preview_string_property(marker, "AppliedSectionId", str(getattr(section, "applied_section_id", "") or ""))
+    _set_preview_float_property(marker, "Station", active_station)
+    _set_preview_float_property(marker, "MarkerX", float(center.x))
+    _set_preview_float_property(marker, "MarkerY", float(center.y))
+    _set_preview_float_property(marker, "MarkerZ", float(center.z))
+    _style_applied_section_station_marker(marker)
+    return marker
 
 
 def applied_section_preview_shape(section):
@@ -361,6 +399,9 @@ class V1AppliedSectionsTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
         action_row.addWidget(refresh_button)
+        validate_button = QtWidgets.QPushButton("Validate")
+        validate_button.clicked.connect(self._validate)
+        action_row.addWidget(validate_button)
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(apply_button)
@@ -404,6 +445,9 @@ class V1AppliedSectionsTaskPanel:
 
     def _apply(self, *, close_after: bool = False) -> bool:
         try:
+            if not self._validate(show_message=False):
+                self._set_progress(0, "Applied Sections validation failed")
+                return False
             self._set_progress(0, "Preparing Applied Sections...")
             self._set_progress(15, "Reading v1 source models...")
             result = build_document_applied_section_set(self.document)
@@ -427,6 +471,27 @@ class V1AppliedSectionsTaskPanel:
             self._set_progress(0, "Applied Sections failed")
             self._summary.setPlainText(f"Applied Sections were not built:\n{exc}")
             _show_message(self.form, "Applied Sections", f"Applied Sections were not built.\n{exc}")
+            return False
+
+    def _validate(self, *, show_message: bool = True) -> bool:
+        try:
+            diagnostics = _applied_sections_source_diagnostics(self.document)
+            if diagnostics:
+                message = "Applied Sections validation failed:\n" + "\n".join(diagnostics)
+                self._summary.setPlainText(message)
+                if show_message:
+                    _show_message(self.form, "Applied Sections", message)
+                return False
+            message = "Applied Sections validation passed."
+            self._summary.setPlainText(message)
+            if show_message:
+                _show_message(self.form, "Applied Sections", message)
+            return True
+        except Exception as exc:
+            message = f"Applied Sections validation failed:\n{exc}"
+            self._summary.setPlainText(message)
+            if show_message:
+                _show_message(self.form, "Applied Sections", message)
             return False
 
     def _set_progress(self, value: int, text: str = "") -> None:
@@ -454,8 +519,8 @@ class V1AppliedSectionsTaskPanel:
                 _format_float(row.get("y", 0.0)),
                 _format_float(row.get("z", 0.0)),
                 str(row.get("region_id", "") or ""),
-                str(row.get("assembly_id", "") or ""),
-                str(row.get("template_id", "") or ""),
+                _display_source_id(row.get("assembly_id", ""), "assembly:"),
+                _display_source_id(row.get("template_id", ""), "template:"),
                 f"{_format_float(row.get('surface_left_width', 0.0))} / {_format_float(row.get('surface_right_width', 0.0))}",
                 str(row.get("component_summary", "") or str(int(row.get("component_count", 0) or 0))),
                 str(row.get("ditch_summary", "") or ""),
@@ -473,10 +538,13 @@ class V1AppliedSectionsTaskPanel:
             if applied is None:
                 applied = build_document_applied_section_set(self.document)
             preview = show_applied_section_preview_object(self.document, applied, int(row_index))
+            marker = self.document.getObject("V1AppliedSectionStationMarker") if self.document is not None else None
             if Gui is not None:
                 try:
                     Gui.Selection.clearSelection()
                     Gui.Selection.addSelection(preview)
+                    if marker is not None:
+                        Gui.Selection.addSelection(marker)
                 except Exception:
                     pass
                 _fit_selected_preview()
@@ -533,6 +601,15 @@ def _station_values(stationing_obj) -> list[float]:
     return values
 
 
+def _build_applied_sections_centerline3d_result(document):
+    try:
+        from .cmd_centerline3d import build_document_centerline3d_result
+
+        return build_document_centerline3d_result(document)
+    except Exception:
+        return None
+
+
 def _source_status(obj) -> str:
     if obj is None:
         return "missing"
@@ -548,11 +625,61 @@ def _assembly_source_status(document) -> str:
     return f"{len(objs)} assembly model(s)"
 
 
+def _applied_sections_source_diagnostics(document) -> list[str]:
+    diagnostics: list[str] = []
+    alignment_obj = find_v1_alignment(document)
+    profile_obj = find_v1_profile(document)
+    assembly_objs = list_v1_assembly_models(document)
+    assembly_obj = assembly_objs[0] if assembly_objs else find_v1_assembly_model(document)
+    region_obj = find_v1_region_model(document)
+    stationing_obj = find_v1_stationing(document)
+    stations = _station_values(stationing_obj)
+    missing = []
+    if alignment_obj is None:
+        missing.append("Alignment")
+    if profile_obj is None:
+        missing.append("Profile")
+    if assembly_obj is None:
+        missing.append("Assembly")
+    if region_obj is None:
+        missing.append("Regions")
+    if not stations:
+        missing.append("Stations")
+    if missing:
+        diagnostics.append("missing_required_sources: " + ", ".join(missing))
+        return diagnostics
+
+    centerline_result = _build_applied_sections_centerline3d_result(document)
+    if centerline_result is None:
+        diagnostics.append("missing_centerline3d_result: 3D Centerline could not be evaluated.")
+        return diagnostics
+    if str(getattr(centerline_result, "status", "") or "") != "ready":
+        diagnostics.append(
+            "centerline3d_not_ready: "
+            + "; ".join(list(getattr(centerline_result, "diagnostic_rows", []) or []) or ["3D Centerline is not ready."])
+        )
+        return diagnostics
+
+    frame_service = Centerline3DFrameService()
+    for station in stations:
+        frame = frame_service.resolve_station(centerline_result, station)
+        if str(getattr(frame, "status", "") or "") == "blocked":
+            diagnostics.extend(str(row) for row in list(getattr(frame, "diagnostic_rows", []) or []))
+    return diagnostics
+
+
 def _review_status_text(row: dict[str, object]) -> str:
     diagnostics = int(row.get("diagnostic_count", 0) or 0)
     if diagnostics:
         return f"WARN ({diagnostics})"
     return "OK"
+
+
+def _display_source_id(value: object, prefix: str) -> str:
+    text = str(value or "")
+    if prefix and text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
 
 
 def applied_section_review_row_color(status: object) -> tuple[int, int, int] | None:
@@ -951,6 +1078,38 @@ def _style_applied_section_preview_object(obj) -> None:
             vobj.Transparency = 0
     except Exception:
         pass
+
+
+def _style_applied_section_station_marker(obj) -> None:
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None:
+        return
+    try:
+        vobj.Visibility = True
+        vobj.DisplayMode = "Shaded"
+        vobj.ShapeColor = (1.0, 0.86, 0.05)
+        vobj.LineColor = (0.02, 0.02, 0.02)
+        vobj.PointColor = (1.0, 0.95, 0.1)
+        vobj.LineWidth = 2.5
+        vobj.PointSize = 12.0
+        if hasattr(vobj, "Transparency"):
+            vobj.Transparency = 0
+    except Exception:
+        pass
+
+
+def _applied_section_station_marker_radius(section) -> float:
+    frame = getattr(section, "frame", None)
+    points = []
+    if frame is not None:
+        points = [point for _role, row_points in _applied_section_preview_polylines(section, frame) for point in list(row_points or [])]
+    if len(points) >= 2:
+        xs = [float(point.x) for point in points]
+        ys = [float(point.y) for point in points]
+        zs = [float(point.z) for point in points]
+        span = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1.0)
+        return max(0.25, min(span * 0.06, 2.5))
+    return 0.6
 
 
 def _set_preview_string_property(obj, name: str, value: str) -> None:

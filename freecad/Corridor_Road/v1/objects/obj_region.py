@@ -60,16 +60,11 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "RegionCount", "Regions", "region row count")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Regions", "region ids")
     _add_property(obj, "App::PropertyIntegerList", "RegionIndices", "Regions", "region indices")
-    _add_property(obj, "App::PropertyStringList", "PrimaryKinds", "Regions", "primary region kinds")
-    _add_property(obj, "App::PropertyStringList", "AppliedLayerRows", "Regions", "comma-separated applied layer rows")
     _add_property(obj, "App::PropertyFloatList", "StationStarts", "Regions", "region start stations")
     _add_property(obj, "App::PropertyFloatList", "StationEnds", "Regions", "region end stations")
     _add_property(obj, "App::PropertyStringList", "AssemblyRefs", "References", "assembly refs")
     _add_property(obj, "App::PropertyStringList", "TemplateRefs", "References", "template refs")
     _add_property(obj, "App::PropertyStringList", "PolicySetRefs", "References", "policy set refs")
-    _add_property(obj, "App::PropertyStringList", "StructureRefs", "References", "singular structure refs")
-    _add_property(obj, "App::PropertyStringList", "StructureRefRows", "References", "comma-separated structure refs")
-    _add_property(obj, "App::PropertyStringList", "DrainageRefRows", "References", "comma-separated drainage refs")
     _add_property(obj, "App::PropertyStringList", "RampRefs", "References", "ramp refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionRefs", "References", "intersection refs")
     _add_property(obj, "App::PropertyStringList", "SuperelevationRefs", "References", "superelevation refs")
@@ -79,6 +74,11 @@ def ensure_v1_region_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "NotesRows", "Source", "region notes")
     _add_property(obj, "App::PropertyString", "ValidationStatus", "Diagnostics", "region validation status")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "region diagnostics")
+    _remove_property(obj, "PrimaryKinds")
+    _remove_property(obj, "AppliedLayerRows")
+    _remove_property(obj, "StructureRefs")
+    _remove_property(obj, "StructureRefRows")
+    _remove_property(obj, "DrainageRefRows")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
         obj.V1ObjectType = "V1RegionModel"
@@ -150,16 +150,11 @@ def update_v1_region_model_object(obj, region_model: RegionModel, *, label: str 
     obj.RegionCount = len(rows)
     obj.RegionIds = [str(row.region_id) for row in rows]
     obj.RegionIndices = [int(getattr(row, "region_index", index + 1) or index + 1) for index, row in enumerate(rows)]
-    obj.PrimaryKinds = [str(row.primary_kind) for row in rows]
-    obj.AppliedLayerRows = [_join_refs(row.applied_layers) for row in rows]
     obj.StationStarts = [float(row.station_start) for row in rows]
     obj.StationEnds = [float(row.station_end) for row in rows]
     obj.AssemblyRefs = [str(row.assembly_ref) for row in rows]
     obj.TemplateRefs = [str(row.template_ref) for row in rows]
     obj.PolicySetRefs = [str(row.policy_set_ref) for row in rows]
-    obj.StructureRefs = [str(getattr(row, "structure_ref", "") or "") for row in rows]
-    obj.StructureRefRows = [_join_refs(row.structure_refs) for row in rows]
-    obj.DrainageRefRows = [_join_refs(row.drainage_refs) for row in rows]
     obj.RampRefs = [str(row.ramp_ref) for row in rows]
     obj.IntersectionRefs = [str(row.intersection_ref) for row in rows]
     obj.SuperelevationRefs = [str(row.superelevation_ref) for row in rows]
@@ -195,16 +190,11 @@ def to_region_model(obj) -> RegionModel | None:
             RegionRow(
                 region_id=_list_value(ids, index, f"region:{index + 1}"),
                 region_index=_int_list_value(getattr(obj, "RegionIndices", []), index, index + 1),
-                primary_kind=_list_value(getattr(obj, "PrimaryKinds", []), index, "normal_road"),
-                applied_layers=_split_refs(_list_value(getattr(obj, "AppliedLayerRows", []), index, "")),
                 station_start=_float_list_value(starts, index, 0.0),
                 station_end=_float_list_value(ends, index, 0.0),
                 assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
                 template_ref=_list_value(getattr(obj, "TemplateRefs", []), index, ""),
                 policy_set_ref=_list_value(getattr(obj, "PolicySetRefs", []), index, ""),
-                structure_ref=_list_value(getattr(obj, "StructureRefs", []), index, ""),
-                structure_refs=_split_refs(_list_value(getattr(obj, "StructureRefRows", []), index, "")),
-                drainage_refs=_split_refs(_list_value(getattr(obj, "DrainageRefRows", []), index, "")),
                 ramp_ref=_list_value(getattr(obj, "RampRefs", []), index, ""),
                 intersection_ref=_list_value(getattr(obj, "IntersectionRefs", []), index, ""),
                 superelevation_ref=_list_value(getattr(obj, "SuperelevationRefs", []), index, ""),
@@ -256,6 +246,18 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         obj.addProperty(property_type, name, group, doc)
     except Exception:
         pass
+
+
+def _remove_property(obj, name: str) -> None:
+    if obj is None or not hasattr(obj, name):
+        return
+    try:
+        obj.removeProperty(name)
+    except Exception:
+        try:
+            setattr(obj, name, [])
+        except Exception:
+            pass
 
 
 def _project_id(project) -> str:

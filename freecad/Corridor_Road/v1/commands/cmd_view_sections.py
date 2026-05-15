@@ -17,6 +17,7 @@ from ..services.evaluation import (
     AlignmentEvaluationService,
     LegacyDocumentAdapter,
     SectionEarthworkAreaService,
+    StationContextResolver,
     TinSamplingService,
     TinSectionSamplingService,
 )
@@ -124,6 +125,7 @@ def _resolve_result_state(
         "assembly_model",
         "region_model",
         "structure_model",
+        "drainage_model",
     ):
         obj = objects.get(key)
         if obj is None:
@@ -158,6 +160,7 @@ def _build_source_inspector(
     assembly_model=None,
     region_model=None,
     structure_model=None,
+    drainage_model=None,
     viewer_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a compact source-inspector payload for the v1 section viewer."""
@@ -203,16 +206,26 @@ def _build_source_inspector(
     template_object_label = str(getattr(assembly_model, "Label", "") or getattr(assembly_model, "Name", "") or "").strip()
     region_object_label = str(getattr(region_model, "Label", "") or getattr(region_model, "Name", "") or "").strip()
     structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
+    drainage_label = str(getattr(drainage_model, "Label", "") or getattr(drainage_model, "Name", "") or "").strip()
     template_label = template_object_label or owner_template
     region_label = region_object_label or owner_region
-    active_structure_ref = _applied_section_structure_ref(applied_section)
+    active_structure_ref = str(viewer_context.get("active_structure_ref", "") or "").strip()
     if not active_structure_ref:
-        active_structure_ref = str(viewer_context.get("active_structure_ref", "") or "").strip()
+        active_structure_ref = _applied_section_structure_ref(applied_section)
     owner_structure = active_structure_ref or structure_label or str(viewer_context.get("structure_summary", "") or "").strip()
+    active_drainage_ref = str(viewer_context.get("active_drainage_ref", "") or "").strip()
+    if not active_drainage_ref:
+        active_drainage_ref = _applied_section_drainage_ref(applied_section)
+    owner_drainage = active_drainage_ref or drainage_label or str(viewer_context.get("drainage_summary", "") or "").strip()
     section_set_status = _source_owner_status(object_label=section_set_label, source_ref=applied_section_set_ref)
     template_status = _source_owner_status(object_label=template_object_label, source_ref=owner_template)
     region_status = _source_owner_status(object_label=region_object_label, source_ref=owner_region)
     structure_status = _source_owner_status(object_label=structure_label, source_ref=owner_structure)
+    drainage_status = (
+        _source_owner_status(object_label=drainage_label, source_ref=owner_drainage)
+        if (drainage_label or owner_drainage)
+        else "not_applicable"
+    )
 
     unresolved_fields = []
     if section_set_status == "unresolved":
@@ -223,10 +236,12 @@ def _build_source_inspector(
         unresolved_fields.append("region")
     if structure_status == "unresolved":
         unresolved_fields.append("structure")
+    if drainage_status == "unresolved":
+        unresolved_fields.append("drainage")
 
     if len(unresolved_fields) == 0:
         ownership_status = "resolved"
-    elif len(unresolved_fields) == 4:
+    elif len(unresolved_fields) == 5:
         ownership_status = "unresolved"
     else:
         ownership_status = "partial"
@@ -247,12 +262,16 @@ def _build_source_inspector(
         "structure_label": structure_label,
         "structure_source_ref": active_structure_ref,
         "structure_status": structure_status,
+        "drainage_label": drainage_label,
+        "drainage_source_ref": active_drainage_ref,
+        "drainage_status": drainage_status,
         "component_id": component_id,
         "component_kind": component_kind,
         "component_side": component_side,
         "owner_template": owner_template,
         "owner_region": owner_region,
         "owner_structure": owner_structure,
+        "owner_drainage": owner_drainage,
         "ownership_status": ownership_status,
         "unresolved_fields": list(unresolved_fields),
         "component_count": int(len(list(getattr(section_output, "component_rows", []) or []))),
@@ -279,6 +298,21 @@ def _applied_section_structure_ref(applied_section) -> str:
             return text
     for component in list(getattr(applied_section, "component_rows", []) or []):
         for value in list(getattr(component, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _applied_section_drainage_ref(applied_section) -> str:
+    """Return the first active Drainage Element ref carried by an AppliedSection."""
+
+    for point in list(getattr(applied_section, "point_rows", []) or []):
+        text = str(getattr(point, "drainage_ref", "") or "").strip()
+        if text:
+            return text
+    for component in list(getattr(applied_section, "component_rows", []) or []):
+        for value in list(getattr(component, "drainage_refs", []) or []):
             text = str(value or "").strip()
             if text:
                 return text
@@ -669,7 +703,7 @@ def _build_structure_review_rows(
                 "kind": "active_structure",
                 "label": "Active Structure",
                 "value": active_structure_ref,
-                "notes": "Resolved from Region structure_ref for the current station.",
+                "notes": "Resolved from Station Context for the current station.",
             }
         )
     for value in list(viewer_context.get("structure_rows", []) or [])[:6]:
@@ -717,6 +751,101 @@ def _build_structure_review_rows(
             }
         )
     return rows
+
+
+def _apply_station_context_to_viewer_context(
+    viewer_context: dict[str, object] | None,
+    *,
+    station: float,
+    region_model=None,
+    structure_model=None,
+    drainage_model=None,
+) -> dict[str, object]:
+    """Populate viewer context from the shared station-context resolver when possible."""
+
+    output = dict(viewer_context or {})
+    source_region_model = _as_region_source_model(region_model)
+    if source_region_model is None:
+        return output
+    try:
+        context = StationContextResolver().resolve(
+            region_model=source_region_model,
+            structure_model=_as_structure_source_model(structure_model),
+            drainage_model=_as_drainage_source_model(drainage_model),
+            station=float(station),
+        )
+    except Exception:
+        return output
+    region_id = str(getattr(getattr(context, "region_context", None), "region_id", "") or "").strip()
+    if region_id:
+        output["station_context_region_ref"] = region_id
+    structure_refs = _unique_text_values(
+        list(getattr(getattr(context, "structure_result", None), "active_structure_ids", []) or [])
+    )
+    if structure_refs:
+        output["active_structure_ref"] = structure_refs[0]
+        output["structure_summary"] = ", ".join(structure_refs)
+        output["structure_rows"] = structure_refs
+    drainage_refs = _unique_text_values(list(getattr(context, "active_drainage_refs", []) or []))
+    if drainage_refs:
+        output["active_drainage_ref"] = drainage_refs[0]
+        output["drainage_summary"] = ", ".join(drainage_refs)
+    flow_route_refs = _unique_text_values(list(getattr(context, "active_flow_route_refs", []) or []))
+    if flow_route_refs:
+        output["active_flow_route_ref"] = flow_route_refs[0]
+        output["flow_route_summary"] = ", ".join(flow_route_refs)
+    return output
+
+
+def _as_region_source_model(value):
+    if value is None:
+        return None
+    if hasattr(value, "region_rows"):
+        return value
+    try:
+        from ..objects.obj_region import to_region_model
+
+        return to_region_model(value)
+    except Exception:
+        return None
+
+
+def _as_structure_source_model(value):
+    if value is None:
+        return None
+    if hasattr(value, "structure_rows"):
+        return value
+    try:
+        from ..objects.obj_structure import to_structure_model
+
+        return to_structure_model(value)
+    except Exception:
+        return None
+
+
+def _as_drainage_source_model(value):
+    if value is None:
+        return None
+    if hasattr(value, "element_rows"):
+        return value
+    try:
+        from ..objects.obj_drainage import to_drainage_model
+
+        return to_drainage_model(value)
+    except Exception:
+        return None
+
+
+def _unique_text_values(values: list[object]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def _nearest_earthwork_balance_row(balance_rows: list[object] | None, station: float | None):
@@ -930,6 +1059,10 @@ def _build_v1_applied_section_set_preview(
         from ..objects.obj_structure import find_v1_structure_model
     except Exception:
         find_v1_structure_model = None
+    try:
+        from ..objects.obj_drainage import find_v1_drainage_model
+    except Exception:
+        find_v1_drainage_model = None
 
     applied_obj = find_v1_applied_section_set(document, preferred_applied_section_set)
     applied_section_set = to_applied_section_set(applied_obj)
@@ -963,6 +1096,7 @@ def _build_v1_applied_section_set_preview(
     assembly_model = find_v1_assembly_model(document) if find_v1_assembly_model is not None else None
     region_model = find_v1_region_model(document) if find_v1_region_model is not None else None
     structure_model = find_v1_structure_model(document) if find_v1_structure_model is not None else None
+    drainage_model = find_v1_drainage_model(document) if find_v1_drainage_model is not None else None
     source_objects = {
         "project": project,
         "applied_section_set": applied_obj,
@@ -972,10 +1106,19 @@ def _build_v1_applied_section_set_preview(
         "corridor": getattr(project, "Corridor", None) if project is not None else None,
         "cut_fill_calc": getattr(project, "CutFillCalc", None) if project is not None else None,
         "structure_model": structure_model,
+        "drainage_model": drainage_model,
     }
     viewer_context: dict[str, object] = {
         "active_structure_ref": _applied_section_structure_ref(applied_section),
+        "active_drainage_ref": _applied_section_drainage_ref(applied_section),
     }
+    viewer_context = _apply_station_context_to_viewer_context(
+        viewer_context,
+        station=target_station,
+        region_model=region_model,
+        structure_model=structure_model,
+        drainage_model=drainage_model,
+    )
     diagnostic_rows = _build_diagnostic_review_rows(
         section_output=section_output,
         viewer_context=viewer_context,
@@ -1010,6 +1153,7 @@ def _build_v1_applied_section_set_preview(
             assembly_model=None,
             region_model=region_model,
             structure_model=structure_model,
+            drainage_model=drainage_model,
             viewer_context=viewer_context,
         ),
         "terrain_rows": _build_terrain_review_rows(
@@ -1269,7 +1413,23 @@ def show_v1_section_preview(
     if active_structure_ref and not str(viewer_context.get("active_structure_ref", "") or "").strip():
         viewer_context["active_structure_ref"] = active_structure_ref
         preview["viewer_context"] = viewer_context
+    active_drainage_ref = _applied_section_drainage_ref(preview.get("applied_section", None))
+    if active_drainage_ref and not str(viewer_context.get("active_drainage_ref", "") or "").strip():
+        viewer_context["active_drainage_ref"] = active_drainage_ref
+        preview["viewer_context"] = viewer_context
     source_objects = dict(preview.get("source_objects", {}) or {})
+    station_payload = dict(preview.get("station_row", {}) or {})
+    station_value = station_payload.get("station", None)
+    if station_value is None:
+        station_value = getattr(preview.get("applied_section", None), "station", 0.0)
+    viewer_context = _apply_station_context_to_viewer_context(
+        viewer_context,
+        station=float(station_value or 0.0),
+        region_model=source_objects.get("region_model"),
+        structure_model=source_objects.get("structure_model"),
+        drainage_model=source_objects.get("drainage_model"),
+    )
+    preview["viewer_context"] = viewer_context
     _apply_tin_section_geometry(preview)
     _apply_section_earthwork_area(preview)
     preview["source_inspector"] = _build_source_inspector(
@@ -1281,6 +1441,7 @@ def show_v1_section_preview(
         assembly_model=source_objects.get("assembly_model"),
         region_model=source_objects.get("region_model"),
         structure_model=source_objects.get("structure_model"),
+        drainage_model=source_objects.get("drainage_model"),
         viewer_context=viewer_context,
     )
     preview["terrain_rows"] = _resolve_terrain_review_rows(preview)

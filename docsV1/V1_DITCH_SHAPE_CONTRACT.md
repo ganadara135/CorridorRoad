@@ -1,4 +1,4 @@
-# CorridorRoad V1 Ditch Shape Contract
+# Parametric Road V1 Ditch Shape Contract
 
 Date: 2026-04-28
 Status: Draft contract
@@ -47,7 +47,7 @@ They must not become the durable editing source.
 
 `DrainageModel` may own the broader drainage purpose, collection, discharge, and constraint intent.
 
-`RegionRow.applied_layers` and `RegionRow.drainage_refs` decide where ditch and drainage behavior is active.
+`AssemblyModel` ditch components define reusable ditch geometry. `DrainageElementRow.region_ref` decides where drainage behavior is active.
 
 `AppliedSection` stores station-specific evaluated ditch points.
 

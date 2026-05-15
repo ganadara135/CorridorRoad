@@ -1,4 +1,4 @@
-# CorridorRoad V1 Assembly Slope Bench Plan
+# Parametric Road V1 Assembly Slope Bench Plan
 
 ## 1. Purpose
 
@@ -139,7 +139,7 @@ Recommended Region usage:
 
 - use `assembly_ref = "assembly:bench-cut-road"`
 - keep `structure_ref` and `drainage_refs` separate
-- use `applied_layers` only for context such as `drainage`, `guardrail`, or `widening`
+- keep additional context in explicit source refs or Region policy rows, not in a free-form Layers field
 
 ### 5.3 AppliedSection
 

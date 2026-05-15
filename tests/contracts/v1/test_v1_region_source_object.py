@@ -31,7 +31,6 @@ def _sample_region_model() -> RegionModel:
             RegionRow(
                 region_id="region:normal",
                 region_index=1,
-                primary_kind="normal_road",
                 station_start=0.0,
                 station_end=120.0,
                 assembly_ref="assembly:road",
@@ -41,17 +40,13 @@ def _sample_region_model() -> RegionModel:
             RegionRow(
                 region_id="region:bridge",
                 region_index=2,
-                primary_kind="bridge",
-                applied_layers=["ditch", "drainage"],
                 station_start=120.0,
                 station_end=180.0,
                 assembly_ref="assembly:bridge-deck",
                 template_ref="template:bridge",
-                structure_refs=["structure:bridge-01"],
-                drainage_refs=["drainage:deck-drain-left", "drainage:side-ditch-right"],
                 override_refs=["override:bridge-shoulder"],
                 priority=80,
-                notes="Bridge region with drainage layers.",
+                notes="Bridge region. Structure and Drainage are assigned in their own panels.",
             ),
         ],
     )
@@ -71,11 +66,11 @@ def test_create_or_update_v1_region_model_object_routes_to_regions_tree() -> Non
         assert obj.RegionModelId == "regions:main"
         assert obj.AlignmentId == "alignment:main"
         assert obj.RegionCount == 2
-        assert list(obj.PrimaryKinds) == ["normal_road", "bridge"]
-        assert list(obj.AppliedLayerRows)[1] == "ditch,drainage"
-        assert list(obj.StructureRefs)[1] == "structure:bridge-01"
-        assert list(obj.StructureRefRows)[1] == "structure:bridge-01"
-        assert list(obj.DrainageRefRows)[1] == "drainage:deck-drain-left,drainage:side-ditch-right"
+        assert not hasattr(obj, "PrimaryKinds") or list(getattr(obj, "PrimaryKinds", [])) == []
+        assert not hasattr(obj, "AppliedLayerRows") or list(getattr(obj, "AppliedLayerRows", [])) == []
+        assert not hasattr(obj, "StructureRefs")
+        assert not hasattr(obj, "StructureRefRows")
+        assert not hasattr(obj, "DrainageRefRows")
         assert obj.Name in _group_names(tree[V1_TREE_REGIONS])
     finally:
         App.closeDocument(doc.Name)
@@ -94,12 +89,9 @@ def test_v1_region_model_object_roundtrips_to_region_model() -> None:
 
         assert model is not None
         assert model.region_model_id == "regions:main"
-        assert model.region_rows[1].primary_kind == "bridge"
-        assert model.region_rows[1].applied_layers == ["ditch", "drainage"]
-        assert model.region_rows[1].structure_ref == "structure:bridge-01"
-        assert model.region_rows[1].structure_refs == ["structure:bridge-01"]
-        assert model.region_rows[1].drainage_refs == ["drainage:deck-drain-left", "drainage:side-ditch-right"]
         assert model.region_rows[1].override_refs == ["override:bridge-shoulder"]
+        assert not hasattr(model.region_rows[1], "structure_ref")
+        assert not hasattr(model.region_rows[1], "drainage_refs")
     finally:
         App.closeDocument(doc.Name)
 
@@ -120,8 +112,6 @@ def test_create_or_update_v1_region_model_object_updates_existing_object() -> No
             region_rows=[
                 RegionRow(
                     region_id="region:ramp",
-                    primary_kind="ramp",
-                    applied_layers=["side_ditch"],
                     station_start=180.0,
                     station_end=240.0,
                     assembly_ref="assembly:ramp",

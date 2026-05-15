@@ -1,4 +1,4 @@
-# CorridorRoad V1 Cross Section 2D Viewer Design
+# Parametric Road V1 Cross Section 2D Viewer Design
 
 Date: 2026-04-28
 Status: Draft detail plan
@@ -50,6 +50,7 @@ The v1 viewer must not reuse v0 `SectionSet` as source truth for new behavior.
 The viewer should answer:
 
 - Is this station's cross section correct?
+- Which baseline placed this station frame?
 - Where are EG and FG?
 - Are side slopes and ditches shaped correctly?
 - Are pavement and subgrade layers visible?
@@ -63,6 +64,7 @@ Minimum inputs:
 - `SectionOutput.geometry_rows`
 - `SectionOutput.component_rows`
 - `SectionOutput.quantity_rows`
+- baseline provenance metadata from `SectionOutput.coordinate_context`
 - focused station row
 - source inspector payload
 
@@ -112,6 +114,10 @@ Lower detail tabs:
 - Quantities / Earthwork
 - Diagnostics
 - Source / Handoff
+
+The Source / Handoff tab should identify whether the station frame came from `centerline3d_result` or a persisted `applied_section_frame` snapshot.
+
+If the shared baseline is missing or stale, the handoff target is the `3D Centerline` review stage.
 
 ## 7. Drawing Style
 

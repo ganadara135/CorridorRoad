@@ -27,7 +27,7 @@ def create_corridorroad_project(doc):
     CorridorRoadProject(obj)
     ensure_project_properties(obj)
     ensure_project_tree(obj, include_references=False)
-    obj.Label = "CorridorRoad Project"
+    obj.Label = "Parametric Road Project"
 
     CorridorRoadProject.auto_link(doc, obj)
 

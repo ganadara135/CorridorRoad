@@ -1,4 +1,4 @@
-# CorridorRoad V1 Structure Model
+# Parametric Road V1 Structure Model
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -72,6 +72,13 @@ The architectural distinction is:
 - `OverrideModel` defines narrow explicit exceptions
 - `StructureModel` defines structure presence and interaction context
 
+Active v1 ownership rule:
+
+- `RegionModel` owns station spans and base Assembly only
+- `StructureModel` owns structure identity, placement, geometry, and interaction meaning
+- `StructurePlacement.region_ref` records the owning Region for corridor-affecting structures
+- Region rows should not be edited to attach Structures
+
 Structures should not become:
 
 - hidden template replacements
@@ -114,6 +121,7 @@ Recommended primary object families:
 - `StructureRow`
 - `StructurePlacement`
 - `StructureGeometrySpec`
+- `StructureConnectionPoint`
 - `StructureInteractionRule`
 - `StructureInfluenceZone`
 - `StructureResolutionResult`
@@ -185,6 +193,10 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 
 `geometry_ref` should point to external, imported, or detailed reference geometry.
 
+Drainage-ready Structures should expose explicit connection points before Drainage Pipeline authoring consumes them.
+
+Connection-point planning is governed by `docsV1/V1_STRUCTURE_CONNECTION_NODE_PLAN.md`.
+
 ## 11. StructurePlacement
 
 ### 11.1 Purpose
@@ -197,6 +209,7 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 - `alignment_id`
 - `station_start`
 - `station_end`
+- `region_ref`
 - optional `station_reference`
 - `offset`
 - `elevation_reference`
@@ -206,6 +219,10 @@ Native structure dimensions and kind-specific shape parameters are governed by `
 ### 11.3 Rule
 
 Placement should remain station-aware whenever possible, even if imported geometry also provides absolute coordinates.
+
+For active v1 corridor workflows, `region_ref` is the Structure-to-Region ownership link.
+
+Validate structure placement against the referenced Region boundary before applying source changes.
 
 ## 12. StructureInteractionRule
 

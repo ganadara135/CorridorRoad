@@ -1,4 +1,4 @@
-# CorridorRoad V1 Alignment Model
+# Parametric Road V1 Alignment Model
 
 Date: 2026-04-25
 Branch: `v1-dev`

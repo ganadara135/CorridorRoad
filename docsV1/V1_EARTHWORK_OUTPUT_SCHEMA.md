@@ -1,4 +1,4 @@
-# CorridorRoad V1 Earthwork Output Schema
+# Parametric Road V1 Earthwork Output Schema
 
 Date: 2026-04-23
 Branch: `v1-dev`

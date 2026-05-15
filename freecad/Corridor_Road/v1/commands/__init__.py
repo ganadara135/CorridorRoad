@@ -31,12 +31,19 @@ from .cmd_structure_editor import (
     apply_v1_structure_model,
     run_v1_structure_editor_command,
     show_v1_structure_preview_object,
+    show_v1_structure_connection_points_preview_object,
     starter_structure_model_from_document,
 )
 from .cmd_review_plan_profile import run_v1_plan_profile_preview_command
+from .cmd_centerline3d import (
+    build_document_centerline3d_result,
+    run_v1_centerline3d_command,
+    show_v1_centerline3d_preview_object,
+)
 from .cmd_review_stations import run_v1_stationing_review_command
 from .cmd_review_tin import run_v1_tin_review_command
 from .cmd_edit_tin import apply_tin_editor_operations, run_v1_tin_editor_command
+from .cmd_watertight_solids import run_v1_watertight_solids_command
 
 __all__ = [
     "apply_tin_editor_operations",
@@ -47,12 +54,14 @@ __all__ = [
     "apply_v1_structure_model",
     "build_document_applied_section_set",
     "build_document_corridor_model",
+    "build_document_centerline3d_result",
     "create_v1_sample_alignment",
     "document_has_v1_applied_sections",
     "run_v1_alignment_editor_command",
     "run_v1_applied_sections_command",
     "run_v1_assembly_editor_command",
     "run_v1_build_corridor_command",
+    "run_v1_centerline3d_command",
     "create_v1_sample_profile",
     "generate_v1_stations",
     "run_v1_generate_stations_command",
@@ -61,10 +70,13 @@ __all__ = [
     "run_v1_structure_editor_command",
     "run_v1_structure_output_command",
     "show_v1_structure_preview_object",
+    "show_v1_structure_connection_points_preview_object",
+    "show_v1_centerline3d_preview_object",
     "run_v1_plan_profile_preview_command",
     "run_v1_stationing_review_command",
     "run_v1_tin_editor_command",
     "run_v1_tin_review_command",
+    "run_v1_watertight_solids_command",
     "starter_region_model_from_document",
     "starter_structure_model_from_document",
     "starter_assembly_model_from_document",

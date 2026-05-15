@@ -1,36 +1,39 @@
 <!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
-<!-- SPDX-FileNotice: Part of the Corridor Road addon. -->
+<!-- SPDX-FileNotice: Part of the Parametric Road addon. -->
 
-# CorridorRoad
+# Parametric Road
 
-CorridorRoad is a FreeCAD workbench for corridor-style road design, review, and output preparation.
+Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-## Support CorridorRoad
+## Support Parametric Road
 
-CorridorRoad is developed as an open-source road design workbench for FreeCAD. If this project saves you time, helps your civil design workflow, or you want to support continued v1 development, please consider sponsoring the project:
+Parametric Road is developed as an open-source road design workbench for FreeCAD. If this project saves you time, helps your civil design workflow, or you want to support continued v1 development, please consider sponsoring the project:
 
-[Sponsor CorridorRoad on GitHub](https://github.com/sponsors/ganadara135)
+[Sponsor on GitHub](https://github.com/sponsors/ganadara135)
+[Sponsor on Patreon](https://patreon.com/kcod)
+[Sponsor on Ko-fi](https://ko-fi.com/ganadara135)
 
 Sponsorship helps fund focused work on the v1 workflow, documentation, testing, and practical road-design features that are difficult to sustain through spare-time development alone.
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current release direction is CorridorRoad `1.0.0`, the first v1 workflow release. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current release direction is Parametric Road `1.0.0`, the first v1 workflow release. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 ## What This Project Does
 
-CorridorRoad v1 provides a staged road corridor workflow:
+Parametric Road v1 provides a staged road corridor workflow:
 
 1. Prepare project and TIN terrain data.
 2. Edit Alignment.
 3. Generate Stations.
 4. Edit Profile.
-5. Define Assembly, Structures, and Regions.
-6. Prepare Drainage references where applicable.
-7. Generate Applied Sections.
-8. Build Corridor preview surfaces.
-9. Review Cross Sections, Plan/Profile, and Earthwork.
-10. Prepare structure output and exchange handoff data where available.
+5. Review Plan/Profile and generate the shared 3D Centerline.
+6. Define Assembly and Regions.
+7. Add Structures and Drainage source rows.
+8. Generate Applied Sections.
+9. Build Corridor preview surfaces.
+10. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
+11. Prepare Watertight Solids, structure output, and exchange handoff data where available.
 
 The workbench is built around a v1 source -> evaluation -> result -> output -> presentation structure.
 
@@ -80,24 +83,25 @@ Important v1 references:
 - `Alignment`
 - `Stations`
 - `Profile`
+- `Review Plan/Profile`
+- `3D Centerline`
 - `Assembly`
-- `Structures`
 - `Region`
+- `Structures`
 - `Drainage`
+- `Drainage Review`
 - `Applied Sections`
 - `Build Corridor`
 - `Cross Section Viewer`
-- `Plan/Profile Connection Review`
 - `Earthwork Viewer`
 - `Structure Output`
 - `Outputs & Exchange`
 - `AI Assist`
+- `Watertight Solids`
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile -> Assembly/Structures/Region -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs`
-
-Drainage currently has a toolbar/menu entry and planning document. The full Drainage Editor is still under development.
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 ## Current V1 Areas
 
@@ -106,29 +110,33 @@ Drainage currently has a toolbar/menu entry and planning document. The full Drai
 - Alignment editing
 - Station generation
 - Profile editing with PVI rows, CSV support, and auto interpolation
+- shared 3D Centerline review for downstream station/offset/elevation context
 - Assembly editor with ditch, side slope, bench, and preset support
 - Structure editor for bridge, culvert, retaining wall, and related source intent
-- Region editor with assembly, structure, and drainage references
+- Structure connection points, native inlet/outlet/culvert preview details, and Structure Output packages
+- Region editor with continuous station spans and Assembly assignment
+- Drainage editor with Elements, Policies, Flow Routes, Structure refs, and Flow Network preview
+- Drainage Review for source rows, pipeline candidates, pipeline segments, networks, and junctions
 - Applied Sections result generation
 - Build Corridor preview surfaces and diagnostics
 - Cross Section Viewer
 - Plan/Profile Connection Review
 - Earthwork Viewer and v1-native earthwork report path
-- Structure Output packages and export-readiness diagnostics
 - Outputs & Exchange entry point
 - AI Assist entry point
+- Watertight Solids final-stage panel for selected road, component, drainage, and structure solid targets
 
 ## In Progress
 
-- Drainage editing is planned but not complete in `1.0.0`.
-- Drainage currently appears through Assembly ditch shapes, Applied Section `ditch_surface` rows, Build Corridor drainage diagnostics, and the planned `DrainageModel` workflow.
-- Advanced hydraulic analysis, automatic pipe sizing, complete drawing-sheet production, and full exchange output coverage are outside the current release scope.
+- Advanced hydraulic analysis and automatic pipe sizing are future work.
+- Complete drawing-sheet production and full exchange output coverage remain incremental.
+- Watertight Solid composition is evolving from independent validated targets toward simulation-ready packages.
 
 ## Install And Run
 
 1. Place this folder under your FreeCAD `Mod` directory.
 2. Restart FreeCAD.
-3. Select the `CorridorRoad` workbench.
+3. Select the `Parametric Road` workbench.
 
 Recommended FreeCAD version:
 
@@ -180,16 +188,16 @@ Testing guidance:
 - https://youtu.be/P0kiPREy2qE
 
 ## Screenshots
-![CorridorRoad screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
-![CorridorRoad screenshot 02](https://github.com/user-attachments/assets/da25c711-88a1-4101-acd5-1353fba72ea4)
-![CorridorRoad screenshot 03](https://github.com/user-attachments/assets/e243fb11-cb56-49db-bb64-dbd0af535c8d)
-![CorridorRoad screenshot 04](https://github.com/user-attachments/assets/5638bace-9e6a-4c35-9524-6c66f2f2d36d)
-![CorridorRoad screenshot 05](https://github.com/user-attachments/assets/4f3bf538-04e1-47c2-a3e6-a2139192a48a)
-![CorridorRoad screenshot 06](https://github.com/user-attachments/assets/a6735b8f-b71e-4085-92ef-a06bc5931c7d)
-![CorridorRoad screenshot 07](https://github.com/user-attachments/assets/22571089-b91b-438f-8e32-ede0a823812b)
-![CorridorRoad screenshot 08](https://github.com/user-attachments/assets/999d9e0c-54ee-4fd1-9b63-c287724899ba)
-![CorridorRoad screenshot 09](https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c)
-![CorridorRoad screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
-![CorridorRoad screenshot 11](https://github.com/user-attachments/assets/71d0cb7d-50e9-4c66-be81-727b0e0840b6)
-![CorridorRoad screenshot 12](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)
-![CorridorRoad screenshot 13](https://github.com/user-attachments/assets/64e20bd5-941a-4a09-9efa-4d16e808cd84)
+![Parametric Road screenshot 01](https://github.com/user-attachments/assets/8afd06ad-2e84-46fe-b8a7-0ca4490f2902)
+![Parametric Road screenshot 02](https://github.com/user-attachments/assets/da25c711-88a1-4101-acd5-1353fba72ea4)
+![Parametric Road screenshot 03](https://github.com/user-attachments/assets/e243fb11-cb56-49db-bb64-dbd0af535c8d)
+![Parametric Road screenshot 04](https://github.com/user-attachments/assets/5638bace-9e6a-4c35-9524-6c66f2f2d36d)
+![Parametric Road screenshot 05](https://github.com/user-attachments/assets/4f3bf538-04e1-47c2-a3e6-a2139192a48a)
+![Parametric Road screenshot 06](https://github.com/user-attachments/assets/a6735b8f-b71e-4085-92ef-a06bc5931c7d)
+![Parametric Road screenshot 07](https://github.com/user-attachments/assets/22571089-b91b-438f-8e32-ede0a823812b)
+![Parametric Road screenshot 08](https://github.com/user-attachments/assets/999d9e0c-54ee-4fd1-9b63-c287724899ba)
+![Parametric Road screenshot 09](https://github.com/user-attachments/assets/88beb6f7-ce66-41e5-bd5d-db4112e6b95c)
+![Parametric Road screenshot 10](https://github.com/user-attachments/assets/32d4e2ab-c05e-438d-ad8d-a4705bb12825)
+![Parametric Road screenshot 11](https://github.com/user-attachments/assets/71d0cb7d-50e9-4c66-be81-727b0e0840b6)
+![Parametric Road screenshot 12](https://github.com/user-attachments/assets/9712cf4d-1d3a-4443-b393-257c5837e93f)
+![Parametric Road screenshot 13](https://github.com/user-attachments/assets/64e20bd5-941a-4a09-9efa-4d16e808cd84)

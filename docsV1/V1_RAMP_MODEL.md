@@ -1,4 +1,4 @@
-# CorridorRoad V1 Ramp Model
+# Parametric Road V1 Ramp Model
 
 Date: 2026-04-24
 Branch: `v1-dev`

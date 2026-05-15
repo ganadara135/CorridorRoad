@@ -1,4 +1,4 @@
-# CorridorRoad V1 Output Strategy
+# Parametric Road V1 Output Strategy
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -12,7 +12,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines how CorridorRoad v1 should approach deliverables and output artifacts.
+This document defines how Parametric Road v1 should approach deliverables and output artifacts.
 
 The goal is to avoid scattered, tool-specific export behavior and instead build a stable output system derived from the v1 source-of-truth model.
 
@@ -257,10 +257,17 @@ Primary sources:
 
 Derived result sources:
 
+- `Centerline3DResult`
 - `AppliedSection`
 - `AppliedSectionSet`
 - corridor surface results
 - quantity summaries
+
+`Centerline3DResult` is the shared generated baseline for downstream station/offset/elevation frame lookup.
+
+`AppliedSection.frame` is a derived placement snapshot created from that baseline for one station.
+
+Outputs may record `centerline3d_result` or `applied_section_frame` as provenance, but they should not treat Applied Sections as a second baseline generator.
 
 ## 7. Output Contracts
 

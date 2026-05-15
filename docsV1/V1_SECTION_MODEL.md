@@ -1,4 +1,4 @@
-# CorridorRoad V1 Section Model
+# Parametric Road V1 Section Model
 
 Date: 2026-04-25
 Branch: `v1-dev`
@@ -26,7 +26,7 @@ It is the authoritative reference for:
 
 ## 2. Why the Section Model Matters
 
-The section system is one of the central domains of CorridorRoad v1.
+The section system is one of the central domains of Parametric Road v1.
 
 It sits at the boundary between:
 

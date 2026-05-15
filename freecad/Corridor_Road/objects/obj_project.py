@@ -55,6 +55,7 @@ V1_TREE_ALIGNMENTS = "v1_alignments"
 V1_TREE_PROFILES = "v1_profiles"
 V1_TREE_STATIONS = "v1_stations"
 V1_TREE_SUPERELEVATION = "v1_superelevation"
+V1_TREE_CENTERLINE3D = "v1_centerline3d"
 V1_TREE_EXISTING_GROUND_TIN = "v1_existing_ground_tin"
 V1_TREE_EXISTING_GROUND_TIN_SOURCE = "v1_existing_ground_tin_source"
 V1_TREE_EXISTING_GROUND_TIN_RESULT = "v1_existing_ground_tin_result"
@@ -68,10 +69,6 @@ V1_TREE_APPLIED_SECTIONS = "v1_applied_sections"
 V1_TREE_RAMPS = "v1_ramps"
 V1_TREE_INTERSECTIONS = "v1_intersections"
 V1_TREE_OVERRIDES = "v1_overrides"
-V1_TREE_DITCHES = "v1_ditches"
-V1_TREE_CULVERTS = "v1_culverts"
-V1_TREE_INLETS = "v1_inlets"
-V1_TREE_FLOW_PATHS = "v1_flow_paths"
 V1_TREE_DRAINAGE_DIAGNOSTICS = "v1_drainage_diagnostics"
 V1_TREE_RETAINING_WALLS = "v1_retaining_walls"
 V1_TREE_BRIDGES = "v1_bridges"
@@ -92,6 +89,7 @@ V1_TREE_DXF = "v1_dxf"
 V1_TREE_LANDXML = "v1_landxml"
 V1_TREE_IFC = "v1_ifc"
 V1_TREE_EXCHANGE_PACKAGES = "v1_exchange_packages"
+V1_TREE_WATERTIGHT_SOLIDS = "v1_watertight_solids"
 V1_TREE_AI_SUGGESTIONS = "v1_ai_suggestions"
 V1_TREE_AI_CHECKS = "v1_ai_checks"
 V1_TREE_AI_GENERATED_ALTERNATIVES = "v1_ai_generated_alternatives"
@@ -139,6 +137,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_STATIONS, "Stations", "CRV1_Stations"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_PROFILES, "Profiles", "CRV1_Profiles"),
     (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_SUPERELEVATION, "Superelevation", "CRV1_Superelevation"),
+    (V1_TREE_ALIGNMENT_PROFILE, V1_TREE_CENTERLINE3D, "3D Centerline", "CRV1_3D_Centerline"),
     (V1_TREE_SURFACES, V1_TREE_EXISTING_GROUND_TIN, "Existing Ground TIN", "CRV1_Existing_Ground_TIN"),
     (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_SOURCE, "Source", "CRV1_EG_TIN_Source"),
     (V1_TREE_EXISTING_GROUND_TIN, V1_TREE_EXISTING_GROUND_TIN_RESULT, "TIN Result", "CRV1_EG_TIN_Result"),
@@ -152,10 +151,6 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_RAMPS, "Ramps", "CRV1_Ramps"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_INTERSECTIONS, "Intersections", "CRV1_Intersections"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_OVERRIDES, "Overrides", "CRV1_Overrides"),
-    (V1_TREE_DRAINAGE, V1_TREE_DITCHES, "Ditches", "CRV1_Ditches"),
-    (V1_TREE_DRAINAGE, V1_TREE_CULVERTS, "Culverts", "CRV1_Culverts"),
-    (V1_TREE_DRAINAGE, V1_TREE_INLETS, "Inlets", "CRV1_Inlets"),
-    (V1_TREE_DRAINAGE, V1_TREE_FLOW_PATHS, "Flow Paths", "CRV1_Flow_Paths"),
     (V1_TREE_DRAINAGE, V1_TREE_DRAINAGE_DIAGNOSTICS, "Drainage Diagnostics", "CRV1_Drainage_Diagnostics"),
     (V1_TREE_STRUCTURES, V1_TREE_RETAINING_WALLS, "Retaining Walls", "CRV1_Retaining_Walls"),
     (V1_TREE_STRUCTURES, V1_TREE_BRIDGES, "Bridges", "CRV1_Bridges"),
@@ -176,6 +171,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_LANDXML, "LandXML", "CRV1_LandXML"),
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_IFC, "IFC", "CRV1_IFC"),
     (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_EXCHANGE_PACKAGES, "Exchange Packages", "CRV1_Exchange_Packages"),
+    (V1_TREE_OUTPUTS_EXCHANGE, V1_TREE_WATERTIGHT_SOLIDS, "Watertight Solids", "CRV1_Watertight_Solids"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_SUGGESTIONS, "Suggestions", "CRV1_AI_Suggestions"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_CHECKS, "Checks", "CRV1_AI_Checks"),
     (V1_TREE_AI_ASSIST, V1_TREE_AI_GENERATED_ALTERNATIVES, "Generated Alternatives", "CRV1_AI_Generated_Alternatives"),
@@ -1209,6 +1205,8 @@ def _is_v1_review(child):
             "PlanProfileReview",
             "SectionReview",
             "TINReview",
+            "V1Centerline3DReview",
+            "Centerline3DReview",
             "ReviewIssue",
             "ReviewBookmark",
             "Issue",
@@ -1218,6 +1216,8 @@ def _is_v1_review(child):
             "PlanProfileReview",
             "SectionReview",
             "TINReview",
+            "V1Centerline3DPreview",
+            "Centerline3DReview",
             "ReviewIssue",
             "ReviewBookmark",
             "Issue",
@@ -1236,6 +1236,8 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1SimulationPackageOutput",
+            "V1WatertightSolidOutput",
         ),
         name_prefixes=(
             "SheetOutput",
@@ -1244,6 +1246,8 @@ def _is_v1_output_exchange(child):
             "LandXMLExport",
             "IFCExport",
             "ExchangePackage",
+            "V1SimulationPackageOutput",
+            "V1WatertightSolidOutput",
         ),
     )
 
@@ -1288,12 +1292,38 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_REGIONS, None)
     if record_kind == "v1_corridor_centerline_preview":
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
+        return tree.get(V1_TREE_CENTERLINE3D, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
-    if record_kind == "v1_applied_section_show_preview":
+    if record_kind == "v1_structure_row_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
+    if record_kind == "v1_structure_connection_point_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
+    if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
+    if record_kind == "v1_watertight_solid_output":
+        return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
+    if record_kind == "v1_simulation_qa_output":
+        return tree.get(V1_TREE_REPORTS, None)
+    if record_kind == "v1_simulation_package_output":
+        return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+    if record_kind == "v1_drainage_model":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_candidate_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_segment_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_network_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_networks_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_drainage_pipeline_segment_output_preview":
+        return tree.get(V1_TREE_DRAINAGE, None)
+    if record_kind == "v1_structure_pipe_connection_point_preview":
+        return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "tin_mesh_preview":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_MESH_PREVIEW, None)
     if record_kind == "tin_diagnostics":
@@ -1319,14 +1349,6 @@ def resolve_v1_target_container(prj, child):
     if _is_v1_intersection(child):
         return tree.get(V1_TREE_INTERSECTIONS, None)
     if _is_v1_drainage(child):
-        if _is_type(child, proxy_types=("DitchModel", "Ditch"), name_prefixes=("DitchModel", "Ditch")):
-            return tree.get(V1_TREE_DITCHES, None)
-        if _is_type(child, proxy_types=("CulvertModel", "Culvert"), name_prefixes=("CulvertModel", "Culvert")):
-            return tree.get(V1_TREE_CULVERTS, None)
-        if _is_type(child, proxy_types=("InletModel", "Inlet"), name_prefixes=("InletModel", "Inlet")):
-            return tree.get(V1_TREE_INLETS, None)
-        if _is_type(child, proxy_types=("FlowPathModel", "FlowPath"), name_prefixes=("FlowPathModel", "FlowPath")):
-            return tree.get(V1_TREE_FLOW_PATHS, None)
         return tree.get(V1_TREE_DRAINAGE, None)
     if _is_type(
         child,
@@ -1365,6 +1387,8 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_SECTION_REVIEW, None)
         if _is_type(child, proxy_types=("TINReview",), name_prefixes=("TINReview",)):
             return tree.get(V1_TREE_TIN_REVIEW, None)
+        if _is_type(child, proxy_types=("V1Centerline3DReview", "Centerline3DReview"), name_prefixes=("V1Centerline3DPreview", "Centerline3DReview")):
+            return tree.get(V1_TREE_CENTERLINE3D, None)
         if _is_type(child, proxy_types=("ReviewIssue", "Issue"), name_prefixes=("ReviewIssue", "Issue")):
             return tree.get(V1_TREE_ISSUES, None)
         if _is_type(child, proxy_types=("ReviewBookmark", "Bookmark"), name_prefixes=("ReviewBookmark", "Bookmark")):
@@ -1383,6 +1407,10 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_IFC, None)
         if _is_type(child, proxy_types=("ExchangePackage",), name_prefixes=("ExchangePackage",)):
             return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+        if _is_type(child, proxy_types=("V1SimulationPackageOutput",), name_prefixes=("V1SimulationPackageOutput",)):
+            return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+        if _is_type(child, proxy_types=("V1WatertightSolidOutput",), name_prefixes=("V1WatertightSolidOutput",)):
+            return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
         return tree.get(V1_TREE_OUTPUTS_EXCHANGE, None)
     if _is_v1_ai_assist(child):
         if _is_type(child, proxy_types=("AISuggestion",), name_prefixes=("AISuggestion",)):

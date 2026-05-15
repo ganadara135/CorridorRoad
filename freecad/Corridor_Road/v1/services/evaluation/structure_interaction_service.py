@@ -26,10 +26,18 @@ class StructureInteractionService:
         station: float,
         *,
         active_structure_ref: str = "",
+        active_region_ref: str = "",
     ) -> StructureResolutionResult:
         """Resolve active structures, rules, and influence zones at a station."""
 
         active_structures = self._active_structures(structure_model.structure_rows, station)
+        active_region_ref = str(active_region_ref or "").strip()
+        if active_region_ref:
+            active_structures = [
+                row
+                for row in active_structures
+                if str(getattr(getattr(row, "placement", None), "region_ref", "") or "") == active_region_ref
+            ]
         active_structure_ref = str(active_structure_ref or "").strip()
         if active_structure_ref:
             active_structures = [

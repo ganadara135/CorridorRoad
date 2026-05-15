@@ -17,6 +17,9 @@ class AppliedSectionPoint:
     z: float
     point_role: str = "section_point"
     lateral_offset: float = 0.0
+    component_ref: str = ""
+    side: str = ""
+    drainage_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,8 @@ class AppliedSectionComponentRow:
     material: str = ""
     override_ids: list[str] = field(default_factory=list)
     structure_ids: list[str] = field(default_factory=list)
+    drainage_refs: list[str] = field(default_factory=list)
+    parameters: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

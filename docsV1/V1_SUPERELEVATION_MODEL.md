@@ -1,4 +1,4 @@
-# CorridorRoad V1 Superelevation Model
+# Parametric Road V1 Superelevation Model
 
 Date: 2026-04-23
 Branch: `v1-dev`

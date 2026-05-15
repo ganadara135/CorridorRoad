@@ -18,12 +18,14 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     show_applied_section_preview_object,
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_model_from_document
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     build_v1_applied_section_set_review_shape,
     find_v1_applied_section_set,
 )
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
@@ -144,10 +146,8 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         region_model.region_rows[0] = type(first)(
             region_id=first.region_id,
             region_index=first.region_index,
-            primary_kind=first.primary_kind,
             station_start=first.station_start,
             station_end=first.station_end,
-            applied_layers=["ditch", "drainage"],
             assembly_ref="assembly:drainage-ditch-road",
             template_ref="template:drainage-ditch-road",
             priority=first.priority,
@@ -167,6 +167,65 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         )
         assert any(role == "left_ditch_points" for role, _points in polylines)
         assert any(role == "right_ditch_points" for role, _points in polylines)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_document_applied_sections_resolves_drainage_from_drainage_model_region_refs() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
+        assembly_model = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        first = region_model.region_rows[0]
+        region_model.region_rows[0] = type(first)(
+            region_id=first.region_id,
+            region_index=first.region_index,
+            station_start=first.station_start,
+            station_end=first.station_end,
+            assembly_ref="assembly:drainage-ditch-road",
+            template_ref="template:drainage-ditch-road",
+            priority=first.priority,
+        )
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        "drainage:plain-left",
+                        "ditch",
+                        side="left",
+                        region_ref=first.region_id,
+                        station_start=0.0,
+                        station_end=240.0,
+                    ),
+                    DrainageElementRow(
+                        "drainage:plain-right",
+                        "ditch",
+                        side="right",
+                        region_ref=first.region_id,
+                        station_start=0.0,
+                        station_end=240.0,
+                    ),
+                ],
+            ),
+        )
+
+        result = build_document_applied_section_set(doc, project=project)
+
+        ditch_components = [row for row in result.sections[0].component_rows if row.kind == "ditch"]
+        ditch_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_surface"]
+        assert [row.drainage_refs for row in ditch_components] == [["drainage:plain-left"], ["drainage:plain-right"]]
+        assert {row.drainage_ref for row in ditch_points} == {"drainage:plain-left", "drainage:plain-right"}
+        assert "drainage:main" in result.source_refs
     finally:
         App.closeDocument(doc.Name)
 
@@ -197,7 +256,6 @@ def test_build_document_applied_section_set_uses_region_specific_assembly_object
         region_model.region_rows[0] = type(region_model.region_rows[0])(
             region_id="region:bridge-all",
             region_index=1,
-            primary_kind="bridge",
             station_start=0.0,
             station_end=100000.0,
             assembly_ref="assembly:bridge-interface",
@@ -284,6 +342,72 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         assert panel._progress.value() == 100
         assert panel._progress.format() == "Applied Sections complete"
         assert "Fast Evaluation" not in panel._summary.toPlainText()
+        assert panel._review_table.item(0, 5).text() == "basic-road"
+        assert panel._review_table.item(0, 6).text() == "basic-road"
+    finally:
+        applied_sections_command._show_message = original_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_applied_sections_validate_allows_drainage_element_without_region() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = applied_sections_command._show_message
+    applied_sections_command._show_message = lambda *_args, **_kwargs: None
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:side-ditch-right",
+                        element_kind="ditch",
+                        station_start=0.0,
+                        station_end=90.0,
+                    )
+                ],
+            ),
+        )
+
+        panel = V1AppliedSectionsTaskPanel(document=doc)
+
+        assert panel._validate(show_message=False) is True
+        assert "drainage_element_missing_region_ref" not in panel._summary.toPlainText()
+        assert panel._apply(close_after=False) is True
+        assert find_v1_applied_section_set(doc) is not None
+    finally:
+        applied_sections_command._show_message = original_show_message
+        App.closeDocument(doc.Name)
+
+
+def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    original_show_message = applied_sections_command._show_message
+    applied_sections_command._show_message = lambda *_args, **_kwargs: None
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+
+        panel = V1AppliedSectionsTaskPanel(document=doc)
+
+        assert panel._validate(show_message=False) is False
+        assert "missing_required_sources: Profile" in panel._summary.toPlainText()
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)
@@ -303,10 +427,16 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         result = build_document_applied_section_set(doc, project=project)
 
         obj = show_applied_section_preview_object(doc, result, 0)
+        marker = doc.getObject("V1AppliedSectionStationMarker")
 
         assert obj is not None
+        assert marker is not None
         assert obj.CRRecordKind == "v1_applied_section_show_preview"
         assert obj.V1ObjectType == "V1AppliedSectionShowPreview"
+        assert marker.CRRecordKind == "v1_applied_section_station_marker"
+        assert marker.V1ObjectType == "V1AppliedSectionStationMarker"
+        assert marker.Station == obj.Station
+        assert marker.Shape.BoundBox.XLength > 0.0
         assert obj.RegionId == "region:normal-01"
         assert obj.AssemblyId == "assembly:basic-road"
         assert obj.TemplateId == "template:basic-road"
@@ -314,6 +444,7 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         assert int(obj.PreviewPointCount) >= 4
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
+        assert marker.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)
 

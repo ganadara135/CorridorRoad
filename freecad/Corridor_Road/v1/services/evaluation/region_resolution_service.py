@@ -5,16 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...models.source.region_model import (
-    REGION_PRIMARY_KINDS,
     RegionDiagnosticRow,
     RegionModel,
     RegionRow,
-    normalize_region_primary_kind,
 )
 from ...models.result.region_context import RegionContextSummary
-
-
-STRUCTURE_REQUIRED_PRIMARY_KINDS = {"bridge", "culvert", "structure_influence"}
 
 
 @dataclass(frozen=True)
@@ -31,16 +26,11 @@ class RegionResolutionResult:
 
     station: float
     active_region_id: str = ""
-    active_primary_kind: str = ""
-    active_applied_layers: list[str] = field(default_factory=list)
     active_policy_set_id: str = ""
     active_template_ref: str = ""
     active_assembly_ref: str = ""
     active_superelevation_ref: str = ""
     active_transition_ref: str = ""
-    resolved_structure_ref: str = ""
-    resolved_structure_refs: list[str] = field(default_factory=list)
-    resolved_drainage_refs: list[str] = field(default_factory=list)
     resolved_ramp_ref: str = ""
     resolved_intersection_ref: str = ""
     overlap_region_ids: list[str] = field(default_factory=list)
@@ -56,12 +46,10 @@ class RegionValidationService:
         region_model: RegionModel,
         *,
         known_assembly_refs: list[str] | None = None,
-        known_structure_refs: list[str] | None = None,
     ) -> RegionValidationResult:
         diagnostics: list[RegionDiagnosticRow] = []
         rows = list(getattr(region_model, "region_rows", []) or [])
         known_assembly_ref_set = _known_ref_set(known_assembly_refs)
-        known_structure_ref_set = _known_ref_set(known_structure_refs)
         seen_ids: set[str] = set()
         for index, row in enumerate(rows, start=1):
             region_id = str(getattr(row, "region_id", "") or "").strip()
@@ -88,11 +76,6 @@ class RegionValidationService:
                     )
                 )
 
-            primary_kind = normalize_region_primary_kind(str(getattr(row, "primary_kind", "") or getattr(row, "region_kind", "")))
-            if primary_kind not in REGION_PRIMARY_KINDS:
-                diagnostics.append(
-                    _diagnostic("warning", "unsupported_primary_kind", source_ref, f"Unsupported primary kind: {primary_kind}.")
-                )
             if not str(getattr(row, "assembly_ref", "") or "").strip() and not str(getattr(row, "template_ref", "") or "").strip():
                 diagnostics.append(
                     _diagnostic(
@@ -116,36 +99,6 @@ class RegionValidationService:
                 int(getattr(row, "priority", 0) or 0)
             except Exception:
                 diagnostics.append(_diagnostic("error", "invalid_priority", source_ref, "Region priority must be numeric."))
-            structure_refs = list(getattr(row, "structure_refs", []) or [])
-            if len(structure_refs) > 1:
-                diagnostics.append(
-                    _diagnostic(
-                        "warning",
-                        "multiple_structure_refs",
-                        source_ref,
-                        "Region should reference at most one active Structure; split the range into separate Region rows.",
-                    )
-                )
-            structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
-            if _primary_kind_requires_structure(primary_kind) and not structure_ref:
-                diagnostics.append(
-                    _diagnostic(
-                        "warning",
-                        "missing_required_structure_ref",
-                        source_ref,
-                        f"Region primary_kind {primary_kind} requires a structure_ref.",
-                    )
-                )
-            if known_structure_ref_set is not None and structure_ref and structure_ref not in known_structure_ref_set:
-                diagnostics.append(
-                    _diagnostic(
-                        "warning",
-                        "missing_structure_ref",
-                        source_ref,
-                        f"Region references missing structure_ref {structure_ref}.",
-                    )
-                )
-
         diagnostics.extend(_overlap_diagnostics(rows))
         status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
         return RegionValidationResult(status=status, diagnostic_rows=diagnostics)
@@ -162,14 +115,12 @@ class RegionResolutionService:
         region_model: RegionModel,
         *,
         known_assembly_refs: list[str] | None = None,
-        known_structure_refs: list[str] | None = None,
     ) -> RegionValidationResult:
         """Validate a RegionModel using the shared validation service."""
 
         return self.validation_service.validate(
             region_model,
             known_assembly_refs=known_assembly_refs,
-            known_structure_refs=known_structure_refs,
         )
 
     def resolve_station(
@@ -215,15 +166,10 @@ class RegionResolutionService:
         return RegionResolutionResult(
             station=station_value,
             active_region_id=active.region_id,
-            active_primary_kind=active.primary_kind,
-            active_applied_layers=list(active.applied_layers or []),
             active_policy_set_id=active.policy_set_ref,
             active_template_ref=active.template_ref,
             active_assembly_ref=active.assembly_ref,
             active_superelevation_ref=active.superelevation_ref,
-            resolved_structure_ref=str(getattr(active, "structure_ref", "") or ""),
-            resolved_structure_refs=list(active.structure_refs or []),
-            resolved_drainage_refs=list(active.drainage_refs or []),
             resolved_ramp_ref=active.ramp_ref,
             resolved_intersection_ref=active.intersection_ref,
             overlap_region_ids=overlap_ids,
@@ -274,15 +220,10 @@ class RegionResolutionService:
         return RegionContextSummary(
             station=result.station,
             region_id=result.active_region_id,
-            primary_kind=result.active_primary_kind,
-            applied_layers=list(result.active_applied_layers or []),
             assembly_ref=result.active_assembly_ref,
             template_ref=result.active_template_ref,
             policy_set_ref=result.active_policy_set_id,
             superelevation_ref=result.active_superelevation_ref,
-            structure_ref=result.resolved_structure_ref,
-            structure_refs=list(result.resolved_structure_refs or []),
-            drainage_refs=list(result.resolved_drainage_refs or []),
             ramp_ref=result.resolved_ramp_ref,
             intersection_ref=result.resolved_intersection_ref,
             override_refs=override_refs,
@@ -359,10 +300,6 @@ def _known_ref_set(values: list[str] | None) -> set[str] | None:
     if values is None:
         return None
     return {str(value).strip() for value in list(values or []) if str(value).strip()}
-
-
-def _primary_kind_requires_structure(primary_kind: str) -> bool:
-    return str(primary_kind or "").strip() in STRUCTURE_REQUIRED_PRIMARY_KINDS
 
 
 def _diagnostic(severity: str, kind: str, source_ref: str, message: str, notes: str = "") -> RegionDiagnosticRow:

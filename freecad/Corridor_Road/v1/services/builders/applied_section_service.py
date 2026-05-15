@@ -13,6 +13,7 @@ from ...models.result.applied_section import (
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...models.result.tin_surface import TINSurface
+from ...models.result.centerline3d import Centerline3DResult
 from ...common.diagnostics import DiagnosticMessage
 from ...models.source.alignment_model import AlignmentModel
 from ...models.source.assembly_model import (
@@ -21,12 +22,17 @@ from ...models.source.assembly_model import (
     assembly_bench_validation_messages,
     normalize_bench_rows,
 )
+from ...models.source.drainage_model import DrainageModel
 from ...models.source.override_model import OverrideModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
 from ...services.evaluation.alignment_evaluation_service import (
     AlignmentEvaluationService,
+)
+from ...services.evaluation.centerline3d_frame_service import (
+    Centerline3DFrame,
+    Centerline3DFrameService,
 )
 from ...services.evaluation.override_resolution_service import (
     OverrideResolutionService,
@@ -40,6 +46,7 @@ from ...services.evaluation.region_resolution_service import (
 from ...services.evaluation.structure_interaction_service import (
     StructureInteractionService,
 )
+from ...services.evaluation.station_context_resolver import StationContextResolver
 from ...services.evaluation.tin_sampling_service import TinSamplingService
 
 
@@ -58,7 +65,9 @@ class AppliedSectionBuildRequest:
     applied_section_id: str
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
+    drainage_model: DrainageModel | None = None
     existing_ground_surface: TINSurface | None = None
+    centerline3d_result: Centerline3DResult | None = None
 
 
 @dataclass(frozen=True)
@@ -76,7 +85,9 @@ class AppliedSectionSetBuildRequest:
     applied_section_set_id: str
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
+    drainage_model: DrainageModel | None = None
     existing_ground_surface: TINSurface | None = None
+    centerline3d_result: Centerline3DResult | None = None
 
 
 @dataclass(frozen=True)
@@ -101,14 +112,21 @@ class AppliedSectionService:
         region_service: RegionResolutionService | None = None,
         override_service: OverrideResolutionService | None = None,
         structure_service: StructureInteractionService | None = None,
+        station_context_resolver: StationContextResolver | None = None,
         tin_sampling_service: TinSamplingService | None = None,
+        centerline_frame_service: Centerline3DFrameService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
         self.region_service = region_service or RegionResolutionService()
         self.override_service = override_service or OverrideResolutionService()
         self.structure_service = structure_service or StructureInteractionService()
+        self.station_context_resolver = station_context_resolver or StationContextResolver(
+            region_service=self.region_service,
+            structure_service=self.structure_service,
+        )
         self.tin_sampling_service = tin_sampling_service or TinSamplingService()
+        self.centerline_frame_service = centerline_frame_service or Centerline3DFrameService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -121,10 +139,13 @@ class AppliedSectionService:
             request.profile,
             request.station,
         )
-        region_context = self.region_service.resolve_handoff(
-            request.region_model,
-            request.station,
+        station_context = self.station_context_resolver.resolve(
+            region_model=request.region_model,
+            station=request.station,
+            structure_model=request.structure_model,
+            drainage_model=request.drainage_model,
         )
+        region_context = station_context.region_context
         assembly = self._resolve_assembly_model(
             request.assembly,
             request.assembly_models,
@@ -135,11 +156,9 @@ class AppliedSectionService:
             request.station,
             region_id=region_context.region_id,
         )
-        structure_result = self.structure_service.resolve_station(
-            request.structure_model,
-            request.station,
-            active_structure_ref=region_context.structure_ref,
-        ) if request.structure_model is not None else None
+        structure_result = station_context.structure_result
+        active_drainage_refs = list(station_context.active_drainage_refs or [])
+        active_drainage_refs_by_side = dict(station_context.active_drainage_refs_by_side or {})
 
         template_id = self._resolve_template_id(
             assembly,
@@ -157,10 +176,12 @@ class AppliedSectionService:
             template=template,
         )
 
+        centerline_frame = self.centerline_frame_service.resolve_station(request.centerline3d_result, request.station)
         frame = self._build_frame(
             station=request.station,
             alignment_result=alignment_result,
             profile_result=profile_result,
+            centerline_frame=centerline_frame,
         )
         active_structure_ids = list(getattr(structure_result, "active_structure_ids", []) or []) if structure_result is not None else []
         active_rule_ids = list(getattr(structure_result, "active_rule_ids", []) or []) if structure_result is not None else []
@@ -190,13 +211,12 @@ class AppliedSectionService:
             region_id=region_context.region_id,
             override_ids=override_result.active_override_ids,
             structure_ids=_unique_refs(
-                _region_structure_refs(region_context)
-                + (
-                    structure_result.active_structure_ids
-                    if structure_result is not None
-                    else []
-                )
+                structure_result.active_structure_ids
+                if structure_result is not None
+                else []
             ),
+            drainage_refs=active_drainage_refs,
+            drainage_refs_by_side=active_drainage_refs_by_side,
             bench_evaluations=bench_evaluations,
         )
         point_rows = self._build_point_rows(
@@ -206,6 +226,8 @@ class AppliedSectionService:
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
+            drainage_refs=active_drainage_refs,
+            drainage_refs_by_side=active_drainage_refs_by_side,
             bench_evaluations=bench_evaluations,
         )
 
@@ -246,6 +268,11 @@ class AppliedSectionService:
                     request.structure_model.structure_model_id
                     if request.structure_model is not None
                     else "",
+                    request.drainage_model.drainage_model_id
+                    if request.drainage_model is not None
+                    else "",
+                    *active_drainage_refs,
+                    *list(station_context.active_flow_route_refs or []),
                 ]
                 if ref
             ],
@@ -277,12 +304,38 @@ class AppliedSectionService:
         station: float,
         alignment_result,
         profile_result,
+        centerline_frame: Centerline3DFrame | None = None,
     ) -> AppliedSectionFrame:
+        if centerline_frame is not None and str(getattr(centerline_frame, "status", "") or "") in {"ok", "warning"}:
+            centerline_notes = "; ".join(
+                text
+                for text in [
+                    "source=centerline3d_result",
+                    *list(getattr(centerline_frame, "diagnostic_rows", []) or []),
+                ]
+                if text
+            )
+            return AppliedSectionFrame(
+                station=float(station),
+                x=float(getattr(centerline_frame, "x", 0.0) or 0.0),
+                y=float(getattr(centerline_frame, "y", 0.0) or 0.0),
+                z=float(getattr(centerline_frame, "z", 0.0) or 0.0),
+                tangent_direction_deg=float(getattr(centerline_frame, "tangent_direction_deg", 0.0) or 0.0),
+                profile_grade=float(getattr(centerline_frame, "grade", 0.0) or 0.0),
+                alignment_status=str(getattr(alignment_result, "status", "") or ""),
+                profile_status=str(getattr(profile_result, "status", "") or ""),
+                active_alignment_element_id=str(getattr(alignment_result, "active_element_id", "") or ""),
+                active_profile_segment_start_id=str(getattr(profile_result, "active_segment_start_id", "") or ""),
+                active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
+                active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
+                notes=centerline_notes,
+            )
         notes = "; ".join(
             text
             for text in [
                 str(getattr(alignment_result, "notes", "") or "").strip(),
                 str(getattr(profile_result, "notes", "") or "").strip(),
+                *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
             ]
             if text
         )
@@ -377,6 +430,8 @@ class AppliedSectionService:
         region_id: str,
         override_ids: list[str],
         structure_ids: list[str],
+        drainage_refs: list[str],
+        drainage_refs_by_side: dict[str, list[str]] | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionComponentRow]:
         if template is None:
@@ -395,6 +450,8 @@ class AppliedSectionService:
                 material=str(getattr(component, "material", "") or ""),
                 override_ids=list(override_ids),
                 structure_ids=list(structure_ids),
+                drainage_refs=_component_drainage_refs(component, drainage_refs, drainage_refs_by_side),
+                parameters=dict(getattr(component, "parameters", {}) or {}),
             )
             for component in template.component_rows
             if component.enabled
@@ -526,6 +583,8 @@ class AppliedSectionService:
         surface_left_width: float,
         surface_right_width: float,
         subgrade_depth: float,
+        drainage_refs: list[str] | None = None,
+        drainage_refs_by_side: dict[str, list[str]] | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionPoint]:
         """Resolve first-slice FG, subgrade, and ditch section points from enabled components."""
@@ -564,6 +623,8 @@ class AppliedSectionService:
                 frame=frame,
                 surface_left_width=surface_left_width,
                 surface_right_width=surface_right_width,
+                drainage_refs=list(drainage_refs or []),
+                drainage_refs_by_side=drainage_refs_by_side,
             )
         )
         output.extend(
@@ -606,7 +667,9 @@ class AppliedSectionSetService:
                     station=station,
                     applied_section_id=section_id,
                     structure_model=request.structure_model,
+                    drainage_model=request.drainage_model,
                     existing_ground_surface=request.existing_ground_surface,
+                    centerline3d_result=request.centerline3d_result,
                 )
             )
             sections.append(section)
@@ -640,6 +703,12 @@ class AppliedSectionSetService:
                     request.structure_model.structure_model_id
                     if request.structure_model is not None
                     else "",
+                    request.drainage_model.drainage_model_id
+                    if request.drainage_model is not None
+                    else "",
+                    request.centerline3d_result.centerline3d_result_id
+                    if request.centerline3d_result is not None
+                    else "",
                 ]
                 if ref
             ],
@@ -658,11 +727,47 @@ def _unique_refs(values: list[str]) -> list[str]:
     return output
 
 
-def _region_structure_refs(region_context) -> list[str]:
-    structure_ref = str(getattr(region_context, "structure_ref", "") or "").strip()
-    if structure_ref:
-        return [structure_ref]
-    return list(getattr(region_context, "structure_refs", []) or [])[:1]
+def _component_drainage_refs(component, drainage_refs: list[str], drainage_refs_by_side: dict[str, list[str]] | None = None) -> list[str]:
+    if str(getattr(component, "kind", "") or "").strip().lower() not in {"ditch", "gutter", "swale", "channel"}:
+        return []
+    side = str(getattr(component, "side", "") or "center").strip().lower()
+    if side in {"left", "right"}:
+        return _unique_refs(_drainage_refs_for_side(drainage_refs, side, drainage_refs_by_side))
+    if side == "both":
+        return _unique_refs(
+            _drainage_refs_for_side(drainage_refs, "left", drainage_refs_by_side)
+            + _drainage_refs_for_side(drainage_refs, "right", drainage_refs_by_side)
+        )
+    return _unique_refs(list(drainage_refs or []))
+
+
+def _drainage_ref_for_side(
+    drainage_refs: list[str] | None,
+    side: str,
+    drainage_refs_by_side: dict[str, list[str]] | None = None,
+) -> str:
+    refs = _drainage_refs_for_side(drainage_refs, side, drainage_refs_by_side)
+    return refs[0] if refs else ""
+
+
+def _drainage_refs_for_side(
+    drainage_refs: list[str] | None,
+    side: str,
+    drainage_refs_by_side: dict[str, list[str]] | None = None,
+) -> list[str]:
+    side_text = str(side or "").strip().lower()
+    if side_text and drainage_refs_by_side:
+        direct = _unique_refs(list(drainage_refs_by_side.get(side_text, []) or []))
+        if direct:
+            return direct
+    refs = _unique_refs(list(drainage_refs or []))
+    if not refs:
+        return []
+    if side_text:
+        for ref in refs:
+            if side_text in str(ref or "").lower():
+                return [ref]
+    return refs if len(refs) == 1 else []
 
 
 def _bench_evaluations(
@@ -1530,6 +1635,8 @@ def _ditch_section_points(
     frame: AppliedSectionFrame,
     surface_left_width: float,
     surface_right_width: float,
+    drainage_refs: list[str] | None = None,
+    drainage_refs_by_side: dict[str, list[str]] | None = None,
 ) -> list[AppliedSectionPoint]:
     """Return first-slice ditch surface strip points outside FG edges."""
 
@@ -1543,7 +1650,7 @@ def _ditch_section_points(
     base_z = float(getattr(frame, "z", 0.0) or 0.0)
     left_width = max(float(surface_left_width or 0.0), 0.0)
     right_width = max(float(surface_right_width or 0.0), 0.0)
-    rows: list[tuple[float, float, str]] = []
+    rows: list[tuple[float, float, str, str, str, str]] = []
     for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
         if not bool(getattr(component, "enabled", True)):
             continue
@@ -1553,12 +1660,31 @@ def _ditch_section_points(
         local_profile = _ditch_local_profile(component)
         if not local_profile:
             continue
+        component_ref = str(getattr(component, "component_id", "") or "")
         if side in {"left", "both", "center"}:
-            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=left_width, direction=1.0, side_label="left"))
+            rows.extend(
+                _oriented_ditch_rows(
+                    local_profile,
+                    edge_offset=left_width,
+                    direction=1.0,
+                    side_label="left",
+                    component_ref=component_ref,
+                    drainage_ref=_drainage_ref_for_side(drainage_refs, "left", drainage_refs_by_side),
+                )
+            )
         if side in {"right", "both", "center"}:
-            rows.extend(_oriented_ditch_rows(local_profile, edge_offset=-right_width, direction=-1.0, side_label="right"))
+            rows.extend(
+                _oriented_ditch_rows(
+                    local_profile,
+                    edge_offset=-right_width,
+                    direction=-1.0,
+                    side_label="right",
+                    component_ref=component_ref,
+                    drainage_ref=_drainage_ref_for_side(drainage_refs, "right", drainage_refs_by_side),
+                )
+            )
     output: list[AppliedSectionPoint] = []
-    for index, (offset, z_delta, role) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
+    for index, (offset, z_delta, role, component_ref, side_label, drainage_ref) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:{role}:{index + 1}",
@@ -1567,6 +1693,9 @@ def _ditch_section_points(
                 z=base_z + z_delta,
                 point_role="ditch_surface",
                 lateral_offset=offset,
+                component_ref=component_ref,
+                side=side_label,
+                drainage_ref=drainage_ref,
             )
         )
     return output
@@ -1824,10 +1953,21 @@ def _oriented_ditch_rows(
     edge_offset: float,
     direction: float,
     side_label: str,
-) -> list[tuple[float, float, str]]:
+    component_ref: str = "",
+    drainage_ref: str = "",
+) -> list[tuple[float, float, str, str, str, str]]:
     rows = []
     for local_offset, z_delta, role in local_profile:
-        rows.append((float(edge_offset) + float(direction) * float(local_offset), float(z_delta), f"{side_label}:{role}"))
+        rows.append(
+            (
+                float(edge_offset) + float(direction) * float(local_offset),
+                float(z_delta),
+                f"{side_label}:{role}",
+                component_ref,
+                str(side_label or ""),
+                drainage_ref,
+            )
+        )
     return rows
 
 

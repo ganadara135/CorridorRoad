@@ -471,7 +471,7 @@ def test_build_document_structure_output_package_maps_structure_solids_quantitie
         solid = result.structure_solid_output.solid_rows[0]
         assert solid.structure_id == "bridge:1"
         assert solid.solid_kind == "bridge_deck_solid"
-        assert solid.path_source == "3d_centerline"
+        assert solid.path_source == "applied_section_frame"
         assert solid.volume == 66.0
         assert solid.placement_x == 5.0
         assert solid.placement_y == 0.0

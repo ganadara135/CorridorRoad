@@ -1,4 +1,4 @@
-# CorridorRoad V1 Region Model
+# Parametric Road V1 Region Model
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -203,14 +203,9 @@ Each `RegionRow` represents one station-bounded policy zone.
 
 - `region_id`
 - `region_index`
-- `primary_kind`
-- `applied_layers`
 - `station_start`
 - `station_end`
 - `assembly_ref`
-- `structure_ref`
-- compatibility `structure_refs`
-- `drainage_refs`
 - optional `ramp_ref`
 - optional `intersection_ref`
 - `policy_set_ref`
@@ -221,20 +216,7 @@ Each `RegionRow` represents one station-bounded policy zone.
 - `source_ref`
 - `notes`
 
-### 11.3 Recommended kinds
-
-- `normal_road`
-- `bridge`
-- `culvert`
-- `intersection`
-- `ramp`
-- `drainage`
-- `transition`
-- `structure_influence`
-- `daylight_control`
-- `temporary_candidate_region`
-
-### 11.4 Rule
+### 11.3 Rule
 
 Region rows must be defined in station space, not only by visual extents or 3D shapes.
 
@@ -246,45 +228,28 @@ The Regions editor should manage continuity by `Start STA`.
 - Validate and Apply should reject Start stations that are not present in Stationing.
 - Region rows should cover the Stationing range without intentional gaps.
 
-One region row should reference one Assembly and zero or one Structure.
+One region row should reference one base Assembly.
 
-If more than one Structure is needed over the same apparent station range, use separate Region rows so each row has one clear structure owner.
+Structure and Drainage ownership is not stored on Region rows. Structure and Drainage source rows choose their owning Region from their own source models.
 
-`structure_refs` may remain in compatibility storage, but more than one active structure reference should produce a diagnostic.
+### 11.4 Source References
 
-### 11.5 Primary Kind and Applied Layers
+Region rows no longer carry separate `primary_kind` or `applied_layers` classification fields.
 
-One region should have one `primary_kind`.
+The station range meaning is derived from explicit references:
 
-The `primary_kind` answers the question:
+- `assembly_ref` and `template_ref` define the section source used in the range.
+- StructureModel placement `region_ref` defines active Structure context.
+- DrainageElementRow `region_ref` defines active Drainage context.
 
-- what is the dominant corridor behavior for this station range?
-
-Examples:
-
-- `normal_road`
-- `bridge`
-- `culvert`
-- `intersection`
-- `ramp`
-- `drainage`
-
-Other overlapping items should be represented as `applied_layers` and explicit references.
-
-The following primary kinds require a `structure_ref` diagnostic if the reference is empty:
-
-- `bridge`
-- `culvert`
-- `structure_influence`
-
-This is a validation rule for source completeness. It does not make Region own Structure geometry.
+This avoids duplicate user-facing classification fields and keeps Region intent traceable to real source objects.
 
 Examples:
 
-- a bridge region with `applied_layers = ["ditch", "drainage"]`
-- a normal road region with `applied_layers = ["culvert", "guardrail"]`
-- an intersection region with `applied_layers = ["drainage", "widening"]`
-- a ramp region with `applied_layers = ["retaining_wall", "side_ditch"]`
+- a bridge region with `assembly_ref`; the bridge Structure row references that Region
+- a normal road region with only `assembly_ref`
+- a drainage-control region with `assembly_ref`; Drainage Elements reference that Region
+- a ramp or intersection region with its dedicated source ref when those domains are available
 
 This keeps the region readable while allowing realistic overlap.
 
@@ -296,38 +261,33 @@ Recommended source shape:
 {
   "region_id": "region:bridge-01",
   "region_index": 3,
-  "primary_kind": "bridge",
-  "applied_layers": ["ditch", "drainage"],
   "station_start": 120.0,
   "station_end": 180.0,
   "assembly_ref": "assembly:bridge-deck",
-  "structure_ref": "structure:bridge-01",
-  "structure_refs": ["structure:bridge-01"],
-  "drainage_refs": ["drainage:deck-drain-left", "drainage:side-ditch-right"],
   "policy_set_ref": "region-policy:bridge-01",
   "override_refs": ["override:bridge-shoulder-narrowing"],
   "priority": 80,
-  "notes": "Bridge deck region with drainage and ditch treatment."
+  "notes": "Bridge deck region. Structure and Drainage are assigned from their own models."
 }
 ```
 
 Viewer display may compress this into one row:
 
-`STA 120.000 - 180.000 | bridge | Assembly: bridge-deck | Layers: ditch, drainage | Structure: bridge-01`
+`STA 120.000 - 180.000 | Assembly: bridge-deck`
 
 ### 11.7 Rule for Overlap
 
 Overlapping design meaning should be expressed inside one region when:
 
 - the station range is the same or nearly the same
-- one primary corridor behavior dominates
-- the extra items are additive layers or references
+- one source context dominates
+- the extra items are explicit Structure or Drainage references
 - the user expects to edit the range as one practical work zone
 
 Separate region rows should be used when:
 
 - station ranges differ meaningfully
-- two primary behaviors compete
+- two source contexts compete
 - the overlap needs a different priority or transition
 - diagnostics need to isolate the behavior clearly
 
@@ -520,8 +480,6 @@ This result object captures resolved region context for downstream consumers.
 - `resolution_id`
 - `station`
 - `active_region_id`
-- `active_primary_kind`
-- `active_applied_layers`
 - `active_policy_set_id`
 - `active_template_ref`
 - `active_assembly_ref`

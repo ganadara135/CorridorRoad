@@ -1,4 +1,4 @@
-# CorridorRoad V1 Wiki 1.0.0 Update Checklist
+# Parametric Road V1 Wiki 1.0.0 Update Checklist
 
 Date: 2026-05-02
 Status: Local wiki drafts created under `docsV1/wiki/`
@@ -13,7 +13,7 @@ Depends on:
 
 ## 1. Purpose
 
-This checklist tracks the Wiki updates required for the CorridorRoad `1.0.0` release.
+This checklist tracks the Wiki updates required for the Parametric Road `1.0.0` release.
 
 The Wiki should present v1 as the primary workflow and should not describe legacy v0 corridor loft behavior as the main product path.
 

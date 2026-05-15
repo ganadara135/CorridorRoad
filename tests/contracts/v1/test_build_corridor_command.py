@@ -17,12 +17,15 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_build_review_rows,
     corridor_build_review_row_color,
     corridor_centerline_preview_style,
+    corridor_drainage_flow_review_rows,
+    corridor_drainage_flow_review_summary,
     corridor_drainage_review_rows,
     corridor_drainage_review_summary,
     corridor_slope_face_issue_rows,
     document_has_v1_applied_sections,
     focus_adjacent_corridor_slope_face_issue,
     focus_corridor_build_guided_review_step,
+    focus_corridor_drainage_flow_review,
     focus_corridor_drainage_review_row,
     focus_corridor_region_boundary_row,
     focus_corridor_slope_face_issue,
@@ -48,8 +51,13 @@ from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSectionPoint,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
+from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_corridor import find_v1_corridor_model
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
+from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.objects.obj_surface import find_v1_surface_model
 from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
     create_or_update_v1_surface_transition_model_object,
@@ -57,6 +65,13 @@ from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
     to_surface_transition_model,
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.structure_model import (
+    StructureConnectionPoint,
+    StructureModel,
+    StructurePlacement,
+    StructureRow,
+)
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 
 _QAPP = None
@@ -398,11 +413,7 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(preview.VertexCount) == 10
         assert int(preview.TriangleCount) == 8
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
-        assert centerline is not None
-        assert centerline.CRRecordKind == "v1_corridor_centerline_preview"
-        assert centerline.V1ObjectType == "V1CorridorCenterlinePreview"
-        assert centerline.DisplayCurveKind == "line"
-        assert int(centerline.PointCount) == 2
+        assert centerline is None
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
         assert subgrade_preview is not None
         assert subgrade_preview.CRRecordKind == "v1_corridor_surface_preview"
@@ -508,6 +519,70 @@ def test_corridor_region_boundary_rows_use_source_region_ranges_when_available()
         App.closeDocument(doc.Name)
 
 
+def test_corridor_region_boundary_rows_use_station_context_resolver_for_domain_sources() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_region_model_object(doc, project=project, region_model=_sample_region_model_with_source_ranges())
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:test",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="crossing",
+                        placement=StructurePlacement(
+                            placement_id="placement:culvert-01",
+                            alignment_id="alignment:main",
+                            station_start=25.0,
+                            station_end=45.0,
+                            region_ref="region:urban",
+                        ),
+                    )
+                ],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:test",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:urban-left",
+                        element_kind="ditch",
+                        side="left",
+                        region_ref="region:urban",
+                        station_start=25.0,
+                        station_end=45.0,
+                    )
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:urban-left",
+                        from_element_ref="drainage:urban-left",
+                        outlet_ref="drainage:outlet-main",
+                    )
+                ],
+            ),
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+
+        rows = corridor_region_boundary_rows(doc)
+
+        assert "structure:culvert-01" in rows[1]["structure"]
+        assert "drainage:urban-left" in rows[1]["drainage"]
+        assert "flow-route:urban-left" in rows[1]["drainage"]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_focus_corridor_region_boundary_row_selects_built_region_surface_object() -> None:
     doc, project = _new_project_doc()
     try:
@@ -530,7 +605,6 @@ def test_focus_corridor_region_boundary_row_selects_built_region_surface_object(
             "V1CorridorRegionSurface_region_urban",
             "V1CorridorRegionSurface_region_urban_subgrade",
             "V1CorridorRegionSurface_region_urban_daylight",
-            "V1CorridorRegionStructure_region_urban",
         ]
         assert marker.Name == "V1CorridorRegionSurface_region_rural"
         assert marker.V1ObjectType == "V1CorridorRegionSurface"
@@ -551,8 +625,7 @@ def test_focus_corridor_region_boundary_row_selects_built_region_surface_object(
         assert int(second_marker.SectionCount) >= 2
         assert int(second_marker.SurfaceFaceCount) >= 2
         assert doc.getObject("V1CorridorRegionSurface_region_urban_daylight") is not None
-        assert doc.getObject("V1CorridorRegionStructure_region_urban") is not None
-        assert list(doc.getObject("V1CorridorRegionStructure_region_urban").StructureRefs) == ["structure:wall-01"]
+        assert doc.getObject("V1CorridorRegionStructure_region_urban") is None
     finally:
         App.closeDocument(doc.Name)
 
@@ -940,8 +1013,8 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         rows = corridor_build_review_rows(doc)
 
         assert [row["role"] for row in rows] == ["centerline", "design", "subgrade", "daylight", "drainage"]
-        assert [row["status"] for row in rows] == ["ready", "ready", "ready", "ready", "missing"]
-        assert rows[0]["triangle_or_point_count"] == 2
+        assert [row["status"] for row in rows] == ["missing", "ready", "ready", "ready", "missing"]
+        assert rows[0]["triangle_or_point_count"] == ""
         assert rows[1]["vertex_count"] == 10
         assert rows[1]["triangle_or_point_count"] == 8
         assert "2 STA" in str(rows[1]["applied_section_summary"])
@@ -950,6 +1023,7 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         assert "no EG TIN: 10" in str(rows[3]["notes"])
         assert "STA 0.000 L no EG TIN" in str(rows[3]["notes"])
         assert "STA 20.000 R no EG TIN" in str(rows[3]["notes"])
+        assert "no drainage_surface row exists" in str(rows[4]["notes"])
         assert preferred_corridor_build_review_row_index(rows) == 1
 
         shown = show_corridor_build_review_object(doc, 1)
@@ -1043,7 +1117,8 @@ def test_corridor_drainage_review_rows_track_ditch_surface_points() -> None:
         assert marker.IssueKind == "drainage_diagnostic"
         assert marker.IssueStation == "0.000"
         assert marker.IssueStatus == "ready"
-        assert int(marker.MarkerCount) == 1
+        assert marker.DisplayMode == "drainage_highlight"
+        assert int(marker.MarkerCount) == 4
     finally:
         App.closeDocument(doc.Name)
 
@@ -1148,6 +1223,217 @@ def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:test",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="crossing",
+                        placement=StructurePlacement(
+                            placement_id="placement:culvert-01",
+                            alignment_id="alignment:main",
+                            station_start=8.0,
+                            station_end=12.0,
+                        ),
+                    )
+                ],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:test",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:side-ditch-right",
+                        element_kind="ditch",
+                        side="right",
+                        station_start=0.0,
+                        station_end=20.0,
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:culvert-01",
+                        element_kind="culvert",
+                        structure_ref="structure:culvert-01",
+                        station_start=8.0,
+                        station_end=12.0,
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:flowId-01",
+                        from_element_ref="drainage:side-ditch-right",
+                        to_element_ref="drainage:culvert-01",
+                        outlet_ref="structure:culvert-01",
+                    )
+                ],
+            ),
+        )
+
+        rows = corridor_drainage_flow_review_rows(doc)
+        summary = corridor_drainage_flow_review_summary(doc)
+        steps = corridor_build_guided_review_steps(doc)
+        focused = focus_corridor_build_guided_review_step(doc, "drainage_flow")
+
+        assert rows[0]["status"] == "ready"
+        assert rows[0]["flow_route_id"] == "flow-route:flowId-01"
+        assert rows[0]["structure_refs"] == "structure:culvert-01"
+        assert summary["status"] == "ready"
+        assert "culvert-01" in str(summary["notes"])
+        assert steps[4]["step_id"] == "drainage_flow"
+        assert steps[4]["focus"] == "flowId-01"
+        assert focused.Name == "ReviewIssueDrainageFlowRoutes"
+        assert focused.FlowRouteRefs == ["flow-route:flowId-01"]
+        assert focused.StructureRefs == ["structure:culvert-01"]
+        assert focus_corridor_drainage_flow_review(doc).Name == "ReviewIssueDrainageFlowRoutes"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_flow_focus_connects_structure_connection_points_as_pipe_segments() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:inlet-01",
+                        structure_kind="utility",
+                        structure_role="reference",
+                        placement=StructurePlacement(
+                            "placement:inlet-01",
+                            "alignment:main",
+                            station_start=2.0,
+                            station_end=2.0,
+                        ),
+                    ),
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="clearance_control",
+                        placement=StructurePlacement(
+                            "placement:culvert-01",
+                            "alignment:main",
+                            station_start=10.0,
+                            station_end=12.0,
+                        ),
+                    ),
+                    StructureRow(
+                        structure_id="structure:outlet-01",
+                        structure_kind="utility",
+                        structure_role="reference",
+                        placement=StructurePlacement(
+                            "placement:outlet-01",
+                            "alignment:main",
+                            station_start=18.0,
+                            station_end=18.0,
+                        ),
+                    ),
+                ],
+                connection_point_rows=[
+                    StructureConnectionPoint(
+                        connection_point_id="connection:inlet-01:pipe-out",
+                        structure_ref="structure:inlet-01",
+                        point_role="pipe_out",
+                        station=2.0,
+                        offset=-4.0,
+                        diameter=0.6,
+                    ),
+                    StructureConnectionPoint(
+                        connection_point_id="connection:culvert-01:upstream",
+                        structure_ref="structure:culvert-01",
+                        point_role="upstream",
+                        station=10.0,
+                        offset=-1.0,
+                        width=3.0,
+                        height=2.0,
+                    ),
+                    StructureConnectionPoint(
+                        connection_point_id="connection:outlet-01:pipe-in",
+                        structure_ref="structure:outlet-01",
+                        point_role="pipe_in",
+                        station=18.0,
+                        offset=-5.0,
+                        diameter=0.8,
+                    ),
+                ],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:test",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:inlet-01",
+                        element_kind="inlet",
+                        structure_ref="structure:inlet-01",
+                        connection_point_ref="connection:inlet-01:pipe-out",
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:culvert-01",
+                        element_kind="culvert_reference",
+                        structure_ref="structure:culvert-01",
+                        connection_point_ref="connection:culvert-01:upstream",
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:outlet-01",
+                        element_kind="outfall_reference",
+                        structure_ref="structure:outlet-01",
+                        connection_point_ref="connection:outlet-01:pipe-in",
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:pipe-network-01",
+                        from_element_ref="drainage:inlet-01",
+                        to_element_ref="drainage:culvert-01",
+                        outlet_ref="drainage:outlet-01",
+                    )
+                ],
+            ),
+        )
+
+        focused = focus_corridor_drainage_flow_review(doc)
+
+        assert focused.Name == "ReviewIssueDrainageFlowRoutes"
+        assert int(focused.MarkerCount) == 2
+        assert focused.ConnectionPointRefs == [
+            "connection:inlet-01:pipe-out",
+            "connection:culvert-01:upstream",
+            "connection:outlet-01:pipe-in",
+        ]
+        assert focused.StructureRefs == [
+            "structure:inlet-01",
+            "structure:culvert-01",
+            "structure:outlet-01",
+        ]
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_preferred_corridor_build_review_row_index_prefers_ready_design_surface() -> None:
     rows = [
         {"role": "centerline", "status": "ready"},
@@ -1164,6 +1450,7 @@ def test_corridor_build_review_row_colors_are_dark_theme_readable() -> None:
     assert corridor_build_review_row_color("ready") == (220, 245, 224)
     assert corridor_build_review_row_color("missing") == (238, 238, 238)
     assert corridor_build_review_row_color("empty") == (255, 241, 205)
+    assert corridor_build_review_row_color("error") == (255, 210, 210)
     assert corridor_build_review_row_color("unknown") is None
 
 
@@ -1266,7 +1553,9 @@ def test_corridor_guided_review_steps_and_focus_isolate_layers() -> None:
     doc = FakeDocument()
 
     steps = corridor_build_guided_review_steps(doc)
-    assert [step["step_id"] for step in steps] == ["centerline", "design", "slope_issues", "drainage"]
+    assert [step["step_id"] for step in steps] == ["centerline", "design", "slope_issues", "drainage", "drainage_flow"]
+    assert steps[3]["title"] == "4. Drainage Surface"
+    assert steps[4]["title"] == "5. Drainage Flow"
     assert steps[2]["status"] == "warn"
     assert steps[2]["focus"] == "First issue marker"
 
@@ -1316,15 +1605,17 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.SurfaceRole == "drainage"
         assert drainage_preview.SurfaceKind == "drainage_surface"
         assert int(drainage_preview.VertexCount) == 20
-        assert int(drainage_preview.TriangleCount) == 24
+        assert int(drainage_preview.TriangleCount) == 16
         rows = corridor_build_review_rows(doc)
+        assert rows[3]["status"] == "error"
+        assert "Slope Face Surface preview was not created" in str(rows[3]["notes"])
         assert rows[4]["status"] == "ready"
         assert rows[4]["vertex_count"] == 20
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_apply_v1_corridor_model_creates_spline_centerline_preview() -> None:
+def test_apply_v1_corridor_model_does_not_create_centerline_preview_from_applied_section_frames() -> None:
     doc, project = _new_project_doc()
     try:
         create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_centerline_curve())
@@ -1332,12 +1623,30 @@ def test_apply_v1_corridor_model_creates_spline_centerline_preview() -> None:
         apply_v1_corridor_model(document=doc, project=project)
 
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
+        assert centerline is None
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        centerline = doc.getObject("V1CorridorCenterline3DPreview")
         assert centerline is not None
-        assert centerline.DisplayCurveKind == "spline"
-        assert int(centerline.PointCount) == 3
-        shape = centerline.Shape
-        assert len(shape.Edges) == 1
-        assert "BSpline" in type(shape.Edges[0].Curve).__name__
+        assert centerline.PreviewSource == "centerline3d_result"
+        assert centerline.Centerline3DResultId == "centerline3d:main"
+        assert int(centerline.PointCount) > 2
+        rows = corridor_build_review_rows(doc)
+        centerline_row = [row for row in rows if row["role"] == "centerline"][0]
+        assert centerline_row["status"] == "ready"
+        assert "source=centerline3d_result" in centerline_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 

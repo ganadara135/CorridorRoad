@@ -1,4 +1,4 @@
-# CorridorRoad V1 Earthwork Balance Plan
+# Parametric Road V1 Earthwork Balance Plan
 
 Date: 2026-04-22
 Branch: `v1-dev`
@@ -10,7 +10,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines how CorridorRoad v1 should approach cut/fill balancing, mass-haul analysis, and earthwork-aware optimization.
+This document defines how Parametric Road v1 should approach cut/fill balancing, mass-haul analysis, and earthwork-aware optimization.
 
 The feature should not be treated as a single "zero-balance button."
 

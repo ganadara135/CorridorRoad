@@ -16,6 +16,8 @@ from freecad.Corridor_Road.v1.models.result.applied_section_set import (
     AppliedSectionStationRow,
 )
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
+from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.models.result.tin_surface import TINTriangle, TINVertex
 from freecad.Corridor_Road.v1.models.output.section_output import (
@@ -31,6 +33,8 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructurePlacement,
     StructureRow,
 )
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_cross_section_drawing_dimension_table_rows,
     build_cross_section_drawing_geometry_table_rows,
@@ -713,6 +717,129 @@ def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources() -> None:
+    doc = App.newDocument("V1SectionViewerStationContextTest")
+    try:
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:station-context",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id="section:20:station",
+                    station=20.0,
+                    applied_section_id="section:20",
+                )
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:20",
+                    station=20.0,
+                    template_id="template:basic-road",
+                    region_id="region:mainline",
+                    component_rows=[
+                        AppliedSectionComponentRow(
+                            component_id="lane-left",
+                            kind="lane",
+                            source_template_id="template:basic-road",
+                            region_id="region:mainline",
+                        )
+                    ],
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Station Context",
+        )
+        create_or_update_v1_region_model_object(
+            document=doc,
+            region_model=RegionModel(
+                schema_version=1,
+                project_id="project:test",
+                region_model_id="regions:main",
+                region_rows=[
+                    RegionRow(
+                        region_id="region:mainline",
+                        station_start=0.0,
+                        station_end=40.0,
+                        assembly_ref="assembly:basic-road",
+                    )
+                ],
+            ),
+            label="Regions Station Context",
+        )
+        create_or_update_v1_structure_model_object(
+            document=doc,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="project:test",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="crossing",
+                        placement=StructurePlacement(
+                            placement_id="placement:culvert-01",
+                            alignment_id="",
+                            station_start=10.0,
+                            station_end=30.0,
+                            region_ref="region:mainline",
+                        ),
+                    )
+                ],
+            ),
+            label="Structures Station Context",
+        )
+        create_or_update_v1_drainage_model_object(
+            document=doc,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="project:test",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:left-ditch",
+                        element_kind="ditch",
+                        side="left",
+                        region_ref="region:mainline",
+                        station_start=0.0,
+                        station_end=40.0,
+                    )
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:left-ditch",
+                        from_element_ref="drainage:left-ditch",
+                        outlet_ref="drainage:outfall-main",
+                    )
+                ],
+            ),
+            label="Drainage Station Context",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=20.0,
+            app_module=None,
+            gui_module=None,
+        )
+
+        inspector = preview["source_inspector"]
+        assert inspector["owner_structure"] == "structure:culvert-01"
+        assert inspector["owner_drainage"] == "drainage:left-ditch"
+        assert preview["viewer_context"]["active_structure_ref"] == "structure:culvert-01"
+        assert preview["viewer_context"]["active_drainage_ref"] == "drainage:left-ditch"
+        assert preview["viewer_context"]["active_flow_route_ref"] == "flow-route:left-ditch"
+        assert any(row["value"] == "structure:culvert-01" for row in preview["structure_rows"])
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_format_section_preview_includes_focus_component_line() -> None:
     summary = format_section_preview(
         show_v1_section_preview(
@@ -1016,6 +1143,7 @@ def test_build_handoff_target_rows_marks_ready_targets() -> None:
                 "assembly_model": _StateObject(label="Assembly A"),
                 "region_model": _StateObject(label="Region Model A"),
                 "structure_model": _StateObject(label="Structure Model A"),
+                "drainage_model": _StateObject(label="Drainage Model A"),
             },
         },
         app_module=None,
@@ -1031,6 +1159,9 @@ def test_build_handoff_target_rows_marks_ready_targets() -> None:
     assert rows[2][0] == "Structure"
     assert rows[2][1] == "ready"
     assert "Structure Model A" in rows[2][2]
+    assert rows[3][0] == "Drainage"
+    assert rows[3][1] == "ready"
+    assert "Drainage Model A" in rows[3][2]
 
 
 def test_build_handoff_status_reports_missing_targets() -> None:

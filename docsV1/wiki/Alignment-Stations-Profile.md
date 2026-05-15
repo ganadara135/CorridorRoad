@@ -25,6 +25,7 @@ Profile owns finished-grade vertical intent.
 Profile supports:
 
 - PVI station/elevation rows
+- Preset Data that samples example profile shapes onto the current station rows
 - CSV-style input paths where available
 - Auto Interpolate Elevations for filling missing elevation rows between known start/end values
 - station check review

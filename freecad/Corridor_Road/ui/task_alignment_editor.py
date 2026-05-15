@@ -480,9 +480,9 @@ class AlignmentEditorTaskPanel:
         self.btn_refresh = QtWidgets.QPushButton("Refresh Criteria Report")
         self.btn_open_v1_preview = QtWidgets.QPushButton("Review Alignment")
         self.btn_close = QtWidgets.QPushButton("Close")
-        rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_refresh)
         rep_row.addWidget(self.btn_open_v1_preview)
+        rep_row.addWidget(self.btn_apply)
         rep_row.addWidget(self.btn_close)
         root.addLayout(rep_row)
 

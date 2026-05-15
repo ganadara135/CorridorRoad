@@ -1,4 +1,4 @@
-# CorridorRoad V1 Surface Model
+# Parametric Road V1 Surface Model
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -125,7 +125,9 @@ Use surface representation for:
 - drainage grading surfaces where the result is terrain-like, such as ditch flowline influence, swale grading, or channel side grading
 - TIN preview and review meshes derived from normalized surface data
 
-Ditch drainage surfaces should derive from the point roles and shape rules in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+Ditch drainage surfaces should derive from Applied Section `ditch_surface` point roles and the shape rules in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
+
+When those point rows carry `drainage_ref`, `component_ref`, and `side`, Build Corridor must preserve that context in drainage TIN provenance and diagnostics. It should not infer drainage design intent from preview meshes.
 
 Do not use surface representation as the durable model for:
 
@@ -152,8 +154,11 @@ Use solid representation for:
 
 Surface and solid outputs may be derived from the same `AppliedSectionSet`, but they must not replace each other.
 
+Use the representation strategy table in `docsV1/V1_MASTER_PLAN.md` as the baseline for deciding whether a subsystem is semantic-first, geometry-first, topology-first, or contract-first.
+
 - A surface is an open height field or TIN-family result.
 - A solid is a closed or component-like body with thickness, material, volume, or asset identity.
+- Watertight solid generation is topology-first and should derive from closed semantic profiles, edge networks, face adjacency, caps, and shell validation before Part solid geometry is accepted.
 - Viewer meshes generated from either one are presentation artifacts, not source truth.
 - Editing must return to source models, replayable TIN edits, region rules, assembly rules, or explicit overrides rather than mutating generated surface or solid display geometry.
 

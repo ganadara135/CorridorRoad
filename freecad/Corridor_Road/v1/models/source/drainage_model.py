@@ -21,18 +21,16 @@ class DrainagePolicySet:
 
 
 @dataclass(frozen=True)
-class DrainageCollectionRegion:
-    """Minimal collection or discharge region row."""
+class DrainageFlowRoute:
+    """Minimal drainage flow route row."""
 
-    collection_region_id: str
-    region_kind: str
-    station_start: float
-    station_end: float
-    alignment_ref: str = ""
-    ramp_ref: str = ""
-    intersection_ref: str = ""
-    expected_receiver_ref: str = ""
+    flow_route_id: str
+    from_element_ref: str = ""
+    to_element_ref: str = ""
+    outlet_ref: str = ""
+    direction: str = ""
     risk_level: str = ""
+    notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,9 +43,12 @@ class DrainageElementRow:
     ramp_ref: str = ""
     intersection_ref: str = ""
     structure_ref: str = ""
+    connection_point_ref: str = ""
+    side: str = ""
+    region_ref: str = ""
+    assembly_component_ref: str = ""
     station_start: float = 0.0
     station_end: float = 0.0
-    offset_rule: str = ""
     policy_set_ref: str = ""
 
 
@@ -58,4 +59,4 @@ class DrainageModel(SourceModelBase):
     drainage_model_id: str = ""
     element_rows: list[DrainageElementRow] = field(default_factory=list)
     policy_rows: list[DrainagePolicySet] = field(default_factory=list)
-    collection_region_rows: list[DrainageCollectionRegion] = field(default_factory=list)
+    flow_route_rows: list[DrainageFlowRoute] = field(default_factory=list)

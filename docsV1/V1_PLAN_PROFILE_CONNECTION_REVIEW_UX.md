@@ -1,4 +1,4 @@
-# CorridorRoad V1 Plan/Profile Connection Review UX
+# Parametric Road V1 Plan/Profile Connection Review UX
 
 Date: 2026-04-28
 Status: Draft detail plan

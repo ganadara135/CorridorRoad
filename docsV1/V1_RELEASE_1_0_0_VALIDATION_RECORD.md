@@ -1,4 +1,4 @@
-# CorridorRoad V1 Release 1.0.0 Validation Record
+# Parametric Road V1 Release 1.0.0 Validation Record
 
 Date: 2026-05-02
 Target version: `1.0.0`
@@ -43,7 +43,7 @@ Registration checks:
 
 Manual FreeCAD QA still required before tagging:
 
-- [x] restart FreeCAD and activate the CorridorRoad workbench
+- [x] restart FreeCAD and activate the Parametric Road workbench
 - [x] confirm toolbar order visually
 - [x] open every primary toolbar command
 - [x] confirm Drainage shows the under-development message

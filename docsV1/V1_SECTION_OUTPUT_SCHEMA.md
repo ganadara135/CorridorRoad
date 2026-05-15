@@ -1,4 +1,4 @@
-# CorridorRoad V1 Section Output Schema
+# Parametric Road V1 Section Output Schema
 
 Date: 2026-04-25
 Branch: `v1-dev`
@@ -50,6 +50,12 @@ Section outputs are derived from:
 They are not direct authoring sources.
 
 No consumer should assume it is allowed to persist engineering changes by mutating section output payloads.
+
+`AppliedSection.frame` should be treated as a station-local placement snapshot.
+
+It is normally derived from the shared `Centerline3DResult`, not authored or regenerated independently by section output consumers.
+
+When a section output needs to expose baseline provenance, use `centerline3d_result` for the shared baseline and `applied_section_frame` only for the persisted per-section placement snapshot.
 
 ## 4. Schema Versioning
 
@@ -142,7 +148,15 @@ Required unit metadata should include:
 Required coordinate metadata should include:
 
 - `coordinate_mode`
+- optional `baseline_source`
 - optional local/world note
+
+Recommended `baseline_source` values:
+
+- `centerline3d_result`
+- `applied_section_frame`
+
+The Cross Section Viewer should use this metadata to explain where the station frame came from, not to edit the frame.
 
 ## 8. Geometry Rows
 

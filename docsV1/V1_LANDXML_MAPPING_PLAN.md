@@ -1,4 +1,4 @@
-# CorridorRoad V1 LandXML Mapping Plan
+# Parametric Road V1 LandXML Mapping Plan
 
 Date: 2026-04-23
 Branch: `v1-dev`
@@ -15,7 +15,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines how `LandXML` should map into and out of the CorridorRoad v1 architecture.
+This document defines how `LandXML` should map into and out of the Parametric Road v1 architecture.
 
 It exists to answer four practical questions:
 

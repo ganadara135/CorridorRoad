@@ -1,12 +1,13 @@
 # docsV1
 
-This folder contains the CorridorRoad v1 redesign documents.
+This folder contains the Parametric Road v1 redesign documents.
 
 Baseline document:
 
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
+- [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
 - [V1_ARCHITECTURE.md](./V1_ARCHITECTURE.md)
@@ -21,12 +22,15 @@ Baseline document:
 - [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
 - [V1_REGION_APPLICATION_FLOW_PLAN.md](./V1_REGION_APPLICATION_FLOW_PLAN.md)
 - [V1_REGION_SURFACE_TRANSITION_PLAN.md](./V1_REGION_SURFACE_TRANSITION_PLAN.md)
+- [V1_REGION_DOMAIN_OWNERSHIP_REDESIGN_PLAN.md](./V1_REGION_DOMAIN_OWNERSHIP_REDESIGN_PLAN.md)
 - [V1_DRAINAGE_MODEL.md](./V1_DRAINAGE_MODEL.md)
 - [V1_DRAINAGE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_IMPLEMENTATION_PLAN.md)
+- [V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md](./V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md)
 - [V1_DITCH_SHAPE_CONTRACT.md](./V1_DITCH_SHAPE_CONTRACT.md)
 - [V1_OVERRIDE_MODEL.md](./V1_OVERRIDE_MODEL.md)
 - [V1_STRUCTURE_MODEL.md](./V1_STRUCTURE_MODEL.md)
 - [V1_STRUCTURE_GEOMETRY_CONTRACT.md](./V1_STRUCTURE_GEOMETRY_CONTRACT.md)
+- [V1_STRUCTURE_CONNECTION_NODE_PLAN.md](./V1_STRUCTURE_CONNECTION_NODE_PLAN.md)
 - [V1_SURFACE_MODEL.md](./V1_SURFACE_MODEL.md)
 - [V1_QUANTITY_MODEL.md](./V1_QUANTITY_MODEL.md)
 - [V1_QUANTITY_OUTPUT_SCHEMA.md](./V1_QUANTITY_OUTPUT_SCHEMA.md)
@@ -54,6 +58,8 @@ Baseline document:
 - [V1_CROSS_SECTION_2D_MANUAL_QA.md](./V1_CROSS_SECTION_2D_MANUAL_QA.md)
 - [V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md](./V1_PLAN_PROFILE_VIEWER_ROLE_AND_SCOPE.md)
 - [V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md](./V1_PLAN_PROFILE_CONNECTION_REVIEW_UX.md)
+- [V1_3D_CENTERLINE_TOOLBAR_PLAN.md](./V1_3D_CENTERLINE_TOOLBAR_PLAN.md)
+- [V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md](./V1_CENTERLINE_OWNERSHIP_CONSOLIDATION_PLAN.md)
 - [V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md](./V1_EARTHWORK_REVIEW_ROLE_AND_SCOPE.md)
 - [V1_REVIEW_WORKFLOW_STAGE_MAP.md](./V1_REVIEW_WORKFLOW_STAGE_MAP.md)
 - [V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md](./V1_CROSS_SECTION_VIEWER_EXECUTION_PLAN.md)
@@ -71,6 +77,10 @@ Baseline document:
 - [V1_EXCHANGE_OUTPUT_SCHEMA.md](./V1_EXCHANGE_OUTPUT_SCHEMA.md)
 - [V1_AI_ASSIST_PLAN.md](./V1_AI_ASSIST_PLAN.md)
 - [V1_AI_OUTPUT_SCHEMA.md](./V1_AI_OUTPUT_SCHEMA.md)
+- [V1_WATERTIGHT_SOLID_PLAN.md](./V1_WATERTIGHT_SOLID_PLAN.md)
+- [V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md](./V1_WATERTIGHT_SOLID_IMPLEMENTATION_PLAN.md)
+- [V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md](./V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md)
+- [V1_WATERTIGHT_SOLID_UI_EXECUTION_PLAN.md](./V1_WATERTIGHT_SOLID_UI_EXECUTION_PLAN.md)
 - [V1_PLAN_PROFILE_SHEET_PLAN.md](./V1_PLAN_PROFILE_SHEET_PLAN.md)
 - [V1_PLAN_OUTPUT_SCHEMA.md](./V1_PLAN_OUTPUT_SCHEMA.md)
 - [V1_PROFILE_OUTPUT_SCHEMA.md](./V1_PROFILE_OUTPUT_SCHEMA.md)
@@ -90,6 +100,8 @@ Preferred review workflow:
 
 - start section review from the v1 `Cross Section Viewer`
 - start plan/profile connection review from the v1 `Plan/Profile Connection Review`
+- expose `3D Centerline` after `Review Plan/Profile` as a read-only common baseline review stage for Structures, Drainage, Applied Sections, and Build Corridor
+- use `Centerline3DResult` as the owner of the shared station/offset/elevation baseline; Applied Sections consume it and keep only derived per-section placement frames
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
 - keep Design Standard editing in `New/Project Setup`; Alignment displays the project standard and applies it as a criteria snapshot
@@ -98,19 +110,26 @@ Preferred review workflow:
 - treat external TIN and Alignment CSV coordinates through `V1_COORDINATE_IMPORT_POLICY.md`: World-first CSV input converts to Local model coordinates, Local-first input is stored directly, and CSV export should expose Project default / World / Local coordinate choices where practical
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
-- model corridor ranges through `Region` as `primary_kind + applied_layers + singular Assembly/Structure refs + domain context`, so each range keeps one clear section owner and one clear structure owner
+- model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
 - use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
+- order the source-authoring toolbar as `Assembly -> Regions -> Structures -> Drainage`, so Structures can reference accepted Regions and Drainage can reference both Regions and Structure refs when needed
+- treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids
+- use `Watertight Solids` as the final toolbar stage after `AI Assist`; it should remain disabled or blocked until Build Corridor has produced accepted corridor prerequisites
 - use `Structures` as the v1 source editor for bridge, culvert, retaining-wall, and custom structure intent; generated preview and exchange geometry remain outputs
+- before advanced Drainage Pipeline work, upgrade Structures into connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, and 3D review as described in `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
 - treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
+- use the representation strategy table in `V1_MASTER_PLAN.md` when deciding whether a subsystem should be semantic-first, geometry-first, topology-first, or contract-first
+- generate watertight solids through a topology-first pipeline: closed semantic Applied Section profiles, deterministic edge networks, face adjacency, shell validation, then Part solid geometry
 - use the existing v0 viewers as secondary support paths during transition
 - keep existing v0 source editors out of the primary toolbar when a v1-native editor is available
 - in the active workbench layout, keep the three v1 review commands grouped ahead of the old review surfaces where practical
 - in the active workbench layout, keep the `Corridor` stage centered on `Build Corridor` rather than exposing low-level intermediate generators
 - in the active workbench layout, expose `Outputs & Exchange` and `AI Assist` as explicit top-level stages even before their detailed v1-native hubs are fully implemented
+- in the active workbench layout, place `Watertight Solids` after `AI Assist` as the final stage and gate it on successful Build Corridor prerequisites
 - in the active workbench layout, keep `Survey & Surface` aligned to the TIN-first strategy and avoid exposing DEM-first terrain workflow as a primary stage action
 
 UX reset rule:

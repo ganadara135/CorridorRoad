@@ -41,6 +41,7 @@ class CorridorSurfaceService:
         subgrade_surface_id = f"{request.corridor.corridor_id}:subgrade"
         daylight_surface_id = f"{request.corridor.corridor_id}:daylight"
         drainage_surface_id = f"{request.corridor.corridor_id}:drainage"
+        drainage_source_refs = _point_role_source_refs(request.applied_section_set, "ditch_surface")
 
         surface_rows = [
             SurfaceRow(
@@ -107,11 +108,14 @@ class CorridorSurfaceService:
                     build_relation_id=f"{request.surface_model_id}:drainage-build",
                     surface_ref=drainage_surface_id,
                     relation_kind="corridor_build",
-                    input_refs=[
-                        request.corridor.corridor_id,
-                        request.applied_section_set.applied_section_set_id,
-                    ],
-                    operation_summary="Built from AppliedSection ditch_surface point rows.",
+                    input_refs=_unique_text_rows(
+                        [
+                            request.corridor.corridor_id,
+                            request.applied_section_set.applied_section_set_id,
+                        ]
+                        + drainage_source_refs
+                    ),
+                    operation_summary="Built as a separate drainage surface from source-tagged AppliedSection ditch_surface point rows.",
                 )
             )
         span_rows = _build_surface_span_rows(
@@ -123,7 +127,7 @@ class CorridorSurfaceService:
         source_refs = [
             request.corridor.corridor_id,
             request.applied_section_set.applied_section_set_id,
-        ]
+        ] + drainage_source_refs
         transition_model_id = str(getattr(request.surface_transition_model, "transition_model_id", "") or "")
         if transition_model_id:
             source_refs.append(transition_model_id)
@@ -134,7 +138,7 @@ class CorridorSurfaceService:
             surface_model_id=request.surface_model_id,
             corridor_id=request.corridor.corridor_id,
             label=f"Surfaces for {request.corridor.corridor_id}",
-            source_refs=source_refs,
+            source_refs=_unique_text_rows(source_refs),
             surface_rows=surface_rows,
             build_relation_rows=build_relation_rows,
             comparison_rows=[],
@@ -148,6 +152,28 @@ def _has_point_role(applied_section_set: AppliedSectionSet, point_role: str) -> 
             if str(getattr(point, "point_role", "") or "") == point_role:
                 return True
     return False
+
+
+def _point_role_source_refs(applied_section_set: AppliedSectionSet, point_role: str) -> list[str]:
+    output: list[str] = []
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        for point in list(getattr(section, "point_rows", []) or []):
+            if str(getattr(point, "point_role", "") or "") != point_role:
+                continue
+            output.append(str(getattr(point, "drainage_ref", "") or ""))
+    return _unique_text_rows(output)
+
+
+def _unique_text_rows(values) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def _build_surface_span_rows(

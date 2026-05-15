@@ -1,4 +1,4 @@
-# CorridorRoad V1 Drainage Model
+# Parametric Road V1 Drainage Model
 
 Date: 2026-04-24
 Branch: `v1-dev`
@@ -30,7 +30,7 @@ This model covers:
 - drainage identity and source intent
 - open and closed drainage element references
 - minimum-grade and low-point policy
-- collection, conveyance, and discharge references
+- flow-route, conveyance, and outlet references
 - diagnostics and review traceability
 - corridor interaction references to sections, ramps, and intersections
 
@@ -80,7 +80,7 @@ Drainage may influence section and profile decisions, but it should remain an ex
 
 Ditch cross-section shape parameters used by Assembly and Applied Section evaluation are defined in `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
 
-Drainage intent such as collection, discharge, and low-point policy remains owned by `DrainageModel`.
+Drainage intent such as flow routing, outlet requirements, and low-point policy remains owned by `DrainageModel`.
 
 ## 6. Design Goals
 
@@ -99,7 +99,7 @@ Recommended early v1 support:
 
 - ditch, gutter, swale, and channel policy
 - culvert, inlet, manhole, and outfall references where practical
-- collection and discharge region references
+- flow-route and discharge references
 - low-point and ponding-risk review
 - drainage-aware grading diagnostics
 - drainage quantity references
@@ -117,7 +117,7 @@ Recommended primary object families:
 - `DrainageModel`
 - `DrainageElementRow`
 - `DrainagePolicySet`
-- `DrainageCollectionRegion`
+- `DrainageFlowRoute`
 - `DrainageConstraintSet`
 - `DrainageReviewResult`
 
@@ -135,7 +135,7 @@ Recommended primary object families:
 - `label`
 - `element_rows`
 - `policy_rows`
-- `collection_region_rows`
+- `flow_route_rows`
 - `constraint_rows`
 - `unit_context`
 - `source_refs`
@@ -149,7 +149,11 @@ Recommended primary object families:
 
 ### 10.1 Purpose
 
-Each `DrainageElementRow` represents one meaningful drainage element or reference.
+Each `DrainageElementRow` represents one drainage node.
+
+Elements answer "what drainage target exists here?".
+
+Assembly-generated drainage geometry is limited to ditch components in the current implementation. Other drainage needs such as culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references; they are not Assembly-generated ditch geometry.
 
 ### 10.2 Recommended fields
 
@@ -162,7 +166,6 @@ Each `DrainageElementRow` represents one meaningful drainage element or referenc
 - optional `structure_ref`
 - `station_start`
 - `station_end`
-- optional `offset_rule`
 - `policy_set_ref`
 - `source_ref`
 - `notes`
@@ -182,11 +185,13 @@ Each `DrainageElementRow` represents one meaningful drainage element or referenc
 
 Drainage elements should preserve engineering role and context, not become unlabeled linework.
 
+Element rows are graph nodes. They do not encode the whole water path by themselves.
+
 ## 11. DrainagePolicySet
 
 ### 11.1 Purpose
 
-`DrainagePolicySet` defines how a drainage element or region should behave.
+`DrainagePolicySet` defines how a drainage element or route should behave.
 
 ### 11.2 Recommended fields
 
@@ -194,7 +199,7 @@ Drainage elements should preserve engineering role and context, not become unlab
 - `flow_intent`
 - `min_grade_rule`
 - `low_point_rule`
-- `collection_rule`
+- `route_rule`
 - `discharge_rule`
 - `maintenance_access_hint`
 - `earthwork_priority`
@@ -208,32 +213,80 @@ Drainage elements should preserve engineering role and context, not become unlab
 - `cross_drainage_transfer`
 - `temporary_construction_drainage`
 
-## 12. DrainageCollectionRegion
+## 12. DrainageFlowRoute
 
 ### 12.1 Purpose
 
-Collection regions preserve where runoff is expected to gather or discharge.
+Flow routes preserve how Drainage elements connect to downstream elements, Structures, or outfalls.
+
+Flow routes answer "how does water move from one drainage node to the next?".
+
+In the source contract, each Flow Route row is one graph edge. A complete drainage path is represented by one or more ordered edges.
 
 ### 12.2 Recommended fields
 
-- `collection_region_id`
-- `region_kind`
-- `station_start`
-- `station_end`
-- optional `alignment_ref`
-- optional `ramp_ref`
-- optional `intersection_ref`
-- `expected_receiver_ref`
+- `flow_route_id`
+- `from_element_ref`
+- `to_element_ref`
+- optional `outlet_ref`
+- `direction`
 - `risk_level`
 - `notes`
 
 ### 12.3 Recommended kinds
 
-- `sag_region`
-- `gutter_collection_region`
-- `ditch_collection_region`
-- `intersection_capture_region`
-- `outfall_region`
+- `ditch_to_ditch`
+- `ditch_to_structure`
+- `ditch_to_outfall`
+- `structure_to_outfall`
+- `review_route`
+
+### 12.4 Outlet Rule
+
+Use `to_element_ref` for the next immediate drainage node.
+
+Use `outlet_ref` only on the route row whose `to_element_ref` is an outlet/outfall Element.
+
+Intermediate route rows should leave `outlet_ref` empty. The final outlet is discovered by following the graph edges instead of repeating the same outlet on every row.
+
+Example:
+
+```text
+ditch:right-r2 -> culvert:01 -> outfall:right-01
+```
+
+Elements:
+
+```text
+ditch:right-r2      kind=ditch
+culvert:01          kind=culvert_reference
+outfall:right-01    kind=outfall_reference
+```
+
+Flow route edges:
+
+```text
+edge:r2-01    from=ditch:right-r2    to=culvert:01
+edge:r2-02    from=culvert:01        to=outfall:right-01
+```
+
+### 12.5 Ditch-to-Inlet Rule
+
+A Flow Route from a `ditch` Element to an `inlet_reference` Element records open-channel capture into the inlet.
+
+It is not a pipe body by itself.
+
+Example:
+
+```text
+side-ditch-right -> inlet-01      capture / intake relationship
+inlet-01 -> culvert-01            pipe connection
+culvert-01 -> outlet-01           pipe connection
+```
+
+The 3D pipe network should start from Structure-owned connection points, for example inlet `pipe_out`, culvert upstream/downstream, and outlet `pipe_in`.
+
+If a real short pipe is needed between the ditch and inlet, model it as a separate Structure-backed drainage element or connector rather than treating the open ditch row as a pipe.
 
 ## 13. Constraint Policy
 
@@ -267,9 +320,13 @@ Drainage constraints make grading and comparison rules explicit.
 - ditch and gutter interpretation
 - drainage-sensitive component selection
 - low-point warnings attached to section review
-- output rows describing collection and discharge context
+- output rows describing flow-route and discharge context
 
 It should not directly become the editable generated section geometry.
+
+Applied Section `ditch_surface` rows may carry `drainage_ref`, `component_ref`, and `side` as result context. Corridor surface generation consumes those source-tagged rows to create the separate drainage surface and carries the source ids into TIN provenance and diagnostics.
+
+Drainage quantity generation uses the same source-tagged Applied Section rows. First-slice quantity outputs report `drainage_ditch_length` by `drainage_ref` and report `drainage_flowline_length` when paired flowline or invert point ids exist.
 
 ## 15. Relationship to Earthwork and AI
 
@@ -288,7 +345,7 @@ Drainage-aware review should be able to show:
 
 - active drainage element identity
 - low-point and sag warnings
-- collection and discharge region context
+- flow-route and discharge context
 - related culvert or structure references
 - affected ramp or intersection context where relevant
 

@@ -1,4 +1,4 @@
-# CorridorRoad V1 AI Assist Plan
+# Parametric Road V1 AI Assist Plan
 
 Date: 2026-04-24
 Branch: `v1-dev`

@@ -14,8 +14,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_APPLIED_SECTIONS,
     V1_TREE_ASSEMBLIES,
     V1_TREE_BOOKMARKS,
-    V1_TREE_CULVERTS,
-    V1_TREE_DITCHES,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
@@ -26,7 +24,6 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_EXISTING_GROUND_TIN_RESULT,
     V1_TREE_EXISTING_GROUND_TIN_SOURCE,
     V1_TREE_INTERSECTIONS,
-    V1_TREE_INLETS,
     V1_TREE_IFC,
     V1_TREE_ISSUES,
     V1_TREE_LANDXML,
@@ -47,6 +44,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_SURFACES,
     V1_TREE_SURVEY_POINTS,
     V1_TREE_TIN_REVIEW,
+    V1_TREE_WATERTIGHT_SOLIDS,
     V1_TREE_PLAN_PROFILE_REVIEW,
     V1_TREE_PROFILES,
     CorridorRoadProject,
@@ -263,9 +261,10 @@ def test_resolve_v1_target_container_routes_drainage_objects() -> None:
         tree = ensure_project_tree(project, include_references=False)
         cases = [
             ("DrainageModel", V1_TREE_DRAINAGE),
-            ("DitchModel", V1_TREE_DITCHES),
-            ("CulvertModel", V1_TREE_CULVERTS),
-            ("InletModel", V1_TREE_INLETS),
+            ("DitchModel", V1_TREE_DRAINAGE),
+            ("CulvertModel", V1_TREE_DRAINAGE),
+            ("InletModel", V1_TREE_DRAINAGE),
+            ("FlowPathModel", V1_TREE_DRAINAGE),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)
@@ -335,10 +334,28 @@ def test_resolve_v1_target_container_routes_output_exchange_objects() -> None:
             ("LandXMLExport", V1_TREE_LANDXML),
             ("IFCExport", V1_TREE_IFC),
             ("ExchangePackage", V1_TREE_EXCHANGE_PACKAGES),
+            ("V1WatertightSolidOutput", V1_TREE_WATERTIGHT_SOLIDS),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)
             assert resolve_v1_target_container(project, obj) == tree[key]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_resolve_v1_target_container_routes_watertight_solid_record_kind() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        obj = doc.addObject("App::FeaturePython", "SomeSolidOutput")
+        obj.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        obj.CRRecordKind = "v1_watertight_solid_output"
+
+        folder = route_to_v1_tree(project, obj)
+
+        assert folder == tree[V1_TREE_WATERTIGHT_SOLIDS]
+        assert obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert tree[V1_TREE_WATERTIGHT_SOLIDS].Label == "Watertight Solids"
     finally:
         App.closeDocument(doc.Name)
 
