@@ -1,0 +1,426 @@
+Below is a draft narration for **Parametric Road**, organized into a total of 17 scenes.
+
+**Scene 01. Intro / Project Setup**
+
+Parmetric Road 워크플로우를 설명하겠습니다.
+I will explain the Parametric Road workflow.
+
+이번 예제에서 사용되는 모든 설계 입력값은
+All design input values used in this example
+별도 수작업 데이터가 아닌 Preset data를 기반으로 합니다.
+are based on preset data, not separately prepared manual data.
+
+먼저 워크벤치에서 Parametric Road 를 선택하고
+First, select Parametric Road from the workbench,
+그리고 새로운 문서를 생성합니다.
+and then create a new document.
+트리창에서 Document 가 생성된 것을 볼 수 있습니다.
+You can see that a Document has been created in the Tree Window.
+
+Project Setup 메뉴를 열어서 도로 설계의 기본 설정을 진행합니다.
+Open the Project Setup menu to configure the basic settings for road design.
+
+설정값에서 Design Standard를 현재는 한국과 미국기준으로 선택할 수 있습니다.
+In the settings, the Design Standard can currently be selected based on Korean or U.S. standards.
+
+다음으로 좌표시스템을 설정하는데, 이 예제에서는 UTM-K 좌표계로 사용자가 직접 수정할 수 있습니다.
+Next, set the coordinate system. In this example, the user can directly modify it to use the UTM-K coordinate system.
+
+Apply Setup 버튼을 클릭하면 Tree Window 에 객체가 생성됩니다.
+When you click the Apply Setup button, objects are created in the Tree Window.
+
+**Scene 02. TIN / Import Terrain**
+**Scene 02. TIN / Import Terrain**
+
+TIN 지형을 생성하는 단계입니다.
+This is the step for creating the TIN terrain.
+
+각 탭메뉴를 통해서 삼각망 데이터를 직접 수정할 수 있습니다
+The triangulation data can be edited directly through each tab menu.
+
+지형데이터를 csv 파일로 불러올 수 있습니다.
+Terrain data can be imported from a CSV file.
+
+사전 설정된 지형 샘플 데이터를 사용하여 TIN 지형을 생성할 수도 있습니다.
+You can also create a TIN terrain using predefined sample terrain data.
+
+지형 좌표 데이터를 불러와서 TIN 지형이 생성된 것을 확인할 수 있습니다.
+After importing the terrain coordinate data, you can confirm that the TIN terrain has been created.
+
+생성된 TIN 지형을 FreeCad 명령어인 Fit Selection 기능을 통해서
+The generated TIN terrain can be viewed using FreeCAD’s Fit Selection command
+
+3D 뷰에서 확인할 수 있습니다.
+in the 3D view.
+
+Tree Window에서 TIN 지형이 생성된 것을 볼 수 있습니다.
+You can see that the TIN terrain has been created in the Tree Window.
+
+**Scene 03. Alignment**
+**Scene 03. Alignment**
+
+다음은 평면 선형을 생성하는 단계입니다.
+Next is the step for creating the horizontal alignment.
+
+FreeCAD의 Sketcher에게 만든 선형 객체가 있으면
+If there is an alignment object created in FreeCAD Sketcher,
+
+여기서 끌어와서 사용할 수 있습니다.
+it can be brought in and used here.
+
+CSV 파일로 Alignment data를 불러올 수 있습니다.
+Alignment data can be imported from a CSV file.
+
+Preset alignment data를 적용하여
+By applying preset alignment data,
+
+직선, 곡선, 완화곡선이 포함된 도로 중심선을 구성할 수 있습니다.
+you can create a road centerline that includes tangents, curves, and transition curves.
+
+TIN 지형과 위치를 맞춰서 평면 선형 데이터를 불러올 수 있습니다.
+Horizontal alignment data can be imported so that it matches the position of the TIN terrain.
+
+도로설계기준 데이터 설정을 할 수가 있습니다.
+Road design standard data can also be configured.
+
+선형 데이터를 생성하겠습니다.
+Now I will create the alignment data.
+
+생성했으나 지형에 덮혀있어서 안 보입니다.
+It has been created, but it is not visible because it is covered by the terrain.
+
+Tree Window 에서 Surface 를 가리면 생성한 선형이 보입니다.
+If you hide the Surface in the Tree Window, the created alignment becomes visible.
+
+**Scene 04. Stations**
+**Scene 04. Stations**
+
+측점 생성을 진행하겠습니다.
+Now I will create the stations.
+
+측점 간격과 측점 심볼을 설정할 수 있습니다.
+You can set the station interval and station symbols.
+
+생성된 측점 정보를 테이블과 Tree Window에서 확인할 수 있습니다.
+The created station information can be checked in the table and in the Tree Window.
+
+**Scene 05. Profile**
+**Scene 05. Profile**
+
+이번 단계에서는 종단 작업을 진행합니다.
+In this step, we will work on the profile.
+
+Preset profile data를 이용해 계획고, 종단 경사, 종곡선 정보를 구성합니다.
+Using preset profile data, the design elevation, profile grades, and vertical curve information are configured.
+
+여기선 간단히 측점과 종점 PVI 2개점으로 종단도를 생성하겠습니다.
+Here, I will simply create a profile using two PVI points: the start station and the end point.
+
+시점과 종점에 높이차를 크게해서 입력후 중간값은 간단히 보간하겠습니다.
+I will enter a large elevation difference between the start and end points, then simply interpolate the intermediate values.
+
+트리창에서 Profile 객체가 생성된 것을 볼 수 있습니다.
+You can see that the Profile object has been created in the Tree Window.
+
+**Scene 06. Profile Review**
+**Scene 06. Profile Review**
+
+Profile Review 에서는 작성된 종단 계획을 검토합니다.
+In Profile Review, the created profile plan is reviewed.
+
+지형고와 계획고의 관계를 확인하고,
+The relationship between the existing ground elevation and the design elevation is checked,
+
+종단 경사와 주요 변화 지점이 의도한 설계 흐름에 맞는지 확인합니다.
+and the profile grades and major change points are reviewed to confirm that they match the intended design flow.
+
+**Scene 07. 3D Centerline**
+**Scene 07. 3D Centerline**
+
+3D Centerline을 생성하는 단계입니다.
+This is the step for creating the 3D Centerline.
+
+평면 선형과 종단 정보를 결합해 3D 중심선을 생성합니다.
+The horizontal alignment and profile information are combined to create the 3D centerline.
+
+이 3D 중심선은 도로 모델의 핵심 기준선으로, 위치와 높이 정보를 모두 포함합니다.
+This 3D centerline is the key reference line of the road model and includes both position and elevation information.
+
+**Scene 08. Assembly**
+**Scene 08. Assembly**
+
+도로 횡단 구성을 정의하는 Assembly를 생성합니다.
+An Assembly is created to define the road cross-section configuration.
+
+차로, 길어깨, 사면 등 기본 횡단 요소를 Preset assembly data로 구성합니다.
+Basic cross-section elements such as lanes, shoulders, and slopes are configured using preset assembly data.
+
+Assembly는 단순한 형상이 아니라,
+An Assembly is not just a simple shape,
+
+도로 구간별로 반복 적용될 수 있는 단면 설계 규칙입니다.
+but a cross-section design rule that can be repeatedly applied to each road segment.
+
+Show 버튼이나, Fit Selection 기능을 통해서
+Using the Show button or the Fit Selection function,
+
+3D 뷰에서 Assembly를 확인할 수 있습니다.
+you can check the Assembly in the 3D view.
+
+**Scene 09. Regions**
+**Scene 09. Regions**
+
+도로 전체 구간을 설계 조건에 따라 Region으로 나눕니다.
+The entire road section is divided into Regions according to the design conditions.
+
+Preset region data를 사용해
+Using preset region data,
+
+구간별 도로 단면 적용 구조를 빠르게 설정합니다.
+the road cross-section application structure for each segment can be set up quickly.
+
+이전 단계에서 생성한 Assembly와 연동하여,
+By linking with the Assembly created in the previous step,
+
+각 Region에 적용할 단면 구성을 지정합니다.
+the cross-section configuration to be applied to each Region is specified.
+
+**Scene 10. Structures**
+**Scene 10. Structures**
+
+본 메뉴에서는 구조물 관련 요소를 구성합니다.
+In this menu, structure-related elements are configured.
+
+Preset structure data를 기반으로
+Based on preset structure data,
+
+도로 구간에 필요한 구조물 정보를 설정합니다.
+the structure information required for the road section is set.
+
+배수, 교량, 터널, 옹벽 등
+It can include various structure types
+
+다양한 구조물 유형을 포함할 수 있습니다
+such as drainage structures, bridges, tunnels, and retaining walls.
+
+상단 테이블에서 한 행을 클릭하면,
+When you click a row in the upper table,
+
+그에 관련된 상세 정보를 하단 섹션에서 확인할 수 있습니다.
+the related detailed information can be checked in the lower section.
+
+Drainage Connection Points는
+Drainage Connection Points
+
+구조물과 배수 요소가 연결되는 지점을 나타냅니다.
+represent the points where structures and drainage elements are connected.
+
+생성된 구조물을 3D 뷰에서 확인할 수 있습니다.
+The generated structures can be checked in the 3D view.
+
+화면 상에 구조물은 배수물 구조물입니다.
+The structures shown on the screen are drainage structures.
+
+Inlet, Outlet, Culvert, Pipe 를 나타냅니다.
+They represent the Inlet, Outlet, Culvert, and Pipe.
+
+향후 디테일하게 보강할 계획입니다.
+These will be enhanced in more detail in the future.
+
+**Scene 11. Drainage**
+**Scene 11. Drainage**
+
+배수물 관련 정보를 구성하는 단계입니다.
+This is the step for configuring drainage-related information.
+
+Preset data 는 이전 단계에서 Drainage 만들었으니,
+Since the drainage preset data was created in the previous step,
+
+여기서도 이여서 Drainage Structure Flow 를 선택하겠습니다.
+I will continue here by selecting Drainage Structure Flow.
+
+Strucutres 메뉴에서 생성한 배수 구조물과
+The drainage structures created in the Structures menu
+
+연결되는 배수 흐름 정보가 설정되어 있습니다.
+are configured with connected drainage flow information.
+
+Show Flow Network 버튼을 통해서
+Using the Show Flow Network button,
+
+배수 흐름 네트워크를 3D 뷰에서 확인할 수 있습니다.
+the drainage flow network can be checked in the 3D view.
+
+Ditch 를 제외한 배수 흐름이 보입니다.
+The drainage flows are visible except for the Ditch.
+
+각 배수물들의 흐름 연결은 Flow Route로 표현됩니다.
+The flow connections between each drainage element are represented as Flow Routes.
+
+배수 정보는 도로 표면과 횡단 구성,
+Drainage information is an important design element
+
+향후 검토 결과와 연결되는 중요한 설계 요소입니다.
+that is connected to the road surface, cross-section configuration, and future review results.
+
+**Scene 12. Drainage Review**
+**Scene 12. Drainage Review**
+
+Drainage Review에서는
+In Drainage Review,
+
+설정된 배수 조건을 검토합니다.
+the configured drainage conditions are reviewed.
+
+배수 위치와 흐름 방향, 주요 저점 조건이
+The drainage locations, flow directions, and major low-point conditions
+
+도로 선형 및 종단 계획과 적절히 연결되는지 확인합니다.
+are checked to confirm that they are properly connected with the road alignment and profile plan.
+
+**Scene 13. Applied Section**
+**Scene 13. Applied Section**
+
+Applied Section은 측점별로 실제 적용되는 단면을 생성합니다.
+Applied Section creates the actual cross-sections applied at each station.
+
+생성된 행을 더블클릭하면
+When you double-click a created row,
+
+각 측점에서 적용된 단면 형상을 3D 뷰에서 확인할 수 있습니다.
+you can check the cross-section shape applied at each station in the 3D view.
+
+Assembly, Region, 지형, 구조물, 배수 조건이 결합되어
+Assembly, Region, terrain, structures, and drainage conditions are combined
+
+각 위치의 Applied Section이 만들어집니다.
+to create the Applied Section for each location.
+
+.
+.
+
+**Scene 14. Build Parametric Road**
+**Scene 14. Build Parametric Road**
+
+앞에서 정의한 모든 규칙과 데이터 설계 조건을
+Based on all the rules, data, and design conditions
+
+바탕으로 Parametric Road 모델을 빌드합니다.
+defined earlier, the Parametric Road model is built.
+
+탭 메뉴를 통해서 보기 옵션을 조정할 수 있습니다.
+View options can be adjusted through the tab menu.
+
+잠시 빌드하는 동안,
+While the model is being built,
+
+내부적으로는 평면 선형, 종단, 3D 중심선, 단면, 구조물, 배수 정보가
+the horizontal alignment, profile, 3D centerline, cross-sections, structures, and drainage information
+
+하나의 도로 모델로 연결됩니다.
+are internally connected into a single road model.
+
+3d 뷰에서 생성된 도로 모델을 확인할 수 있습니다.
+The generated road model can be checked in the 3D view.
+
+더블클릭하면 해당 항목만 3D 뷰에서 볼 수 있습니다.
+By double-clicking an item, only that item can be viewed in the 3D view.
+
+이 과정은 개별 요소를 단순히 그리는 것이 아니라,
+This process is not simply drawing individual elements,
+
+설계 의도에서 결과 모델까지 추적 가능한 구조로 생성하는 단계입니다.
+but creating a traceable structure from design intent to the resulting model.
+
+**Scene 15. Review Cross Sections**
+**Scene 15. Review Cross Sections**
+
+Review Cross Sections에서는 생성된 횡단면을 검토합니다.
+In Review Cross Sections, the generated cross-sections are reviewed.
+
+측점별 단면 형상, 지형과의 관계, 적용된 Assembly
+The cross-section shape at each station, its relationship with the terrain, the applied Assembly,
+
+및 Region 정보를 확인합니다.
+and Region information are checked.
+
+3D 뷰에서 단면을 하나씩 검토하면서,
+By reviewing each cross-section one by one in the 3D view,
+
+도로 설계 결과가 의도한 설계 규칙과 일치하는지 확인합니다
+you can confirm whether the road design result matches the intended design rules.
+
+Canvas 뷰에서는 단면을 확대해서 자세히 볼 수 있습니다.
+In the Canvas view, the cross-section can be enlarged and examined in detail.
+
+Cross Section Viewer는 편집 도구가 아니라,
+The Cross Section Viewer is not an editing tool,
+
+설계 결과를 검토하고 확인하기 위한 리뷰 화면입니다.
+but a review screen for checking and verifying design results.
+
+**Scene 16. Review EarthWork**
+**Scene 16. Review EarthWork**
+
+이번 단계에서는 토공 결과를 검토합니다.
+In this step, the earthwork results are reviewed.
+
+계획 단면과 기존 지형의 차이를 기준으로
+Based on the difference between the design cross-section and the existing terrain,
+
+절토와 성토 상태를 확인합니다.
+the cut and fill conditions are checked.
+
+Build Parametric 단계에서 view option을
+In the Build Parametric step, I will change the view option
+
+전체 표면을 볼 수 있게 변경하겠습니다.
+so that the entire surface can be viewed.
+
+Preset data 기반 예제이지만,
+Although this example is based on preset data,
+
+실제 도로 설계 검토와 같은 방식으로
+the earthwork evaluation flow can be checked
+
+토공량 판단 흐름을 확인할 수 있습니다.
+in the same way as in an actual road design review.
+
+**Scene 17. Rest of Tools / Next Plan**
+**Scene 17. Rest of Tools / Next Plan**
+
+마지막으로 앞으로 확장될 도구들을 정리합니다.
+Finally, I will summarize the tools that will be expanded in the future.
+
+성과품 출력을 향후 추가할 계획입니다.
+Deliverable output features are planned to be added in the future.
+
+구조물 출력도 향후 고도화 계획입니다.
+Structure output will also be enhanced in the future.
+
+Ai Assist 도 추후
+AI Assist will also be expanded later
+
+도로 설계 업무에 특화된 기능으로 확장할 계획입니다.
+with features specialized for road design work.
+
+Watertight solid 모델링 기능도 고도화할 예정입니다.
+The watertight solid modeling function will also be further enhanced.
+
+현재 일부 구조물은 단순한 형상으로 표현되어 있지만,
+Currently, some structures are represented with simple shapes,
+
+향후에는 실제 구조물 설계에 필요한 상세 모델링이
+but in the future, detailed modeling required for actual structure design
+
+가능하도록 개선할 계획입니다.
+will be improved and supported.
+
+일부 구조물을 Solid 모델로 출력해 보겠습니다.
+Now I will output some structures as solid models.
+
+Surface 모형을 숨기면, 구조물의 Solid 모델이 보입니다.
+When the Surface model is hidden, the solid models of the structures become visible.
+
+이상으로 Parametric Road의 주요 기능과 워크플로우를 살펴보았습니다.
+This concludes the overview of the main features and workflow of Parametric Road.
