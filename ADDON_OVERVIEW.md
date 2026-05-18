@@ -83,7 +83,7 @@ Online project resources:
 - FreeCAD Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 ## Video
-- https://youtu.be/P0kiPREy2qE
+- https://youtu.be/_xpqwnXPUU8
 
 
 ## Screenshots
