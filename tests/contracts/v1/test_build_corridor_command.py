@@ -1,7 +1,11 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import (
+    V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
+    CorridorRoadProject,
+    ensure_project_tree,
+)
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
@@ -75,6 +79,10 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 
 _QAPP = None
+
+
+def _group_names(group):
+    return {str(getattr(child, "Name", "") or "") for child in list(getattr(group, "Group", []) or [])}
 
 
 def _new_project_doc():
@@ -455,6 +463,13 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(first_issue_marker.MarkerCount) == 1
         shown_marker = show_corridor_slope_face_issue_marker(doc, 0)
         assert shown_marker.Name == "ReviewIssueSlopeFaceIssue001L"
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        build_output_names = _group_names(build_outputs)
+        assert preview.Name in build_output_names
+        assert subgrade_preview.Name in build_output_names
+        assert daylight_preview.Name in build_output_names
+        assert fallback_markers.Name in build_output_names
+        assert first_issue_marker.Name in build_output_names
         assert progress_events[0] == (40, "Preparing project tree...")
         assert any(text == "Building corridor surfaces..." for _value, text in progress_events)
         assert progress_events[-1] == (94, "Recomputing document...")
@@ -1606,6 +1621,8 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.SurfaceKind == "drainage_surface"
         assert int(drainage_preview.VertexCount) == 20
         assert int(drainage_preview.TriangleCount) == 16
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        assert drainage_preview.Name in _group_names(build_outputs)
         rows = corridor_build_review_rows(doc)
         assert rows[3]["status"] == "error"
         assert "Slope Face Surface preview was not created" in str(rows[3]["notes"])

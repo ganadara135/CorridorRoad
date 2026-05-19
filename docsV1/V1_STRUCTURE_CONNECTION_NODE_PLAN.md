@@ -12,7 +12,7 @@ Current first implementation slice:
 - `Derive Defaults` can create first-slice connection points for culvert/inlet/outlet/headwall-style rows.
 - `Pick From 3D` can fill a connection point row from the current FreeCAD 3D selection by projecting the selected point to Alignment station/offset.
 - `Preview Points` can show selected Structure connection points as 3D review markers, and row double-click can focus one point.
-- Drainage Elements can now store a `connection_point_ref` to a selected Structure connection point.
+- Drainage Elements keep Structure refs, while Flow Routes resolve Pipe In / Pipe Out endpoints from Structure-owned connection points by route direction.
 - External Ref bodies remain separate from connection point endpoints.
 Depends on:
 
@@ -407,7 +407,7 @@ They should not be used as editable geometry.
 
 ## 12. Drainage Handoff Rule
 
-Drainage should reference connection points instead of only Structure ids once this plan is implemented.
+Drainage should reference Structures at the Element level and let Flow Routes resolve the proper Structure connection points by direction.
 
 Current first-slice:
 
@@ -419,15 +419,16 @@ Target:
 
 ```text
 DrainageElementRow.structure_ref = structure:culvert-01
-DrainageElementRow.connection_point_ref = connection:culvert-01:upstream
+DrainageElementRow.structure_ref = structure:culvert-01
+FlowRoute direction resolves culvert-01 as Pipe In when it is the downstream target and Pipe Out when it is the upstream source.
 ```
 
 First-slice editor behavior:
 
 - Drainage Elements keep `Structure Ref`.
-- non-ditch rows expose a `Connection Point` combo.
-- the combo is populated from the selected Structure's `StructureConnectionPoint` rows.
-- validation reports missing connection point refs when a StructureModel is available.
+- non-ditch rows expose a `Structure Ref` combo only.
+- the selected Structure's `StructureConnectionPoint` rows are consumed by Flow Route resolution.
+- validation reports missing Structure refs or missing Structure-owned connection points when a physical pipe segment cannot be resolved.
 
 Flow Route target:
 
@@ -540,8 +541,8 @@ Acceptance:
 
 ### S6. Drainage Handoff Preparation
 
-- Expose connection point choices to Drainage.
-- Keep `structure_ref` compatibility while adding `connection_point_ref`.
+- Keep Drainage Element UI focused on `Structure Ref`; connection point selection remains Structure-owned.
+- Keep `connection_point_ref` as an internal compatibility field only while active UI uses direction-based resolution.
 - Document Flow Route endpoint migration.
 - [x] Make Flow Routes consume connection point endpoints before building physical pipe segments.
 - [x] Add first-slice pipeline segment candidates in Drainage Review from Flow Route endpoint connection points.
@@ -551,7 +552,7 @@ Acceptance:
 
 Acceptance:
 
-- Drainage can choose a Structure connection point as an endpoint.
+- Drainage can choose a Structure as an endpoint owner; Flow Routes choose the actual connection point by direction.
 - Drainage Review can report ready or incomplete pipeline segment candidates without reading generated preview geometry.
 - Drainage Review pipeline candidate preview remains output-only and traceable to Flow Route and Structure connection point refs.
 - Drainage Pipeline result rows are generated only from ready endpoint pairs and remain traceable to Flow Route and Structure connection point refs.

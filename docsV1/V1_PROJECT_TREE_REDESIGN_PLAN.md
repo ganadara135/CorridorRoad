@@ -254,6 +254,7 @@ Examples:
 - assembly templates
 - regions
 - applied section sets
+- Build Parametric preview outputs
 - ramps
 - intersections
 - explicit overrides
@@ -344,6 +345,7 @@ Recommended routing:
 - TIN diagnostics -> `03_Surfaces / Existing Ground TIN / Diagnostics`
 - alignment/profile source -> `02_Alignment & Profile`
 - applied section set -> `04_Corridor Model / Applied Sections`
+- Build Parametric generated previews and diagnostics -> `04_Corridor Model / Build Parametric Outputs`
 - ramp model -> `04_Corridor Model / Ramps`
 - intersection model -> `04_Corridor Model / Intersections`
 - drainage model -> `05_Drainage`

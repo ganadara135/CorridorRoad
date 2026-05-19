@@ -9,6 +9,11 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Changed
+- Changed Build Parametric generated preview and diagnostic objects so they are routed under `04_Corridor Model / Build Parametric Outputs` for tree-based hide/show and property inspection.
+- Changed the Watertight Solids panel so existing `V1WatertightSolidOutput` objects are routed under `09_Outputs & Exchange / Watertight Solids` when the panel opens or refreshes.
+- Changed Drainage Elements so the `Connection Point` column is no longer user-facing; Flow Routes now resolve Pipe In / Pipe Out endpoints from Structure-owned connection points by route direction.
+
 ## [1.0.1] - 2026-05-15
 
 ### Added

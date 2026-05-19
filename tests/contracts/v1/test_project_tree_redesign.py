@@ -14,6 +14,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     V1_TREE_APPLIED_SECTIONS,
     V1_TREE_ASSEMBLIES,
     V1_TREE_BOOKMARKS,
+    V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
     V1_TREE_CORRIDOR_MODEL,
     V1_TREE_DRAINAGE,
     V1_TREE_DXF,
@@ -206,6 +207,7 @@ def test_ensure_project_tree_creates_corridor_network_first_class_groups() -> No
         assert tree[V1_TREE_INTERSECTIONS].Label == "Intersections"
         assert tree[V1_TREE_DRAINAGE].Label == "05_Drainage"
         assert tree[V1_TREE_APPLIED_SECTIONS].Label == "Applied Sections"
+        assert tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS].Label == "Build Parametric Outputs"
     finally:
         App.closeDocument(doc.Name)
 
@@ -225,7 +227,7 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
             ("V1AppliedSectionSet", V1_TREE_APPLIED_SECTIONS),
             ("SectionSet", V1_TREE_APPLIED_SECTIONS),
             ("V1CorridorModel", V1_TREE_CORRIDOR_MODEL),
-            ("V1CorridorCenterlinePreview", V1_TREE_CORRIDOR_MODEL),
+            ("V1CorridorCenterlinePreview", V1_TREE_BUILD_PARAMETRIC_OUTPUTS),
             ("V1SurfaceModel", V1_TREE_DESIGN_TIN),
         ]
         for object_name, key in cases:
@@ -339,6 +341,40 @@ def test_resolve_v1_target_container_routes_output_exchange_objects() -> None:
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)
             assert resolve_v1_target_container(project, obj) == tree[key]
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_resolve_v1_target_container_routes_build_parametric_output_record_kinds() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        for index, record_kind in enumerate(
+            [
+                "v1_corridor_centerline_preview",
+                "v1_corridor_surface_preview",
+                "v1_corridor_region_surface_preview",
+                "v1_corridor_surface_preview_diagnostic",
+                "v1_surface_transition_span_marker",
+            ]
+        ):
+            obj = doc.addObject("App::FeaturePython", f"BuildParametricOutput{index}")
+            obj.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad")
+            obj.CRRecordKind = record_kind
+
+            folder = route_to_v1_tree(project, obj)
+
+            assert folder == tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+            assert obj.Name in _group_names(tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS])
+
+        issue = doc.addObject("App::FeaturePython", "ReviewIssueSlopeFaceIssue001L")
+        issue.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad")
+        issue.addProperty("App::PropertyString", "IssueKind", "CorridorRoad")
+        issue.CRRecordKind = "v1_review_issue"
+        issue.IssueKind = "slope_face_tie_in"
+
+        assert route_to_v1_tree(project, issue) == tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        assert issue.Name in _group_names(tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS])
     finally:
         App.closeDocument(doc.Name)
 

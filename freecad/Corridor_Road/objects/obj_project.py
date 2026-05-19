@@ -66,6 +66,7 @@ V1_TREE_COMPARISON_TIN = "v1_comparison_tin"
 V1_TREE_ASSEMBLIES = "v1_assemblies"
 V1_TREE_REGIONS = "v1_regions"
 V1_TREE_APPLIED_SECTIONS = "v1_applied_sections"
+V1_TREE_BUILD_PARAMETRIC_OUTPUTS = "v1_build_parametric_outputs"
 V1_TREE_RAMPS = "v1_ramps"
 V1_TREE_INTERSECTIONS = "v1_intersections"
 V1_TREE_OVERRIDES = "v1_overrides"
@@ -148,6 +149,7 @@ V1_SUBTREE_DEFS = (
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_ASSEMBLIES, "Assemblies", "CRV1_Assemblies"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_REGIONS, "Regions", "CRV1_Regions"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_APPLIED_SECTIONS, "Applied Sections", "CRV1_Applied_Sections"),
+    (V1_TREE_CORRIDOR_MODEL, V1_TREE_BUILD_PARAMETRIC_OUTPUTS, "Build Parametric Outputs", "CRV1_Build_Parametric_Outputs"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_RAMPS, "Ramps", "CRV1_Ramps"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_INTERSECTIONS, "Intersections", "CRV1_Intersections"),
     (V1_TREE_CORRIDOR_MODEL, V1_TREE_OVERRIDES, "Overrides", "CRV1_Overrides"),
@@ -1286,12 +1288,23 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_SOURCE, None)
     if record_kind == "tin_surface_result":
         return tree.get(V1_TREE_EXISTING_GROUND_TIN_RESULT, None)
-    if record_kind == "v1_corridor_surface_preview":
-        return tree.get(V1_TREE_DESIGN_TIN, None)
+    if record_kind in {
+        "v1_corridor_centerline_preview",
+        "v1_corridor_surface_preview",
+        "v1_corridor_region_surface_preview",
+        "v1_corridor_surface_preview_diagnostic",
+        "v1_surface_transition_span_marker",
+    }:
+        return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind == "v1_surface_transition_model":
         return tree.get(V1_TREE_REGIONS, None)
-    if record_kind == "v1_corridor_centerline_preview":
-        return tree.get(V1_TREE_CORRIDOR_MODEL, None)
+    if record_kind == "v1_review_issue":
+        issue_kind = str(getattr(child, "IssueKind", "") or "")
+        name = _name(child)
+        if issue_kind in {"slope_face_tie_in", "surface_transition_span", "drainage_flow", "drainage_station"}:
+            return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
+        if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
+            return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
         return tree.get(V1_TREE_CENTERLINE3D, None)
     if record_kind == "v1_assembly_show_preview":
@@ -1370,8 +1383,14 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if _is_type(
         child,
-        proxy_types=("V1CorridorModel", "CorridorModel", "V1CorridorCenterlinePreview"),
-        name_prefixes=("V1CorridorModel", "CorridorModel", "V1CorridorCenterlinePreview"),
+        proxy_types=("V1CorridorCenterlinePreview",),
+        name_prefixes=("V1CorridorCenterlinePreview",),
+    ):
+        return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
+    if _is_type(
+        child,
+        proxy_types=("V1CorridorModel", "CorridorModel"),
+        name_prefixes=("V1CorridorModel", "CorridorModel"),
     ):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if _is_type(child, proxy_types=("V1SurfaceModel", "SurfaceModel"), name_prefixes=("V1SurfaceModel", "SurfaceModel")):

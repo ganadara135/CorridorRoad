@@ -108,16 +108,7 @@ def test_drainage_presets_offer_practical_source_sets() -> None:
         "structure:culvert-01",
         "structure:outlet-01",
     ]
-    assert [row.connection_point_ref for row in model.element_rows] == [
-        "",
-        "",
-        "",
-        "connection:inlet-01:pipe-out",
-        "connection:inlet-02:pipe-out",
-        "connection:inlet-03:pipe-out",
-        "",
-        "connection:outlet-01:pipe-in",
-    ]
+    assert [row.connection_point_ref for row in model.element_rows] == [""] * 8
     assert [row.flow_route_id for row in model.flow_route_rows] == [
         "flow-route:flowId-01",
         "flow-route:flowId-02",
@@ -163,7 +154,8 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.horizontalHeaderItem(5).text() == "Assembly"
         assert panel._element_table.horizontalHeaderItem(6).text() == "Policy"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Structure Ref"
-        assert panel._element_table.horizontalHeaderItem(8).text() == "Connection Point"
+        assert panel._element_table.columnCount() == 8
+        assert "Connection Point" not in element_headers
         assert panel._tabs.tabText(2) == "Flow Routes"
         assert panel._flow_route_table.horizontalHeaderItem(0).text() == "Flow Route ID"
         assert panel._flow_route_table.horizontalHeaderItem(3).text() == "Outlet"
@@ -176,8 +168,6 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.cellWidget(0, 6).currentText() == "lined-concrete"
         assert panel._element_table.cellWidget(0, 7).currentText() == ""
         assert not panel._element_table.cellWidget(0, 7).isEnabled()
-        assert panel._element_table.cellWidget(0, 8).currentText() == ""
-        assert not panel._element_table.cellWidget(0, 8).isEnabled()
         assert panel._element_table.item(1, 0).text() == "outfall-main"
         assert panel._element_table.cellWidget(1, 7).currentText() == ""
         assert "main" not in [
@@ -221,7 +211,6 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo = panel._element_table.cellWidget(0, 1)
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
 
         assert assembly_item is not None
         assert structure_combo is not None
@@ -229,17 +218,13 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
-        assert not connection_combo.isEnabled()
-        assert connection_combo.currentText() == ""
 
         kind_combo.setCurrentText("culvert_reference")
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         assert not bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert assembly_item.text() == ""
         assert structure_combo.isEnabled()
-        assert connection_combo.isEnabled()
         structure_combo.setCurrentText("culvert-01")
 
         model = panel._model_from_tables()
@@ -249,14 +234,11 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo.setCurrentText("ditch")
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assembly_item.setText("ditch:right")
         assert panel._model_from_tables().element_rows[0].assembly_component_ref == "ditch:right"
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
-        assert not connection_combo.isEnabled()
-        assert connection_combo.currentText() == ""
         assert panel._model_from_tables().element_rows[0].structure_ref == ""
         assert panel._model_from_tables().element_rows[0].connection_point_ref == ""
     finally:
@@ -309,21 +291,16 @@ def test_drainage_editor_structure_ref_uses_structure_id_combo() -> None:
         kind_combo = panel._element_table.cellWidget(0, 1)
         kind_combo.setCurrentText("culvert_reference")
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         structure_items = [structure_combo.itemText(index) for index in range(structure_combo.count())]
 
         assert structure_combo.isEnabled()
         assert "culvert-01" in structure_items
 
         structure_combo.setCurrentText("culvert-01")
-        connection_combo = panel._element_table.cellWidget(0, 8)
-        connection_items = [connection_combo.itemText(index) for index in range(connection_combo.count())]
-        assert "upstream" in connection_items
-        connection_combo.setCurrentText("upstream")
         model = panel._model_from_tables()
 
         assert model.element_rows[0].structure_ref == "structure:culvert-01"
-        assert model.element_rows[0].connection_point_ref == "connection:culvert-01:upstream"
+        assert model.element_rows[0].connection_point_ref == ""
     finally:
         App.closeDocument(doc.Name)
 
@@ -531,10 +508,8 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
 
         assert panel._element_table.item(3, 0).text() == "inlet-01"
         assert panel._element_table.cellWidget(3, 7).currentText() == "inlet-01"
-        assert panel._element_table.cellWidget(3, 8).currentText() == "pipe-out"
         assert panel._element_table.item(6, 0).text() == "culvert-01"
         assert panel._element_table.cellWidget(6, 7).currentText() == "culvert-01"
-        assert panel._element_table.cellWidget(6, 8).currentText() == ""
         assert panel._flow_route_table.item(6, 0).text() == "flowId-07"
         assert panel._flow_route_table.cellWidget(6, 1).currentText() == "culvert-01"
         assert panel._flow_route_table.cellWidget(6, 2).currentText() == "outlet-01"
@@ -543,7 +518,7 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
         assert panel._flow_route_table.cellWidget(1, 3).isEnabled() is False
         assert panel._flow_route_table.cellWidget(6, 3).isEnabled() is True
         assert model.element_rows[3].structure_ref == "structure:inlet-01"
-        assert model.element_rows[3].connection_point_ref == "connection:inlet-01:pipe-out"
+        assert model.element_rows[3].connection_point_ref == ""
         assert model.element_rows[6].connection_point_ref == ""
         assert model.flow_route_rows[6].flow_route_id == "flow-route:flowId-07"
     finally:

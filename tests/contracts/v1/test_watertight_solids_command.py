@@ -453,6 +453,51 @@ def test_watertight_solids_resources_are_final_v1_stage() -> None:
     assert "topology-first" in resources["ToolTip"]
 
 
+def test_watertight_solids_panel_routes_existing_output_objects_to_tree() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsExistingOutputTreeRouteTest")
+    try:
+        output = WatertightSolidOutput(
+            schema_version=1,
+            project_id="proj-1",
+            watertight_solid_output_id="watertight-solids:existing",
+            corridor_id="corridor:main",
+            solid_rows=[
+                WatertightSolidOutputRow(
+                    output_object_id="watertight-solid:existing",
+                    target_id="solid-target:existing",
+                    target_family="road_body_envelope",
+                    scope_kind="whole_corridor",
+                    station_start=0.0,
+                    station_end=10.0,
+                    generated_object_ref="V1WatertightSolidOutput_Existing",
+                    validation_status="ok",
+                    is_watertight=True,
+                    is_valid_solid=True,
+                    volume=1.0,
+                    face_count=6,
+                    edge_count=12,
+                    profile_count=2,
+                )
+            ],
+        )
+        obj = create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=output,
+            project=None,
+            object_name="V1WatertightSolidOutput_Existing",
+            label="Watertight Solid - Existing",
+        )
+        tree = ensure_project_tree(project, include_references=False)
+        assert obj.Name not in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+
+        V1WatertightSolidsTaskPanel(document=doc)
+
+        assert obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_watertight_solids_toolbar_is_after_ai_assist() -> None:
     commands = corridorroad_workflow_toolbar_commands()
 

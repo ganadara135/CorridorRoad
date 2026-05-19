@@ -38,6 +38,12 @@ Typical outputs include:
 - slope face / daylight preview
 - drainage surface preview where ditch surface rows exist
 
+Build Parametric output objects are exposed in the FreeCAD tree under:
+
+`04_Corridor Model / Build Parametric Outputs`
+
+This folder is for generated preview and review objects from the Build Parametric stage. Users can hide/show these objects from the tree and inspect their FreeCAD properties without reopening the task panel.
+
 ## Region Boundaries
 
 The Build Corridor panel includes a `Region Boundaries` table.

@@ -149,6 +149,30 @@ def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrereq
     )
 
 
+def _route_existing_watertight_solid_outputs_to_tree(document=None) -> int:
+    """Route existing Watertight Solid output objects into the v1 tree."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return 0
+    project = find_project(doc)
+    if project is None:
+        return 0
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+    except Exception:
+        return 0
+    routed = 0
+    for obj in list(getattr(doc, "Objects", []) or []):
+        if _is_watertight_output_object(obj):
+            try:
+                if route_to_v1_tree(project, obj) is not None:
+                    routed += 1
+            except Exception:
+                pass
+    return routed
+
+
 def discover_watertight_solid_targets(document=None):
     """Return the currently discoverable watertight solid target model."""
 
@@ -181,6 +205,7 @@ class V1WatertightSolidsTaskPanel:
 
     def __init__(self, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+        _route_existing_watertight_solid_outputs_to_tree(self.document)
         self._status_model = watertight_solid_prerequisite_status(self.document)
         self._target_model = discover_watertight_solid_targets(self.document)
         self._target_state_by_id: dict[str, WatertightSolidTargetPanelState] = {}
@@ -323,6 +348,7 @@ class V1WatertightSolidsTaskPanel:
         return widget
 
     def _refresh(self) -> None:
+        _route_existing_watertight_solid_outputs_to_tree(self.document)
         self._status_model = watertight_solid_prerequisite_status(self.document)
         self._target_model = discover_watertight_solid_targets(self.document)
         self._set_prerequisite_rows(self._status_model)

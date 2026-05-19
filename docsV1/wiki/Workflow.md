@@ -97,3 +97,9 @@ Watertight Solids is the final stage after Build Corridor and AI Assist.
 4. Validate selected targets.
 5. Build selected or enabled targets.
 6. Build or export a package when simulation or exchange handoff is needed.
+
+Built solid output objects are exposed in the FreeCAD tree under:
+
+`09_Outputs & Exchange / Watertight Solids`
+
+The Watertight Solids panel also routes existing `V1WatertightSolidOutput` objects into this folder when the panel opens or refreshes, so users can hide/show built solids and inspect object properties directly from the tree.

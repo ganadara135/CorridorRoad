@@ -41,7 +41,6 @@ ELEMENT_KIND_COLUMN = 1
 ELEMENT_ASSEMBLY_COLUMN = 5
 ELEMENT_POLICY_COLUMN = 6
 ELEMENT_STRUCTURE_COLUMN = 7
-ELEMENT_CONNECTION_POINT_COLUMN = 8
 FLOW_ROUTE_FROM_COLUMN = 1
 FLOW_ROUTE_TO_COLUMN = 2
 FLOW_ROUTE_OUTLET_COLUMN = 3
@@ -265,7 +264,6 @@ DRAINAGE_PRESETS = {
                 "end": 0.25,
                 "policy": "drainage-policy:structure-node",
                 "structure": "structure:inlet-01",
-                "connection_point": "connection:inlet-01:pipe-out",
             },
             {
                 "id": "drainage:inlet-02",
@@ -275,7 +273,6 @@ DRAINAGE_PRESETS = {
                 "end": 0.39,
                 "policy": "drainage-policy:structure-node",
                 "structure": "structure:inlet-02",
-                "connection_point": "connection:inlet-02:pipe-out",
             },
             {
                 "id": "drainage:inlet-03",
@@ -285,7 +282,6 @@ DRAINAGE_PRESETS = {
                 "end": 0.53,
                 "policy": "drainage-policy:structure-node",
                 "structure": "structure:inlet-03",
-                "connection_point": "connection:inlet-03:pipe-out",
             },
             {
                 "id": "drainage:culvert-01",
@@ -304,7 +300,6 @@ DRAINAGE_PRESETS = {
                 "end": 0.82,
                 "policy": "drainage-policy:outfall",
                 "structure": "structure:outlet-01",
-                "connection_point": "connection:outlet-01:pipe-in",
             },
         ],
         "policies": [
@@ -551,7 +546,6 @@ class V1DrainageEditorTaskPanel:
                 "Assembly",
                 "Policy",
                 "Structure Ref",
-                "Connection Point",
             ]
         )
         self._policy_table = self._table(
@@ -710,7 +704,6 @@ class V1DrainageEditorTaskPanel:
             getattr(row, "assembly_component_ref", "") or "",
             _display_prefixed_id(row.policy_set_ref, "drainage-policy:"),
             _display_prefixed_id(row.structure_ref, "structure:"),
-            getattr(row, "connection_point_ref", "") or "",
         ]
         for col, value in enumerate(values):
             if col == 1:
@@ -747,16 +740,6 @@ class V1DrainageEditorTaskPanel:
                     col,
                     _source_structure_ref(value),
                     self._structure_ref_choices(),
-                    display_refs=True,
-                )
-            elif col == ELEMENT_CONNECTION_POINT_COLUMN:
-                structure_ref = str(getattr(row, "structure_ref", "") or "")
-                self._set_combo_cell(
-                    self._element_table,
-                    index,
-                    col,
-                    _source_connection_point_ref(getattr(row, "connection_point_ref", "") or value),
-                    self._connection_point_ref_choices(structure_ref=structure_ref),
                     display_refs=True,
                 )
             else:
@@ -1055,11 +1038,7 @@ class V1DrainageEditorTaskPanel:
                         self._structure_ref_choices(),
                         default_prefix="structure:",
                     ),
-                    connection_point_ref="" if _structure_disabled_for_kind(element_kind) else _source_ref_from_display(
-                        _combo_source_text(self._element_table, index, ELEMENT_CONNECTION_POINT_COLUMN),
-                        self._connection_point_ref_choices(structure_ref=self._row_structure_ref(index)),
-                        default_prefix="connection:",
-                    ),
+                    connection_point_ref="",
                 )
             )
         return rows
@@ -1125,7 +1104,7 @@ class V1DrainageEditorTaskPanel:
         return to_structure_model(find_v1_structure_model(self.document))
 
     def _on_element_table_changed(self, row_index: int, column_index: int) -> None:
-        if column_index in {0, ELEMENT_KIND_COLUMN, ELEMENT_STRUCTURE_COLUMN, ELEMENT_CONNECTION_POINT_COLUMN}:
+        if column_index in {0, ELEMENT_KIND_COLUMN, ELEMENT_STRUCTURE_COLUMN}:
             self._refresh_flow_route_element_combos()
             self._update_flow_route_preview()
 
@@ -1190,15 +1169,11 @@ class V1DrainageEditorTaskPanel:
                 combo.currentTextChanged.connect(
                     lambda _text, row_index=row: self._update_flow_route_outlet_cell_state(row_index)
                 )
-            if table is self._element_table and column == ELEMENT_STRUCTURE_COLUMN:
-                combo.currentTextChanged.connect(lambda _text, row_index=row: self._refresh_connection_point_combo(row_index))
         except Exception:
             pass
         table.setCellWidget(row, column, combo)
 
     def _display_combo_source(self, value: object, *, table, column: int) -> str:
-        if table is self._element_table and column == ELEMENT_CONNECTION_POINT_COLUMN:
-            return _display_connection_point_ref(value)
         return _display_source_ref(value)
 
     def _normalize_flow_route_link_cells(self, row_index: int, _changed_column: int) -> None:
@@ -1321,39 +1296,6 @@ class V1DrainageEditorTaskPanel:
         ]
         return _unique_texts(choices)
 
-    def _connection_point_ref_choices(self, *, structure_ref: str = "") -> list[str]:
-        model = self._structure_model()
-        expected = str(structure_ref or "").strip()
-        choices = [
-            str(getattr(row, "connection_point_id", "") or "").strip()
-            for row in list(getattr(model, "connection_point_rows", []) or [])
-            if str(getattr(row, "connection_point_id", "") or "").strip()
-            and (not expected or str(getattr(row, "structure_ref", "") or "").strip() == expected)
-        ]
-        return _unique_texts(choices)
-
-    def _row_structure_ref(self, row_index: int) -> str:
-        return _source_ref_from_display(
-            _combo_source_text(self._element_table, row_index, ELEMENT_STRUCTURE_COLUMN),
-            self._structure_ref_choices(),
-            default_prefix="structure:",
-        )
-
-    def _refresh_connection_point_combo(self, row_index: int) -> None:
-        if row_index < 0 or row_index >= self._element_table.rowCount():
-            return
-        current = _combo_source_text(self._element_table, row_index, ELEMENT_CONNECTION_POINT_COLUMN)
-        structure_ref = self._row_structure_ref(row_index)
-        choices = self._connection_point_ref_choices(structure_ref=structure_ref)
-        self._set_combo_cell(
-            self._element_table,
-            row_index,
-            ELEMENT_CONNECTION_POINT_COLUMN,
-            _source_ref_from_display(current, choices, default_prefix="connection:"),
-            choices,
-            display_refs=True,
-        )
-
     def _outlet_ref_choices(self) -> list[str]:
         choices: list[str] = []
         for index in range(self._element_table.rowCount()):
@@ -1368,13 +1310,6 @@ class V1DrainageEditorTaskPanel:
                 choices.append(element_id)
             if structure_ref and element_kind != "ditch":
                 choices.append(structure_ref)
-                connection_ref = _source_ref_from_display(
-                    _combo_source_text(self._element_table, index, ELEMENT_CONNECTION_POINT_COLUMN),
-                    self._connection_point_ref_choices(structure_ref=structure_ref),
-                    default_prefix="connection:",
-                )
-                if connection_ref:
-                    choices.append(connection_ref)
         return _unique_texts(choices)
 
     def _flow_route_outlet_enabled(self, row_index: int) -> bool:
@@ -1447,7 +1382,6 @@ class V1DrainageEditorTaskPanel:
     def _update_element_cell_states(self, row_index: int) -> None:
         self._update_element_assembly_cell_state(row_index)
         self._update_element_structure_cell_state(row_index)
-        self._update_element_connection_point_cell_state(row_index)
 
     def _update_element_assembly_cell_state(self, row_index: int) -> None:
         if row_index < 0 or row_index >= self._element_table.rowCount():
@@ -1504,37 +1438,6 @@ class V1DrainageEditorTaskPanel:
                 widget.setEnabled(True)
                 widget.setToolTip("Select a Structure ID from the active Structures model.")
                 widget.setStyleSheet("")
-                self._refresh_connection_point_combo(row_index)
-        except Exception:
-            return
-
-    def _update_element_connection_point_cell_state(self, row_index: int) -> None:
-        if row_index < 0 or row_index >= self._element_table.rowCount():
-            return
-        widget = self._element_table.cellWidget(row_index, ELEMENT_CONNECTION_POINT_COLUMN)
-        if widget is None:
-            self._set_combo_cell(
-                self._element_table,
-                row_index,
-                ELEMENT_CONNECTION_POINT_COLUMN,
-                "",
-                self._connection_point_ref_choices(structure_ref=self._row_structure_ref(row_index)),
-                display_refs=True,
-            )
-            widget = self._element_table.cellWidget(row_index, ELEMENT_CONNECTION_POINT_COLUMN)
-        disabled = _structure_disabled_for_kind(_item_text(self._element_table, row_index, ELEMENT_KIND_COLUMN))
-        try:
-            if disabled:
-                if hasattr(widget, "setCurrentText"):
-                    widget.setCurrentText("")
-                widget.setEnabled(False)
-                widget.setToolTip("Connection points are not used for ditch elements.")
-                widget.setStyleSheet("QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }")
-            else:
-                widget.setEnabled(True)
-                widget.setToolTip("Select a Structure connection point from the active Structures model.")
-                widget.setStyleSheet("")
-                self._refresh_connection_point_combo(row_index)
         except Exception:
             return
 
@@ -1623,15 +1526,6 @@ def _source_structure_ref(value: object) -> str:
     return f"structure:{text}"
 
 
-def _source_connection_point_ref(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if ":" in text:
-        return text
-    return f"connection:{text}"
-
-
 def _unique_texts(values: list[object]) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
@@ -1686,7 +1580,7 @@ def _preset_element_rows(preset: dict, *, station_start: float, station_end: flo
                 element_kind=str(spec.get("kind", "") or "ditch"),
                 side=str(spec.get("side", "") or ""),
                 structure_ref=str(spec.get("structure", "") or ""),
-                connection_point_ref=str(spec.get("connection_point", "") or ""),
+                connection_point_ref="",
                 region_ref="",
                 assembly_component_ref=str(spec.get("component", "") or ""),
                 station_start=_preset_station_value(spec.get("start", 0.0), station_start=station_start, station_end=station_end),
