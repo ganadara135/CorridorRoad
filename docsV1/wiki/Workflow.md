@@ -64,6 +64,12 @@ Applied Sections resolve the active Region at each station.
 
 Build Corridor then uses Applied Sections plus Region source ranges to build surfaces, display Region Boundary rows, and apply stored Surface Transition records.
 
+Build Parametric generated previews and diagnostics are exposed in the FreeCAD tree under:
+
+`04_Corridor Model / Build Parametric Outputs`
+
+This includes generated surface previews, Region surface previews, transition span markers, and Build Parametric review markers. Users can hide/show these objects and inspect their properties from the tree after Build Corridor runs.
+
 Use this order when changing Region or Surface Transition settings:
 
 1. Update Region source rows.

@@ -913,6 +913,7 @@ Current interactive panel QA should verify:
 28. Click `Focus Solid` and confirm the generated solid is selected and framed when the GUI view is available.
 29. Double-click the built target row and confirm the same focus behavior runs.
 30. Confirm generated watertight solid output objects appear under `09_Outputs & Exchange -> Watertight Solids`.
+31. Reopen or refresh the Watertight Solids panel and confirm existing `V1WatertightSolidOutput` objects remain routed under `09_Outputs & Exchange -> Watertight Solids`.
 
 Future interactive build QA should verify after the UI execution slice is implemented:
 

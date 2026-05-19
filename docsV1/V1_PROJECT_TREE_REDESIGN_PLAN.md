@@ -351,8 +351,17 @@ Recommended routing:
 - drainage model -> `05_Drainage`
 - cut/fill and mass-haul -> `07_Quantities & Earthwork`
 - issue/bookmark -> `08_Review`
+- watertight solid output object -> `09_Outputs & Exchange / Watertight Solids`
+- simulation QA report object -> `09_Outputs & Exchange / Reports`
+- simulation package manifest -> `09_Outputs & Exchange / Exchange Packages`
 - reports and exchange packages -> `09_Outputs & Exchange`
 - AI suggestions -> `10_AI Assist`
+
+Current UI confirmation:
+
+- Drainage Elements no longer expose a user-facing `Connection Point` column. Structure-owned connection points are resolved by Flow Route direction.
+- Build Parametric output objects are visible under `04_Corridor Model / Build Parametric Outputs` and can be hidden/shown from the tree.
+- Watertight Solid output objects are visible under `09_Outputs & Exchange / Watertight Solids` and can be hidden/shown from the tree.
 
 ## 7. Compatibility Strategy
 
