@@ -1,6 +1,6 @@
 # Quick Start
 
-This page describes the basic Parametric Road v1 workflow for `1.0.0`.
+This page describes the basic Parametric Road v1 workflow for `1.0.1`.
 
 ## 1. Install
 
@@ -9,6 +9,8 @@ This page describes the basic Parametric Road v1 workflow for `1.0.0`.
 3. Select the `Parametric Road` workbench.
 
 If commands do not appear after an update, restart FreeCAD or reload the workbench.
+
+Tutorial video: https://youtu.be/_xpqwnXPUU8
 
 ## 2. Recommended Workflow
 

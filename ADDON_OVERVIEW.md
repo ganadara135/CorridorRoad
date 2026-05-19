@@ -5,7 +5,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-The current development focus is the v1 workflow reset: clear source models, evaluated results, review viewers, and output packages instead of editing generated geometry directly.
+The current public release is `1.0.1`. This release continues the v1 workflow reset and introduces the user-facing name `Parametric Road` in place of `Corridor Road`, because the project is growing beyond a corridor-surface generator into a broader parametric road-design and simulation-preparation workflow.
 
 ## Current V1 Workflow
 
@@ -74,7 +74,7 @@ Key references:
 Online project resources:
 
 - Wiki: https://github.com/ganadara135/CorridorRoad/wiki
-- Releases: https://github.com/ganadara135/CorridorRoad/releases
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
 - Issues: https://github.com/ganadara135/CorridorRoad/issues
 - FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 
@@ -83,7 +83,7 @@ Online project resources:
 - FreeCAD Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 ## Video
-- https://youtu.be/_xpqwnXPUU8
+- Tutorial video: https://youtu.be/_xpqwnXPUU8
 
 
 ## Screenshots
