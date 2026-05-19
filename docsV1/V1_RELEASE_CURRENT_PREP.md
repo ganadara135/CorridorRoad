@@ -1,14 +1,34 @@
 # Parametric Road Current Release Preparation
 
 Date: 2026-05-15
-Status: prepared for `1.0.1` release
+Status: `1.0.1` released; post-release docs and announcement alignment in progress
 Scope: post-`1.0.0` v1 updates
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, and validation aligned before tagging the next public release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.1` release.
+
+## Release Status
+
+- Release version: `1.0.1`
+- Release date: `2026-05-15`
+- Tag: `v1.0.1`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- Tutorial video: https://youtu.be/_xpqwnXPUU8
+- Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
+
+Post-release tasks:
+
+- [x] `package.xml` version/date updated to `1.0.1` / `2026-05-15`.
+- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.1` release section.
+- [x] Git tag and GitHub Release published.
+- [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
+- [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
+- [ ] FreeCAD manual smoke QA for the published tag.
+- [ ] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
+- [ ] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
 
@@ -45,13 +65,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG Unreleased contains recent documentation and Drainage/Structure preview notes.
+- [x] CHANGELOG `1.0.1` contains recent documentation and Drainage/Structure preview notes.
+- [x] README, Addon overview, and local Wiki drafts now point to the `1.0.1` release and tutorial video.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Addon overview, Wiki pages, and the `Unreleased` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Addon overview, Wiki pages, and the `1.0.1` changelog section.
 
 ## Release Validation Checklist
 
@@ -88,7 +109,7 @@ Suggested highlights:
 
 ## Tag Readiness
 
-Do not tag the next release until:
+For future release work, do not tag the next release until:
 
 - focused tests for Structures, Drainage, 3D Centerline, Build Corridor, and Watertight Solids pass
 - manual FreeCAD smoke QA is complete

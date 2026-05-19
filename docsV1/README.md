@@ -2,12 +2,20 @@
 
 This folder contains the Parametric Road v1 redesign documents.
 
+Current public release:
+
+- `Parametric Road 1.0.1`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- Tutorial video: https://youtu.be/_xpqwnXPUU8
+- Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
+
 Baseline document:
 
 - [V1_MASTER_PLAN.md](./V1_MASTER_PLAN.md)
 - [V1_RELEASE_1_0_0_PLAN.md](./V1_RELEASE_1_0_0_PLAN.md)
 - [V1_RELEASE_1_0_0_VALIDATION_RECORD.md](./V1_RELEASE_1_0_0_VALIDATION_RECORD.md)
 - [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
+- [V1_1_0_1_FORUM_ANNOUNCEMENT.md](./V1_1_0_1_FORUM_ANNOUNCEMENT.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
 - [V1_ARCHITECTURE.md](./V1_ARCHITECTURE.md)

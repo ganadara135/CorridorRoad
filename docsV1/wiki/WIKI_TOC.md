@@ -1,8 +1,14 @@
 # Parametric Road V1 Wiki Drafts
 
-Target release: `v1.0.0`
+Target release: `v1.0.1`
 
 These files are draft source pages for the GitHub Wiki.
+
+Current release links:
+
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- Tutorial video: https://youtu.be/_xpqwnXPUU8
+- FreeCAD Forum: https://forum.freecad.org/viewtopic.php?t=103783
 
 Recommended publish order:
 
