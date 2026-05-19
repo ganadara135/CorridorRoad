@@ -26,9 +26,10 @@ Post-release tasks:
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
-- [ ] FreeCAD manual smoke QA for the published tag.
-- [ ] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
-- [ ] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
+- [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
+- [x] FreeCAD manual smoke QA for the published tag.
+- [x] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
+- [x] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
 
