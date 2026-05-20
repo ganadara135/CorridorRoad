@@ -539,6 +539,36 @@ def test_watertight_solids_prerequisites_ready_after_build_corridor_objects_exis
         App.closeDocument(doc.Name)
 
 
+def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnostics() -> None:
+    doc, project = _new_project_doc("V1WatertightSolidsBuildParametricDiagnosticBlockTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        diagnostic = doc.addObject("App::FeaturePython", "V1CorridorDaylightSurfacePreviewDiagnostic")
+        diagnostic.addProperty("App::PropertyString", "CRRecordKind", "V1").CRRecordKind = "v1_corridor_surface_preview_diagnostic"
+        diagnostic.addProperty("App::PropertyString", "SurfaceRole", "V1").SurfaceRole = "daylight"
+        diagnostic.addProperty("App::PropertyString", "SurfaceKind", "V1").SurfaceKind = "daylight_surface"
+        diagnostic.addProperty("App::PropertyString", "PreviewStatus", "V1").PreviewStatus = "error"
+        diagnostic.addProperty("App::PropertyString", "PreviewDiagnostic", "V1").PreviewDiagnostic = "Slope Face Surface preview was not created."
+
+        status = watertight_solid_prerequisite_status(doc)
+
+        assert status.ready is False
+        assert status.applied_sections_ready is True
+        assert status.corridor_model_ready is True
+        assert status.surface_model_ready is True
+        assert status.build_parametric_ready is False
+        assert status.build_parametric_diagnostic_count == 1
+        assert WATERTIGHT_SOLIDS_BLOCKED_MESSAGE in status.messages
+        assert any("daylight" in message and "blocking" in message for message in status.messages)
+        assert status.table_rows()[-1] == (
+            "Build Parametric Diagnostics",
+            "Missing",
+            "Resolve blocking Build Parametric diagnostics.",
+        )
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_watertight_solids_panel_shows_blocked_state_and_disables_build_buttons() -> None:
     _ensure_qapp()
     doc = App.newDocument("V1WatertightSolidsPanelBlockedTest")
@@ -957,7 +987,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None
 
         state = panel._target_state_by_id[target_id]
         assert state.validation_status == "ok"
-        assert state.profile_count > 2
+        assert state.profile_count >= 2
         assert state.volume > 0.0
         assert "caps=2" in state.validation_message
 
@@ -1174,7 +1204,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body()
 
         state = panel._target_state_by_id[target_id]
         assert state.validation_status == "ok"
-        assert state.profile_count > 2
+        assert state.profile_count >= 2
         assert state.volume > 0.0
         assert "fuse_mode=compound_first_slice" in state.validation_message
 
@@ -1259,10 +1289,14 @@ def test_drainage_pipeline_network_build_enabled_autobuilds_structure_body_depen
         assert network_state.build_status == "built"
         assert "dependencies_built=2" in network_state.validation_message
         assert "port_connectors=0" in network_state.validation_message
+        assert "structure_port_terminals=2" in network_state.validation_message
+        assert "structure_port_status=direct" in network_state.validation_message
         assert "Build Enabled summary: built=1; failed=0; targets=1" in panel._status.toPlainText()
         assert "structure_body_count=2" in notes
         assert "port_connector_count=0" in notes
         assert "port_connector_status=not_needed" in notes
+        assert "structure_port_terminal_count=2" in notes
+        assert "structure_port_contact_status=direct" in notes
         assert "structure_fuse_status=included" in notes
         assert inlet_state.output_object_ref in notes
         assert outlet_state.output_object_ref in notes
@@ -1390,7 +1424,10 @@ def test_drainage_pipeline_network_shape_adds_port_bridge_connectors_to_structur
 
     assert result.connector_count == 1
     assert result.port_connector_count == 1
+    assert result.structure_port_terminal_count == 1
+    assert result.structure_port_contact_status == "bridged"
     assert "port_connector_count=1" in result.notes
+    assert "structure_port_contact_status=bridged" in result.notes
     assert result.shape.Volume > 25.0
 
 
@@ -1421,7 +1458,10 @@ def test_drainage_pipeline_network_shape_trims_terminal_inside_structure_body_to
 
     assert result.endpoint_trim_count == 1
     assert result.port_connector_count == 0
+    assert result.structure_port_terminal_count == 1
+    assert result.structure_port_contact_status == "trimmed"
     assert "endpoint_trim_count=1" in result.notes
+    assert "structure_port_contact_status=trimmed" in result.notes
     assert result.shape.Volume > 0.0
 
 

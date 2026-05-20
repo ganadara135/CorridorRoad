@@ -1,104 +1,82 @@
-# Parametric Road V1 Drainage Implementation Plan
+# Parametric Road V1 Drainage Enhancement Plan
 
-Date: 2026-05-02
-Status: Draft implementation plan
-Scope: v1-native drainage source, evaluation, review, and output workflow
+Date: 2026-05-20
+Status: Updated enhancement plan, refreshed against current code
+Scope: Drainage source authoring, Flow Route graph, Structure handoff, review, Build Parametric, and Watertight Solid readiness
 
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
 - `docsV1/V1_DRAINAGE_MODEL.md`
-- `docsV1/V1_DITCH_SHAPE_CONTRACT.md`
+- `docsV1/V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md`
+- `docsV1/V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
 - `docsV1/V1_REGION_MODEL.md`
 - `docsV1/V1_SECTION_MODEL.md`
 - `docsV1/V1_SURFACE_MODEL.md`
-- `docsV1/V1_QUANTITY_MODEL.md`
+- `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md`
 
 ## 1. Purpose
 
-This plan defines how Parametric Road v1 should implement Drainage after the first placeholder toolbar entry.
+This document resets the Drainage implementation plan to match the current code.
 
-The goal is to make drainage design intent explicit, editable, reviewable, and traceable through Applied Sections, Corridor Build, quantities, and later exchange outputs.
+Drainage is now an active v1 source stage. It owns drainage Elements, Policies, Flow Routes, Region assignment, Structure references, and first-slice pipe-network intent.
 
-Detailed Flow Route graph implementation is tracked in `V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md`.
+The next goal is not a full hydraulic solver. The next goal is to make drainage intent stable enough that:
 
-## 2. Scope
+- open ditch geometry is traceable through Applied Sections and Build Parametric
+- Structure-backed pipe networks are previewable and reviewable
+- Watertight Solids can consume drainage pipe and lined-ditch targets
+- later simulation/export work can trust source ids and endpoint ownership
 
-This plan includes:
+Latest code checkpoint:
 
-- Drainage toolbar command and editor shell
-- `DrainageModel` object persistence
-- drainage element node creation and editing
-- flow-route edge creation and editing
-- Drainage Element Region assignment workflow
-- Assembly ditch shape connection to drainage intent
-- Applied Section drainage point and flowline evaluation
-- Build Corridor drainage surface consumption
-- Drainage Review diagnostics
-- first-slice drainage quantities and outputs
+- Drainage authoring is no longer only a surface helper.
+- Drainage Elements are graph nodes.
+- Flow Routes are graph edges.
+- Structure connection points are the physical pipe ports.
+- Build Parametric consumes Drainage output as reviewable generated geometry.
+- Watertight Solids can discover Drainage-related targets from the generated contracts.
 
-This plan excludes:
-
-- full hydraulic solver behavior
-- automatic pipe sizing
-- storm sewer network design
-- v0 drainage import or migration
-- direct editing of generated drainage meshes as source truth
-
-## 3. Core Rule
+## 2. Core Rule
 
 `DrainageModel` owns drainage intent.
 
-Assembly owns reusable ditch section shape.
+`StructureModel` owns physical drainage connection points such as `pipe_in`, `pipe_out`, inlet intake points, culvert ports, and outlet ports.
 
-Drainage Elements own their Region assignment.
+Assembly owns reusable ditch geometry.
 
-Applied Sections, corridor surfaces, review markers, and reports are generated results or outputs. They must not become the durable editing source.
+Applied Sections, Build Parametric surfaces, Drainage Review rows, pipe previews, and Watertight Solid outputs are generated result/output layers. They must not become editable drainage source truth.
 
-## 4. Current State
+## 3. Current Code Baseline
 
-Implemented or partially available:
+| Area | Current status |
+|---|---|
+| Drainage source object | `V1DrainageModel` persists element, policy, flow-route, validation, and source refs. |
+| Drainage editor | Elements, Policies, and Flow Routes tabs exist. |
+| Element Region ownership | Elements choose `Region` in Drainage, not in Regions. |
+| Element Assembly ownership | `Assembly` is active for `ditch` rows and disabled for non-ditch rows. |
+| Element Structure ownership | `Structure Ref` is active for non-ditch rows and disabled for `ditch` rows. |
+| Flow Routes | `From Element`, `To Element`, and `Outlet` graph fields are active. |
+| Outlet terminology | User-facing `Receiver` / `Collection` wording has been replaced by `Outlet` / `Flow Route`. |
+| Validation | Duplicate ids, missing refs, Region span checks, cross-Region warnings, self loops, cycles, policy refs, Structure refs, and connection point refs are covered in first slice. |
+| Presets | Roadside ditch, dual side ditch, culvert crossing, and `Drainage Structures Flow` exist. |
+| Structure-backed routing | Flow Routes resolve Structure-owned connection points by route direction. |
+| Ditch-to-inlet routing | Treated as capture-only, not as a pipe body. |
+| Pipeline result | Candidate, segment, geometry, solid, network, and junction rows exist in Drainage output. |
+| 3D preview | `Show Flow Network` creates network preview, segment previews, and Structure pipe connection markers. |
+| Tree exposure | Drainage preview/output objects are exposed in the FreeCAD tree so visibility and properties can be inspected. |
+| Flow Route focus | Flow Route rows can be selected/focused without editing generated pipe geometry. |
+| Build Parametric | Drainage surface consumes Applied Section `ditch_surface` rows with Drainage refs. |
+| Build Parametric review | Guided Review exposes `Drainage Surface` and `Drainage Flow` as separate rows. |
+| Quantity | First-slice ditch length and flowline length fragments preserve Drainage refs. |
+| Watertight Solids | Lined ditch, pipe segment, pipeline network, and Structure body targets can be discovered/built in first slice. |
+| Simulation package handoff | Watertight package output can preserve Drainage pipeline and Structure body provenance for later simulation QA. |
 
-- `DrainageModel` source dataclasses exist.
-- Assembly supports ditch components and shape-aware ditch parameters.
-- Applied Sections can emit `ditch_surface` point rows.
-- Build Corridor has Drainage diagnostics and a drainage surface preview from ditch points.
-- A `Drainage` toolbar/menu entry opens the first Drainage editor task panel.
-- A `V1DrainageModel` document object can persist element, policy, flow-route, source reference, and validation diagnostic rows.
+## 4. Active Source Contract
 
-Main gaps:
+### 4.1 DrainageModel
 
-- no drainage quantity/report pipeline
-- Assembly references are currently text refs, not source-object pickers
-
-## 5. Target Workflow
-
-The target user workflow is:
-
-1. Define TIN, Alignment, Profile, and Stations.
-2. Define Assembly ditch shapes when roadside drainage geometry is needed.
-3. Define Regions and station ranges.
-4. Define Structures and assign them to Regions when structure context is needed.
-5. Open Drainage and create drainage Element nodes.
-6. Assign drainage elements to Regions from the Drainage panel.
-7. Create Flow Route edges between Elements where connection intent is needed.
-8. Treat `ditch -> inlet_reference` Flow Routes as open-channel capture into the inlet, not as a pipe body.
-9. Start 3D pipe geometry from Structure-owned pipe connection points, such as inlet `pipe_out`, culvert upstream/downstream, and outlet `pipe_in`.
-8. Run Applied Sections.
-9. Review ditch points, flowlines, and diagnostics.
-10. Build Corridor drainage surface from Applied Section outputs.
-11. Review Drainage diagnostics and quantities.
-12. Export drainage-aware outputs where supported.
-
-Toolbar order:
-
-`Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor`
-
-## 6. Source Contracts
-
-### 6.1 DrainageModel
-
-Required fields for the first implementation:
+Root fields:
 
 - `drainage_model_id`
 - `project_id`
@@ -106,18 +84,12 @@ Required fields for the first implementation:
 - `element_rows`
 - `policy_rows`
 - `flow_route_rows`
+- `source_refs`
 - `diagnostic_rows`
 
-Core graph rule:
+### 4.2 DrainageElementRow
 
-- `element_rows` are drainage nodes.
-- `flow_route_rows` are drainage edges.
-- Final outlets should be represented as `outfall_reference` Elements when possible.
-- Optional route-level `outlet_ref` is summary metadata, not the primary connection edge.
-
-### 6.2 DrainageElementRow
-
-Required first-slice fields:
+Active fields:
 
 - `drainage_element_id`
 - `element_kind`
@@ -129,19 +101,19 @@ Required first-slice fields:
 - `assembly_component_ref`
 - `policy_set_ref`
 - `structure_ref`
+- `connection_point_ref`
+- `notes`
 
-Recommended first-slice element kinds:
+Current rule:
 
-- `ditch`
-- `swale`
-- `channel`
-- `culvert_reference`
-- `inlet_reference`
-- `outfall_reference`
+- `ditch` rows may use Assembly component refs.
+- non-ditch rows may use Structure refs.
+- `connection_point_ref` is an internal/direct mapping option; normal routing should resolve Structure ports by Flow Route direction.
+- user-facing Drainage editing should not require users to manually pick `connection_point_ref` for normal inlet/culvert/outlet workflows.
 
-### 6.3 DrainagePolicySet
+### 4.3 DrainagePolicySet
 
-Required first-slice fields:
+Active fields:
 
 - `policy_set_id`
 - `flow_intent`
@@ -150,320 +122,405 @@ Required first-slice fields:
 - `route_rule`
 - `discharge_rule`
 - `earthwork_priority`
+- `notes`
 
-### 6.4 DrainageFlowRoute
+Current limitation:
 
-Required first-slice fields:
+Policies are descriptive and validation-oriented. They do not yet size pipes or run hydraulic capacity checks.
+
+### 4.4 DrainageFlowRoute
+
+Active fields:
 
 - `flow_route_id`
 - `from_element_ref`
 - `to_element_ref`
+- `outlet_ref`
 - `direction`
 - `risk_level`
 - `notes`
 
-Optional first-slice field:
+Graph rule:
 
-- `outlet_ref`
+- `from_element_ref -> to_element_ref` is the edge.
+- `outlet_ref` is final discharge context and should be editable only when `To Element` is an outlet/outfall Element.
+- Intermediate route rows should leave `outlet_ref` empty.
+- `outlet_ref` is not a third pipe segment endpoint. It is the terminal discharge context for the route chain.
 
-`from_element_ref -> to_element_ref` is the graph edge. `outlet_ref` is only editable on rows where `to_element_ref` is an outlet/outfall Element; intermediate rows keep it empty.
+## 5. Current Workflow
 
-## 7. Evaluation Flow
+Recommended user workflow:
 
-The evaluation flow should be:
+1. Build Project, TIN, Alignment, Stations, Profile, and 3D Centerline.
+2. Create Assembly ditch components when open drainage geometry is needed.
+3. Create Regions.
+4. Create Structures and Structure connection points for inlets, culverts, headwalls, outlets, or external references.
+5. Open Drainage.
+6. Create Elements.
+7. Assign each Element to a Region.
+8. Assign `Assembly` only for ditch Elements.
+9. Assign `Structure Ref` for Structure-backed Elements.
+10. Create Flow Routes.
+11. Validate and Apply Drainage.
+12. Use `Show Flow Network` to review Structure-backed pipe connections.
+13. Run Applied Sections.
+14. Build Parametric and review Drainage Surface / Drainage Flow.
+15. Use Watertight Solids for lined ditches, pipe segments, pipeline network bodies, and Structure body dependencies.
 
-1. Resolve active Region at station.
-2. Resolve active `DrainageElementRow` objects by `region_ref` and station span.
-4. Resolve Flow Route edges connected to the active elements.
-5. Resolve Assembly ditch components linked by `assembly_component_ref`.
-6. Generate station-specific ditch surface points and flowline hints in `AppliedSection`.
-7. Preserve `drainage_ref`, `component_ref`, side, and role metadata on evaluated points.
-8. Build drainage surface and diagnostics from these result rows.
+## 6. Interpretation Rules
 
-## 8. Review Flow
+### 6.1 Ditch
 
-Drainage Review should expose:
+A `ditch` Element represents open-channel drainage intent tied to Assembly ditch geometry.
 
-- element coverage by station range
-- missing or invalid Drainage Element Region assignments
-- ditch point availability by station and side
-- flowline continuity
-- low-point and minimum-grade warnings
-- missing outlet or discharge target
-- broken Flow Route edge references
-- cross-Region Flow Route warnings
-- cycles that prevent outlet tracing
-- culvert/reference coordination warnings
-- source references back to Region, Structure, Assembly, and DrainageModel rows
+It does not own a Structure Ref.
 
-The review surface is read-only. Corrections should return users to Drainage, Region, Assembly, or Profile editors.
+It can participate in Flow Routes as a source node.
 
-## 9. Output Flow
+### 6.2 Ditch To Inlet
 
-First-slice output rows should include:
+`ditch -> inlet_reference` means capture/intake.
 
-- drainage element summary rows
-- ditch length rows
-- flowline length rows
-- ditch lining area placeholders where lining parameters exist
-- culvert reference count/length placeholders
-- drainage diagnostic rows
+It does not create a separate pipe body.
 
-Later output rows may include:
+Physical pipe geometry starts after the inlet, from Structure-owned connection points.
 
-- drainage report table
-- drainage quantity package
-- exchange package references for culverts, inlets, outlets, and outfalls
+Example:
 
-## 10. Implementation Steps
+```text
+side-ditch-right-01 -> inlet-01       capture only
+inlet-01 -> inlet-02                  pipe
+inlet-02 -> culvert-01                pipe
+culvert-01 -> outlet-01               pipe
+```
 
-### D1. Toolbar and placeholder command
+### 6.3 Structure-Backed Pipe
 
-Status: completed
+When both Flow Route endpoints resolve to Structure-backed Elements, the pipe segment uses Structure connection points:
 
-Acceptance criteria:
+- source Element resolves to outgoing role, usually `pipe_out`
+- target Element resolves to incoming role, usually `pipe_in`
+- culvert used as a target resolves to `pipe_in`
+- culvert used as a source resolves to `pipe_out`
 
-- Drainage command is visible after Region and before Applied Sections.
-- Clicking Drainage shows a clear under-development message.
-- Drainage has a distinct icon.
+Generated preview pipes connect port-to-port. They do not follow the road alignment unless a later source model explicitly adds bends/intermediate pipe nodes.
 
-### D2. Document object persistence
+## 7. Implementation Plan
 
-Status: completed
+### DR-S1. Source Contract Cleanup
 
-Tasks:
-
-- add `obj_drainage.py`
-- serialize/deserialize `DrainageModel`
-- place drainage objects under the v1 `05_Drainage` project folder when possible
-- add validation diagnostics for duplicate ids, invalid ranges, and missing policy refs
-
-Acceptance criteria:
-
-- a document can store and reload one `DrainageModel`
-- validation messages are stable and readable
+Status: Done
 
 Completed:
 
-- `V1DrainageModel` document object stores element, policy, and flow-route rows
-- `to_drainage_model` restores the source contract from the document object
-- `v1_drainage_model` routes to `05_Drainage`
-- Watertight Solid target discovery reads the document DrainageModel and can promote matching ditch/channel elements as lined ditch solid owners
-- `DrainageValidationService` reports duplicate element/policy/flow-route ids, invalid ranges, missing policy ids, and missing policy refs
-- `V1DrainageModel` stores validation status and diagnostic rows on update
+- `Receiver` and `Collection` terminology was replaced in active user-facing Drainage workflow.
+- `Flow Route` is the graph edge concept.
+- `Outlet` is the final discharge context.
+- Elements, Policies, and Flow Routes persist through `V1DrainageModel`.
 
-### D3. Drainage Editor shell
+Acceptance:
 
-Status: first slice complete
+- [x] No active Drainage UI uses `Receiver`.
+- [x] Flow Route outlet data persists through the current outlet contract.
+- [x] Old Collection-style workflow is no longer the user model.
 
-Tasks:
+### DR-S2. Drainage Editor UX
 
-- replace placeholder message with a task panel
-- show Drainage Source selector
-- add element table
-- add policy table
-- add flow-route table
-- add Apply and Close behavior
-
-Acceptance criteria:
-
-- opening the editor loads an existing `DrainageModel` or a non-persistent starter model
-- Apply creates or updates a `DrainageModel`
-- selected rows remain editable without generated geometry ownership
+Status: First slice complete
 
 Completed:
 
-- Drainage command opens `V1DrainageEditorTaskPanel`
-- editor shows element, policy, and flow-route tables
-- editor provides Preset data for roadside ditch, dual side ditches, and culvert crossing source sets
-- Validate runs `DrainageValidationService`
-- Apply persists `V1DrainageModel`
-- invalid rows block Apply and keep diagnostics visible
-- `Show Flow Network` applies the current Drainage table state and creates a 3D `V1DrainagePipelineNetworksPreview` from resolved Structure connection points
+- Elements, Policies, and Flow Routes tabs exist.
+- Add buttons are scoped to the active tab.
+- `Policy` cells use combos from policy rows.
+- `Region` cells use combos from Region rows.
+- `Assembly` cells are disabled for non-ditch rows.
+- `Structure Ref` cells are disabled for ditch rows and use Structure ID combos where available.
+- `Connection Point` is not exposed as a normal Element-column workflow.
+- Flow Route rows support double-click preview/focus.
+- Flow Route `Outlet` editing is enabled only when `To Element` is an outlet/outfall Element.
 
 Remaining:
 
-- source selectors for existing Region and Assembly refs
+- add clearer inline route-chain text for selected Flow Route rows
+- improve invalid-cell coloring for missing Region, Policy, Structure, and outlet cases
+- add safer row templates for common node families such as inlet, outlet, and cross-drain
+- make selected route endpoint resolution visible without opening code-level diagnostics
 
-### D4. Basic element authoring
+Acceptance:
 
-Status: first slice complete
+- [x] Ditch rows feel different from Structure-backed rows.
+- [x] Flow Routes are editable without exposing low-level pipeline result rows.
+- [x] Outlet is treated as terminal context, not a required field on every route row.
+- [ ] selected route chain is readable without opening Review.
 
-Tasks:
+### DR-S3. Preset Alignment
 
-- support ditch, swale, channel, culvert reference, inlet reference, and outfall reference rows
-- support station range, side, Region ref, Assembly component ref, and policy ref columns
-- add simple defaults for left/right side ditch elements
-
-Acceptance criteria:
-
-- user can create a right-side ditch element for a station range
-- user can link it to an existing Region and Assembly ditch component id
-
-Completed:
-
-- `DrainageElementRow` now stores `side`, `region_ref`, and `assembly_component_ref`.
-- `V1DrainageModel` persists and restores side, Region refs, and Assembly component refs.
-- Drainage editor element rows expose Side, Region, Assembly, Policy, and Structure Ref columns.
-- Drainage editor includes left/right ditch default row actions.
-- Drainage validation warns when a drainage side is outside `left`, `right`, `both`, or `center`.
-- Watertight Solid lined-ditch target discovery uses `DrainageElementRow.side` before falling back to Drainage element id text.
-
-Remaining:
-
-- replace free-text Assembly refs with source-object selectors
-
-### D5. Drainage-owned Region assignment
-
-Status: supersedes the old Region-to-Drainage handoff
-
-Tasks:
-
-- keep Region selection in the Drainage Elements table
-- validate missing or invalid Region refs from Drainage
-- validate Drainage Element station ranges against the selected Region
-- report Flow Routes that intentionally cross Region boundaries
-
-Acceptance criteria:
-
-- Drainage Elements can reference Regions without editing Region rows
-- missing or invalid Region references are visible before Applied Sections
-- Flow Routes can connect Elements in different Regions with an explicit warning
+Status: First slice complete
 
 Completed:
 
-- Drainage editor Region cells are row-level combos populated from `V1RegionModel`.
-- Drainage validation checks Element station ranges against selected Region boundaries.
-- Flow Route validation reports cross-Region Element connections as warnings.
-- Drainage `Structure Ref` values are validated against StructureModel when available.
+- `Drainage Structures Flow` aligns with Structures `Drainage Structures` preset.
+- Preset data creates station-banded ditch Elements.
+- Preset data creates inlet, culvert, and outlet Elements.
+- Flow Route ids use `flowId-*`.
+- Ditch-to-inlet rows are capture-only.
+- inlet-to-inlet, inlet-to-culvert, and culvert-to-outlet rows become pipe candidates.
 
 Remaining:
 
-- update Applied Section generation to resolve Drainage from `DrainageModel.region_ref` instead of Region handoff refs
+- add preset self-check diagnostics when matching Structures preset rows are missing
+- add a short preset summary after `Load Preset`
+- keep preset station ranges adapted to current Stationing/Alignment extents
+- keep Structure and Drainage presets paired so inlet, culvert, outlet, and Flow Route ids do not drift
 
-### D6. Applied Section drainage evaluation
+Acceptance:
 
-Status: first slice complete, Applied Section Region-assignment resolver implemented
+- [x] Structures and Drainage presets can be used together without manual id repair.
+- [x] Last inlet connects to culvert `pipe_in` through Flow Route resolution.
+- [ ] preset loader warns when referenced Structures are not present.
 
-Tasks:
+### DR-S4. Validation Upgrade
 
-- resolve Drainage Elements by Region assignment during Applied Section generation
-- tag generated `ditch_surface` points with drainage refs where possible
-- emit flowline hint rows or point roles for invert/flowline points
-- preserve diagnostics for missing Assembly component refs or unsupported shape links
-
-Acceptance criteria:
-
-- Cross Section Viewer can show ditch points with source drainage refs
-- Build Corridor drainage diagnostics can distinguish source-missing from geometry-missing cases
+Status: In progress, route-chain diagnostics expanded
 
 Completed:
 
-- Applied Section generation resolves Drainage Elements from `DrainageModel.region_ref` and station span.
-- Ditch component result rows preserve matching Drainage refs by side when available.
-- Generated `ditch_surface` points preserve `component_ref`, `side`, and `drainage_ref`.
-- Applied Section source refs include active Drainage refs for downstream review and exchange traceability.
-- `V1AppliedSectionSet` document persistence round-trips point and component Drainage context.
+- duplicate id checks
+- missing Element/Policy/Flow Route ids
+- missing Region refs
+- Element station range vs Region boundary
+- missing or invalid Policy refs
+- missing or invalid Structure refs
+- Flow Route missing refs
+- self-loop checks
+- cycle checks
+- cross-Region Flow Route warning
+- Outlet ref validation
+- route-chain warning when no outlet/outfall can be reached
+- route-chain warning when one upstream chain can reach multiple outlets
+- Structure-backed pipe warning when Flow Route ports cannot be resolved
+- non-pipe `ditch -> inlet` capture rows remain non-blocking and do not create false pipe warnings
 
-Remaining:
+Next tasks:
 
-- add explicit flowline/invert point roles beyond the current shape roles
-- add diagnostics for Drainage Elements that do not match any active ditch component side
-- expose Drainage context directly in Cross Section Viewer labels/review tables
+- warn when connected Elements use incompatible Policies
+- report capture-only vs pipe-producing routes explicitly in validation output
+- report when a route expects a pipe but resolves only station-span fallback geometry
 
-### D7. Drainage Review viewer
+Acceptance:
 
-Status: first slice complete
+- [x] invalid graph references are visible before Apply.
+- [x] cross-Region routes are visible as warnings.
+- [x] outlet reachability can be diagnosed from source rows before 3D preview.
+- [x] unresolved Structure pipe ports can be diagnosed before 3D preview.
+- [ ] policy incompatibility and capture/pipe summaries are complete.
 
-Tasks:
+### DR-S5. Structure Connection Handoff
 
-- create read-only Drainage Review task panel
-- show station coverage, element rows, flowline continuity, and diagnostics
-- add marker focus for diagnostic rows
-- add navigation buttons to Region, Assembly, Profile, and Cross Section Viewer
-
-Acceptance criteria:
-
-- user can identify stations without drainage coverage
-- user can focus a drainage issue marker in the 3D view
+Status: First slice complete, selected route endpoint summary added
 
 Completed:
 
-- `DrainageReviewMapper` builds a `DrainageOutput` payload from `DrainageModel`, `RegionModel`, and `AppliedSectionSet`.
-- Drainage Review command opens a read-only task panel after Drainage in the workflow toolbar.
-- Review tables show Drainage elements, Region assignment context, Applied Section ditch context, and summary counts.
-- Missing Drainage Region assignments and cross-Region Flow Routes are surfaced as first-slice review warnings.
-- Applied Section `ditch_surface` point counts and Drainage ref coverage are visible without reading preview mesh geometry.
-- Region assignment review reads Drainage Element `region_ref` values and no longer reads Region-owned Drainage refs.
-- Cross Section Viewer source ownership rows can expose Drainage context when a section carries Drainage Element refs.
+- Structure-backed Elements resolve pipe endpoints from Structure connection points.
+- Direction-aware endpoint selection is implemented.
+- Explicit Structure connection points are preserved.
+- Derived/default culvert upstream/downstream can snap to current placement.
+- `Show Flow Network` refreshes Structures preview before drawing the pipe network.
+- Structure pipe-in/pipe-out markers are under Structures ownership.
+- Connection point preview markers use clear sphere-style review helpers instead of broken-looking marker fragments.
+- Drainage editor Flow Route preview now shows the resolved From Structure/Port and To Structure/Port for the selected route.
+- Capture-only Flow Routes are labeled as no-pipe routes in the selected route preview.
+- Unresolved pipe routes report missing endpoint status in the selected route preview.
 
-Remaining:
+Next tasks:
 
-- add station issue markers and 3D focus for missing coverage rows
-- add navigation buttons back to Region, Drainage, Assembly, Profile, and Cross Section Viewer
-- add flowline continuity checks after explicit flowline/invert result roles exist
+- add Review filters for unresolved, capture-only, and pipe-producing route rows
+- expose the same endpoint summary in Drainage Review route rows where practical
 
-### D8. Corridor and surface integration
+Acceptance:
 
-Status: complete first slice
+- [x] Pipe preview uses Structure-owned connection points.
+- [x] Ditch capture rows do not create fake pipes.
+- [x] Inlet-to-inlet, inlet-to-culvert, and culvert-to-outlet routes use direction-aware ports.
+- [x] per-route endpoint resolution is visible before generating preview geometry.
 
-Implemented:
+### DR-S6. Drainage Review
 
-- drainage surface generation consumes `ditch_surface` Applied Section point rows and preserves `drainage_ref`, `component_ref`, and `side` on generated TIN vertices
-- supplemental drainage surface sampling carries matching source context from the original Applied Section rows instead of reading preview meshes
-- `SurfaceModel` keeps drainage as a separate `drainage_surface` row and adds Drainage element refs to the drainage build relation
-- drainage TIN quality/provenance rows report Drainage source-ref counts and missing source coverage
+Status: First slice complete
 
-Acceptance criteria:
+Completed:
 
-- [x] drainage surface follows Applied Section ditch rows
-- [x] drainage surface diagnostics reference source drainage ids
-- [ ] explicit flowline/invert rows remain a later refinement
+- Drainage Review exists as a read-only review stage.
+- Review can show Drainage Elements, Region assignment, Applied Section context, pipeline candidates, segments, networks, and junctions.
+- Drainage Review can summarize quantities when a QuantityModel is supplied.
+- Build Parametric can create Drainage diagnostic/focus markers for missing ditch-surface coverage.
 
-### D9. Quantities and reports
+Next tasks:
 
-Status: complete first slice
+- expand 3D issue markers beyond missing coverage into unresolved port, broken route, and outlet-chain issues
+- add direct navigation buttons back to Drainage, Regions, Assembly, Structures, and Cross Section Viewer
+- add flowline continuity review after explicit flowline/invert roles are expanded
 
-Implemented:
+Acceptance:
 
-- `QuantityBuildService` creates `drainage_ditch_length` fragments by Drainage element id from source-tagged Applied Section `ditch_surface` rows
-- `QuantityBuildService` creates `drainage_flowline_length` fragments when paired flowline/invert-style ditch point ids are available
-- `QuantityFragment` and `QuantityFragmentRow` preserve `drainage_ref`
-- `DrainageReviewMapper` can include drainage quantity rows and summary lengths when a `QuantityModel` is supplied
-- missing Drainage source refs or insufficient station spans are reported as quantity diagnostics
+- [x] Review shows source and result context separately.
+- [x] Pipeline network and junction rows are visible.
+- [x] missing coverage rows can be focused in 3D.
+- [ ] unresolved Structure port rows can be focused in 3D.
 
-Acceptance criteria:
+### DR-S7. Applied Sections And Build Parametric
 
-- [x] ditch length and flowline length can be reported by Drainage element id
-- [x] diagnostics identify missing quantity source rows
-- [ ] persisted document-level Drainage Review loading of the latest QuantityModel remains a later UI/output integration step
+Status: First slice complete, side/component mismatch diagnostics expanded
 
-## 11. Manual QA
+Completed:
 
-Minimum manual QA scenario:
+- Applied Sections resolve Drainage Elements from `DrainageModel.region_ref`.
+- Ditch component result rows preserve matching Drainage refs by side.
+- `ditch_surface` points preserve Drainage, component, and side context.
+- Build Parametric creates a separate Drainage Surface preview from Applied Section ditch rows.
+- Build Parametric Guided Review includes Drainage Surface and Drainage Flow.
+- Drainage Flow focus uses Flow Route and Structure connection context.
+- Build Parametric exposes generated Drainage preview objects in the tree instead of keeping them only as hidden helper geometry.
+- Build Parametric Drainage Review compares active Drainage ditch rows against generated `ditch_surface` sides.
+- Build Parametric Drainage Review reports missing source drainage refs on generated `ditch_surface` rows.
+- Build Parametric Drainage Review reports Assembly component mismatches when the expected Drainage `assembly_component_ref` is not present on generated ditch points.
 
-1. Create a simple road project.
-2. Create Assembly with ditch components.
-3. Create Region for a station range.
-4. Create Drainage element for the same range and side.
-5. Select the owning Region in the Drainage element row.
-6. Run Applied Sections.
-7. Confirm ditch/flowline rows carry drainage context.
-8. Build Corridor.
-9. Confirm drainage surface and diagnostics are visible.
-10. Confirm Drainage Review can focus issue markers.
+Next tasks:
 
-## 12. Known Risks
+- expose Drainage context more directly in Cross Section Viewer labels/tables
+- add explicit flowline/invert point roles beyond current ditch shape roles
 
-- Drainage can be confused with Assembly ditch shape if ownership is not explicit.
-- Region may become overloaded if drainage intent is stored as free text.
-- Build Corridor may hide drainage problems if it only checks point counts.
-- Flowline continuity needs stable station ordering and side metadata.
-- Culvert references must stay coordinated with StructureModel without duplicating structure ownership.
-- Flow Routes that cross Region boundaries are valid when intentional, but they must be visible as review diagnostics.
+Acceptance:
 
-## 13. Release Note
+- [x] Drainage surface follows source-tagged Applied Section ditch rows.
+- [x] Build Parametric does not infer Drainage ownership from preview mesh geometry.
+- [x] Drainage Flow focus distinguishes resolved pipe segments from fallback station-span focus.
+- [x] side/component mismatch diagnostics are available in Build Parametric Drainage Review rows.
+- [ ] Cross Section Viewer Drainage labels and explicit flowline/invert roles are complete.
 
-For the current release, Drainage is exposed as a planned v1 stage with a toolbar/menu command and placeholder message.
+### DR-S8. Quantities And Reports
 
-Functional editing, review, and output work should begin with D2 and D3 after release stabilization.
+Status: First slice complete
+
+Completed:
+
+- drainage ditch length quantities by Drainage element id
+- flowline length quantities when paired flowline/invert-style point ids are available
+- `QuantityFragment` and rows preserve Drainage refs
+- Drainage Review can include quantity summary rows
+
+Next tasks:
+
+- persist and auto-load latest QuantityModel into Drainage Review where practical
+- group quantities by Flow Route where ownership is unambiguous
+- add report-ready rows for inlet count, culvert count, outlet count, and pipe length by policy
+
+Acceptance:
+
+- [x] ditch length can be reported by Drainage element.
+- [ ] pipe length and structure count reports are source-traceable from Drainage + Structure.
+
+### DR-S9. Watertight Solid Handoff
+
+Status: First slice complete
+
+Completed:
+
+- lined ditch targets can be owned by Drainage Elements.
+- pipe segment body targets can be discovered.
+- pipeline network body targets can be discovered.
+- Structure body dependencies can auto-build before pipeline network targets.
+- network build records fuse mode, connector count, port connector count, endpoint trim count, Structure body refs, connection point refs, and port contact status.
+- generated Watertight Solid output objects are exposed in the tree with source refs and route refs where available.
+
+Next tasks:
+
+- add Drainage-specific QA summary in Watertight Solids for:
+  - capture-only routes
+  - pipe-producing routes
+  - unresolved Structure ports
+  - network fuse fallback
+- add package-level simulation readiness labels for drainage components
+- add clearer user-facing distinction between lined ditch solids, pipe solids, and Structure body solids
+
+Acceptance:
+
+- [x] Watertight Solid output can trace pipeline network bodies back to Flow Routes, Structures, and connection points.
+- [ ] simulation package QA can summarize complete Drainage readiness in one place.
+
+### DR-S10. Future Hydraulic Layer
+
+Status: Deferred
+
+Future scope:
+
+- pipe sizing
+- inlet spacing
+- storm event assumptions
+- capacity checks
+- HGL/EGL analysis
+- ponding and spread calculations
+- external hydraulic software exchange
+
+Non-goal for current implementation:
+
+- Do not block source authoring, review, or solid generation on hydraulic solver availability.
+
+## 8. Priority Order
+
+Recommended next implementation order:
+
+1. DR-S4 validation upgrade for route-chain outlet reachability, multi-outlet ambiguity, and unresolved Structure ports.
+2. DR-S5 selected Flow Route endpoint summary showing From Structure/Port and To Structure/Port.
+3. DR-S7 side/component mismatch diagnostics in Applied Sections and Build Parametric.
+4. DR-S6 3D issue markers for unresolved Structure ports, broken routes, and outlet-chain problems.
+5. DR-S8 report rows for pipe length, inlet count, culvert count, outlet count, and policy grouping.
+6. DR-S9 simulation-readiness summary in Watertight Solids and exported packages.
+
+This order improves correctness and review clarity before adding new hydraulic behavior.
+
+## 9. Manual QA
+
+Minimum current QA:
+
+1. Create or load Alignment, Stations, Profile, and 3D Centerline.
+2. Create Assembly with right-side ditch.
+3. Create Regions.
+4. Load Structures `Drainage Structures` preset and Apply.
+5. Open Drainage.
+6. Load Drainage `Drainage Structures Flow` preset.
+7. Confirm ditch rows have Region, Assembly, Policy, and no Structure Ref.
+8. Confirm inlet/culvert/outlet rows have Structure Ref and no Assembly.
+9. Validate.
+10. Apply.
+11. Click `Show Flow Network`.
+12. Confirm ditch-to-inlet rows are capture-only and do not draw fake pipes.
+13. Confirm inlet-to-inlet, inlet-to-culvert, and culvert-to-outlet pipes connect Structure ports.
+14. Run Applied Sections.
+15. Build Parametric.
+16. Confirm Drainage Surface and Drainage Flow guided review rows are available.
+17. Open Drainage Review and inspect pipeline candidates, segments, networks, and junctions.
+18. Open Watertight Solids and confirm lined ditch / pipeline network / Structure body targets are discoverable.
+
+## 10. Risks
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Drainage Element and Flow Route concepts feel duplicated | Users may not know where to edit a pipe path. | Keep Elements as nodes and Flow Routes as edges; add selected-route summary. |
+| Ditch capture rows are mistaken for pipe rows | Users may expect ditch-to-inlet pipes in 3D. | Label capture-only rows clearly in validation and Review. |
+| Structure port resolution is hidden | Pipe preview may look wrong without obvious source reason. | Show From/To Structure port summary per route. |
+| Region / station mismatches remain subtle | Ditch geometry may not appear downstream. | Strengthen side/component and Region span diagnostics. |
+| Watertight Solid network fuse falls back silently | Simulation geometry may appear valid but remain a compound. | Surface fuse mode and readiness summary in panel and package QA. |
+| Hydraulic expectations grow too early | Scope creep can destabilize source contracts. | Keep hydraulic solver deferred and keep current work focused on traceable source/result/output contracts. |
+
+## 11. Non-goals
+
+This plan does not:
+
+- implement full hydraulic analysis
+- auto-size pipes
+- auto-place inlets
+- replace Structure connection point ownership
+- infer drainage source truth from generated meshes
+- make Flow Network preview geometry directly editable

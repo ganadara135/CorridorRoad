@@ -164,7 +164,7 @@ class DrainageValidationService:
             source_ref = route_id or f"flow-route:{index}"
             if not route_id:
                 diagnostics.append(_diagnostic("error", "missing_flow_route_id", source_ref, "Drainage flow route id is required."))
-        diagnostics.extend(_flow_route_graph_diagnostics(flow_route_rows, element_rows))
+        diagnostics.extend(_flow_route_graph_diagnostics(flow_route_rows, element_rows, structure_model=structure_model))
 
         status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
         return DrainageValidationResult(status=status, diagnostic_rows=diagnostics)
@@ -522,15 +522,15 @@ def _preferred_structure_connection_point(
         if direction == "out"
         else ["pipe_in", "upstream", "inlet", "pipe_junction", "pipe", "pipe_out", "downstream", "outlet", "discharge"]
     )
-    by_role: dict[str, object] = {}
-    for point in points:
+    by_role: dict[str, list[object]] = {}
+    for point in sorted(points, key=_connection_point_sort_key):
         role = str(getattr(point, "point_role", "") or "").strip().lower()
-        if role and role not in by_role:
-            by_role[role] = point
+        if role:
+            by_role.setdefault(role, []).append(point)
     for role in priority:
         if role in by_role:
-            return by_role[role]
-    return sorted(points, key=lambda point: int(getattr(point, "connection_order", 0) or 0))[0]
+            return by_role[role][0]
+    return sorted(points, key=_connection_point_sort_key)[0]
 
 
 def _connection_point_matches_direction(point, direction: str) -> bool:
@@ -568,10 +568,17 @@ def _is_default_culvert_endpoint_point(point, structure) -> bool:
     structure_ref = str(getattr(structure, "structure_id", "") or "").strip()
     base_id = structure_ref.split(":")[-1]
     point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
-    role = str(getattr(point, "point_role", "") or "").strip().lower()
-    default_suffixes = {"pipe-in", "pipe_out", "pipe-out", "pipe_in", "upstream", "downstream"}
-    has_default_id = any(point_id == f"connection:{base_id}:{suffix}".lower() for suffix in default_suffixes)
-    return role in {"pipe_in", "pipe_out", "upstream", "downstream"} or has_default_id
+    default_suffixes = {"upstream", "downstream"}
+    return any(point_id == f"connection:{base_id}:{suffix}".lower() for suffix in default_suffixes)
+
+
+def _connection_point_sort_key(point) -> tuple[int, float, str]:
+    try:
+        order = int(getattr(point, "connection_order", 0) or 0)
+    except Exception:
+        order = 0
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    return order, station, str(getattr(point, "connection_point_id", "") or "")
 
 
 def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, message: str) -> list[DiagnosticMessage]:
@@ -590,6 +597,8 @@ def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, messa
 def _flow_route_graph_diagnostics(
     flow_route_rows: list[DrainageFlowRoute],
     element_rows: list[DrainageElementRow],
+    *,
+    structure_model: StructureModel | None = None,
 ) -> list[DiagnosticMessage]:
     diagnostics: list[DiagnosticMessage] = []
     element_by_id = {
@@ -604,10 +613,13 @@ def _flow_route_graph_diagnostics(
         if str(getattr(row, "structure_ref", "") or "").strip()
     }
     adjacency: dict[str, list[tuple[str, str]]] = {}
+    route_by_id: dict[str, DrainageFlowRoute] = {}
 
     for index, row in enumerate(list(flow_route_rows or []), start=1):
         route_id = str(getattr(row, "flow_route_id", "") or "").strip()
         source_ref = route_id or f"flow-route:{index}"
+        if route_id:
+            route_by_id[route_id] = row
         from_ref = str(getattr(row, "from_element_ref", "") or "").strip()
         to_ref = str(getattr(row, "to_element_ref", "") or "").strip()
         outlet_ref = str(getattr(row, "outlet_ref", "") or "").strip()
@@ -677,6 +689,9 @@ def _flow_route_graph_diagnostics(
         if from_ref and to_ref and from_ref in element_ids and to_ref in element_ids and from_ref != to_ref:
             adjacency.setdefault(from_ref, []).append((to_ref, source_ref))
     diagnostics.extend(_cycle_diagnostics(adjacency))
+    diagnostics.extend(_flow_route_outlet_reachability_diagnostics(adjacency, route_by_id, element_by_id))
+    if structure_model is not None:
+        diagnostics.extend(_flow_route_structure_port_diagnostics(flow_route_rows, element_rows, structure_model))
     return diagnostics
 
 
@@ -684,6 +699,128 @@ def _known_outlet_ref(outlet_ref: str, *, element_ids: set[str], structure_refs:
     if outlet_ref in element_ids or outlet_ref in structure_refs:
         return True
     return outlet_ref.startswith(("outfall:", "outlet:", "structure:"))
+
+
+def _flow_route_outlet_reachability_diagnostics(
+    adjacency: dict[str, list[tuple[str, str]]],
+    route_by_id: dict[str, DrainageFlowRoute],
+    element_by_id: dict[str, DrainageElementRow],
+) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    if not adjacency:
+        return diagnostics
+
+    for from_ref in sorted(adjacency):
+        outlet_refs = _reachable_flow_route_outlets(from_ref, adjacency, route_by_id, element_by_id)
+        route_refs = [route_id for _to_ref, route_id in list(adjacency.get(from_ref, []) or [])]
+        source_ref = ",".join(route_refs) if route_refs else from_ref
+        if not outlet_refs:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "flow_route_no_reachable_outlet",
+                    source_ref,
+                    "Flow Route chain has no reachable outlet/outfall Element or outlet_ref.",
+                    notes=f"from_element_ref={from_ref}",
+                )
+            )
+            continue
+        if len(outlet_refs) > 1:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "flow_route_multiple_reachable_outlets",
+                    source_ref,
+                    "Flow Route chain can reach multiple outlets. Confirm the intended discharge path.",
+                    notes=f"from_element_ref={from_ref};outlet_refs={','.join(outlet_refs)}",
+                )
+            )
+    return diagnostics
+
+
+def _reachable_flow_route_outlets(
+    start_ref: str,
+    adjacency: dict[str, list[tuple[str, str]]],
+    route_by_id: dict[str, DrainageFlowRoute],
+    element_by_id: dict[str, DrainageElementRow],
+) -> list[str]:
+    outlet_refs: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(element_ref: str) -> None:
+        if element_ref in visited:
+            return
+        visited.add(element_ref)
+        outgoing = list(adjacency.get(element_ref, []) or [])
+        if not outgoing and _is_outlet_element(element_by_id.get(element_ref)):
+            outlet_refs.add(element_ref)
+            return
+        for next_ref, route_ref in outgoing:
+            route = route_by_id.get(route_ref)
+            outlet_ref = "" if route is None else str(getattr(route, "outlet_ref", "") or "").strip()
+            if outlet_ref:
+                outlet_refs.add(outlet_ref)
+            if _is_outlet_element(element_by_id.get(next_ref)):
+                outlet_refs.add(next_ref)
+            visit(next_ref)
+
+    visit(start_ref)
+    return sorted(outlet_refs)
+
+
+def _flow_route_structure_port_diagnostics(
+    flow_route_rows: list[DrainageFlowRoute],
+    element_rows: list[DrainageElementRow],
+    structure_model: StructureModel,
+) -> list[DiagnosticMessage]:
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(element_rows or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    candidates = build_drainage_pipeline_segment_candidates(
+        DrainageModel(
+            schema_version=1,
+            project_id=str(getattr(structure_model, "project_id", "") or "corridorroad-v1"),
+            flow_route_rows=list(flow_route_rows or []),
+            element_rows=list(element_rows or []),
+        ),
+        structure_model,
+    )
+    diagnostics: list[DiagnosticMessage] = []
+    for candidate in candidates:
+        status = str(getattr(candidate, "status", "") or "")
+        if status in {"ready", "capture_only", "missing_element"}:
+            continue
+        from_element = element_by_id.get(str(getattr(candidate, "from_element_ref", "") or ""))
+        to_element = element_by_id.get(str(getattr(candidate, "to_element_ref", "") or ""))
+        if _is_capture_only_flow_route(from_element, to_element):
+            continue
+        diagnostics.append(
+            _diagnostic(
+                "warning",
+                "flow_route_structure_ports_unresolved",
+                str(getattr(candidate, "flow_route_ref", "") or ""),
+                "Flow Route expects a Structure-backed pipe but could not resolve both pipe ports.",
+                notes=(
+                    f"from_element_ref={str(getattr(candidate, 'from_element_ref', '') or '')};"
+                    f"to_element_ref={str(getattr(candidate, 'to_element_ref', '') or '')};"
+                    f"status={status};"
+                    f"{str(getattr(candidate, 'notes', '') or '')}"
+                ),
+            )
+        )
+    return diagnostics
+
+
+def _is_outlet_element(element: object | None) -> bool:
+    if element is None:
+        return False
+    kind = str(getattr(element, "element_kind", "") or "").strip().lower()
+    element_id = str(getattr(element, "drainage_element_id", "") or "").strip().lower()
+    return kind in {"outfall", "outfall_reference", "outlet", "outlet_reference"} or "outfall" in kind or "outlet" in kind or element_id.startswith(
+        ("outfall:", "outlet:")
+    )
 
 
 def _cycle_diagnostics(adjacency: dict[str, list[tuple[str, str]]]) -> list[DiagnosticMessage]:

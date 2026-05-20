@@ -24,6 +24,13 @@ from ..models.source.structure_model import (
 )
 
 
+DRAINAGE_READY_STRUCTURE_KINDS = {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}
+DRAINAGE_READY_NATIVE_TYPES = {"box_culvert", "pipe_culvert", "inlet", "outlet", "headwall"}
+INCOMING_CONNECTION_ROLES = {"pipe_in", "inlet", "upstream"}
+OUTGOING_CONNECTION_ROLES = {"pipe_out", "outlet", "downstream", "discharge"}
+CIRCULAR_CONNECTION_ROLES = {"pipe_in", "pipe_out", "upstream", "downstream"}
+
+
 class V1StructureModelObject:
     """Document object proxy that stores a v1 StructureModel contract."""
 
@@ -417,6 +424,7 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         str(getattr(row, "geometry_spec_ref", "") or ""): row
         for row in retaining_wall_geometry_spec_rows
     }
+    regions_by_id = _regions_by_id(region_model)
     diagnostics: list[str] = []
     seen = set()
     for index, row in enumerate(rows, start=1):
@@ -453,6 +461,18 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
         end = float(getattr(placement, "station_end", 0.0) or 0.0)
         if end < start:
             diagnostics.append(f"error|station_range|{structure_id or index}|Station end is before station start.")
+        region_ref = str(getattr(placement, "region_ref", "") or "").strip()
+        if region_ref and regions_by_id:
+            region = regions_by_id.get(region_ref)
+            if region is None:
+                diagnostics.append(f"error|structure_region_ref|{structure_id or index}|Structure references a missing Region.")
+            else:
+                region_start = float(getattr(region, "station_start", 0.0) or 0.0)
+                region_end = float(getattr(region, "station_end", 0.0) or 0.0)
+                if start < region_start or end > region_end:
+                    diagnostics.append(
+                        f"error|structure_outside_region_station_range|{structure_id or index}|Structure station range must stay inside the referenced Region boundary."
+                    )
         diagnostics.extend(_drainage_connection_point_diagnostics(row, connection_point_rows))
     seen_specs = set()
     structure_ids = {str(getattr(row, "structure_id", "") or "") for row in rows}
@@ -494,6 +514,8 @@ def validate_structure_model(structure_model: StructureModel, *, region_model=No
             _validate_positive(diagnostics, "culvert_rise", spec_ref, getattr(spec, "rise", 0.0), "Culvert rise must be greater than zero.")
         elif barrel_shape == "circular":
             _validate_positive(diagnostics, "culvert_diameter", spec_ref, getattr(spec, "diameter", 0.0), "Circular culvert diameter must be greater than zero.")
+        elif barrel_shape in {"inlet", "outlet", "headwall"}:
+            pass
         else:
             diagnostics.append(f"warning|culvert_barrel_shape|{spec_ref}|Culvert barrel shape is not a recommended value.")
         _validate_non_negative(diagnostics, "culvert_wall_thickness", spec_ref, getattr(spec, "wall_thickness", 0.0), "Culvert wall thickness must not be negative.")
@@ -523,7 +545,8 @@ def _geometry_source_mode(row: StructureRow) -> str:
 
 def _drainage_connection_point_diagnostics(row: StructureRow, connection_point_rows: list[StructureConnectionPoint]) -> list[str]:
     kind = str(getattr(row, "structure_kind", "") or "").strip().lower()
-    if kind not in {"culvert", "inlet", "outlet", "headwall", "manhole", "junction_box"}:
+    native_type = str(getattr(row, "native_type", "") or "").strip().lower()
+    if not _is_drainage_ready_structure(kind=kind, native_type=native_type):
         return []
     structure_id = str(getattr(row, "structure_id", "") or "").strip()
     if not structure_id:
@@ -535,14 +558,42 @@ def _drainage_connection_point_diagnostics(row: StructureRow, connection_point_r
     ]
     if not points:
         return [
-            f"warning|structure_connection_points_missing|{structure_id}|Drainage-ready structure has no connection points."
+            f"error|structure_connection_points_missing|{structure_id}|Drainage-ready structure has no connection points."
         ]
     roles = {str(getattr(point, "point_role", "") or "").strip().lower() for point in points}
-    if kind == "culvert" and not ({"upstream", "downstream"} <= roles or {"inlet", "outlet"} <= roles):
-        return [
-            f"warning|culvert_connection_points_incomplete|{structure_id}|Culvert should have upstream/downstream or inlet/outlet connection points."
-        ]
-    return []
+    diagnostics: list[str] = []
+    placement = getattr(row, "placement", None)
+    if placement is not None:
+        start = float(getattr(placement, "station_start", 0.0) or 0.0)
+        end = float(getattr(placement, "station_end", 0.0) or 0.0)
+        for point in points:
+            station = float(getattr(point, "station", 0.0) or 0.0)
+            if station < start or station > end:
+                point_id = str(getattr(point, "connection_point_id", "") or "") or structure_id
+                diagnostics.append(
+                    f"error|connection_point_outside_structure_station_range|{point_id}|Connection point station must stay inside the owning Structure station range."
+                )
+    if kind == "culvert" or native_type in {"box_culvert", "pipe_culvert"}:
+        if not _has_incoming_and_outgoing_roles(roles):
+            diagnostics.append(
+                f"error|culvert_connection_points_incomplete|{structure_id}|Culvert should have pipe_in/pipe_out, upstream/downstream, or inlet/outlet connection points."
+            )
+    elif native_type == "inlet" or kind == "inlet":
+        if "inlet" not in roles:
+            diagnostics.append(f"warning|inlet_collection_point_missing|{structure_id}|Inlet should have an inlet collection point.")
+        if "pipe_out" not in roles:
+            diagnostics.append(f"error|inlet_pipe_out_missing|{structure_id}|Inlet must have a pipe_out connection point before it can feed a pipe route.")
+    elif native_type in {"outlet", "headwall"} or kind in {"outlet", "headwall"}:
+        if "pipe_in" not in roles:
+            diagnostics.append(f"error|outlet_pipe_in_missing|{structure_id}|Outlet or headwall must have a pipe_in connection point.")
+        if not ({"discharge", "outlet"} & roles):
+            diagnostics.append(f"warning|outlet_discharge_point_missing|{structure_id}|Outlet or headwall should have a discharge connection point.")
+    elif kind in {"manhole", "junction_box"}:
+        if not _has_incoming_and_outgoing_roles(roles):
+            diagnostics.append(
+                f"warning|junction_connection_points_incomplete|{structure_id}|Junction structures should have at least one incoming and one outgoing pipe connection point."
+            )
+    return diagnostics
 
 
 def _connection_point_row_diagnostics(
@@ -564,9 +615,59 @@ def _connection_point_row_diagnostics(
         role = str(getattr(point, "point_role", "") or "").strip()
         if not role:
             diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is empty.")
+        elif not _is_recommended_connection_role(role):
+            diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is not a recommended Structure connection role.")
         if getattr(point, "invert_elevation", None) is None and getattr(point, "elevation", None) is None:
             diagnostics.append(f"warning|connection_point_elevation|{point_id or index}|Connection point should define invert or connection elevation.")
+        shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
+        diameter = float(getattr(point, "diameter", 0.0) or 0.0)
+        width = float(getattr(point, "width", 0.0) or 0.0)
+        height = float(getattr(point, "height", 0.0) or 0.0)
+        if _needs_circular_size(role=role, shape_kind=shape_kind) and diameter <= 0.0:
+            diagnostics.append(f"error|connection_point_diameter|{point_id or index}|Circular pipe connection points must define a positive diameter.")
+        if _needs_box_size(shape_kind=shape_kind) and (width <= 0.0 or height <= 0.0):
+            diagnostics.append(f"error|connection_point_size|{point_id or index}|Box or open-channel connection points must define positive width and height.")
     return diagnostics
+
+
+def _regions_by_id(region_model) -> dict[str, object]:
+    rows = list(getattr(region_model, "region_rows", []) or []) if region_model is not None else []
+    return {
+        str(getattr(row, "region_id", "") or ""): row
+        for row in rows
+        if str(getattr(row, "region_id", "") or "")
+    }
+
+
+def _is_drainage_ready_structure(*, kind: str, native_type: str) -> bool:
+    return kind in DRAINAGE_READY_STRUCTURE_KINDS or native_type in DRAINAGE_READY_NATIVE_TYPES
+
+
+def _has_incoming_and_outgoing_roles(roles: set[str]) -> bool:
+    return bool(roles & INCOMING_CONNECTION_ROLES) and bool(roles & OUTGOING_CONNECTION_ROLES)
+
+
+def _is_recommended_connection_role(role: str) -> bool:
+    return role in {
+        "inlet",
+        "outlet",
+        "upstream",
+        "downstream",
+        "left_port",
+        "right_port",
+        "pipe_in",
+        "pipe_out",
+        "overflow",
+        "discharge",
+    }
+
+
+def _needs_circular_size(*, role: str, shape_kind: str) -> bool:
+    return shape_kind == "circular" or role in CIRCULAR_CONNECTION_ROLES
+
+
+def _needs_box_size(*, shape_kind: str) -> bool:
+    return shape_kind in {"box", "rectangular", "ditch_inlet", "outfall", "headwall", "open_channel"}
 
 
 def _validation_status(diagnostics: list[str]) -> str:

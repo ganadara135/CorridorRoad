@@ -66,6 +66,8 @@ class WatertightSolidPrerequisiteStatus:
     applied_sections_ready: bool = False
     corridor_model_ready: bool = False
     surface_model_ready: bool = False
+    build_parametric_ready: bool = True
+    build_parametric_diagnostic_count: int = 0
     ready: bool = False
     messages: tuple[str, ...] = ()
 
@@ -77,6 +79,11 @@ class WatertightSolidPrerequisiteStatus:
             ("Applied Sections", _ready_label(self.applied_sections_ready), "Generate Applied Sections."),
             ("CorridorModel", _ready_label(self.corridor_model_ready), "Run Build Corridor."),
             ("SurfaceModel", _ready_label(self.surface_model_ready), "Build Corridor surface result."),
+            (
+                "Build Parametric Diagnostics",
+                _ready_label(self.build_parametric_ready),
+                "Resolve blocking Build Parametric diagnostics." if not self.build_parametric_ready else "No blocking Build Parametric diagnostics.",
+            ),
         ]
 
 
@@ -112,6 +119,8 @@ class DrainagePipelineNetworkShapeResult:
     structure_body_count: int = 0
     port_connector_count: int = 0
     endpoint_trim_count: int = 0
+    structure_port_terminal_count: int = 0
+    structure_port_contact_status: str = "not_checked"
     notes: str = ""
 
 
@@ -127,6 +136,7 @@ def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrereq
     applied_ready = find_v1_applied_section_set(doc) is not None
     corridor_ready = find_v1_corridor_model(doc) is not None
     surface_ready = find_v1_surface_model(doc) is not None
+    build_parametric = _build_parametric_prerequisite_summary(doc)
     messages: list[str] = []
     if not applied_ready:
         messages.append("Generate Applied Sections before Watertight Solids.")
@@ -134,7 +144,9 @@ def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrereq
         messages.append("Run Build Corridor to create a CorridorModel.")
     if not surface_ready:
         messages.append("Run Build Corridor to create a SurfaceModel.")
-    ready = bool(applied_ready and corridor_ready and surface_ready)
+    for diagnostic in build_parametric["diagnostics"]:
+        messages.append(str(diagnostic))
+    ready = bool(applied_ready and corridor_ready and surface_ready and build_parametric["ready"])
     if ready:
         messages.append("Build Corridor prerequisites are ready. Solid target discovery is available.")
     else:
@@ -144,9 +156,37 @@ def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrereq
         applied_sections_ready=applied_ready,
         corridor_model_ready=corridor_ready,
         surface_model_ready=surface_ready,
+        build_parametric_ready=bool(build_parametric["ready"]),
+        build_parametric_diagnostic_count=len(build_parametric["diagnostics"]),
         ready=ready,
         messages=tuple(messages),
     )
+
+
+def _build_parametric_prerequisite_summary(document) -> dict[str, object]:
+    """Return blocking Build Parametric diagnostics for Watertight Solids."""
+
+    if document is None:
+        return {"ready": False, "diagnostics": ["Open a FreeCAD document before checking Build Parametric outputs."]}
+    try:
+        from .cmd_build_corridor import corridor_build_review_rows
+    except Exception:
+        return {"ready": True, "diagnostics": []}
+    try:
+        rows = corridor_build_review_rows(document)
+    except Exception as exc:
+        return {"ready": False, "diagnostics": [f"Build Parametric diagnostics could not be read: {exc}"]}
+    blocking_roles = {"design", "subgrade", "daylight"}
+    diagnostics: list[str] = []
+    for row in list(rows or []):
+        role = str(row.get("role", "") or "")
+        status = str(row.get("status", "") or "")
+        notes = str(row.get("notes", "") or "")
+        if role in blocking_roles and status == "error":
+            diagnostics.append(f"Build Parametric {role} preview is blocking Watertight Solids: {notes}")
+        elif role in blocking_roles and status == "missing" and notes and notes != "Not built yet.":
+            diagnostics.append(f"Build Parametric {role} preview is missing: {notes}")
+    return {"ready": not diagnostics, "diagnostics": diagnostics}
 
 
 def _route_existing_watertight_solid_outputs_to_tree(document=None) -> int:
@@ -913,6 +953,8 @@ class V1WatertightSolidsTaskPanel:
                     structure_body_count=int(getattr(shape_result, "structure_body_count", 0) or 0),
                     port_connector_count=int(getattr(shape_result, "port_connector_count", 0) or 0),
                     endpoint_trim_count=int(getattr(shape_result, "endpoint_trim_count", 0) or 0),
+                    structure_port_terminal_count=int(getattr(shape_result, "structure_port_terminal_count", 0) or 0),
+                    structure_port_contact_status=str(getattr(shape_result, "structure_port_contact_status", "") or ""),
                     structure_body_object_refs=structure_body_object_refs,
                     fuse_notes=str(getattr(shape_result, "notes", "") or ""),
                     generated_object_ref=object_name,
@@ -937,6 +979,8 @@ class V1WatertightSolidsTaskPanel:
                     f"structure_bodies={int(getattr(shape_result, 'structure_body_count', 0) or 0)}; "
                     f"port_connectors={int(getattr(shape_result, 'port_connector_count', 0) or 0)}; "
                     f"endpoint_trims={int(getattr(shape_result, 'endpoint_trim_count', 0) or 0)}; "
+                    f"structure_port_terminals={int(getattr(shape_result, 'structure_port_terminal_count', 0) or 0)}; "
+                    f"structure_port_status={str(getattr(shape_result, 'structure_port_contact_status', '') or '')}; "
                     f"dependencies_built={dependency_count}; "
                     f"fuse_mode={str(getattr(shape_result, 'fuse_mode', '') or '')}; "
                     f"volume={selected_state.volume:.6g}."
@@ -2144,6 +2188,12 @@ def _drainage_pipeline_network_solid_shape(
         shape for shape in list(structure_body_shapes or [])
         if shape is not None and (_shape_count(shape, "Solids") > 0 or _shape_count(shape, "Faces") > 0)
     ]
+    port_contact = _structure_port_contact_status(
+        active_junction_rows,
+        structure_body_shape_map or {},
+        port_connector_count=len(port_connector_shapes),
+        endpoint_trim_count=endpoint_trim_count,
+    )
     shapes = pipe_shapes + connector_shapes + port_connector_shapes + valid_structure_shapes
     if not shapes:
         raise RuntimeError("Drainage pipeline network has no usable pipe segment shapes.")
@@ -2155,10 +2205,13 @@ def _drainage_pipeline_network_solid_shape(
             structure_body_count=len(valid_structure_shapes),
             port_connector_count=len(port_connector_shapes),
             endpoint_trim_count=endpoint_trim_count,
+            structure_port_terminal_count=port_contact["terminal_count"],
+            structure_port_contact_status=port_contact["status"],
             notes=(
                 f"shape_count=1;pipe_count={len(pipe_shapes)};"
                 f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)}"
+                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
+                f"{port_contact['notes']}"
             ),
         )
     fused = _try_boolean_fuse_shapes(shapes)
@@ -2170,10 +2223,13 @@ def _drainage_pipeline_network_solid_shape(
             structure_body_count=len(valid_structure_shapes),
             port_connector_count=len(port_connector_shapes),
             endpoint_trim_count=endpoint_trim_count,
+            structure_port_terminal_count=port_contact["terminal_count"],
+            structure_port_contact_status=port_contact["status"],
             notes=(
                 f"shape_count={len(shapes)};pipe_count={len(pipe_shapes)};"
                 f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};fallback=no"
+                f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
+                f"{port_contact['notes']};fallback=no"
             ),
         )
     return DrainagePipelineNetworkShapeResult(
@@ -2183,12 +2239,73 @@ def _drainage_pipeline_network_solid_shape(
         structure_body_count=len(valid_structure_shapes),
         port_connector_count=len(port_connector_shapes),
         endpoint_trim_count=endpoint_trim_count,
+        structure_port_terminal_count=port_contact["terminal_count"],
+        structure_port_contact_status=port_contact["status"],
         notes=(
             f"shape_count={len(shapes)};pipe_count={len(pipe_shapes)};"
             f"connector_count={len(connector_shapes)};port_connector_count={len(port_connector_shapes)};"
-            f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};fallback=yes"
+            f"endpoint_trim_count={endpoint_trim_count};structure_body_count={len(valid_structure_shapes)};"
+            f"{port_contact['notes']};fallback=yes"
         ),
     )
+
+
+def _structure_port_contact_status(
+    junction_rows,
+    structure_body_shape_map: dict[str, list[tuple[object, str]]],
+    *,
+    port_connector_count: int,
+    endpoint_trim_count: int,
+) -> dict[str, object]:
+    terminal_count = 0
+    direct_contact_count = 0
+    missing_structure_body_count = 0
+    for junction in list(junction_rows or []):
+        if str(getattr(junction, "junction_kind", "") or "") != "terminal":
+            continue
+        notes = str(getattr(junction, "notes", "") or "")
+        structure_refs = _split_ref_text(_note_value(notes, "structure_refs"))
+        if not structure_refs:
+            continue
+        terminal_count += 1
+        point = _junction_point_vector(junction)
+        if point is None:
+            continue
+        matched = False
+        for structure_ref in structure_refs:
+            for structure_shape, _object_ref in list(structure_body_shape_map.get(structure_ref, []) or []):
+                bbox = getattr(structure_shape, "BoundBox", None)
+                if bbox is not None and _bound_box_contains_point(bbox, point, tolerance=0.05):
+                    matched = True
+                    break
+            if matched:
+                break
+        if matched:
+            direct_contact_count += 1
+        else:
+            missing_structure_body_count += 1
+    if terminal_count <= 0:
+        status = "not_checked"
+    elif not structure_body_shape_map:
+        status = "pending_structure_body"
+    elif int(port_connector_count or 0) > 0:
+        status = "bridged"
+    elif int(endpoint_trim_count or 0) > 0:
+        status = "trimmed"
+    elif direct_contact_count >= terminal_count:
+        status = "direct"
+    else:
+        status = "gap"
+    return {
+        "terminal_count": terminal_count,
+        "status": status,
+        "notes": (
+            f"structure_port_terminal_count={terminal_count};"
+            f"structure_port_direct_contact_count={direct_contact_count};"
+            f"structure_port_missing_body_count={missing_structure_body_count};"
+            f"structure_port_contact_status={status}"
+        ),
+    }
 
 
 def _drainage_pipeline_network_connector_shapes(junction_rows, geometry_rows) -> list[object]:
@@ -2806,6 +2923,8 @@ def _drainage_pipeline_network_watertight_output(
     structure_body_count: int = 0,
     port_connector_count: int = 0,
     endpoint_trim_count: int = 0,
+    structure_port_terminal_count: int = 0,
+    structure_port_contact_status: str = "",
     structure_body_object_refs: list[str] | None = None,
     fuse_notes: str = "",
 ) -> WatertightSolidOutput:
@@ -2866,6 +2985,8 @@ def _drainage_pipeline_network_watertight_output(
             f"port_connector_status={'added' if int(port_connector_count or 0) > 0 else 'not_needed'}; "
             f"endpoint_trim_count={int(endpoint_trim_count or 0)}; "
             f"endpoint_trim_status={'applied' if int(endpoint_trim_count or 0) > 0 else 'not_needed'}; "
+            f"structure_port_terminal_count={int(structure_port_terminal_count or 0)}; "
+            f"structure_port_contact_status={str(structure_port_contact_status or 'not_checked')}; "
             f"structure_body_count={int(structure_body_count or 0)}; "
             f"structure_fuse_status={'included' if int(structure_body_count or 0) > 0 else 'pending'}; "
             f"structure_body_object_refs={','.join(active_structure_body_object_refs)}; "

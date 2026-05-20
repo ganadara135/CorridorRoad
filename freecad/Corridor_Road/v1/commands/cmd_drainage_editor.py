@@ -26,7 +26,10 @@ from ..objects.obj_drainage import (
 )
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
-from ..services.evaluation.drainage_resolution_service import DrainageValidationService
+from ..services.evaluation.drainage_resolution_service import (
+    DrainageValidationService,
+    build_drainage_pipeline_segment_candidates,
+)
 from .cmd_drainage_review import (
     build_drainage_review_output,
     show_drainage_pipeline_networks_preview_object,
@@ -1377,7 +1380,62 @@ class V1DrainageEditorTaskPanel:
             chain.append(to_ref)
         if outlet_ref and outlet_ref != to_ref:
             chain.append(outlet_ref)
-        self._flow_route_preview.setText(f"{route_id}: {' -> '.join(chain)}")
+        route_ref = _source_prefixed_id(route_id, "flow-route:")
+        endpoint_summary = self._flow_route_endpoint_summary(route_ref)
+        preview_lines = [f"{route_id}: {' -> '.join(chain)}"]
+        if endpoint_summary:
+            preview_lines.append(endpoint_summary)
+        self._flow_route_preview.setText("\n".join(preview_lines))
+
+    def _flow_route_endpoint_summary(self, route_ref: str) -> str:
+        route_ref = str(route_ref or "").strip()
+        if not route_ref:
+            return ""
+        structure_model = self._structure_model()
+        if structure_model is None:
+            return "Endpoint: no Structures model is available."
+        try:
+            model = self._model_from_tables()
+            candidates = build_drainage_pipeline_segment_candidates(model, structure_model)
+        except Exception as exc:
+            return f"Endpoint: unresolved ({exc})"
+        candidate = next(
+            (
+                row
+                for row in candidates
+                if str(getattr(row, "flow_route_ref", "") or "").strip() == route_ref
+            ),
+            None,
+        )
+        if candidate is None:
+            return "Endpoint: route is not resolved yet."
+        status = str(getattr(candidate, "status", "") or "").strip()
+        if status == "capture_only":
+            return "Endpoint: capture only; no pipe body is generated for this route."
+        from_point_ref = str(getattr(candidate, "from_connection_point_ref", "") or "").strip()
+        to_point_ref = str(getattr(candidate, "to_connection_point_ref", "") or "").strip()
+        from_point = _structure_connection_point_by_ref(structure_model, from_point_ref)
+        to_point = _structure_connection_point_by_ref(structure_model, to_point_ref)
+        if status != "ready":
+            return (
+                "Endpoint: unresolved pipe ports; "
+                f"status={status}; "
+                f"from_port={_display_connection_point_ref(from_point_ref) or '-'}; "
+                f"to_port={_display_connection_point_ref(to_point_ref) or '-'}"
+            )
+        from_structure = str(getattr(from_point, "structure_ref", "") or "").strip()
+        to_structure = str(getattr(to_point, "structure_ref", "") or "").strip()
+        from_role = str(getattr(from_point, "point_role", "") or "").strip()
+        to_role = str(getattr(to_point, "point_role", "") or "").strip()
+        return (
+            "Endpoint: "
+            f"From Structure {_display_source_ref(from_structure) or '-'} / "
+            f"Port {_display_connection_point_ref(from_point_ref) or '-'}"
+            f"{_role_suffix(from_role)} -> "
+            f"To Structure {_display_source_ref(to_structure) or '-'} / "
+            f"Port {_display_connection_point_ref(to_point_ref) or '-'}"
+            f"{_role_suffix(to_role)}"
+        )
 
     def _update_element_cell_states(self, row_index: int) -> None:
         self._update_element_assembly_cell_state(row_index)
@@ -1486,6 +1544,21 @@ def _display_connection_point_ref(value: object) -> str:
     if ":" in text:
         return text.rsplit(":", 1)[1]
     return text
+
+
+def _structure_connection_point_by_ref(structure_model, connection_point_ref: str):
+    expected = str(connection_point_ref or "").strip()
+    if not expected:
+        return None
+    for row in list(getattr(structure_model, "connection_point_rows", []) or []):
+        if str(getattr(row, "connection_point_id", "") or "").strip() == expected:
+            return row
+    return None
+
+
+def _role_suffix(role: object) -> str:
+    text = str(role or "").strip()
+    return f" ({text})" if text else ""
 
 
 def _source_prefixed_id(value: object, prefix: str, default_suffix: str = "") -> str:

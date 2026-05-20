@@ -1,229 +1,168 @@
-# Parametric Road V1 Structure Connection Node Plan
+# Parametric Road V1 Structures Enhancement Plan
 
-Date: 2026-05-12
-Status: Planning baseline before Drainage Pipeline implementation
+Date: 2026-05-20
+Status: Updated implementation plan from the current v1 code baseline
 
-Current first implementation slice:
-
-- `StructureRow` records explicit `geometry_source_mode` and `native_type`.
-- `StructureModel` persists `StructureConnectionPoint` source rows.
-- Structures editor Selected Detail exposes `Geometry Source` and `Native Type`.
-- Structures editor Selected Detail exposes a `Connection Points` table.
-- `Derive Defaults` can create first-slice connection points for culvert/inlet/outlet/headwall-style rows.
-- `Pick From 3D` can fill a connection point row from the current FreeCAD 3D selection by projecting the selected point to Alignment station/offset.
-- `Preview Points` can show selected Structure connection points as 3D review markers, and row double-click can focus one point.
-- Drainage Elements keep Structure refs, while Flow Routes resolve Pipe In / Pipe Out endpoints from Structure-owned connection points by route direction.
-- External Ref bodies remain separate from connection point endpoints.
 Depends on:
 
 - `docsV1/V1_MASTER_PLAN.md`
 - `docsV1/V1_STRUCTURE_MODEL.md`
 - `docsV1/V1_STRUCTURE_GEOMETRY_CONTRACT.md`
-- `docsV1/V1_DRAINAGE_IMPLEMENTATION_PLAN.md`
+- `docsV1/V1_DRAINAGE_MODEL.md`
 - `docsV1/V1_DRAINAGE_FLOW_ROUTE_IMPLEMENTATION_PLAN.md`
+- `docsV1/V1_BUILD_PARAMETRIC_STABILIZATION_PLAN.md`
+- `docsV1/V1_WATERTIGHT_SOLID_TARGET_EXPANSION_PLAN.md`
 
 ## 1. Purpose
 
-This document defines how Structures should be upgraded before advanced Drainage work.
+This document defines the next Structures enhancement work from the current code state.
 
-The immediate goal is to move Structures from visible 3D objects into connection-ready source nodes that Drainage can use to build pipeline segments.
+The goal is to make Structures a connection-ready v1 source domain that can support:
 
-The long-term goal is:
+- general corridor structures
+- drainage structures such as inlets, culverts, outlets, and headwalls
+- 3D review and project-tree visibility
+- Build Parametric context review
+- Watertight Solid target discovery and simulation-ready output
 
-`Structure source node -> connection points -> Drainage Flow Route -> Pipeline Segment -> preview/quantity/solid/exchange`
+Structures are source intent.
 
-## 2. Scope
+Structure preview objects, pipe previews, generated solids, and export geometry are outputs.
 
-This plan covers:
+## 2. Current Code Baseline
 
-- Structure roles needed by Drainage.
-- Native vs External Structure geometry source behavior.
-- Structure connection point source intent.
-- External geometry connection point mapping.
-- invert and connection elevation requirements.
-- structure placement checks before Drainage consumes them.
-- Structures UI changes needed before Pipeline authoring.
-- validation and review handoff.
+The current implementation already provides these pieces:
 
-This plan does not cover:
-
-- hydraulic calculation.
-- automatic pipe sizing.
-- final pipe network optimization.
-- replacing Structure Output solids.
-- renaming internal `CorridorRoad` package, object, or command ids.
+| Area | Current state |
+|---|---|
+| Source model | `StructureModel`, `StructureRow`, `StructurePlacement`, `StructureGeometrySpec`, kind-specific geometry specs, and `StructureConnectionPoint` exist. |
+| Geometry source | `StructureRow.geometry_source_mode` supports `native` and `external_ref`; `native_type` is stored on the row. |
+| Editor | Structures panel has a compact main table and a `Selected Structure Detail` area. |
+| Removed UI direction | The old visible `Geometry Specs` editing surface is no longer the target UX; geometry spec rows remain internal source contracts. |
+| Native authoring | Native types include box/pipe culvert, bridge deck, retaining wall, headwall, inlet, and outlet. |
+| Connection points | The editor can derive defaults, pick from 3D, preview points, and focus selected connection points. |
+| Tree output | Structure preview objects and connection point preview objects are routed to the project tree. |
+| Drainage handoff | Drainage Elements reference Structures; Flow Routes resolve pipe endpoints from Structure-owned connection points. |
+| Drainage preview | `Show Flow Network` can create pipeline preview geometry from resolved Structure connection points. |
+| Build Parametric | Region focus can include actual Structure and Drainage preview objects instead of placeholder boxes. |
+| Watertight Solids | `structure_body`, `drainage_pipeline_body`, and `drainage_pipeline_network_body` targets exist; native/external structure body handling has first-slice support. |
 
 ## 3. Core Rule
 
-Drainage should not connect directly to anonymous preview geometry.
+Drainage and Watertight Solids must not connect to anonymous preview geometry.
 
-Drainage should connect to `StructureModel` source rows through explicit connection points.
+They must connect through stable source ids:
 
-Structure preview objects remain presentation outputs. They are not the source of pipe endpoints.
+```text
+StructureRow
+-> StructureConnectionPoint
+-> DrainageElement
+-> FlowRoute
+-> DrainagePipelineSegment
+-> Watertight Solid output
+```
 
-## 4. Current Baseline
+Preview geometry may show this relationship, but it must not become the design source.
 
-Current implementation already has:
-
-- `StructureModel`
-- `StructureRow`
-- `StructurePlacement`
-- common and kind-specific geometry specs
-- optional external geometry references through `geometry_ref`
-- Structure editor presets
-- Structure-to-Region assignment
-- Structure preview/output handoff
-- Drainage Element `structure_ref`
-- Flow Route rows that can reference Drainage Elements and Outlet refs
-
-Current limitation:
-
-- visible Structures are not yet formal pipeline nodes
-- connection points are implicit
-- Native and External geometry source choices are not explicit enough in the editor
-- External geometry cannot yet map stable Drainage pipe endpoints
-- invert elevations are not consistently exposed as node endpoints
-- Drainage Flow review can show route context, but it cannot yet build physical pipe links
-
-## 5. Target Mental Model
+## 4. Target Mental Model
 
 Use four distinct layers:
 
 | Layer | Owner | Meaning |
 |---|---|---|
-| Structure | `StructureModel` | A physical or reference object placed in station space |
-| Geometry Source | `StructureModel` | Native parametric shape or external referenced shape |
-| Connection Point | `StructureModel` | A named inlet/outlet/port on a Structure |
-| Pipeline Segment | Drainage result/output | A generated pipe or channel connection between connection points |
+| Structure source | `StructureModel` | Physical or reference structure placed in station/offset space. |
+| Geometry source | `StructureModel` | Native parametric body or external referenced body. |
+| Connection points | `StructureModel` | Stable named ports such as `pipe_in`, `pipe_out`, `upstream`, `downstream`, `discharge`. |
+| Pipeline/solid outputs | Drainage and Watertight outputs | Generated pipe segments, network solids, structure bodies, and export geometry. |
 
-Drainage uses Structures as nodes.
-Geometry Source defines the body.
-Flow Routes use connection points as endpoints.
-Pipeline Segments are evaluated results.
+The user edits Structures as source rows.
 
-Do not use generated preview faces, Part edge ids, or imported solid face ids as Drainage endpoints.
+The system evaluates those rows into preview, drainage, and solid output contracts.
 
-Drainage endpoints must be stable source ids.
+## 5. Workflow Position
 
-Pipeline network solids are grouped from resolved Drainage pipeline segment outputs, not from Structure preview bodies.
-
-## 5.1 Geometry Source Strategy
-
-Each Structure should have one explicit geometry source mode.
-
-Recommended modes:
-
-| Mode | Meaning | User action | Drainage behavior |
-|---|---|---|---|
-| `native` | Parametric Road creates a simplified parametric body from source dimensions | choose a Native Type and key dimensions | derive default connection points where possible |
-| `external_ref` | Structure uses a referenced FreeCAD object, STEP/IFC import, or other detailed body | choose/pick external object and map anchors | require explicit connection point mapping for Drainage-ready use |
-
-Native and External geometry must share the same connection point contract.
-
-The difference is how the physical body is authored.
-
-Drainage should not care whether the body is native or external once connection points are available.
-
-## 5.2 Native Geometry Authoring Strategy
-
-Native geometry should be a simple parametric shape builder, not a detailed bridge or drainage CAD modeler.
-
-The editor should ask for practical engineering dimensions only.
-
-Recommended Native Types:
-
-| Native Type | Primary use | Key inputs |
-|---|---|---|
-| `box_culvert` | drainage crossing | width, height, wall thickness, invert, skew, headwall option |
-| `pipe_culvert` | drainage crossing | diameter, wall thickness, invert, skew, end treatment |
-| `bridge_deck` | bridge/overpass body | deck width, deck thickness, girder depth, barrier height |
-| `retaining_wall` | wall body | height, thickness, footing width, side, top mode |
-| `headwall` | drainage endpoint | width, height, thickness, invert, opening size |
-| `inlet` | drainage intake | width, depth, height, grate/cover type, pipe outlet size |
-| `outlet` | drainage discharge | width, height, apron/wingwall option, pipe inlet size |
-
-Default rules:
-
-- Structure length is derived from `Start STA` and `End STA`.
-- `Vertical Mode` defaults to `profile_frame`.
-- `Length Mode`, internal `Spec Id`, and `Structure Ref` are not primary user-edit fields.
-- `Skew`, `Top Elev`, and advanced elevation behavior belong in the selected Structure detail area.
-- Native culvert, inlet, outlet, and headwall rows may derive default connection points.
-
-The visible UX should use practical names such as `Box Culvert` instead of internal shape names such as `box`.
-
-## 5.3 External Geometry Connection Mapping Strategy
-
-External geometry is the visible/physical body.
-
-It should not be treated as the source of Drainage topology by itself.
-
-For Drainage-ready external Structures, add explicit connection point mapping rows.
-
-Recommended workflow:
+Structures stay in the source-authoring part of the workflow:
 
 ```text
-Geometry Source: External Ref
-External Object: culvert_headwall_solid
-Drainage Ready: Yes
-
-Connection Points
-| Point ID | Role | Station | Offset | Invert | Direction | Shape | Size |
-| inlet-01 | inlet | 102.500 | -4.000 | 47.200 | upstream | circular | 0.800 |
-| outlet-01 | outlet | 104.000 | 4.200 | 46.950 | downstream | circular | 0.800 |
+Alignment
+-> Stations
+-> Profile
+-> 3D Centerline
+-> Assembly
+-> Regions
+-> Structures
+-> Drainage
+-> Applied Sections
+-> Build Parametric
+-> Watertight Solids
 ```
 
-External mapping rules:
+Why this order:
 
-- map pipe/channel endpoints to `StructureConnectionPoint`, not to external face or edge ids
-- store station/offset/elevation or a resolved coordinate plus station context
-- keep point ids stable even if the external body is replaced
-- allow 3D picking later, but persist the picked result as source-level connection point data
-- report warnings when an external Structure is marked Drainage-ready without connection points
+- Structures need accepted Region and 3D Centerline context.
+- Drainage needs accepted Structure refs and connection points.
+- Build Parametric should review generated corridor and domain outputs.
+- Watertight Solids should consume completed Build Parametric and source/result contracts.
 
-First-slice mapping may be manual.
+## 6. Structure Families
 
-Later versions may add:
+Structures should support two broad families.
 
-- [x] `Pick From 3D`
-- station/offset reverse projection
-- direction vector inference
-- IFC property/name-based port detection
-- circular face candidate suggestions
-
-## 6. Structure Role Classification
-
-Structures should be classified by whether they can participate in Drainage.
-
-| Structure kind | Drainage role | Connection behavior |
+| Family | Examples | Drainage behavior |
 |---|---|---|
-| `inlet` | drainage node | receives surface/ditch flow and outputs to pipe |
-| `outlet` | drainage node | receives pipe/channel flow and discharges out |
-| `headwall` | drainage node | endpoint structure for culvert or pipe |
-| `culvert` | drainage link or node pair | has upstream and downstream endpoints |
-| `manhole` | drainage node | joins or redirects pipe segments |
-| `junction_box` | drainage node | joins multiple pipe/channel paths |
-| `retaining_wall` | corridor structure | may carry weep/drain refs later, not a default pipeline node |
-| `bridge` | corridor structure | not a default pipeline node |
+| General corridor structure | bridge, retaining wall, barrier, custom object | May affect corridor context, quantities, and solids; not automatically a drainage node. |
+| Drainage-ready structure | inlet, outlet, headwall, culvert, manhole, junction box | Must expose connection points before Drainage pipeline output can be trusted. |
 
-Initial implementation should prioritize:
+Assembly remains limited to reusable road section components.
 
-- `culvert`
-- `inlet`
-- `outlet`
-- `headwall`
-- `manhole`
-- `junction_box`
+Drainage-related physical nodes belong in Structures, not Assembly.
 
-## 7. Connection Point Contract
+## 7. Native And External Geometry Strategy
 
-Add or derive a source row family for structure connection points.
+Each Structure row has one geometry source mode.
 
-Recommended object family:
+| Mode | Meaning | User-facing expectation | Validation |
+|---|---|---|---|
+| `native` | Parametric Road builds a simplified body from source dimensions. | User picks Native Type and practical dimensions in `Selected Structure Detail`. | Require native type and valid dimensions. |
+| `external_ref` | User references an existing FreeCAD/imported object. | User picks an external body and maps connection points. | Require geometry ref; drainage-ready external refs require mapped connection points. |
 
-- `StructureConnectionPoint`
+Native and external geometry share the same connection point contract.
 
-Recommended fields:
+Drainage should not care how the body was authored once endpoints are available.
+
+## 8. Selected Structure Detail
+
+`Selected Structure Detail` is the single user-facing place for detailed Structure editing.
+
+It should own:
+
+- geometry source mode
+- native type
+- external geometry ref
+- common dimensions
+- native type-specific dimensions
+- shape/material/display role
+- connection point rows
+- validation status for the selected Structure
+
+The main Structures table should remain compact:
+
+- `Structure ID`
+- `Kind`
+- `Role`
+- `Start STA`
+- `End STA`
+- `Offset`
+- `Region`
+- short status columns only when useful
+
+The user should not have to edit internal `Spec ID`, `Structure Ref`, or `Length Mode`.
+
+## 9. Connection Point Contract
+
+`StructureConnectionPoint` is the stable source endpoint for Structure-to-Drainage connectivity.
+
+Current source fields:
 
 - `connection_point_id`
 - `structure_ref`
@@ -241,368 +180,258 @@ Recommended fields:
 - `region_ref`
 - `notes`
 
-Recommended `point_role` values:
+Recommended role meanings:
 
-- `inlet`
-- `outlet`
-- `upstream`
-- `downstream`
-- `left_port`
-- `right_port`
-- `pipe_in`
-- `pipe_out`
-- `overflow`
+| Role | Meaning |
+|---|---|
+| `inlet` | Open collection point from ditch/surface into a structure. |
+| `pipe_in` | Closed pipe enters this structure. |
+| `pipe_out` | Closed pipe leaves this structure. |
+| `upstream` | Culvert upstream endpoint when legacy naming is used. |
+| `downstream` | Culvert downstream endpoint when legacy naming is used. |
+| `discharge` | Final outfall/discharge point. |
 
-Core rule:
-
-Connection point ids should be stable and referenced by Drainage.
-
-Example:
+Preferred drainage route resolution:
 
 ```text
-structure:culvert-01
-  connection:culvert-01:upstream
-  connection:culvert-01:downstream
+from Structure -> use outgoing role such as pipe_out/downstream
+to Structure   -> use incoming role such as pipe_in/upstream
+outlet target  -> use pipe_in/discharge context depending on target role
 ```
 
-## 8. Derived Defaults
+## 10. Current Gaps
 
-The editor may derive connection points from existing geometry specs when explicit rows do not exist.
+The remaining Structures gaps are:
 
-Examples:
+| Gap | Effect |
+|---|---|
+| Structure validation is still broad and partially warning-based. | Bad drainage nodes can reach later previews before the user sees a clear blocking reason. |
+| Connection point role semantics need to be stricter. | Inlet-to-culvert and culvert-to-outlet routing can drift when endpoint choice is ambiguous. |
+| Native shape detail is first-slice. | Culvert, inlet, outlet, and headwall bodies are useful but not yet detailed civil structure models. |
+| External Ref mapping is manual-first. | Imported structure bodies need clearer port mapping and validation. |
+| Watertight integration is first-slice. | Structure bodies can participate in drainage network solids, but robust boolean and port overlap QA need more work. |
+| Tests are focused on contracts and command behavior. | More fixture coverage is needed for real drainage-chain and structure-solid scenarios. |
 
-- box culvert -> upstream/downstream points from placement start/end and invert elevation
-- inlet -> one inlet point and one pipe_out point
-- outlet/headwall -> one pipe_in point and one discharge outlet point
-- manhole -> one or more pipe_in/pipe_out points
+## 11. Implementation Plan
 
-Derived defaults are allowed for preview and first-slice validation.
+### ST-S1. Source Contract Cleanup
 
-Durable source rows should be created before Drainage Pipeline authoring becomes editable.
+Status: Done
 
-## 9. Placement And Elevation Requirements
+Tasks:
 
-For Drainage-ready Structures, validate:
-
-- `structure_id` exists and is unique
-- `structure_kind` is a supported Drainage node kind
-- `StructurePlacement.region_ref` is assigned
-- placement station range is inside the referenced Region
-- connection point station is inside the placement range or explicitly allowed as an extension
-- connection point has an invert or connection elevation
-- circular pipe endpoints have diameter
-- box endpoints have width and height
-- direction is known or derivable
-
-Elevation sources should follow this priority:
-
-1. explicit connection point `invert_elevation`
-2. kind-specific geometry spec invert field
-3. placement elevation reference plus vertical offset rule
-4. profile/terrain fallback with warning
-
-## 10. Structures UI Plan
-
-The Structures panel should be upgraded before Drainage Pipeline UI.
-
-### Main Table
-
-Keep the main Structures table compact.
-
-Recommended visible columns:
-
-- `Structure ID`
-- `Kind`
-- `Region`
-- `Start STA`
-- `End STA`
-- `Offset`
-- `Role`
-- `Drainage Ready`
-
-### Detail Area
-
-Add a detail area or tab for selected Structure.
-
-Recommended tabs:
-
-- `Geometry`
-- `Connection Points`
-- `Preview`
-- `Diagnostics`
-
-The `Geometry` detail area should expose:
-
-- `Geometry Source`: `Native` or `External Ref`
-- Native Type and simple dimensions when `Native` is selected
-- `External Geometry Ref` and anchor/mapping controls when `External Ref` is selected
-
-The main Structures table should not show this field because native v1 geometry is managed through the selected Structure detail area.
-
-The visible `Geometry Specs` table is removed from the Structures panel.
-
-Common native geometry fields such as shape, width, height, vertical mode, elevations, skew, material, and notes are edited in `Selected Structure Detail`.
-
-The underlying `StructureGeometrySpec` rows remain an internal source contract.
-
-The user should not need to edit `Spec Id`, `Structure Ref`, or `Length Mode` in the main table.
-
-Those values are internal source links or advanced behavior.
-
-### Connection Points Tab
-
-Recommended columns:
-
-- `Point ID`
-- `Role`
-- `Station`
-- `Offset`
-- `Invert`
-- `Shape`
-- `Size`
-- `Direction`
-- `Status`
-
-Recommended actions:
-
-- `Add Point`
-- `Delete Point`
-- `Derive Defaults`
-- [x] `Pick From 3D`
-- [x] `Preview Points`
-- `Validate`
-
-For Native geometry, `Derive Defaults` should create practical points from the selected Native Type.
-
-For External Ref geometry, `Pick From 3D` should be a review/authoring helper, but the persisted result must still be a stable `StructureConnectionPoint` row.
-
-First-slice behavior:
-
-- read the current FreeCAD 3D selection
-- accept selected vertex, edge/face/object center, or object placement
-- project XY to the nearest Alignment segment
-- fill `STA`, `Offset`, `Elev`, and `Invert`
-- mark the row notes with `picked_from_3d`
-- show connection point markers as `V1StructureConnectionPointPreview`
-- route connection point preview objects into the Structures project-tree group
-
-## 11. 3D Review Plan
-
-Structure preview should distinguish:
-
-- physical structure body
-- connection points
-- active selected structure
-- drainage-ready vs incomplete nodes
-
-Recommended first-slice display:
-
-- structure body: existing preview color
-- connection point: small non-solid marker or short axis tick
-- selected connection point: highlighted marker
-- incomplete drainage node: warning color in review only
-
-Connection point markers are review helpers.
-They should not be used as editable geometry.
-
-## 12. Drainage Handoff Rule
-
-Drainage should reference Structures at the Element level and let Flow Routes resolve the proper Structure connection points by direction.
-
-Current first-slice:
-
-```text
-DrainageElementRow.structure_ref = structure:culvert-01
-```
-
-Target:
-
-```text
-DrainageElementRow.structure_ref = structure:culvert-01
-DrainageElementRow.structure_ref = structure:culvert-01
-FlowRoute direction resolves culvert-01 as Pipe In when it is the downstream target and Pipe Out when it is the upstream source.
-```
-
-First-slice editor behavior:
-
-- Drainage Elements keep `Structure Ref`.
-- non-ditch rows expose a `Structure Ref` combo only.
-- the selected Structure's `StructureConnectionPoint` rows are consumed by Flow Route resolution.
-- validation reports missing Structure refs or missing Structure-owned connection points when a physical pipe segment cannot be resolved.
-
-Flow Route target:
-
-```text
-from_connection_ref -> to_connection_ref
-```
-
-Fallback rule:
-
-If no connection point exists, Drainage may resolve the default connection point for the referenced Structure and report a warning.
-
-## 13. Validation
-
-Structure validation should add Drainage-readiness diagnostics.
-
-Recommended diagnostics:
-
-- missing Region assignment
-- placement outside Region boundary
-- missing geometry source mode
-- missing Native Type for native geometry
-- missing external object ref for external geometry
-- external drainage-ready Structure has no mapped connection points
-- unsupported drainage node kind
-- missing connection points
-- duplicate connection point ids
-- missing invert elevation
-- missing endpoint size
-- invalid endpoint direction
-- connection point outside placement station range
-- culvert has only one endpoint
-- inlet has no pipe_out point
-- outlet has no pipe_in or discharge point
-
-Diagnostic severity:
-
-- `error`: source cannot be consumed safely
-- `warning`: source can be previewed, but Pipeline output should be blocked or degraded
-- `info`: source is complete enough for review
-
-## 14. Implementation Order
-
-### S1. Documentation Baseline
-
-- Add this plan.
-- Update `V1_STRUCTURE_MODEL.md` with connection-point ownership.
-- Update `docsV1/README.md`.
+- [x] Keep `StructureModel` as the durable owner of structure geometry intent and connection points.
+- [x] Treat `geometry_spec_rows` as internal source contracts behind `Selected Structure Detail`.
+- [x] Keep the internal geometry-spec table detached from the visible UI and non-editable.
+- [x] Remove unused internal geometry-spec delete helper from the editor.
+- [x] Review compatibility fields and keep only fields still used by active commands/tests.
+- [x] Keep source ids stable: `structure:*`, `geometry-spec:*`, `connection:*`.
 
 Acceptance:
 
-- Structures are documented as Drainage-ready nodes.
-- Drainage Pipeline dependency on Structures is explicit.
+- [x] Structures can round-trip through the FreeCAD object without losing selected detail fields.
+- [x] No UI path requires users to edit internal geometry spec ids.
+- [x] Native and External Ref detail edits continue to write the same source contract.
 
-### S2. Source Contract
+Compatibility decision:
 
-- [x] Add explicit geometry source mode to Structure source rows or linked geometry source rows.
-- [x] Keep Native geometry dimensions in normalized spec rows.
-- [x] Keep External Ref body references separate from connection points.
-- [x] Add `StructureConnectionPoint` dataclass.
-- [x] Add rows to `StructureModel`.
-- [x] Persist rows on `V1StructureModel`.
-- Keep old Structure rows valid.
+| Field / Surface | Decision | Reason |
+|---|---|---|
+| `geometry_spec_rows` | Keep, internal only | Needed for native dimensions, preview, solid, and object round-trip. |
+| Hidden geometry-spec table | Keep as detached internal store | Current editor uses it as a compact table-backed source cache; it is not a user editing surface. |
+| `geometry_spec_ref` | Keep | Stable link from `StructureRow` to common and kind-specific geometry specs. |
+| `geometry_ref` | Keep | External Ref workflow needs a durable object/source reference. |
+| `geometry_source_mode` | Keep | Explicitly separates `native` and `external_ref` behavior. |
+| `native_type` | Keep | Drives practical defaults, validation, preview, and derived ports. |
+| `reference_mode` | Keep as compatibility bridge | Active tests and object round-trip still use it to preserve source/external reference semantics. |
 
-Acceptance:
+### ST-S2. Validation Upgrade
 
-- [x] Native and External geometry source modes are distinguishable from source rows.
-- [x] External geometry references do not replace connection point rows.
-- [x] Structure connection points round-trip through document object persistence.
-- [x] Existing Structure tests still pass.
+Status: Done
 
-### S3. Validation Service
+Tasks:
 
-- Extend Structure validation for connection point diagnostics.
-- Validate Region boundary consistency.
-- Validate kind-specific endpoint requirements.
-
-Acceptance:
-
-- invalid culvert/inlet/outlet examples report targeted diagnostics.
-
-### S4. Structures UI
-
-- [x] Move Geometry Specs editing into the selected Structure detail flow.
-- [x] Add `Geometry Source` selection.
-- [x] Add Native Type selector for box culvert, pipe culvert, bridge deck, wall, headwall, inlet, and outlet.
-- [x] Add simple type-specific Native geometry forms for box culvert, pipe culvert, bridge deck, wall, headwall, inlet, and outlet.
-- [x] Reflect pipe culvert circular Native geometry in 3D preview and derived connection point defaults.
-- [x] Derive inlet, outlet, and headwall connection point roles for pipeline handoff, including `pipe_out`, `pipe_in`, and `discharge`.
-- Keep external body references under `External Ref`.
-- [x] Add first-slice `Connection Points` table in selected Structure detail.
-- [x] Add derive-default action for culvert/inlet/outlet/headwall-style rows.
-- Add manual connection-point mapping for External Ref Structures.
-- Add row-level validation status.
+- [x] Add stricter drainage-ready validation for inlet, outlet, headwall, culvert, manhole, and junction box.
+- [x] Validate supplied Region refs and station range against Region boundaries.
+- [x] Validate connection point station range against the owning Structure placement.
+- [x] Validate endpoint size by shape kind.
+- [x] Validate role pairs:
+  - inlet should have `inlet` and `pipe_out` when used as a pipe source
+  - outlet/headwall should have `pipe_in` and optional `discharge`
+  - culvert should have `pipe_in`/`pipe_out` or upstream/downstream equivalents
+- [x] Return diagnostics with stable codes for UI and tests.
 
 Acceptance:
 
-- user can author a simple Native Structure without editing internal ids.
-- user can map Drainage-ready connection points onto an External Ref Structure.
-- [x] user can create or derive connection points without opening Drainage.
+- [x] Invalid drainage-ready examples report targeted diagnostics.
+- [x] Valid `Drainage Structures` preset validates without blocking errors.
 
-### S5. Structure Preview
+### ST-S3. Selected Structure Detail Polish
 
-- Show selected Structure body.
-- Show connection points for selected Structure.
-- Avoid creating permanent marker clutter.
+Status: Done
 
-Acceptance:
+Tasks:
 
-- selected Structure and its connection points can be reviewed in 3D.
-
-### S6. Drainage Handoff Preparation
-
-- Keep Drainage Element UI focused on `Structure Ref`; connection point selection remains Structure-owned.
-- Keep `connection_point_ref` as an internal compatibility field only while active UI uses direction-based resolution.
-- Document Flow Route endpoint migration.
-- [x] Make Flow Routes consume connection point endpoints before building physical pipe segments.
-- [x] Add first-slice pipeline segment candidates in Drainage Review from Flow Route endpoint connection points.
-- [x] Add a lightweight 3D preview object for selected Drainage pipeline candidates.
-- [x] Promote ready pipeline candidates into `DrainagePipelineSegment` result rows and dedicated Drainage output rows.
-- [x] Add a lightweight 3D preview object for selected resolved Drainage pipeline segments.
+- [x] Keep table row selection synchronized with `Selected Structure Detail`.
+- [x] Keep `Apply` and `Apply+Preview` behavior persistent after closing/reopening the panel.
+- [x] Make disabled fields visually clear for non-applicable native/external modes.
+- [x] Show selected Structure validation summary inside the detail area.
+- [x] Keep connection point markers as clear sphere-style review helpers.
 
 Acceptance:
 
-- Drainage can choose a Structure as an endpoint owner; Flow Routes choose the actual connection point by direction.
-- Drainage Review can report ready or incomplete pipeline segment candidates without reading generated preview geometry.
-- Drainage Review pipeline candidate preview remains output-only and traceable to Flow Route and Structure connection point refs.
-- Drainage Pipeline result rows are generated only from ready endpoint pairs and remain traceable to Flow Route and Structure connection point refs.
-- Pipeline previews use the active Alignment station/offset frame when it exists, while preserving a fallback mode for documents that do not yet have an Alignment source.
-- Pipeline preview geometry is fed by Drainage output `pipeline_geometry_rows`, not by Structure preview geometry or UI-only reconstruction.
-- Ready pipeline geometry can produce first-slice capped pipe solid candidates and `drainage_pipeline_body` Watertight Solid targets.
-- Ready pipeline solid candidates can be grouped into a `pipeline_network_rows` output contract and a `drainage_pipeline_network_body` Watertight Solid target.
-- Grouped pipeline network rows can be reviewed as a 3D network preview without using Structure preview geometry as source.
-- Pipeline network endpoint junctions are exposed as output rows before trimming, keeping Structure connection provenance visible for the later watertight connection step.
-- Pipeline terminal rows preserve Structure connection point refs when available.
-- Watertight pipeline network output carries Structure refs and connection point refs forward from terminal rows.
-- The first network solid build adds junction connector bodies for degree greater than one endpoint junctions and terminal connector bodies for Structure-backed endpoints, tries best-effort boolean fuse, and falls back to a compound of capped segment solids.
-- Watertight Solids can build a first-slice `structure_body` output directly from the StructureModel native geometry spec through `StructureSolidOutputService`.
-- `pipe_culvert` and circular culvert native bodies build as cylindrical Part solids rather than rectangular envelopes.
-- Circular culverts with `wall_thickness` build as hollow pipe wall solids by cutting the inner pipe volume from the outer cylinder.
-- External Ref Structures can reuse a referenced FreeCAD object's Shape as the `structure_body` output when `geometry_ref` resolves to a document object.
-- External Ref Structures that are Drainage-ready are blocked from Watertight Solid target discovery until they have at least one mapped source-level connection point.
-- External Ref Structure body validation checks mapped connection point coordinates against the referenced Shape bounding box and blocks the build when points are outside the body tolerance.
-- Drainage pipeline network builds auto-build available matching Structure body targets before network fuse.
-- Structure-backed pipe terminals can add first-slice port bridge connector bodies when the terminal point does not overlap the Structure body.
-- Port bridge connector sizing and direction prefer the owning Structure connection point fields before falling back to pipe diameter and Structure body center.
-- Structure-backed pipe terminals that start inside a matched Structure body bounding box are trimmed to the Structure body exit face before pipe and connector solids are built.
-- Native `inlet`, `outlet`, and `headwall` Structure bodies use their source connection point offset and invert/elevation as first-slice body placement when the Structure placement has no explicit offset.
-- Native `inlet` Structure bodies build as a rectangular body with an internal chamber cut.
-- Native `outlet` and `headwall` Structure bodies build as rectangular headwall bodies with a pipe opening cut from the owning connection point diameter when available.
-- When matching `structure_body` Watertight Solid output objects already exist, the network solid build includes those Structure body shapes in the fuse input and records the matched output refs.
-- Detailed wingwalls, inlet grates, external face/port inference, and terrain interaction remain later implementation steps.
+- [x] Clicking any Structure row updates the detail area.
+- [x] Applying, closing, and reopening shows the applied source data.
+- [x] Connection point preview looks like intentional point markers, not broken geometry.
 
-## 15. Acceptance Criteria For Structures Before Drainage Pipeline
+### ST-S4. Native Shape Authoring Upgrade
 
-Drainage Pipeline work should not start until:
+Status: Done
 
-- Drainage-ready Structure kinds are classified.
-- Native and External geometry source modes are explicit.
-- Native geometry can be authored through simple type-specific fields.
-- External geometry can be mapped to stable connection points.
-- connection point source rows are persisted.
-- at least culvert/inlet/outlet defaults can be derived.
-- Structures UI exposes connection points.
-- validation reports missing invert/size/Region context.
-- 3D review can show selected connection points.
+Tasks:
 
-## 16. Non-goals
+- [x] Keep native authoring simple and practical.
+- [x] Improve type-specific defaults for:
+  - `pipe_culvert`
+  - `box_culvert`
+  - `inlet`
+  - `outlet`
+  - `headwall`
+  - `retaining_wall`
+  - `bridge_deck`
+- [x] Apply practical Structure kind and role defaults when Native Type changes.
+- [x] Derive connection points from native type and dimensions when a selected Structure has no authored ports yet.
+- [x] Make inlet/outlet/headwall defaults larger and easier to inspect in 3D.
+- [x] Keep detailed grates, wingwalls, rebar, and vendor-level parts out of the first stable workflow.
 
-This plan does not make Parametric Road a hydraulic design package.
+Acceptance:
 
-It does not size pipes automatically.
+- [x] Native drainage structures are visually understandable.
+- [x] Derived connection points align with the native body and pipeline preview.
+- [x] User-authored connection points are not overwritten by native defaults.
 
-It does not require all Structures to be Drainage nodes.
+### ST-S5. External Ref Mapping
 
-It does not replace Structure Output solids.
+Status: Done
 
-It prepares source-level Structure nodes so Drainage can later build traceable pipeline results.
+Tasks:
+
+- [x] Keep external body references separate from connection points.
+- [x] Add `Pick External` guidance in `Selected Structure Detail` so the selected 3D/tree object can become the external body reference.
+- [x] Keep `Pick From 3D` for connection-point mapping only.
+- [x] Validate mapped connection points against the external object bounding box when the referenced object exists in the document.
+- [x] Add diagnostics when a drainage-ready external ref has no mapped ports.
+- [ ] Later: suggest ports from circular faces, named IFC ports, or object metadata.
+
+Acceptance:
+
+- [x] External Ref Structures can become drainage-ready through explicit connection point rows.
+- [x] Replacing the external body does not destroy source-level endpoint ids.
+- [x] External body validation reports connection points outside the referenced object bounds.
+
+### ST-S6. Drainage Handoff Hardening
+
+Status: Done
+
+Tasks:
+
+- [x] Keep Drainage Elements referencing Structures, not Structure preview objects.
+- [x] Keep Flow Routes connecting Elements.
+- [x] Resolve endpoint connection points by route direction and Structure role.
+- [x] Preserve explicit Structure connection points instead of snapping every culvert `pipe_in` or `pipe_out` role to placement start/end.
+- [x] Snap only derived/default culvert `upstream` and `downstream` endpoints to the current Structure placement when needed.
+- [x] Double-clicking Flow Route rows can highlight resolved pipe/network objects in 3D.
+- [x] Preserve connection point provenance in pipeline output rows.
+
+Acceptance:
+
+- [x] Inlet-to-inlet, inlet-to-culvert, and culvert-to-outlet routes connect through the correct Structure ports.
+- [x] Explicit culvert `pipe_in` ports keep their authored station and offset.
+- [x] Flow network preview and Watertight target discovery use the same resolved endpoints.
+
+### ST-S7. Build Parametric Integration
+
+Status: Done
+
+Tasks:
+
+- [x] Continue using actual generated Structure preview objects for Region and guided review focus.
+- [x] Do not recreate placeholder Structure boxes inside Build Parametric.
+- [x] Resolve Structure context by `v1_structure_row_preview` + `StructureRef`, not only by a fixed object name.
+- [x] Surface missing Structure context as diagnostics.
+- [x] Keep tree-visible outputs update-in-place.
+
+Acceptance:
+
+- [x] Build Parametric can focus Structure context without creating fake geometry.
+- [x] Build Parametric can focus Structure context even when the preview object name differs from the default generated name.
+- [x] Rebuilding does not create duplicate Structure preview objects.
+
+### ST-S8. Watertight Solid Integration
+
+Status: Done
+
+Tasks:
+
+- [x] Keep `structure_body` targets discoverable from `StructureModel`.
+- [x] Keep `drainage_pipeline_network_body` able to auto-build needed Structure body dependencies.
+- [x] Improve structure-port overlap checks before boolean fuse.
+- [x] Record structure body refs and connection point refs in solid output diagnostics.
+- [x] Record structure-port terminal count and contact status in build messages and solid notes.
+- [x] Treat failed fuse as a visible warning/fallback, not a silent success.
+
+Acceptance:
+
+- [x] Structure bodies and drainage pipeline network bodies remain traceable to source Structure refs.
+- [x] Pipeline network solids report `structure_port_contact_status` as `direct`, `trimmed`, `bridged`, `gap`, or `pending_structure_body`.
+- [x] Simulation-package QA can report missing or non-overlapping structure bodies.
+
+### ST-S9. Tests And Manual QA
+
+Status: Done
+
+Tasks:
+
+- [x] Add contract tests for stricter Structure validation.
+- [x] Add command tests for selected-detail round-trip and connection point persistence.
+- [x] Add drainage-chain fixture tests for:
+  - ditch band to inlet
+  - inlet to inlet
+  - inlet to culvert
+  - culvert to outlet
+- [x] Add Watertight tests for native structure body output and network dependency inclusion.
+- [x] Keep manual QA checklist aligned with v1.0.1 workflow.
+
+Acceptance:
+
+- [x] Focused tests can run without FreeCAD GUI where practical.
+- [x] FreeCAD manual smoke confirms tree visibility, preview, route highlight, and solid target discovery.
+
+## 12. Risk Analysis
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| UI exposes too many internal source fields | Structures panel becomes confusing. | Keep `Selected Structure Detail` as the only detailed editor and hide internal ids. |
+| Connection point role selection stays ambiguous | Pipes connect to wrong ports. | Enforce route-direction role rules and report ambiguous endpoint diagnostics. |
+| Native shapes become too detailed too early | Work slows and source contracts churn. | Keep native shapes simple; detailed CAD can use External Ref. |
+| External Ref is treated as topology source | Replacing imported solids breaks Drainage. | Persist explicit `StructureConnectionPoint` rows as source endpoints. |
+| Watertight fuse masks bad overlap | Simulation package looks valid but leaks. | Add overlap diagnostics and visible fallback status. |
+| Build Parametric recreates Structures | Duplicate or misleading objects appear. | Reuse actual Structure preview/output objects and report missing context. |
+
+## 13. Non-goals
+
+This plan does not:
+
+- turn Parametric Road into a full hydraulic analysis package
+- auto-size pipes or compute design storm capacity
+- model detailed manufacturer parts for every structure
+- replace external CAD/IFC structure workflows
+- make generated preview geometry editable source
+
+## 14. Immediate Next Steps
+
+Recommended next implementation order:
+
+1. ST-S1 source contract cleanup.
+
+Build Parametric now consumes actual Structure preview contracts. The remaining cleanup should tighten source contracts and remove any obsolete compatibility surfaces that no active command/test depends on.

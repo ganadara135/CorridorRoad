@@ -555,6 +555,34 @@ def test_drainage_editor_double_click_flow_route_shows_pipe_segment_preview() ->
         App.closeDocument(doc.Name)
 
 
+def test_drainage_editor_flow_route_preview_shows_resolved_structure_ports() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorFlowRouteEndpointSummaryTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        structure_model = structure_preset_model_from_document(
+            "Drainage Structures",
+            doc,
+            project=project,
+            alignment=alignment,
+        )
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Drainage Structures Flow")
+        panel._load_selected_preset()
+        panel._flow_route_table.setCurrentCell(5, 0)
+        panel._update_flow_route_preview()
+
+        preview = panel._flow_route_preview.text()
+
+        assert "flowId-06: inlet-03 -> culvert-01" in preview
+        assert "From Structure inlet-03 / Port pipe-out (pipe_out)" in preview
+        assert "To Structure culvert-01 / Port pipe-in (pipe_in)" in preview
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_drainage_editor_side_specific_ditch_defaults_keep_ids_unique() -> None:
     _ensure_qapp()
     doc, _project = _new_project_doc("V1DrainageEditorUniqueSideDefaultsTest")

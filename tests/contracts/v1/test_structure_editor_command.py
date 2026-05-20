@@ -14,6 +14,7 @@ from freecad.Corridor_Road.v1.commands.cmd_structure_editor import (
     _kind_detail_values,
     _project_xy_to_alignment,
     _replace_kind_spec,
+    _structure_editor_diagnostics,
     STRUCTURE_GEOMETRY_SPEC_REF_ROLE,
     apply_v1_structure_model,
     show_v1_structure_connection_points_preview_object,
@@ -277,6 +278,85 @@ def test_structure_editor_moves_geometry_ref_to_selected_detail() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_structure_editor_validates_external_ref_connection_points_against_body_bounds() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        external = doc.addObject("Part::Box", "ImportedInletBody")
+        external.Length = 4.0
+        external.Width = 4.0
+        external.Height = 3.0
+        external.Placement.Base = App.Vector(10.0, -6.0, 40.0)
+        doc.recompute()
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-editor",
+            structure_model_id="structures:main",
+            alignment_id="alignment:main",
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:inlet-ext-01",
+                    structure_kind="utility",
+                    structure_role="reference",
+                    placement=StructurePlacement(
+                        placement_id="placement:inlet-ext-01",
+                        alignment_id="alignment:main",
+                        station_start=8.0,
+                        station_end=15.0,
+                        offset=-4.0,
+                    ),
+                    geometry_ref=external.Name,
+                    reference_mode="source_ref",
+                    geometry_source_mode="external_ref",
+                    native_type="inlet",
+                )
+            ],
+            connection_point_rows=[
+                StructureConnectionPoint(
+                    connection_point_id="connection:inlet-ext-01:pipe-out",
+                    structure_ref="structure:inlet-ext-01",
+                    point_role="pipe_out",
+                    station=12.0,
+                    offset=-4.0,
+                    invert_elevation=41.5,
+                    diameter=0.9,
+                    shape_kind="circular",
+                    direction="out",
+                )
+            ],
+        )
+
+        diagnostics = _structure_editor_diagnostics(model, document=doc)
+
+        assert not any("external_connection_point_outside_geometry_bounds" in row for row in diagnostics)
+
+        outside_model = StructureModel(
+            schema_version=1,
+            project_id=model.project_id,
+            structure_model_id=model.structure_model_id,
+            alignment_id=model.alignment_id,
+            structure_rows=model.structure_rows,
+            connection_point_rows=[
+                StructureConnectionPoint(
+                    connection_point_id="connection:inlet-ext-01:pipe-out",
+                    structure_ref="structure:inlet-ext-01",
+                    point_role="pipe_out",
+                    station=20.0,
+                    offset=-4.0,
+                    invert_elevation=41.5,
+                    diameter=0.9,
+                    shape_kind="circular",
+                    direction="out",
+                )
+            ],
+        )
+        diagnostics = _structure_editor_diagnostics(outside_model, document=doc)
+
+        assert any(row.startswith("error|external_connection_point_outside_geometry_bounds|connection:inlet-ext-01:pipe-out|") for row in diagnostics)
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
@@ -317,6 +397,8 @@ def test_structure_editor_edits_common_geometry_in_selected_detail() -> None:
         panel = V1StructureEditorTaskPanel(document=doc)
 
         assert panel._geometry_table.parent() is None
+        assert panel._geometry_table.objectName() == "InternalGeometrySpecStore"
+        assert panel._geometry_table.editTriggers() == QtWidgets.QAbstractItemView.NoEditTriggers
         assert not panel._geometry_ref_field.isEnabled()
         assert panel._common_shape_label.text() == "Shape (auto)"
         assert panel._common_shape_field.placeholderText() == "Auto from Native Type"
@@ -554,6 +636,80 @@ def test_structure_editor_single_click_loads_selected_structure_detail() -> None
         App.closeDocument(doc.Name)
 
 
+def test_structure_editor_selected_detail_shows_structure_validation_summary() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        model = StructureModel(
+            schema_version=1,
+            project_id="proj-structure-editor",
+            structure_model_id="structures:main",
+            alignment_id="alignment:main",
+            structure_rows=[
+                StructureRow(
+                    structure_id="structure:inlet-01",
+                    structure_kind="utility",
+                    structure_role="reference",
+                    placement=StructurePlacement(
+                        placement_id="placement:inlet-01",
+                        alignment_id="alignment:main",
+                        station_start=10.0,
+                        station_end=12.0,
+                    ),
+                    geometry_spec_ref="geometry-spec:inlet-01",
+                    geometry_source_mode="native",
+                    native_type="inlet",
+                )
+            ],
+            geometry_spec_rows=[
+                StructureGeometrySpec(
+                    geometry_spec_id="geometry-spec:inlet-01",
+                    structure_ref="structure:inlet-01",
+                    shape_kind="inlet_box",
+                    width=1.0,
+                    height=1.0,
+                )
+            ],
+        )
+        apply_v1_structure_model(document=doc, project=project, structure_model=model)
+
+        panel = V1StructureEditorTaskPanel(document=doc)
+
+        assert "Selected validation: error" in panel._detail_validation.text()
+        assert "structure_connection_points_missing" in panel._detail_validation.text()
+
+        panel._append_connection_point(
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:inlet",
+                structure_ref="structure:inlet-01",
+                point_role="inlet",
+                station=10.0,
+                offset=-5.0,
+                invert_elevation=44.5,
+                width=1.0,
+                height=0.5,
+                shape_kind="ditch_inlet",
+            )
+        )
+        panel._append_connection_point(
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:pipe-out",
+                structure_ref="structure:inlet-01",
+                point_role="pipe_out",
+                station=12.0,
+                offset=-5.0,
+                invert_elevation=44.25,
+                diameter=0.6,
+                shape_kind="circular",
+            )
+        )
+        panel._apply_selected_detail()
+
+        assert panel._detail_validation.text() == "Selected validation: ok"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_structure_editor_filters_detail_fields_by_native_type() -> None:
     _ensure_qapp()
     doc, project, _tree = _new_project_doc()
@@ -724,6 +880,50 @@ def test_structure_editor_selected_detail_edits_geometry_source() -> None:
 
         assert model.structure_rows[0].geometry_source_mode == "native"
         assert model.structure_rows[0].native_type == "pipe_culvert"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_editor_native_type_apply_sets_practical_defaults_and_ports() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        panel = V1StructureEditorTaskPanel(document=doc)
+        panel._append_row(
+            StructureRow(
+                structure_id="structure:inlet-auto-01",
+                structure_kind="custom",
+                structure_role="active",
+                placement=StructurePlacement(
+                    placement_id="placement:inlet-auto-01",
+                    alignment_id="alignment:main",
+                    station_start=30.0,
+                    station_end=32.0,
+                    offset=-5.0,
+                ),
+                geometry_spec_ref="geometry-spec:inlet-auto-01",
+            )
+        )
+        panel._table.selectRow(0)
+        panel._load_selected_detail()
+
+        panel._geometry_source_combo.setCurrentText("native")
+        panel._native_type_combo.setCurrentText("inlet")
+        panel._apply_selected_detail()
+        model = panel._model_from_table()
+
+        assert model.structure_rows[0].structure_kind == "utility"
+        assert model.structure_rows[0].structure_role == "reference"
+        assert model.structure_rows[0].native_type == "inlet"
+        assert model.geometry_spec_rows[0].shape_kind == "catch_basin"
+        assert model.geometry_spec_rows[0].width == 1.8
+        assert model.geometry_spec_rows[0].height == 1.8
+        assert model.culvert_geometry_spec_rows[0].barrel_shape == "inlet"
+        assert model.culvert_geometry_spec_rows[0].diameter == 0.9
+        assert [row.point_role for row in model.connection_point_rows] == ["inlet", "pipe_out"]
+        assert model.connection_point_rows[1].shape_kind == "circular"
+        assert model.connection_point_rows[1].diameter == 0.9
+        assert "auto_native_default" in model.connection_point_rows[1].notes
     finally:
         App.closeDocument(doc.Name)
 

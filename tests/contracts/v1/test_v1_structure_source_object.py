@@ -9,6 +9,7 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
     CulvertGeometrySpec,
     RetainingWallGeometrySpec,
+    StructureConnectionPoint,
     StructureGeometrySpec,
     StructureInfluenceZone,
     StructureInteractionRule,
@@ -16,6 +17,7 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructurePlacement,
     StructureRow,
 )
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_structure import (
     create_or_update_v1_structure_model_object,
     find_v1_structure_model,
@@ -345,6 +347,166 @@ def test_structure_validation_reports_kind_specific_required_fields() -> None:
     assert any(row.startswith("error|culvert_barrel_count|geometry-spec:culvert-01|") for row in diagnostics)
     assert any(row.startswith("error|culvert_span|geometry-spec:culvert-01|") for row in diagnostics)
     assert any(row.startswith("error|culvert_rise|geometry-spec:culvert-01|") for row in diagnostics)
+
+
+def test_structure_validation_accepts_pipe_in_pipe_out_culvert_roles() -> None:
+    model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:culvert-01",
+                structure_kind="culvert",
+                structure_role="clearance_control",
+                placement=StructurePlacement("placement:culvert-01", "alignment:main", 10.0, 20.0),
+                geometry_spec_ref="geometry-spec:culvert-01",
+                native_type="pipe_culvert",
+            )
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:culvert-01", "structure:culvert-01", width=1.2, height=1.2)
+        ],
+        culvert_geometry_spec_rows=[
+            CulvertGeometrySpec(
+                "geometry-spec:culvert-01",
+                barrel_shape="circular",
+                barrel_count=1,
+                diameter=1.2,
+            )
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:pipe-in",
+                structure_ref="structure:culvert-01",
+                point_role="pipe_in",
+                station=10.0,
+                offset=0.0,
+                diameter=1.2,
+                shape_kind="circular",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:pipe-out",
+                structure_ref="structure:culvert-01",
+                point_role="pipe_out",
+                station=20.0,
+                offset=0.0,
+                diameter=1.2,
+                shape_kind="circular",
+            ),
+        ],
+    )
+
+    diagnostics = validate_structure_model(model)
+
+    assert not any(row.startswith("error|culvert_connection_points_incomplete|") for row in diagnostics)
+    assert not any(row.startswith("error|connection_point_diameter|") for row in diagnostics)
+
+
+def test_structure_validation_reports_drainage_endpoint_role_and_size_errors() -> None:
+    model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:inlet-01",
+                structure_kind="utility",
+                structure_role="reference",
+                placement=StructurePlacement("placement:inlet-01", "alignment:main", 10.0, 12.0),
+                geometry_spec_ref="geometry-spec:inlet-01",
+                native_type="inlet",
+            )
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:inlet-01", "structure:inlet-01", width=1.0, height=1.0)
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:inlet-01:pipe-out",
+                structure_ref="structure:inlet-01",
+                point_role="pipe_out",
+                station=13.0,
+                offset=-5.0,
+                diameter=0.0,
+                shape_kind="circular",
+            )
+        ],
+    )
+
+    diagnostics = validate_structure_model(model)
+
+    assert any(row.startswith("warning|inlet_collection_point_missing|structure:inlet-01|") for row in diagnostics)
+    assert any(row.startswith("error|connection_point_outside_structure_station_range|connection:inlet-01:pipe-out|") for row in diagnostics)
+    assert any(row.startswith("error|connection_point_diameter|connection:inlet-01:pipe-out|") for row in diagnostics)
+
+
+def test_structure_validation_checks_region_station_boundary_when_region_ref_exists() -> None:
+    model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow(
+                structure_id="structure:culvert-01",
+                structure_kind="culvert",
+                structure_role="clearance_control",
+                placement=StructurePlacement(
+                    "placement:culvert-01",
+                    "alignment:main",
+                    40.0,
+                    70.0,
+                    region_ref="region:1",
+                ),
+                geometry_spec_ref="geometry-spec:culvert-01",
+            )
+        ],
+        geometry_spec_rows=[
+            StructureGeometrySpec("geometry-spec:culvert-01", "structure:culvert-01", width=3.0, height=2.0)
+        ],
+        culvert_geometry_spec_rows=[
+            CulvertGeometrySpec("geometry-spec:culvert-01", barrel_shape="box", barrel_count=1, span=3.0, rise=2.0)
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:upstream",
+                structure_ref="structure:culvert-01",
+                point_role="upstream",
+                station=40.0,
+                offset=0.0,
+                width=3.0,
+                height=2.0,
+                shape_kind="box",
+            ),
+            StructureConnectionPoint(
+                connection_point_id="connection:culvert-01:downstream",
+                structure_ref="structure:culvert-01",
+                point_role="downstream",
+                station=70.0,
+                offset=0.0,
+                width=3.0,
+                height=2.0,
+                shape_kind="box",
+            ),
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions:main",
+        region_rows=[
+            RegionRow(
+                region_id="region:1",
+                station_start=45.0,
+                station_end=65.0,
+                assembly_ref="assembly:road",
+            )
+        ],
+    )
+
+    diagnostics = validate_structure_model(model, region_model=region_model)
+
+    assert any(row.startswith("error|structure_outside_region_station_range|structure:culvert-01|") for row in diagnostics)
 
 
 def test_kind_specific_geometry_specs_roundtrip() -> None:

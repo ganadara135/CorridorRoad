@@ -191,7 +191,7 @@ Acceptance:
 
 ### Step BP-S1 - Diagnostic Outcome Matrix
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -204,9 +204,15 @@ Acceptance:
 - every guided review row has deterministic status text
 - surface preview diagnostic objects are created for missing or failed preview families
 
+Implementation note:
+
+- Build Parametric review status values are now explicit: `ready`, `warning`, `missing`, `empty`, and `error`.
+- Diagnostic-only rows preserve `warning` instead of collapsing it to `missing`.
+- Focused contract tests cover the outcome matrix and diagnostic object routing under `04_Corridor Model / Build Parametric Outputs`.
+
 ### Step BP-S2 - Surface Preview Contract Hardening
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -222,9 +228,15 @@ Acceptance:
 - failed Part/Mesh conversion records a diagnostic object
 - existing successful preview tests still pass
 
+Implementation note:
+
+- Design, Subgrade, Daylight/Slope Face, and Drainage surface previews now attach the same Build Parametric preview contract fields: `PreviewStatus`, `PreviewDiagnostic`, `PreviewFacetCount`, `AppliedSectionSetRef`, and `SourceRefs`.
+- Mapper-level preview failures are converted into role-specific diagnostic objects instead of silently returning no preview object.
+- Focused contract tests verify common preview provenance fields for design, subgrade, daylight, and drainage outputs.
+
 ### Step BP-S3 - Region Boundary Object Completeness
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -238,9 +250,15 @@ Acceptance:
 - Region row double-click highlights actual built Region objects
 - selected Region diagnostics identify missing surface/drainage/structure context
 
+Implementation note:
+
+- Region Boundary rows now expose generated object-family status separately from boundary continuity diagnostics.
+- Region focus includes actual generated Region surfaces plus existing Structure and Drainage pipeline preview objects referenced by the selected Region.
+- Placeholder Region structure boxes remain removed; missing Structure/Drainage context is reported as diagnostics instead of being recreated as fake geometry.
+
 ### Step BP-S4 - Surface Transition Rebuild Verification
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -254,9 +272,15 @@ Acceptance:
 - transition spacing is not global unless explicitly designed that way
 - Build Parametric rebuild uses the stored transition records
 
+Implementation note:
+
+- Surface Transition sample counts now use ceiling-based interval math so partial final intervals are counted.
+- Focused tests verify per-boundary spacing persistence, derived sample count, and Build Parametric rebuild changes after spacing updates.
+- Transition span marker objects now expose station ranges, sample intervals, sample counts, and span count for tree/property inspection.
+
 ### Step BP-S5 - Drainage Surface And Flow Review Hardening
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -270,9 +294,15 @@ Acceptance:
 - drainage surface preview is visually and contractually side-separated
 - Flow Route review does not generate misleading extra marker geometry
 
+Implementation note:
+
+- Build Parametric now keeps Drainage Surface diagnostic-only when no `ditch_surface` rows exist, with focused test coverage for the missing preview/diagnostic contract.
+- Drainage Flow review rows expose whether focus will use source Structure connection-point pipe segments or station-span fallback geometry.
+- Drainage Flow highlight objects now record `DisplayMode`, `PipeSegmentCount`, and `StationSpanCount`, so the tree/property view distinguishes true pipe segments from fallback route spans.
+
 ### Step BP-S6 - Tree Routing Regression Coverage
 
-Status: In progress
+Status: Done
 
 Completed baseline:
 
@@ -282,7 +312,11 @@ Completed baseline:
 Remaining work:
 
 - add focused coverage for stale-object update rather than duplicate creation
-- add focused coverage for diagnostic objects and transition markers
+
+Implementation note:
+
+- Focused tests now verify repeated Build Parametric runs update stable preview objects in place and keep one tree entry per generated object.
+- Region preview rebuild coverage verifies stale Region surface objects are removed when the current Applied Sections no longer contain those Region ids.
 
 Acceptance:
 
@@ -291,7 +325,7 @@ Acceptance:
 
 ### Step BP-S7 - Downstream Prerequisite Check
 
-Status: Pending
+Status: Done
 
 Work:
 
@@ -303,6 +337,12 @@ Acceptance:
 
 - Watertight Solids can distinguish missing prerequisites from unsupported target families
 - target-specific diagnostics identify the owning Build Parametric output row or object
+
+Implementation note:
+
+- Watertight Solids prerequisite status now includes a Build Parametric diagnostics row in addition to Applied Sections, CorridorModel, and SurfaceModel.
+- Explicit blocking Build Parametric diagnostics for core surface families (`design`, `subgrade`, `daylight`) prevent Watertight Solids from entering the ready state.
+- Existing documents with source/result objects but no preview diagnostics remain discoverable, while diagnostic messages point back to the owning Build Parametric preview role.
 
 ## 6. Manual QA Checklist
 
