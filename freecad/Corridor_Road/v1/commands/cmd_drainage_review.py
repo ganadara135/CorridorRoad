@@ -20,6 +20,7 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 from ..objects.obj_applied_section import find_v1_applied_section_set, to_applied_section_set
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
+from ..objects.obj_quantity import find_v1_quantity_model, to_quantity_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.alignment_evaluation_service import AlignmentEvaluationService
@@ -65,6 +66,7 @@ def build_drainage_review_output(document=None):
     region_model = to_region_model(find_v1_region_model(doc))
     structure_model = to_structure_model(find_v1_structure_model(doc))
     applied_section_set = to_applied_section_set(find_v1_applied_section_set(doc))
+    quantity_model = to_quantity_model(find_v1_quantity_model(doc))
     project_id = (
         str(getattr(drainage_model, "project_id", "") or "")
         or str(getattr(region_model, "project_id", "") or "")
@@ -80,6 +82,7 @@ def build_drainage_review_output(document=None):
         region_model=region_model,
         structure_model=structure_model,
         applied_section_set=applied_section_set,
+        quantity_model=quantity_model,
         project_id=project_id,
     )
 
@@ -108,11 +111,62 @@ def show_drainage_pipeline_candidate_preview_object(document=None, row_index: in
     _set_preview_string_property(obj, "CRRecordKind", "v1_drainage_pipeline_candidate_preview")
     _set_preview_string_property(obj, "V1ObjectType", "V1DrainagePipelineCandidatePreview")
     _set_preview_string_property(obj, "FlowRouteRef", str(getattr(row, "label", "") or ""))
-    _set_preview_string_property(obj, "CandidateStatus", _note_value(row.notes, "status"))
+    status = _note_value(row.notes, "status")
+    _set_preview_string_property(obj, "CandidateStatus", status)
+    _set_preview_string_property(obj, "IssueKind", "drainage_pipeline_candidate")
+    _set_preview_string_property(obj, "IssueStatus", status)
+    _set_preview_string_property(obj, "DisplayMode", "drainage_pipeline_candidate_ready" if status == "ready" else "drainage_pipeline_issue")
+    _set_preview_string_property(obj, "FromElementRef", _note_value(row.notes, "from_element_ref"))
+    _set_preview_string_property(obj, "ToElementRef", _note_value(row.notes, "to_element_ref"))
     _set_preview_string_property(obj, "FromConnectionPointRef", _note_value(row.notes, "from_connection_point_ref"))
     _set_preview_string_property(obj, "ToConnectionPointRef", _note_value(row.notes, "to_connection_point_ref"))
     _set_preview_string_property(obj, "CoordinateMode", str(coordinate_frame.get("coordinate_mode", "") or "station_offset_fallback"))
-    _style_pipeline_candidate_preview(obj)
+    _style_pipeline_candidate_preview(obj, status=status)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(doc), obj)
+    except Exception:
+        pass
+    try:
+        doc.recompute()
+    except Exception:
+        pass
+    _select_and_fit_object(obj)
+    return obj
+
+
+def show_drainage_flow_route_issue_preview_object(document=None, row_index: int = 0, output=None):
+    """Create or update a 3D review object for one Flow Route graph issue."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Drainage Flow Route issue preview.")
+    payload = output or build_drainage_review_output(doc)
+    rows = [row for row in list(getattr(payload, "element_rows", []) or []) if row.kind == "flow_route_issue"]
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Flow Route issue row index is out of range.")
+    row = rows[row_index]
+    coordinate_frame = _station_offset_coordinate_frame(doc)
+    adapter = coordinate_frame.get("adapter")
+    shape = _flow_route_issue_shape(row, adapter=adapter)
+    obj = doc.getObject("V1DrainageFlowRouteIssuePreview")
+    if obj is None:
+        obj = doc.addObject("Part::Feature", "V1DrainageFlowRouteIssuePreview")
+    obj.Label = "Drainage Flow Route Issue"
+    obj.Shape = shape
+    _set_preview_string_property(obj, "CRRecordKind", "v1_drainage_flow_route_issue_preview")
+    _set_preview_string_property(obj, "V1ObjectType", "V1DrainageFlowRouteIssuePreview")
+    _set_preview_string_property(obj, "IssueKind", str(getattr(row, "label", "") or "flow_route_issue"))
+    _set_preview_string_property(obj, "IssueStatus", _note_value(row.notes, "severity") or "warning")
+    _set_preview_string_property(obj, "DisplayMode", "drainage_flow_route_issue")
+    _set_preview_string_property(obj, "FlowRouteRefs", str(getattr(row, "source_ref", "") or ""))
+    _set_preview_string_property(obj, "FromElementRef", _note_value(row.notes, "from_element_ref"))
+    _set_preview_string_property(obj, "OutletRefs", _note_value(row.notes, "outlet_refs"))
+    _set_preview_string_property(obj, "CoordinateMode", str(coordinate_frame.get("coordinate_mode", "") or "station_offset_fallback"))
+    _style_flow_route_issue_preview(obj)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -498,6 +552,7 @@ class V1DrainageReviewTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.output = None
+        self._report_rows = []
         self.form = self._build_ui()
         self.refresh()
 
@@ -533,6 +588,9 @@ class V1DrainageReviewTaskPanel:
         self._tabs = QtWidgets.QTabWidget()
         self._element_table = _table(["Kind", "Label", "Start STA", "End STA", "Source", "Notes"])
         self._flow_route_table = _table(["Flow Route", "From", "To", "Outlet", "Risk", "Chain", "Notes"])
+        self._flow_route_table.itemDoubleClicked.connect(lambda item: self._show_flow_route_issue(item.row()))
+        self._flow_route_issue_table = _table(["Issue", "Severity", "Flow Route(s)", "From Element", "Outlet(s)", "Start STA", "End STA", "Message"])
+        self._flow_route_issue_table.itemDoubleClicked.connect(lambda item: self._show_flow_route_issue_marker(item.row()))
         self._pipeline_table = _table(["Flow Route", "Status", "From CP", "To CP", "Start STA", "End STA", "Shape", "Diameter", "Notes"])
         self._pipeline_table.itemDoubleClicked.connect(lambda item: self._show_pipeline_candidate(item.row()))
         self._pipeline_segment_table = _table(["Segment", "Flow Route", "From CP", "To CP", "Start STA", "End STA", "Invert", "Shape", "Diameter", "Notes"])
@@ -542,15 +600,28 @@ class V1DrainageReviewTaskPanel:
         self._pipeline_junction_table = _table(["Kind", "Degree", "Point", "Structures", "Segments", "Flow Routes", "Mode", "Status", "Notes"])
         self._region_table = _table(["Region", "Element", "Start STA", "End STA", "Status", "Notes"])
         self._applied_table = _table(["Station", "Section", "Ditch Points", "Drainage Refs", "Notes"])
+        self._flowline_table = _table(["Status", "Source", "Start STA", "End STA", "Fall", "Grade", "From Point", "To Point", "Notes"])
+        self._report_table = _table(["Report", "Source", "Value", "Unit", "Family/Policy", "Refs", "Notes"])
         self._tabs.addTab(self._element_table, "Elements")
         self._tabs.addTab(self._flow_route_table, "Flow Routes")
+        self._tabs.addTab(self._flow_route_issue_table, "Flow Route Issues")
         self._tabs.addTab(self._pipeline_table, "Pipeline Candidates")
         self._tabs.addTab(self._pipeline_segment_table, "Pipeline Segments")
         self._tabs.addTab(self._pipeline_network_table, "Pipeline Networks")
         self._tabs.addTab(self._pipeline_junction_table, "Pipeline Junctions")
         self._tabs.addTab(self._region_table, "Region Assignments")
         self._tabs.addTab(self._applied_table, "Applied Sections")
+        self._tabs.addTab(self._flowline_table, "Flowline Continuity")
+        self._tabs.addTab(self._report_table, "Reports")
         layout.addWidget(self._tabs, 1)
+
+        report_filter_row = QtWidgets.QHBoxLayout()
+        report_filter_row.addWidget(QtWidgets.QLabel("Reports:"))
+        self._report_warnings_only = QtWidgets.QCheckBox("Warnings only")
+        self._report_warnings_only.stateChanged.connect(lambda _state: self._populate_reports())
+        report_filter_row.addWidget(self._report_warnings_only)
+        report_filter_row.addStretch(1)
+        layout.addLayout(report_filter_row)
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
@@ -575,6 +646,15 @@ class V1DrainageReviewTaskPanel:
         close_button.clicked.connect(self.reject)
         action_row.addWidget(close_button)
         layout.addLayout(action_row)
+
+        navigation_row = QtWidgets.QHBoxLayout()
+        navigation_row.addWidget(QtWidgets.QLabel("Open:"))
+        for target, label in _drainage_review_navigation_targets():
+            button = QtWidgets.QPushButton(label)
+            button.clicked.connect(lambda _checked=False, target=target: self._open_related_panel(target))
+            navigation_row.addWidget(button)
+        navigation_row.addStretch(1)
+        layout.addLayout(navigation_row)
         return widget
 
     def refresh(self) -> None:
@@ -582,6 +662,7 @@ class V1DrainageReviewTaskPanel:
         _populate_summary_table(self._summary_table, self.output.summary_rows)
         _populate_element_table(self._element_table, [row for row in self.output.element_rows if row.kind == "drainage_element"])
         _populate_flow_route_table(self._flow_route_table, [row for row in self.output.element_rows if row.kind == "flow_route"])
+        _populate_flow_route_issue_table(self._flow_route_issue_table, [row for row in self.output.element_rows if row.kind == "flow_route_issue"])
         _populate_pipeline_table(self._pipeline_table, [row for row in self.output.element_rows if row.kind == "pipeline_segment_candidate"])
         _populate_pipeline_segment_table(self._pipeline_segment_table, self.output.pipeline_segment_rows)
         _populate_pipeline_network_table(self._pipeline_network_table, self.output.pipeline_network_rows)
@@ -591,7 +672,14 @@ class V1DrainageReviewTaskPanel:
             self._applied_table,
             [row for row in self.output.element_rows if row.kind == "applied_section_ditch_context"],
         )
+        _populate_flowline_table(self._flowline_table, [row for row in self.output.element_rows if row.kind == "flowline_continuity"])
+        self._report_rows = [row for row in self.output.element_rows if row.kind == "drainage_report"]
+        self._populate_reports()
         self._status.setPlainText(_status_text(self.output))
+
+    def _populate_reports(self) -> None:
+        warnings_only = bool(getattr(self, "_report_warnings_only", None) is not None and self._report_warnings_only.isChecked())
+        _populate_report_table(self._report_table, self._report_rows, warnings_only=warnings_only)
 
     def _show_selected_pipeline_candidate(self) -> None:
         row_index = self._pipeline_table.currentRow()
@@ -605,6 +693,43 @@ class V1DrainageReviewTaskPanel:
             self._status.setPlainText(_status_text(self.output) + f"\nPipeline candidate preview: {preview.Name}")
         except Exception as exc:
             self._status.setPlainText(_status_text(self.output) + f"\nPipeline candidate preview failed: {exc}")
+
+    def _show_flow_route_issue(self, row_index: int) -> None:
+        try:
+            flow_rows = [row for row in list(getattr(self.output, "element_rows", []) or []) if row.kind == "flow_route"]
+            if row_index < 0 or row_index >= len(flow_rows):
+                raise IndexError("Flow Route row index is out of range.")
+            flow_route_ref = str(getattr(flow_rows[row_index], "label", "") or "")
+            candidate_rows = [row for row in list(getattr(self.output, "element_rows", []) or []) if row.kind == "pipeline_segment_candidate"]
+            candidate_index = next(
+                (
+                    index
+                    for index, row in enumerate(candidate_rows)
+                    if str(getattr(row, "label", "") or "") == flow_route_ref
+                ),
+                None,
+            )
+            if candidate_index is None:
+                raise RuntimeError(f"No Pipeline Candidate row is available for {flow_route_ref}.")
+            preview = show_drainage_pipeline_candidate_preview_object(self.document, row_index=candidate_index, output=self.output)
+            status = str(getattr(preview, "IssueStatus", "") or getattr(preview, "CandidateStatus", "") or "")
+            self._status.setPlainText(_status_text(self.output) + f"\nFlow Route preview: {flow_route_ref}; status={status}; object={preview.Name}")
+        except Exception as exc:
+            self._status.setPlainText(_status_text(self.output) + f"\nFlow Route preview failed: {exc}")
+
+    def _show_flow_route_issue_marker(self, row_index: int) -> None:
+        try:
+            preview = show_drainage_flow_route_issue_preview_object(self.document, row_index=row_index, output=self.output)
+            issue_kind = str(getattr(preview, "IssueKind", "") or "")
+            self._status.setPlainText(_status_text(self.output) + f"\nFlow Route issue preview: {issue_kind}; object={preview.Name}")
+        except Exception as exc:
+            self._status.setPlainText(_status_text(self.output) + f"\nFlow Route issue preview failed: {exc}")
+
+    def _open_related_panel(self, target: str) -> None:
+        try:
+            _open_drainage_review_navigation_target(target, document=self.document)
+        except Exception as exc:
+            self._status.setPlainText(_status_text(self.output) + f"\nOpen {target} failed: {exc}")
 
     def _show_selected_pipeline_segment(self) -> None:
         row_index = self._pipeline_segment_table.currentRow()
@@ -646,6 +771,59 @@ def _table(headers: list[str]):
     return table
 
 
+def _drainage_review_navigation_targets() -> list[tuple[str, str]]:
+    return [
+        ("drainage", "Drainage"),
+        ("regions", "Regions"),
+        ("assembly", "Assembly"),
+        ("structures", "Structures"),
+        ("sections", "Cross Sections"),
+    ]
+
+
+def _open_drainage_review_navigation_target(target: str, *, document=None):
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        raise RuntimeError("No active document.")
+    _activate_document(doc)
+    if _gui_available() and hasattr(Gui, "Control"):
+        try:
+            Gui.Control.closeDialog()
+        except Exception:
+            pass
+    target = str(target or "").strip().lower()
+    if target == "drainage":
+        from .cmd_drainage_editor import run_v1_drainage_editor_command
+
+        return run_v1_drainage_editor_command(document=doc)
+    if target == "regions":
+        from .cmd_region_editor import run_v1_region_editor_command
+
+        return run_v1_region_editor_command()
+    if target == "assembly":
+        from .cmd_assembly_editor import run_v1_assembly_editor_command
+
+        return run_v1_assembly_editor_command()
+    if target == "structures":
+        from .cmd_structure_editor import run_v1_structure_editor_command
+
+        return run_v1_structure_editor_command()
+    if target == "sections":
+        from .cmd_view_sections import run_v1_section_view_command
+
+        return run_v1_section_view_command()
+    raise ValueError(f"Unsupported Drainage Review navigation target: {target}")
+
+
+def _activate_document(document) -> None:
+    if App is None or document is None:
+        return
+    try:
+        App.setActiveDocument(document.Name)
+    except Exception:
+        pass
+
+
 def _populate_summary_table(table, rows) -> None:
     table.setRowCount(0)
     for row in list(rows or []):
@@ -671,6 +849,24 @@ def _populate_flow_route_table(table, rows) -> None:
                 _note_value(row.notes, "risk_level"),
                 _note_value(row.notes, "chain"),
                 row.notes,
+            ],
+        )
+
+
+def _populate_flow_route_issue_table(table, rows) -> None:
+    table.setRowCount(0)
+    for row in list(rows or []):
+        _append_items(
+            table,
+            [
+                row.label,
+                _note_value(row.notes, "severity"),
+                row.source_ref,
+                _note_value(row.notes, "from_element_ref"),
+                _note_value(row.notes, "outlet_refs"),
+                _format_float(row.station_start),
+                _format_float(row.station_end),
+                _note_value(row.notes, "message"),
             ],
         )
 
@@ -774,6 +970,56 @@ def _populate_applied_table(table, rows) -> None:
         )
 
 
+def _populate_flowline_table(table, rows) -> None:
+    table.setRowCount(0)
+    for row in list(rows or []):
+        _append_items(
+            table,
+            [
+                row.label,
+                row.source_ref,
+                _format_float(row.station_start),
+                _format_float(row.station_end),
+                _note_value(row.notes, "fall"),
+                _note_value(row.notes, "grade"),
+                _note_value(row.notes, "from_point"),
+                _note_value(row.notes, "to_point"),
+                row.notes,
+            ],
+        )
+
+
+def _populate_report_table(table, rows, *, warnings_only: bool = False) -> None:
+    table.setRowCount(0)
+    for row in _filter_report_rows(rows, warnings_only=warnings_only):
+        _append_items(
+            table,
+            [
+                row.label,
+                row.source_ref,
+                _note_value(row.notes, "value"),
+                _note_value(row.notes, "unit"),
+                _note_value(row.notes, "family")
+                or _note_value(row.notes, "policy_ref")
+                or _note_value(row.notes, "policy_refs")
+                or _note_value(row.notes, "quantity_kind"),
+                _note_value(row.notes, "element_refs") or _note_value(row.notes, "flow_route_refs"),
+                row.notes,
+            ],
+        )
+
+
+def _filter_report_rows(rows, *, warnings_only: bool = False) -> list:
+    output = list(rows or [])
+    if not warnings_only:
+        return output
+    return [
+        row
+        for row in output
+        if _note_value(row.notes, "severity").lower() == "warning" or str(getattr(row, "label", "") or "").endswith("_warning")
+    ]
+
+
 def _pipeline_candidate_shape(row, *, adapter=None):
     station_start = float(getattr(row, "station_start", 0.0) or 0.0)
     station_end = float(getattr(row, "station_end", station_start) or station_start)
@@ -796,6 +1042,20 @@ def _pipeline_candidate_shape(row, *, adapter=None):
         except Exception:
             pass
     return Part.makePolygon([point0, point1])
+
+
+def _flow_route_issue_shape(row, *, adapter=None):
+    station_start = float(getattr(row, "station_start", 0.0) or 0.0)
+    station_end = float(getattr(row, "station_end", station_start) or station_start)
+    point0 = _station_offset_vector(station_start, 0.0, 1.5, adapter=adapter)
+    point1 = _station_offset_vector(station_end, 0.0, 1.5, adapter=adapter)
+    direction = point1.sub(point0)
+    if direction.Length <= 1.0e-9:
+        return Part.makeSphere(1.0, point0)
+    marker0 = Part.makeSphere(0.8, point0)
+    marker1 = Part.makeSphere(0.8, point1)
+    line = Part.makePolygon([point0, point1])
+    return Part.Compound([marker0, line, marker1])
 
 
 def _pipeline_geometry_shape(row):
@@ -977,17 +1237,46 @@ def _station_offset_vector(station: float, offset: float, z: float, *, adapter=N
     return App.Vector(float(station), float(offset), float(z))
 
 
-def _style_pipeline_candidate_preview(obj) -> None:
+def _style_pipeline_candidate_preview(obj, *, status: str = "") -> None:
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        if vobj is None:
+            return
+        status = str(status or "").strip().lower()
+        vobj.Visibility = True
+        if status == "ready":
+            vobj.ShapeColor = (0.0, 0.85, 0.95)
+            vobj.LineColor = (0.0, 0.95, 0.55)
+            vobj.PointColor = (0.0, 0.95, 0.55)
+            vobj.Transparency = 15
+            vobj.LineWidth = 5.0
+        elif status == "capture_only":
+            vobj.ShapeColor = (1.0, 0.7, 0.0)
+            vobj.LineColor = (1.0, 0.7, 0.0)
+            vobj.PointColor = (1.0, 0.7, 0.0)
+            vobj.Transparency = 5
+            vobj.LineWidth = 7.0
+        else:
+            vobj.ShapeColor = (1.0, 0.25, 0.0)
+            vobj.LineColor = (1.0, 0.25, 0.0)
+            vobj.PointColor = (1.0, 0.25, 0.0)
+            vobj.Transparency = 0
+            vobj.LineWidth = 8.0
+    except Exception:
+        pass
+
+
+def _style_flow_route_issue_preview(obj) -> None:
     try:
         vobj = getattr(obj, "ViewObject", None)
         if vobj is None:
             return
         vobj.Visibility = True
-        vobj.ShapeColor = (0.0, 0.85, 0.95)
-        vobj.LineColor = (0.0, 0.95, 0.55)
-        vobj.PointColor = (0.0, 0.95, 0.55)
-        vobj.Transparency = 15
-        vobj.LineWidth = 5.0
+        vobj.ShapeColor = (1.0, 0.45, 0.0)
+        vobj.LineColor = (1.0, 0.45, 0.0)
+        vobj.PointColor = (1.0, 0.9, 0.0)
+        vobj.Transparency = 0
+        vobj.LineWidth = 8.0
     except Exception:
         pass
 
@@ -1130,6 +1419,22 @@ def _status_text(output) -> str:
         lines.append(f"Warnings: {region_issues} Drainage Element Region assignment issue(s).")
     if flow_routes:
         lines.append(f"Flow Routes: {flow_routes} source route(s) are available for review.")
+    flow_route_issues = int(summary.get("summary:flow-route-issues", 0) or 0)
+    if flow_route_issues:
+        lines.append(f"Flow Route Issues: {flow_route_issues} outlet-chain issue(s) can be focused in 3D.")
+    flowline_spans = int(summary.get("summary:flowline-continuity-spans", 0) or 0)
+    flowline_issues = int(summary.get("summary:flowline-continuity-issues", 0) or 0)
+    if flowline_spans:
+        lines.append(f"Flowline Continuity: {flowline_spans} span(s), {flowline_issues} issue(s).")
+    inlet_count = int(summary.get("summary:report-inlet-count", 0) or 0)
+    culvert_count = int(summary.get("summary:report-culvert-count", 0) or 0)
+    outlet_count = int(summary.get("summary:report-outlet-count", 0) or 0)
+    pipe_length = float(summary.get("summary:report-pipe-length", 0.0) or 0.0)
+    policy_warnings = int(summary.get("summary:report-pipe-policy-warnings", 0) or 0)
+    if inlet_count or culvert_count or outlet_count or pipe_length:
+        lines.append(
+            f"Reports: inlets={inlet_count}, culverts={culvert_count}, outlets={outlet_count}, pipe_length={pipe_length:.3f} m, policy_warnings={policy_warnings}."
+        )
     if pipeline_candidates:
         lines.append(f"Pipeline Candidates: {pipeline_candidates} route segment candidate(s) resolved from Structure connection points.")
     if pipeline_segments:

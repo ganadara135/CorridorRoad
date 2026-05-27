@@ -1,14 +1,17 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_commands
-from freecad.Corridor_Road.objects.obj_project import V1_TREE_DRAINAGE, V1_TREE_STRUCTURES, CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import V1_TREE_DRAINAGE, V1_TREE_QUANTITIES, V1_TREE_STRUCTURES, CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
     CmdV1DrainageReview,
     V1DrainageReviewTaskPanel,
+    _drainage_review_navigation_targets,
+    _filter_report_rows,
     _geometry_rows_snapped_to_structure_previews,
     build_drainage_review_output,
     run_v1_drainage_review_command,
+    show_drainage_flow_route_issue_preview_object,
     show_drainage_pipeline_candidate_preview_object,
     show_drainage_pipeline_network_preview_object,
     show_drainage_pipeline_networks_preview_object,
@@ -27,6 +30,7 @@ from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alig
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
+from freecad.Corridor_Road.v1.objects.obj_quantity import create_or_update_v1_quantity_model_object, find_v1_quantity_model, to_quantity_model
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
@@ -425,6 +429,8 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
     assert summary["summary:region-assignment-issues"] == 0
     assert summary["summary:ditch-surface-points"] == 2
     assert summary["summary:ditch-surface-points-with-drainage"] == 2
+    assert summary["summary:flowline-continuity-spans"] == 0
+    assert summary["summary:flowline-continuity-issues"] == 0
     assert flow_route_rows[0].label == "flow-route:right"
     assert "chain=drainage:side-ditch-right -> drainage:outfall-right" in flow_route_rows[0].notes
     assert "from_region_ref=region:drainage" in flow_route_rows[0].notes
@@ -437,6 +443,55 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
     )
     assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;component_refs=ditch:right;sides=right"
     assert output.source_refs == ["drainage:main", "regions:main", "applied:main"]
+
+
+def test_drainage_review_mapper_reports_flowline_continuity_rows() -> None:
+    applied_set = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-review",
+        applied_section_set_id="applied:flowline",
+        corridor_id="corridor:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-review",
+                applied_section_id="section:0",
+                station=0.0,
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-flow", 0.0, -6.0, 10.0, "ditch_surface", -6.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-review",
+                applied_section_id="section:10",
+                station=10.0,
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-flow", 10.0, -6.0, 9.8, "ditch_surface", -6.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-review",
+                applied_section_id="section:20",
+                station=20.0,
+                point_rows=[
+                    AppliedSectionPoint("ditch:right-flow", 20.0, -6.0, 10.1, "ditch_surface", -6.0, "ditch:right", "right", "drainage:right"),
+                ],
+            ),
+        ],
+    )
+
+    output = DrainageReviewMapper().map(applied_section_set=applied_set, project_id="proj-review")
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+    rows = [row for row in output.element_rows if row.kind == "flowline_continuity"]
+
+    assert summary["summary:flowline-continuity-spans"] == 2
+    assert summary["summary:flowline-continuity-issues"] == 1
+    assert [row.label for row in rows] == ["ok", "reverse_grade"]
+    assert rows[0].source_ref == "drainage:right"
+    assert "fall=0.200" in rows[0].notes
+    assert "fall=-0.300" in rows[1].notes
 
 
 def test_drainage_review_mapper_reports_pipeline_segment_candidates_from_connection_points() -> None:
@@ -808,6 +863,12 @@ def test_drainage_review_mapper_reports_pipeline_segment_output_rows() -> None:
     assert summary["summary:pipeline-geometries"] == 1
     assert summary["summary:pipeline-solid-candidates"] == 1
     assert summary["summary:pipeline-solid-length"] > 50.0
+    assert summary["summary:report-inlet-count"] == 1
+    assert summary["summary:report-culvert-count"] == 0
+    assert summary["summary:report-outlet-count"] == 1
+    assert summary["summary:report-pipe-length"] > 50.0
+    assert summary["summary:report-pipe-policy-groups"] == 1
+    assert summary["summary:report-pipe-policy-warnings"] == 0
     assert output.result_refs == ["drainage-pipeline:main"]
     assert len(output.pipeline_segment_rows) == 1
     segment = output.pipeline_segment_rows[0]
@@ -833,6 +894,76 @@ def test_drainage_review_mapper_reports_pipeline_segment_output_rows() -> None:
     assert solid.volume > 0.0
     assert "pipeline_solid_status=ready" in flow_route_rows[0].notes
     assert "pipeline_solid_caps=2" in flow_route_rows[0].notes
+    report_rows = [row for row in output.element_rows if row.kind == "drainage_report"]
+    assert any(row.label == "inlet_count" and "value=1" in row.notes for row in report_rows)
+    assert any(row.label == "outlet_count" and "value=1" in row.notes for row in report_rows)
+    assert any(
+        row.label == "pipe_length_by_policy"
+        and row.source_ref == "drainage-policy:pipe"
+        and "flow_route_refs=flow-route:pipe-01" in row.notes
+        for row in report_rows
+    )
+
+
+def test_drainage_review_mapper_reports_mixed_policy_pipe_warning() -> None:
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:mixed-policy",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                structure_ref="structure:inlet-01",
+                connection_point_ref="connection:inlet-01:pipe-out",
+                station_start=30.0,
+                station_end=32.0,
+                policy_set_ref="drainage-policy:small-pipe",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:outlet-01",
+                element_kind="outfall_reference",
+                structure_ref="structure:outlet-01",
+                connection_point_ref="connection:outlet-01:pipe-in",
+                station_start=90.0,
+                station_end=92.0,
+                policy_set_ref="drainage-policy:large-pipe",
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:mixed-policy",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
+            )
+        ],
+    )
+
+    output = DrainageReviewMapper().map(
+        drainage_model=drainage_model,
+        structure_model=_pipeline_structure_model(),
+        project_id="proj-review",
+    )
+    summary = {row.summary_id: row.value for row in output.summary_rows}
+    report_rows = [row for row in output.element_rows if row.kind == "drainage_report"]
+
+    assert summary["summary:report-pipe-policy-groups"] == 1
+    assert summary["summary:report-pipe-policy-warnings"] == 1
+    assert any(
+        row.label == "pipe_length_by_policy"
+        and row.source_ref == "mixed-policy"
+        and "flow_route_refs=flow-route:mixed-policy" in row.notes
+        for row in report_rows
+    )
+    assert any(
+        row.label == "pipe_policy_warning"
+        and row.source_ref == "flow-route:mixed-policy"
+        and "policy_refs=drainage-policy:small-pipe,drainage-policy:large-pipe" in row.notes
+        for row in report_rows
+    )
+    warning_rows = _filter_report_rows(report_rows, warnings_only=True)
+    assert [row.label for row in warning_rows] == ["pipe_policy_warning"]
 
 
 def test_drainage_review_mapper_reports_pipeline_network_output_rows() -> None:
@@ -1032,6 +1163,136 @@ def test_show_drainage_pipeline_candidate_preview_object_creates_pipe_candidate(
         assert preview.Shape.BoundBox.ZMin >= 43.55
         assert preview.Shape.BoundBox.ZLength >= 0.5
         assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_candidate_preview_marks_unresolved_issue() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineCandidateIssuePreviewTest")
+    try:
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        structure_model = _pipeline_structure_model()
+        structure_model.connection_point_rows = structure_model.connection_point_rows[:1]
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        preview = show_drainage_pipeline_candidate_preview_object(doc, row_index=0)
+
+        assert preview.CRRecordKind == "v1_drainage_pipeline_candidate_preview"
+        assert preview.FlowRouteRef == "flow-route:pipe-01"
+        assert preview.CandidateStatus == "missing_connection_point_ref"
+        assert preview.IssueKind == "drainage_pipeline_candidate"
+        assert preview.IssueStatus == "missing_connection_point_ref"
+        assert preview.DisplayMode == "drainage_pipeline_issue"
+        assert preview.FromElementRef == "drainage:inlet-01"
+        assert preview.ToElementRef == "drainage:outlet-01"
+        assert preview.Shape.BoundBox.XLength > 50.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_review_panel_flow_route_double_click_shows_candidate_issue_preview() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageFlowRouteIssuePreviewPanelTest")
+    try:
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
+        structure_model = _pipeline_structure_model()
+        structure_model.connection_point_rows = structure_model.connection_point_rows[:1]
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        panel = V1DrainageReviewTaskPanel(document=doc)
+        panel._show_flow_route_issue(0)
+
+        preview = doc.getObject("V1DrainagePipelineCandidatePreview")
+        assert preview is not None
+        assert preview.FlowRouteRef == "flow-route:pipe-01"
+        assert preview.IssueStatus == "missing_connection_point_ref"
+        assert "Flow Route preview: flow-route:pipe-01" in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_review_mapper_reports_outlet_chain_issue_rows() -> None:
+    drainage_model = DrainageModel(
+        schema_version=1,
+        project_id="proj-review",
+        drainage_model_id="drainage:outlet-chain-issue",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:inlet-01",
+                element_kind="inlet_reference",
+                station_start=30.0,
+                station_end=32.0,
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:junction-01",
+                element_kind="junction_reference",
+                station_start=60.0,
+                station_end=61.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:no-outlet",
+                from_element_ref="drainage:inlet-01",
+                to_element_ref="drainage:junction-01",
+            )
+        ],
+    )
+
+    output = DrainageReviewMapper().map(drainage_model=drainage_model, project_id="proj-review")
+    issue_rows = [row for row in output.element_rows if row.kind == "flow_route_issue"]
+
+    assert len(issue_rows) == 1
+    assert issue_rows[0].label == "flow_route_no_reachable_outlet"
+    assert issue_rows[0].source_ref == "flow-route:no-outlet"
+    assert "from_element_ref=drainage:inlet-01" in issue_rows[0].notes
+    assert any(row.summary_id == "summary:flow-route-issues" and row.value == 1 for row in output.summary_rows)
+
+
+def test_show_drainage_flow_route_issue_preview_object_creates_issue_marker() -> None:
+    doc, project = _new_project_doc("V1DrainageFlowRouteIssuePreviewTest")
+    try:
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-review",
+                drainage_model_id="drainage:outlet-chain-issue",
+                element_rows=[
+                    DrainageElementRow(
+                        drainage_element_id="drainage:inlet-01",
+                        element_kind="inlet_reference",
+                        station_start=30.0,
+                        station_end=32.0,
+                    ),
+                    DrainageElementRow(
+                        drainage_element_id="drainage:junction-01",
+                        element_kind="junction_reference",
+                        station_start=60.0,
+                        station_end=61.0,
+                    ),
+                ],
+                flow_route_rows=[
+                    DrainageFlowRoute(
+                        flow_route_id="flow-route:no-outlet",
+                        from_element_ref="drainage:inlet-01",
+                        to_element_ref="drainage:junction-01",
+                    )
+                ],
+            ),
+        )
+
+        preview = show_drainage_flow_route_issue_preview_object(doc, row_index=0)
+
+        assert preview.CRRecordKind == "v1_drainage_flow_route_issue_preview"
+        assert preview.V1ObjectType == "V1DrainageFlowRouteIssuePreview"
+        assert preview.IssueKind == "flow_route_no_reachable_outlet"
+        assert preview.IssueStatus == "warning"
+        assert preview.DisplayMode == "drainage_flow_route_issue"
+        assert preview.FlowRouteRefs == "flow-route:no-outlet"
+        assert preview.FromElementRef == "drainage:inlet-01"
+        assert preview.Shape.BoundBox.XLength > 20.0
     finally:
         App.closeDocument(doc.Name)
 
@@ -1271,6 +1532,7 @@ def test_drainage_review_mapper_reports_drainage_quantity_summary() -> None:
                 station_end=20.0,
                 component_ref="ditch:right",
                 drainage_ref="drainage:side-ditch-right",
+                flow_route_ref="flow-route:right",
             ),
         ],
     )
@@ -1286,9 +1548,56 @@ def test_drainage_review_mapper_reports_drainage_quantity_summary() -> None:
     quantity_rows = [row for row in output.element_rows if row.kind == "drainage_quantity"]
     assert summary["summary:drainage-ditch-length"] == 20.0
     assert summary["summary:drainage-flowline-length"] == 19.5
+    assert summary["summary:report-quantity-flow-route-groups"] == 1
     assert len(quantity_rows) == 2
     assert quantity_rows[0].source_ref == "drainage:side-ditch-right"
+    report_rows = [row for row in output.element_rows if row.kind == "drainage_report"]
+    assert any(
+        row.label == "quantity_by_flow_route"
+        and row.source_ref == "flow-route:right"
+        and "quantity_kind=drainage_flowline_length" in row.notes
+        and "value=19.5" in row.notes
+        for row in report_rows
+    )
     assert "quantity:drainage" in output.source_refs
+
+
+def test_drainage_review_auto_loads_persisted_quantity_model() -> None:
+    doc, project = _new_project_doc("V1DrainageReviewQuantityAutoLoadTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_drainage_model())
+        create_or_update_v1_region_model_object(doc, project=project, region_model=_region_model())
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_applied_set())
+        quantity_model = QuantityModel(
+            schema_version=1,
+            project_id="proj-review",
+            quantity_model_id="quantity:drainage",
+            fragment_rows=[
+                QuantityFragment(
+                    fragment_id="quantity:ditch",
+                    quantity_kind="drainage_ditch_length",
+                    measurement_kind="plan_length",
+                    value=20.0,
+                    unit="m",
+                    drainage_ref="drainage:side-ditch-right",
+                )
+            ],
+            source_refs=["applied:main"],
+        )
+        quantity_obj = create_or_update_v1_quantity_model_object(doc, project=project, quantity_model=quantity_model)
+
+        loaded = to_quantity_model(find_v1_quantity_model(doc))
+        output = build_drainage_review_output(doc)
+        summary = {row.summary_id: row.value for row in output.summary_rows}
+
+        assert loaded is not None
+        assert loaded.quantity_model_id == "quantity:drainage"
+        assert quantity_obj.Name in _group_names(tree[V1_TREE_QUANTITIES])
+        assert summary["summary:drainage-ditch-length"] == 20.0
+        assert "quantity:drainage" in output.source_refs
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_drainage_review_panel_loads_document_context() -> None:
@@ -1301,25 +1610,42 @@ def test_drainage_review_panel_loads_document_context() -> None:
 
         panel = V1DrainageReviewTaskPanel(document=doc)
 
-        assert panel._summary_table.rowCount() == 18
+        assert panel._summary_table.rowCount() == 28
         assert panel._element_table.rowCount() == 2
         assert panel._flow_route_table.rowCount() == 1
         assert panel._tabs.tabText(1) == "Flow Routes"
         assert panel._flow_route_table.item(0, 0).text() == "flow-route:right"
         assert panel._flow_route_table.item(0, 5).text() == "drainage:side-ditch-right -> drainage:outfall-right"
-        assert panel._tabs.tabText(2) == "Pipeline Candidates"
+        assert panel._tabs.tabText(2) == "Flow Route Issues"
+        assert panel._flow_route_issue_table.rowCount() == 0
+        assert panel._tabs.tabText(3) == "Pipeline Candidates"
         assert panel._pipeline_table.rowCount() == 0
-        assert panel._tabs.tabText(3) == "Pipeline Segments"
+        assert panel._tabs.tabText(4) == "Pipeline Segments"
         assert panel._pipeline_segment_table.rowCount() == 0
-        assert panel._tabs.tabText(4) == "Pipeline Networks"
+        assert panel._tabs.tabText(5) == "Pipeline Networks"
         assert panel._pipeline_network_table.rowCount() == 0
-        assert panel._tabs.tabText(5) == "Pipeline Junctions"
+        assert panel._tabs.tabText(6) == "Pipeline Junctions"
         assert panel._pipeline_junction_table.rowCount() == 0
-        assert panel._tabs.tabText(6) == "Region Assignments"
+        assert panel._tabs.tabText(7) == "Region Assignments"
         assert panel._region_table.rowCount() == 2
         assert panel._applied_table.rowCount() == 1
+        assert panel._flowline_table.rowCount() == 0
+        assert panel._report_table.rowCount() == 3
+        panel._report_warnings_only.setChecked(True)
+        assert panel._report_table.rowCount() == 0
+        panel._report_warnings_only.setChecked(False)
+        assert panel._report_table.rowCount() == 3
         assert "Region drainage ref" not in panel._status.toPlainText()
         assert "Flow Routes: 1 source route" in panel._status.toPlainText()
+        assert [label for _target, label in _drainage_review_navigation_targets()] == [
+            "Drainage",
+            "Regions",
+            "Assembly",
+            "Structures",
+            "Cross Sections",
+        ]
+        button_labels = {button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)}
+        assert {"Drainage", "Regions", "Assembly", "Structures", "Cross Sections"}.issubset(button_labels)
     finally:
         App.closeDocument(doc.Name)
 
@@ -1346,7 +1672,7 @@ def test_build_drainage_review_output_reads_document_objects() -> None:
         output = build_drainage_review_output(doc)
 
         assert output.drainage_model_id == "drainage:main"
-        assert len(output.element_rows) == 6
+        assert len(output.element_rows) == 9
     finally:
         App.closeDocument(doc.Name)
 

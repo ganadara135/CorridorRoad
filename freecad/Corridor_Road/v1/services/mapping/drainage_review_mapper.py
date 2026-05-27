@@ -19,7 +19,11 @@ from ...models.source.alignment_model import AlignmentModel
 from ...models.source.drainage_model import DrainageModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
-from ..evaluation.drainage_resolution_service import build_drainage_pipeline_result, build_drainage_pipeline_segment_candidates
+from ..evaluation.drainage_resolution_service import (
+    DrainageValidationService,
+    build_drainage_pipeline_result,
+    build_drainage_pipeline_segment_candidates,
+)
 from .drainage_pipeline_geometry_mapper import build_drainage_pipeline_geometry_rows
 from .drainage_pipeline_network_mapper import build_drainage_pipeline_junction_rows, build_drainage_pipeline_network_rows
 from .drainage_pipeline_solid_mapper import build_drainage_pipeline_solid_rows
@@ -56,17 +60,27 @@ class DrainageReviewMapper:
         pipeline_junction_rows = _pipeline_junction_output_rows(pipeline_geometry_rows, pipeline_solid_rows, pipeline_segment_rows, structure_model)
         flow_route_rows = _flow_route_rows(drainage_model, pipeline_solid_rows)
         rows.extend(flow_route_rows)
+        flow_route_issue_rows = _flow_route_issue_rows(drainage_model, region_model, structure_model)
+        rows.extend(flow_route_issue_rows)
         pipeline_candidate_rows = _pipeline_segment_candidate_rows(drainage_model, structure_model)
         rows.extend(pipeline_candidate_rows)
         region_rows, region_assignment_issue_count = _region_assignment_rows(drainage_model, region_model)
         rows.extend(region_rows)
         applied_rows, ditch_point_count, ditch_point_with_ref_count = _applied_section_rows(applied_section_set)
         rows.extend(applied_rows)
+        flowline_rows, flowline_issue_count = _flowline_continuity_rows(applied_section_set)
+        rows.extend(flowline_rows)
         quantity_rows, ditch_length, flowline_length = _quantity_rows(quantity_model)
         rows.extend(quantity_rows)
+        quantity_flow_route_report_rows = _quantity_flow_route_report_rows(quantity_model)
+        report_rows = _drainage_report_rows(drainage_model, structure_model, pipeline_segment_rows, pipeline_solid_rows)
+        report_rows.extend(quantity_flow_route_report_rows)
+        rows.extend(report_rows)
+        report_summary = _drainage_report_summary(report_rows)
         summary_rows = [
             DrainageSummaryRow("summary:drainage-elements", "count", "Drainage elements", len(_drainage_element_ids(drainage_model)), "count"),
             DrainageSummaryRow("summary:flow-routes", "count", "Flow Routes", len(flow_route_rows), "count"),
+            DrainageSummaryRow("summary:flow-route-issues", "count", "Flow Route issues", len(flow_route_issue_rows), "count"),
             DrainageSummaryRow("summary:pipeline-segment-candidates", "count", "Pipeline segment candidates", len(pipeline_candidate_rows), "count"),
             DrainageSummaryRow("summary:pipeline-segments", "count", "Pipeline segments", len(pipeline_segment_rows), "count"),
             DrainageSummaryRow("summary:pipeline-geometries", "count", "Pipeline geometry rows", len(pipeline_geometry_rows), "count"),
@@ -87,8 +101,17 @@ class DrainageReviewMapper:
                 ditch_point_with_ref_count,
                 "count",
             ),
+            DrainageSummaryRow("summary:flowline-continuity-spans", "count", "Drainage flowline continuity spans", len(flowline_rows), "count"),
+            DrainageSummaryRow("summary:flowline-continuity-issues", "count", "Drainage flowline continuity issues", flowline_issue_count, "count"),
             DrainageSummaryRow("summary:drainage-ditch-length", "length", "Drainage ditch length", ditch_length, "m"),
             DrainageSummaryRow("summary:drainage-flowline-length", "length", "Drainage flowline length", flowline_length, "m"),
+            DrainageSummaryRow("summary:report-inlet-count", "count", "Report inlet count", report_summary["inlet_count"], "count"),
+            DrainageSummaryRow("summary:report-culvert-count", "count", "Report culvert count", report_summary["culvert_count"], "count"),
+            DrainageSummaryRow("summary:report-outlet-count", "count", "Report outlet count", report_summary["outlet_count"], "count"),
+            DrainageSummaryRow("summary:report-pipe-length", "length", "Report pipe length", report_summary["pipe_length"], "m"),
+            DrainageSummaryRow("summary:report-pipe-policy-groups", "count", "Report pipe policy groups", report_summary["pipe_policy_groups"], "count"),
+            DrainageSummaryRow("summary:report-pipe-policy-warnings", "count", "Report pipe policy warnings", report_summary["pipe_policy_warnings"], "count"),
+            DrainageSummaryRow("summary:report-quantity-flow-route-groups", "count", "Report quantity Flow Route groups", report_summary["quantity_flow_route_groups"], "count"),
         ]
         return DrainageOutput(
             schema_version=1,
@@ -206,6 +229,66 @@ def _pipeline_solid_for_flow_route(
         if str(getattr(row, "flow_route_ref", "") or "").strip() == active_ref:
             return row
     return None
+
+
+def _flow_route_issue_rows(
+    drainage_model: DrainageModel | None,
+    region_model: RegionModel | None,
+    structure_model: StructureModel | None,
+) -> list[DrainageElementOutputRow]:
+    if drainage_model is None:
+        return []
+    diagnostics = DrainageValidationService().validate(
+        drainage_model,
+        region_model=region_model,
+        structure_model=structure_model,
+    ).diagnostic_rows
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(getattr(drainage_model, "element_rows", []) or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    route_by_id = {
+        str(getattr(row, "flow_route_id", "") or "").strip(): row
+        for row in list(getattr(drainage_model, "flow_route_rows", []) or [])
+        if str(getattr(row, "flow_route_id", "") or "").strip()
+    }
+    issue_kinds = {"flow_route_no_reachable_outlet", "flow_route_multiple_reachable_outlets"}
+    rows: list[DrainageElementOutputRow] = []
+    for index, diagnostic in enumerate(list(diagnostics or []), start=1):
+        kind = str(getattr(diagnostic, "kind", "") or "")
+        if kind not in issue_kinds:
+            continue
+        notes = str(getattr(diagnostic, "notes", "") or "")
+        source_ref = _note_value(notes, "source_ref")
+        from_ref = _note_value(notes, "from_element_ref")
+        outlet_refs = _note_value(notes, "outlet_refs")
+        source_route = _first_csv_value(source_ref)
+        route = route_by_id.get(source_route)
+        from_element = element_by_id.get(from_ref or str(getattr(route, "from_element_ref", "") or ""))
+        to_element = element_by_id.get(str(getattr(route, "to_element_ref", "") or ""))
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"flow-route-issue:{_safe_id(source_ref or kind)}:{index}",
+                kind="flow_route_issue",
+                station_start=_route_station_start(from_element, to_element),
+                station_end=_route_station_end(from_element, to_element),
+                label=kind,
+                source_ref=source_ref,
+                notes=";".join(
+                    value
+                    for value in [
+                        f"severity={str(getattr(diagnostic, 'severity', '') or '')}",
+                        f"source_ref={source_ref}",
+                        f"from_element_ref={from_ref}",
+                        f"outlet_refs={outlet_refs}",
+                        f"message={str(getattr(diagnostic, 'message', '') or '')}",
+                    ]
+                    if value.split("=", 1)[-1]
+                ),
+            )
+        )
+    return rows
 
 
 def _pipeline_segment_candidate_rows(
@@ -439,6 +522,96 @@ def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tupl
     return rows, ditch_point_count, ditch_point_with_ref_count
 
 
+def _flowline_continuity_rows(applied_section_set: AppliedSectionSet | None) -> tuple[list[DrainageElementOutputRow], int]:
+    grouped: dict[str, list[tuple[float, object]]] = {}
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        station = float(getattr(section, "station", 0.0) or 0.0)
+        candidates = [_flowline_candidate_point(point) for point in list(getattr(section, "point_rows", []) or [])]
+        for point in [point for point in candidates if point is not None]:
+            key = _flowline_group_key(point)
+            grouped.setdefault(key, []).append((station, point))
+
+    rows: list[DrainageElementOutputRow] = []
+    issue_count = 0
+    for key, values in sorted(grouped.items()):
+        by_station: dict[float, object] = {}
+        for station, point in sorted(values, key=lambda item: (item[0], _point_lateral_offset(item[1]))):
+            current = by_station.get(station)
+            if current is None or float(getattr(point, "z", 0.0) or 0.0) < float(getattr(current, "z", 0.0) or 0.0):
+                by_station[station] = point
+        ordered = sorted(by_station.items())
+        for index, ((station0, point0), (station1, point1)) in enumerate(zip(ordered, ordered[1:]), start=1):
+            z0 = float(getattr(point0, "z", 0.0) or 0.0)
+            z1 = float(getattr(point1, "z", 0.0) or 0.0)
+            distance = station1 - station0
+            fall = z0 - z1
+            grade = fall / distance if abs(distance) > 1.0e-9 else 0.0
+            status = "ok"
+            if abs(distance) <= 1.0e-9:
+                status = "zero_station_span"
+            elif fall < -1.0e-6:
+                status = "reverse_grade"
+            elif abs(fall) <= 1.0e-6:
+                status = "flat"
+            if status != "ok":
+                issue_count += 1
+            source_ref = str(getattr(point0, "drainage_ref", "") or getattr(point1, "drainage_ref", "") or key)
+            rows.append(
+                DrainageElementOutputRow(
+                    row_id=f"flowline-continuity:{_safe_id(key)}:{index}",
+                    kind="flowline_continuity",
+                    station_start=station0,
+                    station_end=station1,
+                    label=status,
+                    source_ref=source_ref,
+                    notes=";".join(
+                        [
+                            f"group={key}",
+                            f"from_point={str(getattr(point0, 'point_id', '') or '')}",
+                            f"to_point={str(getattr(point1, 'point_id', '') or '')}",
+                            f"z_start={z0:.3f}",
+                            f"z_end={z1:.3f}",
+                            f"fall={fall:.3f}",
+                            f"grade={grade:.6g}",
+                            f"component_ref={str(getattr(point0, 'component_ref', '') or getattr(point1, 'component_ref', '') or '')}",
+                            f"side={str(getattr(point0, 'side', '') or getattr(point1, 'side', '') or '')}",
+                        ]
+                    ),
+                )
+            )
+    return rows, issue_count
+
+
+def _flowline_candidate_point(point):
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    point_id = str(getattr(point, "point_id", "") or "").strip().lower()
+    if role in {"drainage_flowline", "ditch_flowline", "flowline", "invert", "ditch_invert", "pipe_invert"}:
+        return point
+    if role == "ditch_surface" and ("flow" in point_id or "invert" in point_id):
+        return point
+    return None
+
+
+def _flowline_group_key(point) -> str:
+    drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
+    component_ref = str(getattr(point, "component_ref", "") or "").strip()
+    side = str(getattr(point, "side", "") or "").strip()
+    if drainage_ref:
+        return drainage_ref
+    if component_ref:
+        return component_ref
+    if side:
+        return f"side:{side}"
+    return "unassigned-flowline"
+
+
+def _point_lateral_offset(point) -> float:
+    try:
+        return float(getattr(point, "lateral_offset", 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
 def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageElementOutputRow], float, float]:
     rows: list[DrainageElementOutputRow] = []
     ditch_length = 0.0
@@ -473,6 +646,225 @@ def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageE
             )
         )
     return rows, ditch_length, flowline_length
+
+
+def _quantity_flow_route_report_rows(quantity_model: QuantityModel | None) -> list[DrainageElementOutputRow]:
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    for row in list(getattr(quantity_model, "fragment_rows", []) or []):
+        flow_route_ref = str(getattr(row, "flow_route_ref", "") or "").strip()
+        if not flow_route_ref:
+            continue
+        quantity_kind = str(getattr(row, "quantity_kind", "") or "").strip() or "quantity"
+        unit = str(getattr(row, "unit", "") or "").strip()
+        key = (flow_route_ref, quantity_kind, unit)
+        payload = grouped.setdefault(key, {"value": 0.0, "fragment_refs": [], "drainage_refs": []})
+        payload["value"] = float(payload["value"]) + float(getattr(row, "value", 0.0) or 0.0)
+        payload["fragment_refs"].append(str(getattr(row, "fragment_id", "") or ""))
+        drainage_ref = str(getattr(row, "drainage_ref", "") or "").strip()
+        if drainage_ref:
+            payload["drainage_refs"].append(drainage_ref)
+
+    rows: list[DrainageElementOutputRow] = []
+    for (flow_route_ref, quantity_kind, unit), payload in sorted(grouped.items()):
+        fragment_refs = _unique_refs(list(payload.get("fragment_refs", []) or []))
+        drainage_refs = _unique_refs(list(payload.get("drainage_refs", []) or []))
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"report:quantity-flow-route:{_safe_id(flow_route_ref)}:{_safe_id(quantity_kind)}:{_safe_id(unit)}",
+                kind="drainage_report",
+                station_start=0.0,
+                station_end=0.0,
+                label="quantity_by_flow_route",
+                source_ref=flow_route_ref,
+                notes=(
+                    "report_kind=quantity_by_flow_route;"
+                    f"quantity_kind={quantity_kind};"
+                    f"value={float(payload.get('value', 0.0) or 0.0):.6g};"
+                    f"unit={unit};"
+                    f"flow_route_refs={flow_route_ref};"
+                    f"fragment_refs={','.join(fragment_refs)};"
+                    f"drainage_refs={','.join(drainage_refs)}"
+                ),
+            )
+        )
+    return rows
+
+
+def _drainage_report_rows(
+    drainage_model: DrainageModel | None,
+    structure_model: StructureModel | None,
+    pipeline_segment_rows: list[DrainagePipelineSegmentOutputRow],
+    pipeline_solid_rows: list[DrainagePipelineSolidOutputRow],
+) -> list[DrainageElementOutputRow]:
+    rows: list[DrainageElementOutputRow] = []
+    element_rows = list(getattr(drainage_model, "element_rows", []) or [])
+    structure_by_id = {
+        str(getattr(row, "structure_id", "") or "").strip(): row
+        for row in list(getattr(structure_model, "structure_rows", []) or [])
+        if str(getattr(row, "structure_id", "") or "").strip()
+    }
+    for family in ["inlet", "culvert", "outlet"]:
+        refs = [
+            str(getattr(row, "drainage_element_id", "") or "").strip()
+            for row in element_rows
+            if _drainage_report_element_family(row, structure_by_id) == family
+        ]
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"report:{family}-count",
+                kind="drainage_report",
+                station_start=0.0,
+                station_end=0.0,
+                label=f"{family}_count",
+                source_ref=",".join(refs),
+                notes=f"report_kind=structure_count;family={family};value={len(refs)};unit=count;element_refs={','.join(refs)}",
+            )
+        )
+
+    solid_by_route = {
+        str(getattr(row, "flow_route_ref", "") or "").strip(): row
+        for row in list(pipeline_solid_rows or [])
+        if str(getattr(row, "flow_route_ref", "") or "").strip()
+    }
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in element_rows
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    policy_lengths: dict[str, float] = {}
+    policy_routes: dict[str, list[str]] = {}
+    for segment in list(pipeline_segment_rows or []):
+        flow_route_ref = str(getattr(segment, "flow_route_ref", "") or "").strip()
+        solid = solid_by_route.get(flow_route_ref)
+        length = float(getattr(solid, "length", 0.0) or 0.0) if solid is not None else abs(
+            float(getattr(segment, "station_end", 0.0) or 0.0) - float(getattr(segment, "station_start", 0.0) or 0.0)
+        )
+        policy_refs = _pipeline_segment_policy_refs(segment, element_by_id)
+        policy_ref = _pipe_length_policy_group(policy_refs)
+        policy_lengths[policy_ref] = policy_lengths.get(policy_ref, 0.0) + length
+        policy_routes.setdefault(policy_ref, []).append(flow_route_ref)
+        if len(policy_refs) > 1:
+            rows.append(
+                DrainageElementOutputRow(
+                    row_id=f"report:pipe-policy-warning:{_safe_id(flow_route_ref)}",
+                    kind="drainage_report",
+                    station_start=float(getattr(segment, "station_start", 0.0) or 0.0),
+                    station_end=float(getattr(segment, "station_end", 0.0) or 0.0),
+                    label="pipe_policy_warning",
+                    source_ref=flow_route_ref,
+                    notes=(
+                        "report_kind=pipe_policy_warning;"
+                        "severity=warning;"
+                        "value=1;"
+                        "unit=count;"
+                        f"policy_refs={','.join(policy_refs)};"
+                        f"flow_route_refs={flow_route_ref};"
+                        f"from_element_ref={str(getattr(segment, 'from_element_ref', '') or '')};"
+                        f"to_element_ref={str(getattr(segment, 'to_element_ref', '') or '')}"
+                    ),
+                )
+            )
+
+    for policy_ref in sorted(policy_lengths):
+        route_refs = _unique_refs(policy_routes.get(policy_ref, []))
+        rows.append(
+            DrainageElementOutputRow(
+                row_id=f"report:pipe-length:{_safe_id(policy_ref)}",
+                kind="drainage_report",
+                station_start=0.0,
+                station_end=0.0,
+                label="pipe_length_by_policy",
+                source_ref=policy_ref,
+                notes=(
+                    f"report_kind=pipe_length_by_policy;"
+                    f"policy_ref={policy_ref};"
+                    f"value={policy_lengths[policy_ref]:.3f};"
+                    "unit=m;"
+                    f"flow_route_refs={','.join(route_refs)}"
+                ),
+            )
+        )
+    return rows
+
+
+def _drainage_report_summary(rows: list[DrainageElementOutputRow]) -> dict[str, float]:
+    summary = {
+        "inlet_count": 0.0,
+        "culvert_count": 0.0,
+        "outlet_count": 0.0,
+        "pipe_length": 0.0,
+        "pipe_policy_groups": 0.0,
+        "pipe_policy_warnings": 0.0,
+        "quantity_flow_route_groups": 0.0,
+    }
+    for row in list(rows or []):
+        report_kind = _note_value(row.notes, "report_kind")
+        value = _note_float(row.notes, "value", 0.0)
+        if report_kind == "structure_count":
+            family = _note_value(row.notes, "family")
+            if family in {"inlet", "culvert", "outlet"}:
+                summary[f"{family}_count"] += value
+        elif report_kind == "pipe_length_by_policy":
+            summary["pipe_length"] += value
+            summary["pipe_policy_groups"] += 1.0
+        elif report_kind == "pipe_policy_warning":
+            summary["pipe_policy_warnings"] += value
+        elif report_kind == "quantity_by_flow_route":
+            summary["quantity_flow_route_groups"] += 1.0
+    return summary
+
+
+def _drainage_report_element_family(element, structure_by_id: dict[str, object]) -> str:
+    text = " ".join(
+        [
+            str(getattr(element, "element_kind", "") or ""),
+            str(getattr(element, "drainage_element_id", "") or ""),
+            str(getattr(element, "structure_ref", "") or ""),
+        ]
+    ).lower()
+    structure = structure_by_id.get(str(getattr(element, "structure_ref", "") or "").strip())
+    if structure is not None:
+        text += " " + " ".join(
+            [
+                str(getattr(structure, "structure_kind", "") or ""),
+                str(getattr(structure, "structure_role", "") or ""),
+                str(getattr(structure, "native_type", "") or ""),
+            ]
+        ).lower()
+    if "culvert" in text or "cross-drain" in text or "cross_drain" in text:
+        return "culvert"
+    if "outlet" in text or "outfall" in text or "discharge" in text:
+        return "outlet"
+    if "inlet" in text or "catch_basin" in text or "catch-basin" in text:
+        return "inlet"
+    return ""
+
+
+def _pipeline_segment_policy_refs(segment, element_by_id: dict[str, object]) -> list[str]:
+    from_element = element_by_id.get(str(getattr(segment, "from_element_ref", "") or ""))
+    to_element = element_by_id.get(str(getattr(segment, "to_element_ref", "") or ""))
+    return _unique_refs(
+        [
+            str(getattr(from_element, "policy_set_ref", "") or ""),
+            str(getattr(to_element, "policy_set_ref", "") or ""),
+        ]
+    )
+
+
+def _pipe_length_policy_group(policy_refs: list[str]) -> str:
+    refs = _unique_refs(list(policy_refs or []))
+    if len(refs) == 1:
+        return refs[0]
+    if len(refs) > 1:
+        return "mixed-policy"
+    return "unassigned-policy"
+
+
+def _note_float(notes: str, key: str, default: float = 0.0) -> float:
+    try:
+        return float(_note_value(notes, key) or default)
+    except Exception:
+        return float(default)
 
 
 def _section_count(applied_section_set: AppliedSectionSet | None) -> int:
@@ -517,6 +909,22 @@ def _unique_refs(values: list[str]) -> list[str]:
 
 def _safe_id(value: str) -> str:
     return str(value or "").strip().replace(":", "-").replace("/", "-").replace("\\", "-").replace(" ", "-") or "unknown"
+
+
+def _note_value(notes: str, key: str) -> str:
+    prefix = f"{key}="
+    for part in str(notes or "").split(";"):
+        if part.startswith(prefix):
+            return part[len(prefix) :]
+    return ""
+
+
+def _first_csv_value(value: str) -> str:
+    for part in str(value or "").split(","):
+        text = part.strip()
+        if text:
+            return text
+    return ""
 
 
 def _optional_note(key: str, value: object) -> str:

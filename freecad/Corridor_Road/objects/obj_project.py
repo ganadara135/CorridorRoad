@@ -1323,6 +1323,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_REPORTS, None)
     if record_kind == "v1_simulation_package_output":
         return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+    if record_kind == "v1_quantity_model":
+        return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind == "v1_drainage_model":
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_drainage_pipeline_candidate_preview":
@@ -1399,6 +1401,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_CORRIDOR_MODEL, None)
     if _is_type(child, proxy_types=("V1StructureModel", "StructureModel", "StructureSet"), name_prefixes=("V1StructureModel", "StructureModel", "StructureSet")):
         return tree.get(V1_TREE_STRUCTURES, None)
+    if _is_type(child, proxy_types=("V1QuantityModel", "QuantityModel"), name_prefixes=("V1QuantityModel", "QuantityModel")):
+        return tree.get(V1_TREE_QUANTITIES, None)
     if _is_v1_review(child):
         if _is_type(child, proxy_types=("PlanProfileReview",), name_prefixes=("PlanProfileReview",)):
             return tree.get(V1_TREE_PLAN_PROFILE_REVIEW, None)

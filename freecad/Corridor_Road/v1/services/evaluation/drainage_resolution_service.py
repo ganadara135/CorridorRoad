@@ -314,6 +314,10 @@ def build_drainage_pipeline_segment_candidates(
         )
         from_point_ref = str(getattr(from_point, "connection_point_id", "") or "").strip()
         to_point_ref = str(getattr(to_point, "connection_point_id", "") or "").strip()
+        fallback_station_start = _element_route_station(from_element, direction="out")
+        fallback_station_end = _element_route_station(to_element, direction="in")
+        fallback_from_offset = _element_route_offset(from_element)
+        fallback_to_offset = _element_route_offset(to_element)
         if not from_point_ref or not to_point_ref:
             output.append(
                 DrainagePipelineSegmentCandidate(
@@ -324,7 +328,11 @@ def build_drainage_pipeline_segment_candidates(
                     from_connection_point_ref=from_point_ref,
                     to_connection_point_ref=to_point_ref,
                     status="missing_connection_point_ref",
-                    notes=f"from_connection_point_ref={from_point_ref};to_connection_point_ref={to_point_ref}",
+                    station_start=fallback_station_start,
+                    station_end=fallback_station_end,
+                    from_offset=fallback_from_offset,
+                    to_offset=fallback_to_offset,
+                    notes=f"from_connection_point_ref={from_point_ref};to_connection_point_ref={to_point_ref};fallback=element_station_range",
                 )
             )
             continue
@@ -338,7 +346,11 @@ def build_drainage_pipeline_segment_candidates(
                     from_connection_point_ref=from_point_ref,
                     to_connection_point_ref=to_point_ref,
                     status="missing_connection_point",
-                    notes=f"from_point_found={from_point is not None};to_point_found={to_point is not None}",
+                    station_start=fallback_station_start,
+                    station_end=fallback_station_end,
+                    from_offset=fallback_from_offset,
+                    to_offset=fallback_to_offset,
+                    notes=f"from_point_found={from_point is not None};to_point_found={to_point is not None};fallback=element_station_range",
                 )
             )
             continue
@@ -450,6 +462,23 @@ def _is_capture_only_flow_route(from_element, to_element) -> bool:
     if to_kind not in {"inlet", "inlet_reference", "catch_basin", "catch-basin"}:
         return False
     return True
+
+
+def _element_route_station(element, *, direction: str) -> float:
+    """Return a fallback station for issue previews when a structure port is unresolved."""
+
+    station_start = float(getattr(element, "station_start", 0.0) or 0.0)
+    station_end = float(getattr(element, "station_end", station_start) or station_start)
+    if str(direction or "").strip().lower() == "out":
+        return station_end
+    return station_start
+
+
+def _element_route_offset(element) -> float:
+    try:
+        return float(getattr(element, "offset", 0.0) or 0.0)
+    except Exception:
+        return 0.0
 
 
 def _policy_id_set(policy_rows: list[DrainagePolicySet]) -> set[str]:

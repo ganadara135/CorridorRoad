@@ -347,7 +347,7 @@ Acceptance:
 
 ### DR-S6. Drainage Review
 
-Status: First slice complete
+Status: First slice complete, 3D issue focus expanded
 
 Completed:
 
@@ -355,19 +355,31 @@ Completed:
 - Review can show Drainage Elements, Region assignment, Applied Section context, pipeline candidates, segments, networks, and junctions.
 - Drainage Review can summarize quantities when a QuantityModel is supplied.
 - Build Parametric can create Drainage diagnostic/focus markers for missing ditch-surface coverage.
+- Flow Route rows can focus the matching Pipeline Candidate in 3D by double-click.
+- Pipeline Candidate preview objects expose `IssueKind`, `IssueStatus`, and `DisplayMode` so unresolved port and broken-route cases are visible in the tree/property context.
+- Unresolved Structure-port candidates use an Element station-range fallback shape so the user can see the route span that failed to resolve.
+- Issue preview styling distinguishes ready, capture-only, and unresolved candidate states.
+- Outlet-chain diagnostics are mapped into `flow_route_issue` review rows.
+- Flow Route Issues can be focused in 3D with a dedicated issue marker object.
+- Drainage Review status text summarizes Flow Route issue counts.
+- Drainage Review provides direct navigation buttons to Drainage, Regions, Assembly, Structures, and Cross Sections.
+- Drainage Review maps Applied Section flowline/invert-style points into `flowline_continuity` rows.
+- Current flowline continuity review treats explicit flowline/invert roles and `ditch_surface` points with `flow` or `invert` ids as review candidates.
+- Flowline continuity rows report fall, grade, and status (`ok`, `flat`, `reverse_grade`, or `zero_station_span`).
 
 Next tasks:
 
-- expand 3D issue markers beyond missing coverage into unresolved port, broken route, and outlet-chain issues
-- add direct navigation buttons back to Drainage, Regions, Assembly, Structures, and Cross Section Viewer
-- add flowline continuity review after explicit flowline/invert roles are expanded
+- promote flowline/invert roles earlier in Applied Sections instead of relying on `ditch_surface` id conventions
 
 Acceptance:
 
 - [x] Review shows source and result context separately.
 - [x] Pipeline network and junction rows are visible.
 - [x] missing coverage rows can be focused in 3D.
-- [ ] unresolved Structure port rows can be focused in 3D.
+- [x] unresolved Structure port rows can be focused in 3D through Flow Route or Pipeline Candidate review rows.
+- [x] outlet-chain-only route issues can be focused in 3D.
+- [x] Review users can navigate back to the main source editors and Cross Section Viewer.
+- [x] Flowline continuity can be reviewed from Applied Section result points.
 
 ### DR-S7. Applied Sections And Build Parametric
 
@@ -401,7 +413,7 @@ Acceptance:
 
 ### DR-S8. Quantities And Reports
 
-Status: First slice complete
+Status: First slice complete, report rows expanded
 
 Completed:
 
@@ -409,21 +421,32 @@ Completed:
 - flowline length quantities when paired flowline/invert-style point ids are available
 - `QuantityFragment` and rows preserve Drainage refs
 - Drainage Review can include quantity summary rows
+- Drainage Review creates report-ready `drainage_report` rows for inlet count, culvert count, outlet count, and pipe length by policy.
+- Structure counts are source-traced from Drainage Elements and their referenced Structure rows where available.
+- Pipe length by policy is derived from resolved pipe-producing Flow Routes and grouped by endpoint Drainage policy when unambiguous.
+- Drainage Review includes a `Reports` tab and report summary metrics.
+- Mixed-policy pipe routes create explicit `pipe_policy_warning` report rows while remaining grouped under `mixed-policy` for length totals.
+- `QuantityModel` can be persisted as a v1 result object under `07_Quantities & Earthwork > Quantities`.
+- Drainage Review auto-loads the persisted `QuantityModel` from the active document when available.
+- Quantity fragments with `flow_route_ref` are grouped into report-ready `quantity_by_flow_route` rows by Flow Route, quantity kind, and unit.
+- Drainage Review Reports tab includes a `Warnings only` filter for report warning rows such as `pipe_policy_warning`.
 
 Next tasks:
 
-- persist and auto-load latest QuantityModel into Drainage Review where practical
-- group quantities by Flow Route where ownership is unambiguous
-- add report-ready rows for inlet count, culvert count, outlet count, and pipe length by policy
+- add export-oriented report formatting after DR-S9 readiness fields stabilize
 
 Acceptance:
 
 - [x] ditch length can be reported by Drainage element.
-- [ ] pipe length and structure count reports are source-traceable from Drainage + Structure.
+- [x] pipe length and structure count reports are source-traceable from Drainage + Structure.
+- [x] mixed-policy pipe ownership is visible as a report warning.
+- [x] persisted QuantityModel auto-load is complete.
+- [x] Flow Route-owned quantity fragments are grouped for report review.
+- [x] Reports tab warning filtering is available.
 
 ### DR-S9. Watertight Solid Handoff
 
-Status: First slice complete
+Status: In progress, panel-level Drainage Solid QA summary added
 
 Completed:
 
@@ -433,21 +456,24 @@ Completed:
 - Structure body dependencies can auto-build before pipeline network targets.
 - network build records fuse mode, connector count, port connector count, endpoint trim count, Structure body refs, connection point refs, and port contact status.
 - generated Watertight Solid output objects are exposed in the tree with source refs and route refs where available.
+- Watertight Solids status text now includes a Drainage Solid QA summary.
+- Drainage Solid QA distinguishes capture-only routes, pipe-producing candidates, unresolved Structure ports, missing element routes, and discovered lined ditch / pipe / network / Structure body target counts.
+- Drainage Solid QA surfaces first-slice network fuse handoff status.
+- Simulation Package output now persists Drainage readiness status, source status, route/candidate counts, target counts, built Drainage output count, and network fuse status.
+- Simulation Package JSON export includes the same Drainage readiness block for downstream simulation QA handoff.
+- Watertight Solids target table now separates Drainage Lined Ditch Solid, Drainage Pipe Segment Solid, Drainage Pipe Network Solid, and Structure Body Solid in user-facing labels.
+- Watertight Solids Source text includes Flow Route refs for Drainage pipe targets.
 
 Next tasks:
 
-- add Drainage-specific QA summary in Watertight Solids for:
-  - capture-only routes
-  - pipe-producing routes
-  - unresolved Structure ports
-  - network fuse fallback
-- add package-level simulation readiness labels for drainage components
-- add clearer user-facing distinction between lined ditch solids, pipe solids, and Structure body solids
+- continue full simulation-readiness hardening after DR-S10 hydraulic assumptions are defined
 
 Acceptance:
 
 - [x] Watertight Solid output can trace pipeline network bodies back to Flow Routes, Structures, and connection points.
-- [ ] simulation package QA can summarize complete Drainage readiness in one place.
+- [x] Watertight Solids panel can summarize Drainage readiness in one place.
+- [x] exported simulation package QA can persist Drainage readiness labels.
+- [x] Watertight Solids UI distinguishes lined ditch solids, pipe solids, pipeline network solids, and Structure body solids.
 
 ### DR-S10. Future Hydraulic Layer
 

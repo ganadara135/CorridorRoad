@@ -23,6 +23,7 @@ class WatertightSimulationPackageBuildRequest:
     solid_inputs: list[WatertightSimulationQaSolidInput] = field(default_factory=list)
     terrain_ref: str = ""
     terrain_bound_box: tuple[float, float, float, float, float, float] | None = None
+    drainage_readiness: dict[str, object] = field(default_factory=dict)
 
 
 class WatertightSimulationPackageService:
@@ -55,6 +56,7 @@ class WatertightSimulationPackageService:
         qa_ref = str(getattr(qa, "simulation_qa_output_id", "") or "simulation-qa:watertight-solids")
         package_ready = bool(getattr(qa, "simulation_ready", False))
         output_refs = _unique_refs(getattr(request, "output_refs", []) or [])
+        drainage = dict(getattr(request, "drainage_readiness", {}) or {})
         return SimulationPackageOutput(
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or getattr(qa, "project_id", "") or "corridorroad-v1"),
@@ -69,6 +71,19 @@ class WatertightSimulationPackageService:
             terrain_status=str(getattr(qa, "terrain_status", "") or "missing"),
             terrain_ref=str(getattr(request, "terrain_ref", "") or ""),
             terrain_bound_box=getattr(request, "terrain_bound_box", None),
+            drainage_readiness_status=_drainage_text(drainage, "readiness_status", "missing"),
+            drainage_source_status=_drainage_text(drainage, "source_status", "missing"),
+            drainage_flow_route_count=_drainage_int(drainage, "flow_route_count"),
+            drainage_capture_only_route_count=_drainage_int(drainage, "capture_only_route_count"),
+            drainage_pipe_candidate_count=_drainage_int(drainage, "pipe_candidate_count"),
+            drainage_unresolved_port_route_count=_drainage_int(drainage, "unresolved_port_route_count"),
+            drainage_missing_element_route_count=_drainage_int(drainage, "missing_element_route_count"),
+            drainage_lined_ditch_target_count=_drainage_int(drainage, "lined_ditch_target_count"),
+            drainage_pipe_segment_target_count=_drainage_int(drainage, "pipe_segment_target_count"),
+            drainage_pipeline_network_target_count=_drainage_int(drainage, "pipeline_network_target_count"),
+            drainage_structure_body_target_count=_drainage_int(drainage, "structure_body_target_count"),
+            drainage_built_output_count=_drainage_int(drainage, "built_drainage_output_count"),
+            drainage_network_fuse_status=_drainage_text(drainage, "network_fuse_status", "not_available"),
             output_count=len(solids),
             total_volume=sum(float(getattr(row, "volume", 0.0) or 0.0) for row in solids),
             target_families=family_refs,
@@ -101,3 +116,14 @@ def _split_refs(values) -> list[str]:
             seen.add(text)
             refs.append(text)
     return refs
+
+
+def _drainage_text(values: dict[str, object], key: str, default: str = "") -> str:
+    return str(values.get(key, default) or default)
+
+
+def _drainage_int(values: dict[str, object], key: str) -> int:
+    try:
+        return int(values.get(key, 0) or 0)
+    except Exception:
+        return 0
