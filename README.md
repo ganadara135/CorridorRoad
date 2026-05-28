@@ -9,15 +9,19 @@ Parametric Road is a FreeCAD workbench for parametric road corridor design, revi
 
 Parametric Road is developed as an open-source road design workbench for FreeCAD. If this project saves you time, helps your civil design workflow, or you want to support continued v1 development, please consider sponsoring the project:
 
-[Sponsor on GitHub](https://github.com/sponsors/ganadara135)
-[Sponsor on Patreon](https://patreon.com/kcod)
-[Sponsor on Ko-fi](https://ko-fi.com/ganadara135)
+- [Sponsor on GitHub](https://github.com/sponsors/ganadara135)
+- [Sponsor on Patreon](https://patreon.com/kcod)
+- [Sponsor on Ko-fi](https://ko-fi.com/ganadara135)
 
 Sponsorship helps fund focused work on the v1 workflow, documentation, testing, and practical road-design features that are difficult to sustain through spare-time development alone.
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
 The current public release is Parametric Road `1.0.1`. This release continues the v1 workflow reset and updates the user-facing name from `Corridor Road` to `Parametric Road`. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+
+This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
+The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
+
 
 ## What This Project Does
 

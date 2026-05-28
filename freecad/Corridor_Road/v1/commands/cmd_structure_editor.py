@@ -1765,6 +1765,14 @@ class V1StructureEditorTaskPanel:
             for row in self._geometry_spec_table_rows()
             if str(getattr(row, "structure_ref", "") or "") in structure_ids
         ]
+        connection_point_rows = _normalized_connection_point_rows_for_structures(
+            [
+                row
+                for row in self._connection_point_rows
+                if str(getattr(row, "structure_ref", "") or "") in structure_ids
+            ],
+            structure_rows,
+        )
         return StructureModel(
             schema_version=1,
             project_id=_project_id(find_project(self.document)),
@@ -1785,11 +1793,7 @@ class V1StructureEditorTaskPanel:
                 self._retaining_wall_geometry_spec_rows or getattr(existing, "retaining_wall_geometry_spec_rows", []),
                 geometry_spec_rows,
             ),
-            connection_point_rows=[
-                row
-                for row in self._connection_point_rows
-                if str(getattr(row, "structure_ref", "") or "") in structure_ids
-            ],
+            connection_point_rows=connection_point_rows,
             interaction_rule_rows=[],
             influence_zone_rows=[],
         )
@@ -2280,14 +2284,18 @@ def _preset_connection_point_from_spec(
         height = float(spec.get("height", 0.0) or 0.0)
     base_id = structure_ref.split(":")[-1]
     point_id = str(spec.get("id", "") or f"connection:{base_id}:{role.replace('_', '-')}")
+    elevation = spec.get("elevation", "")
     invert = spec.get("invert_elevation", None)
+    notes = str(spec.get("notes", "") or "")
+    if _optional_float_text(elevation) is None and (invert is None or _optional_float_text(invert) is None):
+        notes = (notes + ";vertical_source=centerline3d").strip(";")
     return StructureConnectionPoint(
         connection_point_id=point_id,
         structure_ref=structure_ref,
         point_role=role,
         station=station,
         offset=offset,
-        elevation=_optional_float_text(spec.get("elevation", "")),
+        elevation=_optional_float_text(elevation),
         invert_elevation=_optional_float_text(invert) if invert is not None else None,
         diameter=diameter,
         width=width,
@@ -2296,8 +2304,70 @@ def _preset_connection_point_from_spec(
         direction=str(spec.get("direction", "") or ""),
         connection_order=connection_order,
         region_ref="",
-        notes=str(spec.get("notes", "") or ""),
+        notes=notes,
     )
+
+
+def _normalized_connection_point_rows_for_structures(
+    connection_point_rows: list[StructureConnectionPoint],
+    structure_rows: list[StructureRow],
+) -> list[StructureConnectionPoint]:
+    structures = {
+        str(getattr(row, "structure_id", "") or "").strip(): row
+        for row in list(structure_rows or [])
+        if str(getattr(row, "structure_id", "") or "").strip()
+    }
+    output: list[StructureConnectionPoint] = []
+    for point in list(connection_point_rows or []):
+        structure = structures.get(str(getattr(point, "structure_ref", "") or "").strip())
+        if structure is None:
+            output.append(point)
+            continue
+        placement = getattr(structure, "placement", None)
+        if placement is None:
+            output.append(point)
+            continue
+        start = float(getattr(placement, "station_start", 0.0) or 0.0)
+        end = float(getattr(placement, "station_end", start) or start)
+        lower = min(start, end)
+        upper = max(start, end)
+        station = float(getattr(point, "station", 0.0) or 0.0)
+        tolerance = 1.0e-6
+        if lower - tolerance <= station <= upper + tolerance:
+            output.append(point)
+            continue
+        output.append(
+            StructureConnectionPoint(
+                connection_point_id=str(getattr(point, "connection_point_id", "") or ""),
+                structure_ref=str(getattr(point, "structure_ref", "") or ""),
+                point_role=str(getattr(point, "point_role", "") or ""),
+                station=_station_for_connection_point_inside_structure(point, lower=lower, upper=upper),
+                offset=float(getattr(point, "offset", 0.0) or 0.0),
+                elevation=getattr(point, "elevation", None),
+                invert_elevation=getattr(point, "invert_elevation", None),
+                diameter=float(getattr(point, "diameter", 0.0) or 0.0),
+                width=float(getattr(point, "width", 0.0) or 0.0),
+                height=float(getattr(point, "height", 0.0) or 0.0),
+                shape_kind=str(getattr(point, "shape_kind", "") or ""),
+                direction=str(getattr(point, "direction", "") or ""),
+                connection_order=int(getattr(point, "connection_order", 0) or 0),
+                region_ref=str(getattr(point, "region_ref", "") or ""),
+                notes=str(getattr(point, "notes", "") or ""),
+            )
+        )
+    return output
+
+
+def _station_for_connection_point_inside_structure(point: StructureConnectionPoint, *, lower: float, upper: float) -> float:
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    direction = str(getattr(point, "direction", "") or "").strip().lower()
+    point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
+    if direction == "out" or role in {"pipe_out", "discharge", "outlet", "downstream"} or "outfall" in point_id:
+        return float(upper)
+    if direction == "in" or role in {"pipe_in", "inlet", "upstream"}:
+        return float(lower)
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    return min(max(station, float(lower)), float(upper))
 
 
 def _native_type_from_preset_spec(spec: dict) -> str:
@@ -4144,7 +4214,9 @@ def _format_optional_float(value: float | None) -> str:
 
 
 def _optional_float_text(value: object) -> float | None:
-    text = str(value or "").strip()
+    if value is None:
+        return None
+    text = str(value).strip()
     if not text:
         return None
     return _required_float(text, "Optional elevation")

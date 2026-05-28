@@ -493,6 +493,7 @@ def test_watertight_solids_resources_are_final_v1_stage() -> None:
 
     assert resources["MenuText"] == "Watertight Solids"
     assert "topology-first" in resources["ToolTip"]
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("watertight_solids.svg")
 
 
 def test_watertight_solids_panel_routes_existing_output_objects_to_tree() -> None:

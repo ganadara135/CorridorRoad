@@ -1325,7 +1325,7 @@ class CmdV1WatertightSolids:
 
     def GetResources(self):
         return {
-            "Pixmap": icon_path("corridor.svg"),
+            "Pixmap": icon_path("watertight_solids.svg"),
             "MenuText": "Watertight Solids",
             "ToolTip": "Generate topology-first watertight solid outputs after Build Corridor",
         }

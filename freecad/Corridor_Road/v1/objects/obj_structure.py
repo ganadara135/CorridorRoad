@@ -617,7 +617,11 @@ def _connection_point_row_diagnostics(
             diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is empty.")
         elif not _is_recommended_connection_role(role):
             diagnostics.append(f"warning|connection_point_role|{point_id or index}|Connection point role is not a recommended Structure connection role.")
-        if getattr(point, "invert_elevation", None) is None and getattr(point, "elevation", None) is None:
+        if (
+            getattr(point, "invert_elevation", None) is None
+            and getattr(point, "elevation", None) is None
+            and not _uses_centerline3d_vertical_source(point)
+        ):
             diagnostics.append(f"warning|connection_point_elevation|{point_id or index}|Connection point should define invert or connection elevation.")
         shape_kind = str(getattr(point, "shape_kind", "") or "").strip().lower()
         diameter = float(getattr(point, "diameter", 0.0) or 0.0)
@@ -628,6 +632,11 @@ def _connection_point_row_diagnostics(
         if _needs_box_size(shape_kind=shape_kind) and (width <= 0.0 or height <= 0.0):
             diagnostics.append(f"error|connection_point_size|{point_id or index}|Box or open-channel connection points must define positive width and height.")
     return diagnostics
+
+
+def _uses_centerline3d_vertical_source(point: StructureConnectionPoint) -> bool:
+    notes = str(getattr(point, "notes", "") or "").strip().lower()
+    return "vertical_source=centerline3d" in notes or "elevation_source=centerline3d" in notes
 
 
 def _regions_by_id(region_model) -> dict[str, object]:

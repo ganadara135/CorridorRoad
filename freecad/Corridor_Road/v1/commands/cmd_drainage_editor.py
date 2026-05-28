@@ -24,6 +24,7 @@ from ..objects.obj_drainage import (
     find_v1_drainage_model,
     to_drainage_model,
 )
+from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..services.evaluation.drainage_resolution_service import (
@@ -47,6 +48,8 @@ ELEMENT_STRUCTURE_COLUMN = 7
 FLOW_ROUTE_FROM_COLUMN = 1
 FLOW_ROUTE_TO_COLUMN = 2
 FLOW_ROUTE_OUTLET_COLUMN = 3
+INVALID_COMBO_STYLE = "QComboBox { background-color: rgb(96, 40, 40); color: rgb(255, 255, 255); }"
+DISABLED_COMBO_STYLE = "QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }"
 DRAINAGE_PRESETS = {
     "Roadside Ditch": {
         "note": "One right-side roadside ditch across the available station range.",
@@ -411,6 +414,140 @@ def drainage_preset_names() -> list[str]:
     return list(DRAINAGE_PRESETS.keys())
 
 
+def _preset_load_summary(model: DrainageModel) -> str:
+    element_rows = list(getattr(model, "element_rows", []) or [])
+    flow_route_rows = list(getattr(model, "flow_route_rows", []) or [])
+    structure_refs = {
+        str(getattr(row, "structure_ref", "") or "").strip()
+        for row in element_rows
+        if str(getattr(row, "structure_ref", "") or "").strip()
+    }
+    capture_count = 0
+    pipe_count = 0
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in element_rows
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    for route in flow_route_rows:
+        from_element = element_by_id.get(str(getattr(route, "from_element_ref", "") or "").strip())
+        to_element = element_by_id.get(str(getattr(route, "to_element_ref", "") or "").strip())
+        from_structure = str(getattr(from_element, "structure_ref", "") or "").strip()
+        to_structure = str(getattr(to_element, "structure_ref", "") or "").strip()
+        if from_structure and to_structure:
+            pipe_count += 1
+        else:
+            capture_count += 1
+    return (
+        "Preset Summary: "
+        f"elements={len(element_rows)}; "
+        f"flow-routes={len(flow_route_rows)}; "
+        f"structure-backed={len(structure_refs)}; "
+        f"capture-only={capture_count}; "
+        f"pipe-producing={pipe_count}"
+    )
+
+
+def _preset_structure_self_check_text(preset_name: str, *, structure_refs: list[str]) -> str:
+    preset = DRAINAGE_PRESETS.get(str(preset_name or "").strip(), {})
+    required_refs = _preset_required_structure_refs(preset)
+    if not required_refs:
+        return "Structure Preset Check: no Structure refs required."
+    available = {str(value or "").strip() for value in list(structure_refs or []) if str(value or "").strip()}
+    missing = [ref for ref in required_refs if ref not in available]
+    matched = len(required_refs) - len(missing)
+    if missing:
+        return (
+            "Structure Preset Check: "
+            f"matched={matched}/{len(required_refs)}; "
+            "missing=" + ", ".join(_display_source_ref(ref) for ref in missing)
+        )
+    return f"Structure Preset Check: matched={matched}/{len(required_refs)}."
+
+
+def _preset_pair_self_check_text(model: DrainageModel, structure_model) -> str:
+    structure_refs = {
+        str(getattr(row, "structure_ref", "") or "").strip()
+        for row in list(getattr(model, "element_rows", []) or [])
+        if str(getattr(row, "structure_ref", "") or "").strip()
+    }
+    if not structure_refs:
+        return "Preset Pair Check: no Structure-backed Drainage Elements."
+    if structure_model is None:
+        return "Preset Pair Check: no active Structures model; pipe endpoint compatibility was not checked."
+    candidates = list(build_drainage_pipeline_segment_candidates(model, structure_model))
+    capture_count = sum(1 for row in candidates if str(getattr(row, "status", "") or "") == "capture_only")
+    ready_count = sum(1 for row in candidates if str(getattr(row, "status", "") or "") == "ready")
+    unresolved = [
+        row
+        for row in candidates
+        if str(getattr(row, "status", "") or "") not in {"capture_only", "ready"}
+    ]
+    text = (
+        "Preset Pair Check: "
+        f"capture-only={capture_count}; "
+        f"ready-pipes={ready_count}; "
+        f"unresolved={len(unresolved)}"
+    )
+    if unresolved:
+        examples = [
+            f"{_display_source_ref(getattr(row, 'flow_route_ref', ''))}:{getattr(row, 'status', '')}"
+            for row in unresolved[:3]
+        ]
+        text += "; " + " | ".join(examples)
+    return text
+
+
+def _preset_station_range_self_check_text(
+    model: DrainageModel,
+    *,
+    station_start: float,
+    station_end: float,
+    station_source: str = "fallback",
+) -> str:
+    lower = min(float(station_start), float(station_end))
+    upper = max(float(station_start), float(station_end))
+    element_rows = list(getattr(model, "element_rows", []) or [])
+    if not element_rows:
+        return (
+            "Station Range Check: "
+            f"source={station_source}; "
+            f"document={_format_float(lower)}-{_format_float(upper)}; "
+            "elements=none; invalid=0; outside=0"
+        )
+    element_ranges: list[tuple[float, float]] = []
+    invalid_count = 0
+    outside_count = 0
+    tolerance = 1.0e-6
+    for row in element_rows:
+        start = _float_value(getattr(row, "station_start", 0.0))
+        end = _float_value(getattr(row, "station_end", 0.0))
+        element_ranges.append((start, end))
+        if start >= end:
+            invalid_count += 1
+        if start < lower - tolerance or end > upper + tolerance:
+            outside_count += 1
+    element_lower = min(min(start, end) for start, end in element_ranges)
+    element_upper = max(max(start, end) for start, end in element_ranges)
+    return (
+        "Station Range Check: "
+        f"source={station_source}; "
+        f"document={_format_float(lower)}-{_format_float(upper)}; "
+        f"elements={_format_float(element_lower)}-{_format_float(element_upper)}; "
+        f"invalid={invalid_count}; "
+        f"outside={outside_count}"
+    )
+
+
+def _preset_required_structure_refs(preset: dict) -> list[str]:
+    refs = [
+        str(spec.get("structure", "") or "").strip()
+        for spec in list((preset or {}).get("elements", []) or [])
+        if str(spec.get("structure", "") or "").strip()
+    ]
+    return _unique_texts(refs)
+
+
 class CmdV1DrainageEditor:
     def GetResources(self):
         return {
@@ -519,7 +656,9 @@ class V1DrainageEditorTaskPanel:
         preset_row = QtWidgets.QHBoxLayout()
         preset_row.addWidget(QtWidgets.QLabel("Preset:"))
         self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo.addItem("")
         self._preset_combo.addItems(drainage_preset_names())
+        self._preset_combo.setCurrentIndex(0)
         preset_row.addWidget(self._preset_combo)
         load_preset_button = QtWidgets.QPushButton("Load Preset")
         load_preset_button.clicked.connect(self._load_selected_preset)
@@ -583,6 +722,15 @@ class V1DrainageEditorTaskPanel:
         self._add_right_ditch_button = QtWidgets.QPushButton("Add Right Ditch")
         self._add_right_ditch_button.clicked.connect(lambda: self._add_ditch_row("right"))
         edit_row.addWidget(self._add_right_ditch_button)
+        self._add_inlet_button = QtWidgets.QPushButton("Add Inlet")
+        self._add_inlet_button.clicked.connect(self._add_inlet_row)
+        edit_row.addWidget(self._add_inlet_button)
+        self._add_outlet_button = QtWidgets.QPushButton("Add Outlet")
+        self._add_outlet_button.clicked.connect(self._add_outlet_row)
+        edit_row.addWidget(self._add_outlet_button)
+        self._add_cross_drain_button = QtWidgets.QPushButton("Add Cross Drain")
+        self._add_cross_drain_button.clicked.connect(self._add_cross_drain_row)
+        edit_row.addWidget(self._add_cross_drain_button)
         self._add_policy_button = QtWidgets.QPushButton("Add Policy")
         self._add_policy_button.clicked.connect(self._add_policy_row)
         edit_row.addWidget(self._add_policy_button)
@@ -669,10 +817,25 @@ class V1DrainageEditorTaskPanel:
 
     def _load_selected_preset(self) -> None:
         try:
-            preset_name = str(self._preset_combo.currentText() or "Roadside Ditch")
+            preset_name = str(self._preset_combo.currentText() or "").strip()
+            if not preset_name:
+                self._set_status("Select a Drainage preset before loading preset data.")
+                return
             model = drainage_preset_model_from_document(preset_name, document=self.document)
             self._replace_model(model)
-            self._set_status(f"Drainage preset loaded: {preset_name}. Apply when ready.")
+            self._set_status(
+                "\n".join(
+                    value
+                    for value in [
+                        f"Drainage preset loaded: {preset_name}. Apply when ready.",
+                        _preset_load_summary(model),
+                        self._preset_station_range_self_check_text(model),
+                        self._preset_structure_self_check_text(preset_name),
+                        _preset_pair_self_check_text(model, self._structure_model()),
+                    ]
+                    if value
+                )
+            )
         except Exception as exc:
             self._set_status(f"Drainage preset was not loaded:\n{exc}")
 
@@ -693,6 +856,7 @@ class V1DrainageEditorTaskPanel:
         self._flow_route_table.setRowCount(0)
         for row in list(getattr(model, "flow_route_rows", []) or []):
             self._append_flow_route_row(row)
+        self._refresh_validation_cell_styles()
 
     def _append_element_row(self, row: DrainageElementRow | None = None) -> None:
         row = row or self._default_ditch_row("right")
@@ -749,6 +913,7 @@ class V1DrainageEditorTaskPanel:
                 self._element_table.setItem(index, col, QtWidgets.QTableWidgetItem(str(value)))
         self._update_element_cell_states(index)
         self._refresh_flow_route_element_combos()
+        self._refresh_validation_cell_styles()
 
     def _default_ditch_row(self, side: str) -> DrainageElementRow:
         normalized_side = str(side or "right").strip().lower() or "right"
@@ -765,6 +930,27 @@ class V1DrainageEditorTaskPanel:
             policy_set_ref=self._first_policy_ref(),
         )
 
+    def _default_structure_element_row(
+        self,
+        *,
+        base_id: str,
+        element_kind: str,
+        structure_keyword: str,
+        policy_keyword: str,
+        side: str = "right",
+    ) -> DrainageElementRow:
+        structure_ref = self._first_structure_ref_matching(structure_keyword)
+        station_start, station_end = self._structure_station_span(structure_ref)
+        return DrainageElementRow(
+            drainage_element_id=self._unique_numbered_element_id(base_id),
+            element_kind=element_kind,
+            side=side,
+            station_start=station_start,
+            station_end=station_end,
+            structure_ref=structure_ref,
+            policy_set_ref=self._first_policy_ref_matching(policy_keyword) or self._first_policy_ref(),
+        )
+
     def _unique_element_id(self, base_id: str) -> str:
         existing = {
             _source_prefixed_id(_item_text(self._element_table, index, 0), "drainage:")
@@ -777,6 +963,21 @@ class V1DrainageEditorTaskPanel:
         while f"{base_id}:{suffix}" in existing:
             suffix += 1
         return f"{base_id}:{suffix}"
+
+    def _unique_numbered_element_id(self, base_id: str) -> str:
+        normalized = _source_prefixed_id(base_id, "drainage:")
+        existing = {
+            _source_prefixed_id(_item_text(self._element_table, index, 0), "drainage:")
+            for index in range(self._element_table.rowCount())
+            if _item_text(self._element_table, index, 0)
+        }
+        if normalized not in existing:
+            return normalized
+        root = normalized.rsplit("-", 1)[0] if "-" in normalized.rsplit(":", 1)[-1] else normalized
+        suffix = 2
+        while f"{root}-{suffix:02d}" in existing:
+            suffix += 1
+        return f"{root}-{suffix:02d}"
 
     def _append_policy_row(self, row: DrainagePolicySet | None = None) -> None:
         row = row or DrainagePolicySet(
@@ -839,6 +1040,37 @@ class V1DrainageEditorTaskPanel:
         self._append_element_row(row)
         self._set_status(f"Added {row.side} side ditch row.")
 
+    def _add_inlet_row(self) -> None:
+        row = self._default_structure_element_row(
+            base_id="drainage:inlet-01",
+            element_kind="inlet_reference",
+            structure_keyword="inlet",
+            policy_keyword="inlet",
+        )
+        self._append_element_row(row)
+        self._set_status("Added inlet reference row.")
+
+    def _add_outlet_row(self) -> None:
+        row = self._default_structure_element_row(
+            base_id="drainage:outlet-01",
+            element_kind="outfall_reference",
+            structure_keyword="outlet",
+            policy_keyword="outfall",
+        )
+        self._append_element_row(row)
+        self._set_status("Added outlet reference row.")
+
+    def _add_cross_drain_row(self) -> None:
+        row = self._default_structure_element_row(
+            base_id="drainage:culvert-01",
+            element_kind="culvert_reference",
+            structure_keyword="culvert",
+            policy_keyword="cross",
+            side="center",
+        )
+        self._append_element_row(row)
+        self._set_status("Added cross-drain culvert reference row.")
+
     def _add_policy_row(self) -> None:
         self._append_policy_row()
         self._set_status("Added Drainage policy row.")
@@ -862,6 +1094,7 @@ class V1DrainageEditorTaskPanel:
             self._refresh_element_policy_combos()
         if table is self._flow_route_table:
             self._update_flow_route_preview()
+        self._refresh_validation_cell_styles()
         self._set_status(f"Deleted {len(rows)} row(s).")
 
     def _update_tab_action_visibility(self) -> None:
@@ -873,6 +1106,9 @@ class V1DrainageEditorTaskPanel:
             getattr(self, "_add_element_button", None),
             getattr(self, "_add_left_ditch_button", None),
             getattr(self, "_add_right_ditch_button", None),
+            getattr(self, "_add_inlet_button", None),
+            getattr(self, "_add_outlet_button", None),
+            getattr(self, "_add_cross_drain_button", None),
         ):
             if button is not None:
                 button.setVisible(is_elements)
@@ -886,8 +1122,10 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
+                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
+            self._refresh_validation_cell_styles()
             self._set_status(_format_validation_result(result, model))
         except Exception as exc:
             self._set_status(f"Drainage validation failed:\n{exc}")
@@ -897,6 +1135,7 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
+                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
             if result.status == "error":
@@ -933,6 +1172,7 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
+                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
             if result.status == "error":
@@ -982,6 +1222,7 @@ class V1DrainageEditorTaskPanel:
             model = self._model_from_tables()
             result = DrainageValidationService().validate(
                 model,
+                region_model=self._region_model(),
                 structure_model=self._structure_model(),
             )
             if result.status == "error":
@@ -1100,11 +1341,74 @@ class V1DrainageEditorTaskPanel:
     def _first_policy_ref(self) -> str:
         return _source_prefixed_id(_item_text(self._policy_table, 0, 0), "drainage-policy:") if self._policy_table.rowCount() else ""
 
+    def _first_policy_ref_matching(self, keyword: str) -> str:
+        needle = str(keyword or "").strip().lower()
+        if not needle:
+            return ""
+        for row in range(self._policy_table.rowCount()):
+            values = [
+                _item_text(self._policy_table, row, column)
+                for column in range(self._policy_table.columnCount())
+            ]
+            if needle in " ".join(values).lower():
+                return _source_prefixed_id(_item_text(self._policy_table, row, 0), "drainage-policy:")
+        return ""
+
+    def _first_structure_ref_matching(self, keyword: str) -> str:
+        needle = str(keyword or "").strip().lower()
+        model = self._structure_model()
+        for row in list(getattr(model, "structure_rows", []) or []):
+            values = [
+                getattr(row, "structure_id", ""),
+                getattr(row, "structure_kind", ""),
+                getattr(row, "structure_role", ""),
+                getattr(row, "native_type", ""),
+                getattr(row, "geometry_source", ""),
+            ]
+            if needle and needle in " ".join(str(value or "") for value in values).lower():
+                return str(getattr(row, "structure_id", "") or "").strip()
+        return ""
+
+    def _structure_station_span(self, structure_ref: str) -> tuple[float, float]:
+        model = self._structure_model()
+        for row in list(getattr(model, "structure_rows", []) or []):
+            if str(getattr(row, "structure_id", "") or "").strip() != str(structure_ref or "").strip():
+                continue
+            placement = getattr(row, "placement", None)
+            start = _float_value(getattr(placement, "station_start", 0.0))
+            end = _float_value(getattr(placement, "station_end", start))
+            return min(start, end), max(start, end)
+        start, end = _document_station_range(self.document)
+        if end <= start:
+            return start, end
+        mid = start + (end - start) * 0.5
+        half_width = min(1.0, max((end - start) * 0.01, 0.25))
+        return max(start, mid - half_width), min(end, mid + half_width)
+
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
 
     def _structure_model(self):
         return to_structure_model(find_v1_structure_model(self.document))
+
+    def _region_model(self):
+        return to_region_model(find_v1_region_model(self.document))
+
+    def _preset_structure_self_check_text(self, preset_name: str) -> str:
+        return _preset_structure_self_check_text(
+            preset_name,
+            structure_refs=self._structure_ref_choices(),
+        )
+
+    def _preset_station_range_self_check_text(self, model: DrainageModel) -> str:
+        values = _document_station_values(self.document)
+        station_start, station_end = (min(values), max(values)) if values else _document_station_range(self.document)
+        return _preset_station_range_self_check_text(
+            model,
+            station_start=station_start,
+            station_end=station_end,
+            station_source="stationing" if values else "fallback",
+        )
 
     def _on_element_table_changed(self, row_index: int, column_index: int) -> None:
         if column_index in {0, ELEMENT_KIND_COLUMN, ELEMENT_STRUCTURE_COLUMN}:
@@ -1172,6 +1476,7 @@ class V1DrainageEditorTaskPanel:
                 combo.currentTextChanged.connect(
                     lambda _text, row_index=row: self._update_flow_route_outlet_cell_state(row_index)
                 )
+            combo.currentTextChanged.connect(lambda _text: self._refresh_validation_cell_styles())
         except Exception:
             pass
         table.setCellWidget(row, column, combo)
@@ -1273,6 +1578,7 @@ class V1DrainageEditorTaskPanel:
                 choices,
                 display_refs=True,
             )
+        self._refresh_validation_cell_styles()
 
     def _element_ref_choices(self) -> list[str]:
         choices: list[str] = []
@@ -1346,7 +1652,7 @@ class V1DrainageEditorTaskPanel:
                 widget.setCurrentText("")
                 widget.setEnabled(False)
                 widget.setToolTip("Outlet is only edited when To Element is an outlet/outfall element.")
-                widget.setStyleSheet("QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }")
+                widget.setStyleSheet(DISABLED_COMBO_STYLE)
                 widget.blockSignals(False)
             else:
                 widget.setEnabled(True)
@@ -1361,6 +1667,7 @@ class V1DrainageEditorTaskPanel:
                 widget.setToolTip(str(widget.currentText() or "Select the final outlet element."))
         except Exception:
             return
+        self._refresh_validation_cell_styles()
 
     def _update_flow_route_preview(self) -> None:
         if not hasattr(self, "_flow_route_preview"):
@@ -1381,24 +1688,29 @@ class V1DrainageEditorTaskPanel:
         if outlet_ref and outlet_ref != to_ref:
             chain.append(outlet_ref)
         route_ref = _source_prefixed_id(route_id, "flow-route:")
+        route_type_summary = self._flow_route_type_summary(route_ref)
         endpoint_summary = self._flow_route_endpoint_summary(route_ref)
-        preview_lines = [f"{route_id}: {' -> '.join(chain)}"]
+        preview_lines = [f"Route Chain: {route_id}: {' -> '.join(chain)}"]
+        if outlet_ref:
+            preview_lines.append(f"Terminal Outlet: {outlet_ref}")
+        if route_type_summary:
+            preview_lines.append(route_type_summary)
         if endpoint_summary:
             preview_lines.append(endpoint_summary)
         self._flow_route_preview.setText("\n".join(preview_lines))
 
-    def _flow_route_endpoint_summary(self, route_ref: str) -> str:
+    def _flow_route_candidate_for_ref(self, route_ref: str):
         route_ref = str(route_ref or "").strip()
         if not route_ref:
-            return ""
+            return None, None
         structure_model = self._structure_model()
         if structure_model is None:
-            return "Endpoint: no Structures model is available."
+            return None, structure_model
         try:
             model = self._model_from_tables()
             candidates = build_drainage_pipeline_segment_candidates(model, structure_model)
         except Exception as exc:
-            return f"Endpoint: unresolved ({exc})"
+            return exc, structure_model
         candidate = next(
             (
                 row
@@ -1407,6 +1719,32 @@ class V1DrainageEditorTaskPanel:
             ),
             None,
         )
+        return candidate, structure_model
+
+    def _flow_route_type_summary(self, route_ref: str) -> str:
+        candidate, _structure_model = self._flow_route_candidate_for_ref(route_ref)
+        if isinstance(candidate, Exception):
+            return f"Route Type: unresolved ({candidate})"
+        if candidate is None:
+            return "Route Type: not resolved"
+        status = str(getattr(candidate, "status", "") or "").strip()
+        if status == "capture_only":
+            return "Route Type: capture-only open-channel handoff; no pipe solid is generated."
+        if status == "ready":
+            return "Route Type: pipe-producing Structure-to-Structure segment."
+        if status == "missing_element":
+            return "Route Type: broken route; From or To Element is missing."
+        return f"Route Type: unresolved pipe route; station-span fallback only ({status})."
+
+    def _flow_route_endpoint_summary(self, route_ref: str) -> str:
+        route_ref = str(route_ref or "").strip()
+        if not route_ref:
+            return ""
+        candidate, structure_model = self._flow_route_candidate_for_ref(route_ref)
+        if structure_model is None:
+            return "Endpoint: no Structures model is available."
+        if isinstance(candidate, Exception):
+            return f"Endpoint: unresolved ({candidate})"
         if candidate is None:
             return "Endpoint: route is not resolved yet."
         status = str(getattr(candidate, "status", "") or "").strip()
@@ -1491,11 +1829,127 @@ class V1DrainageEditorTaskPanel:
                     widget.setCurrentText("")
                 widget.setEnabled(False)
                 widget.setToolTip("Structure is not used for ditch elements.")
-                widget.setStyleSheet("QComboBox { background-color: rgb(48, 48, 48); color: rgb(140, 140, 140); }")
+                widget.setStyleSheet(DISABLED_COMBO_STYLE)
             else:
                 widget.setEnabled(True)
                 widget.setToolTip("Select a Structure ID from the active Structures model.")
                 widget.setStyleSheet("")
+        except Exception:
+            return
+
+    def _refresh_validation_cell_styles(self) -> None:
+        if getattr(self, "_refreshing_validation_cell_styles", False):
+            return
+        if not hasattr(self, "_element_table") or not hasattr(self, "_flow_route_table"):
+            return
+        self._refreshing_validation_cell_styles = True
+        try:
+            policy_choices = self._policy_ref_choices()
+            policy_set = set(policy_choices)
+            structure_choices = self._structure_ref_choices()
+            structure_set = set(structure_choices)
+            element_choices = self._element_ref_choices()
+            element_set = set(element_choices)
+            outlet_choices = self._outlet_ref_choices()
+            outlet_set = set(outlet_choices)
+
+            for row in range(self._element_table.rowCount()):
+                policy_ref = _source_ref_from_display(
+                    _combo_source_text(self._element_table, row, ELEMENT_POLICY_COLUMN),
+                    policy_choices,
+                    default_prefix="drainage-policy:",
+                )
+                self._set_combo_warning_state(
+                    self._element_table,
+                    row,
+                    ELEMENT_POLICY_COLUMN,
+                    invalid=not policy_ref or policy_ref not in policy_set,
+                    message="Select a Policy from the Policies tab.",
+                )
+
+                kind = str(_item_text(self._element_table, row, ELEMENT_KIND_COLUMN) or "").strip().lower()
+                structure_disabled = _structure_disabled_for_kind(kind)
+                structure_ref = _source_ref_from_display(
+                    _combo_source_text(self._element_table, row, ELEMENT_STRUCTURE_COLUMN),
+                    structure_choices,
+                    default_prefix="structure:",
+                )
+                self._set_combo_warning_state(
+                    self._element_table,
+                    row,
+                    ELEMENT_STRUCTURE_COLUMN,
+                    invalid=not structure_disabled and (not structure_ref or structure_ref not in structure_set),
+                    message="Select a Structure Ref for Structure-backed drainage elements.",
+                    disabled=structure_disabled,
+                )
+
+            for row in range(self._flow_route_table.rowCount()):
+                from_ref = _source_ref_from_display(
+                    _combo_source_text(self._flow_route_table, row, FLOW_ROUTE_FROM_COLUMN),
+                    element_choices,
+                    default_prefix="drainage:",
+                )
+                to_ref = _source_ref_from_display(
+                    _combo_source_text(self._flow_route_table, row, FLOW_ROUTE_TO_COLUMN),
+                    element_choices,
+                    default_prefix="drainage:",
+                )
+                self._set_combo_warning_state(
+                    self._flow_route_table,
+                    row,
+                    FLOW_ROUTE_FROM_COLUMN,
+                    invalid=not from_ref or from_ref not in element_set,
+                    message="Select an existing From Element.",
+                )
+                self._set_combo_warning_state(
+                    self._flow_route_table,
+                    row,
+                    FLOW_ROUTE_TO_COLUMN,
+                    invalid=not to_ref or to_ref not in element_set,
+                    message="Select an existing To Element.",
+                )
+                outlet_enabled = self._flow_route_outlet_enabled(row)
+                outlet_ref = _source_ref_from_display(
+                    _combo_source_text(self._flow_route_table, row, FLOW_ROUTE_OUTLET_COLUMN),
+                    outlet_choices,
+                    default_prefix="drainage:",
+                )
+                self._set_combo_warning_state(
+                    self._flow_route_table,
+                    row,
+                    FLOW_ROUTE_OUTLET_COLUMN,
+                    invalid=outlet_enabled and bool(outlet_ref) and outlet_ref not in outlet_set,
+                    message="Select an existing terminal Outlet, or leave it blank when the To Element is the outlet.",
+                    disabled=not outlet_enabled,
+                )
+        finally:
+            self._refreshing_validation_cell_styles = False
+
+    def _set_combo_warning_state(
+        self,
+        table,
+        row: int,
+        column: int,
+        *,
+        invalid: bool,
+        message: str,
+        disabled: bool = False,
+    ) -> None:
+        widget = table.cellWidget(row, column)
+        if widget is None or not hasattr(widget, "setStyleSheet"):
+            return
+        if disabled:
+            try:
+                widget.setStyleSheet(DISABLED_COMBO_STYLE)
+            except Exception:
+                pass
+            return
+        try:
+            widget.setStyleSheet(INVALID_COMBO_STYLE if invalid else "")
+            if invalid:
+                widget.setToolTip(message)
+            else:
+                widget.setToolTip(str(widget.currentText() or ""))
         except Exception:
             return
 
@@ -1725,6 +2179,8 @@ def _format_float(value: object) -> str:
 
 
 def _format_validation_result(result, model: DrainageModel) -> str:
+    summary = _flow_route_validation_summary_text(result)
+    region_summary = _region_validation_summary_text(result)
     lines = [
         f"Validation: {result.status}",
         f"Elements: {len(model.element_rows)}",
@@ -1732,12 +2188,79 @@ def _format_validation_result(result, model: DrainageModel) -> str:
         f"Flow Routes: {len(model.flow_route_rows)}",
         f"Diagnostics: {len(result.diagnostic_rows)}",
     ]
-    for row in list(result.diagnostic_rows or [])[:6]:
+    if summary:
+        lines.append(summary)
+    if region_summary:
+        lines.append(region_summary)
+    visible_diagnostics = [
+        row for row in list(result.diagnostic_rows or [])
+        if str(getattr(row, "kind", "") or "") != "flow_route_capture_pipe_summary"
+    ]
+    for row in visible_diagnostics[:6]:
         lines.append(f"{row.severity}:{row.kind}: {row.message}")
-    remaining = len(list(result.diagnostic_rows or [])) - 6
+    remaining = len(visible_diagnostics) - 6
     if remaining > 0:
         lines.append(f"+{remaining} more diagnostics")
     return "\n".join(lines)
+
+
+def _region_validation_summary_text(result) -> str:
+    missing = 0
+    outside = 0
+    examples: list[str] = []
+    for row in list(getattr(result, "diagnostic_rows", []) or []):
+        kind = str(getattr(row, "kind", "") or "")
+        if kind not in {"missing_drainage_element_region_ref", "drainage_element_outside_region_station_range"}:
+            continue
+        if kind == "missing_drainage_element_region_ref":
+            missing += 1
+        if kind == "drainage_element_outside_region_station_range":
+            outside += 1
+        if len(examples) < 2:
+            notes = _note_pairs(str(getattr(row, "notes", "") or ""))
+            source = _display_source_ref(notes.get("source_ref", ""))
+            region = _display_source_ref(notes.get("region_ref", ""))
+            element_start = notes.get("element_start", "")
+            element_end = notes.get("element_end", "")
+            region_start = notes.get("region_start", "")
+            region_end = notes.get("region_end", "")
+            if element_start and element_end and region_start and region_end:
+                examples.append(f"{source or '-'} STA {element_start}-{element_end} vs {region or '-'} {region_start}-{region_end}")
+            else:
+                examples.append(f"{source or '-'} -> {region or '-'}")
+    if not missing and not outside:
+        return ""
+    text = f"Region Summary: missing-region={missing}; outside-boundary={outside}"
+    if examples:
+        text += "; " + " | ".join(examples)
+    return text
+
+
+def _flow_route_validation_summary_text(result) -> str:
+    for row in list(getattr(result, "diagnostic_rows", []) or []):
+        if str(getattr(row, "kind", "") or "") != "flow_route_capture_pipe_summary":
+            continue
+        notes = _note_pairs(str(getattr(row, "notes", "") or ""))
+        return (
+            "Flow Route Summary: "
+            f"capture-only={notes.get('capture_only_count', '0')}; "
+            f"pipe-producing={notes.get('pipe_producing_count', '0')}; "
+            f"fallback={notes.get('station_span_fallback_count', '0')}; "
+            f"missing-elements={notes.get('missing_element_count', '0')}"
+        )
+    return ""
+
+
+def _note_pairs(notes: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for part in str(notes or "").split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = value.strip()
+    return values
 
 
 def _project_id(project) -> str:

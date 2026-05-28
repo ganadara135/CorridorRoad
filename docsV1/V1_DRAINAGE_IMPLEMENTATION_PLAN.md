@@ -239,20 +239,28 @@ Completed:
 - `Connection Point` is not exposed as a normal Element-column workflow.
 - Flow Route rows support double-click preview/focus.
 - Flow Route `Outlet` editing is enabled only when `To Element` is an outlet/outfall Element.
+- selected Flow Route preview separates Route Chain, Terminal Outlet, Route Type, and Endpoint text.
+- selected route endpoint resolution is visible without opening code-level diagnostics.
+- invalid Policy, Structure Ref, From Element, To Element, and editable Outlet combo cells are highlighted inline.
+- Elements tab has safer row templates for Inlet, Outlet, and Cross Drain rows.
+- Structure-backed row templates auto-fill matching Structure Ref and station span when a Structures model is available.
+- Drainage Editor validation now passes the active RegionModel into Drainage validation.
+- Region boundary diagnostics are summarized in the validation status text with missing/outside counts and example station spans.
+- Drainage Review now filters Pipeline Candidates by All, Pipe-producing, Capture-only, and Unresolved route status.
+- Drainage Review now filters Region Assignments to issue rows only when needed.
+- Drainage Review now filters Flow Route source rows by the same route status as Pipeline Candidates.
 
 Remaining:
 
-- add clearer inline route-chain text for selected Flow Route rows
-- improve invalid-cell coloring for missing Region, Policy, Structure, and outlet cases
-- add safer row templates for common node families such as inlet, outlet, and cross-drain
-- make selected route endpoint resolution visible without opening code-level diagnostics
+- keep Flow Route source-row filtering aligned with Pipeline Candidate status semantics as route states expand.
 
 Acceptance:
 
 - [x] Ditch rows feel different from Structure-backed rows.
 - [x] Flow Routes are editable without exposing low-level pipeline result rows.
 - [x] Outlet is treated as terminal context, not a required field on every route row.
-- [ ] selected route chain is readable without opening Review.
+- [x] selected route chain is readable without opening Review.
+- [x] Region boundary diagnostics are visible from Drainage validation status.
 
 ### DR-S3. Preset Alignment
 
@@ -266,23 +274,25 @@ Completed:
 - Flow Route ids use `flowId-*`.
 - Ditch-to-inlet rows are capture-only.
 - inlet-to-inlet, inlet-to-culvert, and culvert-to-outlet rows become pipe candidates.
+- Preset load status now reports Elements, Flow Routes, Structure-backed rows, capture-only routes, and pipe-producing routes.
+- Preset load status now self-checks required Structure refs against the active Structures model and reports missing ids.
+- Preset load status now reports the active Stationing/fallback station range, converted Element span, invalid range count, and outside-range count.
+- Preset load status now checks paired Structures connection-point compatibility and reports capture-only, ready pipe, and unresolved route counts.
 
 Remaining:
 
-- add preset self-check diagnostics when matching Structures preset rows are missing
-- add a short preset summary after `Load Preset`
-- keep preset station ranges adapted to current Stationing/Alignment extents
-- keep Structure and Drainage presets paired so inlet, culvert, outlet, and Flow Route ids do not drift
+- keep pair-check expectations aligned as new Structure/Drainage preset families are added.
 
 Acceptance:
 
 - [x] Structures and Drainage presets can be used together without manual id repair.
 - [x] Last inlet connects to culvert `pipe_in` through Flow Route resolution.
-- [ ] preset loader warns when referenced Structures are not present.
+- [x] preset loader warns when referenced Structures are not present.
+- [x] preset loader warns when paired Structure ports no longer resolve pipe-producing Flow Routes.
 
 ### DR-S4. Validation Upgrade
 
-Status: In progress, route-chain diagnostics expanded
+Status: In progress, route-chain and capture/pipe diagnostics expanded
 
 Completed:
 
@@ -301,12 +311,16 @@ Completed:
 - route-chain warning when one upstream chain can reach multiple outlets
 - Structure-backed pipe warning when Flow Route ports cannot be resolved
 - non-pipe `ditch -> inlet` capture rows remain non-blocking and do not create false pipe warnings
+- validation now emits an informational capture-only / pipe-producing / station-span fallback route summary
+- validation warns when pipe-producing Flow Routes connect Elements with different Drainage policies
+- validation separately reports pipe routes that can only resolve station-span fallback geometry because Structure ports are unresolved
+- Drainage editor validation status now shows a concise Flow Route Summary line instead of exposing the summary only as a generic diagnostic row.
+- policy compatibility now uses policy-family handoff rules instead of warning on every different policy id.
+- same-family pipe policies are allowed, while incompatible handoffs such as outfall-to-pipe are still warnings.
 
 Next tasks:
 
-- warn when connected Elements use incompatible Policies
-- report capture-only vs pipe-producing routes explicitly in validation output
-- report when a route expects a pipe but resolves only station-span fallback geometry
+- keep policy-family mapping aligned as hydraulic policy semantics mature
 
 Acceptance:
 
@@ -314,7 +328,7 @@ Acceptance:
 - [x] cross-Region routes are visible as warnings.
 - [x] outlet reachability can be diagnosed from source rows before 3D preview.
 - [x] unresolved Structure pipe ports can be diagnosed before 3D preview.
-- [ ] policy incompatibility and capture/pipe summaries are complete.
+- [x] policy incompatibility and capture/pipe summaries are available in validation diagnostics.
 
 ### DR-S5. Structure Connection Handoff
 
@@ -366,10 +380,12 @@ Completed:
 - Drainage Review maps Applied Section flowline/invert-style points into `flowline_continuity` rows.
 - Current flowline continuity review treats explicit flowline/invert roles and `ditch_surface` points with `flow` or `invert` ids as review candidates.
 - Flowline continuity rows report fall, grade, and status (`ok`, `flat`, `reverse_grade`, or `zero_station_span`).
+- Cross Section Viewer now exposes station-context Drainage Element rows with side and Flow Route refs.
+- Applied Sections now emit explicit `ditch_flowline` points while preserving `ditch_surface` points for surface generation.
 
 Next tasks:
 
-- promote flowline/invert roles earlier in Applied Sections instead of relying on `ditch_surface` id conventions
+- use explicit `ditch_flowline` points in more downstream labels and quantity/review surfaces where practical.
 
 Acceptance:
 

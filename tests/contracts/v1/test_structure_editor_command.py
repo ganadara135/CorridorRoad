@@ -197,6 +197,39 @@ def test_structure_preset_drainage_structures_provides_outlet_and_culvert_refs()
         assert model.connection_point_rows[10].direction == "in"
         assert model.connection_point_rows[11].shape_kind == "outfall"
         assert all(row.region_ref == "" for row in model.connection_point_rows)
+        assert all(row.invert_elevation is None for row in model.connection_point_rows)
+        assert all("vertical_source=centerline3d" in row.notes for row in model.connection_point_rows)
+        diagnostics = _structure_editor_diagnostics(model, document=doc)
+        assert not any("connection_point_outside_structure_station_range" in row for row in diagnostics)
+        assert not any("connection_point_elevation" in row for row in diagnostics)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_structure_editor_normalizes_connection_points_after_station_edits() -> None:
+    _ensure_qapp()
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=50.0)
+        panel = V1StructureEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Drainage Structures")
+        panel._load_selected_preset()
+        panel._table.item(1, 3).setText("75.000")
+        panel._table.item(1, 4).setText("80.000")
+
+        model = panel._model_from_table()
+        points = {
+            row.connection_point_id: row
+            for row in model.connection_point_rows
+            if row.structure_ref == "structure:inlet-02"
+        }
+        diagnostics = _structure_editor_diagnostics(model, document=doc)
+
+        assert points["connection:inlet-02:ditch-in"].station == 75.0
+        assert points["connection:inlet-02:pipe-in"].station == 75.0
+        assert points["connection:inlet-02:pipe-out"].station == 80.0
+        assert not any("connection_point_outside_structure_station_range" in row for row in diagnostics)
     finally:
         App.closeDocument(doc.Name)
 

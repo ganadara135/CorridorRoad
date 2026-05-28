@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import FreeCAD as App
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_commands
@@ -7,7 +9,10 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_review import (
     CmdV1DrainageReview,
     V1DrainageReviewTaskPanel,
     _drainage_review_navigation_targets,
+    _filter_flow_route_rows,
+    _filter_pipeline_candidate_rows,
     _filter_report_rows,
+    _filter_region_assignment_rows,
     _geometry_rows_snapped_to_structure_previews,
     build_drainage_review_output,
     run_v1_drainage_review_command,
@@ -21,7 +26,12 @@ from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import drainage_prese
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import structure_preset_model_from_document
 from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
-from freecad.Corridor_Road.v1.models.output.drainage_output import DrainageOutput, DrainagePipelineGeometryOutputRow, DrainagePipelineSegmentOutputRow
+from freecad.Corridor_Road.v1.models.output.drainage_output import (
+    DrainageElementOutputRow,
+    DrainageOutput,
+    DrainagePipelineGeometryOutputRow,
+    DrainagePipelineSegmentOutputRow,
+)
 from freecad.Corridor_Road.v1.models.result.quantity_model import QuantityFragment, QuantityModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
@@ -1211,6 +1221,68 @@ def test_drainage_review_panel_flow_route_double_click_shows_candidate_issue_pre
         App.closeDocument(doc.Name)
 
 
+def test_drainage_review_filters_pipeline_candidate_route_statuses() -> None:
+    rows = [
+        DrainageElementOutputRow("candidate:ready", "pipeline_segment_candidate", 0.0, 10.0, label="flow-route:ready", notes="status=ready"),
+        DrainageElementOutputRow("candidate:capture", "pipeline_segment_candidate", 10.0, 20.0, label="flow-route:capture", notes="status=capture_only"),
+        DrainageElementOutputRow(
+            "candidate:unresolved",
+            "pipeline_segment_candidate",
+            20.0,
+            30.0,
+            label="flow-route:unresolved",
+            notes="status=missing_connection_point_ref",
+        ),
+    ]
+
+    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Pipe-producing")] == ["flow-route:ready"]
+    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Capture-only")] == ["flow-route:capture"]
+    assert [row.label for row in _filter_pipeline_candidate_rows(rows, mode="Unresolved")] == ["flow-route:unresolved"]
+
+
+def test_drainage_review_filters_flow_route_source_rows_by_candidate_status() -> None:
+    flow_rows = [
+        DrainageElementOutputRow("route:ready", "flow_route", 0.0, 10.0, label="flow-route:ready"),
+        DrainageElementOutputRow("route:capture", "flow_route", 10.0, 20.0, label="flow-route:capture"),
+        DrainageElementOutputRow("route:unresolved", "flow_route", 20.0, 30.0, label="flow-route:unresolved"),
+    ]
+    candidate_rows = [
+        DrainageElementOutputRow("candidate:ready", "pipeline_segment_candidate", 0.0, 10.0, label="flow-route:ready", notes="status=ready"),
+        DrainageElementOutputRow("candidate:capture", "pipeline_segment_candidate", 10.0, 20.0, label="flow-route:capture", notes="status=capture_only"),
+        DrainageElementOutputRow(
+            "candidate:unresolved",
+            "pipeline_segment_candidate",
+            20.0,
+            30.0,
+            label="flow-route:unresolved",
+            notes="status=missing_connection_point_ref",
+        ),
+    ]
+
+    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Pipe-producing")] == ["flow-route:ready"]
+    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Capture-only")] == ["flow-route:capture"]
+    assert [row.label for row in _filter_flow_route_rows(flow_rows, candidate_rows, mode="Unresolved")] == ["flow-route:unresolved"]
+
+
+def test_drainage_review_filters_region_assignment_issues() -> None:
+    rows = [
+        DrainageElementOutputRow("region:ok", "region_assignment", 0.0, 10.0, label="region:1", source_ref="drainage:ditch-01", notes="status=ok"),
+        DrainageElementOutputRow(
+            "region:missing",
+            "region_assignment",
+            10.0,
+            20.0,
+            label="",
+            source_ref="drainage:ditch-02",
+            notes="status=missing_region",
+        ),
+    ]
+
+    filtered = _filter_region_assignment_rows(rows, issues_only=True)
+
+    assert [row.source_ref for row in filtered] == ["drainage:ditch-02"]
+
+
 def test_drainage_review_mapper_reports_outlet_chain_issue_rows() -> None:
     drainage_model = DrainageModel(
         schema_version=1,
@@ -1475,6 +1547,53 @@ def test_show_drainage_pipeline_networks_preview_object_creates_full_network_com
         structure_preview = doc.getObject("V1StructurePreview_structure_inlet_01")
         assert structure_preview is not None
         assert structure_preview.Name in _group_names(tree[V1_TREE_STRUCTURES])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_networks_preview_prefers_centerline3d_result_frame() -> None:
+    doc, project = _new_project_doc("V1DrainagePipelineNetworksCenterline3DPreviewTest")
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_network_drainage_model())
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_network_structure_model())
+
+        preview = show_drainage_pipeline_networks_preview_object(doc)
+
+        assert preview.CoordinateMode == "centerline3d_result"
+        assert preview.Shape.BoundBox.ZMin > 40.0
+        assert preview.Name in _group_names(tree[V1_TREE_DRAINAGE])
+        segment_preview = doc.getObject("V1DrainagePipelineSegment_pipeline_segment_flow_route_pipe_01")
+        assert segment_preview is not None
+        assert segment_preview.CoordinateMode == "centerline3d_result"
+        assert segment_preview.Shape.BoundBox.ZMin > 40.0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_drainage_pipeline_networks_preview_uses_centerline3d_height_for_presets() -> None:
+    doc, project = _new_project_doc("V1DrainagePresetPipelineNetworksCenterline3DPreviewTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        drainage_model = drainage_preset_model_from_document("Drainage Structures Flow", doc, project=project)
+        structure_model = structure_preset_model_from_document("Drainage Structures", doc, project=project, alignment=alignment)
+        assert all(row.invert_elevation is None for row in structure_model.connection_point_rows)
+        structure_model.connection_point_rows = [
+            replace(row, invert_elevation=0.0, notes="")
+            for row in structure_model.connection_point_rows
+        ]
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=drainage_model)
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        preview = show_drainage_pipeline_networks_preview_object(doc)
+
+        assert preview.CoordinateMode == "centerline3d_result"
+        assert preview.Shape.BoundBox.ZMin > 5.0
     finally:
         App.closeDocument(doc.Name)
 

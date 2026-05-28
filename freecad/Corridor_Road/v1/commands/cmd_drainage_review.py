@@ -553,6 +553,11 @@ class V1DrainageReviewTaskPanel:
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.output = None
         self._report_rows = []
+        self._flow_route_rows = []
+        self._flow_route_display_indices = []
+        self._pipeline_candidate_rows = []
+        self._pipeline_candidate_display_indices = []
+        self._region_assignment_rows = []
         self.form = self._build_ui()
         self.refresh()
 
@@ -615,6 +620,23 @@ class V1DrainageReviewTaskPanel:
         self._tabs.addTab(self._report_table, "Reports")
         layout.addWidget(self._tabs, 1)
 
+        review_filter_row = QtWidgets.QHBoxLayout()
+        review_filter_row.addWidget(QtWidgets.QLabel("Flow Routes:"))
+        self._flow_route_filter = QtWidgets.QComboBox()
+        self._flow_route_filter.addItems(["All", "Pipe-producing", "Capture-only", "Unresolved"])
+        self._flow_route_filter.currentIndexChanged.connect(lambda _index: self._populate_flow_routes())
+        review_filter_row.addWidget(self._flow_route_filter)
+        review_filter_row.addWidget(QtWidgets.QLabel("Pipeline Candidates:"))
+        self._pipeline_candidate_filter = QtWidgets.QComboBox()
+        self._pipeline_candidate_filter.addItems(["All", "Pipe-producing", "Capture-only", "Unresolved"])
+        self._pipeline_candidate_filter.currentIndexChanged.connect(lambda _index: self._populate_pipeline_candidates())
+        review_filter_row.addWidget(self._pipeline_candidate_filter)
+        self._region_issues_only = QtWidgets.QCheckBox("Region issues only")
+        self._region_issues_only.stateChanged.connect(lambda _state: self._populate_region_assignments())
+        review_filter_row.addWidget(self._region_issues_only)
+        review_filter_row.addStretch(1)
+        layout.addLayout(review_filter_row)
+
         report_filter_row = QtWidgets.QHBoxLayout()
         report_filter_row.addWidget(QtWidgets.QLabel("Reports:"))
         self._report_warnings_only = QtWidgets.QCheckBox("Warnings only")
@@ -661,13 +683,16 @@ class V1DrainageReviewTaskPanel:
         self.output = build_drainage_review_output(self.document)
         _populate_summary_table(self._summary_table, self.output.summary_rows)
         _populate_element_table(self._element_table, [row for row in self.output.element_rows if row.kind == "drainage_element"])
-        _populate_flow_route_table(self._flow_route_table, [row for row in self.output.element_rows if row.kind == "flow_route"])
+        self._flow_route_rows = [row for row in self.output.element_rows if row.kind == "flow_route"]
         _populate_flow_route_issue_table(self._flow_route_issue_table, [row for row in self.output.element_rows if row.kind == "flow_route_issue"])
-        _populate_pipeline_table(self._pipeline_table, [row for row in self.output.element_rows if row.kind == "pipeline_segment_candidate"])
+        self._pipeline_candidate_rows = [row for row in self.output.element_rows if row.kind == "pipeline_segment_candidate"]
+        self._populate_flow_routes()
+        self._populate_pipeline_candidates()
         _populate_pipeline_segment_table(self._pipeline_segment_table, self.output.pipeline_segment_rows)
         _populate_pipeline_network_table(self._pipeline_network_table, self.output.pipeline_network_rows)
         _populate_pipeline_junction_table(self._pipeline_junction_table, self.output.pipeline_junction_rows)
-        _populate_region_table(self._region_table, [row for row in self.output.element_rows if row.kind == "region_assignment"])
+        self._region_assignment_rows = [row for row in self.output.element_rows if row.kind == "region_assignment"]
+        self._populate_region_assignments()
         _populate_applied_table(
             self._applied_table,
             [row for row in self.output.element_rows if row.kind == "applied_section_ditch_context"],
@@ -681,6 +706,37 @@ class V1DrainageReviewTaskPanel:
         warnings_only = bool(getattr(self, "_report_warnings_only", None) is not None and self._report_warnings_only.isChecked())
         _populate_report_table(self._report_table, self._report_rows, warnings_only=warnings_only)
 
+    def _populate_flow_routes(self) -> None:
+        mode = (
+            str(self._flow_route_filter.currentText() or "All")
+            if getattr(self, "_flow_route_filter", None) is not None
+            else "All"
+        )
+        rows, indices = _filter_flow_route_rows_with_indices(
+            self._flow_route_rows,
+            self._pipeline_candidate_rows,
+            mode=mode,
+        )
+        self._flow_route_display_indices = indices
+        _populate_flow_route_table(self._flow_route_table, rows)
+
+    def _populate_pipeline_candidates(self) -> None:
+        mode = (
+            str(self._pipeline_candidate_filter.currentText() or "All")
+            if getattr(self, "_pipeline_candidate_filter", None) is not None
+            else "All"
+        )
+        rows, indices = _filter_pipeline_candidate_rows_with_indices(self._pipeline_candidate_rows, mode=mode)
+        self._pipeline_candidate_display_indices = indices
+        _populate_pipeline_table(self._pipeline_table, rows)
+
+    def _populate_region_assignments(self) -> None:
+        issues_only = bool(getattr(self, "_region_issues_only", None) is not None and self._region_issues_only.isChecked())
+        _populate_region_table(
+            self._region_table,
+            _filter_region_assignment_rows(self._region_assignment_rows, issues_only=issues_only),
+        )
+
     def _show_selected_pipeline_candidate(self) -> None:
         row_index = self._pipeline_table.currentRow()
         if row_index < 0:
@@ -689,7 +745,10 @@ class V1DrainageReviewTaskPanel:
 
     def _show_pipeline_candidate(self, row_index: int) -> None:
         try:
-            preview = show_drainage_pipeline_candidate_preview_object(self.document, row_index=row_index, output=self.output)
+            source_index = row_index
+            if getattr(self, "_pipeline_candidate_display_indices", None):
+                source_index = self._pipeline_candidate_display_indices[row_index]
+            preview = show_drainage_pipeline_candidate_preview_object(self.document, row_index=source_index, output=self.output)
             self._status.setPlainText(_status_text(self.output) + f"\nPipeline candidate preview: {preview.Name}")
         except Exception as exc:
             self._status.setPlainText(_status_text(self.output) + f"\nPipeline candidate preview failed: {exc}")
@@ -697,6 +756,8 @@ class V1DrainageReviewTaskPanel:
     def _show_flow_route_issue(self, row_index: int) -> None:
         try:
             flow_rows = [row for row in list(getattr(self.output, "element_rows", []) or []) if row.kind == "flow_route"]
+            if getattr(self, "_flow_route_display_indices", None):
+                row_index = self._flow_route_display_indices[row_index]
             if row_index < 0 or row_index >= len(flow_rows):
                 raise IndexError("Flow Route row index is out of range.")
             flow_route_ref = str(getattr(flow_rows[row_index], "label", "") or "")
@@ -853,6 +914,49 @@ def _populate_flow_route_table(table, rows) -> None:
         )
 
 
+def _filter_flow_route_rows_with_indices(
+    rows,
+    pipeline_candidate_rows,
+    *,
+    mode: str = "All",
+) -> tuple[list[object], list[int]]:
+    normalized = str(mode or "All").strip().lower()
+    status_by_route = _pipeline_candidate_status_by_flow_route(pipeline_candidate_rows)
+    output: list[object] = []
+    indices: list[int] = []
+    for index, row in enumerate(list(rows or [])):
+        route_ref = str(getattr(row, "label", "") or getattr(row, "source_ref", "") or "").strip()
+        status = status_by_route.get(route_ref, "")
+        if normalized in {"", "all"}:
+            keep = True
+        elif normalized == "pipe-producing":
+            keep = status == "ready"
+        elif normalized == "capture-only":
+            keep = status == "capture_only"
+        elif normalized == "unresolved":
+            keep = status not in {"ready", "capture_only"}
+        else:
+            keep = True
+        if keep:
+            output.append(row)
+            indices.append(index)
+    return output, indices
+
+
+def _filter_flow_route_rows(rows, pipeline_candidate_rows, *, mode: str = "All") -> list[object]:
+    return _filter_flow_route_rows_with_indices(rows, pipeline_candidate_rows, mode=mode)[0]
+
+
+def _pipeline_candidate_status_by_flow_route(rows) -> dict[str, str]:
+    status_by_route: dict[str, str] = {}
+    for row in list(rows or []):
+        route_ref = str(getattr(row, "label", "") or getattr(row, "source_ref", "") or "").strip()
+        status = str(_note_value(getattr(row, "notes", ""), "status") or "").strip().lower()
+        if route_ref and status:
+            status_by_route[route_ref] = status
+    return status_by_route
+
+
 def _populate_flow_route_issue_table(table, rows) -> None:
     table.setRowCount(0)
     for row in list(rows or []):
@@ -888,6 +992,32 @@ def _populate_pipeline_table(table, rows) -> None:
                 row.notes,
             ],
         )
+
+
+def _filter_pipeline_candidate_rows_with_indices(rows, *, mode: str = "All") -> tuple[list[object], list[int]]:
+    normalized = str(mode or "All").strip().lower()
+    output: list[object] = []
+    indices: list[int] = []
+    for index, row in enumerate(list(rows or [])):
+        status = str(_note_value(getattr(row, "notes", ""), "status") or "").strip().lower()
+        if normalized in {"", "all"}:
+            keep = True
+        elif normalized == "pipe-producing":
+            keep = status == "ready"
+        elif normalized == "capture-only":
+            keep = status == "capture_only"
+        elif normalized == "unresolved":
+            keep = status not in {"ready", "capture_only"}
+        else:
+            keep = True
+        if keep:
+            output.append(row)
+            indices.append(index)
+    return output, indices
+
+
+def _filter_pipeline_candidate_rows(rows, *, mode: str = "All") -> list[object]:
+    return _filter_pipeline_candidate_rows_with_indices(rows, mode=mode)[0]
 
 
 def _populate_pipeline_segment_table(table, rows) -> None:
@@ -953,6 +1083,16 @@ def _populate_region_table(table, rows) -> None:
     for row in list(rows or []):
         status = _note_value(row.notes, "status")
         _append_items(table, [row.label, row.source_ref, _format_float(row.station_start), _format_float(row.station_end), status, row.notes])
+
+
+def _filter_region_assignment_rows(rows, *, issues_only: bool = False) -> list[object]:
+    if not issues_only:
+        return list(rows or [])
+    return [
+        row
+        for row in list(rows or [])
+        if str(_note_value(getattr(row, "notes", ""), "status") or "").strip().lower() not in {"", "ok"}
+    ]
 
 
 def _populate_applied_table(table, rows) -> None:
@@ -1230,8 +1370,10 @@ def _centerline3d_coordinate_frame(document) -> dict[str, object] | None:
 def _station_offset_vector(station: float, offset: float, z: float, *, adapter=None):
     if adapter is not None:
         try:
-            x, y = adapter(float(station), float(offset))
-            return App.Vector(float(x), float(y), float(z))
+            values = adapter(float(station), float(offset))
+            x, y = values[0], values[1]
+            base_z = values[2] if len(values) >= 3 else 0.0
+            return App.Vector(float(x), float(y), float(base_z) + float(z))
         except Exception:
             pass
     return App.Vector(float(station), float(offset), float(z))
