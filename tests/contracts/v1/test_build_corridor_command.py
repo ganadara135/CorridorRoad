@@ -1,7 +1,11 @@
 import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
+from freecad.Corridor_Road.objects.obj_project import (
+    V1_TREE_BUILD_PARAMETRIC_OUTPUTS,
+    CorridorRoadProject,
+    ensure_project_tree,
+)
 import freecad.Corridor_Road.v1.commands.cmd_build_corridor as build_corridor_command
 from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     V1BuildCorridorTaskPanel,
@@ -11,6 +15,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     build_document_corridor_surface_model,
     corridor_applied_sections_review_summary,
     corridor_build_guided_review_steps,
+    corridor_build_review_outcome_matrix,
     corridor_region_boundary_rows,
     corridor_surface_transition_boundary_options,
     corridor_surface_transition_rows,
@@ -75,6 +80,14 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 from freecad.Corridor_Road.v1.models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 
 _QAPP = None
+
+
+def _group_names(group):
+    return {str(getattr(child, "Name", "") or "") for child in list(getattr(group, "Group", []) or [])}
+
+
+def _group_name_list(group):
+    return [str(getattr(child, "Name", "") or "") for child in list(getattr(group, "Group", []) or [])]
 
 
 def _new_project_doc():
@@ -410,6 +423,14 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         preview = doc.getObject("V1CorridorDesignSurfacePreview")
         assert preview is not None
         assert preview.CRRecordKind == "v1_corridor_surface_preview"
+        assert preview.SurfaceRole == "design"
+        assert preview.SurfaceKind == "design_surface"
+        assert preview.SurfaceModelId == "surface:main"
+        assert preview.AppliedSectionSetRef == "sections:main"
+        assert preview.PreviewStatus == "ready"
+        assert int(preview.PreviewFacetCount) == 8
+        assert "surface:main" in list(preview.SourceRefs)
+        assert "sections:main" in list(preview.SourceRefs)
         assert int(preview.VertexCount) == 10
         assert int(preview.TriangleCount) == 8
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
@@ -417,11 +438,19 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         subgrade_preview = doc.getObject("V1CorridorSubgradeSurfacePreview")
         assert subgrade_preview is not None
         assert subgrade_preview.CRRecordKind == "v1_corridor_surface_preview"
+        assert subgrade_preview.SurfaceRole == "subgrade"
+        assert subgrade_preview.SurfaceKind == "subgrade_surface"
+        assert subgrade_preview.PreviewStatus == "ready"
+        assert subgrade_preview.AppliedSectionSetRef == "sections:main"
         assert int(subgrade_preview.VertexCount) == 10
         assert int(subgrade_preview.TriangleCount) == 8
         daylight_preview = doc.getObject("V1CorridorDaylightSurfacePreview")
         assert daylight_preview is not None
         assert daylight_preview.CRRecordKind == "v1_corridor_surface_preview"
+        assert daylight_preview.SurfaceRole == "daylight"
+        assert daylight_preview.SurfaceKind == "daylight_surface"
+        assert daylight_preview.PreviewStatus == "ready"
+        assert daylight_preview.AppliedSectionSetRef == "sections:main"
         assert int(daylight_preview.VertexCount) == 20
         assert int(daylight_preview.TriangleCount) == 16
         assert int(daylight_preview.EGIntersectionCount) == 0
@@ -455,6 +484,13 @@ def test_apply_v1_corridor_model_creates_result_object() -> None:
         assert int(first_issue_marker.MarkerCount) == 1
         shown_marker = show_corridor_slope_face_issue_marker(doc, 0)
         assert shown_marker.Name == "ReviewIssueSlopeFaceIssue001L"
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        build_output_names = _group_names(build_outputs)
+        assert preview.Name in build_output_names
+        assert subgrade_preview.Name in build_output_names
+        assert daylight_preview.Name in build_output_names
+        assert fallback_markers.Name in build_output_names
+        assert first_issue_marker.Name in build_output_names
         assert progress_events[0] == (40, "Preparing project tree...")
         assert any(text == "Building corridor surfaces..." for _value, text in progress_events)
         assert progress_events[-1] == (94, "Recomputing document...")
@@ -630,6 +666,85 @@ def test_focus_corridor_region_boundary_row_selects_built_region_surface_object(
         App.closeDocument(doc.Name)
 
 
+def test_region_boundary_rows_report_generated_object_family_completeness() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        create_corridor_region_surface_previews(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+
+        missing_rows = corridor_region_boundary_rows(doc)
+
+        assert missing_rows[1]["region_object_status"] == "missing"
+        assert "structure" in missing_rows[1]["region_object_diagnostics"]
+        assert "V1CorridorRegionStructure_region_urban" not in list(missing_rows[1]["missing_region_object_names"])
+
+        structure_obj = doc.addObject("Part::Feature", "V1StructurePreview_structure_wall_01")
+        structure_obj.Label = "Structure - wall-01"
+        structure_obj.addProperty("App::PropertyString", "CRRecordKind", "V1").CRRecordKind = "v1_structure_row_preview"
+        structure_obj.addProperty("App::PropertyString", "StructureRef", "V1").StructureRef = "structure:wall-01"
+
+        focused_names: list[str] = []
+        previous_select = build_corridor_command._select_and_fit_objects
+        try:
+            build_corridor_command._select_and_fit_objects = lambda objects: focused_names.extend([obj.Name for obj in objects])
+            focused = focus_corridor_region_boundary_row(doc, 1)
+        finally:
+            build_corridor_command._select_and_fit_objects = previous_select
+
+        ready_rows = corridor_region_boundary_rows(doc)
+
+        assert focused.Name == "V1CorridorRegionSurface_region_urban"
+        assert "V1StructurePreview_structure_wall_01" in focused_names
+        assert "V1CorridorRegionStructure_region_urban" not in focused_names
+        assert ready_rows[1]["region_object_status"] == "ready"
+        assert ready_rows[1]["region_object_count"] >= 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_boundary_focus_uses_structure_preview_contract_not_placeholder_name() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+        corridor_model = build_document_corridor_model(doc, project=project)
+        surface_model = build_document_corridor_surface_model(doc, project=project, corridor_model=corridor_model)
+        create_corridor_region_surface_previews(
+            document=doc,
+            project=project,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+        )
+        structure_obj = doc.addObject("Part::Feature", "CustomStructurePreviewWall01")
+        structure_obj.Label = "Structure - wall-01"
+        structure_obj.addProperty("App::PropertyString", "CRRecordKind", "V1").CRRecordKind = "v1_structure_row_preview"
+        structure_obj.addProperty("App::PropertyString", "StructureRef", "V1").StructureRef = "structure:wall-01"
+
+        focused_names: list[str] = []
+        previous_select = build_corridor_command._select_and_fit_objects
+        try:
+            build_corridor_command._select_and_fit_objects = lambda objects: focused_names.extend([obj.Name for obj in objects])
+            focused = focus_corridor_region_boundary_row(doc, 1)
+        finally:
+            build_corridor_command._select_and_fit_objects = previous_select
+
+        ready_rows = corridor_region_boundary_rows(doc)
+
+        assert focused.Name == "V1CorridorRegionSurface_region_urban"
+        assert "CustomStructurePreviewWall01" in focused_names
+        assert "V1StructurePreview_structure_wall_01" not in ready_rows[1]["missing_region_object_names"]
+        assert "CustomStructurePreviewWall01" in ready_rows[1]["region_object_names"]
+        assert ready_rows[1]["region_object_status"] == "ready"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_create_corridor_surface_transition_from_region_boundary_persists_source_intent() -> None:
     doc, project = _new_project_doc()
     try:
@@ -702,6 +817,9 @@ def test_create_or_update_corridor_surface_transition_for_boundary_updates_only_
         intervals = {row.transition_id: row.sample_interval for row in model.transition_ranges}
         assert intervals["surface-transition:region:rural->region:urban@20.000"] == 2.5
         assert intervals["surface-transition:region:urban->region:suburban@40.000"] == 5.0
+        rows = {row["transition_id"]: row for row in corridor_surface_transition_rows(doc)}
+        assert rows["surface-transition:region:rural->region:urban@20.000"]["sample_count"] == 5
+        assert rows["surface-transition:region:urban->region:suburban@40.000"]["sample_count"] == 3
     finally:
         App.closeDocument(doc.Name)
 
@@ -737,6 +855,46 @@ def test_build_document_corridor_surface_model_reads_saved_surface_transitions()
         assert "surface-transitions:main" in surface_model.source_refs
         assert any(row.transition_ref for row in design_spans)
         assert any(row.continuity_status == "transition_applied" for row in design_spans)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_surface_transition_sample_count_uses_ceiling_for_partial_spacing() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+
+        create_or_update_corridor_surface_transition_for_boundary(doc, 1, sample_interval=4.0, region_id="region:rural")
+        rows = corridor_surface_transition_rows(doc)
+
+        assert rows[0]["sample_interval"] == 4.0
+        assert rows[0]["sample_count"] == 4
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_parametric_rebuild_reflects_surface_transition_spacing_update() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+
+        create_or_update_corridor_surface_transition_for_boundary(doc, 1, sample_interval=5.0, region_id="region:rural")
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+        coarse_preview = doc.getObject("V1CorridorDesignSurfacePreview")
+        assert coarse_preview is not None
+        coarse_vertices = int(coarse_preview.VertexCount)
+
+        create_or_update_corridor_surface_transition_for_boundary(doc, 1, sample_interval=1.0, region_id="region:rural")
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+        dense_preview = doc.getObject("V1CorridorDesignSurfacePreview")
+        marker = doc.getObject("V1SurfaceTransitionSpanMarkers")
+
+        assert dense_preview is not None
+        assert int(dense_preview.VertexCount) > coarse_vertices
+        assert marker is not None
+        assert int(marker.TransitionSpanCount) >= 1
+        assert any(text.endswith("|1.000") for text in list(marker.TransitionSampleIntervals))
+        assert any(text.endswith("|11") for text in list(marker.TransitionSampleCounts))
     finally:
         App.closeDocument(doc.Name)
 
@@ -825,6 +983,68 @@ def test_apply_v1_corridor_model_creates_surface_transition_span_markers() -> No
         assert marker.IssueKind == "surface_transition_span"
         assert int(marker.MarkerCount) >= 1
         assert list(marker.TransitionRefs)
+        assert int(marker.TransitionSpanCount) == len(list(marker.TransitionRefs))
+        assert list(marker.TransitionStations)
+        assert list(marker.TransitionSampleIntervals)
+        assert list(marker.TransitionSampleCounts)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_parametric_rebuild_updates_stable_tree_objects_without_duplicates() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_ditch_points())
+
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+        first_names = {
+            name
+            for name in (
+                "V1CorridorDesignSurfacePreview",
+                "V1CorridorSubgradeSurfacePreview",
+                "V1CorridorDaylightSurfacePreview",
+                "V1CorridorDrainageSurfacePreview",
+                "ReviewIssueSlopeFaceFallbackMarkers",
+            )
+            if doc.getObject(name) is not None
+        }
+        first_object_ids = {name: id(doc.getObject(name)) for name in first_names}
+
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        build_output_names = _group_name_list(build_outputs)
+
+        for name in first_names:
+            assert doc.getObject(name) is not None
+            assert id(doc.getObject(name)) == first_object_ids[name]
+            assert build_output_names.count(name) == 1
+        for name in first_names:
+            assert len([obj for obj in doc.Objects if str(getattr(obj, "Name", "") or "") == name]) == 1
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_region_surface_preview_rebuild_removes_stale_region_objects() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections_with_region_boundary())
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+
+        assert doc.getObject("V1CorridorRegionSurface_region_rural") is not None
+        assert doc.getObject("V1CorridorRegionSurface_region_urban") is not None
+
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+        apply_v1_corridor_model(document=doc, project=project, supplemental_sampling_enabled=False)
+
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        build_output_names = _group_names(build_outputs)
+
+        assert doc.getObject("V1CorridorRegionSurface_region_rural") is None
+        assert doc.getObject("V1CorridorRegionSurface_region_rural_subgrade") is None
+        assert doc.getObject("V1CorridorRegionSurface_region_rural_daylight") is None
+        assert doc.getObject("V1CorridorRegionSurface_region_urban") is None
+        assert not any(name.startswith("V1CorridorRegionSurface_region_") for name in build_output_names)
     finally:
         App.closeDocument(doc.Name)
 
@@ -1032,6 +1252,38 @@ def test_corridor_build_review_rows_summarize_preview_outputs() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_corridor_build_review_outcome_matrix_is_deterministic() -> None:
+    rows = corridor_build_review_outcome_matrix()
+
+    assert [row["status"] for row in rows] == ["ready", "warning", "missing", "empty", "error"]
+    assert all(row["meaning"] for row in rows)
+
+
+def test_corridor_build_review_rows_preserve_warning_diagnostics() -> None:
+    doc, project = _new_project_doc()
+    try:
+        build_corridor_command._record_corridor_build_preview_diagnostic(
+            doc,
+            role="design",
+            surface_kind="design_surface",
+            status="warning",
+            notes="Design Surface preview needs review before downstream use.",
+            project=project,
+        )
+
+        rows = corridor_build_review_rows(doc)
+
+        assert rows[1]["role"] == "design"
+        assert rows[1]["status"] == "warning"
+        assert "needs review" in str(rows[1]["notes"])
+        tree = ensure_project_tree(project, include_references=False)
+        diagnostic = doc.getObject("V1CorridorDesignSurfacePreviewDiagnostic")
+        assert diagnostic is not None
+        assert diagnostic.Name in _group_names(tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_applied_sections_review_summary_tracks_source_context() -> None:
     doc, project = _new_project_doc()
     try:
@@ -1223,6 +1475,164 @@ def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_corridor_drainage_review_rows_report_source_side_component_mismatch() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = AppliedSectionSet(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_set_id="sections:drainage-mismatch",
+            corridor_id="corridor:main",
+            alignment_id="alignment:main",
+            station_rows=[AppliedSectionStationRow("station:0", 0.0, "section:0")],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="proj-1",
+                    applied_section_id="section:0",
+                    corridor_id="corridor:main",
+                    alignment_id="alignment:main",
+                    station=0.0,
+                    region_id="region:road",
+                    frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0),
+                    point_rows=[
+                        AppliedSectionPoint(
+                            "ditch:left-flow",
+                            0.0,
+                            6.0,
+                            9.8,
+                            "ditch_surface",
+                            6.0,
+                            component_ref="ditch:left",
+                            side="left",
+                            drainage_ref="drainage:left",
+                        ),
+                        AppliedSectionPoint(
+                            "ditch:left-edge",
+                            0.0,
+                            5.0,
+                            10.0,
+                            "ditch_surface",
+                            5.0,
+                            component_ref="ditch:left",
+                            side="left",
+                            drainage_ref="drainage:left",
+                        ),
+                    ],
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+        create_or_update_v1_region_model_object(
+            doc,
+            project=project,
+            region_model=RegionModel(
+                schema_version=1,
+                project_id="proj-1",
+                region_model_id="regions:main",
+                region_rows=[RegionRow("region:road", 0.0, 20.0)],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        "drainage:right",
+                        "ditch",
+                        side="right",
+                        region_ref="region:road",
+                        assembly_component_ref="ditch:right",
+                        station_start=0.0,
+                        station_end=20.0,
+                    )
+                ],
+            ),
+        )
+
+        rows = corridor_drainage_review_rows(doc)
+        summary = corridor_drainage_review_summary(doc)
+
+        assert rows[0]["status"] == "missing"
+        assert "missing_side=right" in str(rows[0]["notes"])
+        assert "drainage_ref=drainage:right" in str(rows[0]["notes"])
+        assert summary["status"] == "missing"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_corridor_drainage_review_rows_report_source_tag_mismatch() -> None:
+    doc, project = _new_project_doc()
+    try:
+        applied = _sample_sections_with_ditch_points()
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=applied)
+        create_or_update_v1_region_model_object(
+            doc,
+            project=project,
+            region_model=RegionModel(
+                schema_version=1,
+                project_id="proj-1",
+                region_model_id="regions:main",
+                region_rows=[RegionRow("region:road", 0.0, 20.0)],
+            ),
+        )
+        create_or_update_v1_drainage_model_object(
+            doc,
+            project=project,
+            drainage_model=DrainageModel(
+                schema_version=1,
+                project_id="proj-1",
+                drainage_model_id="drainage:main",
+                element_rows=[
+                    DrainageElementRow(
+                        "drainage:right",
+                        "ditch",
+                        side="right",
+                        region_ref="region:road",
+                        assembly_component_ref="ditch:right",
+                        station_start=0.0,
+                        station_end=20.0,
+                    )
+                ],
+            ),
+        )
+
+        rows = corridor_drainage_review_rows(doc)
+
+        assert rows[0]["status"] == "warn"
+        assert "missing_drainage_ref=drainage:right" in str(rows[0]["notes"])
+        assert "component_mismatch=ditch:right" in str(rows[0]["notes"])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_apply_v1_corridor_model_records_drainage_surface_diagnostic_without_ditch_points() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_applied_section_set_object(doc, project=project, applied_section_set=_sample_sections())
+
+        apply_v1_corridor_model(document=doc, project=project)
+
+        preview = doc.getObject("V1CorridorDrainageSurfacePreview")
+        diagnostic = doc.getObject("V1CorridorDrainageSurfacePreviewDiagnostic")
+        rows = corridor_build_review_rows(doc)
+
+        assert preview is None
+        assert diagnostic is not None
+        assert diagnostic.CRRecordKind == "v1_corridor_surface_preview_diagnostic"
+        assert diagnostic.SurfaceRole == "drainage"
+        assert diagnostic.PreviewStatus == "missing"
+        assert "ditch_surface" in diagnostic.PreviewDiagnostic
+        assert rows[4]["role"] == "drainage"
+        assert rows[4]["status"] == "missing"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> None:
     doc, project = _new_project_doc()
     try:
@@ -1291,13 +1701,17 @@ def test_corridor_guided_review_adds_drainage_flow_context_and_highlight() -> No
         assert rows[0]["status"] == "ready"
         assert rows[0]["flow_route_id"] == "flow-route:flowId-01"
         assert rows[0]["structure_refs"] == "structure:culvert-01"
+        assert rows[0]["highlight_mode"] == "station_span"
         assert summary["status"] == "ready"
         assert "culvert-01" in str(summary["notes"])
         assert steps[4]["step_id"] == "drainage_flow"
         assert steps[4]["focus"] == "flowId-01"
         assert focused.Name == "ReviewIssueDrainageFlowRoutes"
+        assert focused.DisplayMode == "drainage_flow_station_span"
         assert focused.FlowRouteRefs == ["flow-route:flowId-01"]
         assert focused.StructureRefs == ["structure:culvert-01"]
+        assert int(focused.PipeSegmentCount) == 0
+        assert int(focused.StationSpanCount) >= 1
         assert focus_corridor_drainage_flow_review(doc).Name == "ReviewIssueDrainageFlowRoutes"
     finally:
         App.closeDocument(doc.Name)
@@ -1417,9 +1831,14 @@ def test_drainage_flow_focus_connects_structure_connection_points_as_pipe_segmen
         )
 
         focused = focus_corridor_drainage_flow_review(doc)
+        rows = corridor_drainage_flow_review_rows(doc)
 
         assert focused.Name == "ReviewIssueDrainageFlowRoutes"
+        assert focused.DisplayMode == "drainage_flow_pipe_segments"
         assert int(focused.MarkerCount) == 2
+        assert int(focused.PipeSegmentCount) == 2
+        assert int(focused.StationSpanCount) == 0
+        assert rows[0]["highlight_mode"] == "connection_point_pipe"
         assert focused.ConnectionPointRefs == [
             "connection:inlet-01:pipe-out",
             "connection:culvert-01:upstream",
@@ -1448,6 +1867,7 @@ def test_preferred_corridor_build_review_row_index_prefers_ready_design_surface(
 
 def test_corridor_build_review_row_colors_are_dark_theme_readable() -> None:
     assert corridor_build_review_row_color("ready") == (220, 245, 224)
+    assert corridor_build_review_row_color("warning") == (255, 241, 205)
     assert corridor_build_review_row_color("missing") == (238, 238, 238)
     assert corridor_build_review_row_color("empty") == (255, 241, 205)
     assert corridor_build_review_row_color("error") == (255, 210, 210)
@@ -1604,8 +2024,16 @@ def test_apply_v1_corridor_model_creates_drainage_surface_when_ditch_points_exis
         assert drainage_preview.CRRecordKind == "v1_corridor_surface_preview"
         assert drainage_preview.SurfaceRole == "drainage"
         assert drainage_preview.SurfaceKind == "drainage_surface"
+        assert drainage_preview.SurfaceModelId == "surface:main"
+        assert drainage_preview.AppliedSectionSetRef == "sections:ditch"
+        assert drainage_preview.PreviewStatus == "ready"
+        assert int(drainage_preview.PreviewFacetCount) == 16
+        assert "surface:main" in list(drainage_preview.SourceRefs)
+        assert "sections:ditch" in list(drainage_preview.SourceRefs)
         assert int(drainage_preview.VertexCount) == 20
         assert int(drainage_preview.TriangleCount) == 16
+        build_outputs = ensure_project_tree(project, include_references=False)[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
+        assert drainage_preview.Name in _group_names(build_outputs)
         rows = corridor_build_review_rows(doc)
         assert rows[3]["status"] == "error"
         assert "Slope Face Surface preview was not created" in str(rows[3]["notes"])

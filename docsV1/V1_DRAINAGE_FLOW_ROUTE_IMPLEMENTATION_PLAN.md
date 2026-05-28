@@ -267,7 +267,7 @@ First implementation slice:
 - Lined-ditch Watertight Solid targets preserve `flow_route_ref` from the owning Drainage Element.
 - Watertight Solid output rows, persisted output objects, and exchange source-context rows preserve `flow_route_ref`.
 - Drainage Review exposes first-slice `pipeline_segment_candidate` rows when Flow Route endpoints resolve to Structure connection points.
-- Pipeline candidates are generated from `from_element_ref.connection_point_ref` and `to_element_ref.connection_point_ref`; generated preview geometry is not used as source.
+- Pipeline candidates are generated from Flow Route direction and Structure-owned connection points resolved from the referenced Drainage Elements; generated preview geometry is not used as source.
 - Drainage Review can create a 3D `V1DrainagePipelineCandidatePreview` object for a selected candidate.
 - Ready candidates are promoted into `DrainagePipelineResult.segment_rows` as `DrainagePipelineSegment` result records.
 - Drainage output exposes dedicated `pipeline_segment_rows` so downstream preview, quantity, solid, and exchange work can consume resolved segments without reading review candidate rows.

@@ -436,10 +436,12 @@ Tasks:
 
 - add dedicated `Watertight Solids` group under `Outputs & Exchange`
 - route generated output objects there
+- route existing `V1WatertightSolidOutput` objects there when the Watertight Solids panel opens or refreshes
 
 Acceptance:
 
 - generated solids are easy to find in the project tree
+- tree-visible solid objects can be hidden/shown and inspected through FreeCAD object properties
 
 ## 15. Non-goals
 

@@ -98,10 +98,19 @@ SURFACE_TRANSITION_SPACING_PRESETS = (
 
 CORRIDOR_BUILD_REVIEW_ROW_COLORS = {
     "ready": (220, 245, 224),
+    "warning": (255, 241, 205),
     "missing": (238, 238, 238),
     "empty": (255, 241, 205),
     "error": (255, 210, 210),
 }
+CORRIDOR_BUILD_REVIEW_STATUS_VALUES = ("ready", "warning", "missing", "empty", "error")
+CORRIDOR_BUILD_REVIEW_OUTCOME_MATRIX = (
+    ("ready", "Preview object exists and has usable geometry."),
+    ("warning", "Preview object or diagnostic exists, but the output needs review before downstream use."),
+    ("missing", "Preview object is not available because source/result context is missing or not built."),
+    ("empty", "Preview object exists, but has no usable geometry rows."),
+    ("error", "Preview generation failed and a diagnostic object records the failure."),
+)
 CORRIDOR_BUILD_REVIEW_TEXT_COLOR = (20, 20, 20)
 CORRIDOR_CENTERLINE_PREVIEW_STYLE = {
     "shape_color": (0.00, 0.85, 1.00),
@@ -476,6 +485,15 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
     return rows
 
 
+def corridor_build_review_outcome_matrix() -> list[dict[str, str]]:
+    """Return the deterministic Build Parametric review status meanings."""
+
+    return [
+        {"status": str(status), "meaning": str(meaning)}
+        for status, meaning in CORRIDOR_BUILD_REVIEW_OUTCOME_MATRIX
+    ]
+
+
 def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
     """Return station-side slope-face issue rows from the corridor daylight preview."""
 
@@ -604,6 +622,7 @@ def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]
                 "structure_refs": ", ".join(structure_refs),
                 "station_start": "" if station_range is None else station_range[0],
                 "station_end": "" if station_range is None else station_range[1],
+                "highlight_mode": _drainage_flow_row_highlight_mode(doc, route_id),
                 "notes": notes,
             }
         )
@@ -691,11 +710,18 @@ def corridor_drainage_review_rows(document=None) -> list[dict[str, object]]:
         str(getattr(section, "applied_section_id", "") or ""): section
         for section in list(getattr(applied, "sections", []) or [])
     }
+    region_model = to_region_model(find_v1_region_model(doc))
+    drainage_model = to_drainage_model(find_v1_drainage_model(doc))
     output: list[dict[str, object]] = []
     for row in sorted(list(getattr(applied, "station_rows", []) or []), key=lambda item: float(getattr(item, "station", 0.0) or 0.0)):
         section_id = str(getattr(row, "applied_section_id", "") or "")
         section = sections.get(section_id)
         station = float(getattr(row, "station", 0.0) or 0.0)
+        active_ditch_rows = _active_ditch_drainage_rows(
+            drainage_model,
+            region_model=region_model,
+            station=station,
+        )
         if section is None:
             output.append(
                 {
@@ -720,9 +746,18 @@ def corridor_drainage_review_rows(document=None) -> list[dict[str, object]]:
         ]
         left_count = sum(1 for point in ditch_points if _drainage_point_side(point) == "L")
         right_count = sum(1 for point in ditch_points if _drainage_point_side(point) == "R")
-        if not ditch_points:
+        mismatch_notes = _drainage_source_surface_mismatch_notes(active_ditch_rows, ditch_points)
+        if active_ditch_rows and any(note.startswith("missing_side=") for note in mismatch_notes):
+            status = "missing"
+            notes = "Active Drainage ditch row has no matching ditch_surface side. " + " ".join(mismatch_notes)
+        elif not ditch_points:
             status = "missing"
             notes = "No ditch_surface point rows from Assembly/Applied Sections."
+            if active_ditch_rows:
+                notes += " " + " ".join(mismatch_notes)
+        elif mismatch_notes:
+            status = "warn"
+            notes = "Drainage source/result mismatch. " + " ".join(mismatch_notes)
         elif left_count and right_count:
             status = "ready"
             notes = "Left and right ditch surface points available."
@@ -834,6 +869,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
         return _region_boundary_rows_from_source_regions(
             source_rows,
             sections,
+            document=doc,
             region_model=region_model,
             structure_model=structure_model,
             drainage_model=drainage_model,
@@ -850,28 +886,28 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
         if index < len(groups) - 1:
             diagnostics.extend(_region_boundary_diagnostics(last, groups[index + 1]["sections"][0], boundary_side="end"))
         boundary_status = _region_boundary_status(diagnostics)
-        rows.append(
-            {
-                "region_id": str(group.get("region_id", "") or ""),
-                "station_start": float(group.get("station_start", 0.0) or 0.0),
-                "station_end": float(group.get("station_end", 0.0) or 0.0),
-                "assembly": _unique_join(_section_text_values(group_sections, "assembly_id")),
-                "structure": _region_group_structure_summary(
-                    group_sections,
-                    region_model=region_model,
-                    structure_model=structure_model,
-                ),
-                "drainage": _region_group_drainage_summary(
-                    group_sections,
-                    region_model=region_model,
-                    drainage_model=drainage_model,
-                ),
-                "surface_status": _region_group_surface_status(group_sections),
-                "boundary_status": boundary_status,
-                "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
-                "diagnostic_count": len(diagnostics),
-            }
-        )
+        row = {
+            "region_id": str(group.get("region_id", "") or ""),
+            "station_start": float(group.get("station_start", 0.0) or 0.0),
+            "station_end": float(group.get("station_end", 0.0) or 0.0),
+            "assembly": _unique_join(_section_text_values(group_sections, "assembly_id")),
+            "structure": _region_group_structure_summary(
+                group_sections,
+                region_model=region_model,
+                structure_model=structure_model,
+            ),
+            "drainage": _region_group_drainage_summary(
+                group_sections,
+                region_model=region_model,
+                drainage_model=drainage_model,
+            ),
+            "surface_status": _region_group_surface_status(group_sections),
+            "boundary_status": boundary_status,
+            "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
+            "diagnostic_count": len(diagnostics),
+        }
+        row.update(_region_generated_object_summary(doc, row))
+        rows.append(row)
     return rows
 
 
@@ -903,7 +939,7 @@ def focus_corridor_region_boundary_row(document=None, row_index: int = 0):
     if not region_id:
         raise RuntimeError("No Region row is available to display.")
     _remove_legacy_region_display_objects(doc)
-    objects = _corridor_region_preview_objects(doc, region_id)
+    objects = _corridor_region_preview_objects(doc, region_id, row=row)
     if not objects:
         raise RuntimeError("Region object set has not been built yet. Rebuild Corridor first.")
     set_all_corridor_build_preview_visibility(doc, False, include_issue_markers=True)
@@ -1595,13 +1631,29 @@ def create_corridor_design_surface_preview(
         surface_role="design",
         recompute=False,
     )
+    if str(getattr(result, "status", "") or "") == "error":
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="design",
+            surface_kind="design_surface",
+            status="error",
+            notes=str(getattr(result, "notes", "") or "Design Surface preview mapper failed."),
+            project=project or find_project(doc),
+        )
+        return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "design")
-        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
-        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        _attach_corridor_surface_preview_contract(
+            preview_obj,
+            role="design",
+            surface_kind="design_surface",
+            surface_id=surface_id,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+            applied_section_set=applied_section_set,
+            preview_result=result,
+        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -1702,13 +1754,29 @@ def create_corridor_subgrade_surface_preview(
         surface_role="subgrade",
         recompute=False,
     )
+    if str(getattr(result, "status", "") or "") == "error":
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="subgrade",
+            surface_kind="subgrade_surface",
+            status="error",
+            notes=str(getattr(result, "notes", "") or "Subgrade Surface preview mapper failed."),
+            project=project or find_project(doc),
+        )
+        return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "subgrade")
-        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
-        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        _attach_corridor_surface_preview_contract(
+            preview_obj,
+            role="subgrade",
+            surface_kind="subgrade_surface",
+            surface_id=surface_id,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+            applied_section_set=applied_section_set,
+            preview_result=result,
+        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -1768,13 +1836,29 @@ def create_corridor_daylight_surface_preview(
         surface_role="daylight",
         recompute=False,
     )
+    if str(getattr(result, "status", "") or "") == "error":
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="daylight",
+            surface_kind="daylight_surface",
+            status="error",
+            notes=str(getattr(result, "notes", "") or "Slope Face Surface preview mapper failed."),
+            project=project or find_project(doc),
+        )
+        return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "daylight")
-        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
-        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        _attach_corridor_surface_preview_contract(
+            preview_obj,
+            role="daylight",
+            surface_kind="daylight_surface",
+            surface_id=surface_id,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+            applied_section_set=applied_section_set,
+            preview_result=result,
+        )
         _attach_surface_quality_properties(preview_obj, tin_surface, applied_section_set=applied_section_set)
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
@@ -1853,13 +1937,30 @@ def create_corridor_drainage_surface_preview(
         surface_role="drainage",
         recompute=False,
     )
+    if str(getattr(result, "status", "") or "") == "error":
+        _remove_preview_object(doc, "V1CorridorDrainageSurfacePreview")
+        _record_corridor_build_preview_diagnostic(
+            doc,
+            role="drainage",
+            surface_kind="drainage_surface",
+            status="error",
+            notes=str(getattr(result, "notes", "") or "Drainage Surface preview mapper failed."),
+            project=project or find_project(doc),
+        )
+        return None
     preview_obj = doc.getObject(result.object_name) if str(getattr(result, "object_name", "") or "") else None
     if preview_obj is not None:
         _remove_corridor_build_preview_diagnostic(doc, "drainage")
-        _set_preview_property(preview_obj, "CRRecordKind", "v1_corridor_surface_preview")
-        _set_preview_property(preview_obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
-        _set_preview_property(preview_obj, "SurfaceId", surface_id)
+        _attach_corridor_surface_preview_contract(
+            preview_obj,
+            role="drainage",
+            surface_kind="drainage_surface",
+            surface_id=surface_id,
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+            applied_section_set=applied_section_set,
+            preview_result=result,
+        )
         try:
             from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -1883,6 +1984,8 @@ def create_corridor_surface_transition_span_markers(
         return None
     applied = to_applied_section_set(find_v1_applied_section_set(doc))
     points, refs = _surface_transition_span_marker_points(applied, surface_model)
+    transition_model = to_surface_transition_model(find_v1_surface_transition_model(doc))
+    metadata = _surface_transition_span_marker_metadata(surface_model, transition_model)
     obj = _create_marker_compound(
         document=doc,
         object_name="V1SurfaceTransitionSpanMarkers",
@@ -1900,6 +2003,10 @@ def create_corridor_surface_transition_span_markers(
     _set_preview_property(obj, "CRRecordKind", "v1_surface_transition_span_marker")
     _set_preview_property(obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
     _set_preview_string_list_property(obj, "TransitionRefs", refs)
+    _set_preview_string_list_property(obj, "TransitionStations", metadata["stations"])
+    _set_preview_string_list_property(obj, "TransitionSampleIntervals", metadata["sample_intervals"])
+    _set_preview_string_list_property(obj, "TransitionSampleCounts", metadata["sample_counts"])
+    _set_preview_integer_property(obj, "TransitionSpanCount", len(refs))
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
@@ -1907,6 +2014,54 @@ def create_corridor_surface_transition_span_markers(
     except Exception:
         pass
     return obj
+
+
+def _attach_corridor_surface_preview_contract(
+    obj,
+    *,
+    role: str,
+    surface_kind: str,
+    surface_id: str,
+    corridor_model,
+    surface_model,
+    applied_section_set=None,
+    preview_result=None,
+) -> None:
+    """Attach common Build Parametric surface-preview provenance properties."""
+
+    if obj is None:
+        return
+    _set_preview_property(obj, "CRRecordKind", "v1_corridor_surface_preview")
+    _set_preview_property(obj, "SurfaceRole", str(role or ""))
+    _set_preview_property(obj, "SurfaceKind", str(surface_kind or ""))
+    _set_preview_property(obj, "CorridorId", str(getattr(corridor_model, "corridor_id", "") or ""))
+    _set_preview_property(obj, "SurfaceModelId", str(getattr(surface_model, "surface_model_id", "") or ""))
+    _set_preview_property(obj, "SurfaceId", str(surface_id or ""))
+    _set_preview_property(obj, "AppliedSectionSetRef", str(getattr(applied_section_set, "applied_section_set_id", "") or ""))
+    _set_preview_property(obj, "PreviewStatus", "ready")
+    _set_preview_property(obj, "PreviewDiagnostic", str(getattr(preview_result, "notes", "") or "Preview object created from Build Parametric surface output."))
+    _set_preview_integer_property(obj, "PreviewFacetCount", int(getattr(preview_result, "facet_count", 0) or 0))
+    _set_preview_string_list_property(
+        obj,
+        "SourceRefs",
+        _corridor_surface_preview_source_refs(corridor_model, surface_model, applied_section_set),
+    )
+
+
+def _corridor_surface_preview_source_refs(corridor_model, surface_model, applied_section_set=None) -> list[str]:
+    refs = [
+        str(getattr(corridor_model, "corridor_id", "") or ""),
+        str(getattr(surface_model, "surface_model_id", "") or ""),
+        str(getattr(applied_section_set, "applied_section_set_id", "") or ""),
+    ]
+    refs.extend(str(ref) for ref in list(getattr(surface_model, "source_refs", []) or []) if str(ref))
+    refs.extend(str(ref) for ref in list(getattr(corridor_model, "source_refs", []) or []) if str(ref))
+    output: list[str] = []
+    for ref in refs:
+        text = str(ref or "").strip()
+        if text and text not in output:
+            output.append(text)
+    return output
 
 
 def run_v1_build_corridor_command():
@@ -2486,7 +2641,7 @@ class V1BuildCorridorTaskPanel:
                 str(row.get("drainage", "") or ""),
                 str(row.get("surface_status", "") or ""),
                 str(row.get("boundary_status", "") or ""),
-                str(row.get("diagnostics", "") or ""),
+                _region_boundary_display_diagnostics(row),
             ]
             for col, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
@@ -3293,6 +3448,7 @@ def _region_boundary_rows_from_source_regions(
     source_rows: list[object],
     sections: list[object],
     *,
+    document=None,
     region_model=None,
     structure_model=None,
     drainage_model=None,
@@ -3316,28 +3472,28 @@ def _region_boundary_rows_from_source_regions(
             next_first = section_groups[index + 1][0] if section_groups[index + 1] else None
             diagnostics.extend(_region_boundary_diagnostics(last, next_first, boundary_side="end"))
         boundary_status = _region_boundary_status(diagnostics)
-        rows.append(
-            {
-                "region_id": str(getattr(source_row, "region_id", "") or ""),
-                "station_start": float(getattr(source_row, "station_start", 0.0) or 0.0),
-                "station_end": float(getattr(source_row, "station_end", 0.0) or 0.0),
-                "assembly": str(getattr(source_row, "assembly_ref", "") or "") or _unique_join(_section_text_values(group_sections, "assembly_id")),
-                "structure": _region_group_structure_summary(
-                    group_sections,
-                    region_model=region_model,
-                    structure_model=structure_model,
-                ),
-                "drainage": _region_group_drainage_summary(
-                    group_sections,
-                    region_model=region_model,
-                    drainage_model=drainage_model,
-                ),
-                "surface_status": _region_group_surface_status(group_sections),
-                "boundary_status": boundary_status,
-                "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
-                "diagnostic_count": len(diagnostics),
-            }
-        )
+        row = {
+            "region_id": str(getattr(source_row, "region_id", "") or ""),
+            "station_start": float(getattr(source_row, "station_start", 0.0) or 0.0),
+            "station_end": float(getattr(source_row, "station_end", 0.0) or 0.0),
+            "assembly": str(getattr(source_row, "assembly_ref", "") or "") or _unique_join(_section_text_values(group_sections, "assembly_id")),
+            "structure": _region_group_structure_summary(
+                group_sections,
+                region_model=region_model,
+                structure_model=structure_model,
+            ),
+            "drainage": _region_group_drainage_summary(
+                group_sections,
+                region_model=region_model,
+                drainage_model=drainage_model,
+            ),
+            "surface_status": _region_group_surface_status(group_sections),
+            "boundary_status": boundary_status,
+            "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
+            "diagnostic_count": len(diagnostics),
+        }
+        row.update(_region_generated_object_summary(document, row))
+        rows.append(row)
     return rows
 
 
@@ -3721,9 +3877,11 @@ def _surface_transition_row_status(transition, diagnostics: list[object]) -> str
 
 
 def _surface_transition_sample_count(station_start: float, station_end: float, sample_interval: float) -> int:
+    import math
+
     length = abs(float(station_end) - float(station_start))
     interval = max(0.1, float(sample_interval or SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL))
-    return int(length / interval) + 1
+    return int(math.ceil(length / interval)) + 1
 
 
 def _surface_transition_diagnostic_summary(diagnostics: list[object], *, max_items: int = 2) -> str:
@@ -3821,6 +3979,42 @@ def _surface_transition_span_marker_points(applied_section_set, surface_model) -
         points.append(point)
         refs.append(transition_ref)
     return points, refs
+
+
+def _surface_transition_span_marker_metadata(surface_model, transition_model) -> dict[str, list[str]]:
+    transitions = {
+        str(getattr(row, "transition_id", "") or ""): row
+        for row in list(getattr(transition_model, "transition_ranges", []) or []) if transition_model is not None
+    }
+    stations: list[str] = []
+    sample_intervals: list[str] = []
+    sample_counts: list[str] = []
+    seen_refs: set[str] = set()
+    for span in list(getattr(surface_model, "span_rows", []) or []) if surface_model is not None else []:
+        transition_ref = str(getattr(span, "transition_ref", "") or "")
+        if not transition_ref:
+            continue
+        try:
+            station_start = float(getattr(span, "station_start", 0.0) or 0.0)
+            station_end = float(getattr(span, "station_end", 0.0) or 0.0)
+        except Exception:
+            continue
+        if transition_ref in seen_refs:
+            continue
+        seen_refs.add(transition_ref)
+        transition = transitions.get(transition_ref)
+        if transition is not None:
+            station_start = float(getattr(transition, "station_start", station_start) or station_start)
+            station_end = float(getattr(transition, "station_end", station_end) or station_end)
+        interval = float(getattr(transition, "sample_interval", SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL) or SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL)
+        stations.append(f"{transition_ref}|{station_start:.3f}-{station_end:.3f}")
+        sample_intervals.append(f"{transition_ref}|{interval:.3f}")
+        sample_counts.append(f"{transition_ref}|{_surface_transition_sample_count(station_start, station_end, interval)}")
+    return {
+        "stations": stations,
+        "sample_intervals": sample_intervals,
+        "sample_counts": sample_counts,
+    }
 
 
 def _surface_transition_span_marker_point(sections: list[object], station: float, *, z_offset: float = 0.75) -> tuple[float, float, float] | None:
@@ -4040,6 +4234,16 @@ def _region_boundary_diagnostic_summary(diagnostics: list[dict[str, str]], *, ma
         suffix = f"; +{len(messages) - len(clipped)} more"
     prefix = f"{warning_count} warning(s), {info_count} info"
     return f"{prefix}: {'; '.join(clipped)}{suffix}"
+
+
+def _region_boundary_display_diagnostics(row: dict[str, object]) -> str:
+    base = str(row.get("diagnostics", "") or "").strip()
+    object_diagnostics = str(row.get("region_object_diagnostics", "") or "").strip()
+    if not object_diagnostics or object_diagnostics == "Region object families are available.":
+        return base
+    if not base or base == "ok":
+        return object_diagnostics
+    return f"{base}; {object_diagnostics}"
 
 
 def _create_or_update_region_preview_objects(
@@ -4531,18 +4735,150 @@ def _region_applied_section_subset(applied_section_set, *, region_id: str, secti
     )
 
 
-def _corridor_region_preview_objects(document, region_id: str) -> list[object]:
+def _corridor_region_preview_objects(document, region_id: str, *, row: dict[str, object] | None = None) -> list[object]:
     if document is None:
         return []
     objects: list[object] = []
-    for object_name in _region_preview_object_names(region_id):
+    for object_name in _region_preview_object_names(region_id) + _region_context_preview_object_names(row or {}, document=document):
         try:
             obj = document.getObject(object_name)
         except Exception:
             obj = None
-        if obj is not None:
+        if obj is not None and obj not in objects:
             objects.append(obj)
     return objects
+
+
+def _region_generated_object_summary(document, row: dict[str, object]) -> dict[str, object]:
+    expected = _region_expected_preview_object_names(row, document=document)
+    present = _existing_document_object_names(document, expected)
+    missing = [name for name in expected if name not in present]
+    if not expected:
+        status = "not_required"
+        diagnostics = "No Region-generated object families are required."
+    elif missing:
+        status = "missing"
+        diagnostics = "Missing Region object families: " + ", ".join(_region_object_family_labels(missing))
+    else:
+        status = "ready"
+        diagnostics = "Region object families are available."
+    return {
+        "region_object_status": status,
+        "region_object_diagnostics": diagnostics,
+        "region_object_count": len(present),
+        "region_object_names": present,
+        "missing_region_object_names": missing,
+    }
+
+
+def _region_expected_preview_object_names(row: dict[str, object], *, document=None) -> list[str]:
+    region_id = str(row.get("region_id", "") or "")
+    names = _region_expected_surface_preview_object_names(region_id, row)
+    names.extend(_region_context_preview_object_names(row, document=document))
+    return _unique_text_values(names)
+
+
+def _region_expected_surface_preview_object_names(region_id: str, row: dict[str, object]) -> list[str]:
+    if not region_id:
+        return []
+    roles = ["design", "subgrade", "daylight"]
+    if _region_has_drainage_context(row):
+        roles.append("drainage")
+    return [_region_surface_preview_object_name(region_id, role) for role in roles]
+
+
+def _region_has_drainage_context(row: dict[str, object]) -> bool:
+    drainage = str(row.get("drainage", "") or "").strip()
+    return bool(drainage and drainage != "-")
+
+
+def _region_context_preview_object_names(row: dict[str, object], *, document=None) -> list[str]:
+    names: list[str] = []
+    for ref in _region_summary_refs(row.get("structure", "")):
+        names.extend(_structure_preview_object_names_for_ref(document, ref))
+    for ref in _region_summary_refs(row.get("drainage", ""), prefixes=("flow-route:",)):
+        names.append("V1DrainagePipelineSegment_" + _safe_output_object_suffix(f"pipeline-segment:{ref}"))
+    return names
+
+
+def _structure_preview_object_names_for_ref(document, structure_ref: str) -> list[str]:
+    ref = str(structure_ref or "").strip()
+    if not ref:
+        return []
+    names: list[str] = []
+    if document is not None:
+        for obj in list(getattr(document, "Objects", []) or []):
+            try:
+                if str(getattr(obj, "CRRecordKind", "") or "") != "v1_structure_row_preview":
+                    continue
+                if str(getattr(obj, "StructureRef", "") or "").strip() != ref:
+                    continue
+                name = str(getattr(obj, "Name", "") or "")
+                if name:
+                    names.append(name)
+            except Exception:
+                continue
+    if not names:
+        names.append("V1StructurePreview_" + _safe_output_object_suffix(ref))
+    return _unique_text_values(names)
+
+
+def _existing_document_object_names(document, names: list[str]) -> list[str]:
+    if document is None:
+        return []
+    existing: list[str] = []
+    for name in _unique_text_values(names):
+        try:
+            if document.getObject(name) is not None:
+                existing.append(name)
+        except Exception:
+            continue
+    return existing
+
+
+def _region_summary_refs(value: object, *, prefixes: tuple[str, ...] = ()) -> list[str]:
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return []
+    refs: list[str] = []
+    for chunk in text.replace("routes:", "").split(","):
+        ref = chunk.strip()
+        if not ref or ref.startswith("+") or ref.startswith("ditch points"):
+            continue
+        if prefixes and not any(ref.startswith(prefix) for prefix in prefixes):
+            continue
+        refs.append(ref)
+    return _unique_text_values(refs)
+
+
+def _region_object_family_labels(names: list[str]) -> list[str]:
+    labels: list[str] = []
+    for name in list(names or []):
+        text = str(name or "")
+        if text.startswith("V1CorridorRegionSurface_"):
+            if text.endswith("_subgrade"):
+                labels.append("subgrade surface")
+            elif text.endswith("_daylight"):
+                labels.append("slope surface")
+            elif text.endswith("_drainage"):
+                labels.append("drainage surface")
+            else:
+                labels.append("design surface")
+        elif text.startswith("V1StructurePreview_"):
+            labels.append("structure")
+        elif text.startswith("V1DrainagePipelineSegment_"):
+            labels.append("drainage pipeline")
+        else:
+            labels.append(text)
+    return _unique_text_values(labels)
+
+
+def _safe_output_object_suffix(value: object) -> str:
+    text = str(value or "").strip()
+    output = []
+    for char in text:
+        output.append(char if char.isalnum() else "_")
+    return "".join(output).strip("_") or "unknown"
 
 
 def _corridor_region_surface_preview_object(document, region_id: str):
@@ -4622,6 +4958,11 @@ def _safe_region_token(region_id: str) -> str:
 
 def _drainage_point_side(point) -> str:
     point_id = str(getattr(point, "point_id", "") or "").lower()
+    side = str(getattr(point, "side", "") or "").strip().lower()
+    if side == "left":
+        return "L"
+    if side == "right":
+        return "R"
     lateral = float(getattr(point, "lateral_offset", 0.0) or 0.0)
     if "left" in point_id:
         return "L"
@@ -4632,6 +4973,110 @@ def _drainage_point_side(point) -> str:
     if lateral < 0.0:
         return "R"
     return ""
+
+
+def _active_ditch_drainage_rows(drainage_model, *, region_model, station: float) -> list[object]:
+    if drainage_model is None:
+        return []
+    if region_model is not None:
+        try:
+            context = StationContextResolver().resolve(
+                region_model=region_model,
+                drainage_model=drainage_model,
+                station=float(station),
+            )
+            rows = list(getattr(context, "active_drainage_elements", []) or [])
+            return [row for row in rows if _is_ditch_drainage_element(row)]
+        except Exception:
+            pass
+    output: list[object] = []
+    for row in list(getattr(drainage_model, "element_rows", []) or []):
+        if not _is_ditch_drainage_element(row):
+            continue
+        try:
+            start = float(getattr(row, "station_start", 0.0) or 0.0)
+            end = float(getattr(row, "station_end", 0.0) or 0.0)
+        except Exception:
+            continue
+        if min(start, end) <= float(station) <= max(start, end):
+            output.append(row)
+    return output
+
+
+def _is_ditch_drainage_element(row) -> bool:
+    kind = str(getattr(row, "element_kind", "") or "").strip().lower()
+    return kind in {"ditch", "lined_ditch", "lined-ditch", "gutter", "swale", "channel"}
+
+
+def _drainage_source_surface_mismatch_notes(active_ditch_rows: list[object], ditch_points: list[object]) -> list[str]:
+    if not active_ditch_rows:
+        return []
+    point_data = _ditch_point_context_by_side(ditch_points)
+    notes: list[str] = []
+    for row in active_ditch_rows:
+        drainage_ref = str(getattr(row, "drainage_element_id", "") or "").strip()
+        component_ref = str(getattr(row, "assembly_component_ref", "") or "").strip()
+        for side in _drainage_row_sides(row):
+            data = point_data.get(side, {})
+            point_count = int(data.get("point_count", 0) or 0)
+            drainage_refs = set(data.get("drainage_refs", []) or [])
+            component_refs = set(data.get("component_refs", []) or [])
+            if point_count <= 0:
+                notes.append(f"missing_side={side};drainage_ref={drainage_ref or '-'}")
+                continue
+            if drainage_ref and drainage_ref not in drainage_refs:
+                notes.append(f"missing_drainage_ref={drainage_ref};side={side}")
+            if component_ref and component_ref not in component_refs:
+                notes.append(f"component_mismatch={component_ref};side={side}")
+    return _unique_refs(notes)
+
+
+def _ditch_point_context_by_side(ditch_points: list[object]) -> dict[str, dict[str, object]]:
+    output: dict[str, dict[str, object]] = {}
+    for point in list(ditch_points or []):
+        side = _long_drainage_side(_drainage_point_side(point))
+        if side not in {"left", "right"}:
+            continue
+        data = output.setdefault(side, {"point_count": 0, "drainage_refs": [], "component_refs": []})
+        data["point_count"] = int(data.get("point_count", 0) or 0) + 1
+        drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
+        component_ref = str(getattr(point, "component_ref", "") or "").strip()
+        if drainage_ref:
+            data.setdefault("drainage_refs", []).append(drainage_ref)
+        if component_ref:
+            data.setdefault("component_refs", []).append(component_ref)
+    for data in output.values():
+        data["drainage_refs"] = _unique_refs(list(data.get("drainage_refs", []) or []))
+        data["component_refs"] = _unique_refs(list(data.get("component_refs", []) or []))
+    return output
+
+
+def _drainage_row_sides(row) -> list[str]:
+    side = str(getattr(row, "side", "") or "").strip().lower()
+    if side == "both":
+        return ["left", "right"]
+    if side in {"left", "right"}:
+        return [side]
+    ref_text = " ".join(
+        [
+            str(getattr(row, "drainage_element_id", "") or ""),
+            str(getattr(row, "assembly_component_ref", "") or ""),
+        ]
+    ).lower()
+    if "left" in ref_text or ":l" in ref_text or "-l" in ref_text:
+        return ["left"]
+    if "right" in ref_text or ":r" in ref_text or "-r" in ref_text:
+        return ["right"]
+    return []
+
+
+def _long_drainage_side(side: str) -> str:
+    text = str(side or "").strip().lower()
+    if text in {"l", "left"}:
+        return "left"
+    if text in {"r", "right"}:
+        return "right"
+    return text
 
 
 def _drainage_review_marker_point(section, ditch_points: list[object]) -> tuple[float, float, float]:
@@ -4714,6 +5159,19 @@ def _drainage_flow_station_range(
     return min(stations), max(stations)
 
 
+def _drainage_flow_row_highlight_mode(document, route_ref: str) -> str:
+    if document is None or not str(route_ref or ""):
+        return "missing"
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    sections = _station_ordered_applied_sections(applied)
+    segments = _drainage_flow_connection_point_segments(
+        document,
+        sections,
+        {"flow_route_id": str(route_ref or "")},
+    )
+    return "connection_point_pipe" if segments else "station_span"
+
+
 def _unique_text_values(values: list[str]) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
@@ -4747,6 +5205,8 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     route_refs: list[str] = []
     structure_refs: list[str] = []
     connection_point_refs: list[str] = []
+    pipe_segment_count = 0
+    station_span_count = 0
     for row in list(rows or []):
         route_ref = str(row.get("flow_route_id", "") or "")
         if route_ref:
@@ -4761,9 +5221,11 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
                 connection_point_refs.extend([first_ref, second_ref])
                 try:
                     shapes.append(_make_drainage_pipe_segment_shape(Part, AppModule, first, second, radius))
+                    pipe_segment_count += 1
                 except Exception:
                     try:
                         shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
+                        pipe_segment_count += 1
                     except Exception:
                         pass
             continue
@@ -4774,6 +5236,7 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
         for first, second in zip(points[:-1], points[1:]):
             try:
                 shapes.append(Part.makeLine(AppModule.Vector(*first), AppModule.Vector(*second)))
+                station_span_count += 1
             except Exception:
                 pass
     if not shapes:
@@ -4789,11 +5252,14 @@ def _create_drainage_flow_review_highlight(*, document=None, rows: list[dict[str
     _set_preview_property(obj, "CRRecordKind", "v1_review_issue")
     _set_preview_property(obj, "V1ObjectType", "ReviewIssue")
     _set_preview_property(obj, "IssueKind", "drainage_flow")
-    _set_preview_property(obj, "DisplayMode", "drainage_flow_highlight")
+    display_mode = "drainage_flow_pipe_segments" if pipe_segment_count else "drainage_flow_station_span"
+    _set_preview_property(obj, "DisplayMode", display_mode)
     _set_preview_string_list_property(obj, "FlowRouteRefs", _unique_text_values(route_refs))
     _set_preview_string_list_property(obj, "StructureRefs", _unique_text_values(structure_refs))
     _set_preview_string_list_property(obj, "ConnectionPointRefs", _unique_text_values(connection_point_refs))
     _set_preview_integer_property(obj, "MarkerCount", len(shapes))
+    _set_preview_integer_property(obj, "PipeSegmentCount", pipe_segment_count)
+    _set_preview_integer_property(obj, "StationSpanCount", station_span_count)
     try:
         vobj = getattr(obj, "ViewObject", None)
         if vobj is not None:
@@ -5279,13 +5745,13 @@ def _surface_id(surface_model, surface_kind: str) -> str:
 def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, diagnostic=None) -> dict[str, object]:
     if obj is None:
         notes = str(getattr(diagnostic, "PreviewDiagnostic", "") or "Not built yet.")
-        status = str(getattr(diagnostic, "PreviewStatus", "") or "missing")
+        status = _normalize_corridor_build_review_status(getattr(diagnostic, "PreviewStatus", "") or "missing")
         return {
             "role": role,
             "result": title,
             "object_name": object_name,
             "object_label": "",
-            "status": status if status in {"missing", "empty", "error"} else "missing",
+            "status": status,
             "vertex_count": "",
             "triangle_or_point_count": "",
             "notes": notes,
@@ -5324,6 +5790,17 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
         "triangle_or_point_count": triangle_count,
         "notes": notes,
     }
+
+
+def _normalize_corridor_build_review_status(status: str, *, default: str = "missing") -> str:
+    value = str(status or "").strip().lower()
+    if value == "warn":
+        value = "warning"
+    if value == "not_built":
+        value = "missing"
+    if value in CORRIDOR_BUILD_REVIEW_STATUS_VALUES:
+        return value
+    return str(default or "missing")
 
 
 def _set_preview_property(obj, name: str, value: str) -> None:

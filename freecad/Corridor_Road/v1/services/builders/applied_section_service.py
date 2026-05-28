@@ -1684,7 +1684,8 @@ def _ditch_section_points(
                 )
             )
     output: list[AppliedSectionPoint] = []
-    for index, (offset, z_delta, role, component_ref, side_label, drainage_ref) in enumerate(sorted(rows, key=lambda item: (item[0], item[2]))):
+    sorted_rows = sorted(rows, key=lambda item: (item[0], item[2]))
+    for index, (offset, z_delta, role, component_ref, side_label, drainage_ref) in enumerate(sorted_rows):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:{role}:{index + 1}",
@@ -1698,6 +1699,39 @@ def _ditch_section_points(
                 drainage_ref=drainage_ref,
             )
         )
+    for index, (offset, z_delta, component_ref, side_label, drainage_ref) in enumerate(_ditch_flowline_rows(sorted_rows), start=1):
+        output.append(
+            AppliedSectionPoint(
+                point_id=f"ditch:flowline:{side_label}:{index}",
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=base_z + z_delta,
+                point_role="ditch_flowline",
+                lateral_offset=offset,
+                component_ref=component_ref,
+                side=side_label,
+                drainage_ref=drainage_ref,
+            )
+        )
+    return output
+
+
+def _ditch_flowline_rows(rows: list[tuple[float, float, str, str, str, str]]) -> list[tuple[float, float, str, str, str]]:
+    grouped: dict[tuple[str, str, str], list[tuple[float, float]]] = {}
+    for offset, z_delta, _role, component_ref, side_label, drainage_ref in list(rows or []):
+        key = (str(component_ref or ""), str(side_label or ""), str(drainage_ref or ""))
+        grouped.setdefault(key, []).append((float(offset), float(z_delta)))
+    output: list[tuple[float, float, str, str, str]] = []
+    for component_ref, side_label, drainage_ref in sorted(grouped):
+        values = grouped[(component_ref, side_label, drainage_ref)]
+        if not values:
+            continue
+        min_z = min(z for _offset, z in values)
+        low_offsets = [offset for offset, z in values if abs(z - min_z) <= 1.0e-9]
+        if not low_offsets:
+            continue
+        flow_offset = sum(low_offsets) / len(low_offsets)
+        output.append((flow_offset, min_z, component_ref, side_label, drainage_ref))
     return output
 
 

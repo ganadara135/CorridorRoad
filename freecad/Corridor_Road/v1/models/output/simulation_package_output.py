@@ -31,6 +31,19 @@ class SimulationPackageOutput(OutputModelBase):
     terrain_status: str = "missing"
     terrain_ref: str = ""
     terrain_bound_box: tuple[float, float, float, float, float, float] | None = None
+    drainage_readiness_status: str = "missing"
+    drainage_source_status: str = "missing"
+    drainage_flow_route_count: int = 0
+    drainage_capture_only_route_count: int = 0
+    drainage_pipe_candidate_count: int = 0
+    drainage_unresolved_port_route_count: int = 0
+    drainage_missing_element_route_count: int = 0
+    drainage_lined_ditch_target_count: int = 0
+    drainage_pipe_segment_target_count: int = 0
+    drainage_pipeline_network_target_count: int = 0
+    drainage_structure_body_target_count: int = 0
+    drainage_built_output_count: int = 0
+    drainage_network_fuse_status: str = "not_available"
     output_count: int = 0
     total_volume: float = 0.0
     target_families: list[str] = field(default_factory=list)

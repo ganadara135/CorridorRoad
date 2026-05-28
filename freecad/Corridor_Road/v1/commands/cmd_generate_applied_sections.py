@@ -233,12 +233,11 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     _set_preview_integer_property(obj, "PreviewPointCount", _applied_section_preview_point_count(section))
     _set_preview_float_property(obj, "Station", station)
     _style_applied_section_preview_object(obj)
-    marker = show_applied_section_station_marker_object(document, section, station=station)
+    _remove_applied_section_station_marker_object(document)
     try:
         from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
 
         route_to_v1_tree(find_project(document), obj)
-        route_to_v1_tree(find_project(document), marker)
     except Exception:
         pass
     try:
@@ -246,6 +245,21 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     except Exception:
         pass
     return obj
+
+
+def _remove_applied_section_station_marker_object(document) -> None:
+    if document is None:
+        return
+    marker = document.getObject("V1AppliedSectionStationMarker")
+    if marker is None:
+        return
+    try:
+        document.removeObject(marker.Name)
+    except Exception:
+        try:
+            marker.ViewObject.Visibility = False
+        except Exception:
+            pass
 
 
 def show_applied_section_station_marker_object(document, section, *, station: float | None = None):
@@ -265,9 +279,10 @@ def show_applied_section_station_marker_object(document, section, *, station: fl
         marker = document.addObject("Part::Feature", "V1AppliedSectionStationMarker")
     active_station = float(station if station is not None else getattr(section, "station", 0.0) or 0.0)
     marker.Label = f"Applied Section Station - STA {active_station:.3f}"
-    marker.Shape = Part.makeSphere(radius, center)
+    marker.Shape = _applied_section_station_marker_shape(center, radius, frame)
     _set_preview_string_property(marker, "CRRecordKind", "v1_applied_section_station_marker")
     _set_preview_string_property(marker, "V1ObjectType", "V1AppliedSectionStationMarker")
+    _set_preview_string_property(marker, "MarkerShape", "target_cross")
     _set_preview_string_property(marker, "AppliedSectionId", str(getattr(section, "applied_section_id", "") or ""))
     _set_preview_float_property(marker, "Station", active_station)
     _set_preview_float_property(marker, "MarkerX", float(center.x))
@@ -287,17 +302,11 @@ def applied_section_preview_shape(section):
         raise ValueError("Applied Section preview requires a station frame.")
     polylines = _applied_section_preview_polylines(section, frame)
     all_points = [point for _role, points in polylines for point in points]
-    stroke_width = _applied_section_stroke_width(all_points)
     shapes = []
     for _role, points in polylines:
-        for start, end in zip(points, points[1:]):
-            try:
-                if (end - start).Length <= 1.0e-9:
-                    continue
-                stroke = _make_applied_section_segment_stroke(start, end, stroke_width)
-                shapes.append(stroke if stroke is not None else Part.makeLine(start, end))
-            except Exception:
-                pass
+        wire = _make_applied_section_wire(points)
+        if wire is not None:
+            shapes.append(wire)
     return Part.Compound(shapes) if shapes else Part.Shape()
 
 
@@ -543,8 +552,6 @@ class V1AppliedSectionsTaskPanel:
                 try:
                     Gui.Selection.clearSelection()
                     Gui.Selection.addSelection(preview)
-                    if marker is not None:
-                        Gui.Selection.addSelection(marker)
                 except Exception:
                     pass
                 _fit_selected_preview()
@@ -1025,6 +1032,24 @@ def _applied_section_stroke_width(points) -> float:
     return max(0.08, min(0.35, span * 0.015))
 
 
+def _make_applied_section_wire(points):
+    clean_points = _unique_preview_points(list(points or []))
+    if len(clean_points) < 2 or Part is None:
+        return None
+    try:
+        return Part.makePolygon(clean_points)
+    except Exception:
+        edges = []
+        for start, end in zip(clean_points, clean_points[1:]):
+            try:
+                if (end - start).Length <= 1.0e-9:
+                    continue
+                edges.append(Part.makeLine(start, end))
+            except Exception:
+                pass
+        return Part.Compound(edges) if edges else None
+
+
 def _make_applied_section_segment_stroke(start, end, stroke_width: float):
     width = float(stroke_width or 0.0)
     if width <= 0.0 or Part is None:
@@ -1061,12 +1086,12 @@ def _style_applied_section_preview_object(obj) -> None:
     try:
         daylight_color = (0.10, 0.85, 0.25)
         vobj.Visibility = True
-        vobj.DisplayMode = "Flat Lines"
+        vobj.DisplayMode = "Wireframe"
         vobj.ShapeColor = daylight_color
         vobj.LineColor = daylight_color
         vobj.PointColor = daylight_color
-        vobj.LineWidth = 7.0
-        vobj.PointSize = 9.0
+        vobj.LineWidth = 5.0
+        vobj.PointSize = 1.0
         if hasattr(vobj, "DrawStyle"):
             vobj.DrawStyle = "Solid"
         if hasattr(vobj, "Lighting"):
@@ -1086,16 +1111,47 @@ def _style_applied_section_station_marker(obj) -> None:
         return
     try:
         vobj.Visibility = True
-        vobj.DisplayMode = "Shaded"
+        vobj.DisplayMode = "Wireframe"
+        vobj.DrawStyle = "Solid"
         vobj.ShapeColor = (1.0, 0.86, 0.05)
         vobj.LineColor = (0.02, 0.02, 0.02)
         vobj.PointColor = (1.0, 0.95, 0.1)
-        vobj.LineWidth = 2.5
-        vobj.PointSize = 12.0
+        vobj.LineWidth = 4.0
+        vobj.PointSize = 1.0
         if hasattr(vobj, "Transparency"):
             vobj.Transparency = 0
     except Exception:
         pass
+
+
+def _applied_section_station_marker_shape(center, radius: float, frame):
+    """Build a wire target marker that stays legible without shaded sphere artifacts."""
+
+    radius = max(float(radius or 0.0), 0.25)
+    tangent_deg = float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0)
+    try:
+        import math
+
+        angle = math.radians(tangent_deg)
+        tangent = App.Vector(math.cos(angle), math.sin(angle), 0.0)
+        normal = App.Vector(-math.sin(angle), math.cos(angle), 0.0)
+    except Exception:
+        tangent = App.Vector(1.0, 0.0, 0.0)
+        normal = App.Vector(0.0, 1.0, 0.0)
+    vertical = App.Vector(0.0, 0.0, 1.0)
+    shapes = []
+    try:
+        shapes.append(Part.makeCircle(radius, center, vertical))
+    except Exception:
+        pass
+    for axis, scale in ((tangent, 1.35), (normal, 1.35), (vertical, 0.9)):
+        try:
+            factor = radius * scale
+            delta = App.Vector(float(axis.x) * factor, float(axis.y) * factor, float(axis.z) * factor)
+            shapes.append(Part.makeLine(center - delta, center + delta))
+        except Exception:
+            pass
+    return Part.Compound(shapes) if shapes else Part.makeSphere(radius, center)
 
 
 def _applied_section_station_marker_radius(section) -> float:

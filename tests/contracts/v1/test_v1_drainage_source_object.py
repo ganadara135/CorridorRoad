@@ -423,6 +423,122 @@ def test_drainage_validation_checks_connection_point_refs_against_structure_mode
     assert "missing_drainage_connection_point_ref" in kinds
 
 
+def test_drainage_validation_reports_capture_pipe_summary_policy_and_fallback() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                "drainage:ditch",
+                "ditch",
+                station_start=0.0,
+                station_end=10.0,
+                policy_set_ref="drainage-policy:ditch",
+            ),
+            DrainageElementRow(
+                "drainage:inlet",
+                "inlet_reference",
+                structure_ref="structure:inlet-01",
+                station_start=10.0,
+                station_end=11.0,
+                policy_set_ref="drainage-policy:small-pipe",
+            ),
+            DrainageElementRow(
+                "drainage:outlet",
+                "outfall_reference",
+                structure_ref="structure:outlet-01",
+                station_start=50.0,
+                station_end=51.0,
+                policy_set_ref="drainage-policy:large-pipe",
+            ),
+            DrainageElementRow(
+                "drainage:culvert",
+                "culvert_reference",
+                structure_ref="structure:culvert-01",
+                station_start=30.0,
+                station_end=40.0,
+                policy_set_ref="drainage-policy:large-pipe",
+            ),
+        ],
+        policy_rows=[
+            DrainagePolicySet("drainage-policy:ditch", "collect_open_channel"),
+            DrainagePolicySet("drainage-policy:small-pipe", "pipe_small"),
+            DrainagePolicySet("drainage-policy:large-pipe", "pipe_large"),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute("flow-route:capture", "drainage:ditch", "drainage:inlet", "drainage:outlet"),
+            DrainageFlowRoute("flow-route:pipe", "drainage:inlet", "drainage:outlet", "drainage:outlet"),
+            DrainageFlowRoute("flow-route:fallback", "drainage:inlet", "drainage:culvert", "drainage:outlet"),
+        ],
+    )
+    structure_model = StructureModel(
+        schema_version=1,
+        project_id="proj-1",
+        structure_model_id="structures:main",
+        structure_rows=[
+            StructureRow("structure:inlet-01", "utility", "reference", StructurePlacement("placement:inlet", "alignment:main", 10.0, 11.0)),
+            StructureRow("structure:outlet-01", "utility", "reference", StructurePlacement("placement:outlet", "alignment:main", 50.0, 51.0)),
+            StructureRow("structure:culvert-01", "culvert", "drainage_crossing", StructurePlacement("placement:culvert", "alignment:main", 30.0, 40.0)),
+        ],
+        connection_point_rows=[
+            StructureConnectionPoint("connection:inlet-01:pipe-out", "structure:inlet-01", "pipe_out", station=11.0, offset=-5.0, diameter=0.6),
+            StructureConnectionPoint("connection:outlet-01:pipe-in", "structure:outlet-01", "pipe_in", station=50.0, offset=-5.0, diameter=0.6),
+        ],
+    )
+
+    result = DrainageValidationService().validate(model, structure_model=structure_model)
+    by_kind = {row.kind: row for row in result.diagnostic_rows}
+
+    assert result.status == "warning"
+    assert "flow_route_capture_pipe_summary" in by_kind
+    assert "flow_route_pipe_station_span_fallback" in by_kind
+    assert "capture_only_count=1" in by_kind["flow_route_capture_pipe_summary"].notes
+    assert "pipe_producing_count=1" in by_kind["flow_route_capture_pipe_summary"].notes
+    assert "station_span_fallback_count=1" in by_kind["flow_route_capture_pipe_summary"].notes
+    assert "flow_route_policy_incompatibility" not in by_kind
+    assert "fallback=element_station_range" in by_kind["flow_route_pipe_station_span_fallback"].notes
+
+
+def test_drainage_validation_warns_for_incompatible_policy_families() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:main",
+        element_rows=[
+            DrainageElementRow(
+                "drainage:outfall-node",
+                "outfall_reference",
+                station_start=0.0,
+                station_end=1.0,
+                policy_set_ref="drainage-policy:outfall",
+            ),
+            DrainageElementRow(
+                "drainage:pipe-node",
+                "culvert_reference",
+                station_start=10.0,
+                station_end=11.0,
+                policy_set_ref="drainage-policy:cross-drain",
+            ),
+        ],
+        policy_rows=[
+            DrainagePolicySet("drainage-policy:outfall", "ditch_outfall", discharge_rule="outfall"),
+            DrainagePolicySet("drainage-policy:cross-drain", "cross_drainage_transfer", discharge_rule="pipe_culvert"),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute("flow-route:bad-policy", "drainage:outfall-node", "drainage:pipe-node", "drainage:outfall-node"),
+        ],
+    )
+
+    result = DrainageValidationService().validate(model)
+    by_kind = {row.kind: row for row in result.diagnostic_rows}
+
+    assert result.status == "warning"
+    assert "flow_route_policy_incompatibility" in by_kind
+    assert "from_policy_family=outfall" in by_kind["flow_route_policy_incompatibility"].notes
+    assert "to_policy_family=pipe" in by_kind["flow_route_policy_incompatibility"].notes
+
+
 def test_drainage_validation_checks_element_station_range_against_region() -> None:
     model = DrainageModel(
         schema_version=1,

@@ -726,6 +726,8 @@ class V1StructureEditorTaskPanel:
         layout.addLayout(edit_row)
 
         self._geometry_table = QtWidgets.QTableWidget(0, 12)
+        self._geometry_table.setObjectName("InternalGeometrySpecStore")
+        self._geometry_table.setToolTip("Internal source-contract store. Edit geometry through Selected Structure Detail.")
         self._geometry_table.setHorizontalHeaderLabels(
             [
                 "Spec Id",
@@ -743,12 +745,8 @@ class V1StructureEditorTaskPanel:
             ]
         )
         self._geometry_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._geometry_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self._geometry_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditKeyPressed
-            | QtWidgets.QAbstractItemView.AnyKeyPressed
-        )
+        self._geometry_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._geometry_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         try:
             self._geometry_table.horizontalHeader().setStretchLastSection(True)
         except Exception:
@@ -759,6 +757,9 @@ class V1StructureEditorTaskPanel:
         detail_layout = QtWidgets.QVBoxLayout(detail_group)
         self._detail_summary = QtWidgets.QLabel("No structure row is selected.")
         detail_layout.addWidget(self._detail_summary)
+        self._detail_validation = QtWidgets.QLabel("Selected validation: not available")
+        self._detail_validation.setWordWrap(True)
+        detail_layout.addWidget(self._detail_validation)
         detail_form = QtWidgets.QFormLayout()
         self._geometry_source_combo = QtWidgets.QComboBox()
         self._geometry_source_combo.addItems(GEOMETRY_SOURCE_CHOICES)
@@ -770,10 +771,20 @@ class V1StructureEditorTaskPanel:
         self._native_type_combo.setToolTip("Simple native structure type used to drive practical dimensions and default connection points.")
         self._native_type_combo.currentIndexChanged.connect(self._handle_native_type_changed)
         detail_form.addRow("Native Type", self._native_type_combo)
+        external_ref_row = QtWidgets.QHBoxLayout()
         self._geometry_ref_field = QtWidgets.QLineEdit()
-        self._geometry_ref_field.setToolTip("Optional external or detailed geometry reference. Native geometry dimensions are edited in this detail area.")
+        self._geometry_ref_field.setPlaceholderText("Select an existing FreeCAD/imported object")
+        self._geometry_ref_field.setToolTip(
+            "External Ref stores the referenced body object name only. "
+            "Drainage connection points remain editable source rows below."
+        )
         self._geometry_ref_field.textEdited.connect(lambda _text: self._sync_selected_detail_to_row())
-        detail_form.addRow("External Geometry Ref", self._geometry_ref_field)
+        external_ref_row.addWidget(self._geometry_ref_field, 1)
+        self._pick_external_ref_button = QtWidgets.QPushButton("Pick External")
+        self._pick_external_ref_button.setToolTip("Use the currently selected 3D object as the external Structure body reference.")
+        self._pick_external_ref_button.clicked.connect(self._pick_external_geometry_ref_from_3d)
+        external_ref_row.addWidget(self._pick_external_ref_button)
+        detail_form.addRow("External Geometry Ref", external_ref_row)
         self._common_shape_label = QtWidgets.QLabel("Shape (auto)")
         self._common_shape_label.setToolTip("Auto-filled from Native Type. Edit only when a custom native shape key is needed.")
         self._common_shape_field = QtWidgets.QLineEdit()
@@ -1098,14 +1109,6 @@ class V1StructureEditorTaskPanel:
             added += 1
         self._set_status(f"Added {added} missing Geometry Spec row(s).")
 
-    def _delete_selected_geometry_specs(self) -> None:
-        rows = sorted({item.row() for item in list(self._geometry_table.selectedItems() or [])}, reverse=True)
-        if not rows and self._geometry_table.currentRow() >= 0:
-            rows = [self._geometry_table.currentRow()]
-        for row_index in rows:
-            self._geometry_table.removeRow(row_index)
-        self._set_status(f"Deleted {len(rows)} Geometry Spec row(s).")
-
     def _add_connection_point(self) -> None:
         row = self._current_structure_row()
         if row is None:
@@ -1172,6 +1175,29 @@ class V1StructureEditorTaskPanel:
             )
         except Exception as exc:
             self._set_status(f"3D point was not picked:\n{exc}")
+
+    def _pick_external_geometry_ref_from_3d(self) -> None:
+        row = self._current_structure_row()
+        if row is None:
+            self._set_status("Select a Structure row before picking an external geometry reference.")
+            return
+        try:
+            obj = _selected_3d_object()
+            ref = str(getattr(obj, "Name", "") or getattr(obj, "Label", "") or "").strip()
+            if not ref:
+                raise RuntimeError("Selected object has no usable object name.")
+            row_index = self._table.currentRow()
+            self._geometry_source_combo.setCurrentText("external_ref")
+            self._geometry_ref_field.setText(ref)
+            self._set_row_geometry_source_mode(row_index, "external_ref")
+            self._set_row_geometry_ref(row_index, ref)
+            self._refresh_selected_detail_validation(str(row.structure_id), str(getattr(row, "geometry_spec_ref", "") or ""))
+            self._set_status(
+                f"External geometry reference set for {row.structure_id}: {ref}. "
+                "Map connection points with Pick From 3D or explicit station/offset rows."
+            )
+        except Exception as exc:
+            self._set_status(f"External geometry reference was not picked:\n{exc}")
 
     def _preview_connection_points(self) -> None:
         row = self._current_structure_row()
@@ -1372,12 +1398,14 @@ class V1StructureEditorTaskPanel:
                 self._active_detail_structure_id = ""
                 self._active_detail_spec_ref = ""
                 self._detail_summary.setText("No structure row is selected.")
+                self._set_detail_validation("Selected validation: not available", status="none")
                 self._geometry_source_combo.setEnabled(False)
                 self._native_type_combo.setEnabled(False)
                 self._geometry_source_combo.setCurrentText("native")
                 self._native_type_combo.setCurrentText("")
                 self._geometry_ref_field.setText("")
                 self._geometry_ref_field.setEnabled(False)
+                self._pick_external_ref_button.setEnabled(False)
                 self._load_common_geometry_detail(None, "")
                 self._connection_table.setRowCount(0)
                 for label, field in zip(self._detail_labels, self._detail_fields):
@@ -1393,6 +1421,7 @@ class V1StructureEditorTaskPanel:
             self._native_type_combo.setEnabled(source_mode == "native")
             self._native_type_combo.setCurrentText(native_type if native_type in NATIVE_TYPE_CHOICES else "")
             self._geometry_ref_field.setEnabled(source_mode != "native")
+            self._pick_external_ref_button.setEnabled(source_mode != "native")
             self._geometry_ref_field.setText(str(getattr(row, "geometry_ref", "") or ""))
             spec_ref = self._ensure_row_geometry_spec_ref(self._table.currentRow(), row)
             self._active_detail_structure_id = str(row.structure_id)
@@ -1404,6 +1433,8 @@ class V1StructureEditorTaskPanel:
             self._load_type_specific_detail(row, spec_ref)
         finally:
             self._loading_selected_detail = False
+        if self._active_detail_structure_id:
+            self._refresh_selected_detail_validation(self._active_detail_structure_id, self._active_detail_spec_ref)
 
     def _apply_selected_detail(self) -> None:
         try:
@@ -1415,10 +1446,15 @@ class V1StructureEditorTaskPanel:
             self._set_row_geometry_source_mode(row_index, str(self._geometry_source_combo.currentText() or "native"))
             self._set_row_native_type(row_index, str(self._native_type_combo.currentText() or ""))
             self._set_row_geometry_ref(row_index, str(self._geometry_ref_field.text() or "").strip())
+            native_type = str(self._native_type_combo.currentText() or "").strip().lower()
+            self._apply_native_type_row_defaults(row_index, native_type=native_type)
+            row = self._current_structure_row()
+            if row is None:
+                self._set_status("Select a Structure row before applying detail fields.")
+                return
             spec_ref = self._ensure_row_geometry_spec_ref(row_index, row)
             self._add_or_update_common_spec_for_row(row, spec_ref)
             kind = str(row.structure_kind or "").strip().lower()
-            native_type = str(self._native_type_combo.currentText() or "").strip().lower()
             detail_family = _detail_spec_family(native_type, kind)
             fields = _native_detail_field_specs(native_type, kind)
             values = {
@@ -1429,6 +1465,7 @@ class V1StructureEditorTaskPanel:
             if not fields:
                 self._sync_connection_points_from_table(str(row.structure_id))
                 self._load_selected_detail()
+                self._refresh_selected_detail_validation(str(row.structure_id), spec_ref)
                 self._set_status(
                     f"Selected detail applied for {row.structure_id}. Apply the model to persist changes."
                 )
@@ -1451,8 +1488,10 @@ class V1StructureEditorTaskPanel:
             else:
                 self._set_status(f"No kind-specific detail fields are defined for {kind or 'custom'}.")
                 return
+            self._derive_default_connection_points_if_empty_or_auto(row)
             self._sync_connection_points_from_table(str(row.structure_id))
             self._load_selected_detail()
+            self._refresh_selected_detail_validation(str(row.structure_id), spec_ref)
             self._set_status(
                 f"Selected detail applied for {row.structure_id}. Apply the model to persist changes."
             )
@@ -1467,12 +1506,14 @@ class V1StructureEditorTaskPanel:
         if row is None:
             return
         spec_ref = self._ensure_row_geometry_spec_ref(self._table.currentRow(), row)
+        self._apply_native_type_row_defaults(self._table.currentRow(), native_type=str(self._native_type_combo.currentText() or ""))
         self._apply_native_type_common_defaults(row)
         self._load_type_specific_detail(row, spec_ref)
 
     def _handle_geometry_source_changed(self, _index: int) -> None:
         source_mode = str(self._geometry_source_combo.currentText() or "native")
         self._geometry_ref_field.setEnabled(source_mode != "native")
+        self._pick_external_ref_button.setEnabled(source_mode != "native")
         self._native_type_combo.setEnabled(source_mode == "native")
         self._set_common_geometry_detail_enabled(source_mode == "native")
         self._sync_selected_detail_to_row()
@@ -1600,9 +1641,58 @@ class V1StructureEditorTaskPanel:
         self._common_width_field.setText(_format_float(_default_geometry_width_for_native(native_type, row.structure_kind)))
         self._common_height_field.setText(_format_float(_default_geometry_height_for_native(native_type, row.structure_kind)))
 
+    def _apply_native_type_row_defaults(self, row_index: int, *, native_type: str) -> None:
+        if row_index < 0 or row_index >= self._table.rowCount():
+            return
+        native = str(native_type or "").strip().lower()
+        kind = _default_structure_kind_for_native(native)
+        role = _default_structure_role_for_native(native)
+        if kind:
+            self._set_row_structure_kind(row_index, kind)
+        if role:
+            self._set_row_structure_role(row_index, role)
+
+    def _set_row_structure_kind(self, row_index: int, value: str) -> None:
+        self._set_row_combo_or_item_text(row_index, 1, value)
+
+    def _set_row_structure_role(self, row_index: int, value: str) -> None:
+        self._set_row_combo_or_item_text(row_index, 2, value)
+
+    def _set_row_combo_or_item_text(self, row_index: int, col_index: int, value: str) -> None:
+        widget = self._table.cellWidget(row_index, col_index)
+        if widget is not None and hasattr(widget, "setCurrentText"):
+            widget.setCurrentText(str(value or ""))
+            return
+        item = self._table.item(row_index, col_index)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            self._table.setItem(row_index, col_index, item)
+        item.setText(str(value or ""))
+
+    def _derive_default_connection_points_if_empty_or_auto(self, row: StructureRow | None) -> None:
+        if row is None or not self._connection_table_is_empty_or_auto_native():
+            return
+        points = _derive_default_connection_points_for_row(
+            row,
+            self._geometry_spec_for_structure(row),
+            self._culvert_spec_for_structure(row),
+        )
+        if not points:
+            return
+        self._replace_connection_points(_mark_auto_native_connection_points(points))
+
+    def _connection_table_is_empty_or_auto_native(self) -> bool:
+        if self._connection_table.rowCount() <= 0:
+            return True
+        for row_index in range(self._connection_table.rowCount()):
+            if "auto_native_default" not in _item_text(self._connection_table, row_index, 11):
+                return False
+        return True
+
     def _validate(self) -> None:
         try:
             model = self._model_from_table()
+            self._refresh_selected_detail_validation(self._active_detail_structure_id, self._active_detail_spec_ref, model=model)
             self._set_status(_format_validation_result(model, document=self.document))
         except Exception as exc:
             self._set_status(f"Structure validation failed:\n{exc}")
@@ -1610,7 +1700,7 @@ class V1StructureEditorTaskPanel:
     def _apply(self, *, close_after: bool = False, show_preview: bool = False) -> bool:
         try:
             model = self._model_from_table()
-            diagnostics = validate_structure_model(model)
+            diagnostics = _structure_editor_diagnostics(model, document=self.document)
             if any(str(row).startswith("error|") for row in diagnostics):
                 self._set_status(_format_validation_result(model, document=self.document))
                 _show_message(self.form, "Structures", "Structures were not applied because validation has errors.")
@@ -1636,7 +1726,7 @@ class V1StructureEditorTaskPanel:
     def _show_preview(self) -> None:
         try:
             model = self._model_from_table()
-            diagnostics = validate_structure_model(model)
+            diagnostics = _structure_editor_diagnostics(model, document=self.document)
             if any(str(row).startswith("error|") for row in diagnostics):
                 self._set_status(_format_validation_result(model, document=self.document))
                 return
@@ -1675,6 +1765,14 @@ class V1StructureEditorTaskPanel:
             for row in self._geometry_spec_table_rows()
             if str(getattr(row, "structure_ref", "") or "") in structure_ids
         ]
+        connection_point_rows = _normalized_connection_point_rows_for_structures(
+            [
+                row
+                for row in self._connection_point_rows
+                if str(getattr(row, "structure_ref", "") or "") in structure_ids
+            ],
+            structure_rows,
+        )
         return StructureModel(
             schema_version=1,
             project_id=_project_id(find_project(self.document)),
@@ -1695,11 +1793,7 @@ class V1StructureEditorTaskPanel:
                 self._retaining_wall_geometry_spec_rows or getattr(existing, "retaining_wall_geometry_spec_rows", []),
                 geometry_spec_rows,
             ),
-            connection_point_rows=[
-                row
-                for row in self._connection_point_rows
-                if str(getattr(row, "structure_ref", "") or "") in structure_ids
-            ],
+            connection_point_rows=connection_point_rows,
             interaction_rule_rows=[],
             influence_zone_rows=[],
         )
@@ -1903,6 +1997,52 @@ class V1StructureEditorTaskPanel:
 
     def _set_status(self, text: str) -> None:
         self._status.setPlainText(str(text or ""))
+
+    def _refresh_selected_detail_validation(
+        self,
+        structure_ref: str,
+        spec_ref: str = "",
+        *,
+        model: StructureModel | None = None,
+    ) -> None:
+        structure_ref = str(structure_ref or "").strip()
+        if not structure_ref:
+            self._set_detail_validation("Selected validation: not available", status="none")
+            return
+        try:
+            model = model or self._model_from_table()
+            diagnostics = _selected_structure_diagnostics(model, structure_ref, spec_ref, document=self.document)
+            if not diagnostics:
+                self._set_detail_validation("Selected validation: ok", status="ok")
+                return
+            status = "error" if any(str(row).startswith("error|") for row in diagnostics) else "warning"
+            shown = diagnostics[:4]
+            suffix = "" if len(diagnostics) <= len(shown) else f"; +{len(diagnostics) - len(shown)} more"
+            self._set_detail_validation(
+                "Selected validation: "
+                + status
+                + "\n"
+                + "\n".join(str(row) for row in shown)
+                + suffix,
+                status=status,
+            )
+        except Exception as exc:
+            self._set_detail_validation(f"Selected validation: error\n{exc}", status="error")
+
+    def _set_detail_validation(self, text: str, *, status: str) -> None:
+        if not hasattr(self, "_detail_validation"):
+            return
+        self._detail_validation.setText(str(text or ""))
+        color = {
+            "ok": "#2f8f46",
+            "warning": "#a06a00",
+            "error": "#b00020",
+            "none": "#666666",
+        }.get(str(status or ""), "#666666")
+        try:
+            self._detail_validation.setStyleSheet(f"color: {color};")
+        except Exception:
+            pass
 
 
 class CmdV1StructureEditor:
@@ -2144,14 +2284,18 @@ def _preset_connection_point_from_spec(
         height = float(spec.get("height", 0.0) or 0.0)
     base_id = structure_ref.split(":")[-1]
     point_id = str(spec.get("id", "") or f"connection:{base_id}:{role.replace('_', '-')}")
+    elevation = spec.get("elevation", "")
     invert = spec.get("invert_elevation", None)
+    notes = str(spec.get("notes", "") or "")
+    if _optional_float_text(elevation) is None and (invert is None or _optional_float_text(invert) is None):
+        notes = (notes + ";vertical_source=centerline3d").strip(";")
     return StructureConnectionPoint(
         connection_point_id=point_id,
         structure_ref=structure_ref,
         point_role=role,
         station=station,
         offset=offset,
-        elevation=_optional_float_text(spec.get("elevation", "")),
+        elevation=_optional_float_text(elevation),
         invert_elevation=_optional_float_text(invert) if invert is not None else None,
         diameter=diameter,
         width=width,
@@ -2160,8 +2304,70 @@ def _preset_connection_point_from_spec(
         direction=str(spec.get("direction", "") or ""),
         connection_order=connection_order,
         region_ref="",
-        notes=str(spec.get("notes", "") or ""),
+        notes=notes,
     )
+
+
+def _normalized_connection_point_rows_for_structures(
+    connection_point_rows: list[StructureConnectionPoint],
+    structure_rows: list[StructureRow],
+) -> list[StructureConnectionPoint]:
+    structures = {
+        str(getattr(row, "structure_id", "") or "").strip(): row
+        for row in list(structure_rows or [])
+        if str(getattr(row, "structure_id", "") or "").strip()
+    }
+    output: list[StructureConnectionPoint] = []
+    for point in list(connection_point_rows or []):
+        structure = structures.get(str(getattr(point, "structure_ref", "") or "").strip())
+        if structure is None:
+            output.append(point)
+            continue
+        placement = getattr(structure, "placement", None)
+        if placement is None:
+            output.append(point)
+            continue
+        start = float(getattr(placement, "station_start", 0.0) or 0.0)
+        end = float(getattr(placement, "station_end", start) or start)
+        lower = min(start, end)
+        upper = max(start, end)
+        station = float(getattr(point, "station", 0.0) or 0.0)
+        tolerance = 1.0e-6
+        if lower - tolerance <= station <= upper + tolerance:
+            output.append(point)
+            continue
+        output.append(
+            StructureConnectionPoint(
+                connection_point_id=str(getattr(point, "connection_point_id", "") or ""),
+                structure_ref=str(getattr(point, "structure_ref", "") or ""),
+                point_role=str(getattr(point, "point_role", "") or ""),
+                station=_station_for_connection_point_inside_structure(point, lower=lower, upper=upper),
+                offset=float(getattr(point, "offset", 0.0) or 0.0),
+                elevation=getattr(point, "elevation", None),
+                invert_elevation=getattr(point, "invert_elevation", None),
+                diameter=float(getattr(point, "diameter", 0.0) or 0.0),
+                width=float(getattr(point, "width", 0.0) or 0.0),
+                height=float(getattr(point, "height", 0.0) or 0.0),
+                shape_kind=str(getattr(point, "shape_kind", "") or ""),
+                direction=str(getattr(point, "direction", "") or ""),
+                connection_order=int(getattr(point, "connection_order", 0) or 0),
+                region_ref=str(getattr(point, "region_ref", "") or ""),
+                notes=str(getattr(point, "notes", "") or ""),
+            )
+        )
+    return output
+
+
+def _station_for_connection_point_inside_structure(point: StructureConnectionPoint, *, lower: float, upper: float) -> float:
+    role = str(getattr(point, "point_role", "") or "").strip().lower()
+    direction = str(getattr(point, "direction", "") or "").strip().lower()
+    point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
+    if direction == "out" or role in {"pipe_out", "discharge", "outlet", "downstream"} or "outfall" in point_id:
+        return float(upper)
+    if direction == "in" or role in {"pipe_in", "inlet", "upstream"}:
+        return float(lower)
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    return min(max(station, float(lower)), float(upper))
 
 
 def _native_type_from_preset_spec(spec: dict) -> str:
@@ -2347,23 +2553,53 @@ def _detail_values_with_native_defaults(native_type: str, values: dict[str, str]
     output = dict(values or {})
     if native == "box_culvert":
         output["barrel_shape"] = "box"
+        _set_default_detail_value(output, "barrel_count", "1")
+        _set_default_detail_value(output, "span", "3.000")
+        _set_default_detail_value(output, "rise", "2.000")
+        _set_default_detail_value(output, "wall_thickness", "0.300")
         output["diameter"] = "0"
     elif native == "pipe_culvert":
         output["barrel_shape"] = "circular"
+        _set_default_detail_value(output, "barrel_count", "1")
+        _set_default_detail_value(output, "diameter", "1.200")
+        _set_default_detail_value(output, "wall_thickness", "0.120")
         output["span"] = "0"
         output["rise"] = "0"
     elif native == "headwall":
         output["barrel_shape"] = "box"
+        _set_default_detail_value(output, "span", "2.800")
+        _set_default_detail_value(output, "rise", "2.000")
+        _set_default_detail_value(output, "diameter", "1.200")
+        _set_default_detail_value(output, "wall_thickness", "0.300")
         output.setdefault("length", "0")
-        output["diameter"] = "0"
     elif native == "inlet":
         output["barrel_shape"] = "inlet"
+        _set_default_detail_value(output, "span", "1.800")
+        _set_default_detail_value(output, "rise", "1.800")
+        _set_default_detail_value(output, "diameter", "0.900")
+        _set_default_detail_value(output, "wall_thickness", "0.200")
         output.setdefault("length", "0")
     elif native == "outlet":
         output["barrel_shape"] = "outlet"
+        _set_default_detail_value(output, "span", "2.800")
+        _set_default_detail_value(output, "rise", "2.000")
+        _set_default_detail_value(output, "diameter", "1.200")
+        _set_default_detail_value(output, "wall_thickness", "0.300")
         output.setdefault("length", "0")
         output.setdefault("headwall_type", "")
     return output
+
+
+def _set_default_detail_value(values: dict[str, str], key: str, default: str) -> None:
+    text = str(values.get(key, "") or "").strip()
+    if not text:
+        values[key] = default
+        return
+    try:
+        if float(text) == 0.0:
+            values[key] = default
+    except Exception:
+        pass
 
 
 def _effective_native_type(
@@ -2525,7 +2761,7 @@ def _document_station_range(document, alignment_obj=None) -> tuple[float, float]
 
 
 def _format_validation_result(structure_model: StructureModel, *, document=None) -> str:
-    diagnostics = validate_structure_model(structure_model)
+    diagnostics = _structure_editor_diagnostics(structure_model, document=document)
     status = "error" if any(str(row).startswith("error|") for row in diagnostics) else "warning" if diagnostics else "ok"
     lines = ["Validation status: " + status]
     if not diagnostics:
@@ -2544,6 +2780,71 @@ def _format_validation_result(structure_model: StructureModel, *, document=None)
         lines.append("Export readiness: not built")
     lines.append(f"Structure rows: {len(list(structure_model.structure_rows or []))}")
     return "\n".join(lines)
+
+
+def _selected_structure_diagnostics(structure_model: StructureModel, structure_ref: str, spec_ref: str = "", *, document=None) -> list[str]:
+    structure_ref = str(structure_ref or "").strip()
+    spec_ref = str(spec_ref or "").strip()
+    if not structure_ref:
+        return []
+    point_refs = {
+        str(getattr(row, "connection_point_id", "") or "").strip()
+        for row in list(getattr(structure_model, "connection_point_rows", []) or [])
+        if str(getattr(row, "structure_ref", "") or "").strip() == structure_ref
+    }
+    tokens = {structure_ref, structure_ref.split(":")[-1]}
+    if spec_ref:
+        tokens.add(spec_ref)
+    tokens.update(point_refs)
+    diagnostics = []
+    for row in _structure_editor_diagnostics(structure_model, document=document):
+        text = str(row)
+        if any(token and token in text for token in tokens):
+            diagnostics.append(text)
+    return diagnostics
+
+
+def _structure_editor_diagnostics(structure_model: StructureModel, *, document=None) -> list[str]:
+    diagnostics = list(validate_structure_model(structure_model))
+    diagnostics.extend(_external_geometry_mapping_diagnostics(structure_model, document=document))
+    return diagnostics
+
+
+def _external_geometry_mapping_diagnostics(structure_model: StructureModel, *, document=None) -> list[str]:
+    if document is None:
+        return []
+    points_by_structure: dict[str, list[StructureConnectionPoint]] = {}
+    for point in list(getattr(structure_model, "connection_point_rows", []) or []):
+        structure_ref = str(getattr(point, "structure_ref", "") or "").strip()
+        if structure_ref:
+            points_by_structure.setdefault(structure_ref, []).append(point)
+    diagnostics: list[str] = []
+    for row in list(getattr(structure_model, "structure_rows", []) or []):
+        if _geometry_source_mode(row) != "external_ref":
+            continue
+        structure_ref = str(getattr(row, "structure_id", "") or "").strip()
+        geometry_ref = str(getattr(row, "geometry_ref", "") or "").strip()
+        if not geometry_ref:
+            continue
+        external_obj = _external_geometry_object(document, geometry_ref)
+        if external_obj is None:
+            diagnostics.append(
+                f"warning|external_geometry_ref_unresolved|{structure_ref}|External geometry reference was not found in the document: {geometry_ref}."
+            )
+            continue
+        bbox = getattr(getattr(external_obj, "Shape", None), "BoundBox", None) or getattr(external_obj, "BoundBox", None)
+        if bbox is None:
+            diagnostics.append(
+                f"warning|external_geometry_bounds_unavailable|{structure_ref}|External geometry reference has no bounding box for connection-point validation."
+            )
+            continue
+        for point in points_by_structure.get(structure_ref, []):
+            if not _connection_point_inside_external_bounds(point, bbox):
+                point_id = str(getattr(point, "connection_point_id", "") or structure_ref)
+                diagnostics.append(
+                    f"error|external_connection_point_outside_geometry_bounds|{point_id}|Mapped connection point is outside the external Structure body bounds."
+                )
+    return diagnostics
 
 
 def _make_structure_preview_shape(document, structure_model: StructureModel):
@@ -3486,6 +3787,27 @@ def _selected_3d_point():
     raise RuntimeError("Select a vertex, edge, face, or object in the 3D View first.")
 
 
+def _selected_3d_object():
+    if Gui is None:
+        raise RuntimeError("FreeCAD GUI selection is required for Pick External.")
+    try:
+        selection = list(Gui.Selection.getSelection() or [])
+    except Exception:
+        selection = []
+    for obj in selection:
+        if obj is not None:
+            return obj
+    try:
+        selection_ex = list(Gui.Selection.getSelectionEx() or [])
+    except Exception:
+        selection_ex = []
+    for selection_item in selection_ex:
+        obj = getattr(selection_item, "Object", None)
+        if obj is not None:
+            return obj
+    raise RuntimeError("Select one FreeCAD object in the 3D View or tree first.")
+
+
 def _point_from_shape_like(value):
     if value is None:
         return None
@@ -3508,6 +3830,49 @@ def _point_from_shape_like(value):
     if base is not None:
         return base
     return None
+
+
+def _external_geometry_object(document, geometry_ref: str):
+    if document is None:
+        return None
+    ref = str(geometry_ref or "").strip()
+    if not ref:
+        return None
+    candidates = [ref]
+    if ":" in ref:
+        candidates.append(ref.split(":", 1)[1])
+    if hasattr(document, "getObject"):
+        for candidate in candidates:
+            try:
+                obj = document.getObject(candidate)
+            except Exception:
+                obj = None
+            if obj is not None:
+                return obj
+    for obj in list(getattr(document, "Objects", []) or []):
+        name = str(getattr(obj, "Name", "") or "")
+        label = str(getattr(obj, "Label", "") or "")
+        if ref in {name, label} or any(candidate and candidate in {name, label} for candidate in candidates):
+            return obj
+    return None
+
+
+def _connection_point_inside_external_bounds(point: StructureConnectionPoint, bbox, *, tolerance: float = 0.05) -> bool:
+    x = float(getattr(point, "station", 0.0) or 0.0)
+    y = float(getattr(point, "offset", 0.0) or 0.0)
+    z_value = getattr(point, "elevation", None)
+    if z_value is None:
+        z_value = getattr(point, "invert_elevation", None)
+    checks = [
+        (float(getattr(bbox, "XMin", 0.0) or 0.0) - tolerance) <= x <= (float(getattr(bbox, "XMax", 0.0) or 0.0) + tolerance),
+        (float(getattr(bbox, "YMin", 0.0) or 0.0) - tolerance) <= y <= (float(getattr(bbox, "YMax", 0.0) or 0.0) + tolerance),
+    ]
+    if z_value is not None:
+        z = float(z_value)
+        checks.append(
+            (float(getattr(bbox, "ZMin", 0.0) or 0.0) - tolerance) <= z <= (float(getattr(bbox, "ZMax", 0.0) or 0.0) + tolerance)
+        )
+    return all(checks)
 
 
 def _station_offset_from_point(document, point) -> tuple[float, float]:
@@ -3810,6 +4175,34 @@ def _derive_default_connection_points_for_row(
     return []
 
 
+def _mark_auto_native_connection_points(points: list[StructureConnectionPoint]) -> list[StructureConnectionPoint]:
+    marked = []
+    for point in list(points or []):
+        notes = str(getattr(point, "notes", "") or "").strip()
+        if "auto_native_default" not in notes:
+            notes = (notes + "; " if notes else "") + "auto_native_default"
+        marked.append(
+            StructureConnectionPoint(
+                connection_point_id=point.connection_point_id,
+                structure_ref=point.structure_ref,
+                point_role=point.point_role,
+                station=point.station,
+                offset=point.offset,
+                elevation=point.elevation,
+                invert_elevation=point.invert_elevation,
+                shape_kind=point.shape_kind,
+                width=point.width,
+                height=point.height,
+                diameter=point.diameter,
+                direction=point.direction,
+                connection_order=point.connection_order,
+                region_ref=point.region_ref,
+                notes=notes,
+            )
+        )
+    return marked
+
+
 def _format_float(value: float) -> str:
     return f"{float(value):.3f}"
 
@@ -3821,7 +4214,9 @@ def _format_optional_float(value: float | None) -> str:
 
 
 def _optional_float_text(value: object) -> float | None:
-    text = str(value or "").strip()
+    if value is None:
+        return None
+    text = str(value).strip()
     if not text:
         return None
     return _required_float(text, "Optional elevation")
@@ -3853,10 +4248,36 @@ def _default_shape_kind_for_native(native_type: str, structure_kind: str) -> str
     if native == "headwall":
         return "headwall"
     if native == "inlet":
-        return "inlet"
+        return "catch_basin"
     if native == "outlet":
-        return "outlet"
+        return "outlet_headwall"
     return _default_shape_kind(structure_kind)
+
+
+def _default_structure_kind_for_native(native_type: str) -> str:
+    native = str(native_type or "").strip().lower()
+    if native in {"box_culvert", "pipe_culvert"}:
+        return "culvert"
+    if native == "bridge_deck":
+        return "bridge"
+    if native == "retaining_wall":
+        return "retaining_wall"
+    if native in {"inlet", "outlet", "headwall"}:
+        return "utility"
+    return ""
+
+
+def _default_structure_role_for_native(native_type: str) -> str:
+    native = str(native_type or "").strip().lower()
+    if native in {"box_culvert", "pipe_culvert"}:
+        return "clearance_control"
+    if native == "bridge_deck":
+        return "interface"
+    if native == "retaining_wall":
+        return "active"
+    if native in {"inlet", "outlet", "headwall"}:
+        return "reference"
+    return ""
 
 
 def _default_geometry_width(structure_kind: str) -> float:

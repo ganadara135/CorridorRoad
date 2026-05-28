@@ -223,8 +223,11 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
 
         ditch_components = [row for row in result.sections[0].component_rows if row.kind == "ditch"]
         ditch_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_surface"]
+        flowline_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_flowline"]
         assert [row.drainage_refs for row in ditch_components] == [["drainage:plain-left"], ["drainage:plain-right"]]
         assert {row.drainage_ref for row in ditch_points} == {"drainage:plain-left", "drainage:plain-right"}
+        assert {row.drainage_ref for row in flowline_points} == {"drainage:plain-left", "drainage:plain-right"}
+        assert {row.side for row in flowline_points} == {"left", "right"}
         assert "drainage:main" in result.source_refs
     finally:
         App.closeDocument(doc.Name)
@@ -430,21 +433,18 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         marker = doc.getObject("V1AppliedSectionStationMarker")
 
         assert obj is not None
-        assert marker is not None
+        assert marker is None
         assert obj.CRRecordKind == "v1_applied_section_show_preview"
         assert obj.V1ObjectType == "V1AppliedSectionShowPreview"
-        assert marker.CRRecordKind == "v1_applied_section_station_marker"
-        assert marker.V1ObjectType == "V1AppliedSectionStationMarker"
-        assert marker.Station == obj.Station
-        assert marker.Shape.BoundBox.XLength > 0.0
         assert obj.RegionId == "region:normal-01"
         assert obj.AssemblyId == "assembly:basic-road"
         assert obj.TemplateId == "template:basic-road"
         assert obj.PreviewMode == "section_points"
         assert int(obj.PreviewPointCount) >= 4
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
+        assert len(obj.Shape.Edges) >= 4
+        assert len(obj.Shape.Solids) == 0
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
-        assert marker.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)
 

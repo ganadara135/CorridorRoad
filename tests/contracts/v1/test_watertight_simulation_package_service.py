@@ -20,6 +20,15 @@ def test_watertight_simulation_package_service_builds_ready_manifest() -> None:
             ),
             terrain_ref="TerrainMesh",
             terrain_bound_box=(-1.0, 12.0, -1.0, 8.0, -5.0, 5.0),
+            drainage_readiness={
+                "readiness_status": "ready",
+                "source_status": "ready",
+                "flow_route_count": 2,
+                "capture_only_route_count": 1,
+                "pipe_candidate_count": 1,
+                "pipeline_network_target_count": 1,
+                "network_fuse_status": "compound_first_slice",
+            },
             solid_inputs=[
                 WatertightSimulationQaSolidInput(
                     output_ref="RoadBody",
@@ -45,6 +54,13 @@ def test_watertight_simulation_package_service_builds_ready_manifest() -> None:
     assert output.terrain_status == "ready"
     assert output.terrain_ref == "TerrainMesh"
     assert output.terrain_bound_box == (-1.0, 12.0, -1.0, 8.0, -5.0, 5.0)
+    assert output.drainage_readiness_status == "ready"
+    assert output.drainage_source_status == "ready"
+    assert output.drainage_flow_route_count == 2
+    assert output.drainage_capture_only_route_count == 1
+    assert output.drainage_pipe_candidate_count == 1
+    assert output.drainage_pipeline_network_target_count == 1
+    assert output.drainage_network_fuse_status == "compound_first_slice"
     assert output.output_count == 2
     assert output.total_volume == 12.0
     assert output.target_families == ["road_body_envelope", "drainage_pipeline_network_body"]

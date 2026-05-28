@@ -1,34 +1,35 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-05-15
-Status: `1.0.1` released; post-release docs and announcement alignment in progress
+Date: 2026-05-28
+Status: `1.0.2` release prepared
 Scope: post-`1.0.0` v1 updates
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.1` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.2` release.
 
 ## Release Status
 
-- Release version: `1.0.1`
-- Release date: `2026-05-15`
-- Tag: `v1.0.1`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- Release version: `1.0.2`
+- Release date: `2026-05-28`
+- Tag: `v1.0.2`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.0.1` / `2026-05-15`.
-- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.1` release section.
+- [x] `package.xml` version/date updated to `1.0.2` / `2026-05-28`.
+- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.2` release section.
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
-- [ ] FreeCAD manual smoke QA for the published tag.
-- [ ] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
-- [ ] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
+- [x] Manual smoke QA checklist prepared in `docsV1/V1_1_0_1_MANUAL_SMOKE_QA.md`.
+- [x] FreeCAD manual smoke QA for the published tag.
+- [x] Forum announcement posted or updated with the `Corridor Road` -> `Parametric Road` rename explanation.
+- [x] GitHub Wiki pages published/updated from the local `docsV1/wiki/` drafts.
 
 ## Current User-Facing Scope
 
@@ -65,14 +66,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.0.1` contains recent documentation and Drainage/Structure preview notes.
-- [x] README, Addon overview, and local Wiki drafts now point to the `1.0.1` release and tutorial video.
+- [x] CHANGELOG `1.0.2` contains recent Build Parametric, Drainage, Applied Sections, and Watertight Solids notes.
+- [x] README and local Wiki drafts now point to the `1.0.2` release.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Addon overview, Wiki pages, and the `1.0.1` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.2` changelog section.
 
 ## Release Validation Checklist
 
@@ -97,7 +98,7 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`This v1 update expands Parametric Road beyond the initial workflow reset with a shared 3D Centerline baseline, drainage-ready Structures, Flow Route based Drainage, Structure-backed pipe network previews, and a more capable Watertight Solids final stage. Advanced hydraulic analysis, automatic pipe sizing, and complete exchange coverage remain future work.`
+`Parametric Road 1.0.2 refines the simulation-oriented v1 workflow with cleaner Build Parametric output routing, tree-visible Watertight Solid outputs, improved Drainage Flow Network placement on the shared 3D Centerline, simplified Drainage preset loading, and cleaner Applied Section Assembly line review. Advanced hydraulic analysis, automatic pipe sizing, and complete exchange coverage remain future work.`
 
 Suggested highlights:
 
@@ -106,6 +107,9 @@ Suggested highlights:
 - Structures now support connection-ready native drainage objects and clearer 3D review geometry.
 - Drainage now has Elements, Policies, Flow Routes, Structure refs, and Flow Network preview.
 - Watertight Solids now discovers and builds road, component, drainage, and structure targets with package handoff.
+- Build Parametric and Watertight Solid outputs are easier to inspect from the FreeCAD tree.
+- Drainage Flow Network previews now follow shared 3D Centerline elevation context more reliably.
+- Applied Sections row review now shows the selected Assembly line without station marker clutter.
 
 ## Tag Readiness
 
@@ -119,5 +123,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.0.1` and date `2026-05-15`.
-- The intended release tag is `v1.0.1`.
+- `package.xml` declares version `1.0.2` and date `2026-05-28`.
+- The intended release tag is `v1.0.2`.

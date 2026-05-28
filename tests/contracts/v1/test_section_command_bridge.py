@@ -41,6 +41,7 @@ from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_cross_section_drawing_label_table_rows,
     build_corridor_result_review_table_rows,
     build_corridor_result_status,
+    build_drainage_context_rows,
     build_section_geometry_table_rows,
     build_source_inspector_detail_rows,
     build_source_inspector_owner_rows,
@@ -834,7 +835,13 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
         assert inspector["owner_drainage"] == "drainage:left-ditch"
         assert preview["viewer_context"]["active_structure_ref"] == "structure:culvert-01"
         assert preview["viewer_context"]["active_drainage_ref"] == "drainage:left-ditch"
+        assert preview["viewer_context"]["active_drainage_refs"] == ["drainage:left-ditch"]
+        assert preview["viewer_context"]["active_drainage_refs_by_side"] == {"left": ["drainage:left-ditch"]}
         assert preview["viewer_context"]["active_flow_route_ref"] == "flow-route:left-ditch"
+        assert preview["viewer_context"]["active_flow_route_refs"] == ["flow-route:left-ditch"]
+        assert build_drainage_context_rows(preview) == [
+            ["drainage:left-ditch", "left", "flow-route:left-ditch", "station_context"]
+        ]
         assert any(row["value"] == "structure:culvert-01" for row in preview["structure_rows"])
     finally:
         App.closeDocument(doc.Name)

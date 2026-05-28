@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import FreeCAD as App
 
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, V1_TREE_DRAINAGE, ensure_project_tree
@@ -5,13 +7,19 @@ from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.v1.commands.cmd_drainage_editor import (
     CmdV1DrainageEditor,
     V1DrainageEditorTaskPanel,
+    _format_validation_result,
+    _preset_load_summary,
+    _preset_pair_self_check_text,
+    _preset_station_range_self_check_text,
+    _preset_structure_self_check_text,
     drainage_preset_model_from_document,
     drainage_preset_names,
     run_v1_drainage_editor_command,
     starter_drainage_model_from_document,
 )
 from freecad.Corridor_Road.v1.commands.cmd_structure_editor import structure_preset_model_from_document
-from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel, DrainagePolicySet
+from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     StructureConnectionPoint,
     StructureModel,
@@ -24,7 +32,9 @@ from freecad.Corridor_Road.v1.objects.obj_drainage import (
     to_drainage_model,
 )
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
+from freecad.Corridor_Road.v1.objects.obj_stationing import V1StationingObject
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
+from freecad.Corridor_Road.v1.services.evaluation.drainage_resolution_service import DrainageValidationService
 
 _QAPP = None
 
@@ -108,16 +118,7 @@ def test_drainage_presets_offer_practical_source_sets() -> None:
         "structure:culvert-01",
         "structure:outlet-01",
     ]
-    assert [row.connection_point_ref for row in model.element_rows] == [
-        "",
-        "",
-        "",
-        "connection:inlet-01:pipe-out",
-        "connection:inlet-02:pipe-out",
-        "connection:inlet-03:pipe-out",
-        "",
-        "connection:outlet-01:pipe-in",
-    ]
+    assert [row.connection_point_ref for row in model.element_rows] == [""] * 8
     assert [row.flow_route_id for row in model.flow_route_rows] == [
         "flow-route:flowId-01",
         "flow-route:flowId-02",
@@ -144,6 +145,123 @@ def test_drainage_presets_offer_practical_source_sets() -> None:
     assert [row.outlet_ref for row in model.flow_route_rows] == ["", "", "", "", "", "", "drainage:outlet-01"]
 
 
+def test_drainage_editor_preset_combo_starts_empty() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc("V1DrainageEditorPresetEmptyTest")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+
+        assert panel._preset_combo.currentText() == ""
+
+        panel._load_selected_preset()
+
+        assert "Select a Drainage preset" in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_preset_self_check_reports_missing_structure_refs() -> None:
+    model = drainage_preset_model_from_document("Drainage Structures Flow")
+
+    summary = _preset_load_summary(model)
+    station_summary = _preset_station_range_self_check_text(
+        model,
+        station_start=0.0,
+        station_end=203.108,
+        station_source="stationing",
+    )
+    missing = _preset_structure_self_check_text(
+        "Drainage Structures Flow",
+        structure_refs=["structure:inlet-01", "structure:inlet-02", "structure:culvert-01"],
+    )
+    matched = _preset_structure_self_check_text(
+        "Drainage Structures Flow",
+        structure_refs=[
+            "structure:inlet-01",
+            "structure:inlet-02",
+            "structure:inlet-03",
+            "structure:culvert-01",
+            "structure:outlet-01",
+        ],
+    )
+
+    assert "Preset Summary: elements=8; flow-routes=7; structure-backed=5; capture-only=3; pipe-producing=4" == summary
+    assert station_summary == "Station Range Check: source=stationing; document=0.000-203.108; elements=0.000-82.000; invalid=0; outside=0"
+    assert "matched=3/5" in missing
+    assert "missing=inlet-03, outlet-01" in missing
+    assert matched == "Structure Preset Check: matched=5/5."
+
+
+def test_drainage_preset_pair_self_check_reports_route_endpoint_drift() -> None:
+    doc, project = _new_project_doc("V1DrainagePresetPairSelfCheckTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        model = drainage_preset_model_from_document("Drainage Structures Flow", document=doc)
+        structure_model = structure_preset_model_from_document(
+            "Drainage Structures",
+            doc,
+            project=project,
+            alignment=alignment,
+        )
+        model_with_drift = drainage_preset_model_from_document("Drainage Structures Flow", document=doc)
+        model_with_drift.element_rows = [
+            replace(row, structure_ref="structure:culvert-X")
+            if row.drainage_element_id == "drainage:culvert-01"
+            else row
+            for row in model_with_drift.element_rows
+        ]
+
+        assert _preset_pair_self_check_text(model, structure_model) == (
+            "Preset Pair Check: capture-only=3; ready-pipes=4; unresolved=0"
+        )
+        drift_status = _preset_pair_self_check_text(model_with_drift, structure_model)
+        assert "capture-only=3" in drift_status
+        assert "ready-pipes=2" in drift_status
+        assert "unresolved=2" in drift_status
+        assert "flowId-06:missing_connection_point_ref" in drift_status
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_load_preset_status_includes_structure_self_check() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorPresetSelfCheckStatusTest")
+    try:
+        stationing = doc.addObject("Part::FeaturePython", "V1Stationing")
+        V1StationingObject(stationing)
+        stationing.StationValues = [0.0, 60.0, 120.0, 203.108]
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:inlet-01",
+                        structure_kind="inlet",
+                        structure_role="drainage_node",
+                        placement=StructurePlacement("placement:inlet", "alignment:main", 60.0, 62.0),
+                    ),
+                ],
+            ),
+        )
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Drainage Structures Flow")
+        panel._load_selected_preset()
+        status = panel._status.toPlainText()
+
+        assert "Drainage preset loaded: Drainage Structures Flow." in status
+        assert "Preset Summary: elements=8; flow-routes=7" in status
+        assert "Station Range Check: source=stationing; document=0.000-203.108; elements=0.000-166.549; invalid=0; outside=0" in status
+        assert "Structure Preset Check: matched=1/5" in status
+        assert "Preset Pair Check: capture-only=3; ready-pipes=0; unresolved=4" in status
+        assert "missing=inlet-02, inlet-03, culvert-01, outlet-01" in status
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1DrainageEditorApplyTest")
@@ -163,7 +281,8 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.horizontalHeaderItem(5).text() == "Assembly"
         assert panel._element_table.horizontalHeaderItem(6).text() == "Policy"
         assert panel._element_table.horizontalHeaderItem(7).text() == "Structure Ref"
-        assert panel._element_table.horizontalHeaderItem(8).text() == "Connection Point"
+        assert panel._element_table.columnCount() == 8
+        assert "Connection Point" not in element_headers
         assert panel._tabs.tabText(2) == "Flow Routes"
         assert panel._flow_route_table.horizontalHeaderItem(0).text() == "Flow Route ID"
         assert panel._flow_route_table.horizontalHeaderItem(3).text() == "Outlet"
@@ -176,8 +295,6 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert panel._element_table.cellWidget(0, 6).currentText() == "lined-concrete"
         assert panel._element_table.cellWidget(0, 7).currentText() == ""
         assert not panel._element_table.cellWidget(0, 7).isEnabled()
-        assert panel._element_table.cellWidget(0, 8).currentText() == ""
-        assert not panel._element_table.cellWidget(0, 8).isEnabled()
         assert panel._element_table.item(1, 0).text() == "outfall-main"
         assert panel._element_table.cellWidget(1, 7).currentText() == ""
         assert "main" not in [
@@ -213,6 +330,88 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         App.closeDocument(doc.Name)
 
 
+def test_drainage_editor_validate_shows_flow_route_summary() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc("V1DrainageEditorValidationSummaryTest")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+
+        panel._validate()
+        status = panel._status.toPlainText()
+
+        assert "Validation: ok" in status
+        assert "Flow Route Summary:" in status
+        assert "capture-only=0" in status
+        assert "pipe-producing=1" in status
+        assert "fallback=0" in status
+        assert "info:flow_route_capture_pipe_summary" not in status
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_validation_format_shows_region_boundary_summary() -> None:
+    model = DrainageModel(
+        schema_version=1,
+        project_id="proj-region-summary",
+        drainage_model_id="drainage:region-summary",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:ditch-01",
+                element_kind="ditch",
+                region_ref="region:1",
+                station_start=0.0,
+                station_end=120.0,
+                policy_set_ref="drainage-policy:ditch",
+            ),
+            DrainageElementRow(
+                drainage_element_id="drainage:ditch-02",
+                element_kind="ditch",
+                region_ref="region:missing",
+                station_start=10.0,
+                station_end=20.0,
+                policy_set_ref="drainage-policy:ditch",
+            ),
+        ],
+        policy_rows=[DrainagePolicySet("drainage-policy:ditch", "collect_and_convey")],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-region-summary",
+        region_model_id="regions:main",
+        region_rows=[RegionRow("region:1", 0.0, 50.0)],
+    )
+
+    result = DrainageValidationService().validate(model, region_model=region_model)
+    status = _format_validation_result(result, model)
+
+    assert "Validation: error" in status
+    assert "Region Summary: missing-region=1; outside-boundary=1" in status
+    assert "ditch-01 STA 0-120 vs 1 0-50" in status
+
+
+def test_drainage_editor_marks_invalid_reference_cells() -> None:
+    _ensure_qapp()
+    doc, _project = _new_project_doc("V1DrainageEditorInvalidCellStyleTest")
+    try:
+        panel = V1DrainageEditorTaskPanel(document=doc)
+
+        policy_combo = panel._element_table.cellWidget(0, 6)
+        from_combo = panel._flow_route_table.cellWidget(0, 1)
+        assert policy_combo is not None
+        assert from_combo is not None
+
+        policy_combo.setCurrentText("missing-policy")
+        from_combo.setCurrentText("missing-element")
+        panel._validate()
+
+        assert "96, 40, 40" in policy_combo.styleSheet()
+        assert policy_combo.toolTip() == "Select a Policy from the Policies tab."
+        assert "96, 40, 40" in from_combo.styleSheet()
+        assert from_combo.toolTip() == "Select an existing From Element."
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_drainage_editor_ditch_disables_structure_cell() -> None:
     _ensure_qapp()
     doc, _project = _new_project_doc("V1DrainageEditorDitchStructureCellTest")
@@ -221,7 +420,6 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo = panel._element_table.cellWidget(0, 1)
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
 
         assert assembly_item is not None
         assert structure_combo is not None
@@ -229,17 +427,13 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
-        assert not connection_combo.isEnabled()
-        assert connection_combo.currentText() == ""
 
         kind_combo.setCurrentText("culvert_reference")
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         assert not bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assert assembly_item.text() == ""
         assert structure_combo.isEnabled()
-        assert connection_combo.isEnabled()
         structure_combo.setCurrentText("culvert-01")
 
         model = panel._model_from_tables()
@@ -249,14 +443,11 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         kind_combo.setCurrentText("ditch")
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assembly_item.setText("ditch:right")
         assert panel._model_from_tables().element_rows[0].assembly_component_ref == "ditch:right"
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
-        assert not connection_combo.isEnabled()
-        assert connection_combo.currentText() == ""
         assert panel._model_from_tables().element_rows[0].structure_ref == ""
         assert panel._model_from_tables().element_rows[0].connection_point_ref == ""
     finally:
@@ -309,21 +500,75 @@ def test_drainage_editor_structure_ref_uses_structure_id_combo() -> None:
         kind_combo = panel._element_table.cellWidget(0, 1)
         kind_combo.setCurrentText("culvert_reference")
         structure_combo = panel._element_table.cellWidget(0, 7)
-        connection_combo = panel._element_table.cellWidget(0, 8)
         structure_items = [structure_combo.itemText(index) for index in range(structure_combo.count())]
 
         assert structure_combo.isEnabled()
         assert "culvert-01" in structure_items
 
         structure_combo.setCurrentText("culvert-01")
-        connection_combo = panel._element_table.cellWidget(0, 8)
-        connection_items = [connection_combo.itemText(index) for index in range(connection_combo.count())]
-        assert "upstream" in connection_items
-        connection_combo.setCurrentText("upstream")
         model = panel._model_from_tables()
 
         assert model.element_rows[0].structure_ref == "structure:culvert-01"
-        assert model.element_rows[0].connection_point_ref == "connection:culvert-01:upstream"
+        assert model.element_rows[0].connection_point_ref == ""
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_node_template_rows_attach_structure_refs() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorNodeTemplateRowsTest")
+    try:
+        create_or_update_v1_structure_model_object(
+            doc,
+            project=project,
+            structure_model=StructureModel(
+                schema_version=1,
+                project_id="proj-1",
+                structure_model_id="structures:main",
+                structure_rows=[
+                    StructureRow(
+                        structure_id="structure:inlet-01",
+                        structure_kind="inlet",
+                        structure_role="drainage_node",
+                        placement=StructurePlacement("placement:inlet", "alignment:main", 60.0, 62.0),
+                    ),
+                    StructureRow(
+                        structure_id="structure:culvert-01",
+                        structure_kind="culvert",
+                        structure_role="cross_drain",
+                        placement=StructurePlacement("placement:culvert", "alignment:main", 90.0, 110.0),
+                    ),
+                    StructureRow(
+                        structure_id="structure:outlet-01",
+                        structure_kind="outlet",
+                        structure_role="outfall",
+                        placement=StructurePlacement("placement:outlet", "alignment:main", 180.0, 182.0),
+                    ),
+                ],
+            ),
+        )
+        panel = V1DrainageEditorTaskPanel(document=doc)
+
+        panel._add_inlet_row()
+        panel._add_cross_drain_row()
+        panel._add_outlet_row()
+        model = panel._model_from_tables()
+        rows_by_id = {row.drainage_element_id: row for row in model.element_rows}
+
+        inlet = rows_by_id["drainage:inlet-01"]
+        culvert = rows_by_id["drainage:culvert-01"]
+        outlet = rows_by_id["drainage:outlet-01"]
+
+        assert inlet.element_kind == "inlet_reference"
+        assert inlet.structure_ref == "structure:inlet-01"
+        assert (inlet.station_start, inlet.station_end) == (60.0, 62.0)
+        assert culvert.element_kind == "culvert_reference"
+        assert culvert.side == "center"
+        assert culvert.structure_ref == "structure:culvert-01"
+        assert (culvert.station_start, culvert.station_end) == (90.0, 110.0)
+        assert outlet.element_kind == "outfall_reference"
+        assert outlet.structure_ref == "structure:outlet-01"
+        assert (outlet.station_start, outlet.station_end) == (180.0, 182.0)
     finally:
         App.closeDocument(doc.Name)
 
@@ -337,6 +582,9 @@ def test_drainage_editor_add_buttons_follow_active_tab() -> None:
         assert panel._add_element_button.isHidden() is False
         assert panel._add_left_ditch_button.isHidden() is False
         assert panel._add_right_ditch_button.isHidden() is False
+        assert panel._add_inlet_button.isHidden() is False
+        assert panel._add_outlet_button.isHidden() is False
+        assert panel._add_cross_drain_button.isHidden() is False
         assert panel._add_policy_button.isHidden() is True
         assert panel._add_flow_route_button.isHidden() is True
 
@@ -344,6 +592,9 @@ def test_drainage_editor_add_buttons_follow_active_tab() -> None:
         assert panel._add_element_button.isHidden() is True
         assert panel._add_left_ditch_button.isHidden() is True
         assert panel._add_right_ditch_button.isHidden() is True
+        assert panel._add_inlet_button.isHidden() is True
+        assert panel._add_outlet_button.isHidden() is True
+        assert panel._add_cross_drain_button.isHidden() is True
         assert panel._add_policy_button.isHidden() is False
         assert panel._add_flow_route_button.isHidden() is True
 
@@ -351,6 +602,9 @@ def test_drainage_editor_add_buttons_follow_active_tab() -> None:
         assert panel._add_element_button.isHidden() is True
         assert panel._add_left_ditch_button.isHidden() is True
         assert panel._add_right_ditch_button.isHidden() is True
+        assert panel._add_inlet_button.isHidden() is True
+        assert panel._add_outlet_button.isHidden() is True
+        assert panel._add_cross_drain_button.isHidden() is True
         assert panel._add_policy_button.isHidden() is True
         assert panel._add_flow_route_button.isHidden() is False
     finally:
@@ -531,10 +785,8 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
 
         assert panel._element_table.item(3, 0).text() == "inlet-01"
         assert panel._element_table.cellWidget(3, 7).currentText() == "inlet-01"
-        assert panel._element_table.cellWidget(3, 8).currentText() == "pipe-out"
         assert panel._element_table.item(6, 0).text() == "culvert-01"
         assert panel._element_table.cellWidget(6, 7).currentText() == "culvert-01"
-        assert panel._element_table.cellWidget(6, 8).currentText() == ""
         assert panel._flow_route_table.item(6, 0).text() == "flowId-07"
         assert panel._flow_route_table.cellWidget(6, 1).currentText() == "culvert-01"
         assert panel._flow_route_table.cellWidget(6, 2).currentText() == "outlet-01"
@@ -543,7 +795,7 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
         assert panel._flow_route_table.cellWidget(1, 3).isEnabled() is False
         assert panel._flow_route_table.cellWidget(6, 3).isEnabled() is True
         assert model.element_rows[3].structure_ref == "structure:inlet-01"
-        assert model.element_rows[3].connection_point_ref == "connection:inlet-01:pipe-out"
+        assert model.element_rows[3].connection_point_ref == ""
         assert model.element_rows[6].connection_point_ref == ""
         assert model.flow_route_rows[6].flow_route_id == "flow-route:flowId-07"
     finally:
@@ -576,6 +828,63 @@ def test_drainage_editor_double_click_flow_route_shows_pipe_segment_preview() ->
         assert preview.FromConnectionPointRef == "connection:inlet-03:pipe-out"
         assert preview.ToConnectionPointRef == "connection:culvert-01:pipe-in"
         assert "Flow Route pipe segment preview shown." in panel._status.toPlainText()
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_flow_route_preview_shows_resolved_structure_ports() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorFlowRouteEndpointSummaryTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        structure_model = structure_preset_model_from_document(
+            "Drainage Structures",
+            doc,
+            project=project,
+            alignment=alignment,
+        )
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Drainage Structures Flow")
+        panel._load_selected_preset()
+        panel._flow_route_table.setCurrentCell(5, 0)
+        panel._update_flow_route_preview()
+
+        preview = panel._flow_route_preview.text()
+
+        assert "Route Chain: flowId-06: inlet-03 -> culvert-01" in preview
+        assert "Route Type: pipe-producing Structure-to-Structure segment." in preview
+        assert "From Structure inlet-03 / Port pipe-out (pipe_out)" in preview
+        assert "To Structure culvert-01 / Port pipe-in (pipe_in)" in preview
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_drainage_editor_flow_route_preview_labels_capture_only_routes() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1DrainageEditorFlowRouteCaptureSummaryTest")
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        structure_model = structure_preset_model_from_document(
+            "Drainage Structures",
+            doc,
+            project=project,
+            alignment=alignment,
+        )
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=structure_model)
+
+        panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Drainage Structures Flow")
+        panel._load_selected_preset()
+        panel._flow_route_table.setCurrentCell(0, 0)
+        panel._update_flow_route_preview()
+
+        preview = panel._flow_route_preview.text()
+
+        assert "Route Chain: flowId-01: side-ditch-right-01 -> inlet-01" in preview
+        assert "Route Type: capture-only open-channel handoff; no pipe solid is generated." in preview
+        assert "Endpoint: capture only; no pipe body is generated for this route." in preview
     finally:
         App.closeDocument(doc.Name)
 

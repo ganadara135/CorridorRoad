@@ -790,10 +790,19 @@ def _apply_station_context_to_viewer_context(
     if drainage_refs:
         output["active_drainage_ref"] = drainage_refs[0]
         output["drainage_summary"] = ", ".join(drainage_refs)
+        output["active_drainage_refs"] = drainage_refs
+    drainage_refs_by_side = dict(getattr(context, "active_drainage_refs_by_side", {}) or {})
+    if drainage_refs_by_side:
+        output["active_drainage_refs_by_side"] = {
+            str(side or "").strip(): _unique_text_values(list(refs or []))
+            for side, refs in drainage_refs_by_side.items()
+            if str(side or "").strip()
+        }
     flow_route_refs = _unique_text_values(list(getattr(context, "active_flow_route_refs", []) or []))
     if flow_route_refs:
         output["active_flow_route_ref"] = flow_route_refs[0]
         output["flow_route_summary"] = ", ".join(flow_route_refs)
+        output["active_flow_route_refs"] = flow_route_refs
     return output
 
 

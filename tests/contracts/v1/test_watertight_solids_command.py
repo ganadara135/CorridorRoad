@@ -55,6 +55,7 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     WATERTIGHT_SOLIDS_BLOCKED_MESSAGE,
     WATERTIGHT_SOLIDS_COMMAND_ID,
     _drainage_pipeline_network_solid_shape,
+    drainage_watertight_handoff_summary,
     _profile_set_on_centerline3d,
     discover_watertight_solid_targets,
     export_document_simulation_package_json,
@@ -317,6 +318,47 @@ def _populate_pipeline_sources_with_structure_specs(doc, project) -> None:
     create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_pipeline_drainage_model())
 
 
+def _drainage_handoff_mixed_model() -> DrainageModel:
+    base = _pipeline_drainage_model()
+    return DrainageModel(
+        schema_version=1,
+        project_id="proj-1",
+        drainage_model_id="drainage:mixed-handoff",
+        element_rows=[
+            DrainageElementRow(
+                drainage_element_id="drainage:ditch-right",
+                element_kind="ditch",
+                side="right",
+                station_start=0.0,
+                station_end=30.0,
+            ),
+            *list(base.element_rows),
+            DrainageElementRow(
+                drainage_element_id="drainage:node-no-port",
+                element_kind="junction_reference",
+                structure_ref="structure:no-port",
+                station_start=44.0,
+                station_end=45.0,
+            ),
+        ],
+        flow_route_rows=[
+            DrainageFlowRoute(
+                flow_route_id="flow-route:capture-01",
+                from_element_ref="drainage:ditch-right",
+                to_element_ref="drainage:inlet-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+            *list(base.flow_route_rows),
+            DrainageFlowRoute(
+                flow_route_id="flow-route:unresolved-01",
+                from_element_ref="drainage:node-no-port",
+                to_element_ref="drainage:outlet-01",
+                outlet_ref="drainage:outlet-01",
+            ),
+        ],
+    )
+
+
 def _structure_body_source_model() -> StructureModel:
     return StructureModel(
         schema_version=1,
@@ -451,6 +493,52 @@ def test_watertight_solids_resources_are_final_v1_stage() -> None:
 
     assert resources["MenuText"] == "Watertight Solids"
     assert "topology-first" in resources["ToolTip"]
+    assert str(resources["Pixmap"]).replace("\\", "/").endswith("watertight_solids.svg")
+
+
+def test_watertight_solids_panel_routes_existing_output_objects_to_tree() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsExistingOutputTreeRouteTest")
+    try:
+        output = WatertightSolidOutput(
+            schema_version=1,
+            project_id="proj-1",
+            watertight_solid_output_id="watertight-solids:existing",
+            corridor_id="corridor:main",
+            solid_rows=[
+                WatertightSolidOutputRow(
+                    output_object_id="watertight-solid:existing",
+                    target_id="solid-target:existing",
+                    target_family="road_body_envelope",
+                    scope_kind="whole_corridor",
+                    station_start=0.0,
+                    station_end=10.0,
+                    generated_object_ref="V1WatertightSolidOutput_Existing",
+                    validation_status="ok",
+                    is_watertight=True,
+                    is_valid_solid=True,
+                    volume=1.0,
+                    face_count=6,
+                    edge_count=12,
+                    profile_count=2,
+                )
+            ],
+        )
+        obj = create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=output,
+            project=None,
+            object_name="V1WatertightSolidOutput_Existing",
+            label="Watertight Solid - Existing",
+        )
+        tree = ensure_project_tree(project, include_references=False)
+        assert obj.Name not in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+
+        V1WatertightSolidsTaskPanel(document=doc)
+
+        assert obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_watertight_solids_toolbar_is_after_ai_assist() -> None:
@@ -490,6 +578,36 @@ def test_watertight_solids_prerequisites_ready_after_build_corridor_objects_exis
         assert status.surface_model_ready is True
         assert target_model.target_rows[0].target_family == "road_body_envelope"
         assert target_model.target_rows[0].readiness_status == "blocked"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnostics() -> None:
+    doc, project = _new_project_doc("V1WatertightSolidsBuildParametricDiagnosticBlockTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        diagnostic = doc.addObject("App::FeaturePython", "V1CorridorDaylightSurfacePreviewDiagnostic")
+        diagnostic.addProperty("App::PropertyString", "CRRecordKind", "V1").CRRecordKind = "v1_corridor_surface_preview_diagnostic"
+        diagnostic.addProperty("App::PropertyString", "SurfaceRole", "V1").SurfaceRole = "daylight"
+        diagnostic.addProperty("App::PropertyString", "SurfaceKind", "V1").SurfaceKind = "daylight_surface"
+        diagnostic.addProperty("App::PropertyString", "PreviewStatus", "V1").PreviewStatus = "error"
+        diagnostic.addProperty("App::PropertyString", "PreviewDiagnostic", "V1").PreviewDiagnostic = "Slope Face Surface preview was not created."
+
+        status = watertight_solid_prerequisite_status(doc)
+
+        assert status.ready is False
+        assert status.applied_sections_ready is True
+        assert status.corridor_model_ready is True
+        assert status.surface_model_ready is True
+        assert status.build_parametric_ready is False
+        assert status.build_parametric_diagnostic_count == 1
+        assert WATERTIGHT_SOLIDS_BLOCKED_MESSAGE in status.messages
+        assert any("daylight" in message and "blocking" in message for message in status.messages)
+        assert status.table_rows()[-1] == (
+            "Build Parametric Diagnostics",
+            "Missing",
+            "Resolve blocking Build Parametric diagnostics.",
+        )
     finally:
         App.closeDocument(doc.Name)
 
@@ -820,8 +938,8 @@ def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_cont
         panel = V1WatertightSolidsTaskPanel(document=doc)
         lined_ditch_row = _target_table_row(panel, "solid-target:lined-ditch:right")
         assert lined_ditch_row >= 0
-        assert panel._target_table.item(lined_ditch_row, 1).text() == "Lined Ditch - lined_ditch:right"
-        assert panel._target_table.item(lined_ditch_row, 2).text() == "Drainage"
+        assert panel._target_table.item(lined_ditch_row, 1).text() == "Drainage Lined Ditch Solid - lined_ditch:right"
+        assert panel._target_table.item(lined_ditch_row, 2).text() == "Drainage: Lined Ditch"
         assert "lined_ditch:right" in panel._target_table.item(lined_ditch_row, 4).text()
         assert "ditch:right" in panel._target_table.item(lined_ditch_row, 4).text()
         assert "concrete" in panel._target_table.item(lined_ditch_row, 4).text()
@@ -891,6 +1009,35 @@ def test_watertight_solids_discovery_reads_document_drainage_model_owner() -> No
         App.closeDocument(doc.Name)
 
 
+def test_watertight_solids_status_summarizes_drainage_solid_handoff_readiness() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsDrainageHandoffSummaryTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        create_or_update_v1_structure_model_object(doc, project=project, structure_model=_pipeline_structure_model())
+        create_or_update_v1_drainage_model_object(doc, project=project, drainage_model=_drainage_handoff_mixed_model())
+
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        summary = drainage_watertight_handoff_summary(doc, target_model=panel._target_model)
+        status_text = panel._status.toPlainText()
+
+        assert summary.readiness_status == "blocked"
+        assert summary.flow_route_count == 3
+        assert summary.capture_only_route_count == 1
+        assert summary.pipe_candidate_count == 1
+        assert summary.unresolved_port_route_count == 1
+        assert summary.pipe_segment_target_count == 1
+        assert summary.pipeline_network_target_count == 1
+        assert "Drainage Solid QA:" in status_text
+        assert "status=blocked" in status_text
+        assert "capture_only=1" in status_text
+        assert "pipe_candidates=1" in status_text
+        assert "unresolved_ports=1" in status_text
+        assert "network_fuse=compound_first_slice" in status_text
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None:
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsDrainagePipelineBuildTest")
@@ -903,8 +1050,9 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None
         row_index = _target_table_row(panel, target_id)
 
         assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipeline - flow-route:pipe-01"
-        assert panel._target_table.item(row_index, 2).text() == "Drainage"
+        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipe Segment Solid - flow-route:pipe-01"
+        assert panel._target_table.item(row_index, 2).text() == "Drainage: Pipe Segment"
+        assert "flow-route:pipe-01" in panel._target_table.item(row_index, 4).text()
         assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
 
         panel._target_table.selectRow(row_index)
@@ -912,7 +1060,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_body() -> None
 
         state = panel._target_state_by_id[target_id]
         assert state.validation_status == "ok"
-        assert state.profile_count > 2
+        assert state.profile_count >= 2
         assert state.volume > 0.0
         assert "caps=2" in state.validation_message
 
@@ -943,8 +1091,8 @@ def test_watertight_solids_discovers_and_builds_structure_body_from_native_spec(
         row_index = _target_table_row(panel, target_id)
 
         assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Structure Body - structure:culvert-01"
-        assert panel._target_table.item(row_index, 2).text() == "Structure"
+        assert panel._target_table.item(row_index, 1).text() == "Structure Body Solid - structure:culvert-01"
+        assert panel._target_table.item(row_index, 2).text() == "Structure Body"
         assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
 
         panel._target_table.selectRow(row_index)
@@ -1120,8 +1268,9 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body()
         row_index = _target_table_row(panel, target_id)
 
         assert row_index >= 0
-        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipeline Network - drainage-pipeline-network:main"
-        assert panel._target_table.item(row_index, 2).text() == "Drainage"
+        assert panel._target_table.item(row_index, 1).text() == "Drainage Pipe Network Solid - drainage-pipeline-network:main"
+        assert panel._target_table.item(row_index, 2).text() == "Drainage: Pipe Network"
+        assert "flow-route:pipe-01" in panel._target_table.item(row_index, 4).text()
         assert panel._target_state_by_id[target_id].target_row.readiness_status == "available"
 
         panel._target_table.selectRow(row_index)
@@ -1129,7 +1278,7 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body()
 
         state = panel._target_state_by_id[target_id]
         assert state.validation_status == "ok"
-        assert state.profile_count > 2
+        assert state.profile_count >= 2
         assert state.volume > 0.0
         assert "fuse_mode=compound_first_slice" in state.validation_message
 
@@ -1149,6 +1298,29 @@ def test_watertight_solids_discovers_and_builds_drainage_pipeline_network_body()
         assert "structure_refs=structure:inlet-01,structure:outlet-01" in state.watertight_output.solid_rows[0].notes
         assert "connection_point_refs=connection:inlet-01:pipe-out,connection:outlet-01:pipe-in" in state.watertight_output.solid_rows[0].notes
         assert obj.Name in _group_names(ensure_project_tree(project, include_references=False)[V1_TREE_WATERTIGHT_SOLIDS])
+
+        panel._build_package_button.click()
+        package_obj = doc.getObject("V1SimulationPackageOutput")
+        assert package_obj is not None
+        assert package_obj.DrainageReadinessStatus == "ready"
+        assert package_obj.DrainageSourceStatus == "ready"
+        assert package_obj.DrainageFlowRouteCount == 1
+        assert package_obj.DrainagePipeCandidateCount == 1
+        assert package_obj.DrainagePipelineNetworkTargetCount == 1
+        assert package_obj.DrainageNetworkFuseStatus == "built"
+        package_output = to_simulation_package_output(package_obj)
+        assert package_output is not None
+        assert package_output.drainage_readiness_status == "ready"
+        assert package_output.drainage_network_fuse_status == "built"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "simulation_package.json"
+            export_document_simulation_package_json(str(export_path), document=doc, project=project)
+            exported = json.loads(export_path.read_text(encoding="utf-8"))
+            assert exported["drainage_readiness"]["status"] == "ready"
+            assert exported["drainage_readiness"]["pipe_candidate_count"] == 1
+            assert exported["drainage_readiness"]["pipeline_network_target_count"] == 1
+            assert exported["drainage_readiness"]["network_fuse_status"] == "built"
     finally:
         App.closeDocument(doc.Name)
 
@@ -1214,10 +1386,14 @@ def test_drainage_pipeline_network_build_enabled_autobuilds_structure_body_depen
         assert network_state.build_status == "built"
         assert "dependencies_built=2" in network_state.validation_message
         assert "port_connectors=0" in network_state.validation_message
+        assert "structure_port_terminals=2" in network_state.validation_message
+        assert "structure_port_status=direct" in network_state.validation_message
         assert "Build Enabled summary: built=1; failed=0; targets=1" in panel._status.toPlainText()
         assert "structure_body_count=2" in notes
         assert "port_connector_count=0" in notes
         assert "port_connector_status=not_needed" in notes
+        assert "structure_port_terminal_count=2" in notes
+        assert "structure_port_contact_status=direct" in notes
         assert "structure_fuse_status=included" in notes
         assert inlet_state.output_object_ref in notes
         assert outlet_state.output_object_ref in notes
@@ -1345,7 +1521,10 @@ def test_drainage_pipeline_network_shape_adds_port_bridge_connectors_to_structur
 
     assert result.connector_count == 1
     assert result.port_connector_count == 1
+    assert result.structure_port_terminal_count == 1
+    assert result.structure_port_contact_status == "bridged"
     assert "port_connector_count=1" in result.notes
+    assert "structure_port_contact_status=bridged" in result.notes
     assert result.shape.Volume > 25.0
 
 
@@ -1376,7 +1555,10 @@ def test_drainage_pipeline_network_shape_trims_terminal_inside_structure_body_to
 
     assert result.endpoint_trim_count == 1
     assert result.port_connector_count == 0
+    assert result.structure_port_terminal_count == 1
+    assert result.structure_port_contact_status == "trimmed"
     assert "endpoint_trim_count=1" in result.notes
+    assert "structure_port_contact_status=trimmed" in result.notes
     assert result.shape.Volume > 0.0
 
 

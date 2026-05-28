@@ -64,6 +64,12 @@ Applied Sections resolve the active Region at each station.
 
 Build Corridor then uses Applied Sections plus Region source ranges to build surfaces, display Region Boundary rows, and apply stored Surface Transition records.
 
+Build Parametric generated previews and diagnostics are exposed in the FreeCAD tree under:
+
+`04_Corridor Model / Build Parametric Outputs`
+
+This includes generated surface previews, Region surface previews, transition span markers, and Build Parametric review markers. Users can hide/show these objects and inspect their properties from the tree after Build Corridor runs.
+
 Use this order when changing Region or Surface Transition settings:
 
 1. Update Region source rows.
@@ -97,3 +103,9 @@ Watertight Solids is the final stage after Build Corridor and AI Assist.
 4. Validate selected targets.
 5. Build selected or enabled targets.
 6. Build or export a package when simulation or exchange handoff is needed.
+
+Built solid output objects are exposed in the FreeCAD tree under:
+
+`09_Outputs & Exchange / Watertight Solids`
+
+The Watertight Solids panel also routes existing `V1WatertightSolidOutput` objects into this folder when the panel opens or refreshes, so users can hide/show built solids and inspect object properties directly from the tree.

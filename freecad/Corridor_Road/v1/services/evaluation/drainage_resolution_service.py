@@ -10,6 +10,7 @@ from ...models.source.drainage_model import (
     DrainageElementRow,
     DrainageFlowRoute,
     DrainageModel,
+    DrainagePolicySet,
 )
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
@@ -164,9 +165,9 @@ class DrainageValidationService:
             source_ref = route_id or f"flow-route:{index}"
             if not route_id:
                 diagnostics.append(_diagnostic("error", "missing_flow_route_id", source_ref, "Drainage flow route id is required."))
-        diagnostics.extend(_flow_route_graph_diagnostics(flow_route_rows, element_rows))
+        diagnostics.extend(_flow_route_graph_diagnostics(flow_route_rows, element_rows, policy_rows=policy_rows, structure_model=structure_model))
 
-        status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if diagnostics else "ok"
+        status = "error" if any(row.severity == "error" for row in diagnostics) else "warning" if any(row.severity == "warning" for row in diagnostics) else "ok"
         return DrainageValidationResult(status=status, diagnostic_rows=diagnostics)
 
 
@@ -314,6 +315,10 @@ def build_drainage_pipeline_segment_candidates(
         )
         from_point_ref = str(getattr(from_point, "connection_point_id", "") or "").strip()
         to_point_ref = str(getattr(to_point, "connection_point_id", "") or "").strip()
+        fallback_station_start = _element_route_station(from_element, direction="out")
+        fallback_station_end = _element_route_station(to_element, direction="in")
+        fallback_from_offset = _element_route_offset(from_element)
+        fallback_to_offset = _element_route_offset(to_element)
         if not from_point_ref or not to_point_ref:
             output.append(
                 DrainagePipelineSegmentCandidate(
@@ -324,7 +329,11 @@ def build_drainage_pipeline_segment_candidates(
                     from_connection_point_ref=from_point_ref,
                     to_connection_point_ref=to_point_ref,
                     status="missing_connection_point_ref",
-                    notes=f"from_connection_point_ref={from_point_ref};to_connection_point_ref={to_point_ref}",
+                    station_start=fallback_station_start,
+                    station_end=fallback_station_end,
+                    from_offset=fallback_from_offset,
+                    to_offset=fallback_to_offset,
+                    notes=f"from_connection_point_ref={from_point_ref};to_connection_point_ref={to_point_ref};fallback=element_station_range",
                 )
             )
             continue
@@ -338,7 +347,11 @@ def build_drainage_pipeline_segment_candidates(
                     from_connection_point_ref=from_point_ref,
                     to_connection_point_ref=to_point_ref,
                     status="missing_connection_point",
-                    notes=f"from_point_found={from_point is not None};to_point_found={to_point is not None}",
+                    station_start=fallback_station_start,
+                    station_end=fallback_station_end,
+                    from_offset=fallback_from_offset,
+                    to_offset=fallback_to_offset,
+                    notes=f"from_point_found={from_point is not None};to_point_found={to_point is not None};fallback=element_station_range",
                 )
             )
             continue
@@ -361,8 +374,8 @@ def build_drainage_pipeline_segment_candidates(
                 station_end=to_station,
                 from_offset=float(getattr(from_point, "offset", 0.0) or 0.0),
                 to_offset=float(getattr(to_point, "offset", 0.0) or 0.0),
-                invert_start=_optional_float(getattr(from_point, "invert_elevation", None)),
-                invert_end=_optional_float(getattr(to_point, "invert_elevation", None)),
+                invert_start=_connection_point_invert_elevation(from_point),
+                invert_end=_connection_point_invert_elevation(to_point),
                 diameter=max(from_diameter, to_diameter),
                 shape_kind=from_shape or to_shape,
                 notes=(
@@ -452,6 +465,23 @@ def _is_capture_only_flow_route(from_element, to_element) -> bool:
     return True
 
 
+def _element_route_station(element, *, direction: str) -> float:
+    """Return a fallback station for issue previews when a structure port is unresolved."""
+
+    station_start = float(getattr(element, "station_start", 0.0) or 0.0)
+    station_end = float(getattr(element, "station_end", station_start) or station_start)
+    if str(direction or "").strip().lower() == "out":
+        return station_end
+    return station_start
+
+
+def _element_route_offset(element) -> float:
+    try:
+        return float(getattr(element, "offset", 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
 def _policy_id_set(policy_rows: list[DrainagePolicySet]) -> set[str]:
     return {str(getattr(row, "policy_set_id", "") or "").strip() for row in list(policy_rows or []) if str(getattr(row, "policy_set_id", "") or "").strip()}
 
@@ -522,15 +552,15 @@ def _preferred_structure_connection_point(
         if direction == "out"
         else ["pipe_in", "upstream", "inlet", "pipe_junction", "pipe", "pipe_out", "downstream", "outlet", "discharge"]
     )
-    by_role: dict[str, object] = {}
-    for point in points:
+    by_role: dict[str, list[object]] = {}
+    for point in sorted(points, key=_connection_point_sort_key):
         role = str(getattr(point, "point_role", "") or "").strip().lower()
-        if role and role not in by_role:
-            by_role[role] = point
+        if role:
+            by_role.setdefault(role, []).append(point)
     for role in priority:
         if role in by_role:
-            return by_role[role]
-    return sorted(points, key=lambda point: int(getattr(point, "connection_order", 0) or 0))[0]
+            return by_role[role][0]
+    return sorted(points, key=_connection_point_sort_key)[0]
 
 
 def _connection_point_matches_direction(point, direction: str) -> bool:
@@ -568,10 +598,17 @@ def _is_default_culvert_endpoint_point(point, structure) -> bool:
     structure_ref = str(getattr(structure, "structure_id", "") or "").strip()
     base_id = structure_ref.split(":")[-1]
     point_id = str(getattr(point, "connection_point_id", "") or "").strip().lower()
-    role = str(getattr(point, "point_role", "") or "").strip().lower()
-    default_suffixes = {"pipe-in", "pipe_out", "pipe-out", "pipe_in", "upstream", "downstream"}
-    has_default_id = any(point_id == f"connection:{base_id}:{suffix}".lower() for suffix in default_suffixes)
-    return role in {"pipe_in", "pipe_out", "upstream", "downstream"} or has_default_id
+    default_suffixes = {"upstream", "downstream"}
+    return any(point_id == f"connection:{base_id}:{suffix}".lower() for suffix in default_suffixes)
+
+
+def _connection_point_sort_key(point) -> tuple[int, float, str]:
+    try:
+        order = int(getattr(point, "connection_order", 0) or 0)
+    except Exception:
+        order = 0
+    station = float(getattr(point, "station", 0.0) or 0.0)
+    return order, station, str(getattr(point, "connection_point_id", "") or "")
 
 
 def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, message: str) -> list[DiagnosticMessage]:
@@ -590,6 +627,9 @@ def _duplicate_id_diagnostics(rows: list[object], id_attr: str, kind: str, messa
 def _flow_route_graph_diagnostics(
     flow_route_rows: list[DrainageFlowRoute],
     element_rows: list[DrainageElementRow],
+    *,
+    policy_rows: list[DrainagePolicySet] | None = None,
+    structure_model: StructureModel | None = None,
 ) -> list[DiagnosticMessage]:
     diagnostics: list[DiagnosticMessage] = []
     element_by_id = {
@@ -604,10 +644,18 @@ def _flow_route_graph_diagnostics(
         if str(getattr(row, "structure_ref", "") or "").strip()
     }
     adjacency: dict[str, list[tuple[str, str]]] = {}
+    route_by_id: dict[str, DrainageFlowRoute] = {}
+    policy_by_id = {
+        str(getattr(row, "policy_set_id", "") or "").strip(): row
+        for row in list(policy_rows or [])
+        if str(getattr(row, "policy_set_id", "") or "").strip()
+    }
 
     for index, row in enumerate(list(flow_route_rows or []), start=1):
         route_id = str(getattr(row, "flow_route_id", "") or "").strip()
         source_ref = route_id or f"flow-route:{index}"
+        if route_id:
+            route_by_id[route_id] = row
         from_ref = str(getattr(row, "from_element_ref", "") or "").strip()
         to_ref = str(getattr(row, "to_element_ref", "") or "").strip()
         outlet_ref = str(getattr(row, "outlet_ref", "") or "").strip()
@@ -676,7 +724,19 @@ def _flow_route_graph_diagnostics(
 
         if from_ref and to_ref and from_ref in element_ids and to_ref in element_ids and from_ref != to_ref:
             adjacency.setdefault(from_ref, []).append((to_ref, source_ref))
+            policy_diagnostic = _flow_route_policy_incompatibility_diagnostic(
+                row,
+                from_element=element_by_id.get(from_ref),
+                to_element=element_by_id.get(to_ref),
+                policy_by_id=policy_by_id,
+            )
+            if policy_diagnostic is not None:
+                diagnostics.append(policy_diagnostic)
     diagnostics.extend(_cycle_diagnostics(adjacency))
+    diagnostics.extend(_flow_route_outlet_reachability_diagnostics(adjacency, route_by_id, element_by_id))
+    diagnostics.extend(_flow_route_capture_pipe_summary_diagnostics(flow_route_rows, element_rows, structure_model=structure_model))
+    if structure_model is not None:
+        diagnostics.extend(_flow_route_structure_port_diagnostics(flow_route_rows, element_rows, structure_model))
     return diagnostics
 
 
@@ -684,6 +744,276 @@ def _known_outlet_ref(outlet_ref: str, *, element_ids: set[str], structure_refs:
     if outlet_ref in element_ids or outlet_ref in structure_refs:
         return True
     return outlet_ref.startswith(("outfall:", "outlet:", "structure:"))
+
+
+def _flow_route_outlet_reachability_diagnostics(
+    adjacency: dict[str, list[tuple[str, str]]],
+    route_by_id: dict[str, DrainageFlowRoute],
+    element_by_id: dict[str, DrainageElementRow],
+) -> list[DiagnosticMessage]:
+    diagnostics: list[DiagnosticMessage] = []
+    if not adjacency:
+        return diagnostics
+
+    for from_ref in sorted(adjacency):
+        outlet_refs = _reachable_flow_route_outlets(from_ref, adjacency, route_by_id, element_by_id)
+        route_refs = [route_id for _to_ref, route_id in list(adjacency.get(from_ref, []) or [])]
+        source_ref = ",".join(route_refs) if route_refs else from_ref
+        if not outlet_refs:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "flow_route_no_reachable_outlet",
+                    source_ref,
+                    "Flow Route chain has no reachable outlet/outfall Element or outlet_ref.",
+                    notes=f"from_element_ref={from_ref}",
+                )
+            )
+            continue
+        if len(outlet_refs) > 1:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "flow_route_multiple_reachable_outlets",
+                    source_ref,
+                    "Flow Route chain can reach multiple outlets. Confirm the intended discharge path.",
+                    notes=f"from_element_ref={from_ref};outlet_refs={','.join(outlet_refs)}",
+                )
+            )
+    return diagnostics
+
+
+def _reachable_flow_route_outlets(
+    start_ref: str,
+    adjacency: dict[str, list[tuple[str, str]]],
+    route_by_id: dict[str, DrainageFlowRoute],
+    element_by_id: dict[str, DrainageElementRow],
+) -> list[str]:
+    outlet_refs: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(element_ref: str) -> None:
+        if element_ref in visited:
+            return
+        visited.add(element_ref)
+        outgoing = list(adjacency.get(element_ref, []) or [])
+        if not outgoing and _is_outlet_element(element_by_id.get(element_ref)):
+            outlet_refs.add(element_ref)
+            return
+        for next_ref, route_ref in outgoing:
+            route = route_by_id.get(route_ref)
+            outlet_ref = "" if route is None else str(getattr(route, "outlet_ref", "") or "").strip()
+            if outlet_ref:
+                outlet_refs.add(outlet_ref)
+            if _is_outlet_element(element_by_id.get(next_ref)):
+                outlet_refs.add(next_ref)
+            visit(next_ref)
+
+    visit(start_ref)
+    return sorted(outlet_refs)
+
+
+def _flow_route_structure_port_diagnostics(
+    flow_route_rows: list[DrainageFlowRoute],
+    element_rows: list[DrainageElementRow],
+    structure_model: StructureModel,
+) -> list[DiagnosticMessage]:
+    element_by_id = {
+        str(getattr(row, "drainage_element_id", "") or "").strip(): row
+        for row in list(element_rows or [])
+        if str(getattr(row, "drainage_element_id", "") or "").strip()
+    }
+    candidates = build_drainage_pipeline_segment_candidates(
+        DrainageModel(
+            schema_version=1,
+            project_id=str(getattr(structure_model, "project_id", "") or "corridorroad-v1"),
+            flow_route_rows=list(flow_route_rows or []),
+            element_rows=list(element_rows or []),
+        ),
+        structure_model,
+    )
+    diagnostics: list[DiagnosticMessage] = []
+    for candidate in candidates:
+        status = str(getattr(candidate, "status", "") or "")
+        if status in {"ready", "capture_only", "missing_element"}:
+            continue
+        from_element = element_by_id.get(str(getattr(candidate, "from_element_ref", "") or ""))
+        to_element = element_by_id.get(str(getattr(candidate, "to_element_ref", "") or ""))
+        if _is_capture_only_flow_route(from_element, to_element):
+            continue
+        diagnostics.append(
+            _diagnostic(
+                "warning",
+                "flow_route_structure_ports_unresolved",
+                str(getattr(candidate, "flow_route_ref", "") or ""),
+                "Flow Route expects a Structure-backed pipe but could not resolve both pipe ports.",
+                notes=(
+                    f"from_element_ref={str(getattr(candidate, 'from_element_ref', '') or '')};"
+                    f"to_element_ref={str(getattr(candidate, 'to_element_ref', '') or '')};"
+                    f"status={status};"
+                    f"{str(getattr(candidate, 'notes', '') or '')}"
+                ),
+            )
+        )
+        diagnostics.append(
+            _diagnostic(
+                "warning",
+                "flow_route_pipe_station_span_fallback",
+                str(getattr(candidate, "flow_route_ref", "") or ""),
+                "Flow Route expects pipe geometry but currently resolves only station-span fallback geometry.",
+                notes=(
+                    f"from_element_ref={str(getattr(candidate, 'from_element_ref', '') or '')};"
+                    f"to_element_ref={str(getattr(candidate, 'to_element_ref', '') or '')};"
+                    f"status={status};"
+                    f"{str(getattr(candidate, 'notes', '') or '')}"
+                ),
+            )
+        )
+    return diagnostics
+
+
+def _flow_route_policy_incompatibility_diagnostic(
+    route: DrainageFlowRoute,
+    *,
+    from_element: DrainageElementRow | None,
+    to_element: DrainageElementRow | None,
+    policy_by_id: dict[str, DrainagePolicySet],
+) -> DiagnosticMessage | None:
+    if from_element is None or to_element is None:
+        return None
+    if _is_capture_only_flow_route(from_element, to_element):
+        return None
+    from_policy_ref = str(getattr(from_element, "policy_set_ref", "") or "").strip()
+    to_policy_ref = str(getattr(to_element, "policy_set_ref", "") or "").strip()
+    if not from_policy_ref or not to_policy_ref or from_policy_ref == to_policy_ref:
+        return None
+    from_policy = policy_by_id.get(from_policy_ref)
+    to_policy = policy_by_id.get(to_policy_ref)
+    from_intent = str(getattr(from_policy, "flow_intent", "") or "").strip()
+    to_intent = str(getattr(to_policy, "flow_intent", "") or "").strip()
+    from_family = _drainage_policy_family(from_policy)
+    to_family = _drainage_policy_family(to_policy)
+    if _policy_families_are_compatible(from_family, to_family):
+        return None
+    return _diagnostic(
+        "warning",
+        "flow_route_policy_incompatibility",
+        str(getattr(route, "flow_route_id", "") or ""),
+        "Flow Route connects pipe-producing Elements with incompatible Drainage policy families.",
+        notes=(
+            f"from_element_ref={str(getattr(from_element, 'drainage_element_id', '') or '')};"
+            f"from_policy_set_ref={from_policy_ref};from_flow_intent={from_intent};from_policy_family={from_family};"
+            f"to_element_ref={str(getattr(to_element, 'drainage_element_id', '') or '')};"
+            f"to_policy_set_ref={to_policy_ref};to_flow_intent={to_intent};to_policy_family={to_family}"
+        ),
+    )
+
+
+def _drainage_policy_family(policy: DrainagePolicySet | None) -> str:
+    if policy is None:
+        return "unknown"
+    text = " ".join(
+        [
+            str(getattr(policy, "policy_set_id", "") or ""),
+            str(getattr(policy, "flow_intent", "") or ""),
+            str(getattr(policy, "collection_rule", "") or ""),
+            str(getattr(policy, "discharge_rule", "") or ""),
+        ]
+    ).lower().replace("-", "_")
+    if "outfall" in text or "free_discharge" in text or "outlet_headwall" in text:
+        return "outfall"
+    if "cross_drain" in text or "culvert" in text or "pipe" in text:
+        return "pipe"
+    if "capture" in text or "inlet" in text or "catch_basin" in text:
+        return "capture"
+    if "ditch" in text or "channel" in text or "roadside" in text or "convey" in text:
+        return "open_channel"
+    return "unknown"
+
+
+def _policy_families_are_compatible(from_family: str, to_family: str) -> bool:
+    if not from_family or not to_family or "unknown" in {from_family, to_family}:
+        return True
+    if from_family == to_family:
+        return True
+    return (from_family, to_family) in {
+        ("open_channel", "capture"),
+        ("open_channel", "pipe"),
+        ("open_channel", "outfall"),
+        ("capture", "pipe"),
+        ("capture", "outfall"),
+        ("pipe", "outfall"),
+    }
+
+
+def _flow_route_capture_pipe_summary_diagnostics(
+    flow_route_rows: list[DrainageFlowRoute],
+    element_rows: list[DrainageElementRow],
+    *,
+    structure_model: StructureModel | None = None,
+) -> list[DiagnosticMessage]:
+    if not flow_route_rows:
+        return []
+    if structure_model is not None:
+        candidates = build_drainage_pipeline_segment_candidates(
+            DrainageModel(
+                schema_version=1,
+                project_id=str(getattr(structure_model, "project_id", "") or "corridorroad-v1"),
+                flow_route_rows=list(flow_route_rows or []),
+                element_rows=list(element_rows or []),
+            ),
+            structure_model,
+        )
+        statuses = [str(getattr(row, "status", "") or "") for row in candidates]
+        capture_count = statuses.count("capture_only")
+        pipe_count = statuses.count("ready")
+        fallback_count = sum(1 for value in statuses if value in {"missing_connection_point_ref", "missing_connection_point"})
+        missing_element_count = statuses.count("missing_element")
+    else:
+        element_by_id = {
+            str(getattr(row, "drainage_element_id", "") or "").strip(): row
+            for row in list(element_rows or [])
+            if str(getattr(row, "drainage_element_id", "") or "").strip()
+        }
+        capture_count = 0
+        pipe_count = 0
+        missing_element_count = 0
+        for route in list(flow_route_rows or []):
+            from_element = element_by_id.get(str(getattr(route, "from_element_ref", "") or "").strip())
+            to_element = element_by_id.get(str(getattr(route, "to_element_ref", "") or "").strip())
+            if from_element is None or to_element is None:
+                missing_element_count += 1
+            elif _is_capture_only_flow_route(from_element, to_element):
+                capture_count += 1
+            else:
+                pipe_count += 1
+        fallback_count = 0
+    return [
+        _diagnostic(
+            "info",
+            "flow_route_capture_pipe_summary",
+            "drainage:flow-routes",
+            "Flow Route validation summary distinguishes capture-only, pipe-producing, and fallback routes.",
+            notes=(
+                f"flow_route_count={len(list(flow_route_rows or []))};"
+                f"capture_only_count={capture_count};"
+                f"pipe_producing_count={pipe_count};"
+                f"station_span_fallback_count={fallback_count};"
+                f"missing_element_count={missing_element_count};"
+                f"structure_model_available={structure_model is not None}"
+            ),
+        )
+    ]
+
+
+def _is_outlet_element(element: object | None) -> bool:
+    if element is None:
+        return False
+    kind = str(getattr(element, "element_kind", "") or "").strip().lower()
+    element_id = str(getattr(element, "drainage_element_id", "") or "").strip().lower()
+    return kind in {"outfall", "outfall_reference", "outlet", "outlet_reference"} or "outfall" in kind or "outlet" in kind or element_id.startswith(
+        ("outfall:", "outlet:")
+    )
 
 
 def _cycle_diagnostics(adjacency: dict[str, list[tuple[str, str]]]) -> list[DiagnosticMessage]:
@@ -869,6 +1199,19 @@ def _optional_float(value: object) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _connection_point_invert_elevation(point: object | None) -> float | None:
+    if point is None:
+        return None
+    value = _optional_float(getattr(point, "invert_elevation", None))
+    if value is None:
+        return None
+    if abs(value) <= 1.0e-12 and getattr(point, "elevation", None) is None:
+        notes = str(getattr(point, "notes", "") or "").strip().lower()
+        if "invert_source=explicit" not in notes and "vertical_source=absolute" not in notes:
+            return None
+    return value
 
 
 def _safe_ref_id(value: str) -> str:
