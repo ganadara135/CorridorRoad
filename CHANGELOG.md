@@ -9,13 +9,23 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-28
+
 ### Added
 - Added a Build Parametric stabilization plan covering surface preview reliability, Region Boundary review, Surface Transition rebuild behavior, Drainage handoff, tree-visible outputs, and Watertight Solids prerequisites.
+- Added a dedicated Watertight Solids toolbar icon that reflects simulation-ready watertight solid output.
 
 ### Changed
 - Changed Build Parametric generated preview and diagnostic objects so they are routed under `04_Corridor Model / Build Parametric Outputs` for tree-based hide/show and property inspection.
 - Changed the Watertight Solids panel so existing `V1WatertightSolidOutput` objects are routed under `09_Outputs & Exchange / Watertight Solids` when the panel opens or refreshes.
 - Changed Drainage Elements so the `Connection Point` column is no longer user-facing; Flow Routes now resolve Pipe In / Pipe Out endpoints from Structure-owned connection points by route direction.
+- Changed Drainage Flow Network preview so Structure connection point endpoints with implicit elevation use the shared `3D Centerline` height instead of falling back to a zero-elevation Alignment plane.
+- Changed the Drainage preset selector so it opens with an empty preset choice and only loads preset data after an explicit user selection.
+- Changed Applied Sections row double-click preview to display only the selected Assembly section line, using wire linework instead of marker geometry.
+
+### Fixed
+- Fixed Drainage Flow Network previews that could appear along the Alignment plane when older Structure connection point rows contained implicit `0.0` invert values.
+- Fixed Applied Sections 3D review clutter by removing the station marker from selected Assembly section previews.
 
 ## [1.0.1] - 2026-05-15
 
