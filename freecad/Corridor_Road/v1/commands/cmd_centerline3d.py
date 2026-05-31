@@ -58,6 +58,7 @@ def show_v1_centerline3d_preview_object(
     result: Centerline3DResult | None = None,
     project=None,
     show_station_markers: bool = False,
+    display_mode: str = "smooth_curve",
 ):
     """Create or update the 3D Centerline review preview object."""
 
@@ -70,7 +71,7 @@ def show_v1_centerline3d_preview_object(
     points = [App.Vector(float(row.x), float(row.y), float(row.z)) for row in list(active_result.point_rows or ())]
     if len(points) < 2:
         raise RuntimeError("3D Centerline preview requires at least two evaluated points.")
-    shape, curve_kind = _make_centerline3d_curve_shape(points)
+    shape, curve_kind = _make_centerline3d_curve_shape(points, display_mode=display_mode)
     obj = doc.getObject("V1Centerline3DPreview")
     if obj is None:
         obj = doc.addObject("Part::Feature", "V1Centerline3DPreview")
@@ -80,6 +81,7 @@ def show_v1_centerline3d_preview_object(
     _set_string(obj, "V1ObjectType", "V1Centerline3DReview")
     _set_string(obj, "Centerline3DResultId", str(active_result.centerline3d_result_id or "centerline3d:main"))
     _set_string(obj, "CurveKind", curve_kind)
+    _set_string(obj, "CenterlineDisplayMode", _normalized_display_mode(display_mode))
     _set_string(obj, "AlignmentId", str(active_result.alignment_id or ""))
     _set_string(obj, "ProfileId", str(active_result.profile_id or ""))
     _set_string(obj, "StationingId", str(active_result.stationing_id or ""))
@@ -218,6 +220,15 @@ class V1Centerline3DTaskPanel:
         self._show_station_markers.setToolTip("Show or hide station markers on the 3D Centerline.")
         self._show_station_markers.stateChanged.connect(self._toggle_station_markers)
         layout.addWidget(self._show_station_markers)
+        display_row = QtWidgets.QHBoxLayout()
+        display_row.addWidget(QtWidgets.QLabel("Display"))
+        self._display_mode_combo = QtWidgets.QComboBox()
+        self._display_mode_combo.addItems(["Smooth Curve", "Polyline"])
+        self._display_mode_combo.setCurrentText("Smooth Curve")
+        self._display_mode_combo.setToolTip("Choose how the 3D Centerline preview is drawn. This does not change station/frame calculations.")
+        display_row.addWidget(self._display_mode_combo)
+        display_row.addStretch(1)
+        layout.addLayout(display_row)
         buttons = QtWidgets.QHBoxLayout()
         show = QtWidgets.QPushButton("Show")
         show.clicked.connect(self._show)
@@ -247,13 +258,15 @@ class V1Centerline3DTaskPanel:
                 self.document,
                 result=self._result,
                 show_station_markers=self._show_stations_enabled(),
+                display_mode=self._selected_display_mode(),
             )
             self._focus()
             self._refresh_ui(
                 message=(
                     "3D Centerline has been generated. "
                     f"Preview object: {str(getattr(self._preview_object, 'Name', '') or 'V1Centerline3DPreview')}; "
-                    f"points={int(getattr(self._result, 'point_count', 0) or 0)}."
+                    f"points={int(getattr(self._result, 'point_count', 0) or 0)}; "
+                    f"display={_display_mode_label(getattr(self._preview_object, 'CenterlineDisplayMode', 'smooth_curve'))}."
                 )
             )
         except Exception as exc:
@@ -325,6 +338,7 @@ class V1Centerline3DTaskPanel:
             ("Alignment", str(result.alignment_id or "-")),
             ("Profile", str(result.profile_id or "-")),
             ("Stationing", str(result.stationing_id or "-")),
+            ("Display", _display_mode_label(self._selected_display_mode())),
         ]
         self._summary_table.setRowCount(len(rows))
         for row_index, (label, value) in enumerate(rows):
@@ -345,6 +359,12 @@ class V1Centerline3DTaskPanel:
             return bool(self._show_station_markers.isChecked())
         except Exception:
             return False
+
+    def _selected_display_mode(self) -> str:
+        try:
+            return _normalized_display_mode(str(self._display_mode_combo.currentText() or "Smooth Curve"))
+        except Exception:
+            return "smooth_curve"
 
 
 class CmdV1Centerline3D:
@@ -394,17 +414,51 @@ def _style_centerline3d_station_markers(obj, *, visible: bool = True) -> None:
         pass
 
 
-def _make_centerline3d_curve_shape(points: list[object]):
+def _make_centerline3d_curve_shape(points: list[object], *, display_mode: str = "smooth_curve"):
     """Return a smooth centerline review curve, falling back to polyline if needed."""
 
-    if len(points) >= 3:
+    cleaned = _clean_centerline_points(points)
+    if len(cleaned) < 2:
+        raise RuntimeError("3D Centerline preview requires at least two distinct evaluated points.")
+    if _normalized_display_mode(display_mode) == "polyline":
+        return Part.makePolygon(cleaned), "polyline"
+    if len(cleaned) >= 3:
         try:
             curve = Part.BSplineCurve()
-            curve.interpolate(points)
+            curve.interpolate(cleaned)
             return curve.toShape(), "bspline_interpolation"
         except Exception:
             pass
-    return Part.makePolygon(points), "polyline"
+        try:
+            curve = Part.BSplineCurve()
+            curve.approximate(cleaned)
+            return curve.toShape(), "bspline_approximation"
+        except Exception:
+            pass
+    return Part.makePolygon(cleaned), "polyline"
+
+
+def _clean_centerline_points(points: list[object]) -> list[object]:
+    cleaned = []
+    previous_key = None
+    for point in list(points or []):
+        key = (round(float(point.x), 9), round(float(point.y), 9), round(float(point.z), 9))
+        if key == previous_key:
+            continue
+        cleaned.append(point)
+        previous_key = key
+    return cleaned
+
+
+def _normalized_display_mode(value: str) -> str:
+    text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if text in {"polyline", "line", "segmented"}:
+        return "polyline"
+    return "smooth_curve"
+
+
+def _display_mode_label(value: str) -> str:
+    return "Polyline" if _normalized_display_mode(value) == "polyline" else "Smooth Curve"
 
 
 def _station_marker_radius(points: list[object]) -> float:
