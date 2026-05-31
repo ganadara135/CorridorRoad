@@ -509,7 +509,7 @@ Each station should use the Assembly matching the resolved `RegionRow.assembly_r
 
 Opening the command panel should not mutate the document.
 
-Clicking `Apply` creates or updates a `V1AppliedSectionSet` result object under:
+Clicking `Build Sections` validates source handoff readiness and creates or updates a `V1AppliedSectionSet` result object under:
 
 - `04_Corridor Model / Applied Sections`
 

@@ -1,6 +1,6 @@
 # Quick Start
 
-This page describes the basic Parametric Road v1 workflow for `1.0.2`.
+This page describes the basic Parametric Road v1 workflow for `1.0.3`.
 
 ## 1. Install
 
@@ -23,18 +23,21 @@ Use this order:
 5. Profile
 6. Review Plan/Profile
 7. 3D Centerline
-8. Assembly
-9. Region
-10. Structures
-11. Drainage
-12. Applied Sections
-13. Build Corridor
-14. Review
-15. Outputs
-16. AI Assist
-17. Watertight Solids
+8. Superelevation
+9. Assembly
+10. Region
+11. Structures
+12. Drainage
+13. Applied Sections
+14. Build Corridor
+15. Review
+16. Outputs
+17. AI Assist
+18. Watertight Solids
 
 Drainage opens a source editor with Elements, Policies, and Flow Routes. It is placed after Region and Structures so Drainage Elements can reference Region ownership and Structure connection points before downstream corridor evaluation.
+
+Superelevation is optional, but when used it should be applied before Applied Sections.
 
 ## 3. Minimal Smoke Workflow
 
@@ -44,23 +47,25 @@ Drainage opens a source editor with Elements, Policies, and Flow Routes. It is p
 4. Generate Stations.
 5. Edit Profile.
 6. Open Review Plan/Profile, then generate or refresh 3D Centerline.
-7. Create or select an Assembly.
-8. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
-9. Optionally open Structures and apply Structure source rows.
-10. Optionally open Drainage and apply drainage source rows.
-11. Run Applied Sections.
-12. Run Build Corridor.
-13. Review Region Boundaries and Surface Transitions in Build Corridor.
-14. Open Cross Section Viewer.
-15. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
-16. Open Earthwork Viewer.
-17. Open Watertight Solids after Build Corridor when solid targets are needed.
+7. Optionally open Superelevation, load a preset, validate, show samples, and apply.
+8. Create or select an Assembly.
+9. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
+10. Optionally open Structures and apply Structure source rows.
+11. Optionally open Drainage and apply drainage source rows.
+12. Run Applied Sections.
+13. Run Build Corridor.
+14. Review Region Boundaries and Surface Transitions in Build Corridor.
+15. Open Cross Section Viewer.
+16. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
+17. Open Earthwork Viewer.
+18. Open Watertight Solids after Build Corridor when solid targets are needed.
 
 ## 4. What To Check
 
 - No command registration errors appear.
 - Applied Sections are generated before Build Corridor.
 - Build Corridor consumes Applied Sections.
+- Superelevation changes require rebuilding Applied Sections before Build Corridor.
 - Region Boundaries show continuous source Region ranges.
 - Surface Transition `Spacing` and `Sample Count` match the intended transition density.
 - Review panels open without traceback errors.

@@ -578,7 +578,17 @@ def run_v1_drainage_editor_command(document=None):
 def starter_drainage_model_from_document(document=None, *, project=None) -> DrainageModel:
     """Build a non-destructive starter DrainageModel."""
 
-    return drainage_preset_model_from_document("Roadside Ditch", document=document, project=project)
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    prj = project or find_project(doc)
+    return DrainageModel(
+        schema_version=1,
+        project_id=_project_id(prj),
+        drainage_model_id="drainage:main",
+        label="Drainage",
+        element_rows=[],
+        policy_rows=[],
+        flow_route_rows=[],
+    )
 
 
 def drainage_preset_model_from_document(
@@ -712,36 +722,42 @@ class V1DrainageEditorTaskPanel:
         self._flow_route_preview.setWordWrap(True)
         layout.addWidget(self._flow_route_preview)
 
-        edit_row = QtWidgets.QHBoxLayout()
+        edit_rows = QtWidgets.QVBoxLayout()
+        edit_rows.setSpacing(4)
+        edit_row_top = QtWidgets.QHBoxLayout()
+        edit_row_bottom = QtWidgets.QHBoxLayout()
         self._add_element_button = QtWidgets.QPushButton("Add Element")
         self._add_element_button.clicked.connect(self._add_element_row)
-        edit_row.addWidget(self._add_element_button)
+        edit_row_top.addWidget(self._add_element_button)
         self._add_left_ditch_button = QtWidgets.QPushButton("Add Left Ditch")
         self._add_left_ditch_button.clicked.connect(lambda: self._add_ditch_row("left"))
-        edit_row.addWidget(self._add_left_ditch_button)
+        edit_row_top.addWidget(self._add_left_ditch_button)
         self._add_right_ditch_button = QtWidgets.QPushButton("Add Right Ditch")
         self._add_right_ditch_button.clicked.connect(lambda: self._add_ditch_row("right"))
-        edit_row.addWidget(self._add_right_ditch_button)
+        edit_row_top.addWidget(self._add_right_ditch_button)
+        edit_row_top.addStretch(1)
         self._add_inlet_button = QtWidgets.QPushButton("Add Inlet")
         self._add_inlet_button.clicked.connect(self._add_inlet_row)
-        edit_row.addWidget(self._add_inlet_button)
+        edit_row_bottom.addWidget(self._add_inlet_button)
         self._add_outlet_button = QtWidgets.QPushButton("Add Outlet")
         self._add_outlet_button.clicked.connect(self._add_outlet_row)
-        edit_row.addWidget(self._add_outlet_button)
+        edit_row_bottom.addWidget(self._add_outlet_button)
         self._add_cross_drain_button = QtWidgets.QPushButton("Add Cross Drain")
         self._add_cross_drain_button.clicked.connect(self._add_cross_drain_row)
-        edit_row.addWidget(self._add_cross_drain_button)
+        edit_row_bottom.addWidget(self._add_cross_drain_button)
         self._add_policy_button = QtWidgets.QPushButton("Add Policy")
         self._add_policy_button.clicked.connect(self._add_policy_row)
-        edit_row.addWidget(self._add_policy_button)
+        edit_row_bottom.addWidget(self._add_policy_button)
         self._add_flow_route_button = QtWidgets.QPushButton("Add Flow Route")
         self._add_flow_route_button.clicked.connect(self._add_flow_route_row)
-        edit_row.addWidget(self._add_flow_route_button)
-        delete_row = QtWidgets.QPushButton("Delete Selected")
-        delete_row.clicked.connect(self._delete_selected_rows)
-        edit_row.addWidget(delete_row)
-        edit_row.addStretch(1)
-        layout.addLayout(edit_row)
+        edit_row_bottom.addWidget(self._add_flow_route_button)
+        self._delete_button = QtWidgets.QPushButton("Delete Selected")
+        self._delete_button.clicked.connect(self._delete_selected_rows)
+        edit_row_bottom.addWidget(self._delete_button)
+        edit_row_bottom.addStretch(1)
+        edit_rows.addLayout(edit_row_top)
+        edit_rows.addLayout(edit_row_bottom)
+        layout.addLayout(edit_rows)
 
         self._status = QtWidgets.QPlainTextEdit()
         self._status.setReadOnly(True)
@@ -810,7 +826,7 @@ class V1DrainageEditorTaskPanel:
         if model is None:
             model = starter_drainage_model_from_document(self.document)
             self._replace_model(model)
-            self._set_status("Starter DrainageModel loaded. Apply when ready.")
+            self._set_status("No DrainageModel source object is available. Tables are empty; add rows or load a preset, then Apply.")
             return
         self._replace_model(model)
         self._set_status(f"Loaded DrainageModel from {self.drainage_obj.Label}.")

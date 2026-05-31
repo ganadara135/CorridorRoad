@@ -9,6 +9,30 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-31
+
+### Added
+- Added a first-slice v1 Superelevation source workflow with a dedicated toolbar stage after `3D Centerline`, persisted `V1SuperelevationSource` objects, validation, Apply, station sample review, and 3D crossfall-bar preview.
+- Added Superelevation evaluation and sampling services so station-based crossfall intent is resolved through shared v1 service contracts rather than task-panel-local logic.
+- Added Applied Sections integration for Superelevation, including effective lane/shoulder crossfall storage, source provenance, review-table summaries, Cross Section Viewer notes, and persisted round-trip context.
+- Added Build Parametric verification for Superelevation-resolved Design Surface output, ensuring Design Surface TIN generation consumes Applied Section `fg_surface` rows instead of evaluating Superelevation directly.
+- Added Superelevation `Auto Calculate`, which generates traceable Crossfall Control Rows and Transitions from Alignment curve radius, design speed, side friction, maximum superelevation, and transition-length criteria.
+- Added a Superelevation Apply completion message so successful persistence is clear to the user.
+- Added `Smooth Curve` / `Polyline` display mode options to the 3D Centerline panel.
+- Added Superelevation manual QA and Wiki draft documentation covering source ownership, rebuild order, review behavior, and current limitations.
+
+### Changed
+- Changed the recommended v1 workflow order to place `Superelevation` after `3D Centerline` and before `Assembly`, `Regions`, and `Applied Sections`.
+- Changed Superelevation authoring so legacy preset data is removed in favor of Auto Calculate or explicit manual table rows.
+- Changed 3D Centerline preview display so `Smooth Curve` uses B-Spline presentation with polyline fallback while downstream calculations still use `Centerline3DResult` station/frame data.
+- Changed Drainage editor first-entry behavior so Elements, Policies, and Flow Routes start empty when no `V1DrainageModel` exists; presets still load only after explicit selection.
+- Changed Drainage editor row action buttons into a two-line layout to reduce horizontal crowding.
+- Changed README and Wiki workflow descriptions so Assembly remains the default crossfall source while Superelevation is described as the station-based override source.
+
+### Fixed
+- Fixed Superelevation validation false positives at displayed station-range boundaries caused by three-decimal table rounding.
+- Fixed minimum transition-length validation so equal-length generated transitions are not reported as shorter because of floating-point noise.
+
 ## [1.0.2] - 2026-05-28
 
 ### Added

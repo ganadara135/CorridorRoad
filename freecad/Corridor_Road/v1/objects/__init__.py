@@ -80,6 +80,12 @@ from .obj_stationing import (
     station_value_rows,
     update_v1_stationing_from_alignment,
 )
+from .obj_superelevation import (
+    V1SuperelevationSourceObject,
+    create_or_update_v1_superelevation_source_object,
+    find_v1_superelevation_source,
+    to_superelevation_model,
+)
 from .obj_simulation_qa import (
     V1SimulationQaOutputObject,
     create_or_update_v1_simulation_qa_output_object,
@@ -103,6 +109,7 @@ __all__ = [
     "V1ProfileObject",
     "V1RegionModelObject",
     "V1StationingObject",
+    "V1SuperelevationSourceObject",
     "V1StructureModelObject",
     "V1SurfaceModelObject",
     "V1SurfaceTransitionModelObject",
@@ -121,6 +128,7 @@ __all__ = [
     "create_or_update_v1_simulation_qa_output_object",
     "create_or_update_v1_surface_model_object",
     "create_or_update_v1_surface_transition_model_object",
+    "create_or_update_v1_superelevation_source_object",
     "create_or_update_v1_watertight_solid_output_object",
     "create_sample_v1_alignment",
     "create_sample_v1_profile",
@@ -140,6 +148,7 @@ __all__ = [
     "find_v1_region_model",
     "find_v1_stationing",
     "find_v1_structure_model",
+    "find_v1_superelevation_source",
     "list_v1_assembly_models",
     "station_value_rows",
     "to_alignment_model",
@@ -155,5 +164,6 @@ __all__ = [
     "to_profile_model",
     "to_region_model",
     "to_structure_model",
+    "to_superelevation_model",
     "update_v1_stationing_from_alignment",
 ]

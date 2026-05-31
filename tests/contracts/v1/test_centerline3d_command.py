@@ -61,13 +61,35 @@ def test_centerline3d_preview_object_routes_under_alignment_profile_centerline_g
         preview = show_v1_centerline3d_preview_object(doc, result=result, project=project)
 
         assert preview.Name == "V1Centerline3DPreview"
-        assert preview.Label == "3D Centerline"
+        assert str(preview.Label).startswith("3D Centerline")
         assert preview.CRRecordKind == "v1_centerline3d_review"
         assert preview.V1ObjectType == "V1Centerline3DReview"
         assert preview.CurveKind == "bspline_interpolation"
+        assert preview.CenterlineDisplayMode == "smooth_curve"
         assert preview.PointCount == result.point_count
         assert preview.Shape.BoundBox.XLength > 0.0
         assert preview.Name in {str(getattr(obj, "Name", "") or "") for obj in list(tree[V1_TREE_CENTERLINE3D].Group)}
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_centerline3d_preview_can_use_polyline_display_mode() -> None:
+    doc, project, _tree = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+
+        result = build_document_centerline3d_result(doc)
+        preview = show_v1_centerline3d_preview_object(
+            doc,
+            result=result,
+            project=project,
+            display_mode="Polyline",
+        )
+
+        assert preview.CurveKind == "polyline"
+        assert preview.CenterlineDisplayMode == "polyline"
     finally:
         App.closeDocument(doc.Name)
 
@@ -125,6 +147,7 @@ def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> 
 
         assert "Refresh" not in button_texts
         assert button_texts[-2:] == ["Apply", "Close"]
+        assert panel._display_mode_combo.currentText() == "Smooth Curve"
     finally:
         App.closeDocument(doc.Name)
 

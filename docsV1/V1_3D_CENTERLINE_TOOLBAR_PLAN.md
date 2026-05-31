@@ -139,7 +139,9 @@ Recommended 3D preview object:
 
 - `V1Centerline3DPreview`
 
-The preview object may contain a Part wire/polyline and station markers.
+The preview object may contain a Part wire/polyline or a smooth display curve and station markers.
+
+The display curve is presentation-only. Station/frame calculations continue to use `Centerline3DResult` point rows and the shared frame lookup service.
 
 It is an output/presentation object, not editable source.
 
@@ -151,9 +153,10 @@ The `3D Centerline` panel should show:
 - sampled point count
 - station range
 - elevation range
+- display mode: `Smooth Curve` or `Polyline`
 - geometry status
 - diagnostics
-- buttons: `Refresh`, `Show`, `Hide`, `Focus`, `Close`
+- buttons: `Show`, `Hide`, `Focus`, `Apply`, `Close`
 
 Optional later controls:
 
@@ -224,6 +227,7 @@ Pipeline geometry remains result/output.
 - The panel reports missing Alignment, Profile, or Stationing prerequisites clearly.
 - `Show` creates or updates one review preview object.
 - The preview has a visible 3D line and optional station markers.
+- The display mode can switch between smooth presentation and exact polyline presentation without changing source/result station frames.
 - The generated result preserves source refs to Alignment, Profile, and Stationing.
 - Structures and Drainage can continue to store source intent while using the evaluated 3D frame for preview/review.
 - Build Corridor can still run if the user skips the explicit `3D Centerline` stage, but should prefer the shared result when available.

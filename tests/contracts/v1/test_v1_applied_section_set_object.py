@@ -52,6 +52,15 @@ def _sample_set() -> AppliedSectionSet:
                 daylight_right_width=2.5,
                 daylight_left_slope=-0.5,
                 daylight_right_slope=-0.4,
+                active_superelevation_id="superelevation:main",
+                superelevation_left_crossfall=-2.0,
+                superelevation_right_crossfall=4.0,
+                active_superelevation_transition_id="transition:runoff",
+                superelevation_source_rows=[
+                    "left:control:normal",
+                    "right:control:right-full",
+                    "transition:transition:runoff",
+                ],
                 template_id="template:basic-road",
                 region_id="region:main",
                 component_rows=[AppliedSectionComponentRow("lane-1", "lane", drainage_refs=["drainage:side-ditch-right"])],
@@ -128,6 +137,13 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
         assert list(obj.DaylightRightWidths) == [2.5, 2.0]
         assert list(obj.DaylightLeftSlopes) == [-0.5, -0.5]
         assert list(obj.DaylightRightSlopes) == [-0.4, -0.4]
+        assert list(obj.SuperelevationIds) == ["superelevation:main", ""]
+        assert list(obj.SuperelevationLeftCrossfalls) == [-2.0, 0.0]
+        assert list(obj.SuperelevationRightCrossfalls) == [4.0, 0.0]
+        assert list(obj.SuperelevationTransitionIds) == ["transition:runoff", ""]
+        assert list(obj.SuperelevationSourceRows) == [
+            "section:1|left:control:normal|right:control:right-full|transition:transition:runoff",
+        ]
         assert len(list(obj.PointRows)) == 6
         assert len(list(obj.ComponentRows)) == 2
         assert list(obj.RegionIds) == ["region:main", "region:main"]
@@ -169,6 +185,15 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert [section.subgrade_depth for section in model.sections] == [0.25, 0.20]
         assert [section.daylight_left_width for section in model.sections] == [3.0, 3.5]
         assert [section.daylight_right_width for section in model.sections] == [2.5, 2.0]
+        assert [section.active_superelevation_id for section in model.sections] == ["superelevation:main", ""]
+        assert [section.superelevation_left_crossfall for section in model.sections] == [-2.0, 0.0]
+        assert [section.superelevation_right_crossfall for section in model.sections] == [4.0, 0.0]
+        assert [section.active_superelevation_transition_id for section in model.sections] == ["transition:runoff", ""]
+        assert model.sections[0].superelevation_source_rows == [
+            "left:control:normal",
+            "right:control:right-full",
+            "transition:transition:runoff",
+        ]
         assert [section.component_rows[0].component_id for section in model.sections] == ["lane-1", "lane-1"]
         assert [section.component_rows[0].kind for section in model.sections] == ["lane", "lane"]
         assert model.sections[0].component_rows[0].drainage_refs == ["drainage:side-ditch-right"]

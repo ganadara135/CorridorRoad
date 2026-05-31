@@ -249,6 +249,8 @@ def test_resolve_v1_target_container_routes_alignment_profile_objects() -> None:
             ("ProfileBundle", V1_TREE_PROFILES),
             ("V1Stationing", V1_TREE_STATIONS),
             ("Stationing", V1_TREE_STATIONS),
+            ("V1SuperelevationSource", V1_TREE_SUPERELEVATION),
+            ("SuperelevationModel", V1_TREE_SUPERELEVATION),
         ]
         for object_name, key in cases:
             obj = doc.addObject("App::FeaturePython", object_name)

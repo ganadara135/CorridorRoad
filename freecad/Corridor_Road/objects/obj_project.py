@@ -1357,7 +1357,13 @@ def resolve_v1_target_container(prj, child):
         name_prefixes=("V1Stationing", "Stationing", "V1StationHighlight"),
     ):
         return tree.get(V1_TREE_STATIONS, None)
-    if _is_type(child, proxy_types=("Superelevation", "SuperelevationModel"), name_prefixes=("Superelevation", "SuperelevationModel")):
+    if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
+        return tree.get(V1_TREE_SUPERELEVATION, None)
+    if _is_type(
+        child,
+        proxy_types=("V1SuperelevationSource", "Superelevation", "SuperelevationModel"),
+        name_prefixes=("V1SuperelevationSource", "Superelevation", "SuperelevationModel"),
+    ):
         return tree.get(V1_TREE_SUPERELEVATION, None)
     if _is_v1_ramp(child):
         return tree.get(V1_TREE_RAMPS, None)

@@ -8,6 +8,7 @@ Source:
 
 - Alignment
 - Profile
+- Superelevation
 - Assembly
 - Region
 - Structure
@@ -50,11 +51,21 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Regions define station spans and the base Assembly. Structures and Drainage then choose their owning Region from their own source panels.
 
 3D Centerline is the shared downstream baseline for station/offset/elevation context. Structures, Drainage, Applied Sections, Build Corridor, and Watertight Solids should prefer it when available.
+
+Superelevation is the station-based crossfall source after 3D Centerline. It does not replace Assembly; it overrides lane and shoulder crossfall during Applied Sections generation.
+
+Use this order when changing Superelevation:
+
+1. Edit or load Superelevation control rows.
+2. Validate and Apply Superelevation.
+3. Use `Show Samples` to review station values and 3D crossfall bars.
+4. Generate Applied Sections.
+5. Build Corridor again so Design Surface output reflects the resolved crossfall.
 
 ## Region And Transition Review Flow
 

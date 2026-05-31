@@ -19,6 +19,7 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_model_from_document
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
+from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
@@ -29,6 +30,7 @@ from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_dr
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_region import create_or_update_v1_region_model_object
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
+from freecad.Corridor_Road.v1.objects.obj_superelevation import create_or_update_v1_superelevation_source_object
 
 _QAPP = None
 
@@ -64,6 +66,49 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
         assert result.sections[0].assembly_id == "assembly:basic-road"
         assert result.sections[0].template_id == "template:basic-road"
         assert result.sections[0].region_id == "region:normal-01"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_document_applied_section_set_uses_superelevation_source() -> None:
+    doc, project = _new_project_doc()
+    try:
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        create_or_update_v1_superelevation_source_object(
+            document=doc,
+            project=project,
+            superelevation_model=SuperelevationModel(
+                schema_version=1,
+                project_id="proj-1",
+                superelevation_id="superelevation:main",
+                alignment_id=str(alignment.AlignmentId),
+                control_rows=[
+                    CrossfallControlRow("control:normal", 0.0, "both", -2.0),
+                    CrossfallControlRow("control:right-full", 60.0, "right", 4.0),
+                ],
+                transition_rows=[RunoffTransitionRow("transition:runoff", 0.0, 60.0, "runoff")],
+            ),
+        )
+
+        result = build_document_applied_section_set(doc, project=project)
+        section = next(section for section in result.sections if round(section.station, 3) == 60.0)
+        right_rows = [row for row in section.component_rows if row.kind in {"lane", "shoulder"} and row.side == "right"]
+        review_rows = applied_section_review_rows(result)
+        review_row = next(row for row in review_rows if round(float(row["station"]), 3) == 60.0)
+
+        assert section.active_superelevation_id == "superelevation:main"
+        assert section.active_superelevation_transition_id == "transition:runoff"
+        assert round(section.superelevation_right_crossfall, 6) == 4.0
+        assert right_rows
+        assert {round(row.slope, 6) for row in right_rows} == {0.04}
+        assert review_row["superelevation_summary"] == "L -2.000% | R 4.000% | runoff"
+        assert "superelevation:main" in result.source_refs
     finally:
         App.closeDocument(doc.Name)
 
@@ -337,9 +382,13 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
 
         panel = V1AppliedSectionsTaskPanel(document=doc)
         progress_bars = panel.form.findChildren(QtWidgets.QProgressBar)
+        button_labels = [button.text() for button in panel.form.findChildren(QtWidgets.QPushButton)]
 
         assert len(progress_bars) == 1
         assert not any(check.text() == "Fast Evaluation" for check in panel.form.findChildren(QtWidgets.QCheckBox))
+        assert "Build Sections" in button_labels
+        assert "Validate" not in button_labels
+        assert "Apply" not in button_labels
         assert progress_bars[0].format() == "Ready"
         assert panel._apply(close_after=False) is True
         assert panel._progress.value() == 100

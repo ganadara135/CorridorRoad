@@ -19,6 +19,7 @@ Reason:
 Current drainage-related behavior appears through:
 
 - Drainage editor source rows
+- empty editor tables on first entry when no `V1DrainageModel` exists
 - Drainage editor Preset data for roadside ditch, dual side ditches, culvert crossing, and structure-backed flow source sets
 - `V1DrainageModel` document persistence
 - side, Region ref, and Assembly component ref persistence on drainage elements
