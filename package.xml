@@ -12,10 +12,10 @@
 
     <!--[ Versions ]―――――――――――――――――――――――――――――――――――――――――――――――――――――――――-->
 
-    <freecadmin>1.0.2</freecadmin>
+    <freecadmin>1.0.3</freecadmin>
     <pythonmin>3.10</pythonmin>
-    <version>1.0.2</version>
-    <date>2026-05-28</date>
+    <version>1.0.3</version>
+    <date>2026-05-31</date>
 
     <!--[ Dependencies ]―――――――――――――――――――――――――――――――――――――――――――――――――――――-->
 

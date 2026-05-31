@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.0.2`. This release continues the v1 workflow reset after the user-facing name changed from `Corridor Road` to `Parametric Road`. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.0.3`. This release continues the v1 workflow reset after the user-facing name changed from `Corridor Road` to `Parametric Road`. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -76,13 +76,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.0.2`
-- Release date: `2026-05-28`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.2
+- Current release: `v1.0.3`
+- Release date: `2026-05-31`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.3
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.0.2` builds on the public naming transition from `Corridor Road` to `Parametric Road`. The internal Python package, FreeCAD Mod folder, command ids, and v1 source ids remain unchanged for compatibility.
+`1.0.3` builds on the public naming transition from `Corridor Road` to `Parametric Road`. The internal Python package, FreeCAD Mod folder, command ids, and v1 source ids remain unchanged for compatibility.
 
 ## Main Commands
 
