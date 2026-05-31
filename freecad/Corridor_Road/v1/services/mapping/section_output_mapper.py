@@ -57,7 +57,7 @@ class SectionOutputMapper:
                 label="Quantity Count",
                 value=len(quantity_rows),
             ),
-        ] + self._frame_summary_rows(applied_section)
+        ] + self._frame_summary_rows(applied_section) + self._superelevation_summary_rows(applied_section)
 
         return SectionOutput(
             schema_version=1,
@@ -149,6 +149,55 @@ class SectionOutputMapper:
             ),
         ]
 
+    @staticmethod
+    def _superelevation_summary_rows(applied_section: AppliedSection) -> list[SectionSummaryRow]:
+        superelevation_id = str(getattr(applied_section, "active_superelevation_id", "") or "").strip()
+        if not superelevation_id:
+            return []
+        rows = [
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:superelevation-id",
+                kind="superelevation_id",
+                label="Superelevation",
+                value=superelevation_id,
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:superelevation-left-crossfall",
+                kind="superelevation_left_crossfall",
+                label="Left Crossfall",
+                value=float(getattr(applied_section, "superelevation_left_crossfall", 0.0) or 0.0),
+                unit="percent",
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:superelevation-right-crossfall",
+                kind="superelevation_right_crossfall",
+                label="Right Crossfall",
+                value=float(getattr(applied_section, "superelevation_right_crossfall", 0.0) or 0.0),
+                unit="percent",
+            ),
+        ]
+        transition_id = str(getattr(applied_section, "active_superelevation_transition_id", "") or "").strip()
+        if transition_id:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:superelevation-transition",
+                    kind="superelevation_transition",
+                    label="Superelevation Transition",
+                    value=transition_id,
+                )
+            )
+        source_rows = list(getattr(applied_section, "superelevation_source_rows", []) or [])
+        if source_rows:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:superelevation-source-rows",
+                    kind="superelevation_source_rows",
+                    label="Superelevation Source Rows",
+                    value=", ".join(str(row) for row in source_rows if str(row).strip()),
+                )
+            )
+        return rows
+
 
 def _component_notes(row) -> str:
     kind = str(getattr(row, "kind", "") or "").strip().lower()
@@ -158,6 +207,18 @@ def _component_notes(row) -> str:
     side = str(getattr(row, "side", "") or "").strip()
     if side:
         notes.append(f"side={side}")
+    parameters = dict(getattr(row, "parameters", {}) or {})
+    if str(parameters.get("effective_slope_source", "") or "") == "superelevation":
+        notes.append("slope_source=superelevation")
+        source = str(parameters.get("superelevation_source", "") or "").strip()
+        if source:
+            notes.append(f"superelevation_source={source}")
+        transition = str(parameters.get("superelevation_transition", "") or "").strip()
+        if transition:
+            notes.append(f"superelevation_transition={transition}")
+        crossfall = parameters.get("superelevation_crossfall_percent", None)
+        if crossfall not in (None, ""):
+            notes.append(f"crossfall={float(crossfall):.3f}%")
     structure_ids = list(getattr(row, "structure_ids", []) or [])
     if structure_ids:
         notes.append(f"structure_refs={','.join(str(value) for value in structure_ids if str(value).strip())}")

@@ -269,6 +269,7 @@ Status: First slice complete
 Completed:
 
 - `Drainage Structures Flow` aligns with Structures `Drainage Structures` preset.
+- Opening Drainage with no existing source object starts with empty Elements, Policies, and Flow Routes tables.
 - Preset data creates station-banded ditch Elements.
 - Preset data creates inlet, culvert, and outlet Elements.
 - Flow Route ids use `flowId-*`.

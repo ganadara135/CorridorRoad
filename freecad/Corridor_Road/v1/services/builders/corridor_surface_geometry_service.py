@@ -230,10 +230,7 @@ class CorridorSurfaceGeometryService:
             surface_id=request.surface_id,
             surface_kind="daylight_surface",
             label=f"Slope Face Surface - {request.corridor.corridor_id}",
-            source_refs=[
-                str(getattr(request.corridor, "corridor_id", "") or ""),
-                str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-            ],
+            source_refs=_surface_request_source_refs(request),
             vertex_rows=vertices,
             triangle_rows=triangles,
             boundary_refs=[f"{request.surface_id}:daylight-boundary"],
@@ -413,13 +410,7 @@ def _build_surface_from_point_grid(
         surface_id=request.surface_id,
         surface_kind=surface_kind,
         label=f"{label_prefix} - {request.corridor.corridor_id}",
-        source_refs=_unique_text_rows(
-            [
-                str(getattr(request.corridor, "corridor_id", "") or ""),
-                str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-            ]
-            + source_summary["drainage_refs"]
-        ),
+        source_refs=_surface_request_source_refs(request, extra_refs=source_summary["drainage_refs"]),
         vertex_rows=vertices,
         triangle_rows=triangles,
         boundary_refs=[f"{request.surface_id}:section-point-boundary"],
@@ -675,6 +666,21 @@ def _point_source_notes(point) -> str:
     if drainage_ref:
         rows.append(f"drainage_ref={drainage_ref}")
     return ";".join(rows)
+
+
+def _surface_request_source_refs(
+    request: CorridorDesignSurfaceGeometryRequest,
+    *,
+    extra_refs: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    return _unique_text_rows(
+        [
+            str(getattr(request.corridor, "corridor_id", "") or ""),
+            str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+            *list(getattr(request.applied_section_set, "source_refs", []) or []),
+            *list(extra_refs or []),
+        ]
+    )
 
 
 def _unique_text_rows(values) -> list[str]:

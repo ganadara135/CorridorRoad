@@ -12,13 +12,16 @@ They resolve:
 - Profile elevation
 - active Region
 - Assembly components
+- Superelevation effective lane/shoulder crossfall
 - Structure context
 - drainage/ditch point rows where available
 - terrain/daylight behavior
 
 Applied Sections are results. They are not the primary editing surface.
 
-The `Validate` action checks source handoff readiness before building result rows.
+The `Build Sections` action validates source handoff readiness and then builds result rows.
+
+There is no separate user-facing `Validate` button in this result stage. Validation still runs automatically before Applied Sections are written.
 
 Drainage readiness includes:
 
@@ -29,6 +32,10 @@ Drainage readiness includes:
 ## Build Corridor
 
 Build Corridor consumes Applied Sections and creates corridor preview surfaces and diagnostics.
+
+Build Corridor does not evaluate Superelevation directly.
+
+Superelevation must be applied before Applied Sections. Applied Sections then store the effective crossfall and `fg_surface` point rows that Build Corridor uses for Design Surface generation.
 
 Typical outputs include:
 
@@ -83,3 +90,10 @@ Build Corridor uses the stored transition records when rebuilding corridor surfa
 ## Diagnostics
 
 Use Build Corridor diagnostics to find missing or partial result rows before relying on downstream review or output.
+
+If a Superelevation change does not appear in the Design Surface:
+
+1. Apply Superelevation.
+2. Rebuild Applied Sections.
+3. Rebuild Build Corridor.
+4. Check the Applied Sections `Superelevation` column before investigating Build Corridor.

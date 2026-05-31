@@ -23,7 +23,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Main stages:
 
@@ -34,6 +34,7 @@ Main stages:
 - Profile
 - Review Plan/Profile
 - 3D Centerline
+- Superelevation
 - Assembly
 - Region
 - Structures
@@ -55,6 +56,7 @@ Available in the v1 release direction:
 - TIN-first terrain workflow
 - Alignment, Stations, and Profile workflow
 - shared 3D Centerline review for downstream station/offset/elevation context
+- Superelevation source editing, station sample review, 3D crossfall bars, and Applied Sections / Build Parametric handoff
 - Assembly and Region source editing
 - Structure source editing, connection points, native drainage-structure previews, and Structure Output packages
 - Drainage source editing, Flow Routes, Structure-backed pipe network preview, and Drainage Review

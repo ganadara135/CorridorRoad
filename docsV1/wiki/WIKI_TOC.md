@@ -17,18 +17,20 @@ Recommended publish order:
 3. [Workflow](./Workflow.md)
 4. [TIN Terrain](./TIN-Terrain.md)
 5. [Alignment Stations Profile](./Alignment-Stations-Profile.md)
-6. [Assembly Region](./Assembly-Region.md)
-7. [Applied Sections Build Corridor](./Applied-Sections-Build-Corridor.md)
-8. [Review](./Review.md)
-9. [Earthwork](./Earthwork.md)
-10. [Structures Structure Output](./Structures-Structure-Output.md)
-11. [Drainage](./Drainage.md)
-12. [Troubleshooting](./Troubleshooting.md)
-13. [Developer Guide](./Developer-Guide.md)
+6. [Superelevation](./Superelevation.md)
+7. [Assembly Region](./Assembly-Region.md)
+8. [Applied Sections Build Corridor](./Applied-Sections-Build-Corridor.md)
+9. [Review](./Review.md)
+10. [Earthwork](./Earthwork.md)
+11. [Structures Structure Output](./Structures-Structure-Output.md)
+12. [Drainage](./Drainage.md)
+13. [Troubleshooting](./Troubleshooting.md)
+14. [Developer Guide](./Developer-Guide.md)
 
 Release rule:
 
 - v1 is the primary workflow.
+- Superelevation is the source stage after 3D Centerline and before Assembly.
 - Drainage is an active source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review.
 - Advanced hydraulic analysis and automatic pipe sizing remain future work.
 - Watertight Solids is the final output stage after AI Assist and is gated on Build Corridor prerequisites.

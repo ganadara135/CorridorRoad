@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ...models.result.applied_section import (
     AppliedSection,
@@ -27,6 +27,7 @@ from ...models.source.override_model import OverrideModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
+from ...models.source.superelevation_model import SuperelevationModel
 from ...services.evaluation.alignment_evaluation_service import (
     AlignmentEvaluationService,
 )
@@ -45,6 +46,10 @@ from ...services.evaluation.region_resolution_service import (
 )
 from ...services.evaluation.structure_interaction_service import (
     StructureInteractionService,
+)
+from ...services.evaluation.superelevation_service import (
+    SuperelevationService,
+    SuperelevationStationResult,
 )
 from ...services.evaluation.station_context_resolver import StationContextResolver
 from ...services.evaluation.tin_sampling_service import TinSamplingService
@@ -66,6 +71,7 @@ class AppliedSectionBuildRequest:
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
+    superelevation_model: SuperelevationModel | None = None
     existing_ground_surface: TINSurface | None = None
     centerline3d_result: Centerline3DResult | None = None
 
@@ -86,6 +92,7 @@ class AppliedSectionSetBuildRequest:
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
+    superelevation_model: SuperelevationModel | None = None
     existing_ground_surface: TINSurface | None = None
     centerline3d_result: Centerline3DResult | None = None
 
@@ -115,6 +122,7 @@ class AppliedSectionService:
         station_context_resolver: StationContextResolver | None = None,
         tin_sampling_service: TinSamplingService | None = None,
         centerline_frame_service: Centerline3DFrameService | None = None,
+        superelevation_service: SuperelevationService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
@@ -127,6 +135,7 @@ class AppliedSectionService:
         )
         self.tin_sampling_service = tin_sampling_service or TinSamplingService()
         self.centerline_frame_service = centerline_frame_service or Centerline3DFrameService()
+        self.superelevation_service = superelevation_service or SuperelevationService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -195,9 +204,16 @@ class AppliedSectionService:
         left_width, right_width = self._surface_widths(template)
         subgrade_depth = self._subgrade_depth(template)
         daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
-        fg_points = _surface_section_offsets(template, frame=frame)
+        superelevation_result = self._evaluate_superelevation(
+            request.superelevation_model,
+            request.station,
+            template=template,
+        )
+        effective_template = _template_with_superelevation(template, superelevation_result)
+        diagnostics.extend(list(getattr(superelevation_result, "diagnostic_rows", []) or []))
+        fg_points = _surface_section_offsets(effective_template, frame=frame)
         bench_evaluations = _bench_evaluations(
-            template,
+            effective_template,
             frame=frame,
             fg_points=fg_points,
             surface_left_width=left_width,
@@ -207,7 +223,7 @@ class AppliedSectionService:
         )
         diagnostics.extend(_bench_evaluation_diagnostics(bench_evaluations))
         component_rows = self._build_component_rows(
-            template,
+            effective_template,
             region_id=region_context.region_id,
             override_ids=override_result.active_override_ids,
             structure_ids=_unique_refs(
@@ -220,7 +236,7 @@ class AppliedSectionService:
             bench_evaluations=bench_evaluations,
         )
         point_rows = self._build_point_rows(
-            template,
+            effective_template,
             frame=frame,
             fg_points=fg_points,
             surface_left_width=left_width,
@@ -251,6 +267,11 @@ class AppliedSectionService:
             daylight_right_width=daylight_right_width,
             daylight_left_slope=daylight_left_slope,
             daylight_right_slope=daylight_right_slope,
+            active_superelevation_id=str(getattr(request.superelevation_model, "superelevation_id", "") or ""),
+            superelevation_left_crossfall=float(getattr(superelevation_result, "left_crossfall", 0.0) or 0.0),
+            superelevation_right_crossfall=float(getattr(superelevation_result, "right_crossfall", 0.0) or 0.0),
+            active_superelevation_transition_id=str(getattr(superelevation_result, "active_transition_id", "") or ""),
+            superelevation_source_rows=_superelevation_source_rows(superelevation_result),
             point_rows=point_rows,
             active_structure_ids=active_structure_ids,
             active_structure_rule_ids=active_rule_ids,
@@ -270,6 +291,9 @@ class AppliedSectionService:
                     else "",
                     request.drainage_model.drainage_model_id
                     if request.drainage_model is not None
+                    else "",
+                    request.superelevation_model.superelevation_id
+                    if request.superelevation_model is not None
                     else "",
                     *active_drainage_refs,
                     *list(station_context.active_flow_route_refs or []),
@@ -339,6 +363,7 @@ class AppliedSectionService:
             ]
             if text
         )
+
         return AppliedSectionFrame(
             station=float(station),
             x=float(getattr(alignment_result, "x", 0.0) or 0.0),
@@ -353,6 +378,23 @@ class AppliedSectionService:
             active_profile_segment_end_id=str(getattr(profile_result, "active_segment_end_id", "") or ""),
             active_vertical_curve_id=str(getattr(profile_result, "active_vertical_curve_id", "") or ""),
             notes=notes,
+        )
+
+    def _evaluate_superelevation(
+        self,
+        superelevation_model: SuperelevationModel | None,
+        station: float,
+        *,
+        template: SectionTemplate | None,
+    ) -> SuperelevationStationResult | None:
+        if superelevation_model is None:
+            return None
+        left_default, right_default = _default_crossfall_percent_by_side(template)
+        return self.superelevation_service.evaluate_station(
+            superelevation_model,
+            station,
+            default_left_crossfall=left_default,
+            default_right_crossfall=right_default,
         )
 
     @staticmethod
@@ -668,6 +710,7 @@ class AppliedSectionSetService:
                     applied_section_id=section_id,
                     structure_model=request.structure_model,
                     drainage_model=request.drainage_model,
+                    superelevation_model=request.superelevation_model,
                     existing_ground_surface=request.existing_ground_surface,
                     centerline3d_result=request.centerline3d_result,
                 )
@@ -706,6 +749,9 @@ class AppliedSectionSetService:
                     request.drainage_model.drainage_model_id
                     if request.drainage_model is not None
                     else "",
+                    request.superelevation_model.superelevation_id
+                    if request.superelevation_model is not None
+                    else "",
                     request.centerline3d_result.centerline3d_result_id
                     if request.centerline3d_result is not None
                     else "",
@@ -725,6 +771,82 @@ def _unique_refs(values: list[str]) -> list[str]:
         seen.add(text)
         output.append(text)
     return output
+
+
+def _template_with_superelevation(
+    template: SectionTemplate | None,
+    superelevation_result: SuperelevationStationResult | None,
+) -> SectionTemplate | None:
+    if template is None or superelevation_result is None:
+        return template
+    rows = []
+    for component in list(getattr(template, "component_rows", []) or []):
+        rows.append(_component_with_superelevation(component, superelevation_result))
+    return replace(template, component_rows=rows)
+
+
+def _component_with_superelevation(component, superelevation_result: SuperelevationStationResult):
+    kind = str(getattr(component, "kind", "") or "").strip().lower()
+    if kind not in {"lane", "shoulder"}:
+        return component
+    side = str(getattr(component, "side", "") or "").strip().lower()
+    if side == "left":
+        effective_slope = float(getattr(superelevation_result, "left_crossfall", 0.0) or 0.0) / 100.0
+        source = str(getattr(superelevation_result, "left_source", "") or "")
+    elif side == "right":
+        effective_slope = float(getattr(superelevation_result, "right_crossfall", 0.0) or 0.0) / 100.0
+        source = str(getattr(superelevation_result, "right_source", "") or "")
+    else:
+        return component
+    if not source:
+        return component
+    params = dict(getattr(component, "parameters", {}) or {})
+    params.update(
+        {
+            "assembly_default_slope": float(getattr(component, "slope", 0.0) or 0.0),
+            "effective_slope_source": "superelevation",
+            "superelevation_source": source,
+            "superelevation_transition": str(getattr(superelevation_result, "active_transition_id", "") or ""),
+            "superelevation_crossfall_percent": effective_slope * 100.0,
+        }
+    )
+    return replace(component, slope=effective_slope, parameters=params)
+
+
+def _default_crossfall_percent_by_side(template: SectionTemplate | None) -> tuple[float, float]:
+    if template is None:
+        return 0.0, 0.0
+    left_values: list[float] = []
+    right_values: list[float] = []
+    for component in list(getattr(template, "component_rows", []) or []):
+        if not bool(getattr(component, "enabled", True)):
+            continue
+        if str(getattr(component, "kind", "") or "").strip().lower() not in {"lane", "shoulder"}:
+            continue
+        slope_percent = float(getattr(component, "slope", 0.0) or 0.0) * 100.0
+        side = str(getattr(component, "side", "") or "").strip().lower()
+        if side == "left":
+            left_values.append(slope_percent)
+        elif side == "right":
+            right_values.append(slope_percent)
+        elif side == "both":
+            left_values.append(slope_percent)
+            right_values.append(slope_percent)
+    return _average(left_values), _average(right_values)
+
+
+def _superelevation_source_rows(result: SuperelevationStationResult | None) -> list[str]:
+    if result is None:
+        return []
+    rows = []
+    if str(getattr(result, "left_source", "") or ""):
+        rows.append(f"left:{result.left_source}")
+    if str(getattr(result, "right_source", "") or ""):
+        rows.append(f"right:{result.right_source}")
+    transition = str(getattr(result, "active_transition_id", "") or "")
+    if transition:
+        rows.append(f"transition:{transition}")
+    return rows
 
 
 def _component_drainage_refs(component, drainage_refs: list[str], drainage_refs_by_side: dict[str, list[str]] | None = None) -> list[str]:

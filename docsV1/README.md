@@ -4,8 +4,8 @@ This folder contains the Parametric Road v1 redesign documents.
 
 Current public release:
 
-- `Parametric Road 1.0.1`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.1
+- `Parametric Road 1.0.2`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.2
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 
@@ -25,6 +25,9 @@ Baseline document:
 - [V1_INTERSECTION_MODEL.md](./V1_INTERSECTION_MODEL.md)
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
+- [V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md](./V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md)
+- [V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md](./V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md)
+- [V1_SUPERELEVATION_MANUAL_QA.md](./V1_SUPERELEVATION_MANUAL_QA.md)
 - [V1_ASSEMBLY_MODEL.md](./V1_ASSEMBLY_MODEL.md)
 - [V1_ASSEMBLY_SLOPE_BENCH_PLAN.md](./V1_ASSEMBLY_SLOPE_BENCH_PLAN.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
@@ -112,6 +115,7 @@ Preferred review workflow:
 - start plan/profile connection review from the v1 `Plan/Profile Connection Review`
 - expose `3D Centerline` after `Review Plan/Profile` as a read-only common baseline review stage for Structures, Drainage, Applied Sections, and Build Corridor
 - use `Centerline3DResult` as the owner of the shared station/offset/elevation baseline; Applied Sections consume it and keep only derived per-section placement frames
+- introduce `Superelevation` as a dedicated source stage after `3D Centerline` and before `Assembly`; it owns station-based crossfall intent and Applied Sections consume its evaluated state
 - start earthwork review from the v1 `Earthwork Viewer`
 - use the single `Alignment` command as the first native alignment-source editor for element station ranges and sampled XY rows; opening the panel should not create sample alignment data until `Apply`
 - keep Design Standard editing in `New/Project Setup`; Alignment displays the project standard and applies it as a criteria snapshot

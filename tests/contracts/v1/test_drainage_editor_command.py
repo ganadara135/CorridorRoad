@@ -60,17 +60,13 @@ def test_drainage_editor_resources_are_real_editor_entry() -> None:
     assert "drainage design intent" in resources["ToolTip"]
 
 
-def test_starter_drainage_model_has_element_policy_and_flow_route() -> None:
+def test_starter_drainage_model_is_empty_source_intent() -> None:
     model = starter_drainage_model_from_document()
 
     assert model.drainage_model_id == "drainage:main"
-    assert model.element_rows[0].drainage_element_id == "drainage:side-ditch-right"
-    assert model.element_rows[1].drainage_element_id == "drainage:outfall-main"
-    assert model.element_rows[0].side == "right"
-    assert model.element_rows[0].assembly_component_ref == "ditch:right"
-    assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
-    assert model.flow_route_rows[0].flow_route_id == "flow-route:flowId-01"
-    assert model.flow_route_rows[0].to_element_ref == "drainage:outfall-main"
+    assert model.element_rows == []
+    assert model.policy_rows == []
+    assert model.flow_route_rows == []
 
 
 def test_drainage_presets_offer_practical_source_sets() -> None:
@@ -267,6 +263,13 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
     doc, project = _new_project_doc("V1DrainageEditorApplyTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        assert panel._element_table.rowCount() == 0
+        assert panel._policy_table.rowCount() == 0
+        assert panel._flow_route_table.rowCount() == 0
+        assert "Tables are empty" in panel._status.toPlainText()
+
+        panel._preset_combo.setCurrentText("Roadside Ditch")
+        panel._load_selected_preset()
 
         assert panel._element_table.rowCount() == 2
         assert panel._policy_table.rowCount() == 1
@@ -342,7 +345,7 @@ def test_drainage_editor_validate_shows_flow_route_summary() -> None:
         assert "Validation: ok" in status
         assert "Flow Route Summary:" in status
         assert "capture-only=0" in status
-        assert "pipe-producing=1" in status
+        assert "pipe-producing=0" in status
         assert "fallback=0" in status
         assert "info:flow_route_capture_pipe_summary" not in status
     finally:
@@ -394,6 +397,8 @@ def test_drainage_editor_marks_invalid_reference_cells() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorInvalidCellStyleTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Roadside Ditch")
+        panel._load_selected_preset()
 
         policy_combo = panel._element_table.cellWidget(0, 6)
         from_combo = panel._flow_route_table.cellWidget(0, 1)
@@ -417,6 +422,7 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorDitchStructureCellTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._add_ditch_row("right")
         kind_combo = panel._element_table.cellWidget(0, 1)
         assembly_item = panel._element_table.item(0, 5)
         structure_combo = panel._element_table.cellWidget(0, 7)
@@ -497,6 +503,7 @@ def test_drainage_editor_structure_ref_uses_structure_id_combo() -> None:
             ),
         )
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._add_cross_drain_row()
         kind_combo = panel._element_table.cellWidget(0, 1)
         kind_combo.setCurrentText("culvert_reference")
         structure_combo = panel._element_table.cellWidget(0, 7)
@@ -616,6 +623,8 @@ def test_drainage_editor_flow_route_link_cells_use_element_combos() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorFlowRouteComboTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._preset_combo.setCurrentText("Roadside Ditch")
+        panel._load_selected_preset()
         panel._add_ditch_row("left")
 
         from_combo = panel._flow_route_table.cellWidget(0, 1)
@@ -658,6 +667,8 @@ def test_drainage_editor_element_policy_uses_policy_id_combo() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorElementPolicyComboTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._add_policy_row()
+        panel._add_ditch_row("right")
         panel._policy_table.item(0, 0).setText("custom-policy")
 
         policy_combo = panel._element_table.cellWidget(0, 6)
@@ -715,6 +726,7 @@ def test_drainage_editor_apply_blocks_error_validation() -> None:
     doc, _project = _new_project_doc("V1DrainageEditorValidationBlockTest")
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
+        panel._add_ditch_row("right")
         panel._element_table.item(0, 3).setText("100.000")
         panel._element_table.item(0, 4).setText("10.000")
 
@@ -895,6 +907,7 @@ def test_drainage_editor_side_specific_ditch_defaults_keep_ids_unique() -> None:
     try:
         panel = V1DrainageEditorTaskPanel(document=doc)
 
+        panel._add_ditch_row("right")
         panel._add_ditch_row("right")
         model = panel._model_from_tables()
 

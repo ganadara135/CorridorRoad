@@ -32,16 +32,17 @@ Parametric Road v1 provides a staged road corridor workflow:
 3. Generate Stations.
 4. Edit Profile.
 5. Review Plan/Profile and generate the shared 3D Centerline.
-6. Define Assembly and Regions.
-7. Add Structures and Drainage source rows.
-8. Generate Applied Sections.
-9. Build Corridor preview surfaces.
-10. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
-11. Prepare Watertight Solids, structure output, and exchange handoff data where available.
+6. Optionally define Superelevation crossfall controls.
+7. Define Assembly and Regions.
+8. Add Structures and Drainage source rows.
+9. Generate Applied Sections.
+10. Build Corridor preview surfaces.
+11. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
+12. Prepare Watertight Solids, structure output, and exchange handoff data where available.
 
 The workbench is built around a v1 source -> evaluation -> result -> output -> presentation structure.
 
-- Source intent belongs in Alignment, Profile, Assembly, Region, Structure, and Drainage models.
+- Source intent belongs in Alignment, Profile, Superelevation, Assembly, Region, Structure, and Drainage models.
 - Applied Sections and Corridor surfaces are generated results.
 - Review panels expose context, diagnostics, and handoff actions.
 - Output packages preserve source traceability.
@@ -92,6 +93,7 @@ Important v1 references:
 - `Profile`
 - `Review Plan/Profile`
 - `3D Centerline`
+- `Superelevation`
 - `Assembly`
 - `Region`
 - `Structures`
@@ -108,7 +110,7 @@ Important v1 references:
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 ## Current V1 Areas
 
@@ -118,6 +120,7 @@ Current toolbar order is organized around the v1 workflow:
 - Station generation
 - Profile editing with PVI rows, CSV support, and auto interpolation
 - shared 3D Centerline review for downstream station/offset/elevation context
+- Superelevation source editing, station sample review, and Applied Sections / Build Parametric handoff
 - Assembly editor with ditch, side slope, bench, and preset support
 - Structure editor for bridge, culvert, retaining wall, and related source intent
 - Structure connection points, native inlet/outlet/culvert preview details, and Structure Output packages

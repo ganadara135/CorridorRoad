@@ -94,6 +94,11 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "DaylightRightWidths", "Surface", "right daylight widths")
     _add_property(obj, "App::PropertyFloatList", "DaylightLeftSlopes", "Surface", "left daylight slopes")
     _add_property(obj, "App::PropertyFloatList", "DaylightRightSlopes", "Surface", "right daylight slopes")
+    _add_property(obj, "App::PropertyStringList", "SuperelevationIds", "Superelevation", "active superelevation ids")
+    _add_property(obj, "App::PropertyFloatList", "SuperelevationLeftCrossfalls", "Superelevation", "left effective crossfall percent")
+    _add_property(obj, "App::PropertyFloatList", "SuperelevationRightCrossfalls", "Superelevation", "right effective crossfall percent")
+    _add_property(obj, "App::PropertyStringList", "SuperelevationTransitionIds", "Superelevation", "active superelevation transition ids")
+    _add_property(obj, "App::PropertyStringList", "SuperelevationSourceRows", "Superelevation", "superelevation source rows by section")
     _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
     _add_property(obj, "App::PropertyStringList", "ComponentRows", "Resolved Context", "applied section component rows")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Resolved Context", "resolved region ids")
@@ -207,6 +212,11 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.DaylightRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_width", 0.0) or 0.0) for row in station_rows]
     obj.DaylightLeftSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_left_slope", 0.0) or 0.0) for row in station_rows]
     obj.DaylightRightSlopes = [float(getattr(section_by_id.get(str(row.applied_section_id)), "daylight_right_slope", 0.0) or 0.0) for row in station_rows]
+    obj.SuperelevationIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_superelevation_id", "") or "") for row in station_rows]
+    obj.SuperelevationLeftCrossfalls = [float(getattr(section_by_id.get(str(row.applied_section_id)), "superelevation_left_crossfall", 0.0) or 0.0) for row in station_rows]
+    obj.SuperelevationRightCrossfalls = [float(getattr(section_by_id.get(str(row.applied_section_id)), "superelevation_right_crossfall", 0.0) or 0.0) for row in station_rows]
+    obj.SuperelevationTransitionIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_superelevation_transition_id", "") or "") for row in station_rows]
+    obj.SuperelevationSourceRows = _section_list_rows(station_rows, section_by_id, "superelevation_source_rows")
     obj.PointRows = _point_rows(station_rows, section_by_id)
     obj.ComponentRows = _component_rows(station_rows, section_by_id)
     obj.RegionIds = [str(getattr(section_by_id.get(row.applied_section_id), "region_id", "") or "") for row in station_rows]
@@ -401,6 +411,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     active_rules_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureRuleRows", []) or [])
     active_zones_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureInfluenceZoneRows", []) or [])
     structure_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "StructureDiagnosticRows", []) or [])
+    superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
     component_rows_by_section = _parse_component_rows(getattr(obj, "ComponentRows", []) or [])
     for index, station in enumerate(station_values):
         section_id = _list_value(section_ids, index, f"section:{index + 1}")
@@ -430,6 +441,11 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 daylight_right_width=_float_value(getattr(obj, "DaylightRightWidths", []), index, 0.0),
                 daylight_left_slope=_float_value(getattr(obj, "DaylightLeftSlopes", []), index, 0.0),
                 daylight_right_slope=_float_value(getattr(obj, "DaylightRightSlopes", []), index, 0.0),
+                active_superelevation_id=_list_value(getattr(obj, "SuperelevationIds", []), index, ""),
+                superelevation_left_crossfall=_float_value(getattr(obj, "SuperelevationLeftCrossfalls", []), index, 0.0),
+                superelevation_right_crossfall=_float_value(getattr(obj, "SuperelevationRightCrossfalls", []), index, 0.0),
+                active_superelevation_transition_id=_list_value(getattr(obj, "SuperelevationTransitionIds", []), index, ""),
+                superelevation_source_rows=superelevation_sources_by_section.get(section_id, []),
                 component_rows=component_rows_by_section.get(section_id)
                 or _component_placeholders(
                     _integer_value(getattr(obj, "ComponentCounts", []), index, 0),

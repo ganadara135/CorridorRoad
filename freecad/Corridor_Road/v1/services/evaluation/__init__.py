@@ -22,6 +22,18 @@ from .surface_transition_validation_service import (
     SurfaceTransitionValidationResult,
     SurfaceTransitionValidationService,
 )
+from .superelevation_service import (
+    SuperelevationService,
+    SuperelevationStationResult,
+    SuperelevationValidationResult,
+    SuperelevationValidationService,
+)
+from .superelevation_auto_calculation_service import (
+    SuperelevationAutoCalculationRequest,
+    SuperelevationAutoCalculationResult,
+    SuperelevationAutoCalculationService,
+    SuperelevationCurveCandidate,
+)
 from .tin_section_sampling_service import TinSectionSamplingService
 from .tin_sampling_service import TinSamplingService
 
@@ -53,6 +65,14 @@ __all__ = [
     "StationContextResolver",
     "SurfaceTransitionValidationResult",
     "SurfaceTransitionValidationService",
+    "SuperelevationService",
+    "SuperelevationStationResult",
+    "SuperelevationAutoCalculationRequest",
+    "SuperelevationAutoCalculationResult",
+    "SuperelevationAutoCalculationService",
+    "SuperelevationCurveCandidate",
+    "SuperelevationValidationResult",
+    "SuperelevationValidationService",
     "TinSectionSamplingService",
     "TinSamplingService",
 ]

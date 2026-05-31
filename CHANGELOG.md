@@ -9,6 +9,17 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+### Added
+- Added a first-slice v1 Superelevation source workflow with a dedicated toolbar stage after `3D Centerline`, persisted `V1SuperelevationSource` objects, preset loading, validation, Apply, station sample review, and 3D crossfall-bar preview.
+- Added Superelevation evaluation and sampling services so station-based crossfall intent is resolved through shared v1 service contracts rather than task-panel-local logic.
+- Added Applied Sections integration for Superelevation, including effective lane/shoulder crossfall storage, source provenance, review-table summaries, Cross Section Viewer notes, and persisted round-trip context.
+- Added Build Parametric verification for Superelevation-resolved Design Surface output, ensuring Design Surface TIN generation consumes Applied Section `fg_surface` rows instead of evaluating Superelevation directly.
+- Added Superelevation manual QA and Wiki draft documentation covering source ownership, rebuild order, review behavior, and current limitations.
+
+### Changed
+- Changed the recommended v1 workflow order to place `Superelevation` after `3D Centerline` and before `Assembly`, `Regions`, and `Applied Sections`.
+- Changed README and Wiki workflow descriptions so Assembly remains the default crossfall source while Superelevation is described as the station-based override source.
+
 ## [1.0.2] - 2026-05-28
 
 ### Added

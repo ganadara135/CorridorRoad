@@ -35,6 +35,7 @@ from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
+from ..objects.obj_superelevation import find_v1_superelevation_source, to_superelevation_model
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.evaluation import Centerline3DFrameService
 
@@ -66,6 +67,7 @@ def build_document_applied_section_set(
     stationing_obj = find_v1_stationing(doc)
     structure_obj = find_v1_structure_model(doc)
     drainage_obj = find_v1_drainage_model(doc)
+    superelevation_obj = find_v1_superelevation_source(doc)
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
@@ -74,6 +76,7 @@ def build_document_applied_section_set(
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
     drainage_model = to_drainage_model(drainage_obj)
+    superelevation_model = to_superelevation_model(superelevation_obj)
     stations = _station_values(stationing_obj)
 
     missing = []
@@ -110,6 +113,7 @@ def build_document_applied_section_set(
             region_model=region_model,
             structure_model=structure_model,
             drainage_model=drainage_model,
+            superelevation_model=superelevation_model,
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",
@@ -170,6 +174,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         component_summary = _component_summary(section)
         ditch_summary = _ditch_review_summary(section)
         slope_face_summary = _slope_face_review_summary(section)
+        superelevation_summary = _superelevation_review_summary(section)
         diagnostic_summary = _diagnostic_summary(section) if section is not None else "Missing AppliedSection result."
         output.append(
             {
@@ -190,6 +195,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
                 "component_summary": component_summary,
                 "ditch_summary": ditch_summary,
                 "slope_face_summary": slope_face_summary,
+                "superelevation_summary": superelevation_summary,
                 "diagnostic_count": diagnostic_count,
                 "diagnostic_summary": diagnostic_summary,
                 "status": "warn" if diagnostic_count else "ok",
@@ -322,7 +328,7 @@ def run_v1_applied_sections_command():
 
 
 class V1AppliedSectionsTaskPanel:
-    """Small Apply-gated panel for building AppliedSectionSet results."""
+    """Small build-gated panel for creating AppliedSectionSet results."""
 
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
@@ -372,7 +378,7 @@ class V1AppliedSectionsTaskPanel:
         self._progress.setFormat("Ready")
         layout.addWidget(self._progress)
 
-        self._review_table = QtWidgets.QTableWidget(0, 13)
+        self._review_table = QtWidgets.QTableWidget(0, 14)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "STA",
@@ -386,6 +392,7 @@ class V1AppliedSectionsTaskPanel:
                 "Components",
                 "Ditch",
                 "Slope Face",
+                "Superelevation",
                 "Diagnostics",
                 "Status",
             ]
@@ -408,12 +415,9 @@ class V1AppliedSectionsTaskPanel:
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._refresh_summary)
         action_row.addWidget(refresh_button)
-        validate_button = QtWidgets.QPushButton("Validate")
-        validate_button.clicked.connect(self._validate)
-        action_row.addWidget(validate_button)
-        apply_button = QtWidgets.QPushButton("Apply")
-        apply_button.clicked.connect(lambda: self._apply(close_after=False))
-        action_row.addWidget(apply_button)
+        build_button = QtWidgets.QPushButton("Build Sections")
+        build_button.clicked.connect(lambda: self._apply(close_after=False))
+        action_row.addWidget(build_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -432,7 +436,7 @@ class V1AppliedSectionsTaskPanel:
                 f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
                 "",
-                "Click Apply to create or update the v1 AppliedSectionSet result.",
+                "Click Build Sections to validate sources and create or update the v1 AppliedSectionSet result.",
             ]
             existing = to_applied_section_set(find_v1_applied_section_set(self.document))
             if existing is not None:
@@ -534,6 +538,7 @@ class V1AppliedSectionsTaskPanel:
                 str(row.get("component_summary", "") or str(int(row.get("component_count", 0) or 0))),
                 str(row.get("ditch_summary", "") or ""),
                 str(row.get("slope_face_summary", "") or ""),
+                str(row.get("superelevation_summary", "") or ""),
                 str(row.get("diagnostic_summary", "") or ""),
                 _review_status_text(row),
             ]
@@ -742,6 +747,24 @@ def _slope_face_review_summary(section) -> str:
     if right_width > 0.0:
         parts.append(f"R {_format_float(right_width)} @ {_format_float(right_slope)}")
     return " / ".join(parts)
+
+
+def _superelevation_review_summary(section) -> str:
+    if section is None:
+        return ""
+    superelevation_id = str(getattr(section, "active_superelevation_id", "") or "").strip()
+    if not superelevation_id:
+        return ""
+    left = float(getattr(section, "superelevation_left_crossfall", 0.0) or 0.0)
+    right = float(getattr(section, "superelevation_right_crossfall", 0.0) or 0.0)
+    transition_id = str(getattr(section, "active_superelevation_transition_id", "") or "").strip()
+    parts = [
+        f"L {_format_float(left)}%",
+        f"R {_format_float(right)}%",
+    ]
+    if transition_id:
+        parts.append(_display_source_id(transition_id, "transition:"))
+    return " | ".join(parts)
 
 
 def _diagnostic_summary(section) -> str:

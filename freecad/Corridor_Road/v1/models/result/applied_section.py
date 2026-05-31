@@ -91,6 +91,11 @@ class AppliedSection(ResultModelBase):
     daylight_right_width: float = 0.0
     daylight_left_slope: float = 0.0
     daylight_right_slope: float = 0.0
+    active_superelevation_id: str = ""
+    superelevation_left_crossfall: float = 0.0
+    superelevation_right_crossfall: float = 0.0
+    active_superelevation_transition_id: str = ""
+    superelevation_source_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)

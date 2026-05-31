@@ -35,6 +35,7 @@ def corridorroad_workflow_command_groups():
             "CorridorRoad_V1EditProfile",
             "CorridorRoad_ReviewPlanProfile",
             "CorridorRoad_V1Centerline3D",
+            "CorridorRoad_V1EditSuperelevation",
         ],
         "assembly_region": [
             "CorridorRoad_V1EditAssembly",
@@ -106,6 +107,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_view_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_review_plan_profile  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_centerline3d  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_superelevation_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401

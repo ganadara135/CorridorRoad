@@ -36,6 +36,7 @@ Post-release tasks:
 Available or actively represented in the current v1 workflow:
 
 - shared `3D Centerline` stage after Plan/Profile review
+- Superelevation source editing after `3D Centerline`, with station sample review and Applied Sections handoff
 - Assembly and continuous Region source editing
 - Structures source editing with Native/External geometry source modes
 - Structure connection points for drainage-ready ports
@@ -82,17 +83,18 @@ Before tagging the next release:
 1. Restart FreeCAD.
 2. Activate the Parametric Road workbench.
 3. Confirm toolbar order:
-   `Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+   `Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 4. Open each primary panel.
 5. Run a minimal Alignment -> Stations -> Profile -> 3D Centerline path.
-6. Apply Assembly and Regions.
-7. Apply Structures `Drainage Structures` preset and preview it.
-8. Apply Drainage `Drainage Structures Flow` preset and show Flow Network.
-9. Run Applied Sections.
-10. Run Build Corridor.
-11. Open Watertight Solids and confirm target discovery.
-12. Build one Structure or Drainage target where prerequisites are available.
-13. Confirm the report view has no unexpected traceback.
+6. Optionally apply Superelevation and confirm sample preview.
+7. Apply Assembly and Regions.
+8. Apply Structures `Drainage Structures` preset and preview it.
+9. Apply Drainage `Drainage Structures Flow` preset and show Flow Network.
+10. Run Applied Sections.
+11. Run Build Corridor.
+12. Open Watertight Solids and confirm target discovery.
+13. Build one Structure or Drainage target where prerequisites are available.
+14. Confirm the report view has no unexpected traceback.
 
 ## Release Notes Draft
 
@@ -103,6 +105,7 @@ Suggested short release description:
 Suggested highlights:
 
 - Shared 3D Centerline review and downstream coordinate ownership.
+- Superelevation is now a dedicated source stage before Applied Sections, with Applied Sections carrying the resolved crossfall into Build Parametric.
 - Region source simplification: Regions own station spans and Assembly; Structures and Drainage own their own Region/context refs.
 - Structures now support connection-ready native drainage objects and clearer 3D review geometry.
 - Drainage now has Elements, Policies, Flow Routes, Structure refs, and Flow Network preview.

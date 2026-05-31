@@ -44,6 +44,23 @@ def _preview_focused_component_label(preview: dict[str, object]) -> str:
     return " / ".join(pieces)
 
 
+def _superelevation_summary_line(section_output) -> str:
+    values = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    superelevation_id = str(getattr(values.get("superelevation_id"), "value", "") or "").strip()
+    if not superelevation_id:
+        return "Superelevation: (none)"
+    left = getattr(values.get("superelevation_left_crossfall"), "value", "")
+    right = getattr(values.get("superelevation_right_crossfall"), "value", "")
+    transition = str(getattr(values.get("superelevation_transition"), "value", "") or "").strip()
+    pieces = [f"Superelevation: {superelevation_id}", f"L {float(left or 0.0):.3f}%", f"R {float(right or 0.0):.3f}%"]
+    if transition:
+        pieces.append(f"Transition {transition}")
+    return " | ".join(pieces)
+
+
 def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     """Build normalized editor-handoff rows for one section viewer payload."""
 
@@ -446,6 +463,13 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
             "Station range policy that selected the section behavior.",
         ),
         (
+            "Superelevation",
+            "superelevation_status",
+            "superelevation_label",
+            "superelevation_source_ref",
+            "Station-based crossfall source applied to lane and shoulder slopes.",
+        ),
+        (
             "Structure",
             "structure_status",
             "structure_label",
@@ -470,6 +494,8 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
         source_ref = str(inspector.get(ref_key, "") or "").strip() if ref_key else ""
         if not status:
             status = "resolved" if label else "source_ref" if source_ref else "unresolved"
+        if status == "not_applicable" and not label and not source_ref:
+            label = "(none)"
         rows.append(
             [
                 owner,
@@ -561,6 +587,8 @@ def _source_owner_note(status: str, fallback: str) -> str:
         return "Object resolved. " + fallback
     if value == "source_ref":
         return "Source reference exists, but the editor object was not resolved."
+    if value == "not_applicable":
+        return "No source owner is active for this section."
     return "Missing source owner. Review build inputs before editing."
 
 
@@ -1263,13 +1291,14 @@ class CrossSectionViewerTaskPanel:
 
         layout.addWidget(QtWidgets.QLabel("Components"))
         self._component_table = self._table_widget(
-            headers=["Id", "Kind", "Assembly Template", "Region"],
+            headers=["Id", "Kind", "Assembly Template", "Region", "Notes"],
             rows=[
                 [
                     str(getattr(row, "component_id", "") or ""),
                     str(getattr(row, "kind", "") or ""),
                     str(getattr(row, "template_ref", "") or ""),
                     str(getattr(row, "region_ref", "") or ""),
+                    str(getattr(row, "notes", "") or ""),
                 ]
                 for row in list(getattr(self.preview.get("section_output"), "component_rows", []) or [])
             ],
@@ -1277,6 +1306,15 @@ class CrossSectionViewerTaskPanel:
         )
         layout.addWidget(self._component_table)
         self._select_focused_component_row(self._component_table)
+
+        layout.addWidget(QtWidgets.QLabel("Section Summary"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Kind", "Label", "Value", "Unit"],
+                rows=self._section_summary_rows(),
+                empty_text="No section summary rows.",
+            )
+        )
 
         layout.addWidget(QtWidgets.QLabel("Quantities"))
         layout.addWidget(
@@ -1435,6 +1473,7 @@ class CrossSectionViewerTaskPanel:
                 f"Result State: {self._result_state_value()}",
                 f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
                 f"Assembly Template: {template_label}",
+                _superelevation_summary_line(section_output),
                 f"Stations: {len(self._navigation_station_rows())}",
                 f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
                 f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
@@ -1600,6 +1639,20 @@ class CrossSectionViewerTaskPanel:
 
     def _section_geometry_table_rows(self) -> list[list[str]]:
         return build_section_geometry_table_rows(self.preview)
+
+    def _section_summary_rows(self) -> list[list[str]]:
+        section_output = self.preview.get("section_output")
+        rows = []
+        for row in list(getattr(section_output, "summary_rows", []) or []):
+            rows.append(
+                [
+                    str(getattr(row, "kind", "") or ""),
+                    str(getattr(row, "label", "") or ""),
+                    str(getattr(row, "value", "") or ""),
+                    str(getattr(row, "unit", "") or ""),
+                ]
+            )
+        return rows
 
     def _drawing_payload(self):
         return cross_section_drawing_payload(self.preview)

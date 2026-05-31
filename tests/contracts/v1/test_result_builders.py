@@ -35,6 +35,7 @@ from freecad.Corridor_Road.v1.models.source.assembly_model import (
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
+from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
@@ -68,6 +69,7 @@ from freecad.Corridor_Road.v1.services.builders import (
     StructureSolidOutputService,
     transition_augmented_applied_section_set,
 )
+from freecad.Corridor_Road.v1.services.mapping.section_output_mapper import SectionOutputMapper
 from freecad.Corridor_Road.v1.models.output import StructureSolidOutput, StructureSolidOutputRow
 
 
@@ -189,6 +191,96 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     assert [point.point_role for point in result.point_rows].count("fg_surface") >= 2
     assert [point.point_role for point in result.point_rows].count("subgrade_surface") >= 2
     assert min(point.lateral_offset for point in result.point_rows if point.point_role == "fg_surface") < 0.0
+
+
+def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-1",
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-1",
+        alignment_id="align-1",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-1",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-1",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateComponent("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+                    TemplateComponent("ditch-right", "ditch", side="right", width=1.0, slope=-0.02),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-1",
+        alignment_id="align-1",
+        region_rows=[RegionRow("region-1", station_start=0.0, station_end=100.0, template_ref="tmpl-1")],
+    )
+    override_model = OverrideModel(schema_version=1, project_id="proj-1", override_model_id="ovr-1", alignment_id="align-1")
+    superelevation_model = SuperelevationModel(
+        schema_version=1,
+        project_id="proj-1",
+        superelevation_id="superelevation:main",
+        alignment_id="align-1",
+        control_rows=[
+            CrossfallControlRow("control:normal", 0.0, "both", -2.0, kind="normal_crown"),
+            CrossfallControlRow("control:right-full", 80.0, "right", 6.0, kind="full_super"),
+        ],
+        transition_rows=[RunoffTransitionRow("transition:runoff", 40.0, 80.0, "runoff")],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=60.0,
+            applied_section_id="sec-1",
+            superelevation_model=superelevation_model,
+        )
+    )
+
+    by_id = {row.component_id: row for row in result.component_rows}
+    fg_by_offset = {round(point.lateral_offset, 6): point for point in result.point_rows if point.point_role == "fg_surface"}
+
+    assert result.active_superelevation_id == "superelevation:main"
+    assert result.active_superelevation_transition_id == "transition:runoff"
+    assert result.superelevation_right_crossfall == 2.0
+    assert by_id["lane-right"].slope == 0.02
+    assert by_id["shoulder-right"].slope == 0.02
+    assert by_id["lane-right"].parameters["assembly_default_slope"] == -0.02
+    assert by_id["lane-right"].parameters["effective_slope_source"] == "superelevation"
+    assert by_id["ditch-right"].slope == -0.02
+    assert round(fg_by_offset[-3.5].z, 6) == 10.07
+    assert round(fg_by_offset[-5.0].z, 6) == 10.10
+    assert "superelevation:main" in result.source_refs
+
+    output = SectionOutputMapper().map_applied_section(result)
+    summary_by_kind = {row.kind: row for row in output.summary_rows}
+    lane_output = next(row for row in output.component_rows if row.component_id == "lane-right")
+    assert summary_by_kind["superelevation_id"].value == "superelevation:main"
+    assert summary_by_kind["superelevation_right_crossfall"].value == 2.0
+    assert "slope_source=superelevation" in lane_output.notes
+    assert "superelevation_transition=transition:runoff" in lane_output.notes
 
 
 def test_applied_section_service_uses_centerline3d_result_for_section_frame() -> None:
@@ -2909,6 +3001,94 @@ def test_corridor_surface_geometry_service_builds_surface_from_applied_section_p
     assert result.provenance_rows[0].source_kind == "applied_section_points"
     assert result.quality_rows[1].kind == "section_point_count"
     assert result.quality_rows[1].value == 3
+
+
+def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_points() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-1",
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-1",
+        alignment_id="align-1",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-1",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-1",
+                template_kind="roadway",
+                component_rows=[
+                    TemplateComponent("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateComponent("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateComponent("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-1",
+        alignment_id="align-1",
+        region_rows=[RegionRow("region-1", station_start=0.0, station_end=100.0, template_ref="tmpl-1")],
+    )
+    superelevation_model = SuperelevationModel(
+        schema_version=1,
+        project_id="proj-1",
+        superelevation_id="superelevation:main",
+        alignment_id="align-1",
+        control_rows=[
+            CrossfallControlRow("control:normal", 0.0, "both", -2.0, kind="normal_crown"),
+            CrossfallControlRow("control:right-full", 80.0, "right", 6.0, kind="full_super"),
+        ],
+        transition_rows=[RunoffTransitionRow("transition:runoff", 40.0, 80.0, "runoff")],
+    )
+    applied_section_set = AppliedSectionSetService().build(
+        AppliedSectionSetBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="ovr-1", alignment_id="align-1"),
+            stations=[0.0, 80.0],
+            applied_section_set_id="set-1",
+            superelevation_model=superelevation_model,
+        )
+    )
+    corridor = CorridorModel(
+        schema_version=1,
+        project_id="proj-1",
+        corridor_id="cor-1",
+        alignment_id="align-1",
+        profile_id="prof-1",
+    )
+
+    result = CorridorSurfaceGeometryService().build_design_surface(
+        CorridorDesignSurfaceGeometryRequest(
+            project_id="proj-1",
+            corridor=corridor,
+            applied_section_set=applied_section_set,
+            surface_id="cor-1:design",
+        )
+    )
+    vertices = result.vertex_map()
+
+    assert "superelevation:main" in result.source_refs
+    assert result.provenance_rows[0].source_kind == "applied_section_points"
+    assert round(vertices["v1:p0"].z, 6) == 10.30
+    assert round(vertices["v1:p1"].z, 6) == 10.21
+    assert round(vertices["v1:p2"].z, 6) == 10.00
+    assert round(vertices["v1:p3"].z, 6) == 9.93
 
 
 def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_points() -> None:

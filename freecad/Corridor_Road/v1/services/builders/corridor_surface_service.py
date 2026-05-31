@@ -127,7 +127,7 @@ class CorridorSurfaceService:
         source_refs = [
             request.corridor.corridor_id,
             request.applied_section_set.applied_section_set_id,
-        ] + drainage_source_refs
+        ] + list(getattr(request.applied_section_set, "source_refs", []) or []) + drainage_source_refs
         transition_model_id = str(getattr(request.surface_transition_model, "transition_model_id", "") or "")
         if transition_model_id:
             source_refs.append(transition_model_id)
