@@ -179,6 +179,21 @@ def test_ensure_project_tree_uses_v1_only_root_groups() -> None:
         assert "04_Analysis" not in labels
         assert tree[V1_TREE_SOURCE_DATA].Label == "01_Source Data"
         assert tree[V1_TREE_SURFACES].Label == "03_Surfaces"
+        assert tree[V1_TREE_CORRIDOR_MODEL].Label == "04_Parametric Model"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_ensure_project_tree_updates_legacy_corridor_model_folder_label() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        tree[V1_TREE_CORRIDOR_MODEL].Label = "04_Corridor Model"
+
+        repaired = ensure_project_tree(project, include_references=False)
+
+        assert repaired[V1_TREE_CORRIDOR_MODEL].Label == "04_Parametric Model"
+        assert repaired[V1_TREE_CORRIDOR_MODEL].Name == "CRV1_04_Corridor_Model"
     finally:
         App.closeDocument(doc.Name)
 

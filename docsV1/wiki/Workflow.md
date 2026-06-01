@@ -77,7 +77,7 @@ Build Corridor then uses Applied Sections plus Region source ranges to build sur
 
 Build Parametric generated previews and diagnostics are exposed in the FreeCAD tree under:
 
-`04_Corridor Model / Build Parametric Outputs`
+`04_Parametric Model / Build Parametric Outputs`
 
 This includes generated surface previews, Region surface previews, transition span markers, and Build Parametric review markers. Users can hide/show these objects and inspect their properties from the tree after Build Corridor runs.
 

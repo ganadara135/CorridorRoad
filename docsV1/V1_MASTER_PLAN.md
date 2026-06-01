@@ -897,12 +897,16 @@ Priority order for early v1:
 
 Target support:
 
-- alignments
-- multiple related alignments for mainline and ramps
-- profiles
-- TIN surfaces
-- drainage and feature-line references where practical
-- feature lines where practical
+- Autodesk Civil 3D alignments
+- Autodesk Civil 3D profiles
+- Autodesk Civil 3D TIN surfaces
+- Autodesk Civil 3D CgPoints
+- Autodesk Civil 3D drainage and feature-line references where practical
+- Autodesk Civil 3D feature lines where practical
+
+Implementation should follow `V1_LANDXML_IMPORT_IMPLEMENTATION_PLAN.md`: import first normalizes LandXML alignments, profiles, surfaces, and points into v1 source/result contracts before any downstream Build Parametric or output workflow consumes them.
+
+OpenRoads Designer LandXML is a future compatibility target and should not be presented as supported in the first LandXML import UX.
 
 ### 14.3 DXF import
 

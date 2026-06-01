@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2" date="2026-06-01">
+  <Units>
+    <Metric linearUnit="meter" areaUnit="squareMeter" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="milliBars" angularUnit="decimal degrees" directionUnit="decimal degrees"/>
+  </Units>
+  <Application name="Autodesk Civil 3D" version="2026" manufacturer="Autodesk"/>
+  <CgPoints>
+    <CgPoint name="100" desc="survey-control">0.000 0.000 10.000</CgPoint>
+    <CgPoint name="101" desc="survey-control">50.000 0.000 11.000</CgPoint>
+  </CgPoints>
+  <Alignments>
+    <Alignment name="Main Road CL" staStart="0.000">
+      <CoordGeom>
+        <Line>
+          <Start>0.000 0.000</Start>
+          <End>50.000 0.000</End>
+        </Line>
+        <Curve radius="100.000" length="20.000" rot="cw">
+          <Start>50.000 0.000</Start>
+          <End>68.000 8.000</End>
+        </Curve>
+      </CoordGeom>
+      <Profile name="FG Main">
+        <ProfAlign name="FG Main">
+          <PVI>0.000 10.000</PVI>
+          <PVI>50.000 11.000</PVI>
+          <PVI>70.000 10.500</PVI>
+        </ProfAlign>
+      </Profile>
+    </Alignment>
+  </Alignments>
+  <Surfaces>
+    <Surface name="Existing Ground">
+      <Definition surfType="TIN">
+        <Pnts>
+          <P id="1">0.000 0.000 9.500</P>
+          <P id="2">50.000 0.000 10.500</P>
+          <P id="3">0.000 50.000 9.800</P>
+        </Pnts>
+        <Faces>
+          <F>1 2 3</F>
+        </Faces>
+      </Definition>
+    </Surface>
+  </Surfaces>
+</LandXML>

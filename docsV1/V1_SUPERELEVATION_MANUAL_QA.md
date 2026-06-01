@@ -65,7 +65,7 @@ Recommended source setup:
 22. Confirm component notes or summary rows expose Superelevation source/provenance.
 23. Run `Build Corridor` / `Build Parametric`.
 24. Confirm Design Surface preview reflects the rolled lane/shoulder elevations.
-25. Confirm generated Build Parametric objects remain under `04_Corridor Model / Build Parametric Outputs`.
+25. Confirm generated Build Parametric objects remain under `04_Parametric Model / Build Parametric Outputs`.
 26. Confirm Report View has no traceback.
 
 ## Expected Result

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2">
+  <Application name="Unknown Road Tool" version="1.0"/>
+  <Alignments>
+    <Alignment name="Other Tool CL" staStart="0.000">
+      <CoordGeom>
+        <Line>
+          <Start>0.000 0.000</Start>
+          <End>10.000 0.000</End>
+        </Line>
+      </CoordGeom>
+    </Alignment>
+  </Alignments>
+</LandXML>

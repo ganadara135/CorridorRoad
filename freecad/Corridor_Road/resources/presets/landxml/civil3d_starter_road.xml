@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2" date="2026-06-01">
+  <Units>
+    <Metric linearUnit="meter" areaUnit="squareMeter" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="milliBars" angularUnit="decimal degrees" directionUnit="decimal degrees"/>
+  </Units>
+  <Application name="Autodesk Civil 3D" version="2026" manufacturer="Autodesk"/>
+  <CgPoints>
+    <CgPoint name="CP-1001" desc="primary-control">0.000 -20.000 58.420</CgPoint>
+    <CgPoint name="CP-1002" desc="primary-control">180.000 -8.000 59.160</CgPoint>
+    <CgPoint name="CP-1003" desc="primary-control">360.000 18.000 60.040</CgPoint>
+    <CgPoint name="CP-1004" desc="primary-control">540.000 56.000 60.880</CgPoint>
+    <CgPoint name="CP-1005" desc="primary-control">720.000 94.000 61.260</CgPoint>
+    <CgPoint name="CP-1006" desc="primary-control">900.000 112.000 60.740</CgPoint>
+    <CgPoint name="CP-1007" desc="primary-control">1080.000 120.000 59.880</CgPoint>
+    <CgPoint name="EG-2001" desc="existing-ground-shot">120.000 -90.000 57.840</CgPoint>
+    <CgPoint name="EG-2002" desc="existing-ground-shot">320.000 130.000 60.420</CgPoint>
+    <CgPoint name="EG-2003" desc="existing-ground-shot">560.000 -105.000 59.360</CgPoint>
+    <CgPoint name="EG-2004" desc="existing-ground-shot">760.000 175.000 61.720</CgPoint>
+    <CgPoint name="EG-2005" desc="existing-ground-shot">980.000 -65.000 60.050</CgPoint>
+    <CgPoint name="BM-01" desc="benchmark">40.000 210.000 60.000</CgPoint>
+    <CgPoint name="BM-02" desc="benchmark">1040.000 205.000 59.500</CgPoint>
+  </CgPoints>
+  <Alignments>
+    <Alignment name="Civil 3D Starter Road CL" staStart="0.000">
+      <CoordGeom>
+        <Line length="180.000">
+          <Start>0.000 0.000</Start>
+          <End>180.000 0.000</End>
+        </Line>
+        <Curve radius="260.000" length="135.000" rot="ccw">
+          <Start>180.000 0.000</Start>
+          <End>304.000 38.000</End>
+        </Curve>
+        <Line length="185.000">
+          <Start>304.000 38.000</Start>
+          <End>486.000 72.000</End>
+        </Line>
+        <Curve radius="320.000" length="160.000" rot="cw">
+          <Start>486.000 72.000</Start>
+          <End>640.000 90.000</End>
+        </Curve>
+        <Line length="210.000">
+          <Start>640.000 90.000</Start>
+          <End>848.000 112.000</End>
+        </Line>
+        <Curve radius="420.000" length="120.000" rot="ccw">
+          <Start>848.000 112.000</Start>
+          <End>964.000 126.000</End>
+        </Curve>
+        <Line length="120.000">
+          <Start>964.000 126.000</Start>
+          <End>1084.000 126.000</End>
+        </Line>
+      </CoordGeom>
+      <Profile name="FG Civil 3D Starter">
+        <ProfAlign name="FG Civil 3D Starter">
+          <PVI>0.000 60.000</PVI>
+          <PVI>120.000 60.720</PVI>
+          <PVI>240.000 61.550</PVI>
+          <PVI>360.000 61.150</PVI>
+          <PVI>500.000 60.400</PVI>
+          <PVI>650.000 61.100</PVI>
+          <PVI>800.000 60.650</PVI>
+          <PVI>960.000 59.850</PVI>
+          <PVI>1090.000 60.250</PVI>
+        </ProfAlign>
+      </Profile>
+    </Alignment>
+  </Alignments>
+  <Surfaces>
+    <Surface name="EG Civil 3D Starter">
+      <Definition surfType="TIN">
+        <Pnts>
+          <P id="1">-80.000 -160.000 52.600</P>
+          <P id="2">120.000 -160.000 54.800</P>
+          <P id="3">320.000 -160.000 57.900</P>
+          <P id="4">520.000 -160.000 62.400</P>
+          <P id="5">720.000 -160.000 65.800</P>
+          <P id="6">920.000 -160.000 63.100</P>
+          <P id="7">1120.000 -160.000 58.400</P>
+          <P id="8">1320.000 -160.000 54.200</P>
+          <P id="9">-80.000 -80.000 53.700</P>
+          <P id="10">120.000 -80.000 56.400</P>
+          <P id="11">320.000 -80.000 60.200</P>
+          <P id="12">520.000 -80.000 66.600</P>
+          <P id="13">720.000 -80.000 69.400</P>
+          <P id="14">920.000 -80.000 65.200</P>
+          <P id="15">1120.000 -80.000 59.300</P>
+          <P id="16">1320.000 -80.000 55.100</P>
+          <P id="17">-80.000 0.000 55.400</P>
+          <P id="18">120.000 0.000 58.900</P>
+          <P id="19">320.000 0.000 63.800</P>
+          <P id="20">520.000 0.000 71.200</P>
+          <P id="21">720.000 0.000 73.600</P>
+          <P id="22">920.000 0.000 67.000</P>
+          <P id="23">1120.000 0.000 60.100</P>
+          <P id="24">1320.000 0.000 56.000</P>
+          <P id="25">-80.000 80.000 57.200</P>
+          <P id="26">120.000 80.000 61.600</P>
+          <P id="27">320.000 80.000 66.500</P>
+          <P id="28">520.000 80.000 74.800</P>
+          <P id="29">720.000 80.000 76.900</P>
+          <P id="30">920.000 80.000 69.400</P>
+          <P id="31">1120.000 80.000 61.200</P>
+          <P id="32">1320.000 80.000 56.700</P>
+          <P id="33">-80.000 160.000 58.000</P>
+          <P id="34">120.000 160.000 62.400</P>
+          <P id="35">320.000 160.000 67.300</P>
+          <P id="36">520.000 160.000 72.100</P>
+          <P id="37">720.000 160.000 70.200</P>
+          <P id="38">920.000 160.000 64.300</P>
+          <P id="39">1120.000 160.000 59.000</P>
+          <P id="40">1320.000 160.000 55.500</P>
+          <P id="41">-80.000 240.000 57.000</P>
+          <P id="42">120.000 240.000 59.800</P>
+          <P id="43">320.000 240.000 62.200</P>
+          <P id="44">520.000 240.000 63.600</P>
+          <P id="45">720.000 240.000 61.500</P>
+          <P id="46">920.000 240.000 58.700</P>
+          <P id="47">1120.000 240.000 55.600</P>
+          <P id="48">1320.000 240.000 52.900</P>
+        </Pnts>
+        <Faces>
+          <F>1 2 9</F>
+          <F>2 10 9</F>
+          <F>2 3 10</F>
+          <F>3 11 10</F>
+          <F>3 4 11</F>
+          <F>4 12 11</F>
+          <F>4 5 12</F>
+          <F>5 13 12</F>
+          <F>5 6 13</F>
+          <F>6 14 13</F>
+          <F>6 7 14</F>
+          <F>7 15 14</F>
+          <F>7 8 15</F>
+          <F>8 16 15</F>
+          <F>9 10 17</F>
+          <F>10 18 17</F>
+          <F>10 11 18</F>
+          <F>11 19 18</F>
+          <F>11 12 19</F>
+          <F>12 20 19</F>
+          <F>12 13 20</F>
+          <F>13 21 20</F>
+          <F>13 14 21</F>
+          <F>14 22 21</F>
+          <F>14 15 22</F>
+          <F>15 23 22</F>
+          <F>15 16 23</F>
+          <F>16 24 23</F>
+          <F>17 18 25</F>
+          <F>18 26 25</F>
+          <F>18 19 26</F>
+          <F>19 27 26</F>
+          <F>19 20 27</F>
+          <F>20 28 27</F>
+          <F>20 21 28</F>
+          <F>21 29 28</F>
+          <F>21 22 29</F>
+          <F>22 30 29</F>
+          <F>22 23 30</F>
+          <F>23 31 30</F>
+          <F>23 24 31</F>
+          <F>24 32 31</F>
+          <F>25 26 33</F>
+          <F>26 34 33</F>
+          <F>26 27 34</F>
+          <F>27 35 34</F>
+          <F>27 28 35</F>
+          <F>28 36 35</F>
+          <F>28 29 36</F>
+          <F>29 37 36</F>
+          <F>29 30 37</F>
+          <F>30 38 37</F>
+          <F>30 31 38</F>
+          <F>31 39 38</F>
+          <F>31 32 39</F>
+          <F>32 40 39</F>
+          <F>33 34 41</F>
+          <F>34 42 41</F>
+          <F>34 35 42</F>
+          <F>35 43 42</F>
+          <F>35 36 43</F>
+          <F>36 44 43</F>
+          <F>36 37 44</F>
+          <F>37 45 44</F>
+          <F>37 38 45</F>
+          <F>38 46 45</F>
+          <F>38 39 46</F>
+          <F>39 47 46</F>
+          <F>39 40 47</F>
+          <F>40 48 47</F>
+        </Faces>
+      </Definition>
+    </Surface>
+  </Surfaces>
+</LandXML>

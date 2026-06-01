@@ -56,6 +56,7 @@ def corridorroad_workflow_command_groups():
         ],
         "output": [
             "CorridorRoad_OutputsExchange",
+            "CorridorRoad_V1ImportLandXML",
             "CorridorRoad_V1StructureOutput",
         ],
         "ai": [
@@ -110,6 +111,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_superelevation_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_landxml_import  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401
