@@ -1,6 +1,6 @@
 # Quick Start
 
-This page describes the basic Parametric Road v1 workflow for `1.0.3`.
+This page describes the basic Parametric Road v1 workflow for `1.0.4`.
 
 ## 1. Install
 

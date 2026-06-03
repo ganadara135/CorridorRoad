@@ -2,7 +2,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-Parametric Road `1.0.3` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
+Parametric Road `1.0.4` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
 
 The v1 workflow is source-driven: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics and handoff context.
 
@@ -16,7 +16,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 ## Release And Tutorial
 
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.3
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum discussion: https://forum.freecad.org/viewtopic.php?t=103783
 
