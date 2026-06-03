@@ -31,6 +31,9 @@ def build_document_centerline3d_result(document=None) -> Centerline3DResult:
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    bundles = _centerline3d_source_bundles(doc)
+    if len(bundles) > 1:
+        return _build_multi_alignment_centerline3d_result(doc, bundles)
     alignment_obj = find_v1_alignment(doc)
     profile_obj = find_v1_profile(doc)
     stationing_obj = find_v1_stationing(doc)
@@ -52,6 +55,72 @@ def build_document_centerline3d_result(document=None) -> Centerline3DResult:
     )
 
 
+def _build_multi_alignment_centerline3d_result(document, bundles: list[dict[str, object]]) -> Centerline3DResult:
+    project = find_project(document)
+    project_id = str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
+    service = Centerline3DEvaluationService()
+    point_rows = []
+    diagnostics: list[str] = []
+    source_refs: list[str] = []
+    alignment_ids: list[str] = []
+    profile_ids: list[str] = []
+    stationing_ids: list[str] = []
+    ready_count = 0
+    for bundle in list(bundles or []):
+        alignment = bundle.get("alignment")
+        profile = bundle.get("profile")
+        stationing_obj = bundle.get("stationing_obj")
+        alignment_id = str(getattr(alignment, "alignment_id", "") or "").strip()
+        if alignment_id:
+            alignment_ids.append(alignment_id)
+        profile_id = str(getattr(profile, "profile_id", "") or "").strip()
+        if profile_id:
+            profile_ids.append(profile_id)
+        stationing_id = str(getattr(stationing_obj, "StationingId", "") or "").strip()
+        if stationing_id:
+            stationing_ids.append(stationing_id)
+        result = service.evaluate(
+            Centerline3DEvaluationRequest(
+                project_id=project_id,
+                alignment_model=alignment,
+                profile_model=profile,
+                station_values=tuple(float(value) for value in list(getattr(stationing_obj, "StationValues", []) or [])),
+                stationing_id=stationing_id,
+                source_refs=tuple(
+                    value
+                    for value in (
+                        str(getattr(bundle.get("alignment_obj"), "Name", "") or ""),
+                        str(getattr(bundle.get("profile_obj"), "Name", "") or ""),
+                        str(getattr(stationing_obj, "Name", "") or ""),
+                    )
+                    if value
+                ),
+            )
+        )
+        if str(getattr(result, "status", "") or "") == "ready":
+            ready_count += 1
+        point_rows.extend(list(getattr(result, "point_rows", ()) or ()))
+        diagnostics.extend(
+            f"{alignment_id or 'alignment'}|{row}"
+            for row in list(getattr(result, "diagnostic_rows", ()) or ())
+        )
+        source_refs.extend(list(getattr(result, "source_refs", ()) or ()))
+    status = "ready" if ready_count > 0 and len(point_rows) >= 2 else "blocked"
+    if ready_count < len(bundles):
+        diagnostics.append(f"warning|partial_centerline3d_bundle_count|centerline3d:multiple|Ready bundles: {ready_count}/{len(bundles)}.")
+    return Centerline3DResult(
+        project_id=project_id,
+        centerline3d_result_id="centerline3d:multiple",
+        alignment_id="alignment:multiple",
+        profile_id="profile:multiple" if len(_unique_text(profile_ids)) > 1 else (_unique_text(profile_ids)[0] if profile_ids else ""),
+        stationing_id="stationing:multiple" if len(_unique_text(stationing_ids)) > 1 else (_unique_text(stationing_ids)[0] if stationing_ids else ""),
+        point_rows=tuple(point_rows),
+        diagnostic_rows=tuple(diagnostics),
+        status=status,
+        source_refs=tuple(_unique_text(source_refs)),
+    )
+
+
 def show_v1_centerline3d_preview_object(
     document=None,
     *,
@@ -68,10 +137,10 @@ def show_v1_centerline3d_preview_object(
     if App is None or Part is None:
         raise RuntimeError("FreeCAD Part workbench is required for 3D Centerline preview.")
     active_result = result or build_document_centerline3d_result(doc)
-    points = [App.Vector(float(row.x), float(row.y), float(row.z)) for row in list(active_result.point_rows or ())]
-    if len(points) < 2:
+    point_groups = _centerline3d_preview_point_groups(active_result)
+    if sum(len(points) for points in point_groups) < 2:
         raise RuntimeError("3D Centerline preview requires at least two evaluated points.")
-    shape, curve_kind = _make_centerline3d_curve_shape(points, display_mode=display_mode)
+    shape, curve_kind = _make_centerline3d_compound_curve_shape(point_groups, display_mode=display_mode)
     obj = doc.getObject("V1Centerline3DPreview")
     if obj is None:
         obj = doc.addObject("Part::Feature", "V1Centerline3DPreview")
@@ -83,6 +152,7 @@ def show_v1_centerline3d_preview_object(
     _set_string(obj, "CurveKind", curve_kind)
     _set_string(obj, "CenterlineDisplayMode", _normalized_display_mode(display_mode))
     _set_string(obj, "AlignmentId", str(active_result.alignment_id or ""))
+    _set_string_list(obj, "AlignmentIds", _centerline3d_alignment_ids(active_result))
     _set_string(obj, "ProfileId", str(active_result.profile_id or ""))
     _set_string(obj, "StationingId", str(active_result.stationing_id or ""))
     _set_string(obj, "ReviewStatus", str(active_result.status or "empty"))
@@ -384,6 +454,100 @@ class CmdV1Centerline3D:
         return App is not None and getattr(App, "ActiveDocument", None) is not None
 
 
+def _centerline3d_source_bundles(document) -> list[dict[str, object]]:
+    alignments = [(obj, to_alignment_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
+    alignments = [(obj, model) for obj, model in alignments if model is not None]
+    profiles = [(obj, to_profile_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
+    profiles = [(obj, model) for obj, model in profiles if model is not None]
+    stationings = [
+        obj
+        for obj in list(getattr(document, "Objects", []) or [])
+        if str(getattr(obj, "V1ObjectType", "") or "") == "V1Stationing"
+        or str(getattr(getattr(obj, "Proxy", None), "Type", "") or "") == "V1Stationing"
+        or str(getattr(obj, "Name", "") or "").startswith("V1Stationing")
+    ]
+    output: list[dict[str, object]] = []
+    for alignment_obj, alignment in alignments:
+        alignment_id = str(getattr(alignment, "alignment_id", "") or getattr(alignment_obj, "AlignmentId", "") or "").strip()
+        if not alignment_id:
+            continue
+        profile_obj, profile = _model_object_for_alignment(profiles, alignment_id)
+        stationing_obj = _stationing_for_alignment(stationings, alignment_id)
+        if profile is None or stationing_obj is None:
+            continue
+        output.append(
+            {
+                "alignment_obj": alignment_obj,
+                "alignment": alignment,
+                "profile_obj": profile_obj,
+                "profile": profile,
+                "stationing_obj": stationing_obj,
+            }
+        )
+    return output
+
+
+def _model_object_for_alignment(rows: list[tuple[object, object]], alignment_id: str):
+    target = str(alignment_id or "").strip()
+    fallback = (None, None)
+    for obj, model in list(rows or []):
+        model_alignment_id = str(getattr(model, "alignment_id", "") or "").strip()
+        if fallback == (None, None) and not model_alignment_id:
+            fallback = (obj, model)
+        if model_alignment_id == target:
+            return obj, model
+    return fallback if len(rows) == 1 else (None, None)
+
+
+def _stationing_for_alignment(rows: list[object], alignment_id: str):
+    target = str(alignment_id or "").strip()
+    fallback = None
+    for obj in list(rows or []):
+        obj_alignment_id = str(getattr(obj, "AlignmentId", "") or "").strip()
+        if fallback is None and not obj_alignment_id:
+            fallback = obj
+        if obj_alignment_id == target:
+            return obj
+    return fallback if len(rows) == 1 else None
+
+
+def _centerline3d_preview_point_groups(result: Centerline3DResult) -> list[list[object]]:
+    groups: list[list[object]] = []
+    group_by_alignment: dict[str, list[object]] = {}
+    for row in list(getattr(result, "point_rows", ()) or ()):
+        alignment_id = str(getattr(row, "source_alignment_ref", "") or getattr(result, "alignment_id", "") or "").strip()
+        if not alignment_id:
+            alignment_id = "__unassigned__"
+        if alignment_id not in group_by_alignment:
+            group_by_alignment[alignment_id] = []
+            groups.append(group_by_alignment[alignment_id])
+        group_by_alignment[alignment_id].append(App.Vector(float(row.x), float(row.y), float(row.z)))
+    return [group for group in groups if group]
+
+
+def _centerline3d_alignment_ids(result: Centerline3DResult) -> list[str]:
+    values = [
+        str(getattr(row, "source_alignment_ref", "") or "")
+        for row in list(getattr(result, "point_rows", ()) or ())
+        if str(getattr(row, "source_alignment_ref", "") or "")
+    ]
+    if not values and str(getattr(result, "alignment_id", "") or ""):
+        values.append(str(getattr(result, "alignment_id", "") or ""))
+    return _unique_text(values)
+
+
+def _unique_text(values) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
+
+
 def _style_centerline3d_preview(obj) -> None:
     try:
         vobj = getattr(obj, "ViewObject", None)
@@ -436,6 +600,23 @@ def _make_centerline3d_curve_shape(points: list[object], *, display_mode: str = 
         except Exception:
             pass
     return Part.makePolygon(cleaned), "polyline"
+
+
+def _make_centerline3d_compound_curve_shape(point_groups: list[list[object]], *, display_mode: str = "smooth_curve"):
+    shapes = []
+    curve_kinds: list[str] = []
+    for points in list(point_groups or []):
+        if len(points) < 2:
+            continue
+        shape, curve_kind = _make_centerline3d_curve_shape(points, display_mode=display_mode)
+        shapes.append(shape)
+        curve_kinds.append(curve_kind)
+    if not shapes:
+        raise RuntimeError("3D Centerline preview requires at least two distinct evaluated points.")
+    shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+    if len(set(curve_kinds)) == 1:
+        return shape, curve_kinds[0]
+    return shape, "compound"
 
 
 def _clean_centerline_points(points: list[object]) -> list[object]:

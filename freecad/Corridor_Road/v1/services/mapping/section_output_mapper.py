@@ -57,7 +57,7 @@ class SectionOutputMapper:
                 label="Quantity Count",
                 value=len(quantity_rows),
             ),
-        ] + self._frame_summary_rows(applied_section) + self._superelevation_summary_rows(applied_section)
+        ] + self._frame_summary_rows(applied_section) + self._superelevation_summary_rows(applied_section) + self._intersection_summary_rows(applied_section)
 
         return SectionOutput(
             schema_version=1,
@@ -194,6 +194,52 @@ class SectionOutputMapper:
                     kind="superelevation_source_rows",
                     label="Superelevation Source Rows",
                     value=", ".join(str(row) for row in source_rows if str(row).strip()),
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _intersection_summary_rows(applied_section: AppliedSection) -> list[SectionSummaryRow]:
+        intersection_id = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
+        if not intersection_id:
+            return []
+        rows = [
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:intersection-id",
+                kind="intersection_id",
+                label="Intersection",
+                value=intersection_id,
+            )
+        ]
+        control_area_id = str(getattr(applied_section, "active_intersection_control_area_id", "") or "").strip()
+        if control_area_id:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:intersection-control-area",
+                    kind="intersection_control_area",
+                    label="Intersection Control Area",
+                    value=control_area_id,
+                )
+            )
+        leg_id = str(getattr(applied_section, "active_intersection_leg_id", "") or "").strip()
+        leg_role = str(getattr(applied_section, "active_intersection_leg_role", "") or "").strip()
+        if leg_id or leg_role:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:intersection-leg",
+                    kind="intersection_leg",
+                    label="Intersection Leg",
+                    value=" | ".join(value for value in (leg_id, leg_role) if value),
+                )
+            )
+        control_refs = list(getattr(applied_section, "active_intersection_control_region_refs", []) or [])
+        if control_refs:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:intersection-control-regions",
+                    kind="intersection_control_regions",
+                    label="Intersection Control Regions",
+                    value=", ".join(str(value) for value in control_refs if str(value).strip()),
                 )
             )
         return rows

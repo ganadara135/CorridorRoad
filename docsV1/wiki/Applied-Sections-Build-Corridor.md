@@ -10,6 +10,7 @@ They resolve:
 
 - Alignment frame
 - Profile elevation
+- matching 3D Centerline rows for the active Alignment, when available
 - active Region
 - Assembly components
 - Superelevation effective lane/shoulder crossfall
@@ -56,6 +57,8 @@ This folder is for generated preview and review objects from the Build Parametri
 The Build Corridor panel includes a `Region Boundaries` table.
 
 Each row represents one source Region range.
+
+For multi-alignment Intersections, Region rows are read from all participating Region source models. The table shows an `Alignment` column so primary-road and side-road Regions can be reviewed separately.
 
 Double-click a Region row, or select a row and use `Highlight Region`, to display the selected Region's built objects in the 3D view.
 

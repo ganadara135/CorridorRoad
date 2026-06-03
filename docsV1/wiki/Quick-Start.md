@@ -50,15 +50,16 @@ Superelevation is optional, but when used it should be applied before Applied Se
 7. Optionally open Superelevation, load a preset, validate, show samples, and apply.
 8. Create or select an Assembly.
 9. Create Regions from Stationing-based `Start STA` values and reference the Assembly.
-10. Optionally open Structures and apply Structure source rows.
-11. Optionally open Drainage and apply drainage source rows.
-12. Run Applied Sections.
-13. Run Build Corridor.
-14. Review Region Boundaries and Surface Transitions in Build Corridor.
-15. Open Cross Section Viewer.
-16. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
-17. Open Earthwork Viewer.
-18. Open Watertight Solids after Build Corridor when solid targets are needed.
+10. Optionally open Intersections. Use `Create Starter Sources` for a starter junction; it creates participating sources and a multi-alignment 3D Centerline.
+11. Optionally open Structures and apply Structure source rows.
+12. Optionally open Drainage and apply drainage source rows.
+13. Run Applied Sections.
+14. Run Build Corridor.
+15. Review Region Boundaries and Surface Transitions in Build Corridor.
+16. Open Cross Section Viewer.
+17. Open Drainage Review or show the Flow Network if Structure-backed drainage is present.
+18. Open Earthwork Viewer.
+19. Open Watertight Solids after Build Corridor when solid targets are needed.
 
 ## 4. What To Check
 
@@ -67,6 +68,8 @@ Superelevation is optional, but when used it should be applied before Applied Se
 - Build Corridor consumes Applied Sections.
 - Superelevation changes require rebuilding Applied Sections before Build Corridor.
 - Region Boundaries show continuous source Region ranges.
+- For Intersections starter data, Region Boundaries show primary-road and side-road Region rows with Alignment context.
+- 3D Centerline shows all participating starter Alignments before Applied Sections are built.
 - Surface Transition `Spacing` and `Sample Count` match the intended transition density.
 - Review panels open without traceback errors.
 - Drainage opens the source editor and can store a `V1DrainageModel`.

@@ -470,6 +470,13 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
             "Station-based crossfall source applied to lane and shoulder slopes.",
         ),
         (
+            "Intersection",
+            "intersection_status",
+            "intersection_label",
+            "intersection_source_ref",
+            "Intersection control-area context resolved for this section, if any.",
+        ),
+        (
             "Structure",
             "structure_status",
             "structure_label",
@@ -521,6 +528,10 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
         ("Owner Region Ref", "owner_region"),
         ("Owner Structure Ref", "owner_structure"),
         ("Owner Drainage Ref", "owner_drainage"),
+        ("Owner Intersection Ref", "owner_intersection"),
+        ("Intersection Control Area", "intersection_control_area_ref"),
+        ("Intersection Leg", "intersection_leg_ref"),
+        ("Intersection Leg Role", "intersection_leg_role"),
         ("Ownership Status", "ownership_status"),
     ]
     rows = []
@@ -535,6 +546,39 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
         value = inspector.get(key, None)
         if value not in (None, ""):
             rows.append([label, str(value)])
+    return rows
+
+
+def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: set[str]) -> list[list[str]]:
+    """Build Intersection summary rows when older payloads lack mapped summary rows."""
+
+    if "intersection_id" in seen_kinds:
+        return []
+    section = preview.get("applied_section", None)
+    intersection_id = str(getattr(section, "active_intersection_id", "") or "").strip()
+    if not intersection_id:
+        inspector = dict(preview.get("source_inspector", {}) or {})
+        intersection_id = str(inspector.get("intersection_source_ref", "") or inspector.get("owner_intersection", "") or "").strip()
+    if not intersection_id:
+        return []
+    rows = [["intersection_id", "Intersection", intersection_id, ""]]
+    control_area = str(getattr(section, "active_intersection_control_area_id", "") or "").strip()
+    leg_id = str(getattr(section, "active_intersection_leg_id", "") or "").strip()
+    leg_role = str(getattr(section, "active_intersection_leg_role", "") or "").strip()
+    control_refs = list(getattr(section, "active_intersection_control_region_refs", []) or [])
+    if control_area and "intersection_control_area" not in seen_kinds:
+        rows.append(["intersection_control_area", "Intersection Control Area", control_area, ""])
+    if (leg_id or leg_role) and "intersection_leg" not in seen_kinds:
+        rows.append(["intersection_leg", "Intersection Leg", " | ".join(value for value in (leg_id, leg_role) if value), ""])
+    if control_refs and "intersection_control_regions" not in seen_kinds:
+        rows.append(
+            [
+                "intersection_control_regions",
+                "Intersection Control Regions",
+                ", ".join(str(value) for value in control_refs if str(value).strip()),
+                "",
+            ]
+        )
     return rows
 
 
@@ -1578,6 +1622,7 @@ class CrossSectionViewerTaskPanel:
             ("Region Label", "region_label"),
             ("Structure Label", "structure_label"),
             ("Drainage Label", "drainage_label"),
+            ("Intersection Label", "intersection_label"),
             ("Component Id", "component_id"),
             ("Component Kind", "component_kind"),
             ("Component Side", "component_side"),
@@ -1585,6 +1630,7 @@ class CrossSectionViewerTaskPanel:
             ("Owner Region", "owner_region"),
             ("Owner Structure", "owner_structure"),
             ("Owner Drainage", "owner_drainage"),
+            ("Owner Intersection", "owner_intersection"),
             ("Ownership Status", "ownership_status"),
         ]
         rows = []
@@ -1643,15 +1689,20 @@ class CrossSectionViewerTaskPanel:
     def _section_summary_rows(self) -> list[list[str]]:
         section_output = self.preview.get("section_output")
         rows = []
+        seen_kinds: set[str] = set()
         for row in list(getattr(section_output, "summary_rows", []) or []):
+            kind = str(getattr(row, "kind", "") or "")
+            if kind:
+                seen_kinds.add(kind)
             rows.append(
                 [
-                    str(getattr(row, "kind", "") or ""),
+                    kind,
                     str(getattr(row, "label", "") or ""),
                     str(getattr(row, "value", "") or ""),
                     str(getattr(row, "unit", "") or ""),
                 ]
             )
+        rows.extend(_intersection_summary_fallback_rows(self.preview, seen_kinds))
         return rows
 
     def _drawing_payload(self):

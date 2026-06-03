@@ -19,10 +19,12 @@ Baseline document:
 - [V1_1_0_1_MANUAL_SMOKE_QA.md](./V1_1_0_1_MANUAL_SMOKE_QA.md)
 - [V1_WIKI_1_0_0_UPDATE_CHECKLIST.md](./V1_WIKI_1_0_0_UPDATE_CHECKLIST.md)
 - [wiki/WIKI_TOC.md](./wiki/WIKI_TOC.md)
+- [wiki/Intersections.md](./wiki/Intersections.md)
 - [V1_ARCHITECTURE.md](./V1_ARCHITECTURE.md)
 - [V1_ALIGNMENT_MODEL.md](./V1_ALIGNMENT_MODEL.md)
 - [V1_RAMP_MODEL.md](./V1_RAMP_MODEL.md)
 - [V1_INTERSECTION_MODEL.md](./V1_INTERSECTION_MODEL.md)
+- [V1_INTERSECTION_IMPLEMENTATION_PLAN.md](./V1_INTERSECTION_IMPLEMENTATION_PLAN.md)
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
 - [V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md](./V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md)
@@ -127,7 +129,7 @@ Preferred review workflow:
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
 - use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
-- order the source-authoring toolbar as `Assembly -> Regions -> Structures -> Drainage`, so Structures can reference accepted Regions and Drainage can reference both Regions and Structure refs when needed
+- order the source-authoring toolbar as `Assembly -> Regions -> Intersections -> Structures -> Drainage`, so Intersections can reference accepted Regions, Structures can reference intersection Regions, and Drainage can reference both Regions and Structure refs when needed
 - treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
 - use `Build Corridor` to create the initial v1 `CorridorModel` and corridor-derived `SurfaceModel` from `Applied Sections`; these results should precede final corridor solids

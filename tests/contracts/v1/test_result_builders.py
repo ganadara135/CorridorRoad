@@ -37,6 +37,12 @@ from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlP
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
 from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionControlArea,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
+)
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     BridgeGeometrySpec,
     CulvertGeometrySpec,
@@ -191,6 +197,104 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     assert [point.point_role for point in result.point_rows].count("fg_surface") >= 2
     assert [point.point_role for point in result.point_rows].count("subgrade_surface") >= 2
     assert min(point.lateral_offset for point in result.point_rows if point.point_role == "fg_surface") < 0.0
+
+
+def test_applied_section_service_hands_off_active_intersection_context() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-1",
+        geometry_sequence=[AlignmentElement("el-1", "tangent", 0.0, 100.0)],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-1",
+        alignment_id="align-1",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-1",
+        template_rows=[
+            SectionTemplate(
+                template_id="tmpl-1",
+                component_rows=[TemplateComponent(component_id="lane-1", kind="lane", side="right", width=3.5)],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-1",
+        alignment_id="align-1",
+        region_rows=[RegionRow("region-intersection", 40.0, 60.0, template_ref="tmpl-1", intersection_ref="intersection:t-01")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-1",
+        alignment_id="align-1",
+    )
+    intersection_model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:main",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="align-1",
+                control_region_refs=["reg-1/region-intersection"],
+                leg_rows=[
+                    IntersectionLegRow(
+                        "intersection:t-01:leg-01",
+                        "primary_control",
+                        "align-1",
+                        intersection_id="intersection:t-01",
+                        region_ref="reg-1/region-intersection",
+                        approach_station_start=40.0,
+                        approach_station_end=60.0,
+                    )
+                ],
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="intersection:t-01:control-area:01",
+                intersection_id="intersection:t-01",
+                alignment_ref="align-1",
+                station_ranges=[(40.0, 60.0)],
+                control_region_refs=["reg-1/region-intersection"],
+            )
+        ],
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            intersection_model=intersection_model,
+            station=50.0,
+            applied_section_id="sec-1",
+        )
+    )
+    section_output = SectionOutputMapper().map_applied_section(result)
+    summary = {row.kind: row.value for row in section_output.summary_rows}
+
+    assert result.active_intersection_id == "intersection:t-01"
+    assert result.active_intersection_control_area_id == "intersection:t-01:control-area:01"
+    assert result.active_intersection_leg_id == "intersection:t-01:leg-01"
+    assert result.active_intersection_leg_role == "primary_control"
+    assert result.active_intersection_control_region_refs == ["reg-1/region-intersection"]
+    assert summary["intersection_id"] == "intersection:t-01"
+    assert "primary_control" in summary["intersection_leg"]
 
 
 def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -> None:

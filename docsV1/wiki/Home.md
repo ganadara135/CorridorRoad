@@ -10,6 +10,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 - [Quick Start](./Quick-Start.md)
 - [Workflow](./Workflow.md)
+- [Intersections](./Intersections.md)
 - [Troubleshooting](./Troubleshooting.md)
 - [Developer Guide](./Developer-Guide.md)
 
@@ -23,7 +24,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Main stages:
 
@@ -58,6 +59,7 @@ Available in the v1 release direction:
 - shared 3D Centerline review for downstream station/offset/elevation context
 - Superelevation source editing, station sample review, 3D crossfall bars, and Applied Sections / Build Parametric handoff
 - Assembly and Region source editing
+- Intersections starter sources, multi-alignment Region review, and multi-alignment 3D Centerline preview
 - Structure source editing, connection points, native drainage-structure previews, and Structure Output packages
 - Drainage source editing, Flow Routes, Structure-backed pipe network preview, and Drainage Review
 - Applied Sections generation

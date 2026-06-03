@@ -19,6 +19,7 @@ from ..objects.obj_applied_section import find_v1_applied_section_set, to_applie
 from ..objects.obj_corridor import create_or_update_v1_corridor_model_object, find_v1_corridor_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
 from ..objects.obj_exchange_package import create_or_update_v1_exchange_package_object, find_v1_exchange_package
+from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import create_or_update_v1_surface_model_object, find_v1_surface_model
@@ -76,9 +77,10 @@ CORRIDOR_BUILD_PREVIEW_DIAGNOSTIC_OBJECTS = {
 CORRIDOR_BUILD_GUIDED_REVIEW_STEPS = (
     ("centerline", "1. Centerline", ("centerline",), "Check 3D centerline continuity and station ordering."),
     ("design", "2. Design Surface", ("centerline", "design"), "Check finished-grade surface continuity."),
-    ("slope_issues", "3. Slope Face Issues", ("daylight",), "Check daylight tie-in fallbacks and EG hits."),
-    ("drainage", "4. Drainage Surface", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
-    ("drainage_flow", "5. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
+    ("intersections", "3. Intersections", ("design",), "Check intersection-controlled Region context and Applied Sections handoff."),
+    ("slope_issues", "4. Slope Face Issues", ("daylight",), "Check daylight tie-in fallbacks and EG hits."),
+    ("drainage", "5. Drainage Surface", ("centerline", "drainage"), "Check ditch/drainage surface handoff where available."),
+    ("drainage_flow", "6. Drainage Flow", ("centerline", "drainage"), "Check Flow Route connections and linked drainage structures."),
 )
 BUILD_CORRIDOR_PANEL_MIN_WIDTH = 420
 BUILD_CORRIDOR_PANEL_MAX_WIDTH = 560
@@ -518,6 +520,7 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
     review_by_role = {str(row.get("role", "") or ""): row for row in corridor_build_review_rows(doc)}
     issue_count = len(corridor_slope_face_issue_rows(doc))
     drainage_flow_summary = corridor_drainage_flow_review_summary(doc)
+    intersection_summary = corridor_intersection_review_summary(doc)
     rows: list[dict[str, object]] = []
     for step_id, title, roles, default_notes in CORRIDOR_BUILD_GUIDED_REVIEW_STEPS:
         if step_id == "slope_issues":
@@ -541,6 +544,10 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
                 status = str(drainage_flow_summary.get("status", status) or status)
                 notes = str(drainage_flow_summary.get("notes", default_notes) or default_notes)
                 focus = str(drainage_flow_summary.get("focus", "Drainage Flow") or "Drainage Flow")
+            elif step_id == "intersections":
+                status = str(intersection_summary.get("status", status) or status)
+                notes = str(intersection_summary.get("notes", default_notes) or default_notes)
+                focus = str(intersection_summary.get("focus", "Intersections") or "Intersections")
         rows.append(
             {
                 "step_id": step_id,
@@ -552,6 +559,34 @@ def corridor_build_guided_review_steps(document=None) -> list[dict[str, object]]
             }
         )
     return rows
+
+
+def corridor_intersection_review_summary(document=None) -> dict[str, object]:
+    """Return a compact Build Parametric intersection readiness summary."""
+
+    rows = [
+        row
+        for row in corridor_region_boundary_rows(document)
+        if str(row.get("intersection", "") or "").strip() not in {"", "-"}
+    ]
+    if not rows:
+        return {
+            "status": "missing",
+            "notes": "No intersection-controlled Region rows are available.",
+            "focus": "Intersections",
+        }
+    diagnostic_count = sum(int(row.get("intersection_diagnostic_count", 0) or 0) for row in rows)
+    if diagnostic_count:
+        return {
+            "status": "warning",
+            "notes": f"{len(rows)} intersection Region row(s); {diagnostic_count} intersection diagnostic(s).",
+            "focus": "Intersection Region diagnostics",
+        }
+    return {
+        "status": "ready",
+        "notes": f"{len(rows)} intersection-controlled Region row(s) reflected in Applied Sections.",
+        "focus": "Intersection Regions",
+    }
 
 
 def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]:
@@ -835,6 +870,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
     if applied is None:
         return [
             {
+                "alignment_id": "",
                 "region_id": "",
                 "station_start": "",
                 "station_end": "",
@@ -850,6 +886,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
     if not sections:
         return [
             {
+                "alignment_id": "",
                 "region_id": "",
                 "station_start": "",
                 "station_end": "",
@@ -861,19 +898,32 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
                 "diagnostics": "No Applied Section station rows are available.",
             }
         ]
-    region_model = to_region_model(find_v1_region_model(doc))
+    region_models = _document_region_models(doc)
+    region_model = region_models[0] if region_models else None
     structure_model = to_structure_model(find_v1_structure_model(doc))
     drainage_model = to_drainage_model(find_v1_drainage_model(doc))
-    source_rows = _region_source_rows(region_model)
-    if source_rows:
-        return _region_boundary_rows_from_source_regions(
-            source_rows,
-            sections,
-            document=doc,
-            region_model=region_model,
-            structure_model=structure_model,
-            drainage_model=drainage_model,
-        )
+    intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+    source_region_groups = [
+        (model, _region_source_rows(model))
+        for model in region_models
+        if _region_source_rows(model)
+    ]
+    if source_region_groups:
+        rows: list[dict[str, object]] = []
+        for model, source_rows in source_region_groups:
+            alignment_sections = _sections_for_region_model(sections, model)
+            rows.extend(
+                _region_boundary_rows_from_source_regions(
+                    source_rows,
+                    alignment_sections,
+                    document=doc,
+                    region_model=model,
+                    structure_model=structure_model,
+                    drainage_model=drainage_model,
+                    intersection_model=intersection_model,
+                )
+            )
+        return rows
     groups = _contiguous_region_groups(sections)
     rows: list[dict[str, object]] = []
     for index, group in enumerate(groups):
@@ -887,6 +937,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
             diagnostics.extend(_region_boundary_diagnostics(last, groups[index + 1]["sections"][0], boundary_side="end"))
         boundary_status = _region_boundary_status(diagnostics)
         row = {
+            "alignment_id": _unique_join(_section_text_values(group_sections, "alignment_id")),
             "region_id": str(group.get("region_id", "") or ""),
             "station_start": float(group.get("station_start", 0.0) or 0.0),
             "station_end": float(group.get("station_end", 0.0) or 0.0),
@@ -901,6 +952,7 @@ def corridor_region_boundary_rows(document=None) -> list[dict[str, object]]:
                 region_model=region_model,
                 drainage_model=drainage_model,
             ),
+            "intersection": _region_group_intersection_summary(None, group_sections, intersection_model=intersection_model),
             "surface_status": _region_group_surface_status(group_sections),
             "boundary_status": boundary_status,
             "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
@@ -2233,11 +2285,11 @@ class V1BuildCorridorTaskPanel:
         regions_label = QtWidgets.QLabel("Region Boundaries")
         regions_label.setToolTip("Double-click a Region row to select its built 3D Region surface object.")
         regions_layout.addWidget(regions_label)
-        self._region_table = QtWidgets.QTableWidget(0, 9)
+        self._region_table = QtWidgets.QTableWidget(0, 11)
         self._region_table.setHorizontalHeaderLabels(
-            ["Region", "Start STA", "End STA", "Assembly", "Structure", "Drainage", "Surface", "Boundary", "Diagnostics"]
+            ["Alignment", "Region", "Start STA", "End STA", "Assembly", "Structure", "Drainage", "Intersection", "Surface", "Boundary", "Diagnostics"]
         )
-        _compact_build_corridor_table(self._region_table, [120, 80, 80, 105, 105, 90, 80, 90, 240])
+        _compact_build_corridor_table(self._region_table, [125, 140, 80, 80, 105, 105, 90, 120, 80, 90, 240])
         self._region_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._region_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._region_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -2633,19 +2685,21 @@ class V1BuildCorridorTaskPanel:
             start = row.get("station_start", "")
             end = row.get("station_end", "")
             values = [
+                _display_source_id(str(row.get("alignment_id", "") or ""), "alignment:"),
                 str(row.get("region_id", "") or ""),
                 "" if start == "" else f"{float(start):.3f}",
                 "" if end == "" else f"{float(end):.3f}",
                 str(row.get("assembly", "") or ""),
                 str(row.get("structure", "") or ""),
                 str(row.get("drainage", "") or ""),
+                str(row.get("intersection", "") or ""),
                 str(row.get("surface_status", "") or ""),
                 str(row.get("boundary_status", "") or ""),
                 _region_boundary_display_diagnostics(row),
             ]
             for col, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
-                if col == 0:
+                if col == 1:
                     item.setData(32, str(row.get("region_id", "") or ""))
                 self._region_table.setItem(row_index, col, item)
             self._apply_region_boundary_row_style(row_index, str(row.get("boundary_status", "") or ""))
@@ -3299,6 +3353,13 @@ def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
 
 
+def _display_source_id(value: object, prefix: str) -> str:
+    text = str(value or "")
+    if prefix and text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
+
+
 def corridor_build_review_row_color(status: object) -> tuple[int, int, int] | None:
     """Return the dark-theme-readable review-row background color for a status."""
 
@@ -3444,6 +3505,37 @@ def _region_source_rows(region_model) -> list[object]:
     )
 
 
+def _document_region_models(document) -> list[object]:
+    models: list[object] = []
+    seen_ids: set[str] = set()
+    for obj in list(getattr(document, "Objects", []) or []):
+        model = to_region_model(obj)
+        if model is None:
+            continue
+        model_id = str(getattr(model, "region_model_id", "") or getattr(obj, "Name", "") or id(obj))
+        if model_id in seen_ids:
+            continue
+        seen_ids.add(model_id)
+        models.append(model)
+    preferred = to_region_model(find_v1_region_model(document))
+    if preferred is not None:
+        preferred_id = str(getattr(preferred, "region_model_id", "") or "")
+        models = [model for model in models if str(getattr(model, "region_model_id", "") or "") != preferred_id]
+        models.insert(0, preferred)
+    return models
+
+
+def _sections_for_region_model(sections: list[object], region_model) -> list[object]:
+    alignment_id = str(getattr(region_model, "alignment_id", "") or "").strip()
+    if not alignment_id:
+        return list(sections or [])
+    return [
+        section
+        for section in list(sections or [])
+        if str(getattr(section, "alignment_id", "") or "").strip() == alignment_id
+    ]
+
+
 def _region_boundary_rows_from_source_regions(
     source_rows: list[object],
     sections: list[object],
@@ -3452,6 +3544,7 @@ def _region_boundary_rows_from_source_regions(
     region_model=None,
     structure_model=None,
     drainage_model=None,
+    intersection_model=None,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     section_groups = [
@@ -3465,6 +3558,12 @@ def _region_boundary_rows_from_source_regions(
         diagnostics: list[dict[str, str]] = []
         diagnostics.extend(_region_source_range_diagnostics(source_rows, index))
         diagnostics.extend(_region_sample_coverage_diagnostics(source_row, group_sections))
+        intersection_diagnostics = _region_intersection_context_diagnostics(
+            source_row,
+            group_sections,
+            intersection_model=intersection_model,
+        )
+        diagnostics.extend(intersection_diagnostics)
         if index > 0:
             previous_last = section_groups[index - 1][-1] if section_groups[index - 1] else None
             diagnostics.extend(_region_boundary_diagnostics(previous_last, first, boundary_side="start"))
@@ -3473,6 +3572,7 @@ def _region_boundary_rows_from_source_regions(
             diagnostics.extend(_region_boundary_diagnostics(last, next_first, boundary_side="end"))
         boundary_status = _region_boundary_status(diagnostics)
         row = {
+            "alignment_id": str(getattr(region_model, "alignment_id", "") or ""),
             "region_id": str(getattr(source_row, "region_id", "") or ""),
             "station_start": float(getattr(source_row, "station_start", 0.0) or 0.0),
             "station_end": float(getattr(source_row, "station_end", 0.0) or 0.0),
@@ -3487,10 +3587,16 @@ def _region_boundary_rows_from_source_regions(
                 region_model=region_model,
                 drainage_model=drainage_model,
             ),
+            "intersection": _region_group_intersection_summary(
+                source_row,
+                group_sections,
+                intersection_model=intersection_model,
+            ),
             "surface_status": _region_group_surface_status(group_sections),
             "boundary_status": boundary_status,
             "diagnostics": _region_boundary_diagnostic_summary(diagnostics),
             "diagnostic_count": len(diagnostics),
+            "intersection_diagnostic_count": len(intersection_diagnostics),
         }
         row.update(_region_generated_object_summary(document, row))
         rows.append(row)
@@ -4096,6 +4202,128 @@ def _region_group_drainage_summary(sections: list[object], *, region_model=None,
     return "; ".join(summary_parts) if summary_parts else "-"
 
 
+def _region_group_intersection_summary(source_row, sections: list[object], *, intersection_model=None) -> str:
+    source_ref = str(getattr(source_row, "intersection_ref", "") or "").strip() if source_row is not None else ""
+    active_refs = _unique_refs(
+        [
+            str(getattr(section, "active_intersection_id", "") or "")
+            for section in list(sections or [])
+            if str(getattr(section, "active_intersection_id", "") or "").strip()
+        ]
+    )
+    leg_roles = _unique_refs(
+        [
+            str(getattr(section, "active_intersection_leg_role", "") or "")
+            for section in list(sections or [])
+            if str(getattr(section, "active_intersection_leg_role", "") or "").strip()
+        ]
+    )
+    parts: list[str] = []
+    if source_ref:
+        parts.append(_display_source_id(source_ref, "intersection:"))
+    elif active_refs:
+        parts.extend(_display_source_id(ref, "intersection:") for ref in active_refs)
+    if leg_roles:
+        parts.append("/".join(leg_roles))
+    if source_ref and intersection_model is not None and _intersection_row_by_id(intersection_model, source_ref) is None:
+        parts.append("unlinked")
+    return " | ".join(part for part in parts if part) or "-"
+
+
+def _region_intersection_context_diagnostics(source_row, sections: list[object], *, intersection_model=None) -> list[dict[str, str]]:
+    source_ref = str(getattr(source_row, "intersection_ref", "") or "").strip()
+    region_id = str(getattr(source_row, "region_id", "") or "").strip()
+    active_refs = _unique_refs(
+        [
+            str(getattr(section, "active_intersection_id", "") or "")
+            for section in list(sections or [])
+            if str(getattr(section, "active_intersection_id", "") or "").strip()
+        ]
+    )
+    diagnostics: list[dict[str, str]] = []
+    if source_ref:
+        if intersection_model is None:
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    "intersection_model_missing",
+                    f"{source_ref}: Region is tagged as intersection-controlled but no IntersectionModel is available.",
+                    "range",
+                )
+            )
+        elif _intersection_row_by_id(intersection_model, source_ref) is None:
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    "intersection_ref_missing_in_model",
+                    f"{source_ref}: Region intersection_ref is not present in IntersectionModel.",
+                    "range",
+                )
+            )
+        if sections and source_ref not in active_refs:
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    "intersection_context_not_reflected_in_applied_sections",
+                    f"{source_ref}: Applied Sections inside this Region do not carry the expected active intersection.",
+                    "range",
+                )
+            )
+        if intersection_model is not None and not _intersection_model_mentions_region(intersection_model, source_ref, region_id):
+            diagnostics.append(
+                _region_boundary_diagnostic(
+                    "warning",
+                    "intersection_control_region_missing",
+                    f"{source_ref}: IntersectionModel does not list this Region as a control Region.",
+                    "range",
+                )
+            )
+    elif active_refs:
+        diagnostics.append(
+            _region_boundary_diagnostic(
+                "warning",
+                "intersection_context_without_region_source_ref",
+                f"{', '.join(active_refs)}: Applied Sections carry intersection context, but Region source has no intersection_ref.",
+                "range",
+            )
+        )
+    if len(active_refs) > 1:
+        diagnostics.append(
+            _region_boundary_diagnostic(
+                "warning",
+                "intersection_context_overlap",
+                f"Multiple active intersections are present in this Region: {', '.join(active_refs)}.",
+                "range",
+            )
+        )
+    return diagnostics
+
+
+def _intersection_row_by_id(intersection_model, intersection_id: str):
+    target = str(intersection_id or "").strip()
+    if intersection_model is None or not target:
+        return None
+    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
+        if str(getattr(row, "intersection_id", "") or "").strip() == target:
+            return row
+    return None
+
+
+def _intersection_model_mentions_region(intersection_model, intersection_id: str, region_id: str) -> bool:
+    target_region = str(region_id or "").strip()
+    if not target_region:
+        return True
+    refs: list[str] = []
+    row = _intersection_row_by_id(intersection_model, intersection_id)
+    if row is not None:
+        refs.extend(str(value or "") for value in list(getattr(row, "control_region_refs", []) or []))
+        refs.extend(str(getattr(leg, "region_ref", "") or "") for leg in list(getattr(row, "leg_rows", []) or []))
+    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
+        if str(getattr(area, "intersection_id", "") or "").strip() == str(intersection_id or "").strip():
+            refs.extend(str(value or "") for value in list(getattr(area, "control_region_refs", []) or []))
+    return any(ref == target_region or ref.endswith(f"/{target_region}") for ref in refs if ref)
+
+
 def _region_group_surface_status(sections: list[object]) -> str:
     if not sections:
         return "missing"
@@ -4259,12 +4487,14 @@ def _create_or_update_region_preview_objects(
     if document is None or corridor_model is None or applied_section_set is None:
         return []
     region_id = str(row.get("region_id", "") or "")
+    alignment_id = str(row.get("alignment_id", "") or "").strip()
     start = float(row.get("station_start", 0.0) or 0.0)
     end = float(row.get("station_end", start) or start)
     all_sections = [
         section
         for section in _station_ordered_applied_sections(applied_section_set)
         if getattr(section, "frame", None) is not None
+        and (not alignment_id or str(getattr(section, "alignment_id", "") or "").strip() == alignment_id)
     ]
     region_sections = [
         section

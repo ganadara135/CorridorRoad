@@ -79,6 +79,7 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "StationRowIds", "Stations", "station row ids")
     _add_property(obj, "App::PropertyFloatList", "StationValues", "Stations", "station values")
     _add_property(obj, "App::PropertyStringList", "AppliedSectionIds", "Stations", "applied section ids")
+    _add_property(obj, "App::PropertyStringList", "AlignmentIds", "Stations", "section alignment ids")
     _add_property(obj, "App::PropertyStringList", "StationKinds", "Stations", "station kinds")
     _add_property(obj, "App::PropertyFloatList", "FrameXValues", "Frames", "applied section frame x values")
     _add_property(obj, "App::PropertyFloatList", "FrameYValues", "Frames", "applied section frame y values")
@@ -99,6 +100,12 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "SuperelevationRightCrossfalls", "Superelevation", "right effective crossfall percent")
     _add_property(obj, "App::PropertyStringList", "SuperelevationTransitionIds", "Superelevation", "active superelevation transition ids")
     _add_property(obj, "App::PropertyStringList", "SuperelevationSourceRows", "Superelevation", "superelevation source rows by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionIds", "Intersections", "active intersection ids")
+    _add_property(obj, "App::PropertyStringList", "IntersectionControlAreaIds", "Intersections", "active intersection control area ids")
+    _add_property(obj, "App::PropertyStringList", "IntersectionLegIds", "Intersections", "active intersection leg ids")
+    _add_property(obj, "App::PropertyStringList", "IntersectionLegRoles", "Intersections", "active intersection leg roles")
+    _add_property(obj, "App::PropertyStringList", "IntersectionControlRegionRows", "Intersections", "active intersection control region refs by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionDiagnosticRows", "Intersections", "intersection context diagnostics by section")
     _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
     _add_property(obj, "App::PropertyStringList", "ComponentRows", "Resolved Context", "applied section component rows")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Resolved Context", "resolved region ids")
@@ -196,6 +203,7 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.StationRowIds = [str(row.station_row_id) for row in station_rows]
     obj.StationValues = [float(row.station) for row in station_rows]
     obj.AppliedSectionIds = [str(row.applied_section_id) for row in station_rows]
+    obj.AlignmentIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "alignment_id", "") or getattr(applied_section_set, "alignment_id", "") or "") for row in station_rows]
     obj.StationKinds = [str(row.kind) for row in station_rows]
     frames = [_section_frame(section_by_id.get(str(row.applied_section_id))) for row in station_rows]
     obj.FrameXValues = [float(getattr(frame, "x", 0.0) or 0.0) for frame in frames]
@@ -217,6 +225,12 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.SuperelevationRightCrossfalls = [float(getattr(section_by_id.get(str(row.applied_section_id)), "superelevation_right_crossfall", 0.0) or 0.0) for row in station_rows]
     obj.SuperelevationTransitionIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_superelevation_transition_id", "") or "") for row in station_rows]
     obj.SuperelevationSourceRows = _section_list_rows(station_rows, section_by_id, "superelevation_source_rows")
+    obj.IntersectionIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_id", "") or "") for row in station_rows]
+    obj.IntersectionControlAreaIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_control_area_id", "") or "") for row in station_rows]
+    obj.IntersectionLegIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_id", "") or "") for row in station_rows]
+    obj.IntersectionLegRoles = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_role", "") or "") for row in station_rows]
+    obj.IntersectionControlRegionRows = _section_list_rows(station_rows, section_by_id, "active_intersection_control_region_refs")
+    obj.IntersectionDiagnosticRows = _section_list_rows(station_rows, section_by_id, "intersection_diagnostic_rows")
     obj.PointRows = _point_rows(station_rows, section_by_id)
     obj.ComponentRows = _component_rows(station_rows, section_by_id)
     obj.RegionIds = [str(getattr(section_by_id.get(row.applied_section_id), "region_id", "") or "") for row in station_rows]
@@ -412,6 +426,8 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     active_zones_by_section = _parse_section_list_rows(getattr(obj, "ActiveStructureInfluenceZoneRows", []) or [])
     structure_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "StructureDiagnosticRows", []) or [])
     superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
+    intersection_control_regions_by_section = _parse_section_list_rows(getattr(obj, "IntersectionControlRegionRows", []) or [])
+    intersection_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "IntersectionDiagnosticRows", []) or [])
     component_rows_by_section = _parse_component_rows(getattr(obj, "ComponentRows", []) or [])
     for index, station in enumerate(station_values):
         section_id = _list_value(section_ids, index, f"section:{index + 1}")
@@ -429,7 +445,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
                 applied_section_id=section_id,
                 corridor_id=str(getattr(obj, "CorridorId", "") or ""),
-                alignment_id=str(getattr(obj, "AlignmentId", "") or ""),
+                alignment_id=_list_value(getattr(obj, "AlignmentIds", []), index, str(getattr(obj, "AlignmentId", "") or "")),
                 assembly_id=_list_value(getattr(obj, "AssemblyIds", []), index, ""),
                 station=float(station),
                 template_id=_list_value(getattr(obj, "TemplateIds", []), index, ""),
@@ -446,6 +462,12 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 superelevation_right_crossfall=_float_value(getattr(obj, "SuperelevationRightCrossfalls", []), index, 0.0),
                 active_superelevation_transition_id=_list_value(getattr(obj, "SuperelevationTransitionIds", []), index, ""),
                 superelevation_source_rows=superelevation_sources_by_section.get(section_id, []),
+                active_intersection_id=_list_value(getattr(obj, "IntersectionIds", []), index, ""),
+                active_intersection_control_area_id=_list_value(getattr(obj, "IntersectionControlAreaIds", []), index, ""),
+                active_intersection_leg_id=_list_value(getattr(obj, "IntersectionLegIds", []), index, ""),
+                active_intersection_leg_role=_list_value(getattr(obj, "IntersectionLegRoles", []), index, ""),
+                active_intersection_control_region_refs=intersection_control_regions_by_section.get(section_id, []),
+                intersection_diagnostic_rows=intersection_diagnostics_by_section.get(section_id, []),
                 component_rows=component_rows_by_section.get(section_id)
                 or _component_placeholders(
                     _integer_value(getattr(obj, "ComponentCounts", []), index, 0),

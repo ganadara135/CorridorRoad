@@ -51,11 +51,13 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
-Regions define station spans and the base Assembly. Structures and Drainage then choose their owning Region from their own source panels.
+Regions define station spans and the base Assembly. Intersections then group intersection Regions and participating Alignments into junction control areas. Structures and Drainage then choose their owning Region from their own source panels.
 
 3D Centerline is the shared downstream baseline for station/offset/elevation context. Structures, Drainage, Applied Sections, Build Corridor, and Watertight Solids should prefer it when available.
+
+For Intersections, 3D Centerline can be multi-alignment. Starter Sources create the participating Alignment/Profile/Stationing/Region sources and then generate a multi-alignment 3D Centerline preview so the primary road and side road do not share one baseline.
 
 Superelevation is the station-based crossfall source after 3D Centerline. It does not replace Assembly; it overrides lane and shoulder crossfall during Applied Sections generation.
 
@@ -90,6 +92,27 @@ Use this order when changing Region or Surface Transition settings:
 5. Review Region Boundaries.
 6. Update Surface Transition spacing where needed.
 7. Build Corridor again to regenerate transition-aware surfaces.
+
+## Intersection Flow
+
+Intersections are source-stage control data.
+
+Use `Create Starter Sources` when a quick test junction is needed. It creates editable Alignment, Profile, Stationing, and Region sources, then generates the 3D Centerline preview for the participating Alignments.
+
+Use this order for the starter workflow:
+
+1. Open Intersections.
+2. Select the intersection type.
+3. Set Source Mode to `Create Starter Sources`.
+4. Create starter sources.
+5. Confirm the status message includes the generated 3D Centerline.
+6. Review or refresh 3D Centerline.
+7. Apply Intersections.
+8. Build Sections.
+9. Build Parametric.
+10. Review Region Boundaries and Slope Face Issues.
+
+Build Parametric reads Region source rows from all participating Alignments. The Region Boundaries table includes an Alignment column for this reason.
 
 ## Drainage And Structure Flow
 

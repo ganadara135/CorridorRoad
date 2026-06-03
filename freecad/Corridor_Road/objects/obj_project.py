@@ -1382,6 +1382,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STATIONS, None)
     if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
         return tree.get(V1_TREE_SUPERELEVATION, None)
+    if record_kind == "v1_intersection_review_overlay":
+        return tree.get(V1_TREE_INTERSECTIONS, None)
     if _is_type(
         child,
         proxy_types=("V1SuperelevationSource", "Superelevation", "SuperelevationModel"),

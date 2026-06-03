@@ -40,6 +40,7 @@ def corridorroad_workflow_command_groups():
         "assembly_region": [
             "CorridorRoad_V1EditAssembly",
             "CorridorRoad_V1EditRegions",
+            "CorridorRoad_V1EditIntersections",
             "CorridorRoad_V1EditStructures",
         ],
         "drainage": [
@@ -102,6 +103,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_intersection_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_drainage_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_drainage_review  # noqa: F401
