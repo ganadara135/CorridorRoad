@@ -124,6 +124,7 @@ def _resolve_result_state(
         "cut_fill_calc",
         "assembly_model",
         "region_model",
+        "intersection_model",
         "structure_model",
         "drainage_model",
     ):
@@ -162,6 +163,7 @@ def _build_source_inspector(
     structure_model=None,
     drainage_model=None,
     superelevation_model=None,
+    intersection_model=None,
     viewer_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a compact source-inspector payload for the v1 section viewer."""
@@ -209,9 +211,14 @@ def _build_source_inspector(
     structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
     drainage_label = str(getattr(drainage_model, "Label", "") or getattr(drainage_model, "Name", "") or "").strip()
     superelevation_label = str(getattr(superelevation_model, "Label", "") or getattr(superelevation_model, "Name", "") or "").strip()
+    intersection_label = str(getattr(intersection_model, "Label", "") or getattr(intersection_model, "Name", "") or "").strip()
     template_label = template_object_label or owner_template
     region_label = region_object_label or owner_region
     owner_superelevation = str(getattr(applied_section, "active_superelevation_id", "") or "").strip()
+    owner_intersection = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
+    owner_intersection_control_area = str(getattr(applied_section, "active_intersection_control_area_id", "") or "").strip()
+    owner_intersection_leg = str(getattr(applied_section, "active_intersection_leg_id", "") or "").strip()
+    owner_intersection_leg_role = str(getattr(applied_section, "active_intersection_leg_role", "") or "").strip()
     active_structure_ref = str(viewer_context.get("active_structure_ref", "") or "").strip()
     if not active_structure_ref:
         active_structure_ref = _applied_section_structure_ref(applied_section)
@@ -234,6 +241,11 @@ def _build_source_inspector(
         if owner_superelevation
         else "not_applicable"
     )
+    intersection_status = (
+        _source_owner_status(object_label=intersection_label, source_ref=owner_intersection)
+        if owner_intersection
+        else "not_applicable"
+    )
 
     unresolved_fields = []
     if section_set_status == "unresolved":
@@ -248,8 +260,10 @@ def _build_source_inspector(
         unresolved_fields.append("drainage")
     if superelevation_status == "unresolved":
         unresolved_fields.append("superelevation")
+    if intersection_status == "unresolved":
+        unresolved_fields.append("intersection")
 
-    required_owner_count = 6
+    required_owner_count = 7
     if len(unresolved_fields) == 0:
         ownership_status = "resolved"
     elif len(unresolved_fields) >= required_owner_count:
@@ -279,6 +293,12 @@ def _build_source_inspector(
         "superelevation_label": superelevation_label or owner_superelevation,
         "superelevation_source_ref": owner_superelevation,
         "superelevation_status": superelevation_status,
+        "intersection_label": intersection_label or owner_intersection,
+        "intersection_source_ref": owner_intersection,
+        "intersection_status": intersection_status,
+        "intersection_control_area_ref": owner_intersection_control_area,
+        "intersection_leg_ref": owner_intersection_leg,
+        "intersection_leg_role": owner_intersection_leg_role,
         "component_id": component_id,
         "component_kind": component_kind,
         "component_side": component_side,
@@ -287,6 +307,7 @@ def _build_source_inspector(
         "owner_structure": owner_structure,
         "owner_drainage": owner_drainage,
         "owner_superelevation": owner_superelevation,
+        "owner_intersection": owner_intersection,
         "ownership_status": ownership_status,
         "unresolved_fields": list(unresolved_fields),
         "component_count": int(len(list(getattr(section_output, "component_rows", []) or []))),
@@ -1091,6 +1112,10 @@ def _build_v1_applied_section_set_preview(
         from ..objects.obj_superelevation import find_v1_superelevation_source
     except Exception:
         find_v1_superelevation_source = None
+    try:
+        from ..objects.obj_intersection import find_v1_intersection_model
+    except Exception:
+        find_v1_intersection_model = None
 
     applied_obj = find_v1_applied_section_set(document, preferred_applied_section_set)
     applied_section_set = to_applied_section_set(applied_obj)
@@ -1126,6 +1151,7 @@ def _build_v1_applied_section_set_preview(
     structure_model = find_v1_structure_model(document) if find_v1_structure_model is not None else None
     drainage_model = find_v1_drainage_model(document) if find_v1_drainage_model is not None else None
     superelevation_model = find_v1_superelevation_source(document) if find_v1_superelevation_source is not None else None
+    intersection_model = find_v1_intersection_model(document) if find_v1_intersection_model is not None else None
     source_objects = {
         "project": project,
         "applied_section_set": applied_obj,
@@ -1137,6 +1163,7 @@ def _build_v1_applied_section_set_preview(
         "structure_model": structure_model,
         "drainage_model": drainage_model,
         "superelevation_model": superelevation_model,
+        "intersection_model": intersection_model,
     }
     viewer_context: dict[str, object] = {
         "active_structure_ref": _applied_section_structure_ref(applied_section),
@@ -1185,6 +1212,7 @@ def _build_v1_applied_section_set_preview(
             structure_model=structure_model,
             drainage_model=drainage_model,
             superelevation_model=superelevation_model,
+            intersection_model=intersection_model,
             viewer_context=viewer_context,
         ),
         "terrain_rows": _build_terrain_review_rows(
@@ -1373,6 +1401,9 @@ def format_section_preview(preview: dict[str, object]) -> str:
     superelevation_line = _section_output_superelevation_summary(section_output)
     if superelevation_line:
         lines.append(superelevation_line)
+    intersection_line = _section_output_intersection_summary(section_output)
+    if intersection_line:
+        lines.append(intersection_line)
     unresolved_fields = [
         str(value)
         for value in list(source_inspector.get("unresolved_fields", []) or [])
@@ -1420,6 +1451,27 @@ def _section_output_superelevation_summary(section_output) -> str:
     pieces = [f"Superelevation: {superelevation_id}", f"L {left:.3f}%", f"R {right:.3f}%"]
     if transition:
         pieces.append(f"Transition {transition}")
+    return " | ".join(pieces)
+
+
+def _section_output_intersection_summary(section_output) -> str:
+    rows = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    intersection_id = str(getattr(rows.get("intersection_id"), "value", "") or "").strip()
+    if not intersection_id:
+        return ""
+    control_area = str(getattr(rows.get("intersection_control_area"), "value", "") or "").strip()
+    leg = str(getattr(rows.get("intersection_leg"), "value", "") or "").strip()
+    control_regions = str(getattr(rows.get("intersection_control_regions"), "value", "") or "").strip()
+    pieces = [f"Intersection: {intersection_id}"]
+    if control_area:
+        pieces.append(f"Control Area {control_area}")
+    if leg:
+        pieces.append(f"Leg {leg}")
+    if control_regions:
+        pieces.append(f"Regions {control_regions}")
     return " | ".join(pieces)
 
 

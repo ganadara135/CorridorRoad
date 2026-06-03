@@ -129,7 +129,7 @@ Parametric Road Project
     Comparison TIN
       Cut Fill Surface
       Difference Surface
-  04_Corridor Model
+  04_Parametric Model
     Assemblies
     Regions
     Applied Sections
@@ -245,7 +245,7 @@ Rules:
 - mesh preview must be replaceable and regenerable
 - surface diagnostics should be inspectable without opening exchange tools
 
-### 5.5 `04_Corridor Model`
+### 5.5 `04_Parametric Model`
 
 Owns the parametric corridor network.
 
@@ -344,10 +344,10 @@ Recommended routing:
 - TIN mesh preview -> `03_Surfaces / Existing Ground TIN / Mesh Preview`
 - TIN diagnostics -> `03_Surfaces / Existing Ground TIN / Diagnostics`
 - alignment/profile source -> `02_Alignment & Profile`
-- applied section set -> `04_Corridor Model / Applied Sections`
-- Build Parametric generated previews and diagnostics -> `04_Corridor Model / Build Parametric Outputs`
-- ramp model -> `04_Corridor Model / Ramps`
-- intersection model -> `04_Corridor Model / Intersections`
+- applied section set -> `04_Parametric Model / Applied Sections`
+- Build Parametric generated previews and diagnostics -> `04_Parametric Model / Build Parametric Outputs`
+- ramp model -> `04_Parametric Model / Ramps`
+- intersection model -> `04_Parametric Model / Intersections`
 - drainage model -> `05_Drainage`
 - cut/fill and mass-haul -> `07_Quantities & Earthwork`
 - issue/bookmark -> `08_Review`
@@ -360,7 +360,7 @@ Recommended routing:
 Current UI confirmation:
 
 - Drainage Elements no longer expose a user-facing `Connection Point` column. Structure-owned connection points are resolved by Flow Route direction.
-- Build Parametric output objects are visible under `04_Corridor Model / Build Parametric Outputs` and can be hidden/shown from the tree.
+- Build Parametric output objects are visible under `04_Parametric Model / Build Parametric Outputs` and can be hidden/shown from the tree.
 - Watertight Solid output objects are visible under `09_Outputs & Exchange / Watertight Solids` and can be hidden/shown from the tree.
 
 ## 7. Compatibility Strategy
@@ -377,7 +377,7 @@ Legacy-to-v1 mapping for old files and code references:
 05_References    -> 01_Source Data / Existing References
 Inputs/Survey    -> 01_Source Data / Survey Points
 Inputs/Terrains  -> 03_Surfaces / Existing Ground TIN or Source Data / Existing References
-Inputs/Regions   -> 04_Corridor Model / Regions
+Inputs/Regions   -> 04_Parametric Model / Regions
 Inputs/Structures -> 06_Structures
 ```
 
@@ -451,8 +451,8 @@ Goal:
 
 Tasks:
 
-- route ramp objects to `04_Corridor Model / Ramps`
-- route intersection objects to `04_Corridor Model / Intersections`
+- route ramp objects to `04_Parametric Model / Ramps`
+- route intersection objects to `04_Parametric Model / Intersections`
 - route drainage objects to `05_Drainage`
 
 Current implementation:

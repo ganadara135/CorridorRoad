@@ -511,7 +511,7 @@ Opening the command panel should not mutate the document.
 
 Clicking `Build Sections` validates source handoff readiness and creates or updates a `V1AppliedSectionSet` result object under:
 
-- `04_Corridor Model / Applied Sections`
+- `04_Parametric Model / Applied Sections`
 
 This command does not generate corridor solids.
 

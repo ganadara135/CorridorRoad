@@ -7,7 +7,6 @@ import FreeCADGui as Gui
 
 from freecad.Corridor_Road.corridor_compat import PREFERRED_COMMAND_ID
 from freecad.Corridor_Road.misc.resources import icon_path
-from freecad.Corridor_Road.ui.task_corridor import CorridorTaskPanel
 
 
 class CmdGenerateCorridor:
@@ -24,17 +23,15 @@ class CmdGenerateCorridor:
     def Activated(self):
         try:
             from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
-                document_has_v1_applied_sections,
                 run_v1_build_corridor_command,
             )
 
-            if document_has_v1_applied_sections(App.ActiveDocument):
-                run_v1_build_corridor_command()
-                return
-        except Exception:
-            pass
-        panel = CorridorTaskPanel()
-        Gui.Control.showDialog(panel)
+            run_v1_build_corridor_command()
+        except Exception as exc:
+            try:
+                App.Console.PrintError(f"Build Parametric panel was not opened: {exc}\n")
+            except Exception:
+                pass
 
 
 _CMD = CmdGenerateCorridor()

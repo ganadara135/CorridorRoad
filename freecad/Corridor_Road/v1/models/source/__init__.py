@@ -3,7 +3,16 @@
 from .alignment_model import AlignmentModel
 from .assembly_model import AssemblyModel, SectionTemplate, TemplateComponent
 from .drainage_model import DrainageModel
-from .intersection_model import IntersectionModel
+from .intersection_model import (
+    INTERSECTION_KIND_PRESETS,
+    IntersectionControlArea,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
+    intersection_kind_from_label,
+    intersection_preset_labels,
+    intersection_row_from_kind,
+)
 from .override_model import OverrideModel
 from .profile_model import ProfileModel
 from .project_model import ProjectModel
@@ -32,6 +41,13 @@ __all__ = [
     "TemplateComponent",
     "DrainageModel",
     "IntersectionModel",
+    "IntersectionRow",
+    "IntersectionLegRow",
+    "IntersectionControlArea",
+    "INTERSECTION_KIND_PRESETS",
+    "intersection_preset_labels",
+    "intersection_kind_from_label",
+    "intersection_row_from_kind",
     "OverrideModel",
     "ProfileModel",
     "ProjectModel",

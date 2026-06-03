@@ -96,6 +96,12 @@ class AppliedSection(ResultModelBase):
     superelevation_right_crossfall: float = 0.0
     active_superelevation_transition_id: str = ""
     superelevation_source_rows: list[str] = field(default_factory=list)
+    active_intersection_id: str = ""
+    active_intersection_control_area_id: str = ""
+    active_intersection_leg_id: str = ""
+    active_intersection_leg_role: str = ""
+    active_intersection_control_region_refs: list[str] = field(default_factory=list)
+    intersection_diagnostic_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)

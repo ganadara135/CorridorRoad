@@ -40,6 +40,7 @@ def corridorroad_workflow_command_groups():
         "assembly_region": [
             "CorridorRoad_V1EditAssembly",
             "CorridorRoad_V1EditRegions",
+            "CorridorRoad_V1EditIntersections",
             "CorridorRoad_V1EditStructures",
         ],
         "drainage": [
@@ -56,6 +57,7 @@ def corridorroad_workflow_command_groups():
         ],
         "output": [
             "CorridorRoad_OutputsExchange",
+            "CorridorRoad_V1ImportLandXML",
             "CorridorRoad_V1StructureOutput",
         ],
         "ai": [
@@ -101,6 +103,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_intersection_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_drainage_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_drainage_review  # noqa: F401
@@ -110,6 +113,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_superelevation_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_earthwork_balance  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_output  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_landxml_import  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_edit_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_alignment  # noqa: F401
         import freecad.Corridor_Road.commands.cmd_review_plan_profile  # noqa: F401

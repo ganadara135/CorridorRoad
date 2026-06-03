@@ -6,6 +6,10 @@ from .centerline3d_evaluation_service import Centerline3DEvaluationRequest, Cent
 from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameService
 from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
 from .intersection_evaluation_service import IntersectionEvaluationService
+from .intersection_alignment_detection_service import (
+    AlignmentIntersectionDetectionResult,
+    AlignmentIntersectionDetectionService,
+)
 from .legacy_document_adapter import LegacyDocumentAdapter, LegacyPreviewBundle
 from .override_resolution_service import OverrideResolutionService
 from .profile_earthwork_area_hint_service import ProfileEarthworkAreaHintService
@@ -47,6 +51,8 @@ __all__ = [
     "DrainageResolutionService",
     "DrainageValidationService",
     "IntersectionEvaluationService",
+    "AlignmentIntersectionDetectionResult",
+    "AlignmentIntersectionDetectionService",
     "LegacyDocumentAdapter",
     "LegacyPreviewBundle",
     "OverrideResolutionService",

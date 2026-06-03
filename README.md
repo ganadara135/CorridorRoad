@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.0.3`. This release continues the v1 workflow reset after the user-facing name changed from `Corridor Road` to `Parametric Road`. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.0.4`. This release improves the v1 intersection workflow with starter multi-alignment sources, automatic multi-alignment 3D Centerline generation, and Build Parametric Region review for primary-road and side-road Region rows. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -34,11 +34,12 @@ Parametric Road v1 provides a staged road corridor workflow:
 5. Review Plan/Profile and generate the shared 3D Centerline.
 6. Optionally define Superelevation crossfall controls.
 7. Define Assembly and Regions.
-8. Add Structures and Drainage source rows.
-9. Generate Applied Sections.
-10. Build Corridor preview surfaces.
-11. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
-12. Prepare Watertight Solids, structure output, and exchange handoff data where available.
+8. Define Intersections where multiple Alignments meet.
+9. Add Structures and Drainage source rows.
+10. Generate Applied Sections.
+11. Build Corridor preview surfaces.
+12. Review Cross Sections, Drainage, Plan/Profile, and Earthwork.
+13. Prepare Watertight Solids, structure output, and exchange handoff data where available.
 
 The workbench is built around a v1 source -> evaluation -> result -> output -> presentation structure.
 
@@ -52,6 +53,7 @@ The workbench is built around a v1 source -> evaluation -> result -> output -> p
 - Online Wiki: https://github.com/ganadara135/CorridorRoad/wiki
 - Quick Start: https://github.com/ganadara135/CorridorRoad/wiki/Quick-Start
 - Workflow: https://github.com/ganadara135/CorridorRoad/wiki/Workflow
+- Intersections: https://github.com/ganadara135/CorridorRoad/wiki/Intersections
 - Troubleshooting: https://github.com/ganadara135/CorridorRoad/wiki/Troubleshooting
 - Developer Guide: https://github.com/ganadara135/CorridorRoad/wiki/Developer-Guide
 
@@ -76,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.0.3`
-- Release date: `2026-05-31`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.3
+- Current release: `v1.0.4`
+- Release date: `2026-06-04`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.0.3` builds on the public naming transition from `Corridor Road` to `Parametric Road`. The internal Python package, FreeCAD Mod folder, command ids, and v1 source ids remain unchanged for compatibility.
+`1.0.4` builds on the public naming transition from `Corridor Road` to `Parametric Road`. The internal Python package, FreeCAD Mod folder, command ids, and v1 source ids remain unchanged for compatibility.
 
 ## Main Commands
 
@@ -110,7 +112,7 @@ Important v1 references:
 
 Current toolbar order is organized around the v1 workflow:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly/Regions/Intersections/Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 ## Current V1 Areas
 

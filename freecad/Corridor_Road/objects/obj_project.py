@@ -118,7 +118,7 @@ V1_ROOT_TREE_DEFS = (
     (V1_TREE_SOURCE_DATA, "01_Source Data", "CRV1_01_Source_Data"),
     (V1_TREE_ALIGNMENT_PROFILE, "02_Alignment & Profile", "CRV1_02_Alignment_Profile"),
     (V1_TREE_SURFACES, "03_Surfaces", "CRV1_03_Surfaces"),
-    (V1_TREE_CORRIDOR_MODEL, "04_Corridor Model", "CRV1_04_Corridor_Model"),
+    (V1_TREE_CORRIDOR_MODEL, "04_Parametric Model", "CRV1_04_Corridor_Model"),
     (V1_TREE_DRAINAGE, "05_Drainage", "CRV1_05_Drainage"),
     (V1_TREE_STRUCTURES, "06_Structures", "CRV1_06_Structures"),
     (V1_TREE_QUANTITIES_EARTHWORK, "07_Quantities & Earthwork", "CRV1_07_Quantities_Earthwork"),
@@ -126,6 +126,9 @@ V1_ROOT_TREE_DEFS = (
     (V1_TREE_OUTPUTS_EXCHANGE, "09_Outputs & Exchange", "CRV1_09_Outputs_Exchange"),
     (V1_TREE_AI_ASSIST, "10_AI Assist", "CRV1_10_AI_Assist"),
 )
+V1_LEGACY_TREE_LABELS = {
+    V1_TREE_CORRIDOR_MODEL: {"04_Corridor Model"},
+}
 V1_SUBTREE_DEFS = (
     (V1_TREE_PROJECT_SETUP, V1_TREE_PROJECT_SETTINGS, "Project Settings", "CRV1_Project_Settings"),
     (V1_TREE_PROJECT_SETUP, V1_TREE_COORDINATE_SYSTEM, "Coordinate System", "CRV1_Coordinate_System"),
@@ -570,10 +573,28 @@ def _ensure_child_folder(doc, owner, key: str, label: str, obj_name: str):
     if folder is None:
         folder = doc.addObject("App::DocumentObjectGroup", str(obj_name))
         folder.Label = str(label)
+    else:
+        _update_folder_label(folder, key, label)
 
     _ensure_folder_meta(folder, key)
     _group_add(owner, folder)
     return folder
+
+
+def _update_folder_label(folder, key: str, label: str) -> None:
+    if folder is None:
+        return
+    desired = str(label)
+    current = str(getattr(folder, "Label", "") or "")
+    if current == desired:
+        return
+    legacy_labels = V1_LEGACY_TREE_LABELS.get(str(key), set())
+    if current and current not in legacy_labels:
+        return
+    try:
+        folder.Label = desired
+    except Exception:
+        pass
 
 
 def _iter_tree_folders(root):
@@ -1323,6 +1344,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_REPORTS, None)
     if record_kind == "v1_simulation_package_output":
         return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
+    if record_kind == "v1_landxml_import":
+        return tree.get(V1_TREE_EXCHANGE_PACKAGES, None)
     if record_kind == "v1_quantity_model":
         return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind == "v1_drainage_model":
@@ -1359,6 +1382,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STATIONS, None)
     if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
         return tree.get(V1_TREE_SUPERELEVATION, None)
+    if record_kind == "v1_intersection_review_overlay":
+        return tree.get(V1_TREE_INTERSECTIONS, None)
     if _is_type(
         child,
         proxy_types=("V1SuperelevationSource", "Superelevation", "SuperelevationModel"),

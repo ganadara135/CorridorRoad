@@ -53,7 +53,7 @@ Missing implementation:
 - native `RegionModel` source model exists and now supports primary kind, applied layers, and domain references
 - region validation service exists for station ranges, ids, kind warnings, and overlap diagnostics
 - region resolution service exists for active station, range overlap, and boundary queries
-- durable v1 Region source object bridge exists and routes to `04_Corridor Model / Regions`
+- durable v1 Region source object bridge exists and routes to `04_Parametric Model / Regions`
 - native Region task panel exists for source-row authoring
 - downstream handoff summaries exist for future AppliedSection and Corridor services
 - no full corridor consumer has been implemented yet
@@ -269,9 +269,9 @@ The starter should be loaded only when the user clicks `Load Starter Regions`.
 
 Recommended v1 tree placement:
 
-- `04_Corridor Model / Regions`
+- `04_Parametric Model / Regions`
 
-If the current tree does not have a dedicated Regions folder under Corridor Model yet, route the first source object under the closest existing `04_Corridor Model` group and record a follow-up to split child folders.
+If the current tree does not have a dedicated Regions folder under Corridor Model yet, route the first source object under the closest existing `04_Parametric Model` group and record a follow-up to split child folders.
 
 Region objects should not be placed under legacy v0 `Regions001` style containers.
 
@@ -322,7 +322,7 @@ Acceptance criteria:
 
 - [x] Apply creates one region source object
 - [x] repeated Apply updates the same object
-- [x] tree placement is under the v1 Corridor Model area
+- [x] tree placement is under the v1 Parametric Model area
 
 ### Phase R4: Region Editor MVP
 

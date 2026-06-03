@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ...models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
 from ...models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
@@ -81,6 +81,9 @@ class CorridorSurfaceGeometryService:
     def build_daylight_surface(self, request: CorridorDesignSurfaceGeometryRequest) -> TINSurface:
         """Build first-slice slope-face strips from design edges and side-slope policy."""
 
+        source_groups = _alignment_section_groups(_section_rows(request.applied_section_set))
+        if len(source_groups) > 1:
+            return _build_grouped_daylight_surfaces(self, request, source_groups=source_groups)
         sections = _section_rows_for_request(request, surface_kind="daylight_surface")
         frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
@@ -271,6 +274,19 @@ class CorridorSurfaceGeometryService:
     ) -> TINSurface:
         """Build a two-edge ribbon from applied-section frames."""
 
+        source_groups = _alignment_section_groups(_section_rows(request.applied_section_set))
+        if len(source_groups) > 1:
+            return _build_grouped_surface_ribbons(
+                self,
+                request,
+                source_groups=source_groups,
+                surface_kind=surface_kind,
+                label_prefix=label_prefix,
+                z_offset_resolver=z_offset_resolver,
+                triangle_kind=triangle_kind,
+                point_role=point_role,
+                allow_width_fallback=allow_width_fallback,
+            )
         sections = _section_rows_for_request(request, surface_kind=surface_kind)
         frame_rows = [getattr(section, "frame", None) for section in sections if getattr(section, "frame", None) is not None]
         if len(frame_rows) < 2:
@@ -365,6 +381,155 @@ class CorridorSurfaceGeometryService:
                 )
             ],
         )
+
+
+def _build_grouped_daylight_surfaces(
+    service: CorridorSurfaceGeometryService,
+    request: CorridorDesignSurfaceGeometryRequest,
+    *,
+    source_groups: list[list[object]],
+) -> TINSurface:
+    """Build separate slope-face surfaces for each Alignment and merge them."""
+
+    vertices: list[TINVertex] = []
+    triangles: list[TINTriangle] = []
+    quality_rows: list[TINQualityRow] = []
+    provenance_rows: list[TINProvenanceRow] = []
+    built_group_count = 0
+    clipping_runs = _alignment_group_footprint_runs(source_groups)
+    clipped_triangle_count = 0
+    for group_index, group_sections in enumerate(source_groups, start=1):
+        if len(group_sections) < 2:
+            continue
+        group_set = _applied_section_set_for_sections(request.applied_section_set, group_sections)
+        group_request = replace(
+            request,
+            applied_section_set=group_set,
+            surface_id=f"{request.surface_id}:alignment:{group_index}",
+        )
+        try:
+            group_surface = service.build_daylight_surface(group_request)
+        except Exception:
+            continue
+        prefix = f"a{group_index}:"
+        filtered_triangles, removed_count = _filter_daylight_triangles_inside_other_alignment_footprints(
+            group_surface.vertex_rows,
+            group_surface.triangle_rows,
+            other_runs=[
+                run
+                for run_index, run in enumerate(clipping_runs, start=1)
+                if run_index != group_index
+            ],
+        )
+        clipped_triangle_count += removed_count
+        vertices.extend(_prefixed_tin_vertices(group_surface.vertex_rows, prefix))
+        triangles.extend(_prefixed_tin_triangles(filtered_triangles, prefix))
+        quality_rows.extend(list(getattr(group_surface, "quality_rows", []) or []))
+        provenance_rows.extend(list(getattr(group_surface, "provenance_rows", []) or []))
+        built_group_count += 1
+    if built_group_count <= 0 or not vertices or not triangles:
+        raise ValueError("At least two applied-section frames are required to build a corridor slope-face surface.")
+    z_values = [float(vertex.z) for vertex in vertices]
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:alignment_group_count", "alignment_group_count", built_group_count, "count"))
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:intersection_footprint_clipped_triangle_count", "intersection_footprint_clipped_triangle_count", clipped_triangle_count, "count"))
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"))
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"))
+    provenance_rows.append(
+        TINProvenanceRow(
+            provenance_id=f"{request.surface_id}:provenance:multi-alignment",
+            source_kind="applied_section_alignment_groups",
+            source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+            notes=f"Built {built_group_count} separate daylight surface group(s) from alignment-scoped Applied Sections; clipped {clipped_triangle_count} triangle(s) inside other alignment footprints.",
+        )
+    )
+    return TINSurface(
+        schema_version=1,
+        project_id=request.project_id,
+        surface_id=request.surface_id,
+        surface_kind="daylight_surface",
+        label=f"Slope Face Surface - {request.corridor.corridor_id}",
+        source_refs=_surface_request_source_refs(request),
+        vertex_rows=vertices,
+        triangle_rows=triangles,
+        boundary_refs=[f"{request.surface_id}:daylight-boundary"],
+        quality_rows=quality_rows,
+        provenance_rows=provenance_rows,
+    )
+
+
+def _build_grouped_surface_ribbons(
+    service: CorridorSurfaceGeometryService,
+    request: CorridorDesignSurfaceGeometryRequest,
+    *,
+    source_groups: list[list[object]],
+    surface_kind: str,
+    label_prefix: str,
+    z_offset_resolver,
+    triangle_kind: str,
+    point_role: str = "",
+    allow_width_fallback: bool = True,
+) -> TINSurface:
+    """Build separate ribbons for each Alignment and merge them into one TIN."""
+
+    vertices: list[TINVertex] = []
+    triangles: list[TINTriangle] = []
+    quality_rows: list[TINQualityRow] = []
+    provenance_rows: list[TINProvenanceRow] = []
+    built_group_count = 0
+    for group_index, group_sections in enumerate(source_groups, start=1):
+        if len(group_sections) < 2:
+            continue
+        group_set = _applied_section_set_for_sections(request.applied_section_set, group_sections)
+        group_request = replace(
+            request,
+            applied_section_set=group_set,
+            surface_id=f"{request.surface_id}:alignment:{group_index}",
+        )
+        try:
+            group_surface = service._build_surface_ribbon(
+                group_request,
+                surface_kind=surface_kind,
+                label_prefix=label_prefix,
+                z_offset_resolver=z_offset_resolver,
+                triangle_kind=triangle_kind,
+                point_role=point_role,
+                allow_width_fallback=allow_width_fallback,
+            )
+        except Exception:
+            continue
+        prefix = f"a{group_index}:"
+        vertices.extend(_prefixed_tin_vertices(group_surface.vertex_rows, prefix))
+        triangles.extend(_prefixed_tin_triangles(group_surface.triangle_rows, prefix))
+        quality_rows.extend(list(getattr(group_surface, "quality_rows", []) or []))
+        provenance_rows.extend(list(getattr(group_surface, "provenance_rows", []) or []))
+        built_group_count += 1
+    if built_group_count <= 0 or not vertices or not triangles:
+        raise ValueError("At least two applied-section frames are required to build a corridor surface.")
+    z_values = [float(vertex.z) for vertex in vertices]
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:alignment_group_count", "alignment_group_count", built_group_count, "count"))
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"))
+    quality_rows.append(TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"))
+    provenance_rows.append(
+        TINProvenanceRow(
+            provenance_id=f"{request.surface_id}:provenance:multi-alignment",
+            source_kind="applied_section_alignment_groups",
+            source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
+            notes=f"Built {built_group_count} separate {surface_kind} ribbon group(s) from alignment-scoped Applied Sections.",
+        )
+    )
+    return TINSurface(
+        schema_version=1,
+        project_id=request.project_id,
+        surface_id=request.surface_id,
+        surface_kind=surface_kind,
+        label=f"{label_prefix} - {request.corridor.corridor_id}",
+        source_refs=_surface_request_source_refs(request),
+        vertex_rows=vertices,
+        triangle_rows=triangles,
+        boundary_refs=[f"{request.surface_id}:multi-alignment-boundary"],
+        quality_rows=quality_rows,
+        provenance_rows=provenance_rows,
+    )
 
 
 def _build_surface_from_point_grid(
@@ -1996,6 +2161,150 @@ def _section_rows(applied_section_set: AppliedSectionSet) -> list[object]:
         if section is not None and getattr(section, "frame", None) is not None:
             output.append(section)
     return output
+
+
+def _alignment_section_groups(sections: list[object]) -> list[list[object]]:
+    groups: list[list[object]] = []
+    group_by_alignment: dict[str, list[object]] = {}
+    for section in list(sections or []):
+        alignment_id = str(getattr(section, "alignment_id", "") or "").strip()
+        if not alignment_id:
+            alignment_id = "__unassigned__"
+        if alignment_id not in group_by_alignment:
+            group_by_alignment[alignment_id] = []
+            groups.append(group_by_alignment[alignment_id])
+        group_by_alignment[alignment_id].append(section)
+    return [group for group in groups if group]
+
+
+def _alignment_group_footprint_runs(source_groups: list[list[object]]) -> list[list[tuple[float, float, float]]]:
+    runs: list[list[tuple[float, float, float]]] = []
+    for group_sections in list(source_groups or []):
+        rows: list[tuple[float, float, float]] = []
+        for section in list(group_sections or []):
+            frame = getattr(section, "frame", None)
+            if frame is None:
+                continue
+            left_width = max(float(getattr(section, "surface_left_width", 0.0) or 0.0), 0.0)
+            right_width = max(float(getattr(section, "surface_right_width", 0.0) or 0.0), 0.0)
+            rows.append(
+                (
+                    float(getattr(frame, "x", 0.0) or 0.0),
+                    float(getattr(frame, "y", 0.0) or 0.0),
+                    max(left_width, right_width, 0.1) + 0.25,
+                )
+            )
+        runs.append(rows)
+    return runs
+
+
+def _filter_daylight_triangles_inside_other_alignment_footprints(
+    vertices: list[TINVertex],
+    triangles: list[TINTriangle],
+    *,
+    other_runs: list[list[tuple[float, float, float]]],
+) -> tuple[list[TINTriangle], int]:
+    if not other_runs:
+        return list(triangles or []), 0
+    vertex_by_id = {str(getattr(vertex, "vertex_id", "") or ""): vertex for vertex in list(vertices or [])}
+    output: list[TINTriangle] = []
+    removed_count = 0
+    for triangle in list(triangles or []):
+        tri_vertices = [
+            vertex_by_id.get(str(getattr(triangle, "v1", "") or "")),
+            vertex_by_id.get(str(getattr(triangle, "v2", "") or "")),
+            vertex_by_id.get(str(getattr(triangle, "v3", "") or "")),
+        ]
+        if any(vertex is None for vertex in tri_vertices):
+            output.append(triangle)
+            continue
+        cx = sum(float(getattr(vertex, "x", 0.0) or 0.0) for vertex in tri_vertices if vertex is not None) / 3.0
+        cy = sum(float(getattr(vertex, "y", 0.0) or 0.0) for vertex in tri_vertices if vertex is not None) / 3.0
+        if _point_inside_any_alignment_footprint(cx, cy, other_runs):
+            removed_count += 1
+            continue
+        output.append(triangle)
+    return output, removed_count
+
+
+def _point_inside_any_alignment_footprint(x: float, y: float, runs: list[list[tuple[float, float, float]]]) -> bool:
+    for run in list(runs or []):
+        for index in range(max(0, len(run) - 1)):
+            x1, y1, w1 = run[index]
+            x2, y2, w2 = run[index + 1]
+            distance, ratio = _point_segment_distance_with_ratio(float(x), float(y), x1, y1, x2, y2)
+            if ratio < -1.0e-9 or ratio > 1.0 + 1.0e-9:
+                continue
+            half_width = _lerp(w1, w2, min(max(ratio, 0.0), 1.0))
+            if distance <= half_width:
+                return True
+    return False
+
+
+def _point_segment_distance_with_ratio(
+    px: float,
+    py: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+) -> tuple[float, float]:
+    dx = float(x2) - float(x1)
+    dy = float(y2) - float(y1)
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 1.0e-18:
+        return math.hypot(float(px) - float(x1), float(py) - float(y1)), 0.0
+    ratio = ((float(px) - float(x1)) * dx + (float(py) - float(y1)) * dy) / length_sq
+    clamped = min(max(ratio, 0.0), 1.0)
+    closest_x = float(x1) + dx * clamped
+    closest_y = float(y1) + dy * clamped
+    return math.hypot(float(px) - closest_x, float(py) - closest_y), ratio
+
+
+def _applied_section_set_for_sections(applied_section_set: AppliedSectionSet, sections: list[object]) -> AppliedSectionSet:
+    section_rows = list(sections or [])
+    station_rows = [
+        AppliedSectionStationRow(
+            station_row_id=f"{getattr(section, 'applied_section_id', f'section:{index + 1}')}:station",
+            station=_section_station(section),
+            applied_section_id=str(getattr(section, "applied_section_id", "") or f"section:{index + 1}"),
+            kind="regular_sample",
+        )
+        for index, section in enumerate(section_rows)
+    ]
+    alignment_ids = [str(getattr(section, "alignment_id", "") or "") for section in section_rows if str(getattr(section, "alignment_id", "") or "")]
+    alignment_id = alignment_ids[0] if alignment_ids else str(getattr(applied_section_set, "alignment_id", "") or "")
+    return AppliedSectionSet(
+        schema_version=int(getattr(applied_section_set, "schema_version", 1) or 1),
+        project_id=str(getattr(applied_section_set, "project_id", "") or ""),
+        applied_section_set_id=str(getattr(applied_section_set, "applied_section_set_id", "") or ""),
+        corridor_id=str(getattr(applied_section_set, "corridor_id", "") or ""),
+        alignment_id=alignment_id,
+        label=str(getattr(applied_section_set, "label", "") or ""),
+        station_rows=station_rows,
+        sections=section_rows,
+        source_refs=list(getattr(applied_section_set, "source_refs", []) or []),
+    )
+
+
+def _prefixed_tin_vertices(vertices: list[TINVertex], prefix: str) -> list[TINVertex]:
+    return [
+        replace(vertex, vertex_id=f"{prefix}{str(getattr(vertex, 'vertex_id', '') or '')}")
+        for vertex in list(vertices or [])
+    ]
+
+
+def _prefixed_tin_triangles(triangles: list[TINTriangle], prefix: str) -> list[TINTriangle]:
+    return [
+        replace(
+            triangle,
+            triangle_id=f"{prefix}{str(getattr(triangle, 'triangle_id', '') or '')}",
+            v1=f"{prefix}{str(getattr(triangle, 'v1', '') or '')}",
+            v2=f"{prefix}{str(getattr(triangle, 'v2', '') or '')}",
+            v3=f"{prefix}{str(getattr(triangle, 'v3', '') or '')}",
+        )
+        for triangle in list(triangles or [])
+    ]
 
 
 def _section_point_grid(sections: list[object], *, point_role: str) -> list[list[object]]:

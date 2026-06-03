@@ -22,6 +22,8 @@ from ...objects.obj_project import (
     ensure_project_tree,
     find_project,
 )
+from ..models.result.centerline3d import Centerline3DResult
+from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.source.override_model import OverrideModel
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_applied_section import (
@@ -31,6 +33,7 @@ from ..objects.obj_applied_section import (
 )
 from ..objects.obj_assembly import find_v1_assembly_model, list_v1_assembly_models, to_assembly_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
+from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
 from ..objects.obj_profile import find_v1_profile, to_profile_model
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_stationing import find_v1_stationing
@@ -59,6 +62,7 @@ def build_document_applied_section_set(
     doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
     if doc is None:
         raise RuntimeError("No active document.")
+    source_bundles = _applied_section_source_bundles(doc)
     alignment_obj = find_v1_alignment(doc)
     profile_obj = find_v1_profile(doc)
     assembly_objs = list_v1_assembly_models(doc)
@@ -68,6 +72,7 @@ def build_document_applied_section_set(
     structure_obj = find_v1_structure_model(doc)
     drainage_obj = find_v1_drainage_model(doc)
     superelevation_obj = find_v1_superelevation_source(doc)
+    intersection_obj = find_v1_intersection_model(doc)
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
@@ -77,6 +82,7 @@ def build_document_applied_section_set(
     structure_model = to_structure_model(structure_obj)
     drainage_model = to_drainage_model(drainage_obj)
     superelevation_model = to_superelevation_model(superelevation_obj)
+    intersection_model = to_intersection_model(intersection_obj)
     stations = _station_values(stationing_obj)
 
     missing = []
@@ -95,6 +101,20 @@ def build_document_applied_section_set(
 
     project_id = _project_id(project or find_project(doc))
     centerline3d_result = _build_applied_sections_centerline3d_result(doc)
+    if len(source_bundles) > 1:
+        return _build_multi_alignment_applied_section_set(
+            source_bundles,
+            project_id=project_id,
+            corridor_id=corridor_id,
+            assembly=assembly,
+            assembly_models=assembly_models,
+            structure_model=structure_model,
+            drainage_model=drainage_model,
+            superelevation_model=superelevation_model,
+            intersection_model=intersection_model,
+            existing_ground_surface=_resolve_applied_sections_existing_ground_tin_surface(doc),
+            centerline3d_result=centerline3d_result,
+        )
     override_model = OverrideModel(
         schema_version=1,
         project_id=project_id,
@@ -114,6 +134,7 @@ def build_document_applied_section_set(
             structure_model=structure_model,
             drainage_model=drainage_model,
             superelevation_model=superelevation_model,
+            intersection_model=intersection_model,
             override_model=override_model,
             stations=stations,
             applied_section_set_id="applied-sections:main",
@@ -121,6 +142,193 @@ def build_document_applied_section_set(
             centerline3d_result=centerline3d_result,
         )
     )
+
+
+def _build_multi_alignment_applied_section_set(
+    source_bundles: list[dict[str, object]],
+    *,
+    project_id: str,
+    corridor_id: str,
+    assembly,
+    assembly_models: list[object],
+    structure_model=None,
+    drainage_model=None,
+    superelevation_model=None,
+    intersection_model=None,
+    existing_ground_surface=None,
+    centerline3d_result=None,
+) -> AppliedSectionSet:
+    """Build one AppliedSectionSet from multiple alignment-scoped source bundles."""
+
+    sections = []
+    station_rows = []
+    source_refs: list[str] = []
+    service = AppliedSectionSetService()
+    for bundle_index, bundle in enumerate(source_bundles, start=1):
+        alignment = bundle["alignment"]
+        profile = bundle["profile"]
+        region_model = bundle["region_model"]
+        stations = list(bundle["stations"])
+        alignment_id = str(getattr(alignment, "alignment_id", "") or f"alignment:{bundle_index}")
+        set_id = f"applied-sections:{_safe_source_token(alignment_id)}"
+        override_model = OverrideModel(
+            schema_version=1,
+            project_id=project_id,
+            override_model_id=f"overrides:empty:{_safe_source_token(alignment_id)}",
+            alignment_id=alignment_id,
+        )
+        partial = service.build(
+            AppliedSectionSetBuildRequest(
+                project_id=project_id,
+                corridor_id=corridor_id,
+                alignment=alignment,
+                profile=profile,
+                assembly=assembly,
+                assembly_models=assembly_models,
+                region_model=region_model,
+                structure_model=structure_model,
+                drainage_model=drainage_model,
+                superelevation_model=superelevation_model,
+                intersection_model=intersection_model,
+                override_model=override_model,
+                stations=stations,
+                applied_section_set_id=set_id,
+                existing_ground_surface=existing_ground_surface,
+                centerline3d_result=_centerline3d_result_for_alignment(centerline3d_result, alignment_id),
+            )
+        )
+        for row in list(getattr(partial, "station_rows", []) or []):
+            station_rows.append(
+                AppliedSectionStationRow(
+                    station_row_id=str(getattr(row, "station_row_id", "") or f"{set_id}:station:{len(station_rows) + 1}"),
+                    station=float(getattr(row, "station", 0.0) or 0.0),
+                    applied_section_id=str(getattr(row, "applied_section_id", "") or ""),
+                    kind=str(getattr(row, "kind", "") or "regular_sample"),
+                )
+            )
+        sections.extend(list(getattr(partial, "sections", []) or []))
+        source_refs.extend(list(getattr(partial, "source_refs", []) or []))
+    return AppliedSectionSet(
+        schema_version=1,
+        project_id=project_id,
+        applied_section_set_id="applied-sections:main",
+        corridor_id=corridor_id,
+        alignment_id="alignment:multiple",
+        station_rows=station_rows,
+        sections=sections,
+        source_refs=_unique_text_refs(source_refs),
+    )
+
+
+def _applied_section_source_bundles(document) -> list[dict[str, object]]:
+    """Return complete Alignment/Profile/Stationing/Region bundles keyed by alignment id."""
+
+    alignments = [(obj, to_alignment_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
+    alignments = [(obj, model) for obj, model in alignments if model is not None]
+    profiles = [(obj, to_profile_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
+    profiles = [(obj, model) for obj, model in profiles if model is not None]
+    regions = [(obj, to_region_model(obj)) for obj in list(getattr(document, "Objects", []) or [])]
+    regions = [(obj, model) for obj, model in regions if model is not None]
+    stationings = [
+        obj
+        for obj in list(getattr(document, "Objects", []) or [])
+        if str(getattr(obj, "V1ObjectType", "") or "") == "V1Stationing"
+        or str(getattr(getattr(obj, "Proxy", None), "Type", "") or "") == "V1Stationing"
+        or str(getattr(obj, "Name", "") or "").startswith("V1Stationing")
+    ]
+    output: list[dict[str, object]] = []
+    for alignment_obj, alignment in alignments:
+        alignment_id = str(getattr(alignment, "alignment_id", "") or getattr(alignment_obj, "AlignmentId", "") or "").strip()
+        if not alignment_id:
+            continue
+        profile = _model_for_alignment(profiles, alignment_id)
+        region_model = _model_for_alignment(regions, alignment_id)
+        stationing_obj = _stationing_for_alignment(stationings, alignment_id)
+        stations = _station_values(stationing_obj)
+        if profile is None or region_model is None or not stations:
+            continue
+        output.append(
+            {
+                "alignment": alignment,
+                "profile": profile,
+                "region_model": region_model,
+                "stations": stations,
+            }
+        )
+    return output
+
+
+def _model_for_alignment(rows: list[tuple[object, object]], alignment_id: str):
+    target = str(alignment_id or "").strip()
+    fallback = None
+    for _obj, model in list(rows or []):
+        model_alignment_id = str(getattr(model, "alignment_id", "") or "").strip()
+        if fallback is None and not model_alignment_id:
+            fallback = model
+        if model_alignment_id == target:
+            return model
+    return fallback if len(rows) == 1 else None
+
+
+def _stationing_for_alignment(rows: list[object], alignment_id: str):
+    target = str(alignment_id or "").strip()
+    fallback = None
+    for obj in list(rows or []):
+        obj_alignment_id = str(getattr(obj, "AlignmentId", "") or "").strip()
+        if fallback is None and not obj_alignment_id:
+            fallback = obj
+        if obj_alignment_id == target:
+            return obj
+    return fallback if len(rows) == 1 else None
+
+
+def _centerline3d_result_for_alignment(centerline3d_result, alignment_id: str):
+    if centerline3d_result is None:
+        return None
+    target = str(alignment_id or "").strip()
+    result_alignment_id = str(getattr(centerline3d_result, "alignment_id", "") or "").strip()
+    if result_alignment_id == target:
+        return centerline3d_result
+    if result_alignment_id == "alignment:multiple":
+        point_rows = tuple(
+            row
+            for row in list(getattr(centerline3d_result, "point_rows", ()) or ())
+            if str(getattr(row, "source_alignment_ref", "") or "").strip() == target
+        )
+        if len(point_rows) >= 2:
+            return Centerline3DResult(
+                project_id=str(getattr(centerline3d_result, "project_id", "") or "corridorroad-v1"),
+                centerline3d_result_id=f"centerline3d:{_safe_source_token(target)}",
+                alignment_id=target,
+                profile_id=str(getattr(point_rows[0], "source_profile_ref", "") or ""),
+                stationing_id=str(getattr(point_rows[0], "source_station_ref", "") or ""),
+                point_rows=point_rows,
+                diagnostic_rows=tuple(
+                    row
+                    for row in list(getattr(centerline3d_result, "diagnostic_rows", ()) or ())
+                    if str(row or "").startswith(f"{target}|") or target in str(row or "")
+                ),
+                status="ready",
+                source_refs=tuple(getattr(centerline3d_result, "source_refs", ()) or ()),
+            )
+    return None
+
+
+def _safe_source_token(value: object) -> str:
+    text = str(value or "source").strip().replace(":", "-")
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in text).strip("-") or "source"
+
+
+def _unique_text_refs(values: list[object]) -> list[str]:
+    output = []
+    seen = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
 
 
 def apply_v1_applied_section_set(
@@ -175,6 +383,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         ditch_summary = _ditch_review_summary(section)
         slope_face_summary = _slope_face_review_summary(section)
         superelevation_summary = _superelevation_review_summary(section)
+        intersection_summary = _intersection_review_summary(section)
         diagnostic_summary = _diagnostic_summary(section) if section is not None else "Missing AppliedSection result."
         output.append(
             {
@@ -196,6 +405,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
                 "ditch_summary": ditch_summary,
                 "slope_face_summary": slope_face_summary,
                 "superelevation_summary": superelevation_summary,
+                "intersection_summary": intersection_summary,
                 "diagnostic_count": diagnostic_count,
                 "diagnostic_summary": diagnostic_summary,
                 "status": "warn" if diagnostic_count else "ok",
@@ -378,7 +588,7 @@ class V1AppliedSectionsTaskPanel:
         self._progress.setFormat("Ready")
         layout.addWidget(self._progress)
 
-        self._review_table = QtWidgets.QTableWidget(0, 14)
+        self._review_table = QtWidgets.QTableWidget(0, 15)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "STA",
@@ -393,6 +603,7 @@ class V1AppliedSectionsTaskPanel:
                 "Ditch",
                 "Slope Face",
                 "Superelevation",
+                "Intersection",
                 "Diagnostics",
                 "Status",
             ]
@@ -433,6 +644,7 @@ class V1AppliedSectionsTaskPanel:
                 f"Profile: {_source_status(find_v1_profile(self.document))}",
                 f"Assembly: {_assembly_source_status(self.document)}",
                 f"Regions: {_source_status(find_v1_region_model(self.document))}",
+                f"Intersections: {_source_status(find_v1_intersection_model(self.document))}",
                 f"Structures: {_source_status(find_v1_structure_model(self.document))}",
                 f"Stations: {station_count} row(s)",
                 "",
@@ -539,6 +751,7 @@ class V1AppliedSectionsTaskPanel:
                 str(row.get("ditch_summary", "") or ""),
                 str(row.get("slope_face_summary", "") or ""),
                 str(row.get("superelevation_summary", "") or ""),
+                str(row.get("intersection_summary", "") or ""),
                 str(row.get("diagnostic_summary", "") or ""),
                 _review_status_text(row),
             ]
@@ -659,6 +872,11 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
         missing.append("Stations")
     if missing:
         diagnostics.append("missing_required_sources: " + ", ".join(missing))
+        if "Assembly" in missing:
+            diagnostics.append(
+                "missing_required_sources_detail: Create or apply an Assembly source before Build Sections. "
+                "Intersections starter sources now create a Basic Road Assembly when no Assembly exists."
+            )
         return diagnostics
 
     centerline_result = _build_applied_sections_centerline3d_result(document)
@@ -764,6 +982,22 @@ def _superelevation_review_summary(section) -> str:
     ]
     if transition_id:
         parts.append(_display_source_id(transition_id, "transition:"))
+    return " | ".join(parts)
+
+
+def _intersection_review_summary(section) -> str:
+    if section is None:
+        return ""
+    intersection_id = str(getattr(section, "active_intersection_id", "") or "").strip()
+    if not intersection_id:
+        return ""
+    leg_role = str(getattr(section, "active_intersection_leg_role", "") or "").strip()
+    control_area = str(getattr(section, "active_intersection_control_area_id", "") or "").strip()
+    parts = [_display_source_id(intersection_id, "intersection:")]
+    if leg_role:
+        parts.append(leg_role)
+    if control_area:
+        parts.append(_display_source_id(control_area, f"{intersection_id}:"))
     return " | ".join(parts)
 
 

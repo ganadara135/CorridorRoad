@@ -1,0 +1,338 @@
+"""FreeCAD source object for v1 IntersectionModel rows."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, is_dataclass
+
+try:
+    import FreeCAD as App
+except Exception:  # pragma: no cover - FreeCAD is not available in plain Python.
+    App = None
+
+from ..models.source.intersection_model import (
+    IntersectionControlArea,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
+)
+
+
+class V1IntersectionModelObject:
+    """Document object proxy that stores a v1 IntersectionModel contract."""
+
+    Type = "IntersectionModel"
+
+    def __init__(self, obj):
+        obj.Proxy = self
+        ensure_v1_intersection_properties(obj)
+
+    def execute(self, obj):
+        ensure_v1_intersection_properties(obj)
+        return
+
+
+class ViewProviderV1IntersectionModel:
+    """Simple view provider for v1 Intersection source objects."""
+
+    Type = "ViewProviderV1IntersectionModel"
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        try:
+            vobj.Visibility = False
+        except Exception:
+            pass
+
+    def getIcon(self):
+        try:
+            from ...misc.resources import icon_path
+
+            return icon_path("intersections.svg")
+        except Exception:
+            return ""
+
+
+def ensure_v1_intersection_properties(obj) -> None:
+    """Ensure the FreeCAD object has v1 IntersectionModel source properties."""
+
+    if obj is None:
+        return
+    _add_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "v1 object type")
+    _add_property(obj, "App::PropertyInteger", "SchemaVersion", "CorridorRoad", "v1 schema version")
+    _add_property(obj, "App::PropertyString", "ProjectId", "CorridorRoad", "v1 project id")
+    _add_property(obj, "App::PropertyString", "IntersectionModelId", "CorridorRoad", "v1 intersection model id")
+    _add_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1 tree routing record kind")
+    _add_property(obj, "App::PropertyString", "IntersectionRowsJson", "Intersections", "intersection rows")
+    _add_property(obj, "App::PropertyString", "ControlAreaRowsJson", "Intersections", "intersection control area rows")
+    _add_property(obj, "App::PropertyStringList", "ControlRegionRefs", "Intersections", "linked control region refs")
+    _add_property(obj, "App::PropertyInteger", "IntersectionCount", "Summary", "intersection row count")
+    _add_property(obj, "App::PropertyInteger", "ControlAreaCount", "Summary", "control area row count")
+    _add_property(obj, "App::PropertyString", "LastValidationStatus", "Diagnostics", "last validation status")
+
+    if not str(getattr(obj, "V1ObjectType", "") or ""):
+        obj.V1ObjectType = "V1IntersectionModel"
+    if int(getattr(obj, "SchemaVersion", 0) or 0) <= 0:
+        obj.SchemaVersion = 1
+    if not str(getattr(obj, "ProjectId", "") or ""):
+        obj.ProjectId = "corridorroad-v1"
+    if not str(getattr(obj, "IntersectionModelId", "") or ""):
+        obj.IntersectionModelId = f"intersections:{str(getattr(obj, 'Name', '') or 'main')}"
+    if not str(getattr(obj, "CRRecordKind", "") or ""):
+        obj.CRRecordKind = "v1_intersection_model"
+    if not str(getattr(obj, "IntersectionRowsJson", "") or ""):
+        obj.IntersectionRowsJson = "[]"
+    if not str(getattr(obj, "ControlAreaRowsJson", "") or ""):
+        obj.ControlAreaRowsJson = "[]"
+    if not str(getattr(obj, "LastValidationStatus", "") or ""):
+        obj.LastValidationStatus = "empty"
+
+
+def create_or_update_v1_intersection_model_object(
+    document=None,
+    intersection_model: IntersectionModel | None = None,
+    *,
+    project=None,
+    object_name: str = "V1IntersectionModel",
+    label: str = "Intersections",
+):
+    """Create or update the durable v1 IntersectionModel source object."""
+
+    doc = document
+    if doc is None and App is not None:
+        doc = getattr(App, "ActiveDocument", None)
+    if doc is None:
+        raise RuntimeError("No active document is available for v1 IntersectionModel creation.")
+    if intersection_model is None:
+        intersection_model = IntersectionModel(
+            schema_version=1,
+            project_id=_project_id(project),
+            intersection_model_id="intersections:main",
+        )
+
+    obj = doc.getObject(object_name)
+    if obj is None:
+        obj = doc.addObject("App::FeaturePython", object_name)
+        V1IntersectionModelObject(obj)
+        try:
+            ViewProviderV1IntersectionModel(obj.ViewObject)
+        except Exception:
+            pass
+    else:
+        V1IntersectionModelObject(obj)
+    update_v1_intersection_model_object(obj, intersection_model, label=label)
+
+    if project is not None:
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+        except Exception:
+            pass
+    return obj
+
+
+def update_v1_intersection_model_object(obj, intersection_model: IntersectionModel, *, label: str = "Intersections"):
+    """Write IntersectionModel rows into an existing FreeCAD object."""
+
+    ensure_v1_intersection_properties(obj)
+    intersection_rows = list(getattr(intersection_model, "intersection_rows", []) or [])
+    control_area_rows = list(getattr(intersection_model, "control_area_rows", []) or [])
+    control_refs: list[str] = []
+    for row in intersection_rows:
+        for ref in list(getattr(row, "control_region_refs", []) or []):
+            if ref and ref not in control_refs:
+                control_refs.append(str(ref))
+
+    obj.Label = label or str(getattr(intersection_model, "label", "") or "Intersections")
+    obj.SchemaVersion = int(getattr(intersection_model, "schema_version", 1) or 1)
+    obj.ProjectId = str(getattr(intersection_model, "project_id", "") or "corridorroad-v1")
+    obj.IntersectionModelId = str(
+        getattr(intersection_model, "intersection_model_id", "") or getattr(obj, "IntersectionModelId", "") or "intersections:main"
+    )
+    obj.CRRecordKind = "v1_intersection_model"
+    obj.IntersectionRowsJson = _json_dumps(intersection_rows)
+    obj.ControlAreaRowsJson = _json_dumps(control_area_rows)
+    obj.ControlRegionRefs = control_refs
+    obj.IntersectionCount = len(intersection_rows)
+    obj.ControlAreaCount = len(control_area_rows)
+    obj.LastValidationStatus = "stored" if intersection_rows else "empty"
+    try:
+        obj.touch()
+    except Exception:
+        pass
+    return obj
+
+
+def to_intersection_model(obj) -> IntersectionModel | None:
+    """Build an IntersectionModel from a v1 Intersection FreeCAD object."""
+
+    if not _is_v1_intersection_model(obj):
+        return None
+    ensure_v1_intersection_properties(obj)
+    return IntersectionModel(
+        schema_version=int(getattr(obj, "SchemaVersion", 1) or 1),
+        project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
+        label=str(getattr(obj, "Label", "") or "Intersections"),
+        intersection_model_id=str(getattr(obj, "IntersectionModelId", "") or "intersections:main"),
+        intersection_rows=[_intersection_row_from_json(row, index) for index, row in enumerate(_json_list(obj.IntersectionRowsJson))],
+        control_area_rows=[_control_area_from_json(row, index) for index, row in enumerate(_json_list(obj.ControlAreaRowsJson))],
+    )
+
+
+def find_v1_intersection_model(document, preferred_intersection_model=None):
+    """Find a v1 IntersectionModel object in a document."""
+
+    if _is_v1_intersection_model(preferred_intersection_model):
+        return preferred_intersection_model
+    if document is None:
+        return None
+    for obj in list(getattr(document, "Objects", []) or []):
+        if _is_v1_intersection_model(obj):
+            return obj
+    return None
+
+
+def _intersection_row_from_json(row: dict[str, object], index: int) -> IntersectionRow:
+    leg_rows = [
+        IntersectionLegRow(
+            leg_id=str(leg.get("leg_id", "") or f"leg:{leg_index + 1}"),
+            leg_role=str(leg.get("leg_role", "") or ""),
+            alignment_ref=str(leg.get("alignment_ref", "") or ""),
+            intersection_id=str(leg.get("intersection_id", "") or row.get("intersection_id", "")),
+            profile_ref=str(leg.get("profile_ref", "") or ""),
+            centerline3d_ref=str(leg.get("centerline3d_ref", "") or ""),
+            region_ref=str(leg.get("region_ref", "") or ""),
+            approach_station_start=_float_value(leg.get("approach_station_start", 0.0)),
+            approach_station_end=_float_value(leg.get("approach_station_end", 0.0)),
+            priority=_int_value(leg.get("priority", leg_index + 1), leg_index + 1),
+            notes=str(leg.get("notes", "") or ""),
+        )
+        for leg_index, leg in enumerate(_dict_list(row.get("leg_rows", [])))
+    ]
+    return IntersectionRow(
+        intersection_id=str(row.get("intersection_id", "") or f"intersection:{index + 1}"),
+        intersection_kind=str(row.get("intersection_kind", "") or ""),
+        intersection_index=_int_value(row.get("intersection_index", index + 1), index + 1),
+        primary_alignment_ref=str(row.get("primary_alignment_ref", "") or ""),
+        secondary_alignment_refs=[str(value) for value in _any_list(row.get("secondary_alignment_refs", []))],
+        intersection_point_x=_float_value(row.get("intersection_point_x", 0.0)),
+        intersection_point_y=_float_value(row.get("intersection_point_y", 0.0)),
+        intersection_point_z=_float_value(row.get("intersection_point_z", 0.0)),
+        primary_station=_float_value(row.get("primary_station", 0.0)),
+        secondary_station_refs={str(key): _float_value(value) for key, value in _dict(row.get("secondary_station_refs", {})).items()},
+        control_region_refs=[str(value) for value in _any_list(row.get("control_region_refs", []))],
+        leg_rows=leg_rows,
+        control_area_ref=str(row.get("control_area_ref", "") or ""),
+        grading_policy_ref=str(row.get("grading_policy_ref", "") or ""),
+        drainage_ref=str(row.get("drainage_ref", "") or ""),
+        design_criteria_ref=str(row.get("design_criteria_ref", "") or ""),
+        source_mode=str(row.get("source_mode", "") or "use_existing_alignments"),
+        policy_refs=[str(value) for value in _any_list(row.get("policy_refs", []))],
+        notes=str(row.get("notes", "") or ""),
+    )
+
+
+def _control_area_from_json(row: dict[str, object], index: int) -> IntersectionControlArea:
+    return IntersectionControlArea(
+        control_area_id=str(row.get("control_area_id", "") or f"control-area:{index + 1}"),
+        intersection_id=str(row.get("intersection_id", "") or ""),
+        alignment_ref=str(row.get("alignment_ref", "") or ""),
+        station_ranges=_range_list(row.get("station_ranges", [])),
+        influence_ranges=_range_list(row.get("influence_ranges", [])),
+        control_region_refs=[str(value) for value in _any_list(row.get("control_region_refs", []))],
+        turn_lane_policy_ref=str(row.get("turn_lane_policy_ref", "") or ""),
+        curb_return_policy_ref=str(row.get("curb_return_policy_ref", "") or ""),
+        grading_policy_ref=str(row.get("grading_policy_ref", "") or ""),
+        drainage_policy_ref=str(row.get("drainage_policy_ref", "") or ""),
+        notes=str(row.get("notes", "") or ""),
+    )
+
+
+def _is_v1_intersection_model(obj) -> bool:
+    if obj is None:
+        return False
+    if str(getattr(obj, "V1ObjectType", "") or "") == "V1IntersectionModel":
+        return True
+    if str(getattr(obj, "CRRecordKind", "") or "") == "v1_intersection_model":
+        return True
+    proxy_type = str(getattr(getattr(obj, "Proxy", None), "Type", "") or "")
+    name = str(getattr(obj, "Name", "") or "")
+    return proxy_type == "IntersectionModel" or name.startswith("V1IntersectionModel")
+
+
+def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:
+    if obj is None or hasattr(obj, name):
+        return
+    try:
+        obj.addProperty(property_type, name, group, doc)
+    except Exception:
+        pass
+
+
+def _json_dumps(value: object) -> str:
+    if isinstance(value, list):
+        data = [_as_plain_json(row) for row in value]
+    else:
+        data = _as_plain_json(value)
+    return json.dumps(data, sort_keys=True, separators=(",", ":"))
+
+
+def _as_plain_json(value: object):
+    if is_dataclass(value):
+        return asdict(value)
+    if isinstance(value, dict):
+        return {str(key): _as_plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_as_plain_json(item) for item in value]
+    return value
+
+
+def _json_list(text: object) -> list[dict[str, object]]:
+    try:
+        data = json.loads(str(text or "[]"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [row for row in data if isinstance(row, dict)]
+
+
+def _range_list(value: object) -> list[tuple[float, float]]:
+    output: list[tuple[float, float]] = []
+    for row in _any_list(value):
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            output.append((_float_value(row[0]), _float_value(row[1])))
+    return output
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    return [row for row in _any_list(value) if isinstance(row, dict)]
+
+
+def _any_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
+def _dict(value: object) -> dict[object, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _float_value(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _int_value(value: object, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+def _project_id(project) -> str:
+    if project is None:
+        return "corridorroad-v1"
+    return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")

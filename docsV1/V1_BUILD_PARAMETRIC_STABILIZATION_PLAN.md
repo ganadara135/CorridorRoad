@@ -54,7 +54,7 @@ The current implementation is centered in:
 7. Record missing or failed surface preview diagnostics.
 8. Route generated Build Parametric objects under:
 
-`04_Corridor Model / Build Parametric Outputs`
+`04_Parametric Model / Build Parametric Outputs`
 
 ## 3. Core Rule
 
@@ -155,7 +155,7 @@ Acceptance:
 
 The current tree target is:
 
-`04_Corridor Model / Build Parametric Outputs`
+`04_Parametric Model / Build Parametric Outputs`
 
 Stabilization work:
 
@@ -208,7 +208,7 @@ Implementation note:
 
 - Build Parametric review status values are now explicit: `ready`, `warning`, `missing`, `empty`, and `error`.
 - Diagnostic-only rows preserve `warning` instead of collapsing it to `missing`.
-- Focused contract tests cover the outcome matrix and diagnostic object routing under `04_Corridor Model / Build Parametric Outputs`.
+- Focused contract tests cover the outcome matrix and diagnostic object routing under `04_Parametric Model / Build Parametric Outputs`.
 
 ### Step BP-S2 - Surface Preview Contract Hardening
 
@@ -306,7 +306,7 @@ Status: Done
 
 Completed baseline:
 
-- Build Parametric generated preview and diagnostic objects route under `04_Corridor Model / Build Parametric Outputs`.
+- Build Parametric generated preview and diagnostic objects route under `04_Parametric Model / Build Parametric Outputs`.
 - Manual UI confirmation was completed for tree hide/show and property inspection.
 
 Remaining work:
@@ -358,7 +358,7 @@ Use a project with Alignment, Stations, Profile, 3D Centerline, Assembly, Region
 8. Double-click Region Boundary rows and confirm actual built Region objects display.
 9. Update one Surface Transition spacing value and click `Update`.
 10. Rebuild Build Parametric and confirm sample count and surface output update.
-11. Confirm generated objects appear under `04_Corridor Model / Build Parametric Outputs`.
+11. Confirm generated objects appear under `04_Parametric Model / Build Parametric Outputs`.
 12. Hide/show generated objects from the tree.
 13. Inspect generated object properties in FreeCAD's property view.
 14. Open Watertight Solids and confirm target discovery reports Build Parametric prerequisite status clearly.

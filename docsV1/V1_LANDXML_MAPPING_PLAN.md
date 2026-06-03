@@ -9,6 +9,7 @@ Depends on:
 - `docsV1/V1_ARCHITECTURE.md`
 - `docsV1/V1_EXCHANGE_PLAN.md`
 - `docsV1/V1_EXCHANGE_OUTPUT_SCHEMA.md`
+- `docsV1/V1_LANDXML_IMPORT_IMPLEMENTATION_PLAN.md`
 - `docsV1/V1_TIN_DATA_SCHEMA.md`
 - `docsV1/V1_PLAN_OUTPUT_SCHEMA.md`
 - `docsV1/V1_PROFILE_OUTPUT_SCHEMA.md`
@@ -16,6 +17,8 @@ Depends on:
 ## 1. Purpose
 
 This document defines how `LandXML` should map into and out of the Parametric Road v1 architecture.
+
+Implementation order, UI flow, parser contracts, and acceptance criteria are tracked in `V1_LANDXML_IMPORT_IMPLEMENTATION_PLAN.md`.
 
 It exists to answer four practical questions:
 
@@ -99,14 +102,17 @@ v1 should not promise perfect round-tripping for every unsupported or loosely de
 
 Recommended initial `LandXML` coverage:
 
-1. alignment import/export
-2. profile import/export
-3. TIN surface import/export
-4. feature-line import where practical
-5. diagnostic reporting for unsupported content
+1. Autodesk Civil 3D alignment import/export
+2. Autodesk Civil 3D profile import/export
+3. Autodesk Civil 3D TIN surface import/export
+4. Autodesk Civil 3D CgPoints import where practical
+5. Autodesk Civil 3D feature-line import where practical
+6. diagnostic reporting for unsupported content and unsupported producers
 
 Deferred or lower-priority topics:
 
+- OpenRoads Designer LandXML compatibility
+- unknown-producer LandXML compatibility
 - corridor-specific schema ambitions beyond stable v1 contracts
 - sheet-oriented annotation exchange
 - structure-rich exchange that is better suited to `IFC`

@@ -2,7 +2,7 @@
 
 Parametric Road is a FreeCAD workbench for parametric road corridor design, review, and output preparation.
 
-Parametric Road `1.0.3` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
+Parametric Road `1.0.4` is the current public v1 release. It continues the v1 workflow reset under the `Parametric Road` user-facing name instead of `Corridor Road`.
 
 The v1 workflow is source-driven: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics and handoff context.
 
@@ -10,12 +10,13 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 - [Quick Start](./Quick-Start.md)
 - [Workflow](./Workflow.md)
+- [Intersections](./Intersections.md)
 - [Troubleshooting](./Troubleshooting.md)
 - [Developer Guide](./Developer-Guide.md)
 
 ## Release And Tutorial
 
-- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.3
+- Latest release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum discussion: https://forum.freecad.org/viewtopic.php?t=103783
 
@@ -23,7 +24,7 @@ The v1 workflow is source-driven: design intent is stored in source models, eval
 
 Typical toolbar order:
 
-`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly -> Regions -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`Project -> TIN -> Alignment -> Stations/Profile/3D Centerline -> Superelevation -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Main stages:
 
@@ -58,6 +59,7 @@ Available in the v1 release direction:
 - shared 3D Centerline review for downstream station/offset/elevation context
 - Superelevation source editing, station sample review, 3D crossfall bars, and Applied Sections / Build Parametric handoff
 - Assembly and Region source editing
+- Intersections starter sources, multi-alignment Region review, and multi-alignment 3D Centerline preview
 - Structure source editing, connection points, native drainage-structure previews, and Structure Output packages
 - Drainage source editing, Flow Routes, Structure-backed pipe network preview, and Drainage Review
 - Applied Sections generation

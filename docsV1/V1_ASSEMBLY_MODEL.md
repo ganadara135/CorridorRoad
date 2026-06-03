@@ -245,4 +245,4 @@ The Assembly source object does not replace Region, Structure, Drainage, Ramp, o
 
 Expected tree location:
 
-- `04_Corridor Model / Assemblies`
+- `04_Parametric Model / Assemblies`

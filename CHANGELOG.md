@@ -9,6 +9,26 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-06-04
+
+### Added
+- Added first-slice Intersections starter-source workflow support for multi-alignment T/cross/Y junction setup.
+- Added automatic multi-alignment 3D Centerline generation after Intersections `Create Starter Sources`.
+- Added multi-alignment 3D Centerline preview support so primary and side-road baselines are drawn as separate curves in one review object.
+- Added Build Parametric Region Boundary support for all participating Region source models, with an Alignment column for primary-road and side-road Region review.
+- Added local Wiki documentation for Intersections, starter sources, multi-alignment 3D Centerline behavior, and Build Parametric Region review.
+
+### Changed
+- Changed Applied Sections generation so multi-alignment Centerline3DResult rows are filtered by the active Alignment before station frames are resolved.
+- Changed Build Parametric surface generation so Design, Subgrade, and Slope Face surfaces are built per Alignment group before being merged into one preview result.
+- Changed Region preview creation to filter by both Region and Alignment, avoiding cross-alignment Region preview mixing.
+- Changed Intersections starter status reporting so 3D Centerline generation success or failure is visible in the panel status text.
+
+### Fixed
+- Fixed side-road Intersections workflows where downstream Applied Sections could fall back to Alignment/Profile because only the primary 3D Centerline was available.
+- Fixed Build Parametric Region Boundaries showing only the first RegionModel in multi-alignment intersection projects.
+- Fixed Slope Face Surface generation that could connect unrelated Alignment section rows across a junction.
+
 ## [1.0.3] - 2026-05-31
 
 ### Added

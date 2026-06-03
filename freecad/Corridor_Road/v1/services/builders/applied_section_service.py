@@ -23,6 +23,7 @@ from ...models.source.assembly_model import (
     normalize_bench_rows,
 )
 from ...models.source.drainage_model import DrainageModel
+from ...models.source.intersection_model import IntersectionModel
 from ...models.source.override_model import OverrideModel
 from ...models.source.profile_model import ProfileModel
 from ...models.source.region_model import RegionModel
@@ -37,6 +38,10 @@ from ...services.evaluation.centerline3d_frame_service import (
 )
 from ...services.evaluation.override_resolution_service import (
     OverrideResolutionService,
+)
+from ...services.evaluation.intersection_evaluation_service import (
+    IntersectionEvaluationResult,
+    IntersectionEvaluationService,
 )
 from ...services.evaluation.profile_evaluation_service import (
     ProfileEvaluationService,
@@ -72,6 +77,7 @@ class AppliedSectionBuildRequest:
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
+    intersection_model: IntersectionModel | None = None
     existing_ground_surface: TINSurface | None = None
     centerline3d_result: Centerline3DResult | None = None
 
@@ -93,6 +99,7 @@ class AppliedSectionSetBuildRequest:
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
+    intersection_model: IntersectionModel | None = None
     existing_ground_surface: TINSurface | None = None
     centerline3d_result: Centerline3DResult | None = None
 
@@ -123,6 +130,7 @@ class AppliedSectionService:
         tin_sampling_service: TinSamplingService | None = None,
         centerline_frame_service: Centerline3DFrameService | None = None,
         superelevation_service: SuperelevationService | None = None,
+        intersection_service: IntersectionEvaluationService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
@@ -136,6 +144,7 @@ class AppliedSectionService:
         self.tin_sampling_service = tin_sampling_service or TinSamplingService()
         self.centerline_frame_service = centerline_frame_service or Centerline3DFrameService()
         self.superelevation_service = superelevation_service or SuperelevationService()
+        self.intersection_service = intersection_service or IntersectionEvaluationService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -209,8 +218,14 @@ class AppliedSectionService:
             request.station,
             template=template,
         )
+        intersection_result = self._evaluate_intersection(
+            request.intersection_model,
+            request.station,
+            alignment_ref=request.alignment.alignment_id,
+        )
         effective_template = _template_with_superelevation(template, superelevation_result)
         diagnostics.extend(list(getattr(superelevation_result, "diagnostic_rows", []) or []))
+        diagnostics.extend(_intersection_context_diagnostics(intersection_result))
         fg_points = _surface_section_offsets(effective_template, frame=frame)
         bench_evaluations = _bench_evaluations(
             effective_template,
@@ -272,6 +287,12 @@ class AppliedSectionService:
             superelevation_right_crossfall=float(getattr(superelevation_result, "right_crossfall", 0.0) or 0.0),
             active_superelevation_transition_id=str(getattr(superelevation_result, "active_transition_id", "") or ""),
             superelevation_source_rows=_superelevation_source_rows(superelevation_result),
+            active_intersection_id=str(getattr(intersection_result, "active_intersection_id", "") or ""),
+            active_intersection_control_area_id=str(getattr(intersection_result, "active_control_area_id", "") or ""),
+            active_intersection_leg_id=str(getattr(intersection_result, "active_leg_id", "") or ""),
+            active_intersection_leg_role=str(getattr(intersection_result, "leg_role", "") or ""),
+            active_intersection_control_region_refs=list(getattr(intersection_result, "control_region_refs", ()) or ()),
+            intersection_diagnostic_rows=list(getattr(intersection_result, "diagnostic_rows", ()) or ()),
             point_rows=point_rows,
             active_structure_ids=active_structure_ids,
             active_structure_rule_ids=active_rule_ids,
@@ -295,6 +316,10 @@ class AppliedSectionService:
                     request.superelevation_model.superelevation_id
                     if request.superelevation_model is not None
                     else "",
+                    request.intersection_model.intersection_model_id
+                    if request.intersection_model is not None
+                    else "",
+                    str(getattr(intersection_result, "active_intersection_id", "") or ""),
                     *active_drainage_refs,
                     *list(station_context.active_flow_route_refs or []),
                 ]
@@ -395,6 +420,21 @@ class AppliedSectionService:
             station,
             default_left_crossfall=left_default,
             default_right_crossfall=right_default,
+        )
+
+    def _evaluate_intersection(
+        self,
+        intersection_model: IntersectionModel | None,
+        station: float,
+        *,
+        alignment_ref: str,
+    ) -> IntersectionEvaluationResult | None:
+        if intersection_model is None:
+            return None
+        return self.intersection_service.resolve_station(
+            intersection_model,
+            station,
+            alignment_ref=alignment_ref,
         )
 
     @staticmethod
@@ -711,6 +751,7 @@ class AppliedSectionSetService:
                     structure_model=request.structure_model,
                     drainage_model=request.drainage_model,
                     superelevation_model=request.superelevation_model,
+                    intersection_model=request.intersection_model,
                     existing_ground_surface=request.existing_ground_surface,
                     centerline3d_result=request.centerline3d_result,
                 )
@@ -751,6 +792,9 @@ class AppliedSectionSetService:
                     else "",
                     request.superelevation_model.superelevation_id
                     if request.superelevation_model is not None
+                    else "",
+                    request.intersection_model.intersection_model_id
+                    if request.intersection_model is not None
                     else "",
                     request.centerline3d_result.centerline3d_result_id
                     if request.centerline3d_result is not None
@@ -1657,6 +1701,29 @@ def _structure_context_diagnostics(
             f"info|structure_influence_zone|STA {float(station):g}|Active structure context has no influence zone ids."
         )
     return diagnostics
+
+
+def _intersection_context_diagnostics(result: IntersectionEvaluationResult | None) -> list[DiagnosticMessage]:
+    if result is None:
+        return []
+    active_id = str(getattr(result, "active_intersection_id", "") or "")
+    rows = []
+    for kind in list(getattr(result, "diagnostic_rows", ()) or ()):
+        text = str(kind or "")
+        if text in {
+            "intersection_context_not_found_for_alignment_station",
+            "intersection_context_not_found_for_station",
+        }:
+            continue
+        rows.append(
+            DiagnosticMessage(
+                severity="warning" if active_id else "info",
+                kind=text,
+                message="Intersection context diagnostic from Applied Sections handoff.",
+                notes=f"intersection_id={active_id};station={float(getattr(result, 'station', 0.0) or 0.0):g}",
+            )
+        )
+    return rows
 
 
 def _unique_assembly_models(values: list[AssemblyModel]) -> list[AssemblyModel]:

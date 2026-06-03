@@ -27,6 +27,7 @@ from .cmd_region_editor import (
     run_v1_region_editor_command,
     starter_region_model_from_document,
 )
+from .cmd_intersection_editor import run_v1_intersection_editor_command
 from .cmd_superelevation_editor import (
     apply_v1_superelevation_model,
     run_v1_superelevation_editor_command,
@@ -72,6 +73,7 @@ __all__ = [
     "create_v1_sample_profile",
     "generate_v1_stations",
     "run_v1_generate_stations_command",
+    "run_v1_intersection_editor_command",
     "run_v1_profile_editor_command",
     "run_v1_region_editor_command",
     "run_v1_structure_editor_command",
