@@ -39,6 +39,8 @@ Drainage opens a source editor with Elements, Policies, and Flow Routes. It is p
 
 Superelevation is optional, but when used it should be applied before Applied Sections.
 
+For Intersections, see [Intersections](./Intersections.md). Use `Use Existing Alignments` when the road sources already exist, or `Create Starter Sources` when you want a starter junction created for you.
+
 ## 3. Minimal Smoke Workflow
 
 1. Create or open a project.

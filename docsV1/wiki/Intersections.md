@@ -14,6 +14,58 @@ Use the Intersections panel to:
 - link intersection control Regions
 - create an Intersection source model for Applied Sections and Build Parametric
 
+## Two Ways To Use Intersections
+
+The Intersections panel supports two user workflows.
+
+Choose the workflow based on whether the road Alignments already exist.
+
+### 1. Use Existing Alignments
+
+Use this mode when the primary road and side road have already been created.
+
+This mode links existing source data into an Intersection model.
+
+Typical use:
+
+1. Create or import the main-road Alignment.
+2. Create or import the side-road Alignment.
+3. Create matching Profile, Stationing, and Region sources for each road.
+4. Open `Intersections`.
+5. Set `Source Mode` to `Use Existing Alignments`.
+6. Select the Primary Alignment and Secondary Alignment.
+7. Use `Auto Detect` to find the crossing point.
+8. Review the detected control Regions.
+9. Click `Apply` to create or update the Intersection source model.
+10. Run `Build Sections`.
+11. Run `Build Parametric`.
+
+This mode is best for real design work where the road geometry is already known.
+
+It does not replace your Alignment, Profile, Stationing, or Region sources.
+
+### 2. Create Starter Sources
+
+Use this mode when you want Parametric Road to create a starter junction for testing or early layout.
+
+This mode creates editable source objects first, then links them into the Intersection workflow.
+
+Typical use:
+
+1. Open `Intersections`.
+2. Select the intersection type, such as T, Cross, or Y.
+3. Set `Source Mode` to `Create Starter Sources`.
+4. Click `Create Starter Sources`.
+5. Confirm the status message lists created Alignment, Profile, Stationing, Region, and `3D Centerline` rows.
+6. Review the generated 3D Centerline.
+7. Click `Apply` to create or update the Intersection source model.
+8. Run `Build Sections`.
+9. Run `Build Parametric`.
+
+This mode is best for quick testing, examples, tutorials, and early concept setup.
+
+The generated sources are normal editable v1 source objects. You can modify them after creation.
+
 ## Starter Sources
 
 `Source Mode = Create Starter Sources` creates editable starter data for the selected intersection type.
