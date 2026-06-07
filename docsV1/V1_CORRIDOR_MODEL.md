@@ -281,6 +281,8 @@ Build Corridor review UI should be organized into tabs for `Guided Review`, `Res
 
 `Guided Review` separates `Drainage Surface` from `Drainage Flow`.
 `Drainage Surface` reviews generated ditch/drainage surface handoff from Applied Section points.
+The Drainage tab shows a `Context` column so users can distinguish `Roadside Drainage` station-range checks from `Intersection Drainage` low-point coverage checks.
+Intersection Drainage does not create hydraulic design automatically; it reports whether the intersection patch low-point candidate has Drainage Element coverage.
 `Drainage Flow` reviews source-level Flow Route connections and linked Structure refs, and double-click focus should create a linear 3D highlight for the route station span without adding separate point or cross marker geometry.
 
 It does not generate final corridor solids.

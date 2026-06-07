@@ -12,6 +12,10 @@ from .corridor_model import CorridorModel
 from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
+from .intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
+from .intersection_patch_boundary import IntersectionPatchBoundaryPointRow, IntersectionPatchBoundaryResult
+from .intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionTieInEdgeRow
+from .intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
 from .mass_haul_model import MassHaulModel
 from .quantity_model import QuantityModel
 from .region_context import RegionContextReviewItem, RegionContextSummary
@@ -31,6 +35,14 @@ __all__ = [
     "DrainagePipelineResult",
     "DrainagePipelineSegment",
     "EarthworkBalanceModel",
+    "IntersectionBoundarySegmentResult",
+    "IntersectionBoundarySegmentRow",
+    "IntersectionPatchBoundaryPointRow",
+    "IntersectionPatchBoundaryResult",
+    "IntersectionTieInEdgeResult",
+    "IntersectionTieInEdgeRow",
+    "IntersectionTrimBoundaryPair",
+    "IntersectionTrimBoundaryResult",
     "MassHaulModel",
     "QuantityModel",
     "RegionContextReviewItem",

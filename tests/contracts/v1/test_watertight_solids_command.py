@@ -33,6 +33,7 @@ from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
+from freecad.Corridor_Road.v1.models.source.intersection_model import IntersectionControlArea, IntersectionModel, IntersectionRow
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     CulvertGeometrySpec,
     StructureConnectionPoint,
@@ -44,6 +45,8 @@ from freecad.Corridor_Road.v1.models.source.structure_model import (
 from freecad.Corridor_Road.v1.objects.obj_applied_section import create_or_update_v1_applied_section_set_object
 from freecad.Corridor_Road.v1.objects.obj_corridor import create_or_update_v1_corridor_model_object
 from freecad.Corridor_Road.v1.objects.obj_drainage import create_or_update_v1_drainage_model_object
+from freecad.Corridor_Road.v1.objects.obj_intersection import create_or_update_v1_intersection_model_object
+from freecad.Corridor_Road.v1.objects.obj_intersection_trim_boundary import to_intersection_trim_boundary_result
 from freecad.Corridor_Road.v1.objects.obj_structure import create_or_update_v1_structure_model_object
 from freecad.Corridor_Road.v1.objects.obj_surface import create_or_update_v1_surface_model_object
 from freecad.Corridor_Road.v1.objects.obj_watertight_solid import create_or_update_v1_watertight_solid_output_object
@@ -55,6 +58,17 @@ from freecad.Corridor_Road.v1.commands.cmd_watertight_solids import (
     WATERTIGHT_SOLIDS_BLOCKED_MESSAGE,
     WATERTIGHT_SOLIDS_COMMAND_ID,
     _drainage_pipeline_network_solid_shape,
+    _create_or_update_intersection_trim_boundary_result_object,
+    _create_or_update_intersection_trim_application_output_object,
+    _create_or_update_intersection_trim_application_preview_object,
+    _create_or_update_intersection_trim_closure_cell_output_object,
+    _create_or_update_intersection_trim_closure_surface_preview_object,
+    _create_or_update_intersection_trim_closure_surface_output_object,
+    _create_or_update_intersection_trim_fuse_candidate_output_object,
+    _create_or_update_intersection_trim_shell_candidate_output_object,
+    _create_or_update_intersection_trim_shell_reconstruction_output_object,
+    _create_or_update_intersection_trim_solid_reconstruction_output_object,
+    _create_or_update_intersection_trim_preview_object,
     drainage_watertight_handoff_summary,
     _profile_set_on_centerline3d,
     discover_watertight_solid_targets,
@@ -170,6 +184,54 @@ def _sample_corridor() -> CorridorModel:
     )
 
 
+def _sample_intersection_sections(*, degenerate_boundary: bool = False) -> AppliedSectionSet:
+    primary_left_y = 0.0 if degenerate_boundary else 5.0
+    primary_right_y = 0.0 if degenerate_boundary else -5.0
+    side_left_y = 0.0 if degenerate_boundary else -6.0
+    side_right_y = 0.0 if degenerate_boundary else 6.0
+    return AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:intersection",
+        corridor_id="corridor:main",
+        alignment_id="alignment:main",
+        station_rows=[
+            AppliedSectionStationRow("station:primary-100", 100.0, "section:primary-100"),
+            AppliedSectionStationRow("station:side-10", 10.0, "section:side-10"),
+        ],
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:primary-100",
+                corridor_id="corridor:main",
+                alignment_id="alignment:main",
+                region_id="region:primary-intersection",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                point_rows=[
+                    AppliedSectionPoint("fg:primary-left", -6.0, primary_left_y, 20.0, "fg_surface", 5.0),
+                    AppliedSectionPoint("fg:primary-right", 6.0, primary_right_y, 20.0, "fg_surface", -5.0),
+                ],
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-10",
+                corridor_id="corridor:main",
+                alignment_id="alignment:side",
+                region_id="region:side-intersection",
+                station=10.0,
+                active_intersection_id="intersection:t-01",
+                point_rows=[
+                    AppliedSectionPoint("fg:side-left", -5.0, side_left_y, 20.0, "fg_surface", 4.0),
+                    AppliedSectionPoint("fg:side-right", 5.0, side_right_y, 20.0, "fg_surface", -4.0),
+                ],
+            ),
+        ],
+    )
+
+
 def _sample_surface() -> SurfaceModel:
     return SurfaceModel(
         schema_version=1,
@@ -179,6 +241,39 @@ def _sample_surface() -> SurfaceModel:
         surface_rows=[
             SurfaceRow("corridor:main:design", "design_surface", "corridor:main:design:tin"),
             SurfaceRow("corridor:main:subgrade", "subgrade_surface", "corridor:main:subgrade:tin"),
+        ],
+    )
+
+
+def _sample_intersection_model() -> IntersectionModel:
+    return IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:main",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:side"],
+                control_region_refs=["region:primary-intersection", "region:side-intersection"],
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="control-area:t-01:primary",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:main",
+                station_ranges=[(90.0, 110.0)],
+                control_region_refs=["region:primary-intersection"],
+            ),
+            IntersectionControlArea(
+                control_area_id="control-area:t-01:side",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                station_ranges=[(0.0, 30.0)],
+                control_region_refs=["region:side-intersection"],
+            ),
         ],
     )
 
@@ -582,6 +677,261 @@ def test_watertight_solids_prerequisites_ready_after_build_corridor_objects_exis
         App.closeDocument(doc.Name)
 
 
+def test_watertight_solids_discovers_blocked_intersection_patch_body_target() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchTargetTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+
+        target_model = discover_watertight_solid_targets(doc)
+        target = [row for row in target_model.target_rows if row.target_family == "intersection_patch_body"][0]
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        row_index = _target_table_row(panel, target.target_id)
+
+        assert target.target_id == "solid-target:intersection-patch:intersection-t-01"
+        assert target.scope_kind == "intersection"
+        assert target.readiness_status == "blocked"
+        assert target.region_ref == "region:primary-intersection,region:side-intersection"
+        assert "intersection:t-01" in target.source_refs
+        assert "intersection-patch-boundary:refined-preferred" in target.source_refs
+        assert "boundary_source=refined_patch_boundary_preferred" in target.notes
+        assert any(
+            diagnostic.kind == "intersection_patch_target_insufficient_sections"
+            and diagnostic.source_ref == target.target_id
+            for diagnostic in target_model.target_diagnostic_rows
+        )
+        assert panel._target_table.item(row_index, 1).text() == "Intersection Patch Solid - intersection:t-01"
+        assert panel._target_table.item(row_index, 2).text() == "Intersection Patch"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_builds_intersection_patch_body_target() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchBuildTest")
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_sections(),
+        )
+        create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
+        create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        target_id = "solid-target:intersection-patch:intersection-t-01"
+        row_index = _target_table_row(panel, target_id)
+        state = panel._target_state_by_id[target_id]
+
+        assert panel._target_table.item(row_index, 5).text() == "available"
+        assert panel._validate_target_state(state) is True
+        assert state.validation_status == "ok"
+        assert state.profile_count == 4
+
+        assert panel._build_target_state(state) is True
+
+        assert state.build_status == "built"
+        assert state.volume > 0.0
+        assert state.watertight_output.solid_rows[0].target_family == "intersection_patch_body"
+        assert state.watertight_output.solid_rows[0].scope_kind == "intersection"
+        assert state.watertight_output.solid_rows[0].is_watertight is True
+        assert "intersection=t-01" not in state.watertight_output.solid_rows[0].notes
+        assert "intersection=intersection:t-01" in state.watertight_output.solid_rows[0].notes
+        assert state.output_object is not None
+        assert state.output_object.TargetFamilies == ["intersection_patch_body"]
+
+        qa_obj = panel._refresh_simulation_qa_output()
+        qa_output = to_simulation_qa_output(qa_obj)
+
+        assert qa_output is not None
+        assert any(row.family == "intersection_patch_body" for row in qa_output.family_rows)
+        assert qa_output.road_body_status == "ready"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_blocks_degenerate_intersection_patch_boundary() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionPatchDegenerateTest")
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_sections(degenerate_boundary=True),
+        )
+        create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
+        create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        state = panel._target_state_by_id["solid-target:intersection-patch:intersection-t-01"]
+
+        assert panel._validate_target_state(state) is False
+
+        assert state.validation_status == "error"
+        assert "boundary area is zero" in state.validation_message
+        assert state.build_status == "blocked"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_blocks_open_refined_intersection_patch_boundary() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsOpenRefinedPatchBoundaryTest")
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_sections(),
+        )
+        create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
+        create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        preview.Shape = Part.makePolygon(
+            [
+                App.Vector(-8.0, -5.0, 20.0),
+                App.Vector(8.0, -5.0, 20.0),
+                App.Vector(8.0, 5.0, 20.0),
+                App.Vector(-8.0, 5.0, 20.0),
+                App.Vector(-8.0, -5.0, 20.0),
+            ]
+        )
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "No"
+        preview.addProperty("App::PropertyInteger", "IntersectionPatchBoundaryOrderedPointCount", "Test").IntersectionPatchBoundaryOrderedPointCount = 4
+
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        state = panel._target_state_by_id["solid-target:intersection-patch:intersection-t-01"]
+
+        assert panel._validate_target_state(state) is False
+        assert state.validation_status == "error"
+        assert "intersection_patch_boundary_open" in state.validation_message
+        assert state.build_status == "blocked"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_builds_intersection_patch_from_closed_refined_preview_boundary() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsRefinedPatchBoundaryBuildTest")
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_sections(),
+        )
+        create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
+        create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        preview = doc.addObject("Part::Feature", "V1CorridorIntersectionSurfacePreview")
+        preview.Shape = Part.makePolygon(
+            [
+                App.Vector(-8.0, -5.0, 20.0),
+                App.Vector(8.0, -5.0, 20.0),
+                App.Vector(8.0, 5.0, 20.0),
+                App.Vector(-8.0, 5.0, 20.0),
+                App.Vector(-8.0, -5.0, 20.0),
+            ]
+        )
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "Yes"
+        preview.addProperty("App::PropertyInteger", "IntersectionPatchBoundaryOrderedPointCount", "Test").IntersectionPatchBoundaryOrderedPointCount = 4
+        preview.addProperty("App::PropertyInteger", "IntersectionPatchBoundaryDiagnosticCount", "Test").IntersectionPatchBoundaryDiagnosticCount = 0
+        preview.addProperty("App::PropertyString", "TieInEdgePreviewRef", "Test").TieInEdgePreviewRef = "V1CorridorIntersectionTieInEdgePreview"
+        preview.addProperty("App::PropertyString", "IntersectionBoundaryPreviewRef", "Test").IntersectionBoundaryPreviewRef = "V1CorridorIntersectionBoundarySegmentPreview"
+        preview.addProperty("App::PropertyString", "IntersectionExclusionZoneRef", "Test").IntersectionExclusionZoneRef = "V1CorridorIntersectionExclusionZonePreview"
+
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        state = panel._target_state_by_id["solid-target:intersection-patch:intersection-t-01"]
+
+        assert panel._validate_target_state(state) is True
+        assert state.profile_set["boundary_source"] == "refined_intersection_surface_preview"
+        assert state.profile_count == 4
+        assert panel._build_target_state(state) is True
+        solid = state.watertight_output.solid_rows[0]
+        assert solid.path_source == "refined_intersection_surface_preview"
+        assert preview.Name in solid.source_refs
+        assert "V1CorridorIntersectionTieInEdgePreview" in solid.source_refs
+        assert "V1CorridorIntersectionBoundarySegmentPreview" in solid.source_refs
+        assert "V1CorridorIntersectionExclusionZonePreview" in solid.source_refs
+        assert "refined_intersection_surface_preview" in solid.notes
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_reports_intersection_practical_boundary_handoff() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionPracticalHandoffTest")
+    try:
+        create_or_update_v1_applied_section_set_object(
+            doc,
+            project=project,
+            applied_section_set=_sample_intersection_sections(),
+        )
+        create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
+        create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        preview = doc.addObject("App::FeaturePython", "V1CorridorIntersectionSurfacePreview")
+        preview.addProperty("App::PropertyString", "IntersectionId", "Test").IntersectionId = "intersection:t-01"
+        preview.addProperty("App::PropertyString", "IntersectionPatchBoundaryClosed", "Test").IntersectionPatchBoundaryClosed = "Yes"
+        preview.addProperty("App::PropertyString", "PatchTriangulationMode", "Test").PatchTriangulationMode = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyString", "PatchBoundaryStrategy", "Test").PatchBoundaryStrategy = "structured_strip_curb_return_blend"
+        preview.addProperty("App::PropertyInteger", "PatchEdgeBlendFaceCount", "Test").PatchEdgeBlendFaceCount = 20
+        preview.addProperty("App::PropertyInteger", "PatchCurbReturnArcCount", "Test").PatchCurbReturnArcCount = 2
+        preview.addProperty("App::PropertyInteger", "PatchCurbReturnArcSegmentCount", "Test").PatchCurbReturnArcSegmentCount = 20
+        preview.addProperty("App::PropertyFloat", "PatchMinTriangleQuality", "Test").PatchMinTriangleQuality = 0.52
+        preview.addProperty("App::PropertyInteger", "PatchSkinnyTriangleCount", "Test").PatchSkinnyTriangleCount = 0
+        design = doc.addObject("App::FeaturePython", "V1CorridorDesignSurfacePreview")
+        design.addProperty("App::PropertyString", "IntersectionExclusionBoundaryStrategy", "Test").IntersectionExclusionBoundaryStrategy = "structured_strip_curb_return_blend"
+        design.addProperty("App::PropertyString", "IntersectionExclusionPracticalBoundaryAligned", "Test").IntersectionExclusionPracticalBoundaryAligned = "Yes"
+        daylight = doc.addObject("App::FeaturePython", "V1CorridorDaylightSurfacePreview")
+        daylight.addProperty("App::PropertyString", "IntersectionExclusionBoundaryStrategy", "Test").IntersectionExclusionBoundaryStrategy = "structured_strip_curb_return_blend"
+        daylight.addProperty("App::PropertyString", "IntersectionExclusionPracticalBoundaryAligned", "Test").IntersectionExclusionPracticalBoundaryAligned = "Yes"
+
+        target_model = discover_watertight_solid_targets(doc)
+        target = [row for row in target_model.target_rows if row.target_family == "intersection_patch_body"][0]
+        summary = watertight_cmd.intersection_watertight_handoff_summary(doc, target_model=target_model)
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        status_text = panel._status_text()
+
+        assert summary.readiness_status == "ready"
+        assert summary.surface_boundary_strategy == "structured_strip_curb_return_blend"
+        assert summary.exclusion_practical_aligned is True
+        assert "intersection-boundary:structured_strip_curb_return_blend" in target.source_refs
+        assert "IntersectionHandoff: status=ready" in target.notes
+        assert "boundary=structured_strip_curb_return_blend" in target.notes
+        assert "Intersection Solid QA:" in status_text
+        assert "status=ready" in status_text
+        assert "aligned=practical" in status_text
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_watertight_solids_prerequisites_block_on_build_parametric_error_diagnostics() -> None:
     doc, project = _new_project_doc("V1WatertightSolidsBuildParametricDiagnosticBlockTest")
     try:
@@ -885,6 +1235,300 @@ def test_watertight_solids_simulation_package_records_actual_terrain_shape_conte
 
 def _group_names(folder) -> set[str]:
     return {str(getattr(obj, "Name", "") or "") for obj in list(getattr(folder, "Group", []) or [])}
+
+
+def test_watertight_solids_creates_intersection_trim_candidate_preview_object() -> None:
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionTrimPreviewTest")
+    try:
+        road_output = WatertightSolidOutput(
+            schema_version=1,
+            project_id="proj-1",
+            watertight_solid_output_id="watertight-solids:road-preview",
+            corridor_id="corridor:main",
+            solid_rows=[
+                WatertightSolidOutputRow(
+                    output_object_id="watertight-solid:road-preview",
+                    target_id="solid-target:region-body:primary-intersection",
+                    target_family="region_body",
+                    scope_kind="region",
+                    station_start=0.0,
+                    station_end=10.0,
+                    generated_object_ref="V1WatertightSolidOutput_RoadTrimPreview",
+                    validation_status="ok",
+                    is_watertight=True,
+                    is_valid_solid=True,
+                    volume=1.0,
+                    face_count=1,
+                    edge_count=1,
+                    source_refs=["region:primary-intersection"],
+                )
+            ],
+        )
+        patch_output = WatertightSolidOutput(
+            schema_version=1,
+            project_id="proj-1",
+            watertight_solid_output_id="watertight-solids:patch-preview",
+            corridor_id="corridor:main",
+            solid_rows=[
+                WatertightSolidOutputRow(
+                    output_object_id="watertight-solid:patch-preview",
+                    target_id="solid-target:intersection-patch:intersection-t-01",
+                    target_family="intersection_patch_body",
+                    scope_kind="intersection",
+                    station_start=0.0,
+                    station_end=10.0,
+                    generated_object_ref="V1WatertightSolidOutput_PatchTrimPreview",
+                    validation_status="ok",
+                    is_watertight=True,
+                    is_valid_solid=True,
+                    volume=1.0,
+                    face_count=1,
+                    edge_count=1,
+                    source_refs=["intersection:t-01", "region:primary-intersection"],
+                )
+            ],
+        )
+        create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=road_output,
+            shape=Part.makeLine(App.Vector(0.0, 3.0, 0.0), App.Vector(10.0, 3.0, 0.0)),
+            project=project,
+            object_name="V1WatertightSolidOutput_RoadTrimPreview",
+            label="Watertight Solid - Road Trim Preview",
+        )
+        create_or_update_v1_watertight_solid_output_object(
+            document=doc,
+            watertight_solid_output=patch_output,
+            shape=Part.makeLine(App.Vector(5.0, 2.0, 1.0), App.Vector(5.0, 4.0, 1.0)),
+            project=project,
+            object_name="V1WatertightSolidOutput_PatchTrimPreview",
+            label="Watertight Solid - Patch Trim Preview",
+        )
+
+        preview = _create_or_update_intersection_trim_preview_object(doc)
+        result_obj = _create_or_update_intersection_trim_boundary_result_object(doc)
+        application_preview = _create_or_update_intersection_trim_application_preview_object(doc)
+        application_output = _create_or_update_intersection_trim_application_output_object(doc)
+        closure_preview = _create_or_update_intersection_trim_closure_surface_preview_object(doc)
+        closure_output = _create_or_update_intersection_trim_closure_surface_output_object(doc)
+        closure_cell = _create_or_update_intersection_trim_closure_cell_output_object(doc)
+        shell_candidate = _create_or_update_intersection_trim_shell_candidate_output_object(doc)
+        fuse_candidate = _create_or_update_intersection_trim_fuse_candidate_output_object(doc)
+        shell_reconstruction = _create_or_update_intersection_trim_shell_reconstruction_output_object(doc)
+        solid_reconstruction = _create_or_update_intersection_trim_solid_reconstruction_output_object(doc)
+
+        assert preview is not None
+        assert preview.V1ObjectType == "V1WatertightIntersectionTrimPreview"
+        assert preview.CRRecordKind == "v1_watertight_trim_preview"
+        assert preview.PreviewStatus == "ready"
+        assert preview.ApplicationStatus == "ready"
+        assert preview.CandidateEdgePairCount == 1
+        assert preview.ReadyEdgePairCount == 1
+        assert preview.BlockedEdgePairCount == 0
+        assert len(preview.Shape.Edges) == 3
+        assert set(preview.SourceRefs) == {
+            "V1WatertightSolidOutput_PatchTrimPreview",
+            "V1WatertightSolidOutput_RoadTrimPreview",
+        }
+        assert result_obj is not None
+        assert result_obj.V1ObjectType == "V1IntersectionTrimBoundaryResult"
+        assert result_obj.CRRecordKind == "v1_intersection_trim_boundary_result"
+        assert result_obj.BoundaryPairCount == 1
+        assert result_obj.ApplicationStatus == "ready"
+        assert result_obj.ReadyPairCount == 1
+        assert result_obj.BlockedPairCount == 0
+        assert list(result_obj.PatchOutputRefs) == ["V1WatertightSolidOutput_PatchTrimPreview"]
+        assert list(result_obj.RoadOutputRefs) == ["V1WatertightSolidOutput_RoadTrimPreview"]
+        assert list(result_obj.DistancesXY) == [0.0]
+        result = to_intersection_trim_boundary_result(result_obj)
+        assert result is not None
+        assert result.trim_boundary_result_id == "intersection-trim-boundaries:watertight"
+        assert result.application_status == "ready"
+        assert result.ready_pair_count == 1
+        assert result.blocked_pair_count == 0
+        assert result.boundary_pair_rows[0].boundary_pair_id == "intersection-trim-boundary:1"
+        assert result.boundary_pair_rows[0].patch_output_ref == "V1WatertightSolidOutput_PatchTrimPreview"
+        assert result.boundary_pair_rows[0].road_output_ref == "V1WatertightSolidOutput_RoadTrimPreview"
+        assert result.boundary_pair_rows[0].status == "ready_to_trim"
+        assert list(doc.getObject("V1WatertightSolidOutput_PatchTrimPreview").ResultRefs) == [result_obj.Name]
+        assert list(doc.getObject("V1WatertightSolidOutput_RoadTrimPreview").ResultRefs) == [result_obj.Name]
+        assert doc.getObject("V1WatertightSolidOutput_PatchTrimPreview").IntersectionTrimBoundaryResultRef == result_obj.Name
+        assert doc.getObject("V1WatertightSolidOutput_PatchTrimPreview").IntersectionTrimApplicationStatus == "ready"
+        assert doc.getObject("V1WatertightSolidOutput_PatchTrimPreview").IntersectionTrimReadyPairCount == 1
+        assert doc.getObject("V1WatertightSolidOutput_RoadTrimPreview").IntersectionTrimBoundaryPairCount == 1
+        assert application_preview is not None
+        assert application_preview.V1ObjectType == "V1WatertightIntersectionTrimApplicationPreview"
+        assert application_preview.CRRecordKind == "v1_watertight_trim_application_preview"
+        assert application_preview.ApplicationStatus == "ready"
+        assert application_preview.ReadyPairCount == 1
+        assert application_preview.AppliedPairCount == 1
+        assert len(application_preview.Shape.Edges) >= 3
+        assert application_output is not None
+        assert application_output.V1ObjectType == "V1WatertightIntersectionTrimApplicationOutput"
+        assert application_output.CRRecordKind == "v1_watertight_trim_application_output"
+        assert application_output.OutputStatus == "ready"
+        assert application_output.TrimBoundaryResultRef == result_obj.Name
+        assert application_output.ReadyPairCount == 1
+        assert application_output.AppliedPairCount == 1
+        assert application_output.AppliedEdgeCount >= 3
+        assert len(application_output.Shape.Edges) >= 3
+        assert closure_preview is not None
+        assert closure_preview.V1ObjectType == "V1WatertightIntersectionTrimClosureSurfacePreview"
+        assert closure_preview.CRRecordKind == "v1_watertight_trim_closure_surface_preview"
+        assert closure_preview.ClosureStatus == "ready"
+        assert closure_preview.ReadyPairCount == 1
+        assert closure_preview.ClosureFaceCount == 1
+        assert len(closure_preview.Shape.Faces) == 1
+        assert closure_output is not None
+        assert closure_output.V1ObjectType == "V1WatertightIntersectionTrimClosureSurfaceOutput"
+        assert closure_output.CRRecordKind == "v1_watertight_trim_closure_surface_output"
+        assert closure_output.OutputStatus == "ready"
+        assert closure_output.TrimBoundaryResultRef == result_obj.Name
+        assert closure_output.ReadyPairCount == 1
+        assert closure_output.ClosureFaceCount == 1
+        assert len(closure_output.Shape.Faces) == 1
+        assert closure_cell is not None
+        assert closure_cell.V1ObjectType == "V1WatertightIntersectionTrimClosureCellOutput"
+        assert closure_cell.CRRecordKind == "v1_watertight_trim_closure_cell_output"
+        assert closure_cell.OutputStatus == "ready"
+        assert closure_cell.TrimBoundaryResultRef == result_obj.Name
+        assert closure_cell.ReadyPairCount == 1
+        assert closure_cell.ClosureCellFaceCount == 5
+        assert closure_cell.ShellClosureStatus == "closed"
+        assert closure_cell.OpenEdgeCount == 0
+        assert len(closure_cell.Shape.Faces) == 5
+        assert shell_candidate is not None
+        assert shell_candidate.V1ObjectType == "V1WatertightIntersectionTrimShellCandidateOutput"
+        assert shell_candidate.CRRecordKind == "v1_watertight_trim_shell_candidate_output"
+        assert shell_candidate.ShellCandidateStatus == "ready"
+        assert shell_candidate.ShellClosureStatus == "open"
+        assert shell_candidate.TrimBoundaryResultRef == result_obj.Name
+        assert shell_candidate.TrimApplicationOutputRef == application_output.Name
+        assert shell_candidate.ClosureSurfaceOutputRef == closure_output.Name
+        assert shell_candidate.ClosureCellOutputRef == closure_cell.Name
+        assert shell_candidate.SourceOutputCount == 2
+        assert shell_candidate.ClosureFaceCount == 1
+        assert shell_candidate.ClosureCellFaceCount == 5
+        assert shell_candidate.CandidateShapeCount == 4
+        assert shell_candidate.ShellFaceCount >= 6
+        assert shell_candidate.ShellEdgeCount >= 3
+        assert shell_candidate.OpenEdgeCount > 0
+        assert "open_edges=" in shell_candidate.ShellCandidateDiagnostic
+        assert "closure_cell_faces=5" in shell_candidate.ShellCandidateDiagnostic
+        assert set(shell_candidate.SourceOutputRefs) == {
+            "V1WatertightSolidOutput_PatchTrimPreview",
+            "V1WatertightSolidOutput_RoadTrimPreview",
+        }
+        assert fuse_candidate is not None
+        assert fuse_candidate.V1ObjectType == "V1WatertightIntersectionTrimFuseCandidateOutput"
+        assert fuse_candidate.CRRecordKind == "v1_watertight_trim_fuse_candidate_output"
+        assert fuse_candidate.FuseCandidateStatus in {"fused", "fuse_failed_compound"}
+        assert fuse_candidate.ShellCandidateOutputRef == shell_candidate.Name
+        assert fuse_candidate.ClosureCellOutputRef == closure_cell.Name
+        assert fuse_candidate.FuseSourceCount == 3
+        assert fuse_candidate.FuseFaceCount >= 5
+        assert "open_edges=" in fuse_candidate.FuseDiagnostic
+        assert set(fuse_candidate.FuseSourceRefs) == {
+            "V1WatertightSolidOutput_PatchTrimPreview",
+            "V1WatertightSolidOutput_RoadTrimPreview",
+            closure_cell.Name,
+        }
+        assert shell_reconstruction is not None
+        assert shell_reconstruction.V1ObjectType == "V1WatertightIntersectionTrimShellReconstructionOutput"
+        assert shell_reconstruction.CRRecordKind == "v1_watertight_trim_shell_reconstruction_output"
+        assert shell_reconstruction.ReconstructionStatus == "closed"
+        assert shell_reconstruction.ShellClosureStatus == "closed"
+        assert shell_reconstruction.ShellCandidateOutputRef == shell_candidate.Name
+        assert shell_reconstruction.ClosureCellOutputRef == closure_cell.Name
+        assert shell_reconstruction.InputFaceCount == 5
+        assert shell_reconstruction.ClosureCellFaceCount == 5
+        assert shell_reconstruction.ShellFaceCount == 5
+        assert shell_reconstruction.OpenEdgeCount == 0
+        assert "open_edges=" in shell_reconstruction.ReconstructionDiagnostic
+        assert solid_reconstruction is not None
+        assert solid_reconstruction.V1ObjectType == "V1WatertightIntersectionTrimSolidReconstructionOutput"
+        assert solid_reconstruction.CRRecordKind == "v1_watertight_trim_solid_reconstruction_output"
+        assert solid_reconstruction.SolidReconstructionStatus in {"solid", "error"}
+        assert solid_reconstruction.ShellReconstructionOutputRef == shell_reconstruction.Name
+        assert solid_reconstruction.ShellClosureStatus == "closed"
+        assert solid_reconstruction.OpenEdgeCount == 0
+        assert solid_reconstruction.SolidFaceCount == 5
+        package_obj = watertight_cmd.apply_v1_simulation_package(document=doc, project=project)
+        assert package_obj.IntersectionTrimStatus == "ready"
+        assert package_obj.IntersectionTrimResultRef == result_obj.Name
+        assert package_obj.IntersectionTrimBoundaryPairCount == 1
+        assert package_obj.IntersectionTrimReadyPairCount == 1
+        assert package_obj.IntersectionTrimBlockedPairCount == 0
+        assert package_obj.IntersectionTrimFuseStatus in {"fused", "fuse_failed_compound"}
+        assert package_obj.IntersectionTrimFuseCandidateRef == fuse_candidate.Name
+        assert package_obj.IntersectionTrimFuseSourceCount == 3
+        assert package_obj.IntersectionTrimFuseFaceCount >= 5
+        assert set(package_obj.IntersectionTrimFuseSourceRefs) == {
+            "V1WatertightSolidOutput_PatchTrimPreview",
+            "V1WatertightSolidOutput_RoadTrimPreview",
+            closure_cell.Name,
+        }
+        assert package_obj.IntersectionTrimHandoffChainRefs == [
+            result_obj.Name,
+            application_output.Name,
+            closure_output.Name,
+            closure_cell.Name,
+            shell_candidate.Name,
+            fuse_candidate.Name,
+            shell_reconstruction.Name,
+            solid_reconstruction.Name,
+        ]
+        assert "trim_boundary=ready" in package_obj.IntersectionTrimHandoffStageStatuses
+        assert "closure_cell=ready" in package_obj.IntersectionTrimHandoffStageStatuses
+        assert any(
+            status.startswith("solid_reconstruction=")
+            for status in package_obj.IntersectionTrimHandoffStageStatuses
+        )
+        assert doc.getObject("V1WatertightSolidOutput_PatchTrimPreview").IntersectionTrimHandoffChainRefs == list(
+            package_obj.IntersectionTrimHandoffChainRefs
+        )
+        package_output = to_simulation_package_output(package_obj)
+        assert package_output is not None
+        assert package_output.intersection_trim_status == "ready"
+        assert package_output.intersection_trim_result_ref == result_obj.Name
+        assert package_output.intersection_trim_ready_pair_count == 1
+        assert package_output.intersection_trim_fuse_status in {"fused", "fuse_failed_compound"}
+        assert package_output.intersection_trim_fuse_candidate_ref == fuse_candidate.Name
+        assert package_output.intersection_trim_fuse_source_count == 3
+        assert package_output.intersection_trim_fuse_face_count >= 5
+        assert package_output.intersection_trim_handoff_chain_refs == list(package_obj.IntersectionTrimHandoffChainRefs)
+        assert "fuse_candidate=" + fuse_candidate.FuseCandidateStatus in package_output.intersection_trim_handoff_stage_statuses
+        assert package_output.intersection_trim_pair_rows[0]["boundary_pair_id"] == "intersection-trim-boundary:1"
+        assert package_output.intersection_trim_pair_rows[0]["status"] == "ready_to_trim"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "simulation_package.json"
+            export_document_simulation_package_json(str(export_path), document=doc, project=project)
+            exported = json.loads(export_path.read_text(encoding="utf-8"))
+            assert exported["intersection_trim"]["status"] == "ready"
+            assert exported["intersection_trim"]["result_ref"] == result_obj.Name
+            assert exported["intersection_trim"]["ready_pair_count"] == 1
+            assert exported["intersection_trim"]["fuse_candidate"]["ref"] == fuse_candidate.Name
+            assert exported["intersection_trim"]["fuse_candidate"]["source_count"] == 3
+            assert exported["intersection_trim"]["fuse_candidate"]["face_count"] >= 5
+            assert exported["intersection_trim"]["handoff_chain"]["refs"] == list(package_obj.IntersectionTrimHandoffChainRefs)
+            assert "shell_candidate=ready" in exported["intersection_trim"]["handoff_chain"]["stage_statuses"]
+            assert exported["intersection_trim"]["pair_rows"][0]["boundary_pair_id"] == "intersection-trim-boundary:1"
+            assert exported["intersection_trim"]["pair_rows"][0]["status"] == "ready_to_trim"
+            assert exported["intersection_trim"]["pair_rows"][0]["patch_segment_xyz"] == [5.0, 2.0, 1.0, 5.0, 4.0, 1.0]
+        tree = ensure_project_tree(project, include_references=False)
+        assert preview.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert application_preview.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert application_output.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert closure_preview.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert closure_output.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert closure_cell.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert shell_candidate.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert fuse_candidate.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert shell_reconstruction.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert solid_reconstruction.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+        assert result_obj.Name in _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_watertight_solids_panel_show_hide_focus_controls_built_output_object() -> None:

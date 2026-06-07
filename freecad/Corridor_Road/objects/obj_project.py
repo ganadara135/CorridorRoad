@@ -1338,7 +1338,20 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
-    if record_kind == "v1_watertight_solid_output":
+    if record_kind in {
+        "v1_watertight_solid_output",
+        "v1_watertight_trim_preview",
+        "v1_watertight_trim_application_preview",
+        "v1_watertight_trim_application_output",
+        "v1_watertight_trim_closure_surface_preview",
+        "v1_watertight_trim_closure_surface_output",
+        "v1_watertight_trim_closure_cell_output",
+        "v1_watertight_trim_shell_candidate_output",
+        "v1_watertight_trim_fuse_candidate_output",
+        "v1_watertight_trim_shell_reconstruction_output",
+        "v1_watertight_trim_solid_reconstruction_output",
+        "v1_intersection_trim_boundary_result",
+    }:
         return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
     if record_kind == "v1_simulation_qa_output":
         return tree.get(V1_TREE_REPORTS, None)

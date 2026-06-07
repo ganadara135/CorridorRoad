@@ -105,6 +105,7 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "IntersectionLegIds", "Intersections", "active intersection leg ids")
     _add_property(obj, "App::PropertyStringList", "IntersectionLegRoles", "Intersections", "active intersection leg roles")
     _add_property(obj, "App::PropertyStringList", "IntersectionControlRegionRows", "Intersections", "active intersection control region refs by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionGradingPolicyRefs", "Intersections", "active intersection grading policy refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionDiagnosticRows", "Intersections", "intersection context diagnostics by section")
     _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
     _add_property(obj, "App::PropertyStringList", "ComponentRows", "Resolved Context", "applied section component rows")
@@ -230,6 +231,7 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.IntersectionLegIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_id", "") or "") for row in station_rows]
     obj.IntersectionLegRoles = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_role", "") or "") for row in station_rows]
     obj.IntersectionControlRegionRows = _section_list_rows(station_rows, section_by_id, "active_intersection_control_region_refs")
+    obj.IntersectionGradingPolicyRefs = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_grading_policy_ref", "") or "") for row in station_rows]
     obj.IntersectionDiagnosticRows = _section_list_rows(station_rows, section_by_id, "intersection_diagnostic_rows")
     obj.PointRows = _point_rows(station_rows, section_by_id)
     obj.ComponentRows = _component_rows(station_rows, section_by_id)
@@ -467,6 +469,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 active_intersection_leg_id=_list_value(getattr(obj, "IntersectionLegIds", []), index, ""),
                 active_intersection_leg_role=_list_value(getattr(obj, "IntersectionLegRoles", []), index, ""),
                 active_intersection_control_region_refs=intersection_control_regions_by_section.get(section_id, []),
+                active_intersection_grading_policy_ref=_list_value(getattr(obj, "IntersectionGradingPolicyRefs", []), index, ""),
                 intersection_diagnostic_rows=intersection_diagnostics_by_section.get(section_id, []),
                 component_rows=component_rows_by_section.get(section_id)
                 or _component_placeholders(

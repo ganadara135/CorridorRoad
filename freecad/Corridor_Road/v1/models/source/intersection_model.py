@@ -61,6 +61,36 @@ class IntersectionControlArea:
 
 
 @dataclass(frozen=True)
+class IntersectionCurbReturnPolicyRow:
+    """Source policy for first-slice intersection corner return preview geometry."""
+
+    policy_id: str
+    intersection_id: str
+    radius: float
+    side: str = "all"
+    edge_role: str = "pavement_edge"
+    long_edge_factor: float = 2.5
+    max_boundary_edge_length: float = 0.0
+    approach_leg_refs: list[str] = field(default_factory=list)
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class IntersectionGradingPolicyRow:
+    """Source policy for intersection-area crossfall and grading behavior."""
+
+    policy_id: str
+    intersection_id: str
+    mode: str = "flatten_intersection"
+    target_crossfall_percent: float = 0.0
+    primary_alignment_ref: str = ""
+    secondary_alignment_refs: list[str] = field(default_factory=list)
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class IntersectionRow:
     """Minimal at-grade intersection definition row."""
 
@@ -98,6 +128,8 @@ class IntersectionModel(SourceModelBase):
     intersection_model_id: str = ""
     intersection_rows: list[IntersectionRow] = field(default_factory=list)
     control_area_rows: list[IntersectionControlArea] = field(default_factory=list)
+    curb_return_policy_rows: list[IntersectionCurbReturnPolicyRow] = field(default_factory=list)
+    grading_policy_rows: list[IntersectionGradingPolicyRow] = field(default_factory=list)
 
 
 def intersection_preset_labels() -> list[str]:
@@ -157,4 +189,6 @@ def intersection_row_from_kind(
         control_region_refs=list(control_region_refs or []),
         leg_rows=leg_rows,
         control_area_ref=f"{intersection_id}:control-area",
+        grading_policy_ref=f"grading:{intersection_id}:default",
+        policy_refs=[f"curb-return:{intersection_id}:default", f"grading:{intersection_id}:default"],
     )

@@ -53,6 +53,12 @@ from .obj_intersection import (
     find_v1_intersection_model,
     to_intersection_model,
 )
+from .obj_intersection_trim_boundary import (
+    V1IntersectionTrimBoundaryResultObject,
+    create_or_update_v1_intersection_trim_boundary_result_object,
+    find_v1_intersection_trim_boundary_result,
+    to_intersection_trim_boundary_result,
+)
 from .obj_surface_transition import (
     V1SurfaceTransitionModelObject,
     create_or_update_v1_surface_transition_model_object,
@@ -117,6 +123,7 @@ __all__ = [
     "V1DrainageModelObject",
     "V1ExchangePackageObject",
     "V1IntersectionModelObject",
+    "V1IntersectionTrimBoundaryResultObject",
     "V1LandXMLImportObject",
     "V1ProfileObject",
     "V1RegionModelObject",
@@ -137,6 +144,7 @@ __all__ = [
     "create_or_update_v1_drainage_model_object",
     "create_or_update_v1_exchange_package_object",
     "create_or_update_v1_intersection_model_object",
+    "create_or_update_v1_intersection_trim_boundary_result_object",
     "create_or_update_v1_landxml_import_object",
     "create_or_update_v1_simulation_package_output_object",
     "create_or_update_v1_simulation_qa_output_object",
@@ -154,6 +162,7 @@ __all__ = [
     "find_v1_drainage_model",
     "find_v1_exchange_package",
     "find_v1_intersection_model",
+    "find_v1_intersection_trim_boundary_result",
     "find_v1_simulation_package_output",
     "find_v1_simulation_qa_output",
     "find_v1_surface_model",
@@ -172,6 +181,7 @@ __all__ = [
     "to_corridor_model",
     "to_drainage_model",
     "to_intersection_model",
+    "to_intersection_trim_boundary_result",
     "to_simulation_package_output",
     "to_simulation_qa_output",
     "to_surface_model",

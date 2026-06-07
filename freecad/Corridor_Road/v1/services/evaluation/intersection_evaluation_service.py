@@ -30,6 +30,24 @@ class IntersectionEvaluationResult:
     diagnostic_rows: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class IntersectionPatchPrerequisiteResult:
+    """Readiness contract for a future intersection surface patch output."""
+
+    status: str
+    intersection_id: str = ""
+    intersection_kind: str = ""
+    alignment_refs: tuple[str, ...] = ()
+    control_region_refs: tuple[str, ...] = ()
+    control_area_refs: tuple[str, ...] = ()
+    participating_alignment_count: int = 0
+    control_region_count: int = 0
+    applied_section_count: int = 0
+    tie_in_edge_count: int = 0
+    boundary_point_count: int = 0
+    diagnostic_rows: tuple[str, ...] = ()
+
+
 class IntersectionEvaluationService:
     """Resolve intersection control-area context from an intersection source model."""
 

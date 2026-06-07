@@ -39,6 +39,7 @@ from freecad.Corridor_Road.v1.models.source.superelevation_model import Crossfal
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -267,6 +268,14 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
                 alignment_ref="align-1",
                 station_ranges=[(40.0, 60.0)],
                 control_region_refs=["reg-1/region-intersection"],
+                grading_policy_ref="grading:intersection:t-01:default",
+            )
+        ],
+        grading_policy_rows=[
+            IntersectionGradingPolicyRow(
+                policy_id="grading:intersection:t-01:default",
+                intersection_id="intersection:t-01",
+                mode="flatten_intersection",
             )
         ],
     )
@@ -293,8 +302,10 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
     assert result.active_intersection_leg_id == "intersection:t-01:leg-01"
     assert result.active_intersection_leg_role == "primary_control"
     assert result.active_intersection_control_region_refs == ["reg-1/region-intersection"]
+    assert result.active_intersection_grading_policy_ref == "grading:intersection:t-01:default"
     assert summary["intersection_id"] == "intersection:t-01"
     assert "primary_control" in summary["intersection_leg"]
+    assert summary["intersection_grading_policy"] == "grading:intersection:t-01:default"
 
 
 def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -> None:

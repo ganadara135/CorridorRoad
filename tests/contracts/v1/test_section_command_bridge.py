@@ -847,6 +847,69 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
         App.closeDocument(doc.Name)
 
 
+def test_cross_section_viewer_summary_shows_intersection_grading_context() -> None:
+    doc = App.newDocument("V1SectionViewerIntersectionGradingSummaryTest")
+    try:
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:intersection-context",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id="section:96:station",
+                    station=96.0,
+                    applied_section_id="section:96",
+                )
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:96",
+                    station=96.0,
+                    template_id="template:intersection-road",
+                    region_id="region:primary-intersection",
+                    active_superelevation_id="superelevation:main",
+                    superelevation_left_crossfall=-2.0,
+                    superelevation_right_crossfall=3.0,
+                    active_superelevation_transition_id="transition:runoff",
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:primary",
+                    active_intersection_leg_id="leg:primary",
+                    active_intersection_leg_role="primary_through",
+                    active_intersection_control_region_refs=["region:primary-intersection"],
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Intersection Context",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=96.0,
+            app_module=None,
+            gui_module=None,
+        )
+        panel = CrossSectionViewerTaskPanel.__new__(CrossSectionViewerTaskPanel)
+        panel.preview = preview
+
+        summary_text = panel._summary_text()
+        section_rows = panel._section_summary_rows()
+
+        assert "Intersection: intersection:t-01" in summary_text
+        assert "Control Area control-area:t-01:primary" in summary_text
+        assert "Leg leg:primary | primary_through" in summary_text
+        assert "Grading Policy grading:intersection:t-01:default" in summary_text
+        assert "Superelevation: superelevation:main" in summary_text
+        assert ["intersection_grading_policy", "Intersection Grading Policy", "grading:intersection:t-01:default", ""] in section_rows
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_format_section_preview_includes_focus_component_line() -> None:
     summary = format_section_preview(
         show_v1_section_preview(

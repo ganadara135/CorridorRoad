@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import hypot
+from math import ceil, cos, hypot, pi, sin
 
 try:
     import FreeCAD as App
@@ -22,6 +22,8 @@ from freecad.Corridor_Road.qt_compat import QtWidgets
 
 from ..models.source.intersection_model import (
     IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -45,6 +47,7 @@ INTERSECTION_SOURCE_MODES = ("Use Existing Alignments", "Create Starter Sources"
 NEXT_INTERSECTION_WORKFLOW_TEXT = (
     "Workflow: Regions -> Intersections -> Structures -> Drainage -> Build Sections"
 )
+INTERSECTION_REVIEW_MAX_REGION_SPAN = 48.0
 
 
 def list_v1_alignment_choices(document) -> list[tuple[str, str]]:
@@ -184,6 +187,8 @@ def build_intersection_model_from_sources(
         control_region_refs=control_refs,
         leg_rows=leg_rows,
         control_area_ref=f"{intersection_id}:control-area",
+        grading_policy_ref=f"grading:{intersection_id}:default",
+        policy_refs=[f"curb-return:{intersection_id}:default", f"grading:{intersection_id}:default"],
         source_mode=_source_mode_id(source_mode),
         notes="Created by Intersections panel control Region linking.",
     )
@@ -194,6 +199,20 @@ def build_intersection_model_from_sources(
         intersection_model_id="intersections:main",
         intersection_rows=[row],
         control_area_rows=control_area_rows,
+        curb_return_policy_rows=[
+            _default_curb_return_policy(
+                intersection_id=intersection_id,
+                intersection_kind=kind,
+                leg_rows=leg_rows,
+            )
+        ],
+        grading_policy_rows=[
+            _default_grading_policy(
+                intersection_id=intersection_id,
+                primary_alignment_ref=str(primary_alignment_ref or "").strip(),
+                secondary_alignment_refs=secondary_refs,
+            )
+        ],
     )
 
 
@@ -229,10 +248,17 @@ def show_intersection_review_overlay(
     for row in control_region_choices:
         alignment_ref = str(row.get("alignment_ref", "") or "")
         alignment = alignment_by_ref.get(alignment_ref)
+        station_start, station_end = _intersection_review_region_station_span(
+            row,
+            detection_result=detection_result,
+            primary_alignment_ref=primary_alignment_ref,
+            secondary_alignment_ref=secondary_alignment_ref,
+            max_span=INTERSECTION_REVIEW_MAX_REGION_SPAN,
+        )
         points = _alignment_station_span_points(
             alignment,
-            float(row.get("station_start", 0.0) or 0.0),
-            float(row.get("station_end", 0.0) or 0.0),
+            station_start,
+            station_end,
         )
         if len(points) >= 2:
             for first, second in zip(points[:-1], points[1:]):
@@ -246,6 +272,21 @@ def show_intersection_review_overlay(
         point = _alignment_point_at_station(alignment, float(first_row.get("station_start", 0.0) or 0.0))
     if point is not None:
         shapes.extend(_intersection_point_marker_shapes(point, radius=3.0))
+        curb_return_shapes, curb_return_metadata = _curb_return_preview_shapes(
+            point=point,
+            intersection_kind=intersection_kind,
+            primary_alignment=alignment_by_ref.get(str(primary_alignment_ref or "")),
+            secondary_alignment=alignment_by_ref.get(str(secondary_alignment_ref or "")),
+            detection_result=detection_result,
+        )
+        shapes.extend(curb_return_shapes)
+    else:
+        curb_return_metadata = {
+            "policy_ref": "",
+            "radius": 0.0,
+            "arc_count": 0,
+            "diagnostics": ["intersection_curb_return_policy_missing: intersection point is required."],
+        }
 
     if not shapes:
         raise RuntimeError("No Intersection review geometry could be created.")
@@ -261,6 +302,10 @@ def show_intersection_review_overlay(
     _set_preview_property(obj, "PrimaryAlignmentRef", str(primary_alignment_ref or ""))
     _set_preview_property(obj, "SecondaryAlignmentRef", str(secondary_alignment_ref or ""))
     _set_preview_string_list_property(obj, "ControlRegionRefs", _unique_text_values(control_refs))
+    _set_preview_property(obj, "CurbReturnPolicyRef", str(curb_return_metadata.get("policy_ref", "") or ""))
+    _set_preview_property(obj, "CurbReturnRadius", f"{float(curb_return_metadata.get('radius', 0.0) or 0.0):.3f}")
+    _set_preview_integer_property(obj, "CurbReturnArcCount", int(curb_return_metadata.get("arc_count", 0) or 0))
+    _set_preview_string_list_property(obj, "CurbReturnDiagnostics", list(curb_return_metadata.get("diagnostics", []) or []))
     _set_preview_integer_property(obj, "ShapePartCount", len(shapes))
     _style_intersection_review_overlay(obj, visible=True)
     try:
@@ -892,6 +937,7 @@ def _control_area_rows_from_region_choices(
                     for row in region_rows
                 ],
                 control_region_refs=[str(row.get("control_region_ref", "") or "") for row in region_rows],
+                grading_policy_ref=f"grading:{intersection_id}:default",
                 notes="Linked from Region rows tagged with intersection_ref.",
             )
         )
@@ -940,6 +986,50 @@ def _source_mode_id(source_mode: str) -> str:
     return "use_existing_alignments"
 
 
+def _default_curb_return_policy(
+    *,
+    intersection_id: str,
+    intersection_kind: str,
+    leg_rows: list[IntersectionLegRow],
+) -> IntersectionCurbReturnPolicyRow:
+    kind = str(intersection_kind or "").strip()
+    radius = 12.0
+    if kind == "cross_intersection":
+        radius = 10.0
+    elif kind == "y_intersection":
+        radius = 15.0
+    return IntersectionCurbReturnPolicyRow(
+        policy_id=f"curb-return:{intersection_id}:default",
+        intersection_id=intersection_id,
+        radius=radius,
+        side="all",
+        edge_role="pavement_edge",
+        approach_leg_refs=[
+            str(getattr(row, "leg_id", "") or "")
+            for row in list(leg_rows or [])
+            if str(getattr(row, "leg_id", "") or "")
+        ],
+        notes="Default first-slice curb return radius for 3D review preview.",
+    )
+
+
+def _default_grading_policy(
+    *,
+    intersection_id: str,
+    primary_alignment_ref: str,
+    secondary_alignment_refs: list[str],
+) -> IntersectionGradingPolicyRow:
+    return IntersectionGradingPolicyRow(
+        policy_id=f"grading:{intersection_id}:default",
+        intersection_id=intersection_id,
+        mode="flatten_intersection",
+        target_crossfall_percent=0.0,
+        primary_alignment_ref=primary_alignment_ref,
+        secondary_alignment_refs=list(secondary_alignment_refs or []),
+        notes="Default first-slice intersection grading policy. Overrides normal superelevation inside the control area.",
+    )
+
+
 def _intersection_review_point(detection_result):
     if detection_result is None or App is None:
         return None
@@ -951,6 +1041,60 @@ def _intersection_review_point(detection_result):
         )
     except Exception:
         return None
+
+
+def _intersection_review_region_station_span(
+    row: dict[str, object],
+    *,
+    detection_result=None,
+    primary_alignment_ref: str = "",
+    secondary_alignment_ref: str = "",
+    max_span: float = INTERSECTION_REVIEW_MAX_REGION_SPAN,
+) -> tuple[float, float]:
+    start = float(row.get("station_start", 0.0) or 0.0)
+    end = float(row.get("station_end", 0.0) or 0.0)
+    low = min(start, end)
+    high = max(start, end)
+    span = high - low
+    limit = max(float(max_span or 0.0), 1.0)
+    if span <= limit:
+        return (start, end)
+
+    center = _intersection_review_station_for_alignment(
+        str(row.get("alignment_ref", "") or ""),
+        detection_result=detection_result,
+        primary_alignment_ref=primary_alignment_ref,
+        secondary_alignment_ref=secondary_alignment_ref,
+        fallback=(low + high) * 0.5,
+    )
+    center = min(max(float(center), low), high)
+    half = limit * 0.5
+    clipped_low = max(low, center - half)
+    clipped_high = min(high, center + half)
+    if clipped_high - clipped_low < min(limit, span) - 1.0e-9:
+        if clipped_low <= low + 1.0e-9:
+            clipped_high = min(high, clipped_low + limit)
+        elif clipped_high >= high - 1.0e-9:
+            clipped_low = max(low, clipped_high - limit)
+    return (clipped_low, clipped_high) if start <= end else (clipped_high, clipped_low)
+
+
+def _intersection_review_station_for_alignment(
+    alignment_ref: str,
+    *,
+    detection_result=None,
+    primary_alignment_ref: str = "",
+    secondary_alignment_ref: str = "",
+    fallback: float = 0.0,
+) -> float:
+    if detection_result is None:
+        return float(fallback)
+    text = str(alignment_ref or "")
+    if text and text == str(primary_alignment_ref or ""):
+        return float(getattr(detection_result, "primary_station", fallback) or fallback)
+    if text and text == str(secondary_alignment_ref or ""):
+        return float(getattr(detection_result, "secondary_station", fallback) or fallback)
+    return float(fallback)
 
 
 def _intersection_point_marker_shapes(point, *, radius: float) -> list[object]:
@@ -972,6 +1116,72 @@ def _intersection_point_marker_shapes(point, *, radius: float) -> list[object]:
         except Exception:
             pass
     return shapes
+
+
+def _curb_return_preview_shapes(
+    *,
+    point,
+    intersection_kind: str,
+    primary_alignment,
+    secondary_alignment,
+    detection_result=None,
+) -> tuple[list[object], dict[str, object]]:
+    if App is None or Part is None or point is None:
+        return [], {
+            "policy_ref": "",
+            "radius": 0.0,
+            "arc_count": 0,
+            "diagnostics": ["intersection_curb_return_policy_missing: FreeCAD Part context and intersection point are required."],
+        }
+    kind = str(intersection_kind or "").strip() or "t_intersection"
+    radius = 12.0
+    if kind == "cross_intersection":
+        radius = 10.0
+    elif kind == "y_intersection":
+        radius = 15.0
+    primary_station = float(getattr(detection_result, "primary_station", 0.0) or 0.0) if detection_result is not None else 0.0
+    secondary_station = float(getattr(detection_result, "secondary_station", 0.0) or 0.0) if detection_result is not None else 0.0
+    primary_dir = _alignment_tangent_at_station(primary_alignment, primary_station) or App.Vector(1.0, 0.0, 0.0)
+    secondary_dir = _alignment_tangent_at_station(secondary_alignment, secondary_station) or App.Vector(0.0, 1.0, 0.0)
+    primary_dir = _unit_vector(primary_dir) or App.Vector(1.0, 0.0, 0.0)
+    secondary_dir = _unit_vector(secondary_dir) or App.Vector(0.0, 1.0, 0.0)
+    quadrants = {
+        "cross_intersection": ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)),
+        "t_intersection": ((1.0, -1.0), (-1.0, -1.0)),
+        "y_intersection": ((1.0, 1.0), (-1.0, 1.0)),
+    }.get(kind, ((1.0, 1.0), (-1.0, 1.0)))
+    shapes: list[object] = []
+    diagnostics: list[str] = []
+    sample_count = _curb_return_arc_sample_count(radius)
+    for index, (primary_sign, secondary_sign) in enumerate(quadrants, start=1):
+        arc_points = []
+        denominator = max(sample_count - 1, 1)
+        for step in range(sample_count):
+            theta = (pi / 2.0) * (step / denominator)
+            vector = _scaled_vector(primary_dir, primary_sign * radius * cos(theta)) + _scaled_vector(
+                secondary_dir,
+                secondary_sign * radius * sin(theta),
+            )
+            arc_points.append(point + vector)
+        try:
+            shapes.append(Part.makePolygon(arc_points))
+        except Exception as exc:
+            diagnostics.append(f"intersection_curb_return_radius_invalid: arc {index} could not be created: {exc}")
+    if not shapes and not diagnostics:
+        diagnostics.append("intersection_curb_return_policy_missing: no curb return arc could be created.")
+    return shapes, {
+        "policy_ref": f"curb-return:starter-{kind}:default",
+        "radius": radius,
+        "arc_count": len(shapes),
+        "diagnostics": diagnostics,
+    }
+
+
+def _curb_return_arc_sample_count(radius: float) -> int:
+    arc_length = max(float(radius), 0.0) * (pi / 2.0)
+    segment_count = int(ceil(arc_length / 2.0)) if arc_length > 0.0 else 4
+    segment_count = max(4, min(segment_count, 48))
+    return segment_count + 1
 
 
 def _alignment_station_span_points(alignment_model, station_start: float, station_end: float) -> list[object]:
@@ -1039,6 +1249,43 @@ def _point_on_polyline(points: list[object], distance: float):
             return first + segment.multiply(remaining / length)
         remaining -= length
     return points[-1]
+
+
+def _alignment_tangent_at_station(alignment_model, station: float):
+    if alignment_model is None or App is None:
+        return None
+    before = _alignment_point_at_station(alignment_model, float(station) - 1.0)
+    after = _alignment_point_at_station(alignment_model, float(station) + 1.0)
+    if before is None or after is None:
+        points = []
+        for element in list(getattr(alignment_model, "geometry_sequence", []) or []):
+            points.extend(_alignment_element_points(element))
+        if len(points) >= 2:
+            before = points[0]
+            after = points[-1]
+    if before is None or after is None:
+        return None
+    vector = after - before
+    return vector if float(getattr(vector, "Length", 0.0) or 0.0) > 1.0e-9 else None
+
+
+def _unit_vector(vector):
+    if vector is None:
+        return None
+    length = float(getattr(vector, "Length", 0.0) or 0.0)
+    if length <= 1.0e-9:
+        return None
+    return vector.multiply(1.0 / length)
+
+
+def _scaled_vector(vector, scale: float):
+    if App is None or vector is None:
+        return None
+    return App.Vector(
+        float(getattr(vector, "x", 0.0) or 0.0) * float(scale),
+        float(getattr(vector, "y", 0.0) or 0.0) * float(scale),
+        float(getattr(vector, "z", 0.0) or 0.0) * float(scale),
+    )
 
 
 def _style_intersection_review_overlay(obj, *, visible: bool) -> None:
@@ -1189,8 +1436,8 @@ def _starter_region_model_for_alignment(
     control_start = max(float(length) * 0.4, 0.0)
     control_end = min(float(length) * 0.6, float(length))
     if role == "secondary" and intersection_kind == "t_intersection":
-        control_start = 0.0
-        control_end = min(float(length) * 0.35, float(length))
+        control_start = max(float(length) * 0.65, 0.0)
+        control_end = float(length)
     rows: list[RegionRow] = []
     if control_start > 1.0e-9:
         rows.append(

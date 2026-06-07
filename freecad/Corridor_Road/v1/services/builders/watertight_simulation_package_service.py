@@ -24,6 +24,7 @@ class WatertightSimulationPackageBuildRequest:
     terrain_ref: str = ""
     terrain_bound_box: tuple[float, float, float, float, float, float] | None = None
     drainage_readiness: dict[str, object] = field(default_factory=dict)
+    intersection_trim: dict[str, object] = field(default_factory=dict)
 
 
 class WatertightSimulationPackageService:
@@ -57,6 +58,7 @@ class WatertightSimulationPackageService:
         package_ready = bool(getattr(qa, "simulation_ready", False))
         output_refs = _unique_refs(getattr(request, "output_refs", []) or [])
         drainage = dict(getattr(request, "drainage_readiness", {}) or {})
+        intersection_trim = dict(getattr(request, "intersection_trim", {}) or {})
         return SimulationPackageOutput(
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or getattr(qa, "project_id", "") or "corridorroad-v1"),
@@ -84,6 +86,36 @@ class WatertightSimulationPackageService:
             drainage_structure_body_target_count=_drainage_int(drainage, "structure_body_target_count"),
             drainage_built_output_count=_drainage_int(drainage, "built_drainage_output_count"),
             drainage_network_fuse_status=_drainage_text(drainage, "network_fuse_status", "not_available"),
+            intersection_trim_status=_drainage_text(intersection_trim, "status", "not_available"),
+            intersection_trim_result_ref=_drainage_text(intersection_trim, "result_ref", ""),
+            intersection_trim_boundary_pair_count=_drainage_int(intersection_trim, "boundary_pair_count"),
+            intersection_trim_ready_pair_count=_drainage_int(intersection_trim, "ready_pair_count"),
+            intersection_trim_blocked_pair_count=_drainage_int(intersection_trim, "blocked_pair_count"),
+            intersection_trim_pair_rows=[
+                dict(row)
+                for row in list(intersection_trim.get("pair_rows", []) or [])
+                if isinstance(row, dict)
+            ],
+            intersection_trim_fuse_status=_drainage_text(intersection_trim, "fuse_status", "not_available"),
+            intersection_trim_fuse_candidate_ref=_drainage_text(intersection_trim, "fuse_candidate_ref", ""),
+            intersection_trim_fuse_source_count=_drainage_int(intersection_trim, "fuse_source_count"),
+            intersection_trim_fuse_face_count=_drainage_int(intersection_trim, "fuse_face_count"),
+            intersection_trim_fuse_open_edge_count=_drainage_int(intersection_trim, "fuse_open_edge_count"),
+            intersection_trim_fuse_source_refs=[
+                str(ref)
+                for ref in list(intersection_trim.get("fuse_source_refs", []) or [])
+                if str(ref)
+            ],
+            intersection_trim_handoff_chain_refs=[
+                str(ref)
+                for ref in list(intersection_trim.get("handoff_chain_refs", []) or [])
+                if str(ref)
+            ],
+            intersection_trim_handoff_stage_statuses=[
+                str(value)
+                for value in list(intersection_trim.get("handoff_stage_statuses", []) or [])
+                if str(value)
+            ],
             output_count=len(solids),
             total_volume=sum(float(getattr(row, "volume", 0.0) or 0.0) for row in solids),
             target_families=family_refs,

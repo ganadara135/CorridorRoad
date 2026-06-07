@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -23,6 +24,12 @@ from ..objects.obj_applied_section import to_applied_section_set
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_corridor import find_v1_corridor_model, to_corridor_model
 from ..objects.obj_drainage import find_v1_drainage_model, to_drainage_model
+from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+from ..objects.obj_intersection_trim_boundary import (
+    create_or_update_v1_intersection_trim_boundary_result_object,
+    find_v1_intersection_trim_boundary_result,
+    to_intersection_trim_boundary_result,
+)
 from ..objects.obj_region import find_v1_region_model, to_region_model
 from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_surface import find_v1_surface_model
@@ -31,6 +38,7 @@ from ..objects.obj_simulation_qa import create_or_update_v1_simulation_qa_output
 from ..objects.obj_simulation_package import create_or_update_v1_simulation_package_output_object, find_v1_simulation_package_output
 from ..exchange import export_simulation_package_to_json
 from ..models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow, WatertightSolidSegmentRow
+from ..models.result.intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
 from ..services.builders import (
     AppliedSectionSolidProfileService,
     SolidEdgeNetworkBuildRequest,
@@ -153,6 +161,43 @@ class DrainageWatertightHandoffSummary:
         return "ready"
 
 
+@dataclass(frozen=True)
+class IntersectionWatertightHandoffSummary:
+    """Intersection-specific readiness summary for Watertight Solid handoff."""
+
+    source_status: str = "missing"
+    intersection_id: str = ""
+    target_count: int = 0
+    triangulation_mode: str = ""
+    surface_boundary_strategy: str = ""
+    exclusion_boundary_strategy: str = ""
+    exclusion_practical_aligned: bool = False
+    edge_blend_face_count: int = 0
+    curb_return_arc_count: int = 0
+    curb_return_arc_segment_count: int = 0
+    min_triangle_quality: float = 0.0
+    skinny_triangle_count: int = 0
+    patch_boundary_status: str = ""
+    review_summary: str = ""
+    patch_quality_summary: str = ""
+
+    @property
+    def readiness_status(self) -> str:
+        if self.source_status != "ready":
+            return "missing"
+        if self.target_count <= 0:
+            return "missing"
+        if not self.surface_boundary_strategy:
+            return "check"
+        if self.patch_boundary_status and self.patch_boundary_status.lower() not in {"yes", "true", "1", "closed"}:
+            return "blocked"
+        if self.skinny_triangle_count > 0:
+            return "check"
+        if self.exclusion_boundary_strategy and not self.exclusion_practical_aligned:
+            return "check"
+        return "ready"
+
+
 def watertight_solid_prerequisite_status(document=None) -> WatertightSolidPrerequisiteStatus:
     """Return whether the current document can open the Watertight Solids build path."""
 
@@ -249,24 +294,28 @@ def discover_watertight_solid_targets(document=None):
     applied_obj = find_v1_applied_section_set(doc)
     corridor_obj = find_v1_corridor_model(doc)
     region_obj = find_v1_region_model(doc)
+    intersection_obj = find_v1_intersection_model(doc)
     structure_obj = find_v1_structure_model(doc)
     drainage_obj = find_v1_drainage_model(doc)
     applied = to_applied_section_set(applied_obj)
     corridor = to_corridor_model(corridor_obj)
     region_model = to_region_model(region_obj)
+    intersection_model = to_intersection_model(intersection_obj)
     structure_model = to_structure_model(structure_obj)
     drainage_model = to_drainage_model(drainage_obj)
-    return SolidTargetDiscoveryService().discover(
+    target_model = SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
             project_id=str(getattr(applied, "project_id", "") or getattr(corridor, "project_id", "") or "corridorroad-v1"),
             corridor_ref=str(getattr(corridor, "corridor_id", "") or "corridor:main"),
             applied_section_set=applied,
             corridor_model=corridor,
             region_model=region_model,
+            intersection_model=intersection_model,
             structure_model=structure_model,
             drainage_model=drainage_model,
         )
     )
+    return _annotate_intersection_watertight_handoff_targets(target_model, doc)
 
 
 class V1WatertightSolidsTaskPanel:
@@ -530,6 +579,10 @@ class V1WatertightSolidsTaskPanel:
         if drainage_qa_lines:
             lines.append("")
             lines.extend(drainage_qa_lines)
+        intersection_qa_lines = _intersection_watertight_handoff_lines(self.document, self._target_model)
+        if intersection_qa_lines:
+            lines.append("")
+            lines.extend(intersection_qa_lines)
         return "\n".join(lines)
 
     def _restore_target_selection(self, target_id: str) -> None:
@@ -637,6 +690,8 @@ class V1WatertightSolidsTaskPanel:
             return self._validate_structure_body_target_state(selected_state)
         if _is_drainage_pipeline_target(selected_state.target_row):
             return self._validate_drainage_pipeline_target_state(selected_state)
+        if _is_intersection_patch_target(selected_state.target_row):
+            return self._validate_intersection_patch_target_state(selected_state)
 
         try:
             applied_obj = find_v1_applied_section_set(self.document)
@@ -802,6 +857,49 @@ class V1WatertightSolidsTaskPanel:
         self._refresh_target_row(selected_state.target_id)
         return selected_state.validation_status == "ok"
 
+    def _validate_intersection_patch_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
+        try:
+            patch = _intersection_patch_context(self.document, selected_state.target_row)
+            quality_errors = [
+                str(row.get("message", "") or "")
+                for row in list(patch.get("quality_diagnostics", []) or [])
+                if str(row.get("severity", "") or "") == "error"
+            ]
+            if quality_errors:
+                raise RuntimeError("; ".join(quality_errors))
+            selected_state.profile_set = patch
+            selected_state.edge_network = patch
+            selected_state.profile_count = int(patch.get("boundary_count", 0) or 0)
+            selected_state.face_count = max(0, int(patch.get("boundary_count", 0) or 0) * 2)
+            selected_state.edge_count = max(0, int(patch.get("boundary_count", 0) or 0) * 3)
+            selected_state.volume = 0.0
+            selected_state.validation_status = "ok"
+            boundary_strategy = str(patch.get("surface_boundary_strategy", "") or patch.get("triangulation_mode", "") or "-")
+            edge_blend_count = int(patch.get("edge_blend_face_count", 0) or 0)
+            selected_state.validation_message = (
+                "Intersection patch solid candidate ready; "
+                f"intersection={patch.get('intersection_id', '')}; "
+                f"boundary_points={int(patch.get('boundary_count', 0) or 0)}; "
+                f"control_regions={patch.get('control_region_count', 0)}; "
+                f"area_xy={float(patch.get('area_xy', 0.0) or 0.0):.3f}; "
+                f"min_edge={float(patch.get('min_edge_length', 0.0) or 0.0):.3f}; "
+                f"depth={float(patch.get('depth', 0.0) or 0.0):.3f}; "
+                f"boundary={boundary_strategy}; "
+                f"edge_blend_faces={edge_blend_count}."
+            )
+        except Exception as exc:
+            selected_state.profile_set = None
+            selected_state.edge_network = None
+            selected_state.profile_count = 0
+            selected_state.face_count = 0
+            selected_state.edge_count = 0
+            selected_state.volume = 0.0
+            selected_state.validation_status = "error"
+            selected_state.build_status = "blocked"
+            selected_state.validation_message = f"Intersection patch validation failed: {exc}"
+        self._refresh_target_row(selected_state.target_id)
+        return selected_state.validation_status == "ok"
+
     def _build_selected_target(self) -> None:
         selected_state = self._selected_target_state()
         if selected_state is None:
@@ -814,6 +912,8 @@ class V1WatertightSolidsTaskPanel:
             return self._build_structure_body_target_state(selected_state)
         if _is_drainage_pipeline_target(selected_state.target_row):
             return self._build_drainage_pipeline_target_state(selected_state)
+        if _is_intersection_patch_target(selected_state.target_row):
+            return self._build_intersection_patch_target_state(selected_state)
         if selected_state.validation_status != "ok" or selected_state.profile_set is None or selected_state.edge_network is None:
             if not self._validate_target_state(selected_state):
                 return False
@@ -862,6 +962,49 @@ class V1WatertightSolidsTaskPanel:
         except Exception as exc:
             selected_state.build_status = "error"
             selected_state.validation_message = f"Build failed: {exc}"
+        self._refresh_target_row(selected_state.target_id)
+        return selected_state.build_status == "built"
+
+    def _build_intersection_patch_target_state(self, selected_state: WatertightSolidTargetPanelState) -> bool:
+        if selected_state.validation_status != "ok":
+            if not self._validate_intersection_patch_target_state(selected_state):
+                return False
+        try:
+            patch = selected_state.profile_set if isinstance(selected_state.profile_set, dict) else _intersection_patch_context(self.document, selected_state.target_row)
+            shape = _intersection_patch_solid_shape(patch)
+            object_name = _solid_output_object_name(selected_state.target_id)
+            output = _intersection_patch_watertight_output(
+                selected_state.target_row,
+                patch=patch,
+                shape=shape,
+                generated_object_ref=object_name,
+            )
+            obj = create_or_update_v1_watertight_solid_output_object(
+                document=self.document,
+                watertight_solid_output=output,
+                shape=shape,
+                project=find_project(self.document),
+                object_name=object_name,
+                label=f"Watertight Solid - {_target_display_label(selected_state.target_row)}",
+            )
+            selected_state.profile_set = patch
+            selected_state.edge_network = patch
+            selected_state.watertight_output = output
+            selected_state.output_object = obj
+            selected_state.output_object_ref = str(getattr(obj, "Name", "") or object_name)
+            selected_state.volume = float(getattr(shape, "Volume", 0.0) or 0.0)
+            selected_state.face_count = _shape_count(shape, "Faces")
+            selected_state.edge_count = _shape_count(shape, "Edges")
+            selected_state.build_status = "built"
+            selected_state.validation_message = (
+                "Intersection patch solid built; "
+                f"intersection={patch.get('intersection_id', '')}; "
+                f"boundary_points={int(patch.get('boundary_count', 0) or 0)}; "
+                f"volume={selected_state.volume:.6g}."
+            )
+        except Exception as exc:
+            selected_state.build_status = "error"
+            selected_state.validation_message = f"Intersection patch build failed: {exc}"
         self._refresh_target_row(selected_state.target_id)
         return selected_state.build_status == "built"
 
@@ -1108,6 +1251,17 @@ class V1WatertightSolidsTaskPanel:
     def _refresh_simulation_qa_output(self):
         qa_output = _build_simulation_qa_output(self.document)
         self._set_simulation_qa_rows(qa_output)
+        _create_or_update_intersection_trim_boundary_result_object(self.document)
+        _create_or_update_intersection_trim_preview_object(self.document)
+        _create_or_update_intersection_trim_application_preview_object(self.document)
+        _create_or_update_intersection_trim_application_output_object(self.document)
+        _create_or_update_intersection_trim_closure_surface_preview_object(self.document)
+        _create_or_update_intersection_trim_closure_surface_output_object(self.document)
+        _create_or_update_intersection_trim_closure_cell_output_object(self.document)
+        _create_or_update_intersection_trim_shell_candidate_output_object(self.document)
+        _create_or_update_intersection_trim_fuse_candidate_output_object(self.document)
+        _create_or_update_intersection_trim_shell_reconstruction_output_object(self.document)
+        _create_or_update_intersection_trim_solid_reconstruction_output_object(self.document)
         try:
             return create_or_update_v1_simulation_qa_output_object(
                 document=self.document,
@@ -1429,6 +1583,10 @@ def _target_display_label(row: object) -> str:
         return f"Drainage Pipe Segment Solid - {flow_route_ref or drainage_ref}" if flow_route_ref or drainage_ref else "Drainage Pipe Segment Solid"
     if family == "drainage_pipeline_network_body":
         return f"Drainage Pipe Network Solid - {drainage_ref}" if drainage_ref else "Drainage Pipe Network Solid"
+    if family == "intersection_patch_body":
+        source_refs = list(getattr(row, "source_refs", []) or [])
+        intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
+        return f"Intersection Patch Solid - {intersection_ref}" if intersection_ref else "Intersection Patch Solid"
     if family == "structure_body":
         return f"Structure Body Solid - {structure_ref}" if structure_ref else "Structure Body Solid"
     return str(getattr(row, "target_family", "") or _target_id(row))
@@ -1446,6 +1604,8 @@ def _target_family_label(row: object) -> str:
         return "Drainage: Pipe Segment"
     if family == "drainage_pipeline_network_body":
         return "Drainage: Pipe Network"
+    if family == "intersection_patch_body":
+        return "Intersection Patch"
     if family in {"structure_body"}:
         return "Structure Body"
     return family or "-"
@@ -1503,6 +1663,358 @@ def _is_drainage_pipeline_network_target(row: object) -> bool:
 
 def _is_structure_body_target(row: object) -> bool:
     return str(getattr(row, "target_family", "") or "").strip().lower() == "structure_body"
+
+
+def _is_intersection_patch_target(row: object) -> bool:
+    return str(getattr(row, "target_family", "") or "").strip().lower() == "intersection_patch_body"
+
+
+def _intersection_patch_context(document, target_row) -> dict[str, object]:
+    if document is None:
+        raise RuntimeError("A FreeCAD document is required for Intersection patch solid output.")
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    if applied is None:
+        raise RuntimeError("Applied Sections are required for Intersection patch solid output.")
+    intersection_id = _intersection_target_ref(target_row)
+    control_refs = _unique_refs(str(getattr(target_row, "region_ref", "") or "").split(","))
+    preview_context = _intersection_patch_preview_context(document, intersection_id, target_row, control_refs)
+    if preview_context is not None:
+        return preview_context
+    points: list[dict[str, object]] = []
+    seen_xy: set[tuple[float, float]] = set()
+    for section in list(getattr(applied, "sections", []) or []):
+        section_intersection = str(getattr(section, "active_intersection_id", "") or "").strip()
+        section_region = str(getattr(section, "region_id", "") or "").strip()
+        if intersection_id and section_intersection != intersection_id and section_region not in control_refs:
+            continue
+        for point in list(getattr(section, "point_rows", []) or []):
+            if str(getattr(point, "point_role", "") or "") != "fg_surface":
+                continue
+            x = float(getattr(point, "x", 0.0) or 0.0)
+            y = float(getattr(point, "y", 0.0) or 0.0)
+            z = float(getattr(point, "z", 0.0) or 0.0)
+            key = (round(x, 6), round(y, 6))
+            if key in seen_xy:
+                continue
+            seen_xy.add(key)
+            points.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                    "station": float(getattr(section, "station", 0.0) or 0.0),
+                    "section_ref": str(getattr(section, "applied_section_id", "") or ""),
+                    "region_ref": section_region,
+                }
+            )
+    if len(points) < 3:
+        raise RuntimeError("Intersection patch solid needs at least three unique fg_surface boundary points.")
+    centroid_x = sum(float(point["x"]) for point in points) / len(points)
+    centroid_y = sum(float(point["y"]) for point in points) / len(points)
+    ordered = sorted(points, key=lambda point: math.atan2(float(point["y"]) - centroid_y, float(point["x"]) - centroid_x))
+    area_xy = abs(_polygon_area_xy(ordered))
+    min_edge_length = _polygon_min_edge_length_xy(ordered)
+    quality_diagnostics = _intersection_patch_quality_diagnostics(
+        ordered,
+        area_xy=area_xy,
+        min_edge_length=min_edge_length,
+    )
+    stations = [float(point.get("station", 0.0) or 0.0) for point in ordered]
+    return {
+        "intersection_id": intersection_id,
+        "control_refs": control_refs,
+        "boundary_points": ordered,
+        "boundary_count": len(ordered),
+        "area_xy": area_xy,
+        "min_edge_length": min_edge_length,
+        "quality_diagnostics": quality_diagnostics,
+        "control_region_count": len(control_refs),
+        "station_start": min(stations) if stations else float(getattr(target_row, "station_start", 0.0) or 0.0),
+        "station_end": max(stations) if stations else float(getattr(target_row, "station_end", 0.0) or 0.0),
+        "depth": _intersection_patch_depth(target_row),
+        "source_refs": _unique_refs([intersection_id, *control_refs, *list(getattr(target_row, "source_refs", []) or [])]),
+        "boundary_source": "applied_section_fg_surface",
+    }
+
+
+def _intersection_patch_preview_context(document, intersection_id: str, target_row, control_refs: list[str]) -> dict[str, object] | None:
+    preview = document.getObject("V1CorridorIntersectionSurfacePreview") if document is not None else None
+    if preview is None:
+        return None
+    preview_intersection = str(getattr(preview, "IntersectionId", "") or "").strip()
+    if intersection_id and preview_intersection and preview_intersection != intersection_id:
+        return None
+    boundary_closed = str(getattr(preview, "IntersectionPatchBoundaryClosed", "") or "").strip().lower()
+    if boundary_closed and boundary_closed not in {"yes", "true", "1"}:
+        raise RuntimeError("intersection_patch_boundary_open: refined Intersection patch boundary is not closed.")
+    diagnostic_count = int(getattr(preview, "IntersectionPatchBoundaryDiagnosticCount", 0) or 0)
+    if diagnostic_count:
+        diagnostics = [
+            str(value or "")
+            for value in list(getattr(preview, "IntersectionPatchBoundaryDiagnostics", []) or [])
+            if str(value or "")
+        ]
+        message = diagnostics[0] if diagnostics else f"{diagnostic_count} patch boundary diagnostic(s)."
+        raise RuntimeError(f"intersection_patch_boundary_diagnostics: {message}")
+    ordered_count = int(getattr(preview, "IntersectionPatchBoundaryOrderedPointCount", 0) or 0)
+    points = _intersection_patch_preview_boundary_points(preview, max(ordered_count, 0))
+    if len(points) < 3:
+        return None
+    area_xy = abs(_polygon_area_xy(points))
+    min_edge_length = _polygon_min_edge_length_xy(points)
+    quality_diagnostics = _intersection_patch_quality_diagnostics(
+        points,
+        area_xy=area_xy,
+        min_edge_length=min_edge_length,
+    )
+    source_refs = _unique_refs(
+        [
+            intersection_id,
+            *control_refs,
+            *list(getattr(target_row, "source_refs", []) or []),
+            str(getattr(preview, "Name", "") or ""),
+            str(getattr(preview, "TieInEdgePreviewRef", "") or ""),
+            str(getattr(preview, "IntersectionBoundaryPreviewRef", "") or ""),
+            str(getattr(preview, "IntersectionExclusionZoneRef", "") or ""),
+        ]
+    )
+    return {
+        "intersection_id": intersection_id or preview_intersection,
+        "control_refs": control_refs,
+        "boundary_points": points,
+        "boundary_count": len(points),
+        "area_xy": area_xy,
+        "min_edge_length": min_edge_length,
+        "quality_diagnostics": quality_diagnostics,
+        "control_region_count": len(control_refs),
+        "station_start": float(getattr(target_row, "station_start", 0.0) or 0.0),
+        "station_end": float(getattr(target_row, "station_end", 0.0) or 0.0),
+        "depth": _intersection_patch_depth(target_row),
+        "source_refs": source_refs,
+        "boundary_source": "refined_intersection_surface_preview",
+        "triangulation_mode": str(getattr(preview, "PatchTriangulationMode", "") or ""),
+        "surface_boundary_strategy": str(getattr(preview, "PatchBoundaryStrategy", "") or getattr(preview, "PatchTriangulationMode", "") or ""),
+        "edge_blend_face_count": int(getattr(preview, "PatchEdgeBlendFaceCount", 0) or 0),
+        "curb_return_arc_count": int(getattr(preview, "PatchCurbReturnArcCount", 0) or 0),
+        "curb_return_arc_sample_count": int(getattr(preview, "PatchCurbReturnArcSampleCount", 0) or 0),
+        "curb_return_arc_segment_count": int(getattr(preview, "PatchCurbReturnArcSegmentCount", 0) or 0),
+    }
+
+
+def _intersection_patch_preview_boundary_points(preview, ordered_count: int) -> list[dict[str, object]]:
+    points = _intersection_patch_preview_mesh_points(preview)
+    if not points:
+        points = _intersection_patch_preview_shape_points(preview)
+    if ordered_count > 0 and len(points) >= ordered_count:
+        points = points[:ordered_count]
+    return _dedupe_patch_xy_points(points)
+
+
+def _intersection_patch_preview_mesh_points(preview) -> list[dict[str, object]]:
+    mesh = getattr(preview, "Mesh", None)
+    if mesh is None:
+        return []
+    try:
+        topology = mesh.Topology
+        raw_points = list(topology[0] or [])
+    except Exception:
+        raw_points = []
+    points: list[dict[str, object]] = []
+    for index, point in enumerate(raw_points, start=1):
+        try:
+            points.append({"x": float(point.x), "y": float(point.y), "z": float(point.z), "source": f"preview-mesh:{index}"})
+        except Exception:
+            try:
+                points.append({"x": float(point[0]), "y": float(point[1]), "z": float(point[2]), "source": f"preview-mesh:{index}"})
+            except Exception:
+                continue
+    return points
+
+
+def _intersection_patch_preview_shape_points(preview) -> list[dict[str, object]]:
+    shape = getattr(preview, "Shape", None)
+    vertexes = list(getattr(shape, "Vertexes", []) or []) if shape is not None else []
+    points: list[dict[str, object]] = []
+    for index, vertex in enumerate(vertexes, start=1):
+        try:
+            point = vertex.Point
+            points.append({"x": float(point.x), "y": float(point.y), "z": float(point.z), "source": f"preview-shape:{index}"})
+        except Exception:
+            continue
+    return points
+
+
+def _dedupe_patch_xy_points(points: list[dict[str, object]]) -> list[dict[str, object]]:
+    output: list[dict[str, object]] = []
+    seen: set[tuple[float, float]] = set()
+    for point in list(points or []):
+        key = (round(float(point.get("x", 0.0) or 0.0), 6), round(float(point.get("y", 0.0) or 0.0), 6))
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(point)
+    return output
+
+
+def _intersection_patch_solid_shape(patch: dict[str, object]):
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Intersection patch solid build.")
+    points = list(patch.get("boundary_points", []) or [])
+    if len(points) < 3:
+        raise RuntimeError("Intersection patch solid needs at least three boundary points.")
+    depth = max(float(patch.get("depth", 0.0) or 0.0), 0.05)
+    top = [App.Vector(float(point["x"]), float(point["y"]), float(point["z"])) for point in points]
+    bottom = [App.Vector(point.x, point.y, point.z - depth) for point in top]
+    center_top = App.Vector(
+        sum(point.x for point in top) / len(top),
+        sum(point.y for point in top) / len(top),
+        sum(point.z for point in top) / len(top),
+    )
+    center_bottom = App.Vector(center_top.x, center_top.y, center_top.z - depth)
+    faces = []
+    for index, current in enumerate(top):
+        nxt = top[(index + 1) % len(top)]
+        bottom_current = bottom[index]
+        bottom_next = bottom[(index + 1) % len(bottom)]
+        faces.append(Part.Face(Part.makePolygon([center_top, current, nxt, center_top])))
+        faces.append(Part.Face(Part.makePolygon([center_bottom, bottom_next, bottom_current, center_bottom])))
+        faces.append(Part.Face(Part.makePolygon([current, bottom_current, bottom_next, nxt, current])))
+    shell = Part.Shell(faces)
+    solid = Part.Solid(shell)
+    if solid is None or _shape_count(solid, "Solids") <= 0:
+        raise RuntimeError("FreeCAD Part failed to create an Intersection patch solid.")
+    return solid
+
+
+def _intersection_patch_watertight_output(target_row, *, patch: dict[str, object], shape, generated_object_ref: str) -> WatertightSolidOutput:
+    target_id = str(getattr(target_row, "target_id", "") or "")
+    output_object_id = f"watertight-solid:{_safe_object_id(target_id)}"
+    source_refs = _unique_refs([target_id, *list(patch.get("source_refs", []) or []), *list(getattr(target_row, "source_refs", []) or [])])
+    volume = float(getattr(shape, "Volume", 0.0) or 0.0)
+    solid = WatertightSolidOutputRow(
+        output_object_id=output_object_id,
+        target_id=target_id,
+        target_family=str(getattr(target_row, "target_family", "") or "intersection_patch_body"),
+        scope_kind=str(getattr(target_row, "scope_kind", "") or "intersection"),
+        station_start=float(patch.get("station_start", getattr(target_row, "station_start", 0.0)) or 0.0),
+        station_end=float(patch.get("station_end", getattr(target_row, "station_end", 0.0)) or 0.0),
+        source_refs=source_refs,
+        generated_object_ref=str(generated_object_ref or ""),
+        validation_status="ok" if volume > 0.0 else "error",
+        is_watertight=volume > 0.0,
+        is_valid_solid=volume > 0.0,
+        volume=volume,
+        face_count=_shape_count(shape, "Faces"),
+        edge_count=_shape_count(shape, "Edges"),
+        profile_count=int(patch.get("boundary_count", 0) or 0),
+        region_ref=str(getattr(target_row, "region_ref", "") or ""),
+        material_ref=str(getattr(target_row, "material_ref", "") or "intersection-patch"),
+        path_source=str(patch.get("boundary_source", "") or "intersection_patch_fg_surface"),
+        notes=(
+            f"Intersection patch solid from {patch.get('boundary_source', 'fg_surface boundary')}; intersection={patch.get('intersection_id', '')}; "
+            f"boundary_points={int(patch.get('boundary_count', 0) or 0)}; "
+            f"area_xy={float(patch.get('area_xy', 0.0) or 0.0):.3f}; "
+            f"min_edge={float(patch.get('min_edge_length', 0.0) or 0.0):.3f}; "
+            f"depth={float(patch.get('depth', 0.0) or 0.0):.3f}; "
+            f"boundary={str(patch.get('surface_boundary_strategy', '') or patch.get('triangulation_mode', '') or '-')}; "
+            f"edge_blend_faces={int(patch.get('edge_blend_face_count', 0) or 0)}; "
+            f"curb_return_arcs={int(patch.get('curb_return_arc_count', 0) or 0)}."
+        ),
+    )
+    segment = WatertightSolidSegmentRow(
+        segment_id=f"{output_object_id}:segment:1",
+        parent_output_object_id=output_object_id,
+        station_start=solid.station_start,
+        station_end=solid.station_end,
+        notes=f"intersection={patch.get('intersection_id', '')};control_regions={','.join(list(patch.get('control_refs', []) or []))}",
+    )
+    return WatertightSolidOutput(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        watertight_solid_output_id="watertight-solids:intersection-patch",
+        corridor_id="corridor:main",
+        label="Watertight Solids",
+        selection_scope={"scope_kind": str(getattr(target_row, "scope_kind", "") or ""), "target_id": target_id},
+        source_refs=source_refs,
+        result_refs=[str(generated_object_ref or "")],
+        solid_rows=[solid],
+        segment_rows=[segment],
+    )
+
+
+def _intersection_target_ref(target_row) -> str:
+    for ref in list(getattr(target_row, "source_refs", []) or []):
+        text = str(ref or "").strip()
+        if text.startswith("intersection:"):
+            return text
+    target_id = str(getattr(target_row, "target_id", "") or "")
+    if "intersection-" in target_id:
+        return "intersection:" + target_id.split("intersection-", 1)[1].replace("-", "-")
+    return ""
+
+
+def _intersection_patch_quality_diagnostics(
+    boundary_points: list[dict[str, object]],
+    *,
+    area_xy: float,
+    min_edge_length: float,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if len(boundary_points) < 3:
+        rows.append(
+            {
+                "severity": "error",
+                "kind": "intersection_patch_boundary_too_few_points",
+                "message": "Intersection patch solid needs at least three unique boundary points.",
+            }
+        )
+    if float(area_xy or 0.0) <= 1.0e-6:
+        rows.append(
+            {
+                "severity": "error",
+                "kind": "intersection_patch_boundary_zero_area",
+                "message": "Intersection patch boundary area is zero or too small.",
+            }
+        )
+    if len(boundary_points) >= 3 and float(min_edge_length or 0.0) <= 1.0e-6:
+        rows.append(
+            {
+                "severity": "error",
+                "kind": "intersection_patch_boundary_degenerate_edge",
+                "message": "Intersection patch boundary contains a zero-length or near-zero edge.",
+            }
+        )
+    return rows
+
+
+def _polygon_area_xy(points: list[dict[str, object]]) -> float:
+    if len(points) < 3:
+        return 0.0
+    area = 0.0
+    for index, current in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        area += float(current.get("x", 0.0) or 0.0) * float(nxt.get("y", 0.0) or 0.0)
+        area -= float(nxt.get("x", 0.0) or 0.0) * float(current.get("y", 0.0) or 0.0)
+    return area / 2.0
+
+
+def _polygon_min_edge_length_xy(points: list[dict[str, object]]) -> float:
+    if len(points) < 2:
+        return 0.0
+    lengths: list[float] = []
+    for index, current in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        dx = float(nxt.get("x", 0.0) or 0.0) - float(current.get("x", 0.0) or 0.0)
+        dy = float(nxt.get("y", 0.0) or 0.0) - float(current.get("y", 0.0) or 0.0)
+        lengths.append(math.hypot(dx, dy))
+    return min(lengths) if lengths else 0.0
+
+
+def _intersection_patch_depth(target_row) -> float:
+    try:
+        return max(float(getattr(target_row, "thickness", 0.0) or 0.0), 0.50)
+    except Exception:
+        return 0.50
 
 
 def _structure_body_output_context(document, target_row):
@@ -3142,6 +3654,51 @@ def _shape_count(shape, attr_name: str) -> int:
         return 0
 
 
+def _shape_edge_closure_diagnostics(shape) -> dict[str, int | str]:
+    edge_keys: dict[tuple[tuple[float, float, float], tuple[float, float, float]], int] = {}
+    try:
+        edges = list(getattr(shape, "Edges", []) or [])
+    except Exception:
+        edges = []
+    for edge in edges:
+        key = _edge_endpoint_key(edge)
+        if key is None:
+            continue
+        edge_keys[key] = edge_keys.get(key, 0) + 1
+    open_edge_count = sum(1 for count in edge_keys.values() if count == 1)
+    shared_edge_count = sum(1 for count in edge_keys.values() if count > 1)
+    face_count = _shape_count(shape, "Faces")
+    return {
+        "closure_status": "closed" if face_count > 0 and open_edge_count == 0 else "open",
+        "face_count": face_count,
+        "edge_count": len(edge_keys),
+        "open_edge_count": open_edge_count,
+        "shared_edge_count": shared_edge_count,
+    }
+
+
+def _edge_endpoint_key(edge):
+    try:
+        vertices = list(getattr(edge, "Vertexes", []) or [])
+    except Exception:
+        vertices = []
+    if len(vertices) < 2:
+        return None
+    start = _rounded_vertex_xyz(vertices[0])
+    end = _rounded_vertex_xyz(vertices[-1])
+    if start is None or end is None:
+        return None
+    return tuple(sorted((start, end)))
+
+
+def _rounded_vertex_xyz(vertex) -> tuple[float, float, float] | None:
+    try:
+        point = vertex.Point
+        return (round(float(point.x), 6), round(float(point.y), 6), round(float(point.z), 6))
+    except Exception:
+        return None
+
+
 def _side_from_ref(value: str) -> str:
     text = str(value or "").strip().lower()
     if "right" in text:
@@ -3183,6 +3740,159 @@ def _drainage_watertight_handoff_lines(document, target_model=None) -> list[str]
             f"built_drainage_outputs={summary.built_drainage_output_count}; network_fuse={summary.network_fuse_status}"
         ),
     ]
+
+
+def _intersection_watertight_handoff_lines(document, target_model=None) -> list[str]:
+    summary = intersection_watertight_handoff_summary(document, target_model=target_model)
+    if summary.source_status == "missing" and summary.target_count <= 0:
+        return []
+    return [
+        "Intersection Solid QA:",
+        (
+            f"status={summary.readiness_status}; source={summary.source_status}; "
+            f"targets={summary.target_count}; intersection={summary.intersection_id or '-'}; "
+            f"triangulation={summary.triangulation_mode or '-'}; boundary={summary.surface_boundary_strategy or '-'}; "
+            f"edge_blend_faces={summary.edge_blend_face_count}; curb_return_arcs={summary.curb_return_arc_count}; "
+            f"arc_segments={summary.curb_return_arc_segment_count}; min_triangle_quality={summary.min_triangle_quality:.3f}; "
+            f"skinny_triangles={summary.skinny_triangle_count}"
+        ),
+        (
+            f"clipping_boundary={summary.exclusion_boundary_strategy or '-'}; "
+            f"aligned={'practical' if summary.exclusion_practical_aligned else 'check'}; "
+            f"patch_boundary={summary.patch_boundary_status or '-'}"
+        ),
+    ]
+
+
+def intersection_watertight_handoff_summary(document=None, *, target_model=None) -> IntersectionWatertightHandoffSummary:
+    """Return Intersection readiness focused on Watertight Solid simulation handoff."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    if doc is None:
+        return IntersectionWatertightHandoffSummary(source_status="missing")
+    active_target_model = target_model
+    target_rows = list(getattr(active_target_model, "target_rows", []) or []) if active_target_model is not None else []
+    target_count = _solid_target_family_count(target_rows, "intersection_patch_body")
+    preview = _intersection_surface_preview_object(doc)
+    if preview is None:
+        return IntersectionWatertightHandoffSummary(source_status="missing", target_count=target_count)
+    exclusion_strategy, practical_aligned = _intersection_exclusion_handoff_status(doc)
+    return IntersectionWatertightHandoffSummary(
+        source_status="ready",
+        intersection_id=str(getattr(preview, "IntersectionId", "") or ""),
+        target_count=target_count,
+        triangulation_mode=str(getattr(preview, "PatchTriangulationMode", "") or ""),
+        surface_boundary_strategy=str(getattr(preview, "PatchBoundaryStrategy", "") or getattr(preview, "PatchTriangulationMode", "") or ""),
+        exclusion_boundary_strategy=exclusion_strategy,
+        exclusion_practical_aligned=practical_aligned,
+        edge_blend_face_count=int(getattr(preview, "PatchEdgeBlendFaceCount", 0) or 0),
+        curb_return_arc_count=int(getattr(preview, "PatchCurbReturnArcCount", 0) or 0),
+        curb_return_arc_segment_count=int(getattr(preview, "PatchCurbReturnArcSegmentCount", 0) or 0),
+        min_triangle_quality=float(getattr(preview, "PatchMinTriangleQuality", 0.0) or 0.0),
+        skinny_triangle_count=int(getattr(preview, "PatchSkinnyTriangleCount", 0) or 0),
+        patch_boundary_status=str(getattr(preview, "IntersectionPatchBoundaryClosed", "") or ""),
+        review_summary=str(getattr(preview, "IntersectionReviewSummary", "") or ""),
+        patch_quality_summary=str(getattr(preview, "IntersectionPatchQualitySummary", "") or ""),
+    )
+
+
+def _annotate_intersection_watertight_handoff_targets(target_model, document):
+    rows = list(getattr(target_model, "target_rows", []) or [])
+    if not rows:
+        return target_model
+    summary = intersection_watertight_handoff_summary(document, target_model=target_model)
+    if summary.source_status != "ready":
+        return target_model
+    annotated_rows = []
+    changed = False
+    source_refs = _intersection_handoff_source_refs(summary)
+    notes = _intersection_handoff_target_notes(summary)
+    for row in rows:
+        if not _is_intersection_patch_target(row):
+            annotated_rows.append(row)
+            continue
+        annotated_rows.append(
+            replace(
+                row,
+                source_refs=_unique_refs(list(getattr(row, "source_refs", []) or []) + source_refs),
+                notes=_join_notes(str(getattr(row, "notes", "") or ""), notes),
+            )
+        )
+        changed = True
+    if not changed:
+        return target_model
+    try:
+        return replace(target_model, target_rows=annotated_rows)
+    except Exception:
+        try:
+            target_model.target_rows = annotated_rows
+        except Exception:
+            pass
+        return target_model
+
+
+def _intersection_handoff_source_refs(summary: IntersectionWatertightHandoffSummary) -> list[str]:
+    return _unique_refs(
+        [
+            "V1CorridorIntersectionSurfacePreview",
+            "V1CorridorDesignSurfacePreview",
+            "V1CorridorDaylightSurfacePreview",
+            summary.intersection_id,
+            f"intersection-boundary:{summary.surface_boundary_strategy}" if summary.surface_boundary_strategy else "",
+        ]
+    )
+
+
+def _intersection_handoff_target_notes(summary: IntersectionWatertightHandoffSummary) -> str:
+    return (
+        "IntersectionHandoff: "
+        f"status={summary.readiness_status}; "
+        f"triangulation={summary.triangulation_mode or '-'}; "
+        f"boundary={summary.surface_boundary_strategy or '-'}; "
+        f"clipping_boundary={summary.exclusion_boundary_strategy or '-'}; "
+        f"aligned={'practical' if summary.exclusion_practical_aligned else 'check'}; "
+        f"edge_blend_faces={summary.edge_blend_face_count}; "
+        f"curb_return_arcs={summary.curb_return_arc_count}; "
+        f"arc_segments={summary.curb_return_arc_segment_count}."
+    )
+
+
+def _intersection_surface_preview_object(document):
+    if document is None:
+        return None
+    try:
+        return document.getObject("V1CorridorIntersectionSurfacePreview")
+    except Exception:
+        return None
+
+
+def _intersection_exclusion_handoff_status(document) -> tuple[str, bool]:
+    strategies: list[str] = []
+    aligned_values: list[bool] = []
+    for object_name in ("V1CorridorDesignSurfacePreview", "V1CorridorDaylightSurfacePreview"):
+        try:
+            obj = document.getObject(object_name)
+        except Exception:
+            obj = None
+        if obj is None:
+            continue
+        strategy = str(getattr(obj, "IntersectionExclusionBoundaryStrategy", "") or "")
+        if strategy:
+            strategies.append(strategy)
+        raw_aligned = str(getattr(obj, "IntersectionExclusionPracticalBoundaryAligned", "") or "").strip().lower()
+        if raw_aligned:
+            aligned_values.append(raw_aligned in {"1", "true", "yes", "practical"})
+    return ",".join(_unique_refs(strategies)), bool(aligned_values) and all(aligned_values)
+
+
+def _join_notes(existing: str, addition: str) -> str:
+    existing_text = str(existing or "").strip()
+    addition_text = str(addition or "").strip()
+    if not existing_text:
+        return addition_text
+    if not addition_text or addition_text in existing_text:
+        return existing_text
+    return f"{existing_text} {addition_text}"
 
 
 def drainage_watertight_handoff_summary(document=None, *, target_model=None) -> DrainageWatertightHandoffSummary:
@@ -3289,6 +3999,1109 @@ def _build_simulation_qa_output(document):
     )
 
 
+def _create_or_update_intersection_trim_preview_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    candidates = _intersection_trim_ready_preview_candidates(result)
+    candidate_count = len(list(getattr(result, "boundary_pair_rows", []) or [])) if result is not None else 0
+    ready_count = int(getattr(result, "ready_pair_count", 0) or len(candidates)) if result is not None else len(candidates)
+    blocked_count = int(getattr(result, "blocked_pair_count", 0) or 0) if result is not None else 0
+    application_status = str(getattr(result, "application_status", "") or ("ready" if candidates else "empty"))
+    obj = document.getObject("V1WatertightIntersectionTrimPreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimPreview")
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimPreview")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_preview")
+    _set_object_property(obj, "App::PropertyString", "PreviewStatus", "Preview", application_status)
+    _set_object_property(obj, "App::PropertyString", "ApplicationStatus", "Preview", application_status)
+    _set_object_property(obj, "App::PropertyInteger", "CandidateEdgePairCount", "Preview", candidate_count)
+    _set_object_property(obj, "App::PropertyInteger", "ReadyEdgePairCount", "Preview", ready_count)
+    _set_object_property(obj, "App::PropertyInteger", "BlockedEdgePairCount", "Preview", blocked_count)
+    _set_object_property(obj, "App::PropertyFloat", "Tolerance", "Preview", float(tolerance or 0.0))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "PreviewDiagnostic",
+        "Preview",
+        (
+            f"Intersection patch trim edge pairs: ready={ready_count}, blocked={blocked_count}, total={candidate_count}."
+            if candidates
+            else "No ready intersection patch trim edge pairs were found."
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(result, "source_refs", []) or [])
+        if result is not None
+        else _unique_refs([ref for candidate in candidates for ref in (candidate["patch_ref"], candidate["road_ref"])]),
+    )
+    shapes = []
+    for candidate in candidates:
+        patch_segment = candidate["patch_segment"]
+        road_segment = candidate["road_segment"]
+        shapes.append(_line_shape_from_segment(patch_segment))
+        shapes.append(_line_shape_from_segment(road_segment))
+        shapes.append(_line_shape_from_points(_segment_midpoint(patch_segment), _segment_midpoint(road_segment)))
+    try:
+        obj.Shape = Part.makeCompound([shape for shape in shapes if shape is not None]) if shapes else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Ready Trim Preview"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (1.0, 0.72, 0.05)
+            vobj.ShapeColor = (1.0, 0.72, 0.05)
+            vobj.LineWidth = 4.0
+            vobj.Visibility = bool(candidates)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _intersection_trim_boundary_result_for_preview(document, *, tolerance: float = 0.05) -> IntersectionTrimBoundaryResult | None:
+    if document is None:
+        return None
+    existing = to_intersection_trim_boundary_result(find_v1_intersection_trim_boundary_result(document))
+    if existing is not None:
+        return existing
+    return _build_intersection_trim_boundary_result(document, tolerance=tolerance)
+
+
+def _intersection_trim_ready_preview_candidates(result: IntersectionTrimBoundaryResult | None) -> list[dict[str, object]]:
+    if result is None:
+        return []
+    candidates: list[dict[str, object]] = []
+    for row in list(getattr(result, "boundary_pair_rows", []) or []):
+        if str(getattr(row, "status", "") or "") != "ready_to_trim":
+            continue
+        candidates.append(
+            {
+                "patch_ref": str(getattr(row, "patch_output_ref", "") or ""),
+                "road_ref": str(getattr(row, "road_output_ref", "") or ""),
+                "patch_segment": tuple(float(value) for value in getattr(row, "patch_segment_xyz", ()) or ()),
+                "road_segment": tuple(float(value) for value in getattr(row, "road_segment_xyz", ()) or ()),
+                "distance": float(getattr(row, "distance_xy", 0.0) or 0.0),
+            }
+        )
+    return candidates
+
+
+def _create_or_update_intersection_trim_application_preview_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    candidates = _intersection_trim_ready_preview_candidates(result)
+    obj = document.getObject("V1WatertightIntersectionTrimApplicationPreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimApplicationPreview")
+    application_status = str(getattr(result, "application_status", "") or ("ready" if candidates else "empty"))
+    applied_shapes: list[object] = []
+    applied_count = 0
+    for candidate in candidates:
+        patch_segment = tuple(float(value) for value in candidate["patch_segment"])
+        road_segment = tuple(float(value) for value in candidate["road_segment"])
+        shapes = _intersection_trim_application_shapes(patch_segment, road_segment)
+        if shapes:
+            applied_shapes.extend(shapes)
+            applied_count += 1
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimApplicationPreview")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_application_preview")
+    _set_object_property(obj, "App::PropertyString", "ApplicationStatus", "Application", application_status)
+    _set_object_property(obj, "App::PropertyInteger", "ReadyPairCount", "Application", len(candidates))
+    _set_object_property(obj, "App::PropertyInteger", "AppliedPairCount", "Application", applied_count)
+    _set_object_property(obj, "App::PropertyFloat", "Tolerance", "Application", float(tolerance or 0.0))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "ApplicationDiagnostic",
+        "Application",
+        (
+            f"Intersection trim application preview built from ready pairs: applied={applied_count}; ready={len(candidates)}."
+            if applied_count
+            else "No ready intersection trim pair could be converted into application guide geometry."
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(result, "source_refs", []) or []) if result is not None else [],
+    )
+    try:
+        obj.Shape = Part.makeCompound([shape for shape in applied_shapes if shape is not None]) if applied_shapes else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Application Preview"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.15, 0.95, 1.0)
+            vobj.ShapeColor = (0.15, 0.95, 1.0)
+            vobj.LineWidth = 5.0
+            vobj.Visibility = bool(applied_shapes)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _intersection_trim_application_shapes(
+    patch_segment: tuple[float, float, float, float, float, float],
+    road_segment: tuple[float, float, float, float, float, float],
+) -> list[object]:
+    patch_start = (patch_segment[0], patch_segment[1], patch_segment[2])
+    patch_end = (patch_segment[3], patch_segment[4], patch_segment[5])
+    road_start = (road_segment[0], road_segment[1], road_segment[2])
+    road_end = (road_segment[3], road_segment[4], road_segment[5])
+    road_for_patch_start = _closest_point_on_segment_xyz(patch_start, road_start, road_end)
+    road_for_patch_end = _closest_point_on_segment_xyz(patch_end, road_start, road_end)
+    shapes = [
+        _line_shape_from_points(patch_start, patch_end),
+        _line_shape_from_points(road_for_patch_start, road_for_patch_end),
+        _line_shape_from_points(patch_start, road_for_patch_start),
+        _line_shape_from_points(patch_end, road_for_patch_end),
+    ]
+    return [shape for shape in shapes if shape is not None]
+
+
+def _create_or_update_intersection_trim_application_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result_obj = find_v1_intersection_trim_boundary_result(document)
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    candidates = _intersection_trim_ready_preview_candidates(result)
+    obj = document.getObject("V1WatertightIntersectionTrimApplicationOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimApplicationOutput")
+    applied_shapes: list[object] = []
+    applied_pair_count = 0
+    for candidate in candidates:
+        patch_segment = tuple(float(value) for value in candidate["patch_segment"])
+        road_segment = tuple(float(value) for value in candidate["road_segment"])
+        shapes = _intersection_trim_application_shapes(patch_segment, road_segment)
+        if shapes:
+            applied_shapes.extend(shapes)
+            applied_pair_count += 1
+    output_status = "ready" if applied_pair_count else "empty"
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimApplicationOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_application_output")
+    _set_object_property(obj, "App::PropertyString", "OutputStatus", "Trim Application Output", output_status)
+    _set_object_property(obj, "App::PropertyString", "TrimBoundaryResultRef", "Trim Application Output", str(getattr(result_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyInteger", "ReadyPairCount", "Trim Application Output", len(candidates))
+    _set_object_property(obj, "App::PropertyInteger", "AppliedPairCount", "Trim Application Output", applied_pair_count)
+    _set_object_property(obj, "App::PropertyInteger", "AppliedEdgeCount", "Trim Application Output", len(applied_shapes))
+    _set_object_property(obj, "App::PropertyFloat", "Tolerance", "Trim Application Output", float(tolerance or 0.0))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "OutputDiagnostic",
+        "Trim Application Output",
+        (
+            f"Intersection trim application output built: applied_pairs={applied_pair_count}; "
+            f"applied_edges={len(applied_shapes)}; ready_pairs={len(candidates)}."
+            if applied_pair_count
+            else "No ready intersection trim pair could be promoted to a trim application output."
+        ),
+    )
+    source_refs = list(getattr(result, "source_refs", []) or []) if result is not None else []
+    _set_object_property(obj, "App::PropertyStringList", "SourceRefs", "Traceability", source_refs)
+    try:
+        obj.Shape = Part.makeCompound(applied_shapes) if applied_shapes else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Application Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.0, 0.75, 0.95)
+            vobj.ShapeColor = (0.0, 0.75, 0.95)
+            vobj.LineWidth = 3.0
+            vobj.Visibility = bool(applied_shapes)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_closure_surface_preview_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    candidates = _intersection_trim_ready_preview_candidates(result)
+    obj = document.getObject("V1WatertightIntersectionTrimClosureSurfacePreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimClosureSurfacePreview")
+    faces = _intersection_trim_closure_faces_from_result(result)
+    closure_status = "ready" if faces else "empty"
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimClosureSurfacePreview")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_closure_surface_preview")
+    _set_object_property(obj, "App::PropertyString", "ClosureStatus", "Closure Surface", closure_status)
+    _set_object_property(obj, "App::PropertyInteger", "ReadyPairCount", "Closure Surface", len(candidates))
+    _set_object_property(obj, "App::PropertyInteger", "ClosureFaceCount", "Closure Surface", len(faces))
+    _set_object_property(obj, "App::PropertyFloat", "Tolerance", "Closure Surface", float(tolerance or 0.0))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "ClosureDiagnostic",
+        "Closure Surface",
+        (
+            f"Intersection trim closure surface preview built: faces={len(faces)}; ready_pairs={len(candidates)}."
+            if faces
+            else "No ready intersection trim pair could be converted into a closure surface."
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(result, "source_refs", []) or []) if result is not None else [],
+    )
+    try:
+        obj.Shape = Part.makeCompound(faces) if faces else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Closure Surface Preview"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.05, 0.65, 1.0)
+            vobj.ShapeColor = (0.05, 0.65, 1.0)
+            vobj.Transparency = 35
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(faces)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_closure_surface_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    faces = _intersection_trim_closure_faces_from_result(result)
+    obj = document.getObject("V1WatertightIntersectionTrimClosureSurfaceOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimClosureSurfaceOutput")
+    output_status = "ready" if faces else "empty"
+    result_ref = str(getattr(find_v1_intersection_trim_boundary_result(document), "Name", "") or "")
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimClosureSurfaceOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_closure_surface_output")
+    _set_object_property(obj, "App::PropertyString", "OutputStatus", "Closure Surface Output", output_status)
+    _set_object_property(obj, "App::PropertyString", "TrimBoundaryResultRef", "Closure Surface Output", result_ref)
+    _set_object_property(obj, "App::PropertyInteger", "ReadyPairCount", "Closure Surface Output", int(getattr(result, "ready_pair_count", 0) or 0) if result is not None else 0)
+    _set_object_property(obj, "App::PropertyInteger", "ClosureFaceCount", "Closure Surface Output", len(faces))
+    _set_object_property(obj, "App::PropertyFloat", "Tolerance", "Closure Surface Output", float(tolerance or 0.0))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "OutputDiagnostic",
+        "Closure Surface Output",
+        (
+            f"Intersection trim closure surface output built: faces={len(faces)}."
+            if faces
+            else "No ready intersection trim closure surface output was built."
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(result, "source_refs", []) or []) if result is not None else [],
+    )
+    try:
+        obj.Shape = Part.makeCompound(faces) if faces else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Closure Surface Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.0, 0.45, 0.95)
+            vobj.ShapeColor = (0.0, 0.45, 0.95)
+            vobj.Transparency = 15
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(faces)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_closure_cell_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    faces = _intersection_trim_closure_cell_faces_from_result(result, depth=max(float(tolerance or 0.0), 0.05))
+    obj = document.getObject("V1WatertightIntersectionTrimClosureCellOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimClosureCellOutput")
+    output_status = "ready" if faces else "empty"
+    result_ref = str(getattr(find_v1_intersection_trim_boundary_result(document), "Name", "") or "")
+    diagnostics = _shape_edge_closure_diagnostics(Part.makeCompound(faces) if faces else Part.Shape())
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimClosureCellOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_closure_cell_output")
+    _set_object_property(obj, "App::PropertyString", "OutputStatus", "Closure Cell Output", output_status)
+    _set_object_property(obj, "App::PropertyString", "TrimBoundaryResultRef", "Closure Cell Output", result_ref)
+    _set_object_property(obj, "App::PropertyInteger", "ReadyPairCount", "Closure Cell Output", int(getattr(result, "ready_pair_count", 0) or 0) if result is not None else 0)
+    _set_object_property(obj, "App::PropertyInteger", "ClosureCellFaceCount", "Closure Cell Output", len(faces))
+    _set_object_property(obj, "App::PropertyString", "ShellClosureStatus", "Closure Cell Output", str(diagnostics["closure_status"]))
+    _set_object_property(obj, "App::PropertyInteger", "OpenEdgeCount", "Closure Cell Output", int(diagnostics["open_edge_count"]))
+    _set_object_property(obj, "App::PropertyFloat", "CellDepth", "Closure Cell Output", max(float(tolerance or 0.0), 0.05))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "OutputDiagnostic",
+        "Closure Cell Output",
+        (
+            f"Intersection trim closure cell output built: faces={len(faces)}; "
+            f"shell_status={diagnostics['closure_status']}; open_edges={diagnostics['open_edge_count']}."
+            if faces
+            else "No ready intersection trim closure cell output was built."
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(result, "source_refs", []) or []) if result is not None else [],
+    )
+    try:
+        obj.Shape = Part.makeCompound(faces) if faces else Part.Shape()
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Closure Cell Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.0, 0.85, 0.55)
+            vobj.ShapeColor = (0.0, 0.85, 0.55)
+            vobj.Transparency = 25
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(faces)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_shell_candidate_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    result_obj = find_v1_intersection_trim_boundary_result(document)
+    result = _intersection_trim_boundary_result_for_preview(document, tolerance=tolerance)
+    application_obj = _create_or_update_intersection_trim_application_output_object(document, tolerance=tolerance)
+    closure_obj = _create_or_update_intersection_trim_closure_surface_output_object(document, tolerance=tolerance)
+    closure_cell_obj = _create_or_update_intersection_trim_closure_cell_output_object(document, tolerance=tolerance)
+    source_refs = list(getattr(result, "source_refs", []) or []) if result is not None else []
+    source_objects = [
+        obj
+        for ref in source_refs
+        for obj in [document.getObject(str(ref or ""))]
+        if obj is not None and _is_watertight_output_object(obj)
+    ]
+    shapes = [getattr(obj, "Shape", None) for obj in source_objects]
+    closure_shape = getattr(closure_obj, "Shape", None) if closure_obj is not None else None
+    closure_cell_shape = getattr(closure_cell_obj, "Shape", None) if closure_cell_obj is not None else None
+    if closure_shape is not None and _shape_count(closure_shape, "Faces") > 0:
+        shapes.append(closure_shape)
+    if closure_cell_shape is not None and _shape_count(closure_cell_shape, "Faces") > 0:
+        shapes.append(closure_cell_shape)
+    valid_shapes = [shape for shape in shapes if shape is not None and (_shape_count(shape, "Faces") > 0 or _shape_count(shape, "Edges") > 0)]
+    obj = document.getObject("V1WatertightIntersectionTrimShellCandidateOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimShellCandidateOutput")
+    shell_status = "ready" if valid_shapes and closure_shape is not None and _shape_count(closure_shape, "Faces") > 0 else "empty"
+    try:
+        candidate_shape = Part.makeCompound(valid_shapes) if valid_shapes else Part.Shape()
+    except Exception:
+        candidate_shape = Part.Shape()
+    closure_diagnostics = _shape_edge_closure_diagnostics(candidate_shape)
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimShellCandidateOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_shell_candidate_output")
+    _set_object_property(obj, "App::PropertyString", "ShellCandidateStatus", "Shell Candidate", shell_status)
+    _set_object_property(obj, "App::PropertyString", "ShellClosureStatus", "Shell Candidate", str(closure_diagnostics["closure_status"]))
+    _set_object_property(obj, "App::PropertyString", "TrimBoundaryResultRef", "Shell Candidate", str(getattr(result_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "TrimApplicationOutputRef", "Shell Candidate", str(getattr(application_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "ClosureSurfaceOutputRef", "Shell Candidate", str(getattr(closure_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "ClosureCellOutputRef", "Shell Candidate", str(getattr(closure_cell_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyInteger", "SourceOutputCount", "Shell Candidate", len(source_objects))
+    _set_object_property(obj, "App::PropertyInteger", "ClosureFaceCount", "Shell Candidate", _shape_count(closure_shape, "Faces"))
+    _set_object_property(obj, "App::PropertyInteger", "ClosureCellFaceCount", "Shell Candidate", _shape_count(closure_cell_shape, "Faces"))
+    _set_object_property(obj, "App::PropertyInteger", "CandidateShapeCount", "Shell Candidate", len(valid_shapes))
+    _set_object_property(obj, "App::PropertyInteger", "ShellFaceCount", "Shell Candidate", int(closure_diagnostics["face_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "ShellEdgeCount", "Shell Candidate", int(closure_diagnostics["edge_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "OpenEdgeCount", "Shell Candidate", int(closure_diagnostics["open_edge_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "SharedEdgeCount", "Shell Candidate", int(closure_diagnostics["shared_edge_count"]))
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceOutputRefs",
+        "Traceability",
+        [str(getattr(source_obj, "Name", "") or "") for source_obj in source_objects],
+    )
+    _set_object_property(obj, "App::PropertyStringList", "SourceRefs", "Traceability", source_refs)
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "ShellCandidateDiagnostic",
+        "Shell Candidate",
+        (
+            f"Intersection trim shell candidate output built: source_outputs={len(source_objects)}; "
+            f"closure_faces={_shape_count(closure_shape, 'Faces')}; "
+            f"closure_cell_faces={_shape_count(closure_cell_shape, 'Faces')}; shapes={len(valid_shapes)}; "
+            f"shell_status={closure_diagnostics['closure_status']}; "
+            f"open_edges={closure_diagnostics['open_edge_count']}; "
+            f"shared_edges={closure_diagnostics['shared_edge_count']}."
+            if shell_status == "ready"
+            else "Intersection trim shell candidate output is empty because required source or closure geometry is missing."
+        ),
+    )
+    obj.Shape = candidate_shape
+    try:
+        obj.Label = "Intersection Trim Shell Candidate Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.2, 0.35, 1.0)
+            vobj.ShapeColor = (0.2, 0.35, 1.0)
+            vobj.Transparency = 45
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(valid_shapes)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_fuse_candidate_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    shell_candidate_obj = _create_or_update_intersection_trim_shell_candidate_output_object(document, tolerance=tolerance)
+    closure_cell_ref = str(getattr(shell_candidate_obj, "ClosureCellOutputRef", "") or "")
+    source_refs = list(getattr(shell_candidate_obj, "SourceOutputRefs", []) or []) if shell_candidate_obj is not None else []
+    fuse_source_refs = [ref for ref in source_refs if str(ref)]
+    if closure_cell_ref:
+        fuse_source_refs.append(closure_cell_ref)
+    source_shapes = [
+        getattr(obj, "Shape", None)
+        for ref in fuse_source_refs
+        for obj in [document.getObject(str(ref or ""))]
+        if obj is not None
+    ]
+    valid_shapes = [shape for shape in source_shapes if shape is not None and (_shape_count(shape, "Faces") > 0 or _shape_count(shape, "Edges") > 0)]
+    fuse_shape = None
+    fuse_status = "empty"
+    fuse_note = "No fuse candidate source shapes are available."
+    if valid_shapes:
+        fuse_shape = valid_shapes[0]
+        fuse_status = "compound_candidate"
+        fuse_note = "Fuse candidate compound created; Boolean fuse was not required."
+        try:
+            for shape in valid_shapes[1:]:
+                fuse_shape = fuse_shape.fuse(shape)
+            fuse_status = "fused"
+            fuse_note = f"Boolean fuse completed for {len(valid_shapes)} source shapes."
+        except Exception as exc:
+            try:
+                fuse_shape = Part.makeCompound(valid_shapes)
+            except Exception:
+                fuse_shape = Part.Shape()
+            fuse_status = "fuse_failed_compound"
+            fuse_note = f"Boolean fuse failed; compound candidate retained for review: {exc}"
+    else:
+        fuse_shape = Part.Shape()
+    diagnostics = _shape_edge_closure_diagnostics(fuse_shape)
+    obj = document.getObject("V1WatertightIntersectionTrimFuseCandidateOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimFuseCandidateOutput")
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimFuseCandidateOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_fuse_candidate_output")
+    _set_object_property(obj, "App::PropertyString", "FuseCandidateStatus", "Fuse Candidate", fuse_status)
+    _set_object_property(obj, "App::PropertyString", "ShellCandidateOutputRef", "Fuse Candidate", str(getattr(shell_candidate_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "ClosureCellOutputRef", "Fuse Candidate", closure_cell_ref)
+    _set_object_property(obj, "App::PropertyInteger", "FuseSourceCount", "Fuse Candidate", len(valid_shapes))
+    _set_object_property(obj, "App::PropertyInteger", "FuseFaceCount", "Fuse Candidate", _shape_count(fuse_shape, "Faces"))
+    _set_object_property(obj, "App::PropertyInteger", "FuseEdgeCount", "Fuse Candidate", _shape_count(fuse_shape, "Edges"))
+    _set_object_property(obj, "App::PropertyString", "ShellClosureStatus", "Fuse Candidate", str(diagnostics["closure_status"]))
+    _set_object_property(obj, "App::PropertyInteger", "OpenEdgeCount", "Fuse Candidate", int(diagnostics["open_edge_count"]))
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "FuseSourceRefs",
+        "Traceability",
+        fuse_source_refs,
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(shell_candidate_obj, "SourceRefs", []) or []) if shell_candidate_obj is not None else [],
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "FuseDiagnostic",
+        "Fuse Candidate",
+        (
+            f"{fuse_note} faces={_shape_count(fuse_shape, 'Faces')}; edges={_shape_count(fuse_shape, 'Edges')}; "
+            f"shell_status={diagnostics['closure_status']}; open_edges={diagnostics['open_edge_count']}."
+        ),
+    )
+    try:
+        obj.Shape = fuse_shape
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Fuse Candidate Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (1.0, 0.35, 0.05)
+            vobj.ShapeColor = (1.0, 0.35, 0.05)
+            vobj.Transparency = 40
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(valid_shapes)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_shell_reconstruction_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    candidate_obj = _create_or_update_intersection_trim_shell_candidate_output_object(document, tolerance=tolerance)
+    closure_cell_obj = _create_or_update_intersection_trim_closure_cell_output_object(document, tolerance=tolerance)
+    closure_cell_shape = getattr(closure_cell_obj, "Shape", None) if closure_cell_obj is not None else None
+    candidate_shape = getattr(candidate_obj, "Shape", None) if candidate_obj is not None else None
+    closure_cell_faces = list(getattr(closure_cell_shape, "Faces", []) or []) if closure_cell_shape is not None else []
+    candidate_faces = list(getattr(candidate_shape, "Faces", []) or []) if candidate_shape is not None else []
+    faces = closure_cell_faces or candidate_faces
+    obj = document.getObject("V1WatertightIntersectionTrimShellReconstructionOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimShellReconstructionOutput")
+    shell_shape = None
+    reconstruction_note = ""
+    if faces:
+        try:
+            shell_shape = Part.Shell(faces)
+            reconstruction_note = "Part.Shell created from shell candidate faces."
+        except Exception as exc:
+            shell_shape = Part.makeCompound(faces)
+            reconstruction_note = f"Part.Shell creation failed; face compound used for diagnostics: {exc}"
+    else:
+        shell_shape = Part.Shape()
+        reconstruction_note = "No shell candidate faces are available."
+    diagnostic_shape = Part.makeCompound(faces) if faces else Part.Shape()
+    diagnostics = _shape_edge_closure_diagnostics(diagnostic_shape)
+    reconstruction_status = "empty"
+    if faces:
+        reconstruction_status = "closed" if str(diagnostics["closure_status"]) == "closed" else "open"
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimShellReconstructionOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_shell_reconstruction_output")
+    _set_object_property(obj, "App::PropertyString", "ReconstructionStatus", "Shell Reconstruction", reconstruction_status)
+    _set_object_property(obj, "App::PropertyString", "ShellClosureStatus", "Shell Reconstruction", str(diagnostics["closure_status"]))
+    _set_object_property(obj, "App::PropertyString", "ShellCandidateOutputRef", "Shell Reconstruction", str(getattr(candidate_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "ClosureCellOutputRef", "Shell Reconstruction", str(getattr(closure_cell_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyInteger", "InputFaceCount", "Shell Reconstruction", len(faces))
+    _set_object_property(obj, "App::PropertyInteger", "ClosureCellFaceCount", "Shell Reconstruction", len(closure_cell_faces))
+    _set_object_property(obj, "App::PropertyInteger", "ShellFaceCount", "Shell Reconstruction", int(diagnostics["face_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "ShellEdgeCount", "Shell Reconstruction", int(diagnostics["edge_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "OpenEdgeCount", "Shell Reconstruction", int(diagnostics["open_edge_count"]))
+    _set_object_property(obj, "App::PropertyInteger", "SharedEdgeCount", "Shell Reconstruction", int(diagnostics["shared_edge_count"]))
+    _set_object_property(
+        obj,
+        "App::PropertyString",
+        "ReconstructionDiagnostic",
+        "Shell Reconstruction",
+        (
+            f"Intersection trim shell reconstruction output built: input_faces={len(faces)}; "
+            f"shell_status={diagnostics['closure_status']}; open_edges={diagnostics['open_edge_count']}; "
+            f"shared_edges={diagnostics['shared_edge_count']}; {reconstruction_note}"
+        ),
+    )
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(candidate_obj, "SourceRefs", []) or []) if candidate_obj is not None else [],
+    )
+    try:
+        obj.Shape = shell_shape
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Shell Reconstruction Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.55, 0.2, 1.0)
+            vobj.ShapeColor = (0.55, 0.2, 1.0)
+            vobj.Transparency = 30
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(faces)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _create_or_update_intersection_trim_solid_reconstruction_output_object(document, *, tolerance: float = 0.05):
+    if document is None or Part is None or App is None:
+        return None
+    shell_obj = _create_or_update_intersection_trim_shell_reconstruction_output_object(document, tolerance=tolerance)
+    shell_shape = getattr(shell_obj, "Shape", None) if shell_obj is not None else None
+    shell_status = str(getattr(shell_obj, "ShellClosureStatus", "") or "")
+    open_edge_count = int(getattr(shell_obj, "OpenEdgeCount", 0) or 0) if shell_obj is not None else 0
+    obj = document.getObject("V1WatertightIntersectionTrimSolidReconstructionOutput")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1WatertightIntersectionTrimSolidReconstructionOutput")
+    solid_shape = Part.Shape()
+    solid_status = "empty"
+    solid_note = "No shell reconstruction output is available."
+    if shell_shape is not None and _shape_count(shell_shape, "Faces") > 0:
+        if shell_status == "closed" and open_edge_count == 0:
+            try:
+                solid_shape = Part.Solid(shell_shape)
+                solid_status = "solid"
+                solid_note = "Part.Solid created from closed shell reconstruction output."
+            except Exception as exc:
+                solid_shape = shell_shape
+                solid_status = "error"
+                solid_note = f"Part.Solid failed from closed shell reconstruction output: {exc}"
+        else:
+            solid_status = "blocked_open_shell"
+            solid_note = f"Solid reconstruction blocked because shell is open: open_edges={open_edge_count}."
+            solid_shape = shell_shape
+    face_count = _shape_count(solid_shape, "Faces")
+    edge_count = _shape_count(solid_shape, "Edges")
+    volume = 0.0
+    try:
+        volume = float(getattr(solid_shape, "Volume", 0.0) or 0.0)
+    except Exception:
+        volume = 0.0
+    _set_object_property(obj, "App::PropertyString", "V1ObjectType", "CorridorRoad", "V1WatertightIntersectionTrimSolidReconstructionOutput")
+    _set_object_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1_watertight_trim_solid_reconstruction_output")
+    _set_object_property(obj, "App::PropertyString", "SolidReconstructionStatus", "Solid Reconstruction", solid_status)
+    _set_object_property(obj, "App::PropertyString", "ShellReconstructionOutputRef", "Solid Reconstruction", str(getattr(shell_obj, "Name", "") or ""))
+    _set_object_property(obj, "App::PropertyString", "ShellClosureStatus", "Solid Reconstruction", shell_status)
+    _set_object_property(obj, "App::PropertyInteger", "OpenEdgeCount", "Solid Reconstruction", open_edge_count)
+    _set_object_property(obj, "App::PropertyInteger", "SolidFaceCount", "Solid Reconstruction", face_count)
+    _set_object_property(obj, "App::PropertyInteger", "SolidEdgeCount", "Solid Reconstruction", edge_count)
+    _set_object_property(obj, "App::PropertyFloat", "SolidVolume", "Solid Reconstruction", volume)
+    _set_object_property(obj, "App::PropertyString", "SolidDiagnostic", "Solid Reconstruction", solid_note)
+    _set_object_property(
+        obj,
+        "App::PropertyStringList",
+        "SourceRefs",
+        "Traceability",
+        list(getattr(shell_obj, "SourceRefs", []) or []) if shell_obj is not None else [],
+    )
+    try:
+        obj.Shape = solid_shape
+    except Exception:
+        obj.Shape = Part.Shape()
+    try:
+        obj.Label = "Intersection Trim Solid Reconstruction Output"
+    except Exception:
+        pass
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is not None:
+        try:
+            vobj.LineColor = (0.85, 0.15, 0.95)
+            vobj.ShapeColor = (0.85, 0.15, 0.95)
+            vobj.Transparency = 20 if solid_status == "solid" else 55
+            vobj.LineWidth = 2.0
+            vobj.Visibility = bool(face_count)
+        except Exception:
+            pass
+    try:
+        project = find_project(document)
+        if project is not None:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project, obj)
+    except Exception:
+        pass
+    return obj
+
+
+def _intersection_trim_closure_faces_from_result(result: IntersectionTrimBoundaryResult | None) -> list[object]:
+    faces: list[object] = []
+    for candidate in _intersection_trim_ready_preview_candidates(result):
+        patch_segment = tuple(float(value) for value in candidate["patch_segment"])
+        road_segment = tuple(float(value) for value in candidate["road_segment"])
+        face = _intersection_trim_closure_face(patch_segment, road_segment)
+        if face is not None:
+            faces.append(face)
+    return faces
+
+
+def _intersection_trim_closure_cell_faces_from_result(result: IntersectionTrimBoundaryResult | None, *, depth: float) -> list[object]:
+    faces: list[object] = []
+    for candidate in _intersection_trim_ready_preview_candidates(result):
+        patch_segment = tuple(float(value) for value in candidate["patch_segment"])
+        road_segment = tuple(float(value) for value in candidate["road_segment"])
+        cell_faces = _intersection_trim_closure_cell_faces(patch_segment, road_segment, depth=depth)
+        faces.extend(face for face in cell_faces if face is not None)
+    return faces
+
+
+def _intersection_trim_closure_cell_faces(
+    patch_segment: tuple[float, float, float, float, float, float],
+    road_segment: tuple[float, float, float, float, float, float],
+    *,
+    depth: float,
+) -> list[object]:
+    top = _intersection_trim_closure_quad_points(patch_segment, road_segment)
+    if len(top) < 3:
+        return []
+    dz = abs(float(depth or 0.0)) or 0.05
+    bottom = [(point[0], point[1], point[2] - dz) for point in top]
+    face_point_rows = [
+        top,
+        list(reversed(bottom)),
+    ]
+    for index, point in enumerate(top):
+        next_index = (index + 1) % len(top)
+        face_point_rows.append([point, top[next_index], bottom[next_index], bottom[index]])
+    return [_face_from_xyz_points(points) for points in face_point_rows]
+
+
+def _intersection_trim_closure_face(
+    patch_segment: tuple[float, float, float, float, float, float],
+    road_segment: tuple[float, float, float, float, float, float],
+):
+    points = _intersection_trim_closure_quad_points(patch_segment, road_segment)
+    if len(points) < 3:
+        return None
+    return _face_from_xyz_points(points)
+
+
+def _intersection_trim_closure_quad_points(
+    patch_segment: tuple[float, float, float, float, float, float],
+    road_segment: tuple[float, float, float, float, float, float],
+) -> list[tuple[float, float, float]]:
+    patch_start = (patch_segment[0], patch_segment[1], patch_segment[2])
+    patch_end = (patch_segment[3], patch_segment[4], patch_segment[5])
+    road_start = (road_segment[0], road_segment[1], road_segment[2])
+    road_end = (road_segment[3], road_segment[4], road_segment[5])
+    road_for_patch_start = _closest_point_on_segment_xyz(patch_start, road_start, road_end)
+    road_for_patch_end = _closest_point_on_segment_xyz(patch_end, road_start, road_end)
+    return _dedupe_xyz_points([patch_start, patch_end, road_for_patch_end, road_for_patch_start])
+
+
+def _face_from_xyz_points(points: list[tuple[float, float, float]]):
+    if len(points) < 3 or Part is None or App is None:
+        return None
+    try:
+        vectors = [App.Vector(*point) for point in points]
+        vectors.append(vectors[0])
+        return Part.Face(Part.makePolygon(vectors))
+    except Exception:
+        return None
+
+
+def _dedupe_xyz_points(points: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:
+    output: list[tuple[float, float, float]] = []
+    seen: set[tuple[float, float, float]] = set()
+    for point in points:
+        key = (round(float(point[0]), 9), round(float(point[1]), 9), round(float(point[2]), 9))
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append((float(point[0]), float(point[1]), float(point[2])))
+    return output
+
+
+def _create_or_update_intersection_trim_boundary_result_object(document, *, tolerance: float = 0.05):
+    if document is None:
+        return None
+    result = _build_intersection_trim_boundary_result(document, tolerance=tolerance)
+    try:
+        obj = create_or_update_v1_intersection_trim_boundary_result_object(
+            document=document,
+            trim_boundary_result=result,
+            project=find_project(document),
+            object_name="V1IntersectionTrimBoundaryResult",
+            label="Intersection Trim Boundary Result",
+        )
+        _link_intersection_trim_boundary_result_to_outputs(document, obj)
+        return obj
+    except Exception:
+        return None
+
+
+def _link_intersection_trim_boundary_result_to_outputs(document, result_obj) -> int:
+    """Attach trim-boundary result refs to the related Watertight Solid output objects."""
+
+    if document is None or result_obj is None:
+        return 0
+    result_ref = str(getattr(result_obj, "Name", "") or "")
+    if not result_ref:
+        return 0
+    output_refs = _unique_refs(
+        [
+            *list(getattr(result_obj, "PatchOutputRefs", []) or []),
+            *list(getattr(result_obj, "RoadOutputRefs", []) or []),
+        ]
+    )
+    linked = 0
+    for output_ref in output_refs:
+        obj = document.getObject(str(output_ref or ""))
+        if obj is None or not _is_watertight_output_object(obj):
+            continue
+        try:
+            existing = [str(ref) for ref in list(getattr(obj, "ResultRefs", []) or []) if str(ref)]
+            if result_ref not in existing:
+                obj.ResultRefs = [*existing, result_ref]
+            _set_object_property(obj, "App::PropertyString", "IntersectionTrimBoundaryResultRef", "Intersection Trim", result_ref)
+            _set_object_property(
+                obj,
+                "App::PropertyString",
+                "IntersectionTrimApplicationStatus",
+                "Intersection Trim",
+                str(getattr(result_obj, "ApplicationStatus", "") or "not_evaluated"),
+            )
+            _set_object_property(
+                obj,
+                "App::PropertyInteger",
+                "IntersectionTrimBoundaryPairCount",
+                "Intersection Trim",
+                int(getattr(result_obj, "BoundaryPairCount", 0) or 0),
+            )
+            _set_object_property(
+                obj,
+                "App::PropertyInteger",
+                "IntersectionTrimReadyPairCount",
+                "Intersection Trim",
+                int(getattr(result_obj, "ReadyPairCount", 0) or 0),
+            )
+            try:
+                obj.touch()
+            except Exception:
+                pass
+            linked += 1
+        except Exception:
+            continue
+    return linked
+
+
+def _build_intersection_trim_boundary_result(document, *, tolerance: float = 0.05) -> IntersectionTrimBoundaryResult:
+    candidates = _intersection_trim_preview_candidates(document, tolerance=tolerance)
+    rows: list[IntersectionTrimBoundaryPair] = []
+    ready_count = 0
+    blocked_count = 0
+    for index, candidate in enumerate(candidates, start=1):
+        distance = float(candidate.get("distance", 0.0) or 0.0)
+        patch_segment = tuple(float(value) for value in candidate["patch_segment"])
+        road_segment = tuple(float(value) for value in candidate["road_segment"])
+        status, status_note = _intersection_trim_pair_status(
+            patch_segment,
+            road_segment,
+            distance_xy=distance,
+            tolerance=tolerance,
+        )
+        if status == "ready_to_trim":
+            ready_count += 1
+        else:
+            blocked_count += 1
+        rows.append(
+            IntersectionTrimBoundaryPair(
+                boundary_pair_id=f"intersection-trim-boundary:{index}",
+                patch_output_ref=str(candidate.get("patch_ref", "") or ""),
+                road_output_ref=str(candidate.get("road_ref", "") or ""),
+                distance_xy=distance,
+                patch_segment_xyz=patch_segment,
+                road_segment_xyz=road_segment,
+                status=status,
+                notes=(
+                    f"Candidate patch/road trim edge pair; distance_xy={distance:.3f}; "
+                    f"tolerance={float(tolerance or 0.0):.3f}; {status_note}"
+                ),
+            )
+        )
+    application_status = "ready" if ready_count > 0 and blocked_count == 0 else "partial" if ready_count > 0 else "blocked" if rows else "empty"
+    return IntersectionTrimBoundaryResult(
+        schema_version=1,
+        project_id=_document_project_id(document),
+        label="Intersection Trim Boundary Result",
+        source_refs=_unique_refs([ref for row in rows for ref in (row.patch_output_ref, row.road_output_ref)]),
+        trim_boundary_result_id="intersection-trim-boundaries:watertight",
+        tolerance=float(tolerance or 0.0),
+        application_status=application_status,
+        ready_pair_count=ready_count,
+        blocked_pair_count=blocked_count,
+        boundary_pair_rows=rows,
+    )
+
+
+def _intersection_trim_pair_status(
+    patch_segment: tuple[float, float, float, float, float, float],
+    road_segment: tuple[float, float, float, float, float, float],
+    *,
+    distance_xy: float,
+    tolerance: float,
+) -> tuple[str, str]:
+    patch_length = _segment_xyz_length(patch_segment)
+    road_length = _segment_xyz_length(road_segment)
+    tol = max(float(tolerance or 0.0), 0.0)
+    if patch_length <= 1.0e-6:
+        return "blocked", "patch edge is degenerate."
+    if road_length <= 1.0e-6:
+        return "blocked", "road edge is degenerate."
+    if float(distance_xy or 0.0) > tol:
+        return "blocked", "edge-pair distance exceeds trim tolerance."
+    return "ready_to_trim", f"ready for future clip/trim; patch_length={patch_length:.3f}; road_length={road_length:.3f}."
+
+
+def _segment_xyz_length(segment: tuple[float, float, float, float, float, float]) -> float:
+    return math.sqrt(
+        (float(segment[3]) - float(segment[0])) ** 2
+        + (float(segment[4]) - float(segment[1])) ** 2
+        + (float(segment[5]) - float(segment[2])) ** 2
+    )
+
+
+def _intersection_trim_preview_candidates(document, *, tolerance: float) -> list[dict[str, object]]:
+    road_objects = [
+        obj for obj in _watertight_output_objects(document)
+        if _object_has_target_family(obj, {"road_body_envelope", "region_body"})
+    ]
+    patch_objects = [
+        obj for obj in _watertight_output_objects(document)
+        if _object_has_target_family(obj, {"intersection_patch_body"})
+    ]
+    if not road_objects or not patch_objects:
+        return []
+    tol = max(float(tolerance or 0.0), 0.0)
+    candidates: list[dict[str, object]] = []
+    for patch_obj in patch_objects:
+        patch_segments = _shape_edge_xyz_segments(getattr(patch_obj, "Shape", None))
+        if not patch_segments:
+            continue
+        for road_obj in road_objects:
+            road_segments = _shape_edge_xyz_segments(getattr(road_obj, "Shape", None))
+            if not road_segments:
+                continue
+            for patch_segment in patch_segments:
+                for road_segment in road_segments:
+                    distance = _segment_xy_distance_from_xyz(patch_segment, road_segment)
+                    if distance <= tol:
+                        candidates.append(
+                            {
+                                "patch_ref": str(getattr(patch_obj, "Name", "") or ""),
+                                "road_ref": str(getattr(road_obj, "Name", "") or ""),
+                                "patch_segment": patch_segment,
+                                "road_segment": road_segment,
+                                "distance": distance,
+                            }
+                        )
+                        if len(candidates) >= 120:
+                            return candidates
+    return candidates
+
+
 def _build_simulation_package_output(document, *, qa_output=None):
     active_qa_output = qa_output or _build_simulation_qa_output(document)
     return WatertightSimulationPackageService().build(
@@ -3303,6 +5116,7 @@ def _build_simulation_package_output(document, *, qa_output=None):
             drainage_readiness=_drainage_watertight_handoff_dict(
                 drainage_watertight_handoff_summary(document, target_model=discover_watertight_solid_targets(document))
             ),
+            intersection_trim=_intersection_trim_handoff_dict(document),
         )
     )
 
@@ -3325,6 +5139,136 @@ def _drainage_watertight_handoff_dict(summary: DrainageWatertightHandoffSummary)
     }
 
 
+def _intersection_trim_handoff_dict(document) -> dict[str, object]:
+    if document is None:
+        return {"status": "not_available"}
+    result_obj = _create_or_update_intersection_trim_boundary_result_object(document)
+    result = to_intersection_trim_boundary_result(result_obj)
+    if result is None:
+        return {"status": "not_available"}
+    application_obj = _create_or_update_intersection_trim_application_output_object(document)
+    closure_surface_obj = _create_or_update_intersection_trim_closure_surface_output_object(document)
+    closure_cell_obj = _create_or_update_intersection_trim_closure_cell_output_object(document)
+    shell_candidate_obj = _create_or_update_intersection_trim_shell_candidate_output_object(document)
+    fuse_obj = _create_or_update_intersection_trim_fuse_candidate_output_object(document)
+    shell_reconstruction_obj = _create_or_update_intersection_trim_shell_reconstruction_output_object(document)
+    solid_reconstruction_obj = _create_or_update_intersection_trim_solid_reconstruction_output_object(document)
+    handoff_chain_refs = _intersection_trim_handoff_chain_refs(
+        result_obj,
+        application_obj,
+        closure_surface_obj,
+        closure_cell_obj,
+        shell_candidate_obj,
+        fuse_obj,
+        shell_reconstruction_obj,
+        solid_reconstruction_obj,
+    )
+    handoff_stage_statuses = _intersection_trim_handoff_stage_statuses(
+        result_obj=result_obj,
+        application_obj=application_obj,
+        closure_surface_obj=closure_surface_obj,
+        closure_cell_obj=closure_cell_obj,
+        shell_candidate_obj=shell_candidate_obj,
+        fuse_obj=fuse_obj,
+        shell_reconstruction_obj=shell_reconstruction_obj,
+        solid_reconstruction_obj=solid_reconstruction_obj,
+    )
+    _link_intersection_trim_handoff_chain_to_outputs(
+        document,
+        result_obj=result_obj,
+        handoff_chain_refs=handoff_chain_refs,
+        handoff_stage_statuses=handoff_stage_statuses,
+    )
+    pair_rows = [
+        {
+            "boundary_pair_id": str(getattr(row, "boundary_pair_id", "") or ""),
+            "status": str(getattr(row, "status", "") or ""),
+            "patch_output_ref": str(getattr(row, "patch_output_ref", "") or ""),
+            "road_output_ref": str(getattr(row, "road_output_ref", "") or ""),
+            "distance_xy": float(getattr(row, "distance_xy", 0.0) or 0.0),
+            "patch_segment_xyz": tuple(float(value) for value in getattr(row, "patch_segment_xyz", ()) or ()),
+            "road_segment_xyz": tuple(float(value) for value in getattr(row, "road_segment_xyz", ()) or ()),
+        }
+        for row in list(getattr(result, "boundary_pair_rows", []) or [])
+        if str(getattr(row, "status", "") or "") == "ready_to_trim"
+    ]
+    return {
+        "status": str(getattr(result, "application_status", "") or "not_available"),
+        "result_ref": str(getattr(result_obj, "Name", "") or ""),
+        "boundary_pair_count": len(list(getattr(result, "boundary_pair_rows", []) or [])),
+        "ready_pair_count": int(getattr(result, "ready_pair_count", 0) or 0),
+        "blocked_pair_count": int(getattr(result, "blocked_pair_count", 0) or 0),
+        "pair_rows": pair_rows,
+        "fuse_status": str(getattr(fuse_obj, "FuseCandidateStatus", "") or "not_available"),
+        "fuse_candidate_ref": str(getattr(fuse_obj, "Name", "") or ""),
+        "fuse_source_count": int(getattr(fuse_obj, "FuseSourceCount", 0) or 0),
+        "fuse_face_count": int(getattr(fuse_obj, "FuseFaceCount", 0) or 0),
+        "fuse_open_edge_count": int(getattr(fuse_obj, "OpenEdgeCount", 0) or 0),
+        "fuse_source_refs": [str(ref) for ref in list(getattr(fuse_obj, "FuseSourceRefs", []) or []) if str(ref)],
+        "handoff_chain_refs": handoff_chain_refs,
+        "handoff_stage_statuses": handoff_stage_statuses,
+    }
+
+
+def _intersection_trim_handoff_chain_refs(*objects) -> list[str]:
+    return _unique_refs(str(getattr(obj, "Name", "") or "") for obj in objects if obj is not None)
+
+
+def _intersection_trim_handoff_stage_statuses(
+    *,
+    result_obj,
+    application_obj,
+    closure_surface_obj,
+    closure_cell_obj,
+    shell_candidate_obj,
+    fuse_obj,
+    shell_reconstruction_obj,
+    solid_reconstruction_obj,
+) -> list[str]:
+    return [
+        f"trim_boundary={str(getattr(result_obj, 'ApplicationStatus', '') or 'not_available')}",
+        f"trim_application={str(getattr(application_obj, 'OutputStatus', '') or 'not_available')}",
+        f"closure_surface={str(getattr(closure_surface_obj, 'OutputStatus', '') or 'not_available')}",
+        f"closure_cell={str(getattr(closure_cell_obj, 'OutputStatus', '') or 'not_available')}",
+        f"shell_candidate={str(getattr(shell_candidate_obj, 'ShellCandidateStatus', '') or 'not_available')}",
+        f"fuse_candidate={str(getattr(fuse_obj, 'FuseCandidateStatus', '') or 'not_available')}",
+        f"shell_reconstruction={str(getattr(shell_reconstruction_obj, 'ReconstructionStatus', '') or 'not_available')}",
+        f"solid_reconstruction={str(getattr(solid_reconstruction_obj, 'SolidReconstructionStatus', '') or 'not_available')}",
+    ]
+
+
+def _link_intersection_trim_handoff_chain_to_outputs(
+    document,
+    *,
+    result_obj,
+    handoff_chain_refs: list[str],
+    handoff_stage_statuses: list[str],
+) -> int:
+    if document is None or result_obj is None:
+        return 0
+    output_refs = _unique_refs(
+        [
+            *list(getattr(result_obj, "PatchOutputRefs", []) or []),
+            *list(getattr(result_obj, "RoadOutputRefs", []) or []),
+        ]
+    )
+    linked = 0
+    for output_ref in output_refs:
+        obj = document.getObject(str(output_ref or ""))
+        if obj is None or not _is_watertight_output_object(obj):
+            continue
+        _set_object_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffChainRefs", "Intersection Trim", handoff_chain_refs)
+        _set_object_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffStageStatuses", "Intersection Trim", handoff_stage_statuses)
+        try:
+            obj.IntersectionTrimHandoffChainRefs = list(handoff_chain_refs)
+            obj.IntersectionTrimHandoffStageStatuses = list(handoff_stage_statuses)
+            obj.touch()
+        except Exception:
+            pass
+        linked += 1
+    return linked
+
+
 def _simulation_qa_solid_inputs(document) -> list[WatertightSimulationQaSolidInput]:
     rows: list[WatertightSimulationQaSolidInput] = []
     for obj in _watertight_output_objects(document):
@@ -3336,6 +5280,7 @@ def _simulation_qa_solid_inputs(document) -> list[WatertightSimulationQaSolidInp
                 valid_solid_statuses=[str(value or "").strip().lower() == "true" for value in list(getattr(obj, "ValidSolidStatuses", []) or [])],
                 shape_valid=_watertight_output_object_shape_is_valid(obj),
                 bound_box=_shape_bound_box_tuple(getattr(obj, "Shape", None)),
+                edge_xy_segments=_shape_edge_xy_segments(getattr(obj, "Shape", None)),
                 structure_refs=[str(value or "") for value in list(getattr(obj, "StructureRefs", []) or [])],
                 flow_route_refs=[str(value or "") for value in list(getattr(obj, "FlowRouteRefs", []) or [])],
                 source_refs=[str(value or "") for value in list(getattr(obj, "SourceRefs", []) or [])],
@@ -3392,6 +5337,189 @@ def _shape_bound_box_tuple(shape) -> tuple[float, float, float, float, float, fl
         float(getattr(bbox, "ZMin", 0.0) or 0.0),
         float(getattr(bbox, "ZMax", 0.0) or 0.0),
     )
+
+
+def _shape_edge_xy_segments(shape) -> list[tuple[float, float, float, float]]:
+    segments: list[tuple[float, float, float, float]] = []
+    if shape is None:
+        return segments
+    for edge in list(getattr(shape, "Edges", []) or []):
+        vertices = list(getattr(edge, "Vertexes", []) or [])
+        if len(vertices) < 2:
+            continue
+        first = getattr(vertices[0], "Point", None)
+        last = getattr(vertices[-1], "Point", None)
+        if first is None or last is None:
+            continue
+        try:
+            x1 = float(getattr(first, "x", 0.0) or 0.0)
+            y1 = float(getattr(first, "y", 0.0) or 0.0)
+            x2 = float(getattr(last, "x", 0.0) or 0.0)
+            y2 = float(getattr(last, "y", 0.0) or 0.0)
+        except Exception:
+            continue
+        if (x1, y1) == (x2, y2):
+            continue
+        segments.append((x1, y1, x2, y2))
+    return segments
+
+
+def _shape_edge_xyz_segments(shape) -> list[tuple[float, float, float, float, float, float]]:
+    segments: list[tuple[float, float, float, float, float, float]] = []
+    if shape is None:
+        return segments
+    for edge in list(getattr(shape, "Edges", []) or []):
+        vertices = list(getattr(edge, "Vertexes", []) or [])
+        if len(vertices) < 2:
+            continue
+        first = getattr(vertices[0], "Point", None)
+        last = getattr(vertices[-1], "Point", None)
+        if first is None or last is None:
+            continue
+        try:
+            x1 = float(getattr(first, "x", 0.0) or 0.0)
+            y1 = float(getattr(first, "y", 0.0) or 0.0)
+            z1 = float(getattr(first, "z", 0.0) or 0.0)
+            x2 = float(getattr(last, "x", 0.0) or 0.0)
+            y2 = float(getattr(last, "y", 0.0) or 0.0)
+            z2 = float(getattr(last, "z", 0.0) or 0.0)
+        except Exception:
+            continue
+        if (x1, y1, z1) == (x2, y2, z2):
+            continue
+        segments.append((x1, y1, z1, x2, y2, z2))
+    return segments
+
+
+def _object_has_target_family(obj, families: set[str]) -> bool:
+    return bool({str(value or "").strip() for value in list(getattr(obj, "TargetFamilies", []) or [])} & families)
+
+
+def _segment_xy_distance_from_xyz(
+    left: tuple[float, float, float, float, float, float],
+    right: tuple[float, float, float, float, float, float],
+) -> float:
+    return _segment_xy_distance_2d((left[0], left[1], left[3], left[4]), (right[0], right[1], right[3], right[4]))
+
+
+def _segment_xy_distance_2d(
+    left: tuple[float, float, float, float],
+    right: tuple[float, float, float, float],
+) -> float:
+    ax, ay, bx, by = [float(value) for value in left]
+    cx, cy, dx, dy = [float(value) for value in right]
+    if _segments_xy_intersect_2d((ax, ay), (bx, by), (cx, cy), (dx, dy)):
+        return 0.0
+    return min(
+        _point_to_segment_xy_distance_2d((ax, ay), (cx, cy), (dx, dy)),
+        _point_to_segment_xy_distance_2d((bx, by), (cx, cy), (dx, dy)),
+        _point_to_segment_xy_distance_2d((cx, cy), (ax, ay), (bx, by)),
+        _point_to_segment_xy_distance_2d((dx, dy), (ax, ay), (bx, by)),
+    )
+
+
+def _segments_xy_intersect_2d(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+) -> bool:
+    def orient(p, q, r) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on_segment(p, q, r) -> bool:
+        return (
+            min(p[0], r[0]) - 1e-9 <= q[0] <= max(p[0], r[0]) + 1e-9
+            and min(p[1], r[1]) - 1e-9 <= q[1] <= max(p[1], r[1]) + 1e-9
+        )
+
+    o1 = orient(a, b, c)
+    o2 = orient(a, b, d)
+    o3 = orient(c, d, a)
+    o4 = orient(c, d, b)
+    if (o1 > 0.0) != (o2 > 0.0) and (o3 > 0.0) != (o4 > 0.0):
+        return True
+    if abs(o1) <= 1e-9 and on_segment(a, c, b):
+        return True
+    if abs(o2) <= 1e-9 and on_segment(a, d, b):
+        return True
+    if abs(o3) <= 1e-9 and on_segment(c, a, d):
+        return True
+    if abs(o4) <= 1e-9 and on_segment(c, b, d):
+        return True
+    return False
+
+
+def _point_to_segment_xy_distance_2d(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    px, py = point
+    sx, sy = start
+    ex, ey = end
+    dx = ex - sx
+    dy = ey - sy
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 1e-12:
+        return ((px - sx) ** 2 + (py - sy) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - sx) * dx + (py - sy) * dy) / length_sq))
+    nx = sx + t * dx
+    ny = sy + t * dy
+    return ((px - nx) ** 2 + (py - ny) ** 2) ** 0.5
+
+
+def _closest_point_on_segment_xyz(
+    point: tuple[float, float, float],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    px, py, pz = [float(value) for value in point]
+    sx, sy, sz = [float(value) for value in start]
+    ex, ey, ez = [float(value) for value in end]
+    dx = ex - sx
+    dy = ey - sy
+    dz = ez - sz
+    length_sq = dx * dx + dy * dy + dz * dz
+    if length_sq <= 1.0e-12:
+        return (sx, sy, sz)
+    t = max(0.0, min(1.0, ((px - sx) * dx + (py - sy) * dy + (pz - sz) * dz) / length_sq))
+    return (sx + t * dx, sy + t * dy, sz + t * dz)
+
+
+def _line_shape_from_segment(segment: tuple[float, float, float, float, float, float]):
+    return _line_shape_from_points((segment[0], segment[1], segment[2]), (segment[3], segment[4], segment[5]))
+
+
+def _line_shape_from_points(start: tuple[float, float, float], end: tuple[float, float, float]):
+    if Part is None or App is None:
+        return None
+    try:
+        return Part.makeLine(App.Vector(*start), App.Vector(*end))
+    except Exception:
+        return None
+
+
+def _segment_midpoint(segment: tuple[float, float, float, float, float, float]) -> tuple[float, float, float]:
+    return (
+        (float(segment[0]) + float(segment[3])) * 0.5,
+        (float(segment[1]) + float(segment[4])) * 0.5,
+        (float(segment[2]) + float(segment[5])) * 0.5,
+    )
+
+
+def _set_object_property(obj, property_type: str, name: str, group: str, value) -> None:
+    if obj is None:
+        return
+    if not hasattr(obj, name):
+        try:
+            obj.addProperty(property_type, name, group, name)
+        except Exception:
+            pass
+    try:
+        setattr(obj, name, value)
+    except Exception:
+        pass
 
 
 def _terrain_context_ready(document) -> bool:

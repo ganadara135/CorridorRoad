@@ -12,6 +12,8 @@ except Exception:  # pragma: no cover - FreeCAD is not available in plain Python
 
 from ..models.source.intersection_model import (
     IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -65,9 +67,13 @@ def ensure_v1_intersection_properties(obj) -> None:
     _add_property(obj, "App::PropertyString", "CRRecordKind", "CorridorRoad", "v1 tree routing record kind")
     _add_property(obj, "App::PropertyString", "IntersectionRowsJson", "Intersections", "intersection rows")
     _add_property(obj, "App::PropertyString", "ControlAreaRowsJson", "Intersections", "intersection control area rows")
+    _add_property(obj, "App::PropertyString", "CurbReturnPolicyRowsJson", "Intersections", "intersection curb return policy rows")
+    _add_property(obj, "App::PropertyString", "GradingPolicyRowsJson", "Intersections", "intersection grading policy rows")
     _add_property(obj, "App::PropertyStringList", "ControlRegionRefs", "Intersections", "linked control region refs")
     _add_property(obj, "App::PropertyInteger", "IntersectionCount", "Summary", "intersection row count")
     _add_property(obj, "App::PropertyInteger", "ControlAreaCount", "Summary", "control area row count")
+    _add_property(obj, "App::PropertyInteger", "CurbReturnPolicyCount", "Summary", "curb return policy row count")
+    _add_property(obj, "App::PropertyInteger", "GradingPolicyCount", "Summary", "grading policy row count")
     _add_property(obj, "App::PropertyString", "LastValidationStatus", "Diagnostics", "last validation status")
 
     if not str(getattr(obj, "V1ObjectType", "") or ""):
@@ -84,6 +90,10 @@ def ensure_v1_intersection_properties(obj) -> None:
         obj.IntersectionRowsJson = "[]"
     if not str(getattr(obj, "ControlAreaRowsJson", "") or ""):
         obj.ControlAreaRowsJson = "[]"
+    if not str(getattr(obj, "CurbReturnPolicyRowsJson", "") or ""):
+        obj.CurbReturnPolicyRowsJson = "[]"
+    if not str(getattr(obj, "GradingPolicyRowsJson", "") or ""):
+        obj.GradingPolicyRowsJson = "[]"
     if not str(getattr(obj, "LastValidationStatus", "") or ""):
         obj.LastValidationStatus = "empty"
 
@@ -138,6 +148,8 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     ensure_v1_intersection_properties(obj)
     intersection_rows = list(getattr(intersection_model, "intersection_rows", []) or [])
     control_area_rows = list(getattr(intersection_model, "control_area_rows", []) or [])
+    curb_return_policy_rows = list(getattr(intersection_model, "curb_return_policy_rows", []) or [])
+    grading_policy_rows = list(getattr(intersection_model, "grading_policy_rows", []) or [])
     control_refs: list[str] = []
     for row in intersection_rows:
         for ref in list(getattr(row, "control_region_refs", []) or []):
@@ -153,9 +165,13 @@ def update_v1_intersection_model_object(obj, intersection_model: IntersectionMod
     obj.CRRecordKind = "v1_intersection_model"
     obj.IntersectionRowsJson = _json_dumps(intersection_rows)
     obj.ControlAreaRowsJson = _json_dumps(control_area_rows)
+    obj.CurbReturnPolicyRowsJson = _json_dumps(curb_return_policy_rows)
+    obj.GradingPolicyRowsJson = _json_dumps(grading_policy_rows)
     obj.ControlRegionRefs = control_refs
     obj.IntersectionCount = len(intersection_rows)
     obj.ControlAreaCount = len(control_area_rows)
+    obj.CurbReturnPolicyCount = len(curb_return_policy_rows)
+    obj.GradingPolicyCount = len(grading_policy_rows)
     obj.LastValidationStatus = "stored" if intersection_rows else "empty"
     try:
         obj.touch()
@@ -177,6 +193,14 @@ def to_intersection_model(obj) -> IntersectionModel | None:
         intersection_model_id=str(getattr(obj, "IntersectionModelId", "") or "intersections:main"),
         intersection_rows=[_intersection_row_from_json(row, index) for index, row in enumerate(_json_list(obj.IntersectionRowsJson))],
         control_area_rows=[_control_area_from_json(row, index) for index, row in enumerate(_json_list(obj.ControlAreaRowsJson))],
+        curb_return_policy_rows=[
+            _curb_return_policy_from_json(row, index)
+            for index, row in enumerate(_json_list(obj.CurbReturnPolicyRowsJson))
+        ],
+        grading_policy_rows=[
+            _grading_policy_from_json(row, index)
+            for index, row in enumerate(_json_list(obj.GradingPolicyRowsJson))
+        ],
     )
 
 
@@ -245,6 +269,32 @@ def _control_area_from_json(row: dict[str, object], index: int) -> IntersectionC
         curb_return_policy_ref=str(row.get("curb_return_policy_ref", "") or ""),
         grading_policy_ref=str(row.get("grading_policy_ref", "") or ""),
         drainage_policy_ref=str(row.get("drainage_policy_ref", "") or ""),
+        notes=str(row.get("notes", "") or ""),
+    )
+
+
+def _curb_return_policy_from_json(row: dict[str, object], index: int) -> IntersectionCurbReturnPolicyRow:
+    return IntersectionCurbReturnPolicyRow(
+        policy_id=str(row.get("policy_id", "") or f"curb-return:policy-{index + 1}"),
+        intersection_id=str(row.get("intersection_id", "") or ""),
+        radius=_float_value(row.get("radius", 0.0)),
+        side=str(row.get("side", "") or "all"),
+        edge_role=str(row.get("edge_role", "") or "pavement_edge"),
+        approach_leg_refs=[str(value) for value in _any_list(row.get("approach_leg_refs", []))],
+        status=str(row.get("status", "") or "active"),
+        notes=str(row.get("notes", "") or ""),
+    )
+
+
+def _grading_policy_from_json(row: dict[str, object], index: int) -> IntersectionGradingPolicyRow:
+    return IntersectionGradingPolicyRow(
+        policy_id=str(row.get("policy_id", "") or f"grading:policy-{index + 1}"),
+        intersection_id=str(row.get("intersection_id", "") or ""),
+        mode=str(row.get("mode", "") or "flatten_intersection"),
+        target_crossfall_percent=_float_value(row.get("target_crossfall_percent", 0.0)),
+        primary_alignment_ref=str(row.get("primary_alignment_ref", "") or ""),
+        secondary_alignment_refs=[str(value) for value in _any_list(row.get("secondary_alignment_refs", []))],
+        status=str(row.get("status", "") or "active"),
         notes=str(row.get("notes", "") or ""),
     )
 

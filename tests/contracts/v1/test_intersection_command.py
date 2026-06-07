@@ -1,4 +1,5 @@
 import FreeCAD as App
+from types import SimpleNamespace
 
 from freecad.Corridor_Road.init_gui import corridorroad_workflow_command_groups
 from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
@@ -7,9 +8,11 @@ from freecad.Corridor_Road.v1.commands.cmd_intersection_editor import (
     INTERSECTION_SOURCE_MODES,
     NEXT_INTERSECTION_WORKFLOW_TEXT,
     alignment_model_by_ref,
+    show_intersection_review_overlay,
     starter_intersection_source_specs,
     list_v1_alignment_choices,
     validate_existing_alignment_selection,
+    INTERSECTION_REVIEW_MAX_REGION_SPAN,
     _starter_region_model_for_alignment,
     _unique_alignment_id,
 )
@@ -59,7 +62,12 @@ def test_intersection_starter_region_model_omits_zero_length_rows() -> None:
 
     assert all(row.station_end > row.station_start for row in model.region_rows)
     assert [row.region_index for row in model.region_rows] == [1, 2]
-    assert model.region_rows[0].region_id == "region:secondary-intersection"
+    assert model.region_rows[0].region_id == "region:secondary-approach"
+    assert model.region_rows[0].station_start == 0.0
+    assert model.region_rows[0].station_end == 65.0
+    assert model.region_rows[1].region_id == "region:secondary-intersection"
+    assert model.region_rows[1].station_start == 65.0
+    assert model.region_rows[1].station_end == 100.0
 
 
 def test_intersection_existing_alignment_validation_requires_two_different_refs() -> None:
@@ -96,6 +104,76 @@ def test_intersection_alignment_model_by_ref_returns_selected_alignment_model() 
 
         assert model is not None
         assert model.alignment_id == alignment.AlignmentId
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_review_overlay_includes_curb_return_preview_arcs() -> None:
+    doc = App.newDocument("CRV1IntersectionCurbReturnOverlay")
+    try:
+        primary = create_sample_v1_alignment(doc, label="Primary Road")
+        secondary = create_sample_v1_alignment(doc, label="Side Road")
+        secondary.AlignmentId = "alignment:side-road"
+        detection = SimpleNamespace(x=10.0, y=0.0, primary_station=10.0, secondary_station=10.0)
+
+        obj = show_intersection_review_overlay(
+            doc,
+            intersection_kind="t_intersection",
+            primary_alignment_ref=primary.AlignmentId,
+            secondary_alignment_ref=secondary.AlignmentId,
+            control_region_choices=[
+                {
+                    "control_region_ref": "regions:primary/region:primary-intersection",
+                    "alignment_ref": primary.AlignmentId,
+                    "station_start": 0.0,
+                    "station_end": 20.0,
+                },
+                {
+                    "control_region_ref": "regions:side/region:side-intersection",
+                    "alignment_ref": secondary.AlignmentId,
+                    "station_start": 0.0,
+                    "station_end": 20.0,
+                },
+            ],
+            detection_result=detection,
+        )
+
+        assert obj.Name == "V1IntersectionReviewOverlay"
+        assert obj.CurbReturnPolicyRef == "curb-return:starter-t_intersection:default"
+        assert obj.CurbReturnRadius == "12.000"
+        assert int(obj.CurbReturnArcCount) == 2
+        assert list(obj.CurbReturnDiagnostics) == []
+        assert int(obj.ShapePartCount) >= 2
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_review_overlay_clips_long_control_region_highlight() -> None:
+    doc = App.newDocument("CRV1IntersectionOverlayClipsLongRegion")
+    try:
+        primary = create_sample_v1_alignment(doc, label="Primary Road")
+        secondary = create_sample_v1_alignment(doc, label="Side Road")
+        secondary.AlignmentId = "alignment:side-road"
+        detection = SimpleNamespace(x=10.0, y=0.0, primary_station=10.0, secondary_station=10.0)
+
+        obj = show_intersection_review_overlay(
+            doc,
+            intersection_kind="t_intersection",
+            primary_alignment_ref=primary.AlignmentId,
+            secondary_alignment_ref=secondary.AlignmentId,
+            control_region_choices=[
+                {
+                    "control_region_ref": "regions:primary/region:primary-intersection",
+                    "alignment_ref": primary.AlignmentId,
+                    "station_start": 0.0,
+                    "station_end": 180.0,
+                },
+            ],
+            detection_result=detection,
+        )
+
+        bound_box = obj.Shape.BoundBox
+        assert float(bound_box.XLength) <= INTERSECTION_REVIEW_MAX_REGION_SPAN + 7.0
     finally:
         App.closeDocument(doc.Name)
 

@@ -242,6 +242,16 @@ class SectionOutputMapper:
                     value=", ".join(str(value) for value in control_refs if str(value).strip()),
                 )
             )
+        grading_policy_ref = str(getattr(applied_section, "active_intersection_grading_policy_ref", "") or "").strip()
+        if grading_policy_ref:
+            rows.append(
+                SectionSummaryRow(
+                    summary_id=f"{applied_section.applied_section_id}:intersection-grading-policy",
+                    kind="intersection_grading_policy",
+                    label="Intersection Grading Policy",
+                    value=grading_policy_ref,
+                )
+            )
         return rows
 
 

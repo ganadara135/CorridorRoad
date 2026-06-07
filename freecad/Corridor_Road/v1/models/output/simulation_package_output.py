@@ -44,6 +44,20 @@ class SimulationPackageOutput(OutputModelBase):
     drainage_structure_body_target_count: int = 0
     drainage_built_output_count: int = 0
     drainage_network_fuse_status: str = "not_available"
+    intersection_trim_status: str = "not_available"
+    intersection_trim_result_ref: str = ""
+    intersection_trim_boundary_pair_count: int = 0
+    intersection_trim_ready_pair_count: int = 0
+    intersection_trim_blocked_pair_count: int = 0
+    intersection_trim_pair_rows: list[dict[str, object]] = field(default_factory=list)
+    intersection_trim_fuse_status: str = "not_available"
+    intersection_trim_fuse_candidate_ref: str = ""
+    intersection_trim_fuse_source_count: int = 0
+    intersection_trim_fuse_face_count: int = 0
+    intersection_trim_fuse_open_edge_count: int = 0
+    intersection_trim_fuse_source_refs: list[str] = field(default_factory=list)
+    intersection_trim_handoff_chain_refs: list[str] = field(default_factory=list)
+    intersection_trim_handoff_stage_statuses: list[str] = field(default_factory=list)
     output_count: int = 0
     total_volume: float = 0.0
     target_families: list[str] = field(default_factory=list)

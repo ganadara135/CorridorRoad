@@ -67,10 +67,21 @@ Applied Sections, Build Parametric surfaces, Drainage Review rows, pipe previews
 | Tree exposure | Drainage preview/output objects are exposed in the FreeCAD tree so visibility and properties can be inspected. |
 | Flow Route focus | Flow Route rows can be selected/focused without editing generated pipe geometry. |
 | Build Parametric | Drainage surface consumes Applied Section `ditch_surface` rows with Drainage refs. |
-| Build Parametric review | Guided Review exposes `Drainage Surface` and `Drainage Flow` as separate rows. |
+| Build Parametric review | Guided Review exposes `Drainage Surface` and `Drainage Flow` as separate rows, and Drainage Diagnostics separates `Roadside Drainage` from `Intersection Drainage`. |
 | Quantity | First-slice ditch length and flowline length fragments preserve Drainage refs. |
 | Watertight Solids | Lined ditch, pipe segment, pipeline network, and Structure body targets can be discovered/built in first slice. |
 | Simulation package handoff | Watertight package output can preserve Drainage pipeline and Structure body provenance for later simulation QA. |
+
+### 3.1 Roadside Drainage vs Intersection Drainage
+
+Roadside Drainage follows linear Region station ranges.
+It reviews whether Applied Sections produced the expected ditch or gutter surface points for each station.
+
+Intersection Drainage follows intersection control Regions.
+It reviews the intersection surface patch low-point candidate and reports whether a Drainage Element covers that intersection or one of its control Regions.
+
+This is a review handoff, not automatic hydraulic design.
+If an intersection row is marked `missing`, add or assign an inlet/drainage element that references the intersection or the relevant control Region.
 
 ## 4. Active Source Contract
 

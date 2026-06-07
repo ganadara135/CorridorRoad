@@ -1465,6 +1465,7 @@ def _section_output_intersection_summary(section_output) -> str:
     control_area = str(getattr(rows.get("intersection_control_area"), "value", "") or "").strip()
     leg = str(getattr(rows.get("intersection_leg"), "value", "") or "").strip()
     control_regions = str(getattr(rows.get("intersection_control_regions"), "value", "") or "").strip()
+    grading_policy = str(getattr(rows.get("intersection_grading_policy"), "value", "") or "").strip()
     pieces = [f"Intersection: {intersection_id}"]
     if control_area:
         pieces.append(f"Control Area {control_area}")
@@ -1472,6 +1473,8 @@ def _section_output_intersection_summary(section_output) -> str:
         pieces.append(f"Leg {leg}")
     if control_regions:
         pieces.append(f"Regions {control_regions}")
+    if grading_policy:
+        pieces.append(f"Grading {grading_policy}")
     return " | ".join(pieces)
 
 

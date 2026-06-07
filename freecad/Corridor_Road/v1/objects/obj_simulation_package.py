@@ -77,6 +77,26 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "DrainageStructureBodyTargetCount", "Simulation Package", "drainage structure body target count")
     _add_property(obj, "App::PropertyInteger", "DrainageBuiltOutputCount", "Simulation Package", "built drainage solid output count")
     _add_property(obj, "App::PropertyString", "DrainageNetworkFuseStatus", "Simulation Package", "drainage network fuse status")
+    _add_property(obj, "App::PropertyString", "IntersectionTrimStatus", "Simulation Package", "intersection trim readiness status")
+    _add_property(obj, "App::PropertyString", "IntersectionTrimResultRef", "Simulation Package", "intersection trim-boundary result ref")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimBoundaryPairCount", "Simulation Package", "intersection trim boundary-pair count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimReadyPairCount", "Simulation Package", "intersection ready trim-pair count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimBlockedPairCount", "Simulation Package", "intersection blocked trim-pair count")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimPairIds", "Intersection Trim", "intersection trim pair ids")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimPairStatuses", "Intersection Trim", "intersection trim pair statuses")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimPatchOutputRefs", "Intersection Trim", "intersection trim patch output refs")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimRoadOutputRefs", "Intersection Trim", "intersection trim road output refs")
+    _add_property(obj, "App::PropertyFloatList", "IntersectionTrimDistancesXY", "Intersection Trim", "intersection trim pair XY distances")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimPatchSegmentsXYZ", "Intersection Trim", "intersection trim patch segment XYZ rows")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimRoadSegmentsXYZ", "Intersection Trim", "intersection trim road segment XYZ rows")
+    _add_property(obj, "App::PropertyString", "IntersectionTrimFuseStatus", "Intersection Trim", "intersection trim fuse candidate status")
+    _add_property(obj, "App::PropertyString", "IntersectionTrimFuseCandidateRef", "Intersection Trim", "intersection trim fuse candidate object ref")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimFuseSourceCount", "Intersection Trim", "intersection trim fuse source count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimFuseFaceCount", "Intersection Trim", "intersection trim fuse face count")
+    _add_property(obj, "App::PropertyInteger", "IntersectionTrimFuseOpenEdgeCount", "Intersection Trim", "intersection trim fuse open edge count")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimFuseSourceRefs", "Intersection Trim", "intersection trim fuse source refs")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffChainRefs", "Intersection Trim", "intersection trim handoff chain object refs")
+    _add_property(obj, "App::PropertyStringList", "IntersectionTrimHandoffStageStatuses", "Intersection Trim", "intersection trim handoff stage statuses")
     _add_property(obj, "App::PropertyInteger", "OutputCount", "Simulation Package", "packaged solid output count")
     _add_property(obj, "App::PropertyFloat", "TotalVolume", "Simulation Package", "packaged total solid volume")
     _add_property(obj, "App::PropertyStringList", "TargetFamilies", "Simulation Package", "target families")
@@ -179,6 +199,35 @@ def update_v1_simulation_package_output_object(
     obj.DrainageStructureBodyTargetCount = int(getattr(simulation_package_output, "drainage_structure_body_target_count", 0) or 0)
     obj.DrainageBuiltOutputCount = int(getattr(simulation_package_output, "drainage_built_output_count", 0) or 0)
     obj.DrainageNetworkFuseStatus = str(getattr(simulation_package_output, "drainage_network_fuse_status", "") or "not_available")
+    obj.IntersectionTrimStatus = str(getattr(simulation_package_output, "intersection_trim_status", "") or "not_available")
+    obj.IntersectionTrimResultRef = str(getattr(simulation_package_output, "intersection_trim_result_ref", "") or "")
+    obj.IntersectionTrimBoundaryPairCount = int(getattr(simulation_package_output, "intersection_trim_boundary_pair_count", 0) or 0)
+    obj.IntersectionTrimReadyPairCount = int(getattr(simulation_package_output, "intersection_trim_ready_pair_count", 0) or 0)
+    obj.IntersectionTrimBlockedPairCount = int(getattr(simulation_package_output, "intersection_trim_blocked_pair_count", 0) or 0)
+    trim_pairs = list(getattr(simulation_package_output, "intersection_trim_pair_rows", []) or [])
+    obj.IntersectionTrimPairIds = [str(row.get("boundary_pair_id", "") or "") for row in trim_pairs]
+    obj.IntersectionTrimPairStatuses = [str(row.get("status", "") or "") for row in trim_pairs]
+    obj.IntersectionTrimPatchOutputRefs = [str(row.get("patch_output_ref", "") or "") for row in trim_pairs]
+    obj.IntersectionTrimRoadOutputRefs = [str(row.get("road_output_ref", "") or "") for row in trim_pairs]
+    obj.IntersectionTrimDistancesXY = [float(row.get("distance_xy", 0.0) or 0.0) for row in trim_pairs]
+    obj.IntersectionTrimPatchSegmentsXYZ = [_segment_text(row.get("patch_segment_xyz", ())) for row in trim_pairs]
+    obj.IntersectionTrimRoadSegmentsXYZ = [_segment_text(row.get("road_segment_xyz", ())) for row in trim_pairs]
+    obj.IntersectionTrimFuseStatus = str(getattr(simulation_package_output, "intersection_trim_fuse_status", "") or "not_available")
+    obj.IntersectionTrimFuseCandidateRef = str(getattr(simulation_package_output, "intersection_trim_fuse_candidate_ref", "") or "")
+    obj.IntersectionTrimFuseSourceCount = int(getattr(simulation_package_output, "intersection_trim_fuse_source_count", 0) or 0)
+    obj.IntersectionTrimFuseFaceCount = int(getattr(simulation_package_output, "intersection_trim_fuse_face_count", 0) or 0)
+    obj.IntersectionTrimFuseOpenEdgeCount = int(getattr(simulation_package_output, "intersection_trim_fuse_open_edge_count", 0) or 0)
+    obj.IntersectionTrimFuseSourceRefs = [str(ref) for ref in list(getattr(simulation_package_output, "intersection_trim_fuse_source_refs", []) or []) if str(ref)]
+    obj.IntersectionTrimHandoffChainRefs = [
+        str(ref)
+        for ref in list(getattr(simulation_package_output, "intersection_trim_handoff_chain_refs", []) or [])
+        if str(ref)
+    ]
+    obj.IntersectionTrimHandoffStageStatuses = [
+        str(value)
+        for value in list(getattr(simulation_package_output, "intersection_trim_handoff_stage_statuses", []) or [])
+        if str(value)
+    ]
     obj.OutputCount = int(getattr(simulation_package_output, "output_count", 0) or 0)
     obj.TotalVolume = float(getattr(simulation_package_output, "total_volume", 0.0) or 0.0)
     obj.TargetFamilies = [str(value) for value in list(getattr(simulation_package_output, "target_families", []) or []) if str(value)]
@@ -246,6 +295,24 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
         drainage_structure_body_target_count=int(getattr(obj, "DrainageStructureBodyTargetCount", 0) or 0),
         drainage_built_output_count=int(getattr(obj, "DrainageBuiltOutputCount", 0) or 0),
         drainage_network_fuse_status=str(getattr(obj, "DrainageNetworkFuseStatus", "") or "not_available"),
+        intersection_trim_status=str(getattr(obj, "IntersectionTrimStatus", "") or "not_available"),
+        intersection_trim_result_ref=str(getattr(obj, "IntersectionTrimResultRef", "") or ""),
+        intersection_trim_boundary_pair_count=int(getattr(obj, "IntersectionTrimBoundaryPairCount", 0) or 0),
+        intersection_trim_ready_pair_count=int(getattr(obj, "IntersectionTrimReadyPairCount", 0) or 0),
+        intersection_trim_blocked_pair_count=int(getattr(obj, "IntersectionTrimBlockedPairCount", 0) or 0),
+        intersection_trim_pair_rows=_intersection_trim_pair_rows_from_object(obj),
+        intersection_trim_fuse_status=str(getattr(obj, "IntersectionTrimFuseStatus", "") or "not_available"),
+        intersection_trim_fuse_candidate_ref=str(getattr(obj, "IntersectionTrimFuseCandidateRef", "") or ""),
+        intersection_trim_fuse_source_count=int(getattr(obj, "IntersectionTrimFuseSourceCount", 0) or 0),
+        intersection_trim_fuse_face_count=int(getattr(obj, "IntersectionTrimFuseFaceCount", 0) or 0),
+        intersection_trim_fuse_open_edge_count=int(getattr(obj, "IntersectionTrimFuseOpenEdgeCount", 0) or 0),
+        intersection_trim_fuse_source_refs=[str(ref) for ref in list(getattr(obj, "IntersectionTrimFuseSourceRefs", []) or []) if str(ref)],
+        intersection_trim_handoff_chain_refs=[str(ref) for ref in list(getattr(obj, "IntersectionTrimHandoffChainRefs", []) or []) if str(ref)],
+        intersection_trim_handoff_stage_statuses=[
+            str(value)
+            for value in list(getattr(obj, "IntersectionTrimHandoffStageStatuses", []) or [])
+            if str(value)
+        ],
         output_count=int(getattr(obj, "OutputCount", 0) or 0),
         total_volume=float(getattr(obj, "TotalVolume", 0.0) or 0.0),
         target_families=[str(value) for value in list(getattr(obj, "TargetFamilies", []) or []) if str(value)],
@@ -318,6 +385,50 @@ def _bound_box_tuple(value: str) -> tuple[float, float, float, float, float, flo
 
 def _split_refs(value: str) -> list[str]:
     return [part for part in str(value or "").split("|") if part]
+
+
+def _intersection_trim_pair_rows_from_object(obj) -> list[dict[str, object]]:
+    pair_ids = list(getattr(obj, "IntersectionTrimPairIds", []) or [])
+    count = max(
+        len(pair_ids),
+        len(list(getattr(obj, "IntersectionTrimPairStatuses", []) or [])),
+        len(list(getattr(obj, "IntersectionTrimPatchOutputRefs", []) or [])),
+        len(list(getattr(obj, "IntersectionTrimRoadOutputRefs", []) or [])),
+        len(list(getattr(obj, "IntersectionTrimDistancesXY", []) or [])),
+    )
+    rows: list[dict[str, object]] = []
+    for index in range(count):
+        rows.append(
+            {
+                "boundary_pair_id": _list_value(pair_ids, index, f"intersection-trim-boundary:{index + 1}"),
+                "status": _list_value(getattr(obj, "IntersectionTrimPairStatuses", []), index, ""),
+                "patch_output_ref": _list_value(getattr(obj, "IntersectionTrimPatchOutputRefs", []), index, ""),
+                "road_output_ref": _list_value(getattr(obj, "IntersectionTrimRoadOutputRefs", []), index, ""),
+                "distance_xy": _float_list_value(getattr(obj, "IntersectionTrimDistancesXY", []), index),
+                "patch_segment_xyz": _segment_tuple(_list_value(getattr(obj, "IntersectionTrimPatchSegmentsXYZ", []), index, "")),
+                "road_segment_xyz": _segment_tuple(_list_value(getattr(obj, "IntersectionTrimRoadSegmentsXYZ", []), index, "")),
+            }
+        )
+    return rows
+
+
+def _segment_text(segment) -> str:
+    values = list(segment or [])
+    while len(values) < 6:
+        values.append(0.0)
+    return "|".join(f"{float(value):.9g}" for value in values[:6])
+
+
+def _segment_tuple(value: object) -> tuple[float, float, float, float, float, float]:
+    parts = []
+    for token in str(value or "").replace(",", "|").split("|"):
+        try:
+            parts.append(float(token))
+        except Exception:
+            parts.append(0.0)
+    while len(parts) < 6:
+        parts.append(0.0)
+    return tuple(parts[:6])  # type: ignore[return-value]
 
 
 def _list_value(values, index: int, default: str = "") -> str:

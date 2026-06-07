@@ -16,6 +16,7 @@ SOLID_TARGET_FAMILIES = {
     "lined_ditch_body",
     "drainage_pipeline_body",
     "drainage_pipeline_network_body",
+    "intersection_patch_body",
     "structure_body",
 }
 
@@ -26,6 +27,7 @@ SOLID_TARGET_SCOPE_KINDS = {
     "assembly_component",
     "structure",
     "drainage",
+    "intersection",
 }
 
 SOLID_TARGET_READINESS_STATUSES = {

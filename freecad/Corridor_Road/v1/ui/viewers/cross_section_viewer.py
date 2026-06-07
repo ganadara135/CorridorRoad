@@ -61,6 +61,27 @@ def _superelevation_summary_line(section_output) -> str:
     return " | ".join(pieces)
 
 
+def _intersection_summary_line(section_output) -> str:
+    values = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    intersection_id = str(getattr(values.get("intersection_id"), "value", "") or "").strip()
+    if not intersection_id:
+        return ""
+    control_area = str(getattr(values.get("intersection_control_area"), "value", "") or "").strip()
+    leg = str(getattr(values.get("intersection_leg"), "value", "") or "").strip()
+    grading_policy = str(getattr(values.get("intersection_grading_policy"), "value", "") or "").strip()
+    pieces = [f"Intersection: {intersection_id}"]
+    if control_area:
+        pieces.append(f"Control Area {control_area}")
+    if leg:
+        pieces.append(f"Leg {leg}")
+    if grading_policy:
+        pieces.append(f"Grading Policy {grading_policy}")
+    return " | ".join(pieces)
+
+
 def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     """Build normalized editor-handoff rows for one section viewer payload."""
 
@@ -566,6 +587,7 @@ def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: 
     leg_id = str(getattr(section, "active_intersection_leg_id", "") or "").strip()
     leg_role = str(getattr(section, "active_intersection_leg_role", "") or "").strip()
     control_refs = list(getattr(section, "active_intersection_control_region_refs", []) or [])
+    grading_policy = str(getattr(section, "active_intersection_grading_policy_ref", "") or "").strip()
     if control_area and "intersection_control_area" not in seen_kinds:
         rows.append(["intersection_control_area", "Intersection Control Area", control_area, ""])
     if (leg_id or leg_role) and "intersection_leg" not in seen_kinds:
@@ -579,6 +601,10 @@ def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: 
                 "",
             ]
         )
+    if grading_policy and "intersection_grading_policy" not in seen_kinds:
+        rows.append(["intersection_grading_policy", "Intersection Grading Policy", grading_policy, ""])
+    if grading_policy and "intersection_grading_context" not in seen_kinds:
+        rows.append(["intersection_grading_context", "Intersection Grading Context", "active inside control area", grading_policy])
     return rows
 
 
@@ -1510,29 +1536,29 @@ class CrossSectionViewerTaskPanel:
             or "(unresolved)"
         )
 
-        return "\n".join(
-            [
-                f"Station: {station_value}",
-                f"Station Label: {station_label}",
-                f"Result State: {self._result_state_value()}",
-                f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
-                f"Assembly Template: {template_label}",
-                _superelevation_summary_line(section_output),
-                f"Stations: {len(self._navigation_station_rows())}",
-                f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
-                f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
-                f"Geometry Rows: {len(self._section_geometry_rows())}",
-                f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
-                f"Drawing Labels: {len(self._drawing_label_table_rows())}",
-                f"Drawing Dimensions: {len(self._drawing_dimension_table_rows())}",
-                f"Source Ownership: {self._source_inspector_status_value()}",
-                str(self._corridor_result_status().get("text", "")),
-                f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
-                f"Review Markers: {len(self._review_marker_rows())}",
-                f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
-                *self._viewer_context_summary_lines(),
-            ]
-        )
+        lines = [
+            f"Station: {station_value}",
+            f"Station Label: {station_label}",
+            f"Result State: {self._result_state_value()}",
+            f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
+            f"Assembly Template: {template_label}",
+            _superelevation_summary_line(section_output),
+            _intersection_summary_line(section_output),
+            f"Stations: {len(self._navigation_station_rows())}",
+            f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
+            f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
+            f"Geometry Rows: {len(self._section_geometry_rows())}",
+            f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
+            f"Drawing Labels: {len(self._drawing_label_table_rows())}",
+            f"Drawing Dimensions: {len(self._drawing_dimension_table_rows())}",
+            f"Source Ownership: {self._source_inspector_status_value()}",
+            str(self._corridor_result_status().get("text", "")),
+            f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
+            f"Review Markers: {len(self._review_marker_rows())}",
+            f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
+            *self._viewer_context_summary_lines(),
+        ]
+        return "\n".join(line for line in lines if str(line or "").strip())
 
     def _viewer_context_summary_lines(self) -> list[str]:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})

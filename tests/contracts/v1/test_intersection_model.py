@@ -1,6 +1,8 @@
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     INTERSECTION_KIND_PRESETS,
     IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -81,12 +83,34 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
         intersection_model_id="intersection-model:main",
         intersection_rows=[row],
         control_area_rows=[control],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="policy:curb-return-basic",
+                intersection_id="intersection:x-01",
+                radius=12.0,
+                side="all",
+                approach_leg_refs=["intersection:x-01:leg-primary"],
+            )
+        ],
+        grading_policy_rows=[
+            IntersectionGradingPolicyRow(
+                policy_id="policy:intersection-grading-basic",
+                intersection_id="intersection:x-01",
+                mode="flatten_intersection",
+                target_crossfall_percent=0.0,
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:cross"],
+            )
+        ],
     )
 
     assert model.intersection_rows[0].intersection_kind == "cross_intersection"
     assert model.intersection_rows[0].secondary_station_refs["alignment:cross"] == 80.0
     assert model.intersection_rows[0].leg_rows[0].centerline3d_ref == "centerline3d:main"
     assert model.control_area_rows[0].control_region_refs == ["region:main-intersection"]
+    assert model.curb_return_policy_rows[0].radius == 12.0
+    assert model.curb_return_policy_rows[0].approach_leg_refs == ["intersection:x-01:leg-primary"]
+    assert model.grading_policy_rows[0].mode == "flatten_intersection"
 
 
 def test_intersection_kind_helper_rejects_unsupported_kind() -> None:

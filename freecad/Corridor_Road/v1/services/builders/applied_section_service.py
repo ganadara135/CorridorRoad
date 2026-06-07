@@ -292,6 +292,7 @@ class AppliedSectionService:
             active_intersection_leg_id=str(getattr(intersection_result, "active_leg_id", "") or ""),
             active_intersection_leg_role=str(getattr(intersection_result, "leg_role", "") or ""),
             active_intersection_control_region_refs=list(getattr(intersection_result, "control_region_refs", ()) or ()),
+            active_intersection_grading_policy_ref=str(getattr(intersection_result, "grading_policy_ref", "") or ""),
             intersection_diagnostic_rows=list(getattr(intersection_result, "diagnostic_rows", ()) or ()),
             point_rows=point_rows,
             active_structure_ids=active_structure_ids,

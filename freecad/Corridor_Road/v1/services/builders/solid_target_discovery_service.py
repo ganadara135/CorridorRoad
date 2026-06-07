@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from ...models.result.applied_section_set import AppliedSectionSet
 from ...models.result.corridor_model import CorridorModel
 from ...models.source.drainage_model import DrainageModel
+from ...models.source.intersection_model import IntersectionModel
 from ...models.source.region_model import RegionModel
 from ...models.source.structure_model import StructureModel
 from ...models.source.solid_target_model import (
@@ -27,6 +28,7 @@ class SolidTargetDiscoveryRequest:
     applied_section_set: AppliedSectionSet | None = None
     corridor_model: CorridorModel | None = None
     region_model: RegionModel | None = None
+    intersection_model: IntersectionModel | None = None
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
 
@@ -38,6 +40,7 @@ class SolidTargetDiscoveryService:
         applied = request.applied_section_set
         corridor = request.corridor_model
         region_model = request.region_model
+        intersection_model = request.intersection_model
         structure_model = request.structure_model
         drainage_model = request.drainage_model
         diagnostics: list[SolidTargetDiagnosticRow] = []
@@ -105,6 +108,14 @@ class SolidTargetDiscoveryService:
             )
             target_rows.extend(region_rows)
             diagnostics.extend(region_diagnostics)
+
+        intersection_rows, intersection_diagnostics = _intersection_patch_target_rows(
+            intersection_model,
+            applied=applied,
+            source_refs=source_refs,
+        )
+        target_rows.extend(intersection_rows)
+        diagnostics.extend(intersection_diagnostics)
 
         component_rows, component_diagnostics = _component_target_rows(
             applied,
@@ -306,6 +317,70 @@ def _structure_target_rows(
                     f"structure_kind={str(getattr(structure, 'structure_kind', '') or '')}; "
                     f"geometry_source_mode={geometry_source_mode}; "
                     f"connection_point_count={len(connection_points)}."
+                ),
+            )
+        )
+    return rows, diagnostics
+
+
+def _intersection_patch_target_rows(
+    intersection_model: IntersectionModel | None,
+    *,
+    applied: AppliedSectionSet | None,
+    source_refs: list[str],
+) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
+    if intersection_model is None:
+        return [], []
+    rows: list[SolidTargetRow] = []
+    diagnostics: list[SolidTargetDiagnosticRow] = []
+    sections = list(getattr(applied, "sections", []) or []) if applied is not None else []
+    for intersection in list(getattr(intersection_model, "intersection_rows", []) or []):
+        intersection_id = str(getattr(intersection, "intersection_id", "") or "").strip()
+        if not intersection_id:
+            continue
+        target_id = f"solid-target:intersection-patch:{_safe_id(intersection_id)}"
+        control_refs = _intersection_control_region_refs(intersection_model, intersection)
+        station_start, station_end = _intersection_station_range(intersection_model, intersection_id)
+        if station_end <= station_start:
+            station_start, station_end, _station_count = _station_range(applied)
+        section_count = _intersection_applied_section_count(sections, intersection_id, control_refs)
+        diagnostic_refs: list[str] = []
+        if section_count < 2:
+            diagnostic = _diagnostic(
+                "error",
+                "intersection_patch_target_insufficient_sections",
+                target_id,
+                "Intersection patch solid target needs Applied Sections for at least two participating control Regions.",
+                notes=f"intersection={intersection_id};control_regions={','.join(control_refs) or '-'};sections={section_count}",
+            )
+            diagnostics.append(diagnostic)
+            diagnostic_refs.append(diagnostic.diagnostic_id)
+        ready = section_count >= 2
+        rows.append(
+            SolidTargetRow(
+                target_id=target_id,
+                target_family="intersection_patch_body",
+                scope_kind="intersection",
+                station_start=station_start,
+                station_end=station_end,
+                region_ref=",".join(control_refs),
+                enabled=False,
+                readiness_status="available" if ready else "blocked",
+                source_refs=_unique_refs(
+                    source_refs
+                    + [
+                        str(getattr(intersection_model, "intersection_model_id", "") or ""),
+                        intersection_id,
+                        *control_refs,
+                        "intersection-patch-boundary:refined-preferred",
+                    ]
+                ),
+                diagnostic_refs=diagnostic_refs,
+                notes=(
+                    "Intersection patch body target discovered from IntersectionModel control Regions. "
+                    f"intersection={intersection_id}; kind={str(getattr(intersection, 'intersection_kind', '') or '')}; "
+                    f"control_regions={len(control_refs)}; applied_sections={section_count}; "
+                    "boundary_source=refined_patch_boundary_preferred; build_backend=thin_patch_prism."
                 ),
             )
         )
@@ -827,6 +902,48 @@ def _station_range(applied: AppliedSectionSet | None) -> tuple[float, float, int
     if not stations:
         return 0.0, 0.0, 0
     return min(stations), max(stations), len(set(round(value, 6) for value in stations))
+
+
+def _intersection_control_region_refs(intersection_model: IntersectionModel, intersection) -> list[str]:
+    intersection_id = str(getattr(intersection, "intersection_id", "") or "").strip()
+    refs = list(getattr(intersection, "control_region_refs", []) or [])
+    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
+        if str(getattr(area, "intersection_id", "") or "").strip() != intersection_id:
+            continue
+        refs.extend(list(getattr(area, "control_region_refs", []) or []))
+    return _unique_refs(refs)
+
+
+def _intersection_station_range(intersection_model: IntersectionModel, intersection_id: str) -> tuple[float, float]:
+    stations: list[float] = []
+    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
+        if str(getattr(area, "intersection_id", "") or "").strip() != str(intersection_id or "").strip():
+            continue
+        for station_range in list(getattr(area, "station_ranges", []) or []):
+            if len(station_range) < 2:
+                continue
+            try:
+                stations.extend([float(station_range[0]), float(station_range[1])])
+            except Exception:
+                pass
+    if not stations:
+        return 0.0, 0.0
+    return min(stations), max(stations)
+
+
+def _intersection_applied_section_count(sections: list[object], intersection_id: str, control_refs: list[str]) -> int:
+    controls = set(str(value or "").strip() for value in list(control_refs or []) if str(value or "").strip())
+    keys: set[str] = set()
+    for section in list(sections or []):
+        section_id = str(getattr(section, "applied_section_id", "") or "").strip()
+        if not section_id:
+            section_id = f"{getattr(section, 'alignment_id', '')}:{getattr(section, 'station', '')}"
+        if str(getattr(section, "active_intersection_id", "") or "").strip() == str(intersection_id or "").strip():
+            keys.add(section_id)
+            continue
+        if str(getattr(section, "region_id", "") or "").strip() in controls:
+            keys.add(section_id)
+    return len(keys)
 
 
 def _source_refs(applied: AppliedSectionSet | None, corridor: CorridorModel | None) -> list[str]:

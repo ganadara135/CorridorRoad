@@ -101,6 +101,7 @@ class AppliedSection(ResultModelBase):
     active_intersection_leg_id: str = ""
     active_intersection_leg_role: str = ""
     active_intersection_control_region_refs: list[str] = field(default_factory=list)
+    active_intersection_grading_policy_ref: str = ""
     intersection_diagnostic_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
