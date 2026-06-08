@@ -95,6 +95,7 @@ class AppliedSectionSetBuildRequest:
     override_model: OverrideModel
     stations: list[float]
     applied_section_set_id: str
+    station_kinds: dict[float, str] = field(default_factory=dict)
     assembly_models: list[AssemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
@@ -757,13 +758,14 @@ class AppliedSectionSetService:
                     centerline3d_result=request.centerline3d_result,
                 )
             )
+            station_kind = _station_kind_for(request.station_kinds, station)
             sections.append(section)
             station_rows.append(
                 AppliedSectionStationRow(
                     station_row_id=f"{request.applied_section_set_id}:station:{index}",
                     station=station,
                     applied_section_id=section_id,
-                    kind="regular_sample",
+                    kind=station_kind,
                 )
             )
         return AppliedSectionSet(
@@ -816,6 +818,17 @@ def _unique_refs(values: list[str]) -> list[str]:
         seen.add(text)
         output.append(text)
     return output
+
+
+def _station_kind_for(station_kinds: dict[float, str], station: float, *, tolerance: float = 1.0e-6) -> str:
+    for key, value in dict(station_kinds or {}).items():
+        try:
+            if abs(float(key) - float(station)) <= tolerance:
+                text = str(value or "").strip()
+                return text or "regular_sample"
+        except Exception:
+            continue
+    return "regular_sample"
 
 
 def _template_with_superelevation(

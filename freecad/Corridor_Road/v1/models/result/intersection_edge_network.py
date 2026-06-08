@@ -24,6 +24,7 @@ class IntersectionEdgeNetworkRow:
     station_start: float = 0.0
     station_end: float = 0.0
     radius: float = 0.0
+    contact_station_refs: dict[str, tuple[float, ...]] = field(default_factory=dict)
     start_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     end_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     status: str = "candidate"

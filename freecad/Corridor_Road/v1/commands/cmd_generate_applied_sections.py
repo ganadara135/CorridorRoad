@@ -41,6 +41,7 @@ from ..objects.obj_structure import find_v1_structure_model, to_structure_model
 from ..objects.obj_superelevation import find_v1_superelevation_source, to_superelevation_model
 from ..services.builders import AppliedSectionSetBuildRequest, AppliedSectionSetService
 from ..services.evaluation import Centerline3DFrameService
+from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
 
 APPLIED_SECTION_REVIEW_ROW_COLORS = {
@@ -83,7 +84,13 @@ def build_document_applied_section_set(
     drainage_model = to_drainage_model(drainage_obj)
     superelevation_model = to_superelevation_model(superelevation_obj)
     intersection_model = to_intersection_model(intersection_obj)
-    stations = _station_values(stationing_obj)
+    source_stations = _station_values(stationing_obj)
+    stations = _with_intersection_supplemental_stations(
+        source_stations,
+        intersection_model,
+        str(getattr(alignment, "alignment_id", "") or ""),
+    )
+    station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
 
     missing = []
     if alignment is None:
@@ -137,6 +144,7 @@ def build_document_applied_section_set(
             intersection_model=intersection_model,
             override_model=override_model,
             stations=stations,
+            station_kinds=station_kinds,
             applied_section_set_id="applied-sections:main",
             existing_ground_surface=existing_ground_surface,
             centerline3d_result=centerline3d_result,
@@ -168,7 +176,13 @@ def _build_multi_alignment_applied_section_set(
         alignment = bundle["alignment"]
         profile = bundle["profile"]
         region_model = bundle["region_model"]
-        stations = list(bundle["stations"])
+        source_stations = list(bundle["stations"])
+        stations = _with_intersection_supplemental_stations(
+            source_stations,
+            intersection_model,
+            str(getattr(bundle["alignment"], "alignment_id", "") or ""),
+        )
+        station_kinds = _intersection_supplemental_station_kind_map(source_stations, stations)
         alignment_id = str(getattr(alignment, "alignment_id", "") or f"alignment:{bundle_index}")
         set_id = f"applied-sections:{_safe_source_token(alignment_id)}"
         override_model = OverrideModel(
@@ -192,6 +206,7 @@ def _build_multi_alignment_applied_section_set(
                 intersection_model=intersection_model,
                 override_model=override_model,
                 stations=stations,
+                station_kinds=station_kinds,
                 applied_section_set_id=set_id,
                 existing_ground_surface=existing_ground_surface,
                 centerline3d_result=_centerline3d_result_for_alignment(centerline3d_result, alignment_id),
@@ -388,6 +403,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         output.append(
             {
                 "station": float(getattr(station_row, "station", 0.0) or 0.0),
+                "station_kind": str(getattr(station_row, "kind", "") or "regular_sample"),
                 "applied_section_id": section_id,
                 "x": float(getattr(frame, "x", 0.0) or 0.0),
                 "y": float(getattr(frame, "y", 0.0) or 0.0),
@@ -448,6 +464,59 @@ def show_applied_section_preview_object(document, applied_section_set, row_index
     _set_preview_string_property(obj, "PreviewMode", _applied_section_preview_mode(section))
     _set_preview_integer_property(obj, "PreviewPointCount", _applied_section_preview_point_count(section))
     _set_preview_float_property(obj, "Station", station)
+    _style_applied_section_preview_object(obj)
+    _remove_applied_section_station_marker_object(document)
+    try:
+        from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+        route_to_v1_tree(find_project(document), obj)
+    except Exception:
+        pass
+    try:
+        document.recompute()
+    except Exception:
+        pass
+    return obj
+
+
+def show_all_applied_sections_preview_object(document, applied_section_set):
+    """Create or update a 3D preview containing every AppliedSection row."""
+
+    if document is None:
+        raise RuntimeError("No active document.")
+    if App is None or Part is None:
+        raise RuntimeError("FreeCAD Part workbench is required for Applied Sections preview.")
+    sections = list(getattr(applied_section_set, "sections", []) or [])
+    if not sections:
+        raise ValueError("No Applied Section rows are available for preview.")
+    shapes = []
+    preview_point_count = 0
+    stations = []
+    for section in sections:
+        try:
+            shape = applied_section_preview_shape(section)
+            if shape is not None and not shape.isNull():
+                shapes.append(shape)
+                preview_point_count += _applied_section_preview_point_count(section)
+                stations.append(float(getattr(section, "station", 0.0) or 0.0))
+        except Exception:
+            continue
+    if not shapes:
+        raise ValueError("No Applied Section preview geometry could be built.")
+    obj = document.getObject("V1AppliedSectionsShowAllPreview")
+    if obj is None:
+        obj = document.addObject("Part::Feature", "V1AppliedSectionsShowAllPreview")
+    obj.Label = f"Applied Sections Preview - All ({len(shapes)})"
+    obj.Shape = Part.Compound(shapes)
+    _set_preview_string_property(obj, "CRRecordKind", "v1_applied_sections_show_all_preview")
+    _set_preview_string_property(obj, "V1ObjectType", "V1AppliedSectionsShowAllPreview")
+    _set_preview_string_property(obj, "AppliedSectionSetId", str(getattr(applied_section_set, "applied_section_set_id", "") or ""))
+    _set_preview_string_property(obj, "PreviewMode", "all_section_points")
+    _set_preview_integer_property(obj, "PreviewSectionCount", len(shapes))
+    _set_preview_integer_property(obj, "PreviewPointCount", preview_point_count)
+    if stations:
+        _set_preview_float_property(obj, "StationStart", min(stations))
+        _set_preview_float_property(obj, "StationEnd", max(stations))
     _style_applied_section_preview_object(obj)
     _remove_applied_section_station_marker_object(document)
     try:
@@ -588,10 +657,11 @@ class V1AppliedSectionsTaskPanel:
         self._progress.setFormat("Ready")
         layout.addWidget(self._progress)
 
-        self._review_table = QtWidgets.QTableWidget(0, 15)
+        self._review_table = QtWidgets.QTableWidget(0, 16)
         self._review_table.setHorizontalHeaderLabels(
             [
                 "STA",
+                "Kind",
                 "X",
                 "Y",
                 "Z",
@@ -629,6 +699,10 @@ class V1AppliedSectionsTaskPanel:
         build_button = QtWidgets.QPushButton("Build Sections")
         build_button.clicked.connect(lambda: self._apply(close_after=False))
         action_row.addWidget(build_button)
+        show_all_button = QtWidgets.QPushButton("Show All")
+        show_all_button.setToolTip("Show every generated Applied Section in the 3D View.")
+        show_all_button.clicked.connect(self._show_all_review_rows)
+        action_row.addWidget(show_all_button)
         action_row.addStretch(1)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.reject)
@@ -657,6 +731,7 @@ class V1AppliedSectionsTaskPanel:
                     [
                         "",
                         f"Existing Applied Sections: {len(review_rows)} row(s)",
+                        f"Intersection supplemental: {sum(1 for row in review_rows if str(row.get('station_kind', '') or '') == 'intersection_supplemental')}",
                         f"Existing diagnostics: {sum(int(row.get('diagnostic_count', 0) or 0) for row in review_rows)}",
                     ]
                 )
@@ -740,6 +815,7 @@ class V1AppliedSectionsTaskPanel:
             self._review_table.insertRow(row_index)
             values = [
                 _format_float(row.get("station", 0.0)),
+                str(row.get("station_kind", "") or "regular_sample"),
                 _format_float(row.get("x", 0.0)),
                 _format_float(row.get("y", 0.0)),
                 _format_float(row.get("z", 0.0)),
@@ -780,6 +856,33 @@ class V1AppliedSectionsTaskPanel:
         except Exception as exc:
             self._summary.setPlainText(f"Applied Section preview was not shown:\n{exc}")
             _show_message(self.form, "Applied Sections", f"Applied Section preview was not shown.\n{exc}")
+
+    def _show_all_review_rows(self) -> None:
+        try:
+            applied = to_applied_section_set(find_v1_applied_section_set(self.document))
+            if applied is None:
+                applied = build_document_applied_section_set(self.document)
+            preview = show_all_applied_sections_preview_object(self.document, applied)
+            if Gui is not None:
+                try:
+                    Gui.Selection.clearSelection()
+                    Gui.Selection.addSelection(preview)
+                except Exception:
+                    pass
+                _fit_selected_preview()
+            section_count = int(getattr(preview, "PreviewSectionCount", 0) or 0)
+            station_start = float(getattr(preview, "StationStart", 0.0) or 0.0)
+            station_end = float(getattr(preview, "StationEnd", 0.0) or 0.0)
+            self._summary.setPlainText(
+                "All Applied Sections preview shown.\n"
+                f"Sections: {section_count}\n"
+                f"STA: {station_start:.3f} -> {station_end:.3f}\n"
+                f"Object: {preview.Label}\n\n"
+                "Double-click a table row to inspect one section."
+            )
+        except Exception as exc:
+            self._summary.setPlainText(f"All Applied Sections preview was not shown:\n{exc}")
+            _show_message(self.form, "Applied Sections", f"All Applied Sections preview was not shown.\n{exc}")
 
     def _apply_review_row_style(self, row_index: int, status: str) -> None:
         color = applied_section_review_row_color(status)
@@ -824,6 +927,179 @@ def _station_values(stationing_obj) -> list[float]:
         except Exception:
             pass
     return values
+
+
+def _active_intersection_model_for_document(document):
+    try:
+        return to_intersection_model(find_v1_intersection_model(document))
+    except Exception:
+        return None
+
+
+def _with_intersection_supplemental_stations(
+    stations: list[float],
+    intersection_model,
+    alignment_id: str,
+) -> list[float]:
+    """Merge intersection boundary and curb-return control stations into a station list."""
+
+    base = _unique_station_values(stations)
+    if intersection_model is None or not base:
+        return base
+    low = min(base)
+    high = max(base)
+    supplemental = _intersection_supplemental_stations_for_alignment(
+        intersection_model,
+        alignment_id,
+        station_min=low,
+        station_max=high,
+    )
+    return _unique_station_values([*base, *supplemental])
+
+
+def _intersection_supplemental_station_kind_map(source_stations: list[float], built_stations: list[float]) -> dict[float, str]:
+    source = _unique_station_values(source_stations)
+    output: dict[float, str] = {}
+    for station in _unique_station_values(built_stations):
+        output[station] = "regular_sample" if _station_in_list(station, source) else "intersection_supplemental"
+    return output
+
+
+def _station_in_list(station: float, stations: list[float], *, tolerance: float = 1.0e-6) -> bool:
+    for value in list(stations or []):
+        try:
+            if abs(float(value) - float(station)) <= tolerance:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _intersection_supplemental_stations_for_alignment(
+    intersection_model,
+    alignment_id: str,
+    *,
+    station_min: float,
+    station_max: float,
+) -> list[float]:
+    """Return result-only Applied Section stations needed for intersection handoff."""
+
+    alignment_ref = str(alignment_id or "").strip()
+    if not alignment_ref:
+        return []
+    output: list[float] = []
+    output.extend(
+        _intersection_edge_network_contact_stations_for_alignment(
+            intersection_model,
+            alignment_ref,
+        )
+    )
+    curb_radius = _intersection_default_curb_radius(intersection_model)
+
+    for row in list(getattr(intersection_model, "intersection_rows", []) or []):
+        center_station = None
+        if alignment_ref == str(getattr(row, "primary_alignment_ref", "") or "").strip():
+            center_station = _float_or_none(getattr(row, "primary_station", None))
+        else:
+            secondary_refs = dict(getattr(row, "secondary_station_refs", {}) or {})
+            center_station = _float_or_none(secondary_refs.get(alignment_ref))
+        if center_station is not None:
+            output.extend(_intersection_center_control_stations(center_station, curb_radius))
+        for leg in list(getattr(row, "leg_rows", []) or []):
+            if alignment_ref != str(getattr(leg, "alignment_ref", "") or "").strip():
+                continue
+            output.append(float(getattr(leg, "approach_station_start", 0.0) or 0.0))
+            output.append(float(getattr(leg, "approach_station_end", 0.0) or 0.0))
+
+    for area in list(getattr(intersection_model, "control_area_rows", []) or []):
+        if alignment_ref != str(getattr(area, "alignment_ref", "") or "").strip():
+            continue
+        for start, end in list(getattr(area, "station_ranges", []) or []):
+            output.extend([float(start), float(end), (float(start) + float(end)) * 0.5])
+        for start, end in list(getattr(area, "influence_ranges", []) or []):
+            output.extend([float(start), float(end)])
+
+    return _unique_station_values(
+        [
+            _clamp_station(value, station_min=station_min, station_max=station_max)
+            for value in output
+            if _is_finite_number(value)
+        ]
+    )
+
+
+def _intersection_edge_network_contact_stations_for_alignment(
+    intersection_model,
+    alignment_id: str,
+) -> list[float]:
+    """Read exact intersection edge-network contact stations when the contract exposes them."""
+
+    alignment_ref = str(alignment_id or "").strip()
+    if intersection_model is None or not alignment_ref:
+        return []
+    output: list[float] = []
+    try:
+        edge_network = IntersectionEvaluationService().evaluate_edge_network(intersection_model)
+    except Exception:
+        return []
+    for row in list(getattr(edge_network, "edge_rows", []) or []):
+        if str(getattr(row, "edge_family", "") or "") != "curb_return":
+            continue
+        contact_refs = dict(getattr(row, "contact_station_refs", {}) or {})
+        output.extend([float(value) for value in list(contact_refs.get(alignment_ref, ()) or ()) if _is_finite_number(value)])
+    return _unique_station_values(output)
+
+
+def _intersection_center_control_stations(center_station: float, curb_radius: float) -> list[float]:
+    radius = max(float(curb_radius or 0.0), 0.0)
+    if radius <= 1.0e-9:
+        return [float(center_station)]
+    return [
+        float(center_station) - radius,
+        float(center_station) - radius * 0.5,
+        float(center_station),
+        float(center_station) + radius * 0.5,
+        float(center_station) + radius,
+    ]
+
+
+def _intersection_default_curb_radius(intersection_model) -> float:
+    radii = [
+        max(float(getattr(row, "radius", 0.0) or 0.0), 0.0)
+        for row in list(getattr(intersection_model, "curb_return_policy_rows", []) or [])
+        if str(getattr(row, "status", "active") or "active") != "disabled"
+    ]
+    return max(radii) if radii else 0.0
+
+
+def _unique_station_values(values: list[float], *, tolerance: float = 1.0e-6) -> list[float]:
+    output: list[float] = []
+    for value in sorted(float(v) for v in list(values or []) if _is_finite_number(v)):
+        if output and abs(output[-1] - value) <= tolerance:
+            continue
+        output.append(value)
+    return output
+
+
+def _float_or_none(value) -> float | None:
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _is_finite_number(value) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except Exception:
+        return False
+
+
+def _clamp_station(value: float, *, station_min: float, station_max: float) -> float:
+    return max(float(station_min), min(float(station_max), float(value)))
 
 
 def _build_applied_sections_centerline3d_result(document):

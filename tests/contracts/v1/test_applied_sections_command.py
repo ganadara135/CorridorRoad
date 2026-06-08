@@ -15,7 +15,14 @@ from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
     applied_section_review_rows,
     apply_v1_applied_section_set,
     build_document_applied_section_set,
+    show_all_applied_sections_preview_object,
     show_applied_section_preview_object,
+)
+from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionModel,
+    IntersectionRow,
 )
 from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_model_from_document
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
@@ -387,6 +394,7 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         assert len(progress_bars) == 1
         assert not any(check.text() == "Fast Evaluation" for check in panel.form.findChildren(QtWidgets.QCheckBox))
         assert "Build Sections" in button_labels
+        assert "Show All" in button_labels
         assert "Validate" not in button_labels
         assert "Apply" not in button_labels
         assert progress_bars[0].format() == "Ready"
@@ -394,8 +402,8 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         assert panel._progress.value() == 100
         assert panel._progress.format() == "Applied Sections complete"
         assert "Fast Evaluation" not in panel._summary.toPlainText()
-        assert panel._review_table.item(0, 5).text() == "basic-road"
         assert panel._review_table.item(0, 6).text() == "basic-road"
+        assert panel._review_table.item(0, 7).text() == "basic-road"
     finally:
         applied_sections_command._show_message = original_show_message
         App.closeDocument(doc.Name)
@@ -465,6 +473,76 @@ def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None
         App.closeDocument(doc.Name)
 
 
+def test_intersection_supplemental_stations_are_added_to_applied_sections() -> None:
+    model = IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:main",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:side"],
+                primary_station=100.0,
+                secondary_station_refs={"alignment:side": 40.0},
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="intersection:t-01:main-area",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:main",
+                station_ranges=[(90.0, 110.0)],
+            ),
+            IntersectionControlArea(
+                control_area_id="intersection:t-01:side-area",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                station_ranges=[(30.0, 50.0)],
+            ),
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:intersection:t-01:default",
+                intersection_id="intersection:t-01",
+                radius=12.0,
+            )
+        ],
+    )
+
+    main_stations = applied_sections_command._with_intersection_supplemental_stations(
+        [0.0, 120.0],
+        model,
+        "alignment:main",
+    )
+    main_kinds = applied_sections_command._intersection_supplemental_station_kind_map([0.0, 120.0], main_stations)
+    side_stations = applied_sections_command._with_intersection_supplemental_stations(
+        [0.0, 80.0],
+        model,
+        "alignment:side",
+    )
+    side_kinds = applied_sections_command._intersection_supplemental_station_kind_map([0.0, 80.0], side_stations)
+
+    assert 88.0 in main_stations
+    assert 94.0 in main_stations
+    assert 100.0 in main_stations
+    assert 106.0 in main_stations
+    assert 112.0 in main_stations
+    assert 90.0 in main_stations
+    assert 110.0 in main_stations
+    assert 28.0 in side_stations
+    assert 34.0 in side_stations
+    assert 40.0 in side_stations
+    assert 46.0 in side_stations
+    assert 52.0 in side_stations
+    assert 30.0 in side_stations
+    assert 50.0 in side_stations
+    assert main_kinds[0.0] == "regular_sample"
+    assert main_kinds[100.0] == "intersection_supplemental"
+    assert side_kinds[40.0] == "intersection_supplemental"
+
+
 def test_show_applied_section_preview_object_creates_selected_section_line() -> None:
     doc, project = _new_project_doc()
     try:
@@ -493,6 +571,34 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         assert obj.Shape.BoundBox.XLength > 0.0 or obj.Shape.BoundBox.YLength > 0.0
         assert len(obj.Shape.Edges) >= 4
         assert len(obj.Shape.Solids) == 0
+        assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_show_all_applied_sections_preview_object_creates_combined_section_lines() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+        alignment = create_sample_v1_alignment(doc, project=project)
+        create_sample_v1_profile(doc, project=project, alignment=alignment)
+        create_v1_stationing(doc, project=project, alignment=alignment, interval=45.0)
+        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
+        create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
+        result = build_document_applied_section_set(doc, project=project)
+
+        obj = show_all_applied_sections_preview_object(doc, result)
+
+        assert obj is not None
+        assert obj.CRRecordKind == "v1_applied_sections_show_all_preview"
+        assert obj.V1ObjectType == "V1AppliedSectionsShowAllPreview"
+        assert obj.PreviewMode == "all_section_points"
+        assert int(obj.PreviewSectionCount) == len(result.sections)
+        assert int(obj.PreviewPointCount) >= len(result.sections) * 4
+        assert obj.StationStart <= obj.StationEnd
+        assert len(obj.Shape.Edges) >= len(result.sections) * 4
         assert obj.Name in _group_names(tree[V1_TREE_APPLIED_SECTIONS])
     finally:
         App.closeDocument(doc.Name)

@@ -511,6 +511,11 @@ class IntersectionEvaluationService:
                 )
 
         for policy_index, policy in enumerate(_curb_return_policies_for_intersection(intersection_model, topology.intersection_id), start=1):
+            contact_station_refs = _curb_return_contact_station_refs(
+                intersection_model,
+                topology,
+                policy,
+            )
             for side_index, side in enumerate(_curb_return_sides(policy, topology.intersection_kind), start=1):
                 edge_rows.append(
                     IntersectionEdgeNetworkRow(
@@ -522,6 +527,7 @@ class IntersectionEvaluationService:
                         leg_ref=",".join(str(ref) for ref in list(getattr(policy, "approach_leg_refs", []) or []) if str(ref)),
                         side=side,
                         radius=float(getattr(policy, "radius", 0.0) or 0.0),
+                        contact_station_refs=contact_station_refs,
                         status="ready" if float(getattr(policy, "radius", 0.0) or 0.0) > 0.0 else "warning",
                         notes="" if float(getattr(policy, "radius", 0.0) or 0.0) > 0.0 else "curb_return_radius_missing",
                     )
@@ -914,6 +920,82 @@ def _edge_family(edge_role: str) -> str:
     if role == "curb_return_edge":
         return "curb_return"
     return "leg_edge"
+
+
+def _curb_return_contact_station_refs(
+    intersection_model: IntersectionModel,
+    topology_result: IntersectionTopologyResult,
+    policy: IntersectionCurbReturnPolicyRow,
+) -> dict[str, tuple[float, ...]]:
+    """Return alignment-scoped curb-return control/contact stations for Applied Sections handoff."""
+
+    row = IntersectionEvaluationService._find_topology_intersection_row(
+        intersection_model,
+        str(getattr(topology_result, "intersection_id", "") or ""),
+    )
+    if row is None:
+        return {}
+    radius = max(float(getattr(policy, "radius", 0.0) or 0.0), 0.0)
+    if radius <= 0.0:
+        return {}
+    output: dict[str, tuple[float, ...]] = {}
+    span_by_alignment = {
+        str(getattr(span, "alignment_ref", "") or ""): span
+        for span in list(getattr(topology_result, "leg_span_rows", []) or [])
+        if str(getattr(span, "alignment_ref", "") or "")
+    }
+    alignment_centers: dict[str, float] = {}
+    primary_ref = str(getattr(row, "primary_alignment_ref", "") or "").strip()
+    if primary_ref:
+        alignment_centers[primary_ref] = float(getattr(row, "primary_station", 0.0) or 0.0)
+    for alignment_ref, station in dict(getattr(row, "secondary_station_refs", {}) or {}).items():
+        if str(alignment_ref or "").strip():
+            alignment_centers[str(alignment_ref)] = float(station or 0.0)
+
+    leg_refs = {
+        str(ref)
+        for ref in list(getattr(policy, "approach_leg_refs", []) or [])
+        if str(ref)
+    }
+    for span in list(getattr(topology_result, "leg_span_rows", []) or []):
+        if leg_refs and str(getattr(span, "leg_ref", "") or "") not in leg_refs:
+            continue
+        alignment_ref = str(getattr(span, "alignment_ref", "") or "").strip()
+        if not alignment_ref:
+            continue
+        center = alignment_centers.get(alignment_ref)
+        if center is None:
+            center = (float(getattr(span, "station_start", 0.0) or 0.0) + float(getattr(span, "station_end", 0.0) or 0.0)) * 0.5
+        start = max(float(getattr(span, "station_start", 0.0) or 0.0), center - radius)
+        end = min(float(getattr(span, "station_end", 0.0) or 0.0), center + radius)
+        mid_left = center - radius * 0.5
+        mid_right = center + radius * 0.5
+        stations = [start, mid_left, center, mid_right, end]
+        if alignment_ref in output:
+            stations = [*output[alignment_ref], *stations]
+        output[alignment_ref] = tuple(_unique_float_values(stations))
+
+    for alignment_ref, center in alignment_centers.items():
+        if alignment_ref in output:
+            continue
+        span = span_by_alignment.get(alignment_ref)
+        if span is not None:
+            start = max(float(getattr(span, "station_start", 0.0) or 0.0), center - radius)
+            end = min(float(getattr(span, "station_end", 0.0) or 0.0), center + radius)
+        else:
+            start = center - radius
+            end = center + radius
+        output[alignment_ref] = tuple(_unique_float_values([start, center - radius * 0.5, center, center + radius * 0.5, end]))
+    return output
+
+
+def _unique_float_values(values: list[float], *, tolerance: float = 1.0e-6) -> list[float]:
+    output: list[float] = []
+    for value in sorted(float(v) for v in list(values or [])):
+        if output and abs(output[-1] - value) <= tolerance:
+            continue
+        output.append(value)
+    return output
 
 
 def _edge_network_row_id(

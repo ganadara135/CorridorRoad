@@ -170,6 +170,7 @@ Use this table as the decision baseline when adding or refactoring v1 features.
 | Assembly | semantic-first | Components, layers, roles, materials, ditch rules, and template meaning are more important than preview geometry. |
 | Region | semantic/range-first | Region rows own station ranges, active source references, precedence, and domain ownership. |
 | Applied Sections | semantic geometry basis | Applied Sections combine station frames, active source context, semantic point roles, and evaluated coordinates for downstream builders. |
+| Intersection Applied Sections | semantic geometry basis | Intersection control areas should add result-only supplemental Applied Sections on each participating Alignment at control boundaries, center stations, and curb-return control/contact stations so Build Parametric consumes shared section frames instead of creating hidden late patches. |
 | SurfaceModel and TIN | geometry-first | Terrain, design surfaces, subgrade surfaces, daylight, drainage grading, and review meshes are open TIN or mesh-family results. |
 | Surface Transition | geometry plus semantic continuity | Transition quality depends on point roles, sampling density, interpolation, Region context, and geometric continuity. |
 | Structure source | semantic-first | Structure intent, placement, dimensions, clearances, and references should remain source-owned. |

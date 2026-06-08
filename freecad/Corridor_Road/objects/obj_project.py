@@ -1529,7 +1529,11 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_structure_connection_point_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
-    if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
+    if record_kind in {
+        "v1_applied_section_show_preview",
+        "v1_applied_sections_show_all_preview",
+        "v1_applied_section_station_marker",
+    }:
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
     if record_kind in {
         "v1_watertight_solid_output",

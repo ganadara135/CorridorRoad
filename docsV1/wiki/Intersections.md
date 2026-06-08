@@ -96,6 +96,34 @@ The 3D Centerline stage therefore supports a multi-alignment result:
 
 This avoids using the primary road baseline for the side road.
 
+## Intersection-Aware Applied Sections
+
+Applied Sections are the formal section basis for downstream intersection surfaces.
+
+Build Parametric should consume Applied Sections. It should not create hidden section rows as a late surface patch.
+
+When an Intersection source exists, `Build Sections` adds result-only supplemental section stations for each participating Alignment.
+
+These supplemental stations include:
+
+- intersection control-area start and end stations
+- the detected center station on the primary Alignment
+- the detected center station on each secondary Alignment
+- curb-return control stations around the center station, based on the active curb-return radius
+- midpoint samples inside the intersection control range
+
+The original Stationing source is not edited.
+
+The extra stations exist only in the generated AppliedSectionSet result so Design Surface, Slope Face Surface, Intersection Surface, Cross Section Viewer, and downstream solids can share the same station frames.
+
+The Applied Sections review table shows these rows with `Kind = intersection_supplemental`.
+
+Build Parametric Guided Review reports `intersection supplemental sections=N` so users can confirm the intersection handoff stations were included before surface review.
+
+Curb-return arc start/end and sampled arc contact points are treated as Applied Sections handoff points when the edge-network result exposes `contact_station_refs`.
+
+If exact arc-contact station refs are not available, Applied Sections fall back to the intersection center station, control ranges, and curb-return radius to add stable main-road and side-road supplemental stations.
+
 ## Region Behavior
 
 Intersection starter sources create Region rows per participating Alignment.

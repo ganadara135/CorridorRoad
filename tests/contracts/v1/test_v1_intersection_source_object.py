@@ -24,6 +24,7 @@ from freecad.Corridor_Road.v1.objects.obj_intersection import (
     create_or_update_v1_intersection_model_object,
     to_intersection_model,
 )
+from freecad.Corridor_Road.v1.services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
 
 
 def _new_project_doc():
@@ -206,5 +207,33 @@ def test_intersection_edge_network_preview_object_uses_source_edge_rows() -> Non
         assert obj.CurbReturnEdgeCount == 2
         assert len(list(obj.EdgeIds)) == 6
         assert obj.ShapePartCount > 0
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_intersection_edge_network_exposes_curb_return_contact_stations() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_starter_intersection_sources(doc, "t_intersection", project=project)
+        alignments = list_v1_alignment_choices(doc)
+        control_regions = list_intersection_control_region_choices(doc, intersection_ref_for_kind("t_intersection"))
+        model = build_intersection_model_from_sources(
+            intersection_kind="t_intersection",
+            source_mode="Create Starter Sources",
+            primary_alignment_ref=alignments[0][0],
+            secondary_alignment_ref=alignments[1][0],
+            control_region_choices=control_regions,
+        )
+
+        edge_network = IntersectionEvaluationService().evaluate_edge_network(model)
+        curb_edges = [row for row in edge_network.edge_rows if row.edge_family == "curb_return"]
+
+        assert curb_edges
+        for row in curb_edges:
+            assert row.contact_station_refs
+            assert alignments[0][0] in row.contact_station_refs
+            assert alignments[1][0] in row.contact_station_refs
+            assert len(row.contact_station_refs[alignments[0][0]]) >= 3
+            assert len(row.contact_station_refs[alignments[1][0]]) >= 3
     finally:
         App.closeDocument(doc.Name)
