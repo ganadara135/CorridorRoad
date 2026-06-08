@@ -33,7 +33,16 @@ from freecad.Corridor_Road.v1.models.result.applied_section_solid_profile import
 from freecad.Corridor_Road.v1.models.result.surface_model import SurfaceModel, SurfaceRow
 from freecad.Corridor_Road.v1.models.output.watertight_solid_output import WatertightSolidOutput, WatertightSolidOutputRow
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
-from freecad.Corridor_Road.v1.models.source.intersection_model import IntersectionControlArea, IntersectionModel, IntersectionRow
+from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionArmPolicyRow,
+    IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionEdgePolicyRow,
+    IntersectionGradingPolicyRow,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
+)
 from freecad.Corridor_Road.v1.models.source.structure_model import (
     CulvertGeometrySpec,
     StructureConnectionPoint,
@@ -274,6 +283,105 @@ def _sample_intersection_model() -> IntersectionModel:
                 station_ranges=[(0.0, 30.0)],
                 control_region_refs=["region:side-intersection"],
             ),
+        ],
+    )
+
+
+def _sample_surface_zone_intersection_model() -> IntersectionModel:
+    return IntersectionModel(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_model_id="intersections:surface-zones",
+        intersection_rows=[
+            IntersectionRow(
+                intersection_id="intersection:t-01",
+                intersection_kind="t_intersection",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:side"],
+                control_region_refs=["region:primary-intersection", "region:side-intersection"],
+                leg_rows=[
+                    IntersectionLegRow(
+                        leg_id="leg:primary",
+                        leg_role="primary_through",
+                        alignment_ref="alignment:main",
+                        intersection_id="intersection:t-01",
+                        region_ref="region:primary-intersection",
+                        approach_station_start=90.0,
+                        approach_station_end=110.0,
+                        arm_policy_ref="arm-policy:primary",
+                        edge_policy_refs=["edge-policy:primary:pavement", "edge-policy:primary:daylight"],
+                        grading_policy_ref="grading:intersection:t-01:default",
+                    ),
+                    IntersectionLegRow(
+                        leg_id="leg:side",
+                        leg_role="side_approach",
+                        alignment_ref="alignment:side",
+                        intersection_id="intersection:t-01",
+                        region_ref="region:side-intersection",
+                        approach_station_start=0.0,
+                        approach_station_end=30.0,
+                        arm_policy_ref="arm-policy:side",
+                        edge_policy_refs=["edge-policy:side:pavement", "edge-policy:side:daylight"],
+                        grading_policy_ref="grading:intersection:t-01:default",
+                    ),
+                ],
+            )
+        ],
+        control_area_rows=[
+            IntersectionControlArea(
+                control_area_id="control-area:t-01:primary",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:main",
+                station_ranges=[(90.0, 110.0)],
+                control_region_refs=["region:primary-intersection"],
+                curb_return_policy_ref="curb-return:intersection:t-01:default",
+                grading_policy_ref="grading:intersection:t-01:default",
+            ),
+            IntersectionControlArea(
+                control_area_id="control-area:t-01:side",
+                intersection_id="intersection:t-01",
+                alignment_ref="alignment:side",
+                station_ranges=[(0.0, 30.0)],
+                control_region_refs=["region:side-intersection"],
+                curb_return_policy_ref="curb-return:intersection:t-01:default",
+                grading_policy_ref="grading:intersection:t-01:default",
+            ),
+        ],
+        arm_policy_rows=[
+            IntersectionArmPolicyRow("arm-policy:primary", "intersection:t-01", "leg:primary"),
+            IntersectionArmPolicyRow("arm-policy:side", "intersection:t-01", "leg:side"),
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                "curb-return:intersection:t-01:default",
+                "intersection:t-01",
+                radius=12.0,
+                approach_leg_refs=["leg:primary", "leg:side"],
+            )
+        ],
+        edge_policy_rows=[
+            IntersectionEdgePolicyRow("edge-policy:primary:pavement", "intersection:t-01", "leg:primary"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:primary:daylight",
+                "intersection:t-01",
+                "leg:primary",
+                edge_role="daylight_hinge",
+            ),
+            IntersectionEdgePolicyRow("edge-policy:side:pavement", "intersection:t-01", "leg:side"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:side:daylight",
+                "intersection:t-01",
+                "leg:side",
+                edge_role="daylight_hinge",
+            ),
+        ],
+        grading_policy_rows=[
+            IntersectionGradingPolicyRow(
+                "grading:intersection:t-01:default",
+                "intersection:t-01",
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:side"],
+            )
         ],
     )
 
@@ -707,6 +815,47 @@ def test_watertight_solids_discovers_blocked_intersection_patch_body_target() ->
         )
         assert panel._target_table.item(row_index, 1).text() == "Intersection Patch Solid - intersection:t-01"
         assert panel._target_table.item(row_index, 2).text() == "Intersection Patch"
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_watertight_solids_discovers_intersection_surface_zone_target_handoff_rows() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc("V1WatertightSolidsIntersectionZoneTargetHandoffTest")
+    try:
+        _populate_ready_build_corridor_outputs(doc, project)
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_surface_zone_intersection_model(),
+        )
+
+        target_model = discover_watertight_solid_targets(doc)
+        families = [row.target_family for row in target_model.target_rows]
+        zone_targets = [
+            row
+            for row in target_model.target_rows
+            if row.target_family
+            in {
+                "intersection_pavement_body",
+                "intersection_subgrade_body",
+                "intersection_slope_body",
+                "intersection_curb_return_body",
+            }
+        ]
+        panel = V1WatertightSolidsTaskPanel(document=doc)
+        pavement_target = [row for row in zone_targets if row.target_family == "intersection_pavement_body"][0]
+        row_index = _target_table_row(panel, pavement_target.target_id)
+
+        assert "intersection_pavement_body" in families
+        assert "intersection_subgrade_body" in families
+        assert "intersection_slope_body" in families
+        assert "intersection_curb_return_body" in families
+        assert all(row.scope_kind == "intersection" for row in zone_targets)
+        assert all(row.readiness_status == "planned" for row in zone_targets)
+        assert all("build_backend=planned_edge_network_zone_solid" in row.notes for row in zone_targets)
+        assert any("intersection-zone:" in ref for row in zone_targets for ref in row.source_refs)
+        assert panel._target_table.item(row_index, 2).text() == "Intersection: Pavement"
     finally:
         App.closeDocument(doc.Name)
 

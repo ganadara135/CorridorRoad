@@ -314,6 +314,328 @@ def _build_source_inspector(
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
     }
 
+def _build_intersection_context_rows(
+    document,
+    *,
+    intersection_model_obj=None,
+    applied_section=None,
+) -> list[dict[str, object]]:
+    """Build intersection contract rows for the focused cross-section station."""
+
+    active_intersection = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
+    if not active_intersection:
+        return []
+
+    try:
+        from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+    except Exception:
+        find_v1_intersection_model = None
+        to_intersection_model = None
+    try:
+        from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
+    except Exception:
+        IntersectionEvaluationService = None
+
+    model_obj = intersection_model_obj
+    if model_obj is None and document is not None and find_v1_intersection_model is not None:
+        model_obj = find_v1_intersection_model(document)
+    if model_obj is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "missing",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection source model was not found.",
+            )
+        ]
+
+    model = to_intersection_model(model_obj) if to_intersection_model is not None else None
+    if model is None and hasattr(model_obj, "intersection_rows"):
+        model = model_obj
+    if model is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "error",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection source model could not be decoded.",
+            )
+        ]
+    if IntersectionEvaluationService is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "error",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection evaluation service is unavailable.",
+            )
+        ]
+
+    active_leg = str(getattr(applied_section, "active_intersection_leg_id", "") or "").strip()
+    active_leg_role = str(getattr(applied_section, "active_intersection_leg_role", "") or "").strip()
+    active_control_area = str(getattr(applied_section, "active_intersection_control_area_id", "") or "").strip()
+    active_alignment = str(getattr(applied_section, "alignment_id", "") or "").strip()
+    active_grading_policy = str(getattr(applied_section, "active_intersection_grading_policy_ref", "") or "").strip()
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology_result=topology)
+    surface_zones = service.evaluate_surface_zones(model, edge_network_result=edge_network)
+    corridor_clips = service.evaluate_corridor_clipping(
+        model,
+        topology_result=topology,
+        surface_zone_result=surface_zones,
+    )
+    drainage_hints = service.evaluate_drainage_hints(model, surface_zone_result=surface_zones)
+
+    rows: list[dict[str, object]] = [
+        _intersection_context_row(
+            "topology",
+            topology.status,
+            getattr(topology, "topology_result_id", "") or active_intersection,
+            "intersection",
+            source_refs=[active_intersection],
+            notes=(
+                f"legs={int(getattr(topology, 'leg_span_count', 0) or 0)}; "
+                f"control areas={int(getattr(topology, 'control_area_count', 0) or 0)}"
+            ),
+        )
+    ]
+
+    for leg_row in list(getattr(topology, "leg_span_rows", []) or []):
+        if active_leg and str(getattr(leg_row, "leg_ref", "") or "") != active_leg:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "topology",
+                getattr(leg_row, "status", "") or topology.status,
+                getattr(leg_row, "leg_span_id", "") or active_leg,
+                getattr(leg_row, "leg_role", "") or active_leg_role or "leg",
+                source_refs=[
+                    getattr(leg_row, "alignment_ref", ""),
+                    getattr(leg_row, "region_ref", ""),
+                    getattr(leg_row, "arm_policy_ref", ""),
+                    getattr(leg_row, "grading_policy_ref", ""),
+                ],
+                boundary_refs=[getattr(leg_row, "control_area_ref", "")],
+                notes=f"STA {float(getattr(leg_row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(leg_row, 'station_end', 0.0) or 0.0):.3f}",
+            )
+        )
+
+    for control_row in list(getattr(topology, "control_area_rows", []) or []):
+        if active_control_area and str(getattr(control_row, "control_area_id", "") or "") != active_control_area:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "control_area",
+                getattr(control_row, "status", "") or topology.status,
+                getattr(control_row, "control_area_id", "") or active_control_area,
+                "active_control_area",
+                source_refs=[
+                    getattr(control_row, "alignment_ref", ""),
+                    getattr(control_row, "curb_return_policy_ref", ""),
+                    getattr(control_row, "grading_policy_ref", ""),
+                    getattr(control_row, "drainage_policy_ref", ""),
+                ],
+                boundary_refs=list(getattr(control_row, "control_region_refs", []) or []),
+                notes=_station_range_note(getattr(control_row, "station_ranges", ()) or ()),
+            )
+        )
+
+    for edge_row in list(getattr(edge_network, "edge_rows", []) or []):
+        edge_leg = str(getattr(edge_row, "leg_ref", "") or "").strip()
+        edge_control = str(getattr(edge_row, "control_area_ref", "") or "").strip()
+        if active_leg and edge_leg and edge_leg != active_leg:
+            continue
+        if active_control_area and edge_control and edge_control != active_control_area:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "edge_network",
+                getattr(edge_row, "status", "") or edge_network.status,
+                getattr(edge_row, "edge_id", ""),
+                getattr(edge_row, "edge_role", "") or "edge",
+                source_refs=[
+                    getattr(edge_row, "source_policy_ref", ""),
+                    getattr(edge_row, "alignment_ref", ""),
+                    getattr(edge_row, "leg_ref", ""),
+                ],
+                boundary_refs=[edge_control],
+                notes=(
+                    f"family={getattr(edge_row, 'edge_family', '')}; side={getattr(edge_row, 'side', '')}; "
+                    f"STA {float(getattr(edge_row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(edge_row, 'station_end', 0.0) or 0.0):.3f}"
+                ),
+            )
+        )
+
+    for zone_row in list(getattr(surface_zones, "zone_rows", []) or []):
+        leg_refs = [str(value or "").strip() for value in list(getattr(zone_row, "leg_refs", ()) or ()) if str(value or "").strip()]
+        control_refs = [
+            str(value or "").strip()
+            for value in list(getattr(zone_row, "control_area_refs", ()) or ())
+            if str(value or "").strip()
+        ]
+        if active_leg and leg_refs and active_leg not in leg_refs:
+            continue
+        if active_control_area and control_refs and active_control_area not in control_refs:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "surface_zone",
+                getattr(zone_row, "status", "") or surface_zones.status,
+                getattr(zone_row, "zone_id", ""),
+                getattr(zone_row, "design_zone_role", "") or getattr(zone_row, "zone_role", "") or "zone",
+                source_refs=[
+                    getattr(zone_row, "vertical_policy_ref", ""),
+                    *list(getattr(zone_row, "source_edge_refs", ()) or ()),
+                ],
+                boundary_refs=list(getattr(zone_row, "boundary_edge_refs", ()) or ()),
+                notes=(
+                    f"surface={getattr(zone_row, 'surface_role', '')}; "
+                    f"triangulation={getattr(zone_row, 'triangulation_method', '')}"
+                ),
+            )
+        )
+
+    for clip_row in list(getattr(corridor_clips, "clip_rows", []) or []):
+        clip_control = str(getattr(clip_row, "control_area_ref", "") or "").strip()
+        clip_alignment = str(getattr(clip_row, "alignment_ref", "") or "").strip()
+        if active_control_area and clip_control and clip_control != active_control_area:
+            continue
+        if active_alignment and clip_alignment and clip_alignment != active_alignment:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "corridor_clip",
+                getattr(clip_row, "status", "") or corridor_clips.status,
+                getattr(clip_row, "clip_id", ""),
+                getattr(clip_row, "surface_role", "") or "clip",
+                source_refs=[clip_alignment, *list(getattr(clip_row, "control_region_refs", ()) or ())],
+                boundary_refs=list(getattr(clip_row, "protected_zone_refs", ()) or ()),
+                notes=(
+                    f"{getattr(clip_row, 'clip_timing', '')}; "
+                    f"{getattr(clip_row, 'clip_method', '')}"
+                ),
+            )
+        )
+
+    for hint_row in list(getattr(drainage_hints, "hint_rows", []) or []):
+        control_refs = [
+            str(value or "").strip()
+            for value in list(getattr(hint_row, "control_area_refs", ()) or ())
+            if str(value or "").strip()
+        ]
+        if active_control_area and control_refs and active_control_area not in control_refs:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "drainage_hint",
+                getattr(hint_row, "status", "") or drainage_hints.status,
+                getattr(hint_row, "hint_id", ""),
+                getattr(hint_row, "hint_kind", "") or "hint",
+                source_refs=[
+                    getattr(hint_row, "drainage_policy_ref", ""),
+                    *list(getattr(hint_row, "source_edge_refs", ()) or ()),
+                ],
+                boundary_refs=[
+                    getattr(hint_row, "zone_ref", ""),
+                    *control_refs,
+                ],
+                notes=(
+                    f"recommend={getattr(hint_row, 'recommended_element_kind', '')}; "
+                    f"zone={getattr(hint_row, 'zone_role', '')}; "
+                    f"{getattr(hint_row, 'notes', '')}"
+                ),
+            )
+        )
+
+    for policy in list(getattr(model, "grading_policy_rows", []) or []):
+        policy_id = str(getattr(policy, "policy_id", "") or "").strip()
+        if active_grading_policy and policy_id != active_grading_policy:
+            continue
+        if str(getattr(policy, "intersection_id", "") or "").strip() != active_intersection:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "grading",
+                getattr(policy, "status", "") or "active",
+                policy_id,
+                getattr(policy, "mode", "") or "grading_policy",
+                source_refs=[
+                    getattr(policy, "primary_alignment_ref", ""),
+                    *list(getattr(policy, "secondary_alignment_refs", []) or []),
+                ],
+                notes=f"target crossfall={float(getattr(policy, 'target_crossfall_percent', 0.0) or 0.0):.3f}%",
+            )
+        )
+
+    for policy in list(getattr(model, "drainage_policy_rows", []) or []):
+        if str(getattr(policy, "intersection_id", "") or "").strip() != active_intersection:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "drainage",
+                getattr(policy, "status", "") or "active",
+                getattr(policy, "policy_id", "") or "",
+                getattr(policy, "capture_mode", "") or "drainage_policy",
+                source_refs=list(getattr(policy, "drainage_element_refs", []) or []),
+                boundary_refs=list(getattr(policy, "gutter_edge_refs", []) or []),
+                notes=f"inlet spacing={float(getattr(policy, 'inlet_spacing', 0.0) or 0.0):.3f}; low point tolerance={float(getattr(policy, 'low_point_tolerance', 0.0) or 0.0):.3f}",
+            )
+        )
+
+    return rows
+
+
+def _intersection_context_row(
+    family: str,
+    status: str,
+    row_id: str,
+    role: str,
+    *,
+    source_refs: list[str] | tuple[str, ...] | None = None,
+    boundary_refs: list[str] | tuple[str, ...] | None = None,
+    notes: str = "",
+) -> dict[str, object]:
+    return {
+        "family": str(family or "").strip(),
+        "status": _normalized_intersection_review_status(status),
+        "row_id": str(row_id or "").strip(),
+        "role": str(role or "").strip(),
+        "source_refs": [str(value).strip() for value in list(source_refs or []) if str(value or "").strip()],
+        "boundary_refs": [str(value).strip() for value in list(boundary_refs or []) if str(value or "").strip()],
+        "notes": str(notes or "").strip(),
+    }
+
+
+def _normalized_intersection_review_status(status: str) -> str:
+    value = str(status or "").strip().lower()
+    if value == "candidate":
+        return "ready"
+    if value == "warn":
+        return "warning"
+    return value or "unknown"
+
+
+def _station_range_note(ranges: tuple[tuple[float, float], ...] | list[tuple[float, float]]) -> str:
+    pieces = []
+    for start, end in list(ranges or []):
+        pieces.append(f"STA {float(start or 0.0):.3f}-{float(end or 0.0):.3f}")
+    return ", ".join(pieces)
+
+
+def _intersection_context_summary(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return ""
+    counts: dict[str, int] = {}
+    for row in rows:
+        family = str(row.get("family", "") or "unknown").strip()
+        counts[family] = counts.get(family, 0) + 1
+    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
+
 
 def _first_component_ref(section_output, attr_name: str) -> str:
     """Return the first non-empty component source reference from section output."""
@@ -1176,6 +1498,14 @@ def _build_v1_applied_section_set_preview(
         structure_model=structure_model,
         drainage_model=drainage_model,
     )
+    intersection_context_rows = _build_intersection_context_rows(
+        document,
+        intersection_model_obj=intersection_model,
+        applied_section=applied_section,
+    )
+    intersection_context_summary = _intersection_context_summary(intersection_context_rows)
+    if intersection_context_summary:
+        viewer_context["intersection_contract_summary"] = intersection_context_summary
     diagnostic_rows = _build_diagnostic_review_rows(
         section_output=section_output,
         viewer_context=viewer_context,
@@ -1226,6 +1556,7 @@ def _build_v1_applied_section_set_preview(
             region_model=region_model,
             structure_model=structure_model,
         ),
+        "intersection_context_rows": intersection_context_rows,
         "earthwork_hint_rows": earthwork_hint_rows,
         "review_marker_rows": review_marker_rows,
         "corridor_review_rows": _build_corridor_review_rows(document),
@@ -1535,6 +1866,17 @@ def show_v1_section_preview(
         structure_model=source_objects.get("structure_model"),
         drainage_model=source_objects.get("drainage_model"),
     )
+    if "intersection_context_rows" not in preview:
+        preview["intersection_context_rows"] = _build_intersection_context_rows(
+            active_document,
+            intersection_model_obj=source_objects.get("intersection_model"),
+            applied_section=preview.get("applied_section", None),
+        )
+    intersection_context_summary = _intersection_context_summary(
+        [dict(row or {}) for row in list(preview.get("intersection_context_rows", []) or [])]
+    )
+    if intersection_context_summary:
+        viewer_context["intersection_contract_summary"] = intersection_context_summary
     preview["viewer_context"] = viewer_context
     _apply_tin_section_geometry(preview)
     _apply_section_earthwork_area(preview)

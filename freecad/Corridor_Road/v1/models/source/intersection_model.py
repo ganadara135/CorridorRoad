@@ -39,6 +39,9 @@ class IntersectionLegRow:
     region_ref: str = ""
     approach_station_start: float = 0.0
     approach_station_end: float = 0.0
+    arm_policy_ref: str = ""
+    edge_policy_refs: list[str] = field(default_factory=list)
+    grading_policy_ref: str = ""
     priority: int = 0
     notes: str = ""
 
@@ -77,6 +80,43 @@ class IntersectionCurbReturnPolicyRow:
 
 
 @dataclass(frozen=True)
+class IntersectionArmPolicyRow:
+    """Source policy for one intersection road arm."""
+
+    policy_id: str
+    intersection_id: str
+    leg_ref: str = ""
+    arm_role: str = ""
+    design_speed_kph: float = 0.0
+    design_vehicle_ref: str = ""
+    lane_count: int = 1
+    lane_width: float = 3.5
+    shoulder_width: float = 0.0
+    median_width: float = 0.0
+    turn_lane_policy_ref: str = ""
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class IntersectionEdgePolicyRow:
+    """Source policy for an intersection edge family before topology evaluation."""
+
+    policy_id: str
+    intersection_id: str
+    leg_ref: str = ""
+    edge_role: str = "pavement_edge"
+    side: str = "both"
+    offset_rule: str = ""
+    offset_value: float = 0.0
+    elevation_rule: str = "from_crossfall"
+    profile_ref: str = ""
+    source_policy_ref: str = ""
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class IntersectionGradingPolicyRow:
     """Source policy for intersection-area crossfall and grading behavior."""
 
@@ -86,6 +126,21 @@ class IntersectionGradingPolicyRow:
     target_crossfall_percent: float = 0.0
     primary_alignment_ref: str = ""
     secondary_alignment_refs: list[str] = field(default_factory=list)
+    status: str = "active"
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class IntersectionDrainagePolicyRow:
+    """Source policy for intersection low-point and drainage handoff intent."""
+
+    policy_id: str
+    intersection_id: str
+    capture_mode: str = "review_low_points"
+    inlet_spacing: float = 0.0
+    low_point_tolerance: float = 0.05
+    gutter_edge_refs: list[str] = field(default_factory=list)
+    drainage_element_refs: list[str] = field(default_factory=list)
     status: str = "active"
     notes: str = ""
 
@@ -128,8 +183,11 @@ class IntersectionModel(SourceModelBase):
     intersection_model_id: str = ""
     intersection_rows: list[IntersectionRow] = field(default_factory=list)
     control_area_rows: list[IntersectionControlArea] = field(default_factory=list)
+    arm_policy_rows: list[IntersectionArmPolicyRow] = field(default_factory=list)
     curb_return_policy_rows: list[IntersectionCurbReturnPolicyRow] = field(default_factory=list)
+    edge_policy_rows: list[IntersectionEdgePolicyRow] = field(default_factory=list)
     grading_policy_rows: list[IntersectionGradingPolicyRow] = field(default_factory=list)
+    drainage_policy_rows: list[IntersectionDrainagePolicyRow] = field(default_factory=list)
 
 
 def intersection_preset_labels() -> list[str]:
@@ -167,16 +225,23 @@ def intersection_row_from_kind(
     roles = tuple(preset.get("default_leg_roles", ()) or ())
     leg_rows: list[IntersectionLegRow] = []
     for index, role in enumerate(roles):
+        leg_id = f"{intersection_id}:leg-{index + 1:02d}"
         if str(role).startswith("primary"):
             alignment_ref = primary_alignment_ref
         else:
             alignment_ref = secondaries[0] if secondaries else ""
         leg_rows.append(
             IntersectionLegRow(
-                leg_id=f"{intersection_id}:leg-{index + 1:02d}",
+                leg_id=leg_id,
                 intersection_id=intersection_id,
                 leg_role=str(role),
                 alignment_ref=alignment_ref,
+                arm_policy_ref=f"arm-policy:{intersection_id}:leg-{index + 1:02d}",
+                edge_policy_refs=[
+                    f"edge-policy:{intersection_id}:leg-{index + 1:02d}:pavement",
+                    f"edge-policy:{intersection_id}:leg-{index + 1:02d}:daylight",
+                ],
+                grading_policy_ref=f"grading:{intersection_id}:default",
                 priority=index + 1,
             )
         )
@@ -190,5 +255,16 @@ def intersection_row_from_kind(
         leg_rows=leg_rows,
         control_area_ref=f"{intersection_id}:control-area",
         grading_policy_ref=f"grading:{intersection_id}:default",
-        policy_refs=[f"curb-return:{intersection_id}:default", f"grading:{intersection_id}:default"],
+        policy_refs=[
+            f"curb-return:{intersection_id}:default",
+            f"grading:{intersection_id}:default",
+            f"drainage-policy:{intersection_id}:default",
+            *[str(leg.arm_policy_ref) for leg in leg_rows if str(leg.arm_policy_ref)],
+            *[
+                str(edge_ref)
+                for leg in leg_rows
+                for edge_ref in list(getattr(leg, "edge_policy_refs", []) or [])
+                if str(edge_ref)
+            ],
+        ],
     )

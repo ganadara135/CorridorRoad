@@ -344,7 +344,16 @@ Target families:
 - `road_body_envelope`
 - `region_body`
 - `pavement_layer_body`
+- `subbase_body`
+- `shoulder_body`
 - `lined_ditch_body`
+- `drainage_pipeline_body`
+- `drainage_pipeline_network_body`
+- `intersection_patch_body`
+- `intersection_pavement_body`
+- `intersection_subgrade_body`
+- `intersection_slope_body`
+- `intersection_curb_return_body`
 - `structure_body`
 
 Scope kinds:
@@ -355,6 +364,11 @@ Scope kinds:
 - `assembly_component`
 - `structure`
 - `drainage`
+- `intersection`
+
+Intersection zone target families are currently handoff candidates.
+
+They are discovered from `IntersectionSurfaceZoneResult` rows and remain `planned` until dedicated zone solid builders are implemented.
 
 ### 8.2 AppliedSectionSolidProfile
 

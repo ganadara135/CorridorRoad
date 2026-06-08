@@ -880,6 +880,7 @@ Slope Face clipping rule:
 - If a Slope Face triangle intersects the practical curb-return boundary or the daylight protection area around it, suppress the whole triangle instead of generating an outside fragment.
 - If a Slope Face triangle is sourced from an AppliedSection with active intersection control context and touches the daylight protection area, suppress the whole triangle even when the triangle falls just outside the practical boundary polygon.
 - If a whole-corridor Slope Face triangle remains outside the practical polygon but near a curb-return arc, suppress it through curb-return arc daylight protection so `corridor:main` daylight fragments do not protrude into the curb-return tie-in.
+- If a whole-corridor Slope Face triangle intrudes into a representative intersection pavement strip polygon, suppress it through pavement-strip daylight protection so `corridor:main` Slope Face does not cross over the designed road surface.
 - Do not suppress exterior Slope Face triangles solely because they come from an intersection-control section; outside tie-in slopes must remain continuous between the main road and side road.
 - Keep the curb-return arc Slope Face band so the curb-return exterior edge has daylight surface coverage.
 - Do not append endpoint caps or bridge triangles after TIN construction.
@@ -891,6 +892,7 @@ Slope Face clipping rule:
 - The `intersection_slope_tie_in` strip is a source-traceable Slope Face surface, not a free cap or arbitrary bridge.
 - If the existing side-road Slope Face boundary stops short of the side-road Applied Section edge, add `intersection_side_slope_extension` strips from nearby existing side-road Slope Face boundary edges to that Applied Section edge.
 - The side extension is limited to the nearest existing Slope Face boundary edges and must not connect to unrelated main-road or curb-return generated edges.
+- Generated `intersection_slope_tie_in` and `intersection_side_slope_extension` triangles must not be appended when they intrude into representative pavement strip polygons.
 - Intersection Surface preview displays `curb_return_blend` and `curb_return_core` faces so the curb-return half-round patch remains visible during intersection review.
 - Curb-return Slope Face continuity is reviewed on the Daylight/Slope Face surface. The build should expose generated section rows through section diagnostics and curb-return slope-band counts, not endpoint cap or bridge triangle counts.
 - Build Parametric should expose `IntersectionExclusionControlSectionClippedTriangleCount` so this source-context suppression is visible during QA.

@@ -48,7 +48,7 @@ from ..services.builders import (
     transition_augmented_applied_section_set,
 )
 from ..services.evaluation.surface_transition_validation_service import SurfaceTransitionValidationService
-from ..services.evaluation.intersection_evaluation_service import IntersectionPatchPrerequisiteResult
+from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService, IntersectionPatchPrerequisiteResult
 from ..services.evaluation.station_context_resolver import StationContextResolver
 from ..services.mapping import ExchangeOutputMapper, ExchangePackageRequest, QuantityOutputMapper, SectionOutputMapper
 from ..services.mapping.tin_mesh_preview_mapper import TINMeshPreviewMapper
@@ -98,6 +98,7 @@ REGION_BOUNDARY_DAYLIGHT_SLOPE_JUMP_THRESHOLD = 0.05
 SURFACE_TRANSITION_DEFAULT_HALF_LENGTH = 5.0
 REGION_SURFACE_DISPLAY_Z_OFFSET = 0.25
 SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL = 2.5
+INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE = 0.05
 SURFACE_TRANSITION_SPACING_PRESETS = (
     ("Dense 1.000 m", 1.0),
     ("Normal 2.500 m", SURFACE_TRANSITION_DEFAULT_SAMPLE_INTERVAL),
@@ -905,6 +906,193 @@ def corridor_intersection_patch_prerequisite_result(document=None) -> Intersecti
         boundary_point_count=boundary_point_count,
         diagnostic_rows=tuple(diagnostics),
     )
+
+
+def corridor_intersection_contract_review_rows(document=None) -> list[dict[str, object]]:
+    """Return edge-network-first intersection contract rows for Build Parametric review."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    intersection_model = to_intersection_model(find_v1_intersection_model(doc))
+    if intersection_model is None or not list(getattr(intersection_model, "intersection_rows", []) or []):
+        return [
+            {
+                "contract_family": "intersection",
+                "status": "missing",
+                "row_id": "",
+                "role": "",
+                "source_refs": "",
+                "boundary_refs": "",
+                "focus_object": "",
+                "notes": "IntersectionModel is required before edge-network-first review.",
+            }
+        ]
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(intersection_model)
+    edge_network = service.evaluate_edge_network(intersection_model, topology)
+    surface_zones = service.evaluate_surface_zones(intersection_model, edge_network)
+    corridor_clips = service.evaluate_corridor_clipping(intersection_model, topology, surface_zones)
+    drainage_hints = service.evaluate_drainage_hints(intersection_model, surface_zones)
+    rows: list[dict[str, object]] = []
+    rows.append(
+        {
+            "contract_family": "topology",
+            "status": topology.status,
+            "row_id": topology.topology_result_id,
+            "role": "control_area",
+            "source_refs": ", ".join(list(getattr(topology, "source_refs", []) or [])),
+            "boundary_refs": ", ".join(row.control_area_id for row in list(topology.control_area_rows or [])),
+            "focus_object": "V1CorridorIntersectionSurfacePreview",
+            "notes": (
+                f"legs={topology.leg_span_count}; control areas={topology.control_area_count}; "
+                f"alignments={topology.participating_alignment_count}; diagnostics={len(topology.diagnostic_rows)}"
+            ),
+        }
+    )
+    for row in list(edge_network.edge_rows or []):
+        rows.append(
+            {
+                "contract_family": "edge_network",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or edge_network.status)),
+                "row_id": str(getattr(row, "edge_id", "") or ""),
+                "role": str(getattr(row, "edge_role", "") or ""),
+                "source_refs": str(getattr(row, "source_policy_ref", "") or ""),
+                "boundary_refs": _join_review_notes(
+                    str(getattr(row, "leg_ref", "") or ""),
+                    str(getattr(row, "control_area_ref", "") or ""),
+                    str(getattr(row, "alignment_ref", "") or ""),
+                ),
+                "focus_object": "V1IntersectionEdgeNetworkPreview",
+                "notes": _join_review_notes(
+                    f"family={getattr(row, 'edge_family', '')}",
+                    f"side={getattr(row, 'side', '')}",
+                    f"STA {float(getattr(row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(row, 'station_end', 0.0) or 0.0):.3f}",
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    for row in list(surface_zones.zone_rows or []):
+        rows.append(
+            {
+                "contract_family": "surface_zone",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or surface_zones.status)),
+                "row_id": str(getattr(row, "zone_id", "") or ""),
+                "role": str(getattr(row, "design_zone_role", "") or getattr(row, "zone_role", "") or ""),
+                "source_refs": ", ".join(list(getattr(row, "source_edge_refs", ()) or ())),
+                "boundary_refs": ", ".join(list(getattr(row, "boundary_edge_refs", ()) or ())),
+                "focus_object": "V1CorridorIntersectionSurfacePreview",
+                "notes": _join_review_notes(
+                    f"zone={getattr(row, 'zone_role', '')}",
+                    f"surface={getattr(row, 'surface_role', '')}",
+                    f"triangulation={getattr(row, 'triangulation_method', '')}",
+                    "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    for row in list(corridor_clips.clip_rows or []):
+        rows.append(
+            {
+                "contract_family": "corridor_clip",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or corridor_clips.status)),
+                "row_id": str(getattr(row, "clip_id", "") or ""),
+                "role": str(getattr(row, "surface_role", "") or ""),
+                "source_refs": str(getattr(row, "control_area_ref", "") or ""),
+                "boundary_refs": ", ".join(list(getattr(row, "protected_zone_refs", ()) or ())),
+                "focus_object": "V1CorridorIntersectionExclusionZonePreview",
+                "notes": _join_review_notes(
+                    f"alignment={getattr(row, 'alignment_ref', '')}",
+                    f"method={getattr(row, 'clip_method', '')}",
+                    f"timing={getattr(row, 'clip_timing', '')}",
+                    "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    for row in list(drainage_hints.hint_rows or []):
+        rows.append(
+            {
+                "contract_family": "drainage_hint",
+                "status": _intersection_contract_display_status(str(getattr(row, "status", "") or drainage_hints.status)),
+                "row_id": str(getattr(row, "hint_id", "") or ""),
+                "role": str(getattr(row, "hint_kind", "") or ""),
+                "source_refs": _join_review_notes(
+                    str(getattr(row, "drainage_policy_ref", "") or ""),
+                    ", ".join(list(getattr(row, "source_edge_refs", ()) or ())),
+                ),
+                "boundary_refs": _join_review_notes(
+                    str(getattr(row, "zone_ref", "") or ""),
+                    ", ".join(list(getattr(row, "control_area_refs", ()) or ())),
+                ),
+                "focus_object": "V1CorridorIntersectionSurfacePreview",
+                "notes": _join_review_notes(
+                    f"zone={getattr(row, 'zone_role', '')}",
+                    f"surface={getattr(row, 'surface_role', '')}",
+                    f"recommend={getattr(row, 'recommended_element_kind', '')}",
+                    "; ".join(list(getattr(row, "diagnostic_rows", ()) or ())),
+                    str(getattr(row, "notes", "") or ""),
+                ),
+            }
+        )
+    return rows
+
+
+def corridor_intersection_contract_review_summary(document=None) -> dict[str, object]:
+    """Return a compact edge-network-first contract summary for Build Parametric."""
+
+    rows = corridor_intersection_contract_review_rows(document)
+    real_rows = [row for row in rows if row.get("row_id")]
+    if not real_rows:
+        return {
+            "status": "missing",
+            "row_count": 0,
+            "notes": str(rows[0].get("notes", "No intersection contract rows.") if rows else "No intersection contract rows."),
+        }
+    error_count = sum(1 for row in real_rows if str(row.get("status", "") or "") == "error")
+    warning_count = sum(1 for row in real_rows if str(row.get("status", "") or "") in {"warning", "warn"})
+    family_counts: dict[str, int] = {}
+    for row in real_rows:
+        family = str(row.get("contract_family", "") or "contract")
+        family_counts[family] = family_counts.get(family, 0) + 1
+    status = "error" if error_count else ("warning" if warning_count else "ready")
+    counts = ", ".join(f"{family}={count}" for family, count in sorted(family_counts.items()))
+    return {
+        "status": status,
+        "row_count": len(real_rows),
+        "warning_count": warning_count,
+        "error_count": error_count,
+        "notes": f"Intersection contracts: {counts}; warnings={warning_count}; errors={error_count}.",
+    }
+
+
+def _intersection_contract_display_status(status: str) -> str:
+    text = str(status or "").strip().lower()
+    if text == "candidate":
+        return "ready"
+    if text == "warn":
+        return "warning"
+    return text or "missing"
+
+
+def focus_corridor_intersection_contract_review_row(document=None, row_index: int = 0):
+    """Select the best available 3D object for one intersection contract review row."""
+
+    doc = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
+    rows = corridor_intersection_contract_review_rows(doc)
+    if row_index < 0 or row_index >= len(rows):
+        raise IndexError("Intersection contract review row index is out of range.")
+    row = rows[row_index]
+    candidates = [
+        str(row.get("focus_object", "") or ""),
+        "V1IntersectionEdgeNetworkPreview",
+        "V1CorridorIntersectionSurfacePreview",
+        "V1CorridorIntersectionExclusionZonePreview",
+    ]
+    for name in candidates:
+        obj = doc.getObject(name) if doc is not None and name else None
+        if obj is not None:
+            _select_and_fit_object(obj)
+            return obj
+    raise RuntimeError("No 3D review object is available for the selected intersection contract row.")
 
 
 def corridor_drainage_flow_review_rows(document=None) -> list[dict[str, object]]:
@@ -2427,6 +2615,13 @@ def create_corridor_intersection_surface_preview(
                 "IntersectionDrainageDiagnostics",
                 [value.strip() for value in str(drainage_row.get("diagnostics", "") or "").split(";") if value.strip()],
             )
+        _set_preview_property(preview_obj, "IntersectionImplementationMode", "legacy_patch_frozen")
+        _set_preview_property(preview_obj, "IntersectionRedesignPath", "edge_network_first")
+        _set_preview_property(
+            preview_obj,
+            "IntersectionImplementationStatus",
+            "Frozen first-slice patch path; next redesign work must use Intersection Edge Network.",
+        )
         _set_preview_property(preview_obj, "IntersectionReviewSummary", _intersection_surface_review_notes(preview_obj))
         _set_preview_property(
             preview_obj,
@@ -2644,6 +2839,28 @@ def create_corridor_daylight_surface_preview(
             doc,
             applied_section_set=applied_section_set,
         )
+        intersection_tin_surface = _build_intersection_surface_tin_for_slope_face_height_clip(
+            doc,
+            project=project or find_project(doc),
+            corridor_model=corridor_model,
+            surface_model=surface_model,
+            applied_section_set=applied_section_set,
+        )
+        tin_surface = _suppress_daylight_triangles_above_intersection_surface(
+            tin_surface,
+            intersection_tin_surface,
+            tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
+        )
+        intersection_slope_trim_display_segments, intersection_slope_trim_triangle_count = _intersection_slope_face_overlap_edge_segments(
+            tin_surface,
+            intersection_tin_surface,
+            z_offset=0.08,
+        )
+        tin_surface = _trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
+            tin_surface,
+            intersection_tin_surface,
+            tolerance=INTERSECTION_SLOPE_FACE_HEIGHT_CLIP_TOLERANCE,
+        )
     except Exception as exc:
         _record_corridor_build_preview_diagnostic(
             doc,
@@ -2694,6 +2911,14 @@ def create_corridor_daylight_surface_preview(
             route_to_v1_tree(project or find_project(doc), preview_obj)
         except Exception:
             pass
+        _create_intersection_slope_face_overlap_preview(
+            document=doc,
+            project=project or find_project(doc),
+            daylight_surface=tin_surface,
+            intersection_surface=intersection_tin_surface,
+            overlap_segments=intersection_slope_trim_display_segments,
+            overlap_triangle_count=intersection_slope_trim_triangle_count,
+        )
         _create_slope_face_diagnostic_markers(
             document=doc,
             project=project or find_project(doc),
@@ -2972,6 +3197,9 @@ class V1BuildCorridorTaskPanel:
         issues_tab = QtWidgets.QWidget()
         issues_layout = QtWidgets.QVBoxLayout(issues_tab)
         issues_layout.setContentsMargins(8, 8, 8, 8)
+        intersections_tab = QtWidgets.QWidget()
+        intersections_layout = QtWidgets.QVBoxLayout(intersections_tab)
+        intersections_layout.setContentsMargins(8, 8, 8, 8)
         regions_tab = QtWidgets.QWidget()
         regions_layout = QtWidgets.QVBoxLayout(regions_tab)
         regions_layout.setContentsMargins(8, 8, 8, 8)
@@ -2987,6 +3215,7 @@ class V1BuildCorridorTaskPanel:
         tabs.addTab(guided_tab, "Guided Review")
         tabs.addTab(results_tab, "Results")
         tabs.addTab(issues_tab, "Slope Issues")
+        tabs.addTab(intersections_tab, "Intersections")
         tabs.addTab(regions_tab, "Regions")
         tabs.addTab(drainage_tab, "Drainage")
         tabs.addTab(options_tab, "Options")
@@ -3067,6 +3296,25 @@ class V1BuildCorridorTaskPanel:
         issue_nav_row.addWidget(next_issue_button)
         issue_nav_row.addStretch(1)
         issues_layout.addLayout(issue_nav_row)
+        intersections_label = QtWidgets.QLabel("Intersection Contracts")
+        intersections_label.setToolTip("Edge-network-first contracts for topology, edges, surface zones, and ordinary corridor clipping.")
+        intersections_layout.addWidget(intersections_label)
+        self._intersection_contract_table = QtWidgets.QTableWidget(0, 7)
+        self._intersection_contract_table.setHorizontalHeaderLabels(["Contract", "Status", "ID", "Role", "Source", "Boundary", "Notes"])
+        _compact_build_corridor_table(self._intersection_contract_table, [105, 72, 180, 120, 180, 220, 260])
+        self._intersection_contract_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._intersection_contract_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._intersection_contract_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._intersection_contract_table.setStyleSheet(
+            "QTableWidget::item { color: #141414; } "
+            "QTableWidget::item:selected { color: #ffffff; background: #2f6fab; }"
+        )
+        try:
+            self._intersection_contract_table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+        self._intersection_contract_table.cellDoubleClicked.connect(lambda row_index, _col: self._show_intersection_contract_review_row(row_index))
+        intersections_layout.addWidget(self._intersection_contract_table, 1)
         regions_label = QtWidgets.QLabel("Region Boundaries")
         regions_label.setToolTip("Double-click a Region row to select its built 3D Region surface object.")
         regions_layout.addWidget(regions_label)
@@ -3253,6 +3501,7 @@ class V1BuildCorridorTaskPanel:
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(corridor_build_review_rows(self.document))
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -3276,6 +3525,7 @@ class V1BuildCorridorTaskPanel:
         self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
         self._set_review_rows(corridor_build_review_rows(self.document))
         self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+        self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
         self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
         self._sync_surface_transition_station_options_from_selected_region()
         self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -3305,6 +3555,7 @@ class V1BuildCorridorTaskPanel:
             self._set_guided_review_rows(corridor_build_guided_review_steps(self.document))
             self._set_review_rows(review_rows)
             self._set_slope_face_issue_rows(corridor_slope_face_issue_rows(self.document))
+            self._set_intersection_contract_review_rows(corridor_intersection_contract_review_rows(self.document))
             self._set_region_boundary_rows(corridor_region_boundary_rows(self.document))
             self._sync_surface_transition_station_options_from_selected_region()
             self._set_surface_transition_rows(corridor_surface_transition_rows(self.document))
@@ -3433,6 +3684,31 @@ class V1BuildCorridorTaskPanel:
         if self._slope_issue_table.rowCount() > 0:
             try:
                 self._slope_issue_table.selectRow(0)
+            except Exception:
+                pass
+
+    def _set_intersection_contract_review_rows(self, rows: list[dict[str, object]]) -> None:
+        if not hasattr(self, "_intersection_contract_table"):
+            return
+        self._intersection_contract_table.setRowCount(0)
+        for row in list(rows or []):
+            row_index = self._intersection_contract_table.rowCount()
+            self._intersection_contract_table.insertRow(row_index)
+            values = [
+                str(row.get("contract_family", "") or ""),
+                str(row.get("status", "") or ""),
+                str(row.get("row_id", "") or ""),
+                str(row.get("role", "") or ""),
+                str(row.get("source_refs", "") or ""),
+                str(row.get("boundary_refs", "") or ""),
+                str(row.get("notes", "") or ""),
+            ]
+            for col, value in enumerate(values):
+                self._intersection_contract_table.setItem(row_index, col, QtWidgets.QTableWidgetItem(value))
+            self._apply_intersection_contract_row_style(row_index, str(row.get("status", "") or ""))
+        if self._intersection_contract_table.rowCount() > 0:
+            try:
+                self._intersection_contract_table.selectRow(0)
             except Exception:
                 pass
 
@@ -3863,6 +4139,30 @@ class V1BuildCorridorTaskPanel:
         except Exception as exc:
             _show_message(self.form, "Build Parametric", f"Slope Face issue was not shown.\n{exc}")
 
+    def _show_intersection_contract_review_row(self, row_index: int) -> None:
+        try:
+            rows = corridor_intersection_contract_review_rows(self.document)
+            row = rows[int(row_index)]
+            obj = focus_corridor_intersection_contract_review_row(self.document, int(row_index))
+            try:
+                self._intersection_contract_table.selectRow(int(row_index))
+            except Exception:
+                pass
+            self._summary.setPlainText(
+                "\n".join(
+                    [
+                        "Intersection contract review object focused.",
+                        f"Contract: {row.get('contract_family', '')}",
+                        f"ID: {row.get('row_id', '')}",
+                        f"Status: {row.get('status', '')}",
+                        f"Role: {row.get('role', '')}",
+                        f"Object: {getattr(obj, 'Label', getattr(obj, 'Name', ''))}",
+                    ]
+                )
+            )
+        except Exception as exc:
+            _show_message(self.form, "Build Parametric", f"Intersection contract row was not focused.\n{exc}")
+
     def _focus_adjacent_slope_face_issue(self, direction: int) -> None:
         try:
             current_index = self._selected_slope_face_issue_row_index()
@@ -4038,6 +4338,23 @@ class V1BuildCorridorTaskPanel:
             text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
             for column_index in range(int(self._slope_issue_table.columnCount())):
                 item = self._slope_issue_table.item(int(row_index), column_index)
+                if item is not None:
+                    item.setBackground(brush)
+                    item.setForeground(text_brush)
+        except Exception:
+            pass
+
+    def _apply_intersection_contract_row_style(self, row_index: int, status: str) -> None:
+        color = corridor_build_review_row_color("empty" if str(status or "") in {"warn", "warning"} else status)
+        if color is None:
+            return
+        try:
+            from freecad.Corridor_Road.qt_compat import QtGui
+
+            brush = QtGui.QBrush(QtGui.QColor(*color))
+            text_brush = QtGui.QBrush(QtGui.QColor(*CORRIDOR_BUILD_REVIEW_TEXT_COLOR))
+            for column_index in range(int(self._intersection_contract_table.columnCount())):
+                item = self._intersection_contract_table.item(int(row_index), column_index)
                 if item is not None:
                     item.setBackground(brush)
                     item.setForeground(text_brush)
@@ -8460,6 +8777,645 @@ def _attach_intersection_exclusion_clip_quality(obj, surface) -> None:
     _set_preview_integer_property(obj, "IntersectionExclusionIslandRingCount", int(_tin_quality_float(surface, "intersection_exclusion_island_ring_count") or 0))
     _set_preview_float_property(obj, "IntersectionExclusionDaylightProtectionOffset", _tin_quality_float(surface, "intersection_exclusion_daylight_protection_offset"))
     _set_preview_integer_property(obj, "IntersectionExclusionControlSectionClippedTriangleCount", int(_tin_quality_float(surface, "intersection_exclusion_control_section_clipped_triangle_count") or 0))
+    height_status = _tin_quality_text(surface, "intersection_height_clip_status")
+    if height_status:
+        _set_preview_property(obj, "IntersectionHeightClipStatus", height_status)
+    _set_preview_float_property(obj, "IntersectionHeightClipTolerance", _tin_quality_float(surface, "intersection_height_clip_tolerance"))
+    _set_preview_integer_property(obj, "IntersectionHeightClipTestedTriangleCount", int(_tin_quality_float(surface, "intersection_height_clip_tested_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionHeightClipSuppressedTriangleCount", int(_tin_quality_float(surface, "intersection_height_clip_suppressed_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionHeightClipKeptTriangleCount", int(_tin_quality_float(surface, "intersection_height_clip_kept_triangle_count") or 0))
+    trim_status = _tin_quality_text(surface, "intersection_slope_trim_status")
+    if trim_status:
+        _set_preview_property(obj, "IntersectionSlopeTrimStatus", trim_status)
+    trim_method = _tin_quality_text(surface, "intersection_slope_trim_method")
+    if trim_method:
+        _set_preview_property(obj, "IntersectionSlopeTrimMethod", trim_method)
+    _set_preview_float_property(obj, "IntersectionSlopeTrimTolerance", _tin_quality_float(surface, "intersection_slope_trim_tolerance"))
+    _set_preview_integer_property(obj, "IntersectionSlopeTrimIntersectingTriangleCount", int(_tin_quality_float(surface, "intersection_slope_trim_intersecting_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeTrimRemovedTriangleCount", int(_tin_quality_float(surface, "intersection_slope_trim_removed_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeTrimKeptTriangleCount", int(_tin_quality_float(surface, "intersection_slope_trim_kept_triangle_count") or 0))
+    _set_preview_integer_property(obj, "IntersectionSlopeTrimIntersectionLineCount", int(_tin_quality_float(surface, "intersection_slope_trim_intersection_line_count") or 0))
+
+
+def _build_intersection_surface_tin_for_slope_face_height_clip(
+    document,
+    *,
+    project=None,
+    corridor_model=None,
+    surface_model=None,
+    applied_section_set=None,
+):
+    if document is None or corridor_model is None or surface_model is None or applied_section_set is None:
+        return None
+    try:
+        intersection_model = to_intersection_model(find_v1_intersection_model(document))
+        prerequisite = corridor_intersection_patch_prerequisite_result(document)
+        status = str(getattr(prerequisite, "status", "") or "")
+        if status in {"", "missing", "error"}:
+            return None
+        surface_id = _surface_id(surface_model, "intersection_surface") or f"{corridor_model.corridor_id}:intersection-surface"
+        return _build_intersection_surface_patch_tin(
+            project_id=_project_id(project or find_project(document)),
+            corridor_model=corridor_model,
+            applied_section_set=applied_section_set,
+            prerequisite=prerequisite,
+            intersection_model=intersection_model,
+            surface_id=surface_id,
+        )
+    except Exception:
+        return None
+
+
+def _suppress_daylight_triangles_above_intersection_surface(surface, intersection_surface, *, tolerance: float = 0.05):
+    if surface is None or intersection_surface is None:
+        return surface
+    from ..models.result.tin_surface import TINQualityRow
+
+    surface_triangles = list(getattr(surface, "triangle_rows", []) or [])
+    if not surface_triangles:
+        return surface
+    reference_triangles = _tin_surface_reference_triangles(intersection_surface)
+    if not reference_triangles:
+        return surface
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(surface, "vertex_rows", []) or [])
+    }
+    kept_triangles = []
+    suppressed_count = 0
+    tested_count = 0
+    for triangle in surface_triangles:
+        vertices = [vertex_map.get(str(ref or "")) for ref in (triangle.v1, triangle.v2, triangle.v3)]
+        if any(vertex is None for vertex in vertices):
+            kept_triangles.append(triangle)
+            continue
+        centroid_x = sum(float(getattr(vertex, "x", 0.0) or 0.0) for vertex in vertices) / 3.0
+        centroid_y = sum(float(getattr(vertex, "y", 0.0) or 0.0) for vertex in vertices) / 3.0
+        centroid_z = sum(float(getattr(vertex, "z", 0.0) or 0.0) for vertex in vertices) / 3.0
+        reference_z = _tin_surface_z_at_xy_from_reference_triangles(reference_triangles, centroid_x, centroid_y)
+        if reference_z is None:
+            kept_triangles.append(triangle)
+            continue
+        tested_count += 1
+        if centroid_z >= float(reference_z) - float(tolerance or 0.0):
+            suppressed_count += 1
+            continue
+        kept_triangles.append(triangle)
+    quality_rows = [
+        row for row in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(row, "kind", "") or "") not in {
+            "intersection_height_clip_status",
+            "intersection_height_clip_tolerance",
+            "intersection_height_clip_tested_triangle_count",
+            "intersection_height_clip_suppressed_triangle_count",
+            "intersection_height_clip_kept_triangle_count",
+            "intersection_height_clip_reference_surface_id",
+        }
+    ]
+    surface_id = str(getattr(surface, "surface_id", "") or "daylight_surface")
+    reference_surface_id = str(getattr(intersection_surface, "surface_id", "") or "intersection_surface")
+    quality_rows.extend(
+        [
+            TINQualityRow(f"{surface_id}:intersection_height_clip_status", "intersection_height_clip_status", "ready"),
+            TINQualityRow(f"{surface_id}:intersection_height_clip_tolerance", "intersection_height_clip_tolerance", float(tolerance or 0.0), "m"),
+            TINQualityRow(f"{surface_id}:intersection_height_clip_tested_triangle_count", "intersection_height_clip_tested_triangle_count", int(tested_count), "count"),
+            TINQualityRow(f"{surface_id}:intersection_height_clip_suppressed_triangle_count", "intersection_height_clip_suppressed_triangle_count", int(suppressed_count), "count"),
+            TINQualityRow(f"{surface_id}:intersection_height_clip_kept_triangle_count", "intersection_height_clip_kept_triangle_count", len(kept_triangles), "count"),
+            TINQualityRow(f"{surface_id}:intersection_height_clip_reference_surface_id", "intersection_height_clip_reference_surface_id", reference_surface_id),
+        ]
+    )
+    void_refs = list(getattr(surface, "void_refs", []) or [])
+    if reference_surface_id and reference_surface_id not in void_refs:
+        void_refs.append(reference_surface_id)
+    if suppressed_count <= 0 and tested_count <= 0:
+        return replace(surface, quality_rows=quality_rows, void_refs=void_refs)
+    return replace(surface, triangle_rows=kept_triangles, quality_rows=quality_rows, void_refs=void_refs)
+
+
+def _trim_daylight_triangles_above_intersection_surface_by_intersection_lines(surface, intersection_surface, *, tolerance: float = 0.05):
+    if surface is None or intersection_surface is None:
+        return surface
+    from ..models.result.tin_surface import TINQualityRow
+
+    surface_triangles = list(getattr(surface, "triangle_rows", []) or [])
+    if not surface_triangles:
+        return surface
+    intersection_triangles = _tin_surface_reference_triangles(intersection_surface)
+    if not intersection_triangles:
+        return surface
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(surface, "vertex_rows", []) or [])
+    }
+    kept_triangles = []
+    removed_count = 0
+    intersecting_count = 0
+    line_count = 0
+    for triangle in surface_triangles:
+        vertices = [vertex_map.get(str(ref or "")) for ref in (triangle.v1, triangle.v2, triangle.v3)]
+        if any(vertex is None for vertex in vertices):
+            kept_triangles.append(triangle)
+            continue
+        if not _daylight_triangle_has_intersection_line_with_surface(vertices, intersection_triangles):
+            kept_triangles.append(triangle)
+            continue
+        intersecting_count += 1
+        line_count += 1
+        if _tin_triangle_has_sample_above_reference_surface(vertices, intersection_triangles, tolerance=tolerance):
+            removed_count += 1
+            continue
+        kept_triangles.append(triangle)
+    quality_rows = [
+        row for row in list(getattr(surface, "quality_rows", []) or [])
+        if str(getattr(row, "kind", "") or "") not in {
+            "intersection_slope_trim_status",
+            "intersection_slope_trim_method",
+            "intersection_slope_trim_tolerance",
+            "intersection_slope_trim_intersecting_triangle_count",
+            "intersection_slope_trim_removed_triangle_count",
+            "intersection_slope_trim_kept_triangle_count",
+            "intersection_slope_trim_intersection_line_count",
+            "intersection_slope_trim_reference_surface_id",
+        }
+    ]
+    surface_id = str(getattr(surface, "surface_id", "") or "daylight_surface")
+    reference_id = str(getattr(intersection_surface, "surface_id", "") or "intersection_surface")
+    quality_rows.extend(
+        [
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_status", "intersection_slope_trim_status", "ready"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_method", "intersection_slope_trim_method", "coarse_remove_intersecting_above_triangles"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_tolerance", "intersection_slope_trim_tolerance", float(tolerance or 0.0), "m"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_intersecting_triangle_count", "intersection_slope_trim_intersecting_triangle_count", int(intersecting_count), "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_removed_triangle_count", "intersection_slope_trim_removed_triangle_count", int(removed_count), "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_kept_triangle_count", "intersection_slope_trim_kept_triangle_count", len(kept_triangles), "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_intersection_line_count", "intersection_slope_trim_intersection_line_count", int(line_count), "count"),
+            TINQualityRow(f"{surface_id}:intersection_slope_trim_reference_surface_id", "intersection_slope_trim_reference_surface_id", reference_id),
+        ]
+    )
+    void_refs = list(getattr(surface, "void_refs", []) or [])
+    if reference_id and reference_id not in void_refs:
+        void_refs.append(reference_id)
+    return replace(surface, triangle_rows=kept_triangles, quality_rows=quality_rows, void_refs=void_refs)
+
+
+def _daylight_triangle_has_intersection_line_with_surface(daylight_vertices, intersection_triangles) -> bool:
+    daylight_box = _triangle_xyz_bbox(daylight_vertices)
+    for intersection_triangle in list(intersection_triangles or []):
+        if not _bbox3d_overlaps(daylight_box, _triangle_xyz_bbox(intersection_triangle), tolerance=0.25):
+            continue
+        segment = _triangle_triangle_intersection_segment(daylight_vertices, intersection_triangle)
+        if segment is None:
+            continue
+        if _xyz_distance(segment[0], segment[1]) > 1.0e-7:
+            return True
+    return False
+
+
+def _tin_triangle_has_sample_above_reference_surface(vertices, reference_triangles, *, tolerance: float = 0.05) -> bool:
+    for sample_x, sample_y, sample_z in _tin_triangle_height_sample_points(vertices):
+        reference_z = _tin_surface_z_at_xy_from_reference_triangles(reference_triangles, sample_x, sample_y)
+        if reference_z is None:
+            continue
+        if float(sample_z) > float(reference_z) + float(tolerance or 0.0):
+            return True
+    return False
+
+
+def _tin_triangle_height_sample_points(vertices) -> list[tuple[float, float, float]]:
+    points = [
+        (
+            float(getattr(vertex, "x", 0.0) or 0.0),
+            float(getattr(vertex, "y", 0.0) or 0.0),
+            float(getattr(vertex, "z", 0.0) or 0.0),
+        )
+        for vertex in list(vertices or [])
+    ]
+    if len(points) != 3:
+        return points
+    centroid = (
+        sum(point[0] for point in points) / 3.0,
+        sum(point[1] for point in points) / 3.0,
+        sum(point[2] for point in points) / 3.0,
+    )
+    midpoints = [
+        (
+            (points[index][0] + points[(index + 1) % 3][0]) / 2.0,
+            (points[index][1] + points[(index + 1) % 3][1]) / 2.0,
+            (points[index][2] + points[(index + 1) % 3][2]) / 2.0,
+        )
+        for index in range(3)
+    ]
+    return [centroid] + points + midpoints
+
+
+def _create_intersection_slope_face_overlap_preview(
+    *,
+    document,
+    project=None,
+    daylight_surface=None,
+    intersection_surface=None,
+    overlap_segments=None,
+    overlap_triangle_count=None,
+):
+    if document is None:
+        return None
+    try:
+        import Part
+        import FreeCAD as AppModule
+    except Exception:
+        return None
+    if overlap_segments is None:
+        overlap_segments, overlap_triangle_count = _intersection_slope_face_overlap_edge_segments(
+            daylight_surface,
+            intersection_surface,
+        )
+    object_name = "V1CorridorIntersectionSlopeFaceOverlapPreview"
+    obj = document.getObject(object_name)
+    if not overlap_segments:
+        _remove_preview_object(document, "V1CorridorIntersectionSlopeFaceOverlapPreview")
+        return None
+    shapes = []
+    for start, end in overlap_segments:
+        try:
+            start_vec = AppModule.Vector(float(start[0]), float(start[1]), float(start[2]))
+            end_vec = AppModule.Vector(float(end[0]), float(end[1]), float(end[2]))
+            if start_vec.distanceToPoint(end_vec) <= 1.0e-9:
+                continue
+            shapes.append(Part.makeLine(start_vec, end_vec))
+        except Exception:
+            continue
+    if not shapes:
+        _remove_preview_object(document, object_name)
+        return None
+    if obj is None:
+        obj = document.addObject("Part::Feature", object_name)
+    if obj is not None:
+        try:
+            obj.Shape = Part.makeCompound(shapes) if len(shapes) > 1 else shapes[0]
+            obj.Label = "Intersection / Slope Face Overlap Lines"
+        except Exception:
+            return obj
+        _set_preview_property(obj, "CRRecordKind", "v1_corridor_intersection_slope_face_overlap_line_preview")
+        _set_preview_property(obj, "V1ObjectType", "V1CorridorIntersectionSlopeFaceOverlapPreview")
+        _set_preview_property(obj, "OverlapKind", "intersection_surface_vs_corridor_slope_face")
+        _set_preview_property(obj, "SourceSurfaceRef", str(getattr(daylight_surface, "surface_id", "") or ""))
+        _set_preview_property(obj, "ReferenceSurfaceRef", str(getattr(intersection_surface, "surface_id", "") or ""))
+        _set_preview_integer_property(obj, "OverlapTriangleCount", int(overlap_triangle_count))
+        _set_preview_integer_property(obj, "OverlapLineCount", len(shapes))
+        try:
+            vobj = getattr(obj, "ViewObject", None)
+            if vobj is not None:
+                vobj.Visibility = True
+                vobj.ShapeColor = (1.0, 0.88, 0.0)
+                vobj.LineColor = (1.0, 0.88, 0.0)
+                vobj.PointColor = (1.0, 0.88, 0.0)
+                vobj.LineWidth = 6.0
+                vobj.Transparency = 0
+        except Exception:
+            pass
+        try:
+            from freecad.Corridor_Road.objects.obj_project import route_to_v1_tree
+
+            route_to_v1_tree(project or find_project(document), obj)
+        except Exception:
+            pass
+    return obj
+
+
+def _intersection_slope_face_overlap_edge_segments(daylight_surface, intersection_surface, *, z_offset: float = 0.08) -> tuple[list[tuple[tuple[float, float, float], tuple[float, float, float]]], int]:
+    daylight_triangles = _tin_surface_reference_triangles(daylight_surface)
+    intersection_triangles = _tin_surface_reference_triangles(intersection_surface)
+    if not daylight_triangles or not intersection_triangles:
+        return [], 0
+    segments = []
+    seen: set[tuple[tuple[float, float, float], tuple[float, float, float]]] = set()
+    tested_triangle_count = 0
+    for daylight_triangle in daylight_triangles:
+        daylight_box = _triangle_xyz_bbox(daylight_triangle)
+        triangle_has_segment = False
+        for intersection_triangle in intersection_triangles:
+            if not _bbox3d_overlaps(daylight_box, _triangle_xyz_bbox(intersection_triangle), tolerance=0.25):
+                continue
+            segment = _triangle_triangle_intersection_segment(daylight_triangle, intersection_triangle)
+            if segment is None:
+                continue
+            start, end = segment
+            if _xyz_distance(start, end) <= 1.0e-7:
+                continue
+            start = (start[0], start[1], start[2] + float(z_offset or 0.0))
+            end = (end[0], end[1], end[2] + float(z_offset or 0.0))
+            key = _normalized_segment_key(start, end)
+            if key in seen:
+                continue
+            seen.add(key)
+            segments.append((start, end))
+            triangle_has_segment = True
+        if triangle_has_segment:
+            tested_triangle_count += 1
+    return segments, tested_triangle_count
+
+
+def _intersection_slope_face_overlap_surface(daylight_surface, intersection_surface, *, z_offset: float = 0.08):
+    if daylight_surface is None or intersection_surface is None:
+        return None
+    from ..models.result.tin_surface import TINQualityRow, TINSurface, TINTriangle, TINVertex
+
+    reference_triangles = _tin_surface_reference_triangles(intersection_surface)
+    if not reference_triangles:
+        return None
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(daylight_surface, "vertex_rows", []) or [])
+    }
+    overlap_triangles = []
+    overlap_vertex_ids: set[str] = set()
+    for triangle in list(getattr(daylight_surface, "triangle_rows", []) or []):
+        vertices = [vertex_map.get(str(ref or "")) for ref in (triangle.v1, triangle.v2, triangle.v3)]
+        if any(vertex is None for vertex in vertices):
+            continue
+        if not _tin_triangle_xy_overlaps_reference_triangles(vertices, reference_triangles):
+            continue
+        overlap_triangles.append(
+            TINTriangle(
+                str(getattr(triangle, "triangle_id", "") or f"overlap:{len(overlap_triangles) + 1}"),
+                str(getattr(triangle, "v1", "") or ""),
+                str(getattr(triangle, "v2", "") or ""),
+                str(getattr(triangle, "v3", "") or ""),
+                "intersection_slope_face_overlap",
+                "intersection_slope_face_overlap",
+                str(getattr(triangle, "notes", "") or ""),
+            )
+        )
+        overlap_vertex_ids.update([str(getattr(triangle, "v1", "") or ""), str(getattr(triangle, "v2", "") or ""), str(getattr(triangle, "v3", "") or "")])
+    if not overlap_triangles:
+        return None
+    overlap_vertices = []
+    for vertex in list(getattr(daylight_surface, "vertex_rows", []) or []):
+        vertex_id = str(getattr(vertex, "vertex_id", "") or "")
+        if vertex_id not in overlap_vertex_ids:
+            continue
+        overlap_vertices.append(
+            TINVertex(
+                vertex_id,
+                float(getattr(vertex, "x", 0.0) or 0.0),
+                float(getattr(vertex, "y", 0.0) or 0.0),
+                float(getattr(vertex, "z", 0.0) or 0.0) + float(z_offset or 0.0),
+                str(getattr(vertex, "source_point_ref", "") or ""),
+                str(getattr(vertex, "notes", "") or ""),
+            )
+        )
+    source_id = str(getattr(daylight_surface, "surface_id", "") or "daylight_surface")
+    reference_id = str(getattr(intersection_surface, "surface_id", "") or "intersection_surface")
+    surface_id = f"{source_id}:intersection-slope-overlap"
+    return TINSurface(
+        schema_version=int(getattr(daylight_surface, "schema_version", 1) or 1),
+        project_id=str(getattr(daylight_surface, "project_id", "") or getattr(intersection_surface, "project_id", "") or ""),
+        surface_id=surface_id,
+        surface_kind="intersection_slope_face_overlap",
+        vertex_rows=overlap_vertices,
+        triangle_rows=overlap_triangles,
+        boundary_refs=[source_id, reference_id],
+        quality_rows=[
+            TINQualityRow(f"{surface_id}:overlap_triangle_count", "overlap_triangle_count", len(overlap_triangles), "count"),
+            TINQualityRow(f"{surface_id}:overlap_source_surface_id", "overlap_source_surface_id", source_id),
+            TINQualityRow(f"{surface_id}:overlap_reference_surface_id", "overlap_reference_surface_id", reference_id),
+            TINQualityRow(f"{surface_id}:overlap_z_offset", "overlap_z_offset", float(z_offset or 0.0), "m"),
+        ],
+    )
+
+
+def _tin_triangle_xy_overlaps_reference_triangles(vertices: list[object], reference_triangles: list[tuple[object, object, object]]) -> bool:
+    for sample_x, sample_y in _tin_triangle_overlap_sample_points_xy(vertices):
+        if _tin_surface_z_at_xy_from_reference_triangles(reference_triangles, sample_x, sample_y) is not None:
+            return True
+    return False
+
+
+def _tin_triangle_overlap_sample_points_xy(vertices: list[object]) -> list[tuple[float, float]]:
+    points = [
+        (
+            float(getattr(vertex, "x", 0.0) or 0.0),
+            float(getattr(vertex, "y", 0.0) or 0.0),
+        )
+        for vertex in list(vertices or [])
+    ]
+    if len(points) != 3:
+        return points
+    centroid = (
+        sum(point[0] for point in points) / 3.0,
+        sum(point[1] for point in points) / 3.0,
+    )
+    midpoints = [
+        (
+            (points[index][0] + points[(index + 1) % 3][0]) / 2.0,
+            (points[index][1] + points[(index + 1) % 3][1]) / 2.0,
+        )
+        for index in range(3)
+    ]
+    return [centroid] + points + midpoints
+
+
+def _triangle_triangle_intersection_segment(triangle_a, triangle_b):
+    points: list[tuple[float, float, float]] = []
+    points.extend(_triangle_edges_intersect_other_triangle_plane(triangle_a, triangle_b))
+    points.extend(_triangle_edges_intersect_other_triangle_plane(triangle_b, triangle_a))
+    unique = _unique_xyz_points(points, tolerance=1.0e-6)
+    if len(unique) < 2:
+        return None
+    best_pair = None
+    best_distance = 0.0
+    for index, first in enumerate(unique):
+        for second in unique[index + 1:]:
+            distance = _xyz_distance(first, second)
+            if distance > best_distance:
+                best_distance = distance
+                best_pair = (first, second)
+    if best_pair is None or best_distance <= 1.0e-7:
+        return None
+    return best_pair
+
+
+def _triangle_edges_intersect_other_triangle_plane(source_triangle, target_triangle) -> list[tuple[float, float, float]]:
+    plane = _triangle_plane(target_triangle)
+    if plane is None:
+        return []
+    normal, plane_d = plane
+    source_points = [_vertex_xyz(vertex) for vertex in source_triangle]
+    target_points = [_vertex_xyz(vertex) for vertex in target_triangle]
+    output: list[tuple[float, float, float]] = []
+    for first, second in ((source_points[0], source_points[1]), (source_points[1], source_points[2]), (source_points[2], source_points[0])):
+        first_distance = _dot3(normal, first) + plane_d
+        second_distance = _dot3(normal, second) + plane_d
+        if abs(first_distance) <= 1.0e-7 and _point_in_triangle_3d(first, target_points):
+            output.append(first)
+        if abs(second_distance) <= 1.0e-7 and _point_in_triangle_3d(second, target_points):
+            output.append(second)
+        if first_distance * second_distance > 0.0:
+            continue
+        denominator = first_distance - second_distance
+        if abs(denominator) <= 1.0e-12:
+            continue
+        ratio = first_distance / denominator
+        if ratio < -1.0e-7 or ratio > 1.0 + 1.0e-7:
+            continue
+        point = (
+            first[0] + (second[0] - first[0]) * ratio,
+            first[1] + (second[1] - first[1]) * ratio,
+            first[2] + (second[2] - first[2]) * ratio,
+        )
+        if _point_in_triangle_3d(point, target_points):
+            output.append(point)
+    return output
+
+
+def _triangle_plane(triangle):
+    points = [_vertex_xyz(vertex) for vertex in triangle]
+    ab = _sub3(points[1], points[0])
+    ac = _sub3(points[2], points[0])
+    normal = _cross3(ab, ac)
+    length = _length3(normal)
+    if length <= 1.0e-12:
+        return None
+    normal = (normal[0] / length, normal[1] / length, normal[2] / length)
+    return normal, -_dot3(normal, points[0])
+
+
+def _point_in_triangle_3d(point: tuple[float, float, float], triangle_points: list[tuple[float, float, float]]) -> bool:
+    a, b, c = triangle_points
+    v0 = _sub3(c, a)
+    v1 = _sub3(b, a)
+    v2 = _sub3(point, a)
+    dot00 = _dot3(v0, v0)
+    dot01 = _dot3(v0, v1)
+    dot02 = _dot3(v0, v2)
+    dot11 = _dot3(v1, v1)
+    dot12 = _dot3(v1, v2)
+    denominator = dot00 * dot11 - dot01 * dot01
+    if abs(denominator) <= 1.0e-12:
+        return False
+    inv = 1.0 / denominator
+    u = (dot11 * dot02 - dot01 * dot12) * inv
+    v = (dot00 * dot12 - dot01 * dot02) * inv
+    tolerance = 1.0e-6
+    return u >= -tolerance and v >= -tolerance and (u + v) <= 1.0 + tolerance
+
+
+def _triangle_xyz_bbox(triangle) -> tuple[float, float, float, float, float, float]:
+    points = [_vertex_xyz(vertex) for vertex in triangle]
+    return (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        min(point[2] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+        max(point[2] for point in points),
+    )
+
+
+def _bbox3d_overlaps(first, second, *, tolerance: float = 0.0) -> bool:
+    return not (
+        first[3] < second[0] - tolerance
+        or second[3] < first[0] - tolerance
+        or first[4] < second[1] - tolerance
+        or second[4] < first[1] - tolerance
+        or first[5] < second[2] - tolerance
+        or second[5] < first[2] - tolerance
+    )
+
+
+def _unique_xyz_points(points: list[tuple[float, float, float]], *, tolerance: float = 1.0e-6) -> list[tuple[float, float, float]]:
+    output = []
+    for point in list(points or []):
+        if any(_xyz_distance(point, existing) <= tolerance for existing in output):
+            continue
+        output.append(point)
+    return output
+
+
+def _normalized_segment_key(start, end) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    first = (round(float(start[0]), 5), round(float(start[1]), 5), round(float(start[2]), 5))
+    second = (round(float(end[0]), 5), round(float(end[1]), 5), round(float(end[2]), 5))
+    return (first, second) if first <= second else (second, first)
+
+
+def _vertex_xyz(vertex) -> tuple[float, float, float]:
+    return (
+        float(getattr(vertex, "x", 0.0) or 0.0),
+        float(getattr(vertex, "y", 0.0) or 0.0),
+        float(getattr(vertex, "z", 0.0) or 0.0),
+    )
+
+
+def _sub3(first, second) -> tuple[float, float, float]:
+    return (first[0] - second[0], first[1] - second[1], first[2] - second[2])
+
+
+def _dot3(first, second) -> float:
+    return first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+
+
+def _cross3(first, second) -> tuple[float, float, float]:
+    return (
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    )
+
+
+def _length3(value) -> float:
+    return math.sqrt(_dot3(value, value))
+
+
+def _xyz_distance(first, second) -> float:
+    return math.sqrt(
+        (float(first[0]) - float(second[0])) ** 2
+        + (float(first[1]) - float(second[1])) ** 2
+        + (float(first[2]) - float(second[2])) ** 2
+    )
+
+
+def _tin_surface_reference_triangles(surface) -> list[tuple[object, object, object]]:
+    vertex_map = {
+        str(getattr(vertex, "vertex_id", "") or ""): vertex
+        for vertex in list(getattr(surface, "vertex_rows", []) or [])
+    }
+    output = []
+    for triangle in list(getattr(surface, "triangle_rows", []) or []):
+        vertices = [vertex_map.get(str(ref or "")) for ref in (triangle.v1, triangle.v2, triangle.v3)]
+        if any(vertex is None for vertex in vertices):
+            continue
+        output.append((vertices[0], vertices[1], vertices[2]))
+    return output
+
+
+def _tin_surface_z_at_xy_from_reference_triangles(reference_triangles, x: float, y: float):
+    for a, b, c in list(reference_triangles or []):
+        z_value = _triangle_z_at_xy(a, b, c, x, y)
+        if z_value is not None:
+            return z_value
+    return None
+
+
+def _triangle_z_at_xy(a, b, c, x: float, y: float):
+    ax = float(getattr(a, "x", 0.0) or 0.0)
+    ay = float(getattr(a, "y", 0.0) or 0.0)
+    az = float(getattr(a, "z", 0.0) or 0.0)
+    bx = float(getattr(b, "x", 0.0) or 0.0)
+    by = float(getattr(b, "y", 0.0) or 0.0)
+    bz = float(getattr(b, "z", 0.0) or 0.0)
+    cx = float(getattr(c, "x", 0.0) or 0.0)
+    cy = float(getattr(c, "y", 0.0) or 0.0)
+    cz = float(getattr(c, "z", 0.0) or 0.0)
+    denominator = ((by - cy) * (ax - cx)) + ((cx - bx) * (ay - cy))
+    if abs(denominator) <= 1.0e-12:
+        return None
+    first = (((by - cy) * (float(x) - cx)) + ((cx - bx) * (float(y) - cy))) / denominator
+    second = (((cy - ay) * (float(x) - cx)) + ((ax - cx) * (float(y) - cy))) / denominator
+    third = 1.0 - first - second
+    tolerance = 1.0e-8
+    if first < -tolerance or second < -tolerance or third < -tolerance:
+        return None
+    return (first * az) + (second * bz) + (third * cz)
 
 
 def _clip_tin_surface_by_intersection_exclusion(
@@ -8820,6 +9776,7 @@ def _augment_daylight_surface_with_curb_return_boundary_bands(
     added_tie_in_triangle_count = 0
     added_side_extension_edge_count = 0
     added_side_extension_triangle_count = 0
+    added_pavement_tie_in_band_edge_count = 0
     radial_edges: list[tuple[TINVertex, TINVertex]] = []
     pavement_strip_polygons = _intersection_pavement_strip_polygons_xy_from_boundary_result(boundary_result)
 
@@ -8910,6 +9867,140 @@ def _augment_daylight_surface_with_curb_return_boundary_bands(
             )
             added_edge_count += 1
 
+    boundary_center = _intersection_boundary_result_center_xyz(boundary_result)
+    for tie_in_index, row in enumerate(list(getattr(boundary_result, "segment_rows", []) or []), start=1):
+        if str(getattr(row, "segment_kind", "") or "") != "tie_in":
+            continue
+        if str(getattr(row, "segment_role", "") or "") != "pavement_edge":
+            continue
+        start = _xyz_tuple(getattr(row, "start_xyz", (0.0, 0.0, 0.0)))
+        end = _xyz_tuple(getattr(row, "end_xyz", (0.0, 0.0, 0.0)))
+        mid = _midpoint_xyz(start, end)
+        outward_x = float(mid[0]) - float(boundary_center[0])
+        outward_y = float(mid[1]) - float(boundary_center[1])
+        outward_len = math.hypot(outward_x, outward_y)
+        if outward_len <= 1.0e-9:
+            segment_x = float(end[0]) - float(start[0])
+            segment_y = float(end[1]) - float(start[1])
+            outward_x, outward_y = -segment_y, segment_x
+            outward_len = math.hypot(outward_x, outward_y)
+        if outward_len <= 1.0e-9:
+            continue
+        unit_x = outward_x / outward_len
+        unit_y = outward_y / outward_len
+        start_inner = TINVertex(
+            vertex_id=f"{surface_id}:intersection-pavement-tie-in-slope-band:e{tie_in_index}:start:inner",
+            x=float(start[0]),
+            y=float(start[1]),
+            z=float(start[2]),
+            source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+            notes="pavement_tie_in_slope_band_inner",
+        )
+        end_inner = TINVertex(
+            vertex_id=f"{surface_id}:intersection-pavement-tie-in-slope-band:e{tie_in_index}:end:inner",
+            x=float(end[0]),
+            y=float(end[1]),
+            z=float(end[2]),
+            source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+            notes="pavement_tie_in_slope_band_inner",
+        )
+        start_outer = TINVertex(
+            vertex_id=f"{surface_id}:intersection-pavement-tie-in-slope-band:e{tie_in_index}:start:outer",
+            x=float(start[0]) + unit_x * width,
+            y=float(start[1]) + unit_y * width,
+            z=float(start[2]) - abs(float(slope)) * width,
+            source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+            notes="pavement_tie_in_slope_band_outer",
+        )
+        end_outer = TINVertex(
+            vertex_id=f"{surface_id}:intersection-pavement-tie-in-slope-band:e{tie_in_index}:end:outer",
+            x=float(end[0]) + unit_x * width,
+            y=float(end[1]) + unit_y * width,
+            z=float(end[2]) - abs(float(slope)) * width,
+            source_point_ref=str(getattr(row, "boundary_segment_id", "") or ""),
+            notes="pavement_tie_in_slope_band_outer",
+        )
+        vertices.extend([start_inner, end_inner, start_outer, end_outer])
+        append_triangle(
+            start_inner,
+            end_inner,
+            start_outer,
+            quality_ref="intersection_pavement_tie_in_slope_band",
+            notes=f"pavement tie-in edge slope face band; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}",
+        )
+        append_triangle(
+            start_outer,
+            end_inner,
+            end_outer,
+            quality_ref="intersection_pavement_tie_in_slope_band",
+            notes=f"pavement tie-in edge slope face band; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}",
+        )
+        added_pavement_tie_in_band_edge_count += 1
+        existing_edges = _near_existing_daylight_boundary_edges_to_side_edge(
+            surface,
+            start_outer,
+            end_outer,
+            max_distance=max(float(width or 0.0) * 6.0, 18.0),
+            max_edges=4,
+        )
+        for extension_index, existing_edge in enumerate(existing_edges, start=1):
+            existing_first, existing_second = existing_edge
+            append_triangle(
+                existing_first,
+                start_outer,
+                existing_second,
+                quality_ref="intersection_side_slope_extension",
+                notes=(
+                    "existing Primary Slope Face boundary to pavement tie-in slope band; "
+                    f"extension={extension_index}; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
+                ),
+            )
+            append_triangle(
+                existing_second,
+                start_outer,
+                end_outer,
+                quality_ref="intersection_side_slope_extension",
+                notes=(
+                    "existing Primary Slope Face boundary to pavement tie-in slope band; "
+                    f"extension={extension_index}; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
+                ),
+            )
+            added_side_extension_edge_count += 1
+        for cap_index, (cap_inner, cap_outer, cap_label) in enumerate(
+            ((start_inner, start_outer, "start"), (end_inner, end_outer, "end")),
+            start=1,
+        ):
+            cap_edges = _near_existing_daylight_boundary_edges_to_side_edge(
+                surface,
+                cap_inner,
+                cap_outer,
+                max_distance=max(float(width or 0.0) * 4.0, 12.0),
+                max_edges=2,
+            )
+            for cap_edge_index, existing_edge in enumerate(cap_edges, start=1):
+                existing_first, existing_second = existing_edge
+                append_triangle(
+                    existing_first,
+                    cap_inner,
+                    cap_outer,
+                    quality_ref="intersection_side_slope_extension",
+                    notes=(
+                        "pavement tie-in slope band endpoint cap to existing Slope Face; "
+                        f"cap={cap_label}; edge={cap_edge_index}; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
+                    ),
+                )
+                append_triangle(
+                    existing_first,
+                    cap_outer,
+                    existing_second,
+                    quality_ref="intersection_side_slope_extension",
+                    notes=(
+                        "pavement tie-in slope band endpoint cap to existing Slope Face; "
+                        f"cap={cap_label}; edge={cap_edge_index}; alignment={getattr(row, 'alignment_ref', '')}; side={getattr(row, 'side', '')}"
+                    ),
+                )
+                added_side_extension_edge_count += 1
+
     tie_in_edges = _intersection_side_applied_section_slope_tie_in_edges(
         applied_section_set,
         boundary_result=boundary_result,
@@ -8989,6 +10080,8 @@ def _augment_daylight_surface_with_curb_return_boundary_bands(
             "intersection_slope_tie_in_triangle_count",
             "intersection_side_slope_extension_edge_count",
             "intersection_side_slope_extension_triangle_count",
+            "intersection_pavement_tie_in_slope_band_edge_count",
+            "intersection_pavement_tie_in_slope_band_triangle_count",
         }
     ]
     filtered_quality.extend(
@@ -9001,9 +10094,29 @@ def _augment_daylight_surface_with_curb_return_boundary_bands(
             TINQualityRow(f"{surface_id}:intersection_slope_tie_in_triangle_count", "intersection_slope_tie_in_triangle_count", added_tie_in_triangle_count, "count"),
             TINQualityRow(f"{surface_id}:intersection_side_slope_extension_edge_count", "intersection_side_slope_extension_edge_count", added_side_extension_edge_count, "count"),
             TINQualityRow(f"{surface_id}:intersection_side_slope_extension_triangle_count", "intersection_side_slope_extension_triangle_count", added_side_extension_triangle_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_pavement_tie_in_slope_band_edge_count", "intersection_pavement_tie_in_slope_band_edge_count", added_pavement_tie_in_band_edge_count, "count"),
+            TINQualityRow(f"{surface_id}:intersection_pavement_tie_in_slope_band_triangle_count", "intersection_pavement_tie_in_slope_band_triangle_count", added_pavement_tie_in_band_edge_count * 2, "count"),
         ]
     )
     return replace(surface, vertex_rows=vertices, triangle_rows=triangles, quality_rows=filtered_quality)
+
+
+def _intersection_boundary_result_center_xyz(boundary_result) -> tuple[float, float, float]:
+    centers: list[tuple[float, float, float]] = []
+    points: list[tuple[float, float, float]] = []
+    for row in list(getattr(boundary_result, "segment_rows", []) or []):
+        if str(getattr(row, "segment_kind", "") or "") == "arc":
+            centers.append(_xyz_tuple(getattr(row, "center_xyz", (0.0, 0.0, 0.0))))
+        points.append(_xyz_tuple(getattr(row, "start_xyz", (0.0, 0.0, 0.0))))
+        points.append(_xyz_tuple(getattr(row, "end_xyz", (0.0, 0.0, 0.0))))
+    source = centers or points
+    if not source:
+        return (0.0, 0.0, 0.0)
+    return (
+        sum(float(point[0]) for point in source) / len(source),
+        sum(float(point[1]) for point in source) / len(source),
+        sum(float(point[2]) for point in source) / len(source),
+    )
 
 
 def _intersection_curb_return_slope_band_policy(applied_section_set) -> tuple[float, float]:
@@ -9035,12 +10148,9 @@ def _intersection_side_applied_section_slope_tie_in_edges(
     if applied_section_set is None or not band_radial_edges:
         return []
     intersection_id = str(getattr(boundary_result, "intersection_id", "") or "").strip()
-    secondary_refs = _intersection_secondary_alignment_refs_from_sections(applied_section_set, intersection_id=intersection_id)
     candidate_edges: list[dict[str, object]] = []
     for section in list(getattr(applied_section_set, "sections", []) or []):
         alignment_id = str(getattr(section, "alignment_id", "") or "").strip()
-        if secondary_refs and alignment_id not in secondary_refs:
-            continue
         active_intersection = str(getattr(section, "active_intersection_id", "") or "").strip()
         if intersection_id and active_intersection and active_intersection != intersection_id:
             continue
@@ -9055,53 +10165,49 @@ def _intersection_side_applied_section_slope_tie_in_edges(
                 continue
             side_inner, side_outer = edge
             side_mid = _midpoint_xyz(side_inner, side_outer)
-            nearest_band_edge = None
-            nearest_distance = None
+            band_candidates: list[tuple[float, object, object]] = []
             for band_inner, band_outer in band_radial_edges:
                 band_mid = _midpoint_xyz(
                     _vertex_xyz_tuple(band_inner),
                     _vertex_xyz_tuple(band_outer),
                 )
                 distance = _xy_distance((side_mid[0], side_mid[1]), (band_mid[0], band_mid[1]))
-                if nearest_distance is None or distance < nearest_distance:
-                    nearest_distance = distance
-                    nearest_band_edge = (band_inner, band_outer)
-            if nearest_band_edge is None or nearest_distance is None:
-                continue
+                band_candidates.append((float(distance), band_inner, band_outer))
             max_distance = max(float(band_width or 0.0) * 4.0, 12.0)
-            if float(nearest_distance) > max_distance:
-                continue
-            candidate_edges.append(
-                {
-                    "section_id": str(getattr(section, "applied_section_id", "") or ""),
-                    "alignment_id": alignment_id,
-                    "side_label": side_label,
-                    "side_inner": side_inner,
-                    "side_outer": side_outer,
-                    "band_edge": nearest_band_edge,
-                    "distance": float(nearest_distance),
-                    "source_ref": f"{str(getattr(section, 'applied_section_id', '') or '')}:{side_label}",
-                    "notes": f"alignment={alignment_id}; section={str(getattr(section, 'applied_section_id', '') or '')}; side={side_label}; distance={float(nearest_distance):.3f}",
-                }
-            )
+            for nearest_distance, band_inner, band_outer in sorted(band_candidates, key=lambda row: row[0])[:6]:
+                if float(nearest_distance) > max_distance:
+                    continue
+                candidate_edges.append(
+                    {
+                        "section_id": str(getattr(section, "applied_section_id", "") or ""),
+                        "alignment_id": alignment_id,
+                        "side_label": side_label,
+                        "side_inner": side_inner,
+                        "side_outer": side_outer,
+                        "band_edge": (band_inner, band_outer),
+                        "distance": float(nearest_distance),
+                        "source_ref": f"{str(getattr(section, 'applied_section_id', '') or '')}:{side_label}",
+                        "notes": f"alignment={alignment_id}; section={str(getattr(section, 'applied_section_id', '') or '')}; side={side_label}; distance={float(nearest_distance):.3f}",
+                    }
+                )
     output: list[dict[str, object]] = []
-    used_keys: set[tuple[str, str]] = set()
-    used_band_edges: set[tuple[str, str]] = set()
+    used_key_counts: dict[tuple[str, str], int] = {}
+    used_band_edge_counts: dict[tuple[str, str], int] = {}
     for candidate in sorted(candidate_edges, key=lambda row: float(row.get("distance", 0.0) or 0.0)):
-        key = (str(candidate.get("alignment_id", "") or ""), str(candidate.get("side_label", "") or ""))
-        if key in used_keys:
+        key = (str(candidate.get("section_id", "") or ""), str(candidate.get("side_label", "") or ""))
+        if used_key_counts.get(key, 0) >= 3:
             continue
         band_inner, band_outer = candidate["band_edge"]
         band_key = (
             str(getattr(band_inner, "vertex_id", "") or ""),
             str(getattr(band_outer, "vertex_id", "") or ""),
         )
-        if band_key in used_band_edges:
+        if used_band_edge_counts.get(band_key, 0) >= 2:
             continue
         output.append(candidate)
-        used_keys.add(key)
-        used_band_edges.add(band_key)
-        if len(output) >= 4:
+        used_key_counts[key] = used_key_counts.get(key, 0) + 1
+        used_band_edge_counts[band_key] = used_band_edge_counts.get(band_key, 0) + 1
+        if len(output) >= 12:
             break
     return output
 
@@ -9126,14 +10232,15 @@ def _near_existing_daylight_boundary_edges_to_side_edge(
         float(getattr(side_outer, "x", 0.0) or 0.0),
         float(getattr(side_outer, "y", 0.0) or 0.0),
     )
-    candidates: list[tuple[float, float, object, object]] = []
-    for first_id, second_id in _tin_surface_boundary_edges(surface):
+    candidates: list[tuple[float, int, float, object, object]] = []
+
+    def add_candidate(first_id: str, second_id: str, *, priority: int) -> None:
         first = vertex_map.get(str(first_id or ""))
         second = vertex_map.get(str(second_id or ""))
         if first is None or second is None:
-            continue
+            return
         if _daylight_boundary_edge_is_generated_intersection_edge(first, second):
-            continue
+            return
         edge_mid = _midpoint_xyz(_vertex_xyz_tuple(first), _vertex_xyz_tuple(second))
         midpoint_distance = _xy_distance((target_mid[0], target_mid[1]), (edge_mid[0], edge_mid[1]))
         endpoint_distance = min(
@@ -9152,10 +10259,16 @@ def _near_existing_daylight_boundary_edges_to_side_edge(
         )[0]
         score = min(midpoint_distance, endpoint_distance, segment_distance)
         if score <= float(max_distance):
-            candidates.append((score, midpoint_distance, first, second))
+            candidates.append((score, int(priority), midpoint_distance, first, second))
+
+    for first_id, second_id in _tin_surface_boundary_edges(surface):
+        add_candidate(first_id, second_id, priority=0)
+    for first_id, second_id in _tin_surface_triangle_edges(surface):
+        add_candidate(first_id, second_id, priority=1)
+
     output: list[tuple[object, object]] = []
     seen_edges: set[tuple[str, str]] = set()
-    for _score, _midpoint_distance, first, second in sorted(candidates, key=lambda row: (row[0], row[1])):
+    for _score, _priority, _midpoint_distance, first, second in sorted(candidates, key=lambda row: (row[0], row[1], row[2])):
         edge_key = tuple(
             sorted(
                 (
@@ -9338,6 +10451,22 @@ def _tin_surface_boundary_edges(surface) -> list[tuple[str, str]]:
             edge_counts[key] = edge_counts.get(key, 0) + 1
             edge_values.setdefault(key, (first_id, second_id))
     return [edge_values[key] for key, count in edge_counts.items() if count == 1]
+
+
+def _tin_surface_triangle_edges(surface) -> list[tuple[str, str]]:
+    edge_values: dict[tuple[str, str], tuple[str, str]] = {}
+    for triangle in list(getattr(surface, "triangle_rows", []) or []):
+        ids = [
+            str(getattr(triangle, "v1", "") or ""),
+            str(getattr(triangle, "v2", "") or ""),
+            str(getattr(triangle, "v3", "") or ""),
+        ]
+        for first_id, second_id in ((ids[0], ids[1]), (ids[1], ids[2]), (ids[2], ids[0])):
+            if not first_id or not second_id:
+                continue
+            key = tuple(sorted((first_id, second_id)))
+            edge_values.setdefault(key, (first_id, second_id))
+    return list(edge_values.values())
 
 
 def _intersection_exclusion_polygon_from_sources(document, *, applied_section_set=None) -> dict[str, object] | None:
@@ -11166,6 +12295,11 @@ def _corridor_build_review_row(role: str, title: str, object_name: str, obj, *, 
                 suffix_parts.append(f"boundary={boundary_strategy}")
             if aligned:
                 suffix_parts.append("aligned=practical")
+            height_status = str(getattr(obj, "IntersectionHeightClipStatus", "") or "")
+            if height_status:
+                height_suppressed = int(getattr(obj, "IntersectionHeightClipSuppressedTriangleCount", 0) or 0)
+                height_tested = int(getattr(obj, "IntersectionHeightClipTestedTriangleCount", 0) or 0)
+                suffix_parts.append(f"height_clip={height_status} suppressed={height_suppressed}/{height_tested}")
             suffix = "; ".join(suffix_parts)
             notes = f"{notes} | {suffix}" if notes else suffix
     if not notes:
@@ -11231,6 +12365,8 @@ def _intersection_surface_review_notes(obj) -> str:
     patch_bbox_aspect_ratio = float(getattr(obj, "PatchBoundaryBBoxAspectRatio", 0.0) or 0.0)
     patch_min_triangle_quality = float(getattr(obj, "PatchTriangleMinQuality", 0.0) or 0.0)
     patch_skinny_triangle_count = int(getattr(obj, "PatchTriangleSkinnyCount", 0) or 0)
+    implementation_mode = str(getattr(obj, "IntersectionImplementationMode", "") or "")
+    redesign_path = str(getattr(obj, "IntersectionRedesignPath", "") or "")
     if tie_in_count:
         parts.append(f"tie-in edges={tie_in_count}")
     if boundary_count:
@@ -11321,6 +12457,10 @@ def _intersection_surface_review_notes(obj) -> str:
         parts.append(f"min triangle quality={patch_min_triangle_quality:.3f}")
     if patch_skinny_triangle_count:
         parts.append(f"skinny triangles={patch_skinny_triangle_count}")
+    if implementation_mode:
+        parts.append(f"implementation={implementation_mode}")
+    if redesign_path:
+        parts.append(f"next={redesign_path}")
     return "; ".join(parts)
 
 

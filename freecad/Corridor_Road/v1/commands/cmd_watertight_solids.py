@@ -168,6 +168,10 @@ class IntersectionWatertightHandoffSummary:
     source_status: str = "missing"
     intersection_id: str = ""
     target_count: int = 0
+    pavement_target_count: int = 0
+    subgrade_target_count: int = 0
+    slope_target_count: int = 0
+    curb_return_target_count: int = 0
     triangulation_mode: str = ""
     surface_boundary_strategy: str = ""
     exclusion_boundary_strategy: str = ""
@@ -1587,6 +1591,18 @@ def _target_display_label(row: object) -> str:
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
         return f"Intersection Patch Solid - {intersection_ref}" if intersection_ref else "Intersection Patch Solid"
+    if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
+        source_refs = list(getattr(row, "source_refs", []) or [])
+        intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
+        zone_ref = component_ref or next((str(ref) for ref in source_refs if "surface-zone" in str(ref)), "")
+        label = {
+            "intersection_pavement_body": "Intersection Pavement Solid",
+            "intersection_subgrade_body": "Intersection Subgrade Solid",
+            "intersection_slope_body": "Intersection Slope Solid",
+            "intersection_curb_return_body": "Intersection Curb-Return Solid",
+        }.get(family, "Intersection Zone Solid")
+        suffix = " - ".join(value for value in (intersection_ref, zone_ref) if value)
+        return f"{label} - {suffix}" if suffix else label
     if family == "structure_body":
         return f"Structure Body Solid - {structure_ref}" if structure_ref else "Structure Body Solid"
     return str(getattr(row, "target_family", "") or _target_id(row))
@@ -1606,6 +1622,13 @@ def _target_family_label(row: object) -> str:
         return "Drainage: Pipe Network"
     if family == "intersection_patch_body":
         return "Intersection Patch"
+    if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
+        return {
+            "intersection_pavement_body": "Intersection: Pavement",
+            "intersection_subgrade_body": "Intersection: Subgrade",
+            "intersection_slope_body": "Intersection: Slope",
+            "intersection_curb_return_body": "Intersection: Curb-Return",
+        }.get(family, "Intersection Zone")
     if family in {"structure_body"}:
         return "Structure Body"
     return family or "-"
@@ -1667,6 +1690,16 @@ def _is_structure_body_target(row: object) -> bool:
 
 def _is_intersection_patch_target(row: object) -> bool:
     return str(getattr(row, "target_family", "") or "").strip().lower() == "intersection_patch_body"
+
+
+def _is_intersection_watertight_target(row: object) -> bool:
+    return str(getattr(row, "target_family", "") or "").strip().lower() in {
+        "intersection_patch_body",
+        "intersection_pavement_body",
+        "intersection_subgrade_body",
+        "intersection_slope_body",
+        "intersection_curb_return_body",
+    }
 
 
 def _intersection_patch_context(document, target_row) -> dict[str, object]:
@@ -3759,7 +3792,9 @@ def _intersection_watertight_handoff_lines(document, target_model=None) -> list[
         (
             f"clipping_boundary={summary.exclusion_boundary_strategy or '-'}; "
             f"aligned={'practical' if summary.exclusion_practical_aligned else 'check'}; "
-            f"patch_boundary={summary.patch_boundary_status or '-'}"
+            f"patch_boundary={summary.patch_boundary_status or '-'}; "
+            f"zone_targets: pavement={summary.pavement_target_count}; subgrade={summary.subgrade_target_count}; "
+            f"slope={summary.slope_target_count}; curb_return={summary.curb_return_target_count}"
         ),
     ]
 
@@ -3772,7 +3807,7 @@ def intersection_watertight_handoff_summary(document=None, *, target_model=None)
         return IntersectionWatertightHandoffSummary(source_status="missing")
     active_target_model = target_model
     target_rows = list(getattr(active_target_model, "target_rows", []) or []) if active_target_model is not None else []
-    target_count = _solid_target_family_count(target_rows, "intersection_patch_body")
+    target_count = sum(1 for row in target_rows if _is_intersection_watertight_target(row))
     preview = _intersection_surface_preview_object(doc)
     if preview is None:
         return IntersectionWatertightHandoffSummary(source_status="missing", target_count=target_count)
@@ -3781,6 +3816,10 @@ def intersection_watertight_handoff_summary(document=None, *, target_model=None)
         source_status="ready",
         intersection_id=str(getattr(preview, "IntersectionId", "") or ""),
         target_count=target_count,
+        pavement_target_count=_solid_target_family_count(target_rows, "intersection_pavement_body"),
+        subgrade_target_count=_solid_target_family_count(target_rows, "intersection_subgrade_body"),
+        slope_target_count=_solid_target_family_count(target_rows, "intersection_slope_body"),
+        curb_return_target_count=_solid_target_family_count(target_rows, "intersection_curb_return_body"),
         triangulation_mode=str(getattr(preview, "PatchTriangulationMode", "") or ""),
         surface_boundary_strategy=str(getattr(preview, "PatchBoundaryStrategy", "") or getattr(preview, "PatchTriangulationMode", "") or ""),
         exclusion_boundary_strategy=exclusion_strategy,

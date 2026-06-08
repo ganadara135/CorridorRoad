@@ -22,6 +22,19 @@ def test_solid_target_row_normalizes_family_scope_status_and_refs() -> None:
     assert row.diagnostic_refs == ["diag:1", "diag:2"]
 
 
+def test_solid_target_row_accepts_intersection_zone_families() -> None:
+    row = SolidTargetRow(
+        target_id="solid-target:intersection-slope:intersection-t-01:zone-1",
+        target_family="Intersection Slope Body",
+        scope_kind="Intersection",
+        readiness_status="Planned",
+    )
+
+    assert row.target_family == "intersection_slope_body"
+    assert row.scope_kind == "intersection"
+    assert row.readiness_status == "planned"
+
+
 def test_solid_target_model_preserves_rows_and_diagnostics() -> None:
     row = SolidTargetRow(
         target_id="solid-target:road-body-envelope",

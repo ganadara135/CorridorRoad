@@ -108,6 +108,10 @@ Do not create solids for open grading surfaces unless a source model defines a p
 | `headwall_body` | StructureModel | deferred | native structure solid output | P2 |
 | `retaining_wall_body` | StructureModel | target discovery exists for structures | reuse Structure Output first, then segment by station where needed | P1 |
 | `bridge_deck_body` | StructureModel | deferred | native structure body, not road envelope | P3 |
+| `intersection_pavement_body` | IntersectionSurfaceZoneResult | planned handoff | zone-scoped closed body from accepted pavement zone boundaries | P1 |
+| `intersection_subgrade_body` | IntersectionSurfaceZoneResult | planned handoff | zone-scoped subgrade body under pavement and curb-return zones | P1 |
+| `intersection_slope_body` | IntersectionSurfaceZoneResult | planned handoff | exterior Slope Face zone body from daylight/pavement/curb-return edge contracts | P1 |
+| `intersection_curb_return_body` | IntersectionSurfaceZoneResult | planned handoff | curb-return zone body from curb-return edge and adjacent pavement boundaries | P1 |
 
 ## 5. Implementation Approach
 

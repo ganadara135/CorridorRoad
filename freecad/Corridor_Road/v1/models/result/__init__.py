@@ -13,8 +13,17 @@ from .centerline3d import Centerline3DPointRow, Centerline3DResult
 from .drainage_pipeline import DrainagePipelineResult, DrainagePipelineSegment
 from .earthwork_balance_model import EarthworkBalanceModel
 from .intersection_boundary_segment import IntersectionBoundarySegmentResult, IntersectionBoundarySegmentRow
+from .intersection_corridor_clipping import IntersectionCorridorClipResult, IntersectionCorridorClipRow
+from .intersection_drainage_hint import IntersectionDrainageHintResult, IntersectionDrainageHintRow
 from .intersection_patch_boundary import IntersectionPatchBoundaryPointRow, IntersectionPatchBoundaryResult
 from .intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionTieInEdgeRow
+from .intersection_edge_network import IntersectionEdgeNetworkResult, IntersectionEdgeNetworkRow
+from .intersection_surface_zone import IntersectionSurfaceZoneResult, IntersectionSurfaceZoneRow
+from .intersection_topology import (
+    IntersectionTopologyControlAreaRow,
+    IntersectionTopologyLegSpanRow,
+    IntersectionTopologyResult,
+)
 from .intersection_trim_boundary import IntersectionTrimBoundaryPair, IntersectionTrimBoundaryResult
 from .mass_haul_model import MassHaulModel
 from .quantity_model import QuantityModel
@@ -37,10 +46,21 @@ __all__ = [
     "EarthworkBalanceModel",
     "IntersectionBoundarySegmentResult",
     "IntersectionBoundarySegmentRow",
+    "IntersectionCorridorClipResult",
+    "IntersectionCorridorClipRow",
+    "IntersectionDrainageHintResult",
+    "IntersectionDrainageHintRow",
     "IntersectionPatchBoundaryPointRow",
     "IntersectionPatchBoundaryResult",
     "IntersectionTieInEdgeResult",
     "IntersectionTieInEdgeRow",
+    "IntersectionEdgeNetworkResult",
+    "IntersectionEdgeNetworkRow",
+    "IntersectionSurfaceZoneResult",
+    "IntersectionSurfaceZoneRow",
+    "IntersectionTopologyControlAreaRow",
+    "IntersectionTopologyLegSpanRow",
+    "IntersectionTopologyResult",
     "IntersectionTrimBoundaryPair",
     "IntersectionTrimBoundaryResult",
     "MassHaulModel",

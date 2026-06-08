@@ -16,6 +16,7 @@ from ...models.source.solid_target_model import (
     SolidTargetRow,
 )
 from ..evaluation.drainage_resolution_service import build_drainage_pipeline_result
+from ..evaluation.intersection_evaluation_service import IntersectionEvaluationService
 from ..evaluation.station_context_resolver import StationContextResolver
 
 
@@ -117,6 +118,13 @@ class SolidTargetDiscoveryService:
         target_rows.extend(intersection_rows)
         diagnostics.extend(intersection_diagnostics)
 
+        intersection_zone_rows, intersection_zone_diagnostics = _intersection_surface_zone_target_rows(
+            intersection_model,
+            source_refs=source_refs,
+        )
+        target_rows.extend(intersection_zone_rows)
+        diagnostics.extend(intersection_zone_diagnostics)
+
         component_rows, component_diagnostics = _component_target_rows(
             applied,
             source_refs=source_refs,
@@ -217,6 +225,111 @@ def _region_target_rows(
             )
         )
     return rows, diagnostics
+
+
+def _intersection_surface_zone_target_rows(
+    intersection_model: IntersectionModel | None,
+    *,
+    source_refs: list[str],
+) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
+    if intersection_model is None:
+        return [], []
+    rows: list[SolidTargetRow] = []
+    diagnostics: list[SolidTargetDiagnosticRow] = []
+    service = IntersectionEvaluationService()
+    for intersection in list(getattr(intersection_model, "intersection_rows", []) or []):
+        intersection_id = str(getattr(intersection, "intersection_id", "") or "").strip()
+        if not intersection_id:
+            continue
+        surface_zones = service.evaluate_surface_zones(intersection_model, intersection_id=intersection_id)
+        if str(getattr(surface_zones, "status", "") or "") == "error":
+            target_id = f"solid-target:intersection-zone:{_safe_id(intersection_id)}"
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "intersection_surface_zone_target_contract_error",
+                    target_id,
+                    "Intersection surface-zone contracts must be ready before zone-scoped watertight targets can be discovered.",
+                    notes="; ".join(str(row) for row in list(getattr(surface_zones, "diagnostic_rows", []) or []) if str(row)),
+                )
+            )
+            continue
+        station_start, station_end = _intersection_station_range(intersection_model, intersection_id)
+        control_refs = _intersection_control_region_refs(intersection_model, intersection)
+        for zone in list(getattr(surface_zones, "zone_rows", []) or []):
+            target_families = _intersection_zone_target_families(zone)
+            if not target_families:
+                continue
+            zone_id = str(getattr(zone, "zone_id", "") or "").strip()
+            zone_token = _safe_id(zone_id or str(getattr(zone, "zone_role", "") or "zone"))
+            zone_status = str(getattr(zone, "status", "") or "").strip().lower()
+            readiness = "planned" if zone_status in {"candidate", "ready", "warning", "warn"} else "blocked"
+            diagnostic_refs: list[str] = []
+            if readiness == "blocked":
+                diagnostic = _diagnostic(
+                    "error",
+                    "intersection_surface_zone_target_not_ready",
+                    f"solid-target:intersection-zone:{_safe_id(intersection_id)}:{zone_token}",
+                    "Intersection surface-zone target is blocked because the source zone is not ready.",
+                    notes=f"zone={zone_id};status={zone_status or '-'}",
+                )
+                diagnostics.append(diagnostic)
+                diagnostic_refs.append(diagnostic.diagnostic_id)
+            for family in target_families:
+                family_token = _intersection_zone_target_family_token(family)
+                target_id = f"solid-target:{family_token}:{_safe_id(intersection_id)}:{zone_token}"
+                rows.append(
+                    SolidTargetRow(
+                        target_id=target_id,
+                        target_family=family,
+                        scope_kind="intersection",
+                        station_start=station_start,
+                        station_end=station_end,
+                        region_ref=",".join(control_refs),
+                        component_ref=zone_id,
+                        enabled=False,
+                        readiness_status=readiness,
+                        source_refs=_unique_refs(
+                            source_refs
+                            + [
+                                str(getattr(intersection_model, "intersection_model_id", "") or ""),
+                                intersection_id,
+                                zone_id,
+                                *list(getattr(zone, "source_edge_refs", ()) or ()),
+                                *list(getattr(zone, "boundary_edge_refs", ()) or ()),
+                                *list(getattr(zone, "control_area_refs", ()) or ()),
+                            ]
+                        ),
+                        diagnostic_refs=diagnostic_refs,
+                        notes=(
+                            "Intersection surface-zone watertight target handoff. "
+                            f"intersection={intersection_id}; "
+                            f"zone={zone_id}; "
+                            f"zone_family={str(getattr(zone, 'zone_family', '') or '')}; "
+                            f"design_zone_role={str(getattr(zone, 'design_zone_role', '') or '')}; "
+                            f"surface_role={str(getattr(zone, 'surface_role', '') or '')}; "
+                            "build_backend=planned_edge_network_zone_solid."
+                        ),
+                    )
+                )
+    return rows, diagnostics
+
+
+def _intersection_zone_target_families(zone: object) -> tuple[str, ...]:
+    zone_family = str(getattr(zone, "zone_family", "") or "").strip().lower()
+    design_role = str(getattr(zone, "design_zone_role", "") or "").strip().lower()
+    if zone_family == "curb_return" or design_role == "curb_return_pavement":
+        return ("intersection_curb_return_body", "intersection_subgrade_body")
+    if zone_family == "slope" or design_role == "exterior_slope_face":
+        return ("intersection_slope_body",)
+    if design_role in {"central_pavement", "main_pavement", "side_pavement"} or zone_family in {"central_junction", "leg_pavement"}:
+        return ("intersection_pavement_body", "intersection_subgrade_body")
+    return ()
+
+
+def _intersection_zone_target_family_token(family: str) -> str:
+    text = str(family or "").strip().lower().replace("_body", "").replace("_", "-")
+    return text or "intersection-zone"
 
 
 def _structure_target_rows(

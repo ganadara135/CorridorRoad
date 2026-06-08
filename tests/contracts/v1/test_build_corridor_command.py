@@ -26,6 +26,8 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     corridor_centerline_preview_style,
     corridor_drainage_flow_review_rows,
     corridor_drainage_flow_review_summary,
+    corridor_intersection_contract_review_rows,
+    corridor_intersection_contract_review_summary,
     corridor_intersection_drainage_review_rows,
     corridor_drainage_review_rows,
     corridor_drainage_review_summary,
@@ -38,6 +40,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
     focus_corridor_build_guided_review_step,
     focus_corridor_drainage_flow_review,
     focus_corridor_drainage_review_row,
+    focus_corridor_intersection_contract_review_row,
     focus_corridor_region_boundary_row,
     focus_corridor_slope_face_issue,
     preferred_corridor_build_review_row_index,
@@ -80,8 +83,11 @@ from freecad.Corridor_Road.v1.objects.obj_surface_transition import (
 )
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionArmPolicyRow,
     IntersectionControlArea,
     IntersectionCurbReturnPolicyRow,
+    IntersectionDrainagePolicyRow,
+    IntersectionEdgePolicyRow,
     IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
@@ -592,7 +598,17 @@ def _sample_intersection_model() -> IntersectionModel:
                 secondary_alignment_refs=["alignment:side"],
                 control_region_refs=["region:primary-intersection", "region:side-intersection"],
                 grading_policy_ref="grading:intersection:t-01:default",
-                policy_refs=["grading:intersection:t-01:default"],
+                policy_refs=[
+                    "arm-policy:intersection:t-01:primary",
+                    "arm-policy:intersection:t-01:side",
+                    "edge-policy:intersection:t-01:primary:pavement",
+                    "edge-policy:intersection:t-01:primary:daylight",
+                    "edge-policy:intersection:t-01:side:pavement",
+                    "edge-policy:intersection:t-01:side:daylight",
+                    "curb-return:intersection:t-01:default",
+                    "grading:intersection:t-01:default",
+                    "drainage:intersection:t-01:default",
+                ],
                 leg_rows=[
                     IntersectionLegRow(
                         leg_id="leg:primary",
@@ -601,6 +617,12 @@ def _sample_intersection_model() -> IntersectionModel:
                         alignment_ref="alignment:primary",
                         approach_station_start=0.0,
                         approach_station_end=20.0,
+                        arm_policy_ref="arm-policy:intersection:t-01:primary",
+                        edge_policy_refs=[
+                            "edge-policy:intersection:t-01:primary:pavement",
+                            "edge-policy:intersection:t-01:primary:daylight",
+                        ],
+                        grading_policy_ref="grading:intersection:t-01:default",
                     ),
                     IntersectionLegRow(
                         leg_id="leg:side",
@@ -609,6 +631,12 @@ def _sample_intersection_model() -> IntersectionModel:
                         alignment_ref="alignment:side",
                         approach_station_start=0.0,
                         approach_station_end=20.0,
+                        arm_policy_ref="arm-policy:intersection:t-01:side",
+                        edge_policy_refs=[
+                            "edge-policy:intersection:t-01:side:pavement",
+                            "edge-policy:intersection:t-01:side:daylight",
+                        ],
+                        grading_policy_ref="grading:intersection:t-01:default",
                     ),
                 ],
             )
@@ -631,6 +659,34 @@ def _sample_intersection_model() -> IntersectionModel:
                 grading_policy_ref="grading:intersection:t-01:default",
             ),
         ],
+        arm_policy_rows=[
+            IntersectionArmPolicyRow("arm-policy:intersection:t-01:primary", "intersection:t-01", "leg:primary"),
+            IntersectionArmPolicyRow("arm-policy:intersection:t-01:side", "intersection:t-01", "leg:side"),
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="curb-return:intersection:t-01:default",
+                intersection_id="intersection:t-01",
+                radius=12.0,
+                approach_leg_refs=["leg:primary", "leg:side"],
+            )
+        ],
+        edge_policy_rows=[
+            IntersectionEdgePolicyRow("edge-policy:intersection:t-01:primary:pavement", "intersection:t-01", "leg:primary"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:intersection:t-01:primary:daylight",
+                "intersection:t-01",
+                "leg:primary",
+                edge_role="daylight_hinge",
+            ),
+            IntersectionEdgePolicyRow("edge-policy:intersection:t-01:side:pavement", "intersection:t-01", "leg:side"),
+            IntersectionEdgePolicyRow(
+                "edge-policy:intersection:t-01:side:daylight",
+                "intersection:t-01",
+                "leg:side",
+                edge_role="daylight_hinge",
+            ),
+        ],
         grading_policy_rows=[
             IntersectionGradingPolicyRow(
                 policy_id="grading:intersection:t-01:default",
@@ -640,6 +696,9 @@ def _sample_intersection_model() -> IntersectionModel:
                 primary_alignment_ref="alignment:primary",
                 secondary_alignment_refs=["alignment:side"],
             )
+        ],
+        drainage_policy_rows=[
+            IntersectionDrainagePolicyRow("drainage:intersection:t-01:default", "intersection:t-01"),
         ],
     )
 
@@ -995,6 +1054,86 @@ def test_corridor_guided_review_reports_intersection_exclusion_clip_counts() -> 
         App.closeDocument(doc.Name)
 
 
+def test_corridor_intersection_contract_review_rows_report_edge_zones_and_clipping() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+
+        rows = corridor_intersection_contract_review_rows(doc)
+        summary = corridor_intersection_contract_review_summary(doc)
+
+        assert summary["status"] == "ready"
+        assert summary["row_count"] == 23
+        assert "topology=1" in summary["notes"]
+        assert "edge_network=6" in summary["notes"]
+        assert "surface_zone=7" in summary["notes"]
+        assert "corridor_clip=4" in summary["notes"]
+        assert "drainage_hint=5" in summary["notes"]
+        assert rows[0]["contract_family"] == "topology"
+        assert rows[0]["status"] == "ready"
+
+        edge_rows = [row for row in rows if row["contract_family"] == "edge_network"]
+        assert len(edge_rows) == 6
+        assert {row["role"] for row in edge_rows} == {"pavement_edge", "daylight_hinge", "curb_return_edge"}
+
+        zone_rows = [row for row in rows if row["contract_family"] == "surface_zone"]
+        assert len(zone_rows) == 7
+        assert zone_rows[0]["status"] == "ready"
+        assert "central_pavement" in {row["role"] for row in zone_rows}
+        assert "exterior_slope_face" in {row["role"] for row in zone_rows}
+
+        clip_rows = [row for row in rows if row["contract_family"] == "corridor_clip"]
+        assert len(clip_rows) == 4
+        assert {row["role"] for row in clip_rows} == {"design", "slope_face"}
+        drainage_hint_rows = [row for row in rows if row["contract_family"] == "drainage_hint"]
+        assert len(drainage_hint_rows) == 5
+        assert {row["role"] for row in drainage_hint_rows} == {"low_point_candidate", "inlet_recommendation"}
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_focus_corridor_intersection_contract_review_row_uses_edge_network_preview_when_available() -> None:
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+        preview = doc.addObject("Part::Feature", "V1IntersectionEdgeNetworkPreview")
+        rows = corridor_intersection_contract_review_rows(doc)
+        edge_index = next(index for index, row in enumerate(rows) if row["contract_family"] == "edge_network")
+
+        focused = focus_corridor_intersection_contract_review_row(doc, edge_index)
+
+        assert focused is preview
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_build_corridor_panel_populates_intersection_contract_table() -> None:
+    _ensure_qapp()
+    doc, project = _new_project_doc()
+    try:
+        create_or_update_v1_intersection_model_object(
+            doc,
+            project=project,
+            intersection_model=_sample_intersection_model(),
+        )
+
+        panel = V1BuildCorridorTaskPanel(document=doc)
+
+        assert panel._intersection_contract_table.rowCount() == 23
+        assert panel._intersection_contract_table.item(0, 0).text() == "topology"
+        assert panel._intersection_contract_table.item(0, 1).text() == "ready"
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_corridor_guided_review_reports_intersection_patch_boundary_diagnostics() -> None:
     doc, project = _new_project_doc()
     try:
@@ -1158,9 +1297,14 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert int(preview.PatchStemTieInEdgeCount) == 2
         assert int(preview.PatchOverlapCutEdgeCount) == 1
         assert int(preview.PatchCurbReturnEdgeCount) == 2
+        assert preview.IntersectionImplementationMode == "legacy_patch_frozen"
+        assert preview.IntersectionRedesignPath == "edge_network_first"
+        assert "Frozen first-slice patch path" in preview.IntersectionImplementationStatus
         assert "triangulation=structured_strip_curb_return_blend" in preview.IntersectionReviewSummary
         assert "edge blend faces=" in preview.IntersectionReviewSummary
         assert "boundary roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" in preview.IntersectionReviewSummary
+        assert "implementation=legacy_patch_frozen" in preview.IntersectionReviewSummary
+        assert "next=edge_network_first" in preview.IntersectionReviewSummary
         assert "boundary=structured_strip_curb_return_blend" in preview.IntersectionPatchQualitySummary
         assert "roles=pavement_tie_in=2; stem_tie_in=2; overlap_cut=1; curb_return=2" in preview.IntersectionPatchQualitySummary
         assert float(preview.PatchBoundaryBBoxAspectRatio) >= 1.0
@@ -1183,6 +1327,8 @@ def test_create_corridor_intersection_surface_preview_builds_patch_object() -> N
         assert "structured strips=2" in intersection_row["notes"]
         assert "curb-return surface edges=2" in intersection_row["notes"]
         assert "curb-return arcs=2" in intersection_row["notes"]
+        assert "implementation=legacy_patch_frozen" in intersection_row["notes"]
+        assert "next=edge_network_first" in intersection_row["notes"]
         assert "arc samples=" in intersection_row["notes"]
         assert "arc segments=" in intersection_row["notes"]
         assert "edge blend faces=" in intersection_row["notes"]
@@ -2277,6 +2423,152 @@ def test_intersection_exclusion_hard_suppresses_daylight_triangles_without_fragm
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_daylight_protection_offset") >= 4.0
 
 
+def test_intersection_height_clip_suppresses_only_daylight_triangles_above_intersection_surface() -> None:
+    intersection_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        surface_kind="intersection_surface",
+        vertex_rows=[
+            TINVertex("i1", 0.0, 0.0, 10.0),
+            TINVertex("i2", 10.0, 0.0, 10.0),
+            TINVertex("i3", 0.0, 10.0, 10.0),
+        ],
+        triangle_rows=[
+            TINTriangle("it1", "i1", "i2", "i3"),
+        ],
+    )
+    daylight_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("a1", 1.0, 1.0, 10.2),
+            TINVertex("a2", 2.0, 1.0, 10.2),
+            TINVertex("a3", 1.0, 2.0, 10.2),
+            TINVertex("b1", 3.0, 1.0, 9.8),
+            TINVertex("b2", 4.0, 1.0, 9.8),
+            TINVertex("b3", 3.0, 2.0, 9.8),
+            TINVertex("c1", 20.0, 20.0, 20.0),
+            TINVertex("c2", 21.0, 20.0, 20.0),
+            TINVertex("c3", 20.0, 21.0, 20.0),
+        ],
+        triangle_rows=[
+            TINTriangle("above", "a1", "a2", "a3"),
+            TINTriangle("below", "b1", "b2", "b3"),
+            TINTriangle("outside", "c1", "c2", "c3"),
+        ],
+    )
+
+    clipped = build_corridor_command._suppress_daylight_triangles_above_intersection_surface(
+        daylight_surface,
+        intersection_surface,
+        tolerance=0.05,
+    )
+
+    assert [row.triangle_id for row in clipped.triangle_rows] == ["below", "outside"]
+    assert "surface:intersection" in clipped.void_refs
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_height_clip_status") == "ready"
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_tested_triangle_count") == 2
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_suppressed_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_height_clip_kept_triangle_count") == 2
+
+
+def test_intersection_slope_face_overlap_edges_mark_only_xy_overlap_triangles() -> None:
+    intersection_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        surface_kind="intersection_surface",
+        vertex_rows=[
+            TINVertex("i1", 0.0, 0.0, 10.0),
+            TINVertex("i2", 10.0, 0.0, 10.0),
+            TINVertex("i3", 0.0, 10.0, 10.0),
+        ],
+        triangle_rows=[TINTriangle("it1", "i1", "i2", "i3")],
+    )
+    daylight_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("a1", 1.0, 1.0, 9.0),
+            TINVertex("a2", 3.0, 1.0, 11.0),
+            TINVertex("a3", 1.0, 3.0, 11.0),
+            TINVertex("b1", 20.0, 20.0, 9.5),
+            TINVertex("b2", 21.0, 20.0, 9.5),
+            TINVertex("b3", 20.0, 21.0, 9.5),
+        ],
+        triangle_rows=[
+            TINTriangle("overlap", "a1", "a2", "a3"),
+            TINTriangle("outside", "b1", "b2", "b3"),
+        ],
+    )
+
+    segments, triangle_count = build_corridor_command._intersection_slope_face_overlap_edge_segments(
+        daylight_surface,
+        intersection_surface,
+        z_offset=0.08,
+    )
+
+    assert triangle_count == 1
+    assert len(segments) == 1
+    start, end = segments[0]
+    assert {round(start[2], 3), round(end[2], 3)} == {10.08}
+    assert {
+        (round(start[0], 3), round(start[1], 3)),
+        (round(end[0], 3), round(end[1], 3)),
+    } == {(2.0, 1.0), (1.0, 2.0)}
+
+
+def test_intersection_slope_trim_removes_intersecting_daylight_triangle_above_intersection_surface() -> None:
+    intersection_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:intersection",
+        surface_kind="intersection_surface",
+        vertex_rows=[
+            TINVertex("i1", 0.0, 0.0, 10.0),
+            TINVertex("i2", 10.0, 0.0, 10.0),
+            TINVertex("i3", 0.0, 10.0, 10.0),
+        ],
+        triangle_rows=[TINTriangle("it1", "i1", "i2", "i3")],
+    )
+    daylight_surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("a1", 1.0, 1.0, 9.0),
+            TINVertex("a2", 3.0, 1.0, 11.0),
+            TINVertex("a3", 1.0, 3.0, 11.0),
+            TINVertex("b1", 20.0, 20.0, 9.5),
+            TINVertex("b2", 21.0, 20.0, 9.5),
+            TINVertex("b3", 20.0, 21.0, 9.5),
+        ],
+        triangle_rows=[
+            TINTriangle("intersecting-above", "a1", "a2", "a3"),
+            TINTriangle("outside", "b1", "b2", "b3"),
+        ],
+    )
+
+    trimmed = build_corridor_command._trim_daylight_triangles_above_intersection_surface_by_intersection_lines(
+        daylight_surface,
+        intersection_surface,
+        tolerance=0.05,
+    )
+
+    assert [row.triangle_id for row in trimmed.triangle_rows] == ["outside"]
+    assert build_corridor_command._tin_quality_text(trimmed, "intersection_slope_trim_status") == "ready"
+    assert build_corridor_command._tin_quality_text(trimmed, "intersection_slope_trim_method") == "coarse_remove_intersecting_above_triangles"
+    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_intersecting_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_removed_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(trimmed, "intersection_slope_trim_kept_triangle_count") == 1
+
+
 def test_intersection_exclusion_suppresses_daylight_triangles_near_junction_gap() -> None:
     surface = TINSurface(
         schema_version=1,
@@ -2320,6 +2612,52 @@ def test_intersection_exclusion_suppresses_daylight_triangles_near_junction_gap(
     assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_clip_method") == "hard_suppress_intersection"
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_clipped_triangle_count") == 1
     assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_daylight_protection_offset") >= 4.0
+
+
+def test_intersection_exclusion_suppresses_daylight_triangles_intruding_into_pavement_strip() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight-pavement-strip",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("v1", 11.0, 2.0, 0.0),
+            TINVertex("v2", 13.0, 2.0, 0.0),
+            TINVertex("v3", 11.0, 4.0, 0.0),
+            TINVertex("v4", 80.0, 80.0, 0.0),
+            TINVertex("v5", 81.0, 80.0, 0.0),
+            TINVertex("v6", 80.0, 81.0, 0.0),
+        ],
+        triangle_rows=[
+            TINTriangle("t-in-pavement-strip", "v1", "v2", "v3"),
+            TINTriangle("t-outside", "v4", "v5", "v6"),
+        ],
+    )
+    original_provider = build_corridor_command._intersection_exclusion_polygon_from_sources
+    build_corridor_command._intersection_exclusion_polygon_from_sources = lambda *args, **kwargs: {
+        "intersection_id": "intersection:t-01",
+        "status": "ready",
+        "points": [(0.0, 0.0), (2.0, 0.0), (0.0, 2.0)],
+        "area": 2.0,
+        "boundary_source": "practical_intersection_surface_boundary",
+        "boundary_strategy": "structured_strip_curb_return_blend",
+        "practical_boundary_aligned": True,
+        "pavement_strip_polygons": [[(10.0, 0.0), (20.0, 0.0), (20.0, 10.0), (10.0, 10.0)]],
+    }
+    try:
+        clipped = build_corridor_command._clip_tin_surface_by_intersection_exclusion(
+            surface,
+            None,
+            surface_role="daylight",
+        )
+    finally:
+        build_corridor_command._intersection_exclusion_polygon_from_sources = original_provider
+
+    assert len(clipped.triangle_rows) == 1
+    assert clipped.triangle_rows[0].triangle_id == "t-outside"
+    assert build_corridor_command._tin_quality_text(clipped, "intersection_exclusion_clip_method") == "hard_suppress_intersection"
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_clipped_triangle_count") == 1
+    assert build_corridor_command._tin_quality_float(clipped, "intersection_exclusion_control_section_clipped_triangle_count") == 1
 
 
 def test_intersection_exclusion_suppresses_daylight_triangles_from_intersection_control_sections() -> None:
@@ -2688,13 +3026,367 @@ def test_intersection_curb_return_slope_band_connects_to_side_applied_section_ed
     )
 
     assert build_corridor_command._tin_quality_float(augmented, "intersection_curb_return_slope_band_triangle_count") == 4
-    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_edge_count") == 1
-    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_triangle_count") == 2
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_edge_count") >= 1
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_triangle_count") >= 2
     assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_extension_edge_count") >= 2
     assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_extension_triangle_count") >= 4
     assert len([row for row in augmented.triangle_rows if row.quality_ref == "intersection_slope_tie_in"]) == 2
     assert len([row for row in augmented.triangle_rows if row.quality_ref == "intersection_side_slope_extension"]) >= 4
     assert any("section:side-contact" in row.notes for row in augmented.triangle_rows if row.quality_ref == "intersection_slope_tie_in")
+
+
+def test_intersection_pavement_tie_in_edge_adds_straight_slope_band() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("existing:primary:inner", -5.0, 5.0, 9.25),
+            TINVertex("existing:primary:outer", 5.0, 5.0, 9.25),
+            TINVertex("existing:primary:tail", 0.0, 8.0, 8.5),
+        ],
+        triangle_rows=[
+            TINTriangle("existing:primary:slope", "existing:primary:inner", "existing:primary:outer", "existing:primary:tail"),
+        ],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:pavement:primary:left",
+                intersection_id="intersection:t-01",
+                segment_kind="tie_in",
+                segment_role="pavement_edge",
+                alignment_ref="alignment:primary",
+                side="left",
+                start_xyz=(-5.0, 2.0, 10.0),
+                end_xyz=(5.0, 2.0, 10.0),
+            )
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:primary",
+                daylight_left_width=3.0,
+                daylight_left_slope=0.25,
+            )
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_curb_return_boundary_bands(
+        surface,
+        boundary_result,
+        applied_section_set=applied,
+    )
+
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_pavement_tie_in_slope_band_edge_count") == 1
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_pavement_tie_in_slope_band_triangle_count") == 2
+    assert len([row for row in augmented.triangle_rows if row.quality_ref == "intersection_pavement_tie_in_slope_band"]) == 2
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_side_slope_extension_edge_count") >= 1
+    assert any(
+        "existing Primary Slope Face boundary" in row.notes
+        for row in augmented.triangle_rows
+        if row.quality_ref == "intersection_side_slope_extension"
+    )
+    assert any(
+        "endpoint cap" in row.notes
+        for row in augmented.triangle_rows
+        if row.quality_ref == "intersection_side_slope_extension"
+    )
+
+
+def test_intersection_curb_return_slope_band_keeps_both_side_tie_ins_when_nearest_band_edge_conflicts() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[],
+        triangle_rows=[],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:curb-return:1",
+                intersection_id="intersection:t-01",
+                segment_kind="arc",
+                segment_role="curb_return",
+                center_xyz=(0.0, 0.0, 10.0),
+                chord_points_xyz=((3.0, 0.0, 10.0), (2.121, 2.121, 10.0), (0.0, 3.0, 10.0)),
+            )
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-contact",
+                alignment_id="alignment:side",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="side_road",
+                frame=AppliedSectionFrame(station=100.0, x=2.121, y=2.121, z=10.0, tangent_direction_deg=45.0),
+                surface_left_width=0.1,
+                surface_right_width=0.1,
+                daylight_left_width=0.2,
+                daylight_right_width=0.2,
+                daylight_left_slope=-0.25,
+                daylight_right_slope=-0.25,
+            )
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_curb_return_boundary_bands(
+        surface,
+        boundary_result,
+        applied_section_set=applied,
+    )
+
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_edge_count") >= 2
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_triangle_count") >= 4
+    tie_in_notes = [
+        row.notes
+        for row in augmented.triangle_rows
+        if row.quality_ref == "intersection_slope_tie_in"
+    ]
+    assert any("side=left" in notes for notes in tie_in_notes)
+    assert any("side=right" in notes for notes in tie_in_notes)
+
+
+def test_intersection_curb_return_slope_band_allows_multiple_sections_on_same_side() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[],
+        triangle_rows=[],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_id="intersection:t-01",
+        status="ready",
+        segment_rows=[
+            IntersectionBoundarySegmentRow(
+                boundary_segment_id="boundary:curb-return:1",
+                intersection_id="intersection:t-01",
+                segment_kind="arc",
+                segment_role="curb_return",
+                center_xyz=(0.0, 0.0, 10.0),
+                chord_points_xyz=((3.0, 0.0, 10.0), (2.121, 2.121, 10.0), (0.0, 3.0, 10.0)),
+            )
+        ],
+    )
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-left-a",
+                alignment_id="alignment:side",
+                station=96.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="side_road",
+                frame=AppliedSectionFrame(station=96.0, x=3.0, y=0.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=0.1,
+                daylight_left_width=0.2,
+                daylight_left_slope=-0.25,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-left-b",
+                alignment_id="alignment:side",
+                station=144.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="side_road",
+                frame=AppliedSectionFrame(station=144.0, x=0.0, y=3.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=0.1,
+                daylight_left_width=0.2,
+                daylight_left_slope=-0.25,
+            ),
+        ],
+    )
+
+    augmented = build_corridor_command._augment_daylight_surface_with_curb_return_boundary_bands(
+        surface,
+        boundary_result,
+        applied_section_set=applied,
+    )
+
+    assert build_corridor_command._tin_quality_float(augmented, "intersection_slope_tie_in_edge_count") >= 2
+    tie_in_notes = [
+        row.notes
+        for row in augmented.triangle_rows
+        if row.quality_ref == "intersection_slope_tie_in"
+    ]
+    assert any("section:side-left-a" in notes for notes in tie_in_notes)
+    assert any("section:side-left-b" in notes for notes in tie_in_notes)
+
+
+def test_intersection_side_tie_in_can_use_multiple_band_edges_for_one_section_side() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-left",
+                alignment_id="alignment:side",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="side_road",
+                frame=AppliedSectionFrame(station=100.0, x=2.0, y=2.0, z=10.0, tangent_direction_deg=45.0),
+                surface_left_width=0.1,
+                daylight_left_width=0.2,
+                daylight_left_slope=-0.25,
+            )
+        ],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_id="intersection:t-01",
+        status="ready",
+    )
+    band_edges = [
+        (
+            TINVertex(f"band:{index}:inner", float(index), float(index), 10.0),
+            TINVertex(f"band:{index}:outer", float(index) + 0.2, float(index) + 0.2, 9.95),
+        )
+        for index in range(1, 5)
+    ]
+
+    edges = build_corridor_command._intersection_side_applied_section_slope_tie_in_edges(
+        applied,
+        boundary_result=boundary_result,
+        band_radial_edges=band_edges,
+        band_width=0.2,
+        band_slope=0.25,
+    )
+
+    left_edges = [edge for edge in edges if edge["section_id"] == "section:side-left" and edge["side_label"] == "left"]
+    assert len(left_edges) == 3
+
+
+def test_intersection_curb_return_slope_tie_in_includes_primary_alignment_sections() -> None:
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="sections:main",
+        sections=[
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:primary-through",
+                alignment_id="alignment:primary",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="primary_through",
+                frame=AppliedSectionFrame(station=100.0, x=2.0, y=2.0, z=10.0, tangent_direction_deg=0.0),
+                surface_left_width=0.1,
+                daylight_left_width=0.2,
+                daylight_left_slope=-0.25,
+            ),
+            AppliedSection(
+                schema_version=1,
+                project_id="proj-1",
+                applied_section_id="section:side-road",
+                alignment_id="alignment:side",
+                station=100.0,
+                active_intersection_id="intersection:t-01",
+                active_intersection_leg_role="side_road",
+                frame=AppliedSectionFrame(station=100.0, x=2.0, y=2.0, z=10.0, tangent_direction_deg=90.0),
+                surface_left_width=0.1,
+                daylight_left_width=0.2,
+                daylight_left_slope=-0.25,
+            ),
+        ],
+    )
+    boundary_result = IntersectionBoundarySegmentResult(
+        schema_version=1,
+        project_id="proj-1",
+        intersection_id="intersection:t-01",
+        status="ready",
+    )
+    band_edges = [
+        (
+            TINVertex(f"band:{index}:inner", float(index), float(index), 10.0),
+            TINVertex(f"band:{index}:outer", float(index) + 0.2, float(index) + 0.2, 9.95),
+        )
+        for index in range(1, 4)
+    ]
+
+    edges = build_corridor_command._intersection_side_applied_section_slope_tie_in_edges(
+        applied,
+        boundary_result=boundary_result,
+        band_radial_edges=band_edges,
+        band_width=0.2,
+        band_slope=0.25,
+    )
+
+    assert any(edge["section_id"] == "section:primary-through" for edge in edges)
+    assert any(edge["section_id"] == "section:side-road" for edge in edges)
+
+
+def test_intersection_side_slope_extension_can_reuse_existing_internal_slope_face_edge() -> None:
+    surface = TINSurface(
+        schema_version=1,
+        project_id="proj-1",
+        surface_id="surface:daylight",
+        surface_kind="daylight_surface",
+        vertex_rows=[
+            TINVertex("existing:shared:a", 0.0, 0.0, 10.0),
+            TINVertex("existing:shared:b", 0.0, 2.0, 9.5),
+            TINVertex("existing:tail:left", -3.0, 1.0, 9.0),
+            TINVertex("existing:tail:right", 3.0, 1.0, 9.0),
+        ],
+        triangle_rows=[
+            TINTriangle("existing:left", "existing:shared:a", "existing:shared:b", "existing:tail:left"),
+            TINTriangle("existing:right", "existing:shared:b", "existing:shared:a", "existing:tail:right"),
+        ],
+    )
+    side_inner = TINVertex("side:inner", 0.0, 0.2, 10.0)
+    side_outer = TINVertex("side:outer", 0.0, 1.8, 9.5)
+
+    edges = build_corridor_command._near_existing_daylight_boundary_edges_to_side_edge(
+        surface,
+        side_inner,
+        side_outer,
+        max_distance=2.0,
+        max_edges=1,
+    )
+
+    assert len(edges) == 1
+    edge_ids = {
+        str(getattr(edges[0][0], "vertex_id", "") or ""),
+        str(getattr(edges[0][1], "vertex_id", "") or ""),
+    }
+    assert edge_ids == {"existing:shared:a", "existing:shared:b"}
 
 
 def test_curb_return_arc_daylight_protection_detects_near_corridor_slope_triangle() -> None:

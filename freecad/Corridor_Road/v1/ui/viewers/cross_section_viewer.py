@@ -651,6 +651,28 @@ def build_drainage_context_rows(preview: dict[str, object]) -> list[list[str]]:
     return [[ref, "-", flow_text, "station_context"] for ref in drainage_refs]
 
 
+def build_intersection_context_rows(preview: dict[str, object]) -> list[list[str]]:
+    """Build readable intersection contract rows for one selected section."""
+
+    rows = []
+    for row in list(preview.get("intersection_context_rows", []) or []):
+        item = dict(row or {})
+        source_refs = ", ".join(str(value) for value in list(item.get("source_refs", []) or []) if str(value or "").strip())
+        boundary_refs = ", ".join(str(value) for value in list(item.get("boundary_refs", []) or []) if str(value or "").strip())
+        rows.append(
+            [
+                str(item.get("family", "") or ""),
+                str(item.get("status", "") or ""),
+                str(item.get("row_id", "") or ""),
+                str(item.get("role", "") or ""),
+                source_refs or "-",
+                boundary_refs or "-",
+                str(item.get("notes", "") or ""),
+            ]
+        )
+    return rows
+
+
 def _source_owner_note(status: str, fallback: str) -> str:
     value = str(status or "").strip().lower()
     if value == "resolved":
@@ -1386,6 +1408,15 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
+        layout.addWidget(QtWidgets.QLabel("Intersection Context"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Family", "Status", "ID", "Role", "Source Refs", "Boundary Refs", "Notes"],
+                rows=self._intersection_context_rows(),
+                empty_text="No active intersection context rows.",
+            )
+        )
+
         layout.addWidget(QtWidgets.QLabel("Quantities"))
         layout.addWidget(
             self._table_widget(
@@ -1553,6 +1584,7 @@ class CrossSectionViewerTaskPanel:
             f"Drawing Dimensions: {len(self._drawing_dimension_table_rows())}",
             f"Source Ownership: {self._source_inspector_status_value()}",
             str(self._corridor_result_status().get("text", "")),
+            f"Intersection Context Rows: {len(self._intersection_context_rows())}",
             f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
             f"Review Markers: {len(self._review_marker_rows())}",
             f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
@@ -1576,6 +1608,8 @@ class CrossSectionViewerTaskPanel:
             lines.append(f"Drainage Element: {viewer_context.get('active_drainage_ref', '')}")
         if viewer_context.get("drainage_summary"):
             lines.append(f"Drainage Summary: {viewer_context.get('drainage_summary', '')}")
+        if viewer_context.get("intersection_contract_summary"):
+            lines.append(f"Intersection Contracts: {viewer_context.get('intersection_contract_summary', '')}")
         diagnostics = list(viewer_context.get("diagnostic_tokens", []) or [])
         if diagnostics:
             lines.append(f"Diagnostics: {', '.join(str(token) for token in diagnostics)}")
@@ -1678,6 +1712,9 @@ class CrossSectionViewerTaskPanel:
 
     def _corridor_result_status(self) -> dict[str, object]:
         return build_corridor_result_status(self.preview)
+
+    def _intersection_context_rows(self) -> list[list[str]]:
+        return build_intersection_context_rows(self.preview)
 
     def _connect_corridor_result_table(self, table) -> None:
         if not hasattr(table, "cellDoubleClicked"):
@@ -1810,6 +1847,7 @@ class CrossSectionViewerTaskPanel:
             ("Structure Summary", "structure_summary"),
             ("Drainage Summary", "drainage_summary"),
             ("Flow Route Summary", "flow_route_summary"),
+            ("Intersection Contracts", "intersection_contract_summary"),
         ]
         for label, key in mapping:
             if label == "Focus Component":

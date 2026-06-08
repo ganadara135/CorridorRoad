@@ -17,6 +17,10 @@ SOLID_TARGET_FAMILIES = {
     "drainage_pipeline_body",
     "drainage_pipeline_network_body",
     "intersection_patch_body",
+    "intersection_pavement_body",
+    "intersection_subgrade_body",
+    "intersection_slope_body",
+    "intersection_curb_return_body",
     "structure_body",
 }
 
