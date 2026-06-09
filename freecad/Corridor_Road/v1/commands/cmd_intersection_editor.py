@@ -396,11 +396,19 @@ def show_intersection_edge_network_preview(
     point = _intersection_review_point(detection_result)
     if point is None:
         point = _intersection_model_point(intersection_model)
+    curb_return_metadata = {
+        "policy_ref": "",
+        "radius": 0.0,
+        "arc_count": 0,
+        "diagnostics": [],
+    }
     if point is not None:
         primary_ref, secondary_ref = _intersection_model_primary_secondary_refs(intersection_model)
-        curb_return_shapes, _metadata = _curb_return_preview_shapes(
+        curb_return_shapes, curb_return_metadata = _curb_return_preview_shapes(
             point=point,
             intersection_kind=str(getattr(edge_network, "intersection_kind", "") or ""),
+            radius=_intersection_model_curb_return_radius(intersection_model),
+            policy_ref=_intersection_model_curb_return_policy_ref(intersection_model),
             primary_alignment=alignment_model_by_ref(document, primary_ref),
             secondary_alignment=alignment_model_by_ref(document, secondary_ref),
             detection_result=detection_result,
@@ -425,8 +433,16 @@ def show_intersection_edge_network_preview(
     _set_preview_integer_property(obj, "LegEdgeCount", int(edge_network.leg_edge_count or 0))
     _set_preview_integer_property(obj, "DaylightEdgeCount", int(edge_network.daylight_edge_count or 0))
     _set_preview_integer_property(obj, "CurbReturnEdgeCount", int(edge_network.curb_return_edge_count or 0))
+    _set_preview_property(obj, "CurbReturnPolicyRef", str(curb_return_metadata.get("policy_ref", "") or ""))
+    _set_preview_property(obj, "CurbReturnRadius", f"{float(curb_return_metadata.get('radius', 0.0) or 0.0):.3f}")
+    _set_preview_integer_property(obj, "CurbReturnArcCount", int(curb_return_metadata.get("arc_count", 0) or 0))
     _set_preview_integer_property(obj, "ShapePartCount", len(shapes))
     _set_preview_string_list_property(obj, "EdgeIds", _unique_text_values(edge_ids))
+    _set_preview_string_list_property(obj, "DesignVehicles", _intersection_model_design_vehicles(intersection_model))
+    _set_preview_string_list_property(obj, "GradingPolicies", _intersection_model_grading_modes(intersection_model))
+    _set_preview_string_list_property(obj, "DrainageModes", _intersection_model_drainage_modes(intersection_model))
+    _set_preview_string_list_property(obj, "ControlAreaRanges", _intersection_model_control_area_ranges(intersection_model))
+    _set_preview_string_list_property(obj, "CurbReturnDiagnostics", list(curb_return_metadata.get("diagnostics", []) or []))
     _set_preview_string_list_property(obj, "Diagnostics", list(edge_network.diagnostic_rows or []))
     _style_intersection_edge_network_preview(obj, visible=True)
     try:
@@ -481,6 +497,14 @@ def starter_intersection_source_specs(intersection_kind: str) -> dict[str, objec
             "alignments": [
                 {"role": "primary", "label": "Y Main Approach", "points": [(0.0, -120.0), (0.0, 0.0)]},
                 {"role": "secondary", "label": "Y Branch Road", "points": [(0.0, 0.0), (90.0, 90.0)]},
+            ],
+        }
+    if kind == "roundabout":
+        return {
+            "kind": kind,
+            "alignments": [
+                {"role": "primary", "label": "Roundabout North-South Road", "points": [(0.0, -130.0), (0.0, 130.0)]},
+                {"role": "secondary", "label": "Roundabout East-West Road", "points": [(-130.0, 0.0), (130.0, 0.0)]},
             ],
         }
     raise ValueError(f"Unsupported starter intersection kind: {intersection_kind}")
@@ -1375,6 +1399,8 @@ def _curb_return_preview_shapes(
     *,
     point,
     intersection_kind: str,
+    radius: float | None = None,
+    policy_ref: str = "",
     primary_alignment,
     secondary_alignment,
     detection_result=None,
@@ -1387,11 +1413,7 @@ def _curb_return_preview_shapes(
             "diagnostics": ["intersection_curb_return_policy_missing: FreeCAD Part context and intersection point are required."],
         }
     kind = str(intersection_kind or "").strip() or "t_intersection"
-    radius = 12.0
-    if kind == "cross_intersection":
-        radius = 10.0
-    elif kind == "y_intersection":
-        radius = 15.0
+    radius_value = _positive_radius_or_default(radius, kind)
     primary_station = float(getattr(detection_result, "primary_station", 0.0) or 0.0) if detection_result is not None else 0.0
     secondary_station = float(getattr(detection_result, "secondary_station", 0.0) or 0.0) if detection_result is not None else 0.0
     primary_dir = _alignment_tangent_at_station(primary_alignment, primary_station) or App.Vector(1.0, 0.0, 0.0)
@@ -1405,15 +1427,15 @@ def _curb_return_preview_shapes(
     }.get(kind, ((1.0, 1.0), (-1.0, 1.0)))
     shapes: list[object] = []
     diagnostics: list[str] = []
-    sample_count = _curb_return_arc_sample_count(radius)
+    sample_count = _curb_return_arc_sample_count(radius_value)
     for index, (primary_sign, secondary_sign) in enumerate(quadrants, start=1):
         arc_points = []
         denominator = max(sample_count - 1, 1)
         for step in range(sample_count):
             theta = (pi / 2.0) * (step / denominator)
-            vector = _scaled_vector(primary_dir, primary_sign * radius * cos(theta)) + _scaled_vector(
+            vector = _scaled_vector(primary_dir, primary_sign * radius_value * cos(theta)) + _scaled_vector(
                 secondary_dir,
-                secondary_sign * radius * sin(theta),
+                secondary_sign * radius_value * sin(theta),
             )
             arc_points.append(point + vector)
         try:
@@ -1423,11 +1445,87 @@ def _curb_return_preview_shapes(
     if not shapes and not diagnostics:
         diagnostics.append("intersection_curb_return_policy_missing: no curb return arc could be created.")
     return shapes, {
-        "policy_ref": f"curb-return:starter-{kind}:default",
-        "radius": radius,
+        "policy_ref": str(policy_ref or f"curb-return:starter-{kind}:default"),
+        "radius": radius_value,
         "arc_count": len(shapes),
         "diagnostics": diagnostics,
     }
+
+
+def _positive_radius_or_default(radius: float | None, kind: str) -> float:
+    try:
+        value = float(radius)
+    except Exception:
+        value = 0.0
+    if value > 0.0:
+        return value
+    if kind == "cross_intersection":
+        return 10.0
+    if kind == "y_intersection":
+        return 15.0
+    return 12.0
+
+
+def _intersection_model_curb_return_radius(intersection_model) -> float:
+    for row in list(getattr(intersection_model, "curb_return_policy_rows", []) or []):
+        try:
+            value = float(getattr(row, "radius", 0.0) or 0.0)
+        except Exception:
+            continue
+        if value > 0.0:
+            return value
+    kind = ""
+    rows = list(getattr(intersection_model, "intersection_rows", []) or [])
+    if rows:
+        kind = str(getattr(rows[0], "intersection_kind", "") or "")
+    return _positive_radius_or_default(None, kind)
+
+
+def _intersection_model_curb_return_policy_ref(intersection_model) -> str:
+    for row in list(getattr(intersection_model, "curb_return_policy_rows", []) or []):
+        policy_ref = str(getattr(row, "policy_id", "") or "").strip()
+        if policy_ref:
+            return policy_ref
+    return ""
+
+
+def _intersection_model_design_vehicles(intersection_model) -> list[str]:
+    return _unique_text_values(
+        [
+            str(getattr(row, "design_vehicle_ref", "") or "").strip()
+            for row in list(getattr(intersection_model, "arm_policy_rows", []) or [])
+        ]
+    )
+
+
+def _intersection_model_grading_modes(intersection_model) -> list[str]:
+    return _unique_text_values(
+        [
+            str(getattr(row, "mode", "") or "").strip()
+            for row in list(getattr(intersection_model, "grading_policy_rows", []) or [])
+        ]
+    )
+
+
+def _intersection_model_drainage_modes(intersection_model) -> list[str]:
+    return _unique_text_values(
+        [
+            str(getattr(row, "capture_mode", "") or "").strip()
+            for row in list(getattr(intersection_model, "drainage_policy_rows", []) or [])
+        ]
+    )
+
+
+def _intersection_model_control_area_ranges(intersection_model) -> list[str]:
+    output = []
+    for row in list(getattr(intersection_model, "control_area_rows", []) or []):
+        alignment_ref = str(getattr(row, "alignment_ref", "") or "").strip()
+        for start, end in list(getattr(row, "station_ranges", []) or []):
+            try:
+                output.append(f"{alignment_ref or '-'} | STA {float(start):.3f}-{float(end):.3f}")
+            except Exception:
+                continue
+    return _unique_text_values(output)
 
 
 def _curb_return_arc_sample_count(radius: float) -> int:

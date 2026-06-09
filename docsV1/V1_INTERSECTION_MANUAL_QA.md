@@ -1,7 +1,7 @@
 # Parametric Road V1 Intersection Manual QA
 
-Date: 2026-06-07
-Status: manual QA procedure; execution pending real FreeCAD document
+Date: 2026-06-09
+Status: manual QA procedure; preset QA added, execution pending real FreeCAD document
 
 ## Purpose
 
@@ -11,13 +11,14 @@ This checklist verifies the edge-network-first Intersection workflow from source
 
 This QA covers:
 
-- T, Cross, and Y starter intersection source creation
+- T, Cross, Y, and preset-driven intersection source creation
+- separate `Intersection Presets` workflow for T, Cross, and Roundabout starter contracts
 - multi-alignment 3D Centerline handoff
 - Applied Sections with active intersection context
 - Build Parametric `Intersections` review rows
 - surface-zone responsibility for pavement, curb-return, and Slope Face zones
 - ordinary corridor clipping contracts
-- drainage low-point and inlet recommendation hints
+- drainage low-point, inlet recommendation, and outlet handoff hints
 - Watertight Solid planned target discovery for intersection zone bodies
 
 This QA does not certify final intersection Part solids.
@@ -52,6 +53,82 @@ The QA passes only when:
 - no Slope Face is accepted inside the pavement/control-area interior
 - diagnostics are `ready` or actionable `warning`
 - no Report View traceback appears
+
+## Intersection Presets Smoke QA
+
+Use this smoke test before detailed geometry review.
+
+Run it once for each preset:
+
+- `T Intersection - Basic`
+- `Cross Intersection - Basic`
+- `Roundabout - Single Lane`
+
+Steps:
+
+1. Open a clean FreeCAD document.
+2. Open `Intersection Presets`.
+3. Select the preset.
+4. Review Design Vehicle, Radius / Diameter, Control Length, Grading Policy, and Drainage Mode.
+5. Click `Create Sources`.
+6. Confirm the status message reports created Alignment, Profile, Stationing, Region, IntersectionModel, Superelevation, and Drainage source objects.
+7. Click `Preview Edge Network`.
+8. Confirm the preview follows the generated preset Alignments and control Regions.
+9. Confirm no final corridor mesh is created by the preset panel.
+10. Open `Intersections`.
+11. Confirm the created Intersection source model can be reviewed without traceback.
+12. Run `Build Sections`.
+13. Open Cross Section Viewer.
+14. Confirm Station Navigation includes both primary and secondary Alignment station rows when the intersection has more than one participating Alignment.
+15. Confirm Intersection Context rows are visible at primary and secondary control-area stations.
+16. Run `Build Parametric`.
+17. Open the `Intersections` tab in Build Parametric.
+18. Confirm topology, edge-network, surface-zone, grading-context, corridor-clip, and drainage-hint rows are visible or represented in the notes/context rows.
+19. Confirm warnings are reviewable source/contract warnings, not Python exceptions.
+
+Pass criteria:
+
+- preset source objects are editable
+- existing `Intersections` panel remains usable
+- Build Sections produces intersection supplemental station context
+- Build Parametric does not silently hide missing policy, grading, or drainage handoff context
+- generated output can be deleted and rebuilt from source rows
+
+## Intersection Presets Existing Alignment QA
+
+Use this test when the participating Alignments already exist.
+
+1. Create or import a primary Alignment.
+2. Create or import a secondary Alignment.
+3. Create matching Profile, Stationing, Region, and 3D Centerline sources as needed.
+4. Confirm Region source rows are tagged with the target intersection ref.
+5. Open `Intersection Presets`.
+6. Set `Source Mode` to `Use Existing Alignments`.
+7. Select the preset family that matches the intended junction type.
+8. Select Primary Alignment.
+9. Select Secondary Alignment.
+10. Click `Auto Detect`.
+11. Confirm detected XY, Primary STA, and Secondary STA are reported.
+12. Click `Preview Edge Network`.
+13. Confirm the preview follows the selected Alignments.
+14. Click `Apply`.
+15. Confirm the created `IntersectionModel` stores `source_mode = use_existing_alignments`.
+16. Run `Build Sections`.
+17. Run `Build Parametric`.
+
+Pass criteria:
+
+- no starter Alignment is created in this mode
+- selected Primary and Secondary Alignment refs are stored in the `IntersectionModel`
+- control Regions remain source-owned Region rows
+- the existing `Intersections` panel can still open and review the resulting model
+
+Fail conditions:
+
+- Primary and Secondary Alignment are the same ref
+- no intersection-tagged control Regions are found
+- Auto Detect silently fails without a status message
+- Apply creates starter source objects when `Use Existing Alignments` is selected
 
 ## T-Intersection QA
 
@@ -101,6 +178,48 @@ The QA passes only when:
 14. Confirm drainage-hint rows identify low-point and inlet review candidates.
 15. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
 
+## Roundabout Preset QA
+
+Roundabout is currently a preset-driven first-slice source contract.
+
+It is not yet promoted into the existing `Intersections` editor's final intersection type workflow.
+
+1. Open `Intersection Presets`.
+2. Select `Roundabout - Single Lane`.
+3. Confirm default Grading Policy is `roundabout_radial_crossfall`.
+4. Confirm default Drainage Mode is `outside_gutter`.
+5. Click `Create Sources`.
+6. Confirm crossing approach Alignment, Profile, Stationing, and Region sources are created.
+7. Confirm an `IntersectionModel` source object is created.
+8. Confirm preset-owned Superelevation and Drainage handoff source objects are created.
+9. Build Sections.
+10. Build Parametric.
+11. Confirm edge-network rows include the `roundabout` family.
+12. Confirm roundabout edge roles include:
+    - `central_island_edge`
+    - `circulatory_outer_edge`
+    - `entry_exit_edge`
+13. Confirm surface-zone rows include:
+    - `roundabout_central_island`
+    - `roundabout_circulatory_pavement`
+    - `roundabout_entry_exit_pavement`
+14. Confirm grading context rows use `roundabout_radial_crossfall`.
+15. Confirm drainage hints report `outside_gutter` mode.
+16. Confirm outlet handoff hints are warning rows that require explicit Drainage Elements.
+17. Confirm no final roundabout triangulation is claimed as complete.
+
+Known acceptable warnings:
+
+- `roundabout_edge_network_first_slice_source_only`
+- missing explicit Drainage Element coverage for low-point, inlet, or outlet handoff
+
+Fail conditions:
+
+- no `roundabout` edge-family rows
+- no roundabout surface-zone rows
+- grading context falls back silently to ordinary road crossfall
+- outlet handoff is absent for `outside_gutter` mode
+
 ## Y Intersection QA
 
 1. Open `Intersections`.
@@ -129,6 +248,9 @@ For each starter type, record:
 - surface-zone row count
 - corridor-clip row count
 - drainage-hint row count
+- grading-context row count
+- outlet handoff count
+- missing drainage coverage count
 - Watertight intersection target counts
 - any `error` diagnostics
 - any actionable `warning` diagnostics
@@ -183,6 +305,6 @@ Notes:
 Future QA should add:
 
 - direct comparison against Civil 3D or OpenRoads sample intersections
-- visual screenshots for accepted T, Cross, and Y baseline cases
+- visual screenshots for accepted T, Cross, Y, and Roundabout baseline cases
 - watertight solid build checks after intersection zone solid builders are implemented
 - drainage flow route checks that consume intersection inlet recommendations

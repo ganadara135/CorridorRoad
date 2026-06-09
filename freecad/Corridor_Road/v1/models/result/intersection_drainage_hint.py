@@ -19,6 +19,9 @@ class IntersectionDrainageHintRow:
     surface_role: str = ""
     recommended_element_kind: str = ""
     drainage_policy_ref: str = ""
+    drainage_mode: str = "review_low_points"
+    grading_context_ref: str = ""
+    crossfall_context: str = ""
     control_area_refs: tuple[str, ...] = ()
     source_edge_refs: tuple[str, ...] = ()
     boundary_edge_refs: tuple[str, ...] = ()
@@ -39,6 +42,8 @@ class IntersectionDrainageHintResult(ResultModelBase):
     hint_row_count: int = 0
     low_point_hint_count: int = 0
     inlet_recommendation_count: int = 0
+    outlet_handoff_count: int = 0
+    missing_coverage_count: int = 0
     ready_hint_count: int = 0
     warning_hint_count: int = 0
     diagnostic_rows: list[str] = field(default_factory=list)

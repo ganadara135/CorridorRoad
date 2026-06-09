@@ -16,6 +16,10 @@ from ...models.result.intersection_edge_network import (
     IntersectionEdgeNetworkResult,
     IntersectionEdgeNetworkRow,
 )
+from ...models.result.intersection_grading_context import (
+    IntersectionGradingContextResult,
+    IntersectionGradingContextRow,
+)
 from ...models.result.intersection_corridor_clipping import (
     IntersectionCorridorClipResult,
     IntersectionCorridorClipRow,
@@ -74,10 +78,96 @@ class IntersectionPatchPrerequisiteResult:
 class IntersectionEvaluationService:
     """Resolve intersection control-area context from an intersection source model."""
 
+    def evaluate_grading_context(
+        self,
+        intersection_model: IntersectionModel | None,
+        surface_zone_result: IntersectionSurfaceZoneResult | None = None,
+        *,
+        intersection_id: str = "",
+    ) -> IntersectionGradingContextResult:
+        """Evaluate intersection grading/crossfall contracts from surface zones."""
+
+        if intersection_model is None:
+            return IntersectionGradingContextResult(
+                schema_version=1,
+                project_id="corridorroad-v1",
+                status="error",
+                diagnostic_rows=["error:intersection_model_missing"],
+            )
+        surface_zones = surface_zone_result or self.evaluate_surface_zones(intersection_model, intersection_id=intersection_id)
+        diagnostics = list(getattr(surface_zones, "diagnostic_rows", []) or [])
+        if str(getattr(surface_zones, "status", "") or "") == "error":
+            return IntersectionGradingContextResult(
+                schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+                project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+                grading_context_result_id=f"intersection-grading-context:{surface_zones.intersection_id or 'error'}",
+                intersection_id=str(getattr(surface_zones, "intersection_id", "") or ""),
+                intersection_kind=str(getattr(surface_zones, "intersection_kind", "") or ""),
+                status="error",
+                diagnostic_rows=diagnostics,
+                source_refs=list(getattr(surface_zones, "source_refs", []) or []),
+            )
+
+        context_rows: list[IntersectionGradingContextRow] = []
+        for index, zone in enumerate(list(getattr(surface_zones, "zone_rows", []) or []), start=1):
+            policy_ref = str(getattr(zone, "vertical_policy_ref", "") or "")
+            policy = _grading_policy_by_ref(intersection_model, policy_ref, surface_zones.intersection_id)
+            row_diagnostics: list[str] = []
+            if policy is None:
+                row_diagnostics.append("warning:grading_policy_missing")
+                diagnostics.append(f"warning:grading_policy_missing:{policy_ref or surface_zones.intersection_id}")
+            mode = str(getattr(policy, "mode", "") or "use_normal_superelevation")
+            zone_role = str(getattr(zone, "design_zone_role", "") or getattr(zone, "zone_role", "") or "")
+            crossfall_context = _intersection_crossfall_context(zone_role, mode)
+            if crossfall_context == "intersection_override" and mode == "use_normal_superelevation":
+                row_diagnostics.append("warning:intersection_zone_uses_normal_superelevation")
+            context_rows.append(
+                IntersectionGradingContextRow(
+                    context_id=f"intersection-grading-context:{_id_token(surface_zones.intersection_id)}:{index:02d}",
+                    intersection_id=surface_zones.intersection_id,
+                    zone_ref=str(getattr(zone, "zone_id", "") or ""),
+                    zone_role=zone_role,
+                    surface_role=str(getattr(zone, "surface_role", "") or ""),
+                    surface_priority=int(getattr(zone, "surface_priority", 0) or 0),
+                    grading_policy_ref=policy_ref or str(getattr(policy, "policy_id", "") or ""),
+                    grading_mode=mode,
+                    target_crossfall_percent=float(getattr(policy, "target_crossfall_percent", 0.0) or 0.0),
+                    crossfall_context=crossfall_context,
+                    primary_alignment_ref=str(getattr(policy, "primary_alignment_ref", "") or ""),
+                    secondary_alignment_refs=tuple(str(ref) for ref in list(getattr(policy, "secondary_alignment_refs", []) or []) if str(ref)),
+                    alignment_refs=tuple(getattr(zone, "alignment_refs", ()) or ()),
+                    control_area_refs=tuple(getattr(zone, "control_area_refs", ()) or ()),
+                    status="warning" if row_diagnostics else "ready",
+                    diagnostic_rows=tuple(row_diagnostics),
+                    notes=_grading_context_note(zone_role, mode, crossfall_context),
+                )
+            )
+
+        if not context_rows:
+            diagnostics.append("error:intersection_grading_context_rows_missing")
+        status = _topology_status(diagnostics)
+        return IntersectionGradingContextResult(
+            schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+            project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+            label=f"Intersection Grading Context - {surface_zones.intersection_id}",
+            grading_context_result_id=f"intersection-grading-context:{surface_zones.intersection_id or 'main'}",
+            intersection_id=surface_zones.intersection_id,
+            intersection_kind=surface_zones.intersection_kind,
+            status=status,
+            context_count=len(context_rows),
+            intersection_override_count=len([row for row in context_rows if row.crossfall_context == "intersection_override"]),
+            normal_superelevation_count=len([row for row in context_rows if row.crossfall_context == "normal_superelevation"]),
+            warning_context_count=len([row for row in context_rows if row.status == "warning"]),
+            diagnostic_rows=diagnostics,
+            context_rows=context_rows,
+            source_refs=list(getattr(surface_zones, "source_refs", []) or []),
+        )
+
     def evaluate_drainage_hints(
         self,
         intersection_model: IntersectionModel | None,
         surface_zone_result: IntersectionSurfaceZoneResult | None = None,
+        grading_context_result: IntersectionGradingContextResult | None = None,
         *,
         intersection_id: str = "",
     ) -> IntersectionDrainageHintResult:
@@ -109,8 +199,19 @@ class IntersectionEvaluationService:
             str(getattr(surface_zones, "intersection_id", "") or intersection_id or ""),
         )
         drainage_policy_ref = str(getattr(drainage_policy, "policy_id", "") or "")
+        drainage_mode = str(getattr(drainage_policy, "capture_mode", "") or "review_low_points")
         if not drainage_policy_ref:
             diagnostics.append("warning:intersection_drainage_policy_missing")
+        grading_context = grading_context_result or self.evaluate_grading_context(
+            intersection_model,
+            surface_zones,
+            intersection_id=str(getattr(surface_zones, "intersection_id", "") or intersection_id or ""),
+        )
+        grading_context_by_zone = {
+            str(getattr(row, "zone_ref", "") or ""): row
+            for row in list(getattr(grading_context, "context_rows", []) or [])
+            if str(getattr(row, "zone_ref", "") or "")
+        }
 
         control_ranges = _control_area_station_ranges_by_id(
             intersection_model,
@@ -121,58 +222,87 @@ class IntersectionEvaluationService:
         for zone in zone_rows:
             design_role = str(getattr(zone, "design_zone_role", "") or "")
             zone_family = str(getattr(zone, "zone_family", "") or "")
-            if design_role == "central_pavement":
+            zone_ref = str(getattr(zone, "zone_id", "") or "")
+            grading_row = grading_context_by_zone.get(zone_ref)
+            if design_role in {"central_pavement", "roundabout_circulatory_pavement"}:
                 row_diagnostics = []
                 if not drainage_policy_ref:
                     row_diagnostics.append("warning:low_point_hint_drainage_policy_missing")
+                if drainage_mode in {"review_low_points", "outside_gutter", "central_island"}:
+                    row_diagnostics.append("warning:low_point_requires_explicit_drainage_element_review")
                 hint_rows.append(
                     IntersectionDrainageHintRow(
                         hint_id=f"intersection-drainage-hint:{_id_token(surface_zones.intersection_id)}:low-point-{len(hint_rows) + 1:02d}",
                         intersection_id=surface_zones.intersection_id,
                         hint_kind="low_point_candidate",
-                        zone_ref=str(getattr(zone, "zone_id", "") or ""),
+                        zone_ref=zone_ref,
                         zone_role=design_role,
                         surface_role=str(getattr(zone, "surface_role", "") or ""),
                         recommended_element_kind="low_point_review",
                         drainage_policy_ref=drainage_policy_ref,
+                        drainage_mode=drainage_mode,
+                        grading_context_ref=str(getattr(grading_row, "context_id", "") or ""),
+                        crossfall_context=str(getattr(grading_row, "crossfall_context", "") or ""),
                         control_area_refs=tuple(getattr(zone, "control_area_refs", ()) or ()),
                         source_edge_refs=tuple(getattr(zone, "source_edge_refs", ()) or ()),
                         boundary_edge_refs=tuple(getattr(zone, "boundary_edge_refs", ()) or ()),
                         station_ranges=_station_ranges_for_refs(control_ranges, getattr(zone, "control_area_refs", ()) or ()),
                         status="warning" if row_diagnostics else "ready",
                         diagnostic_rows=tuple(row_diagnostics),
-                        notes="Review central junction zone for the intersection low point before inlet placement.",
+                        notes=_drainage_hint_note("low_point_candidate", drainage_mode, design_role),
                     )
                 )
-            if design_role == "curb_return_pavement" or zone_family == "slope":
+            if design_role in {"curb_return_pavement", "roundabout_entry_exit_pavement"} or zone_family == "slope":
                 row_diagnostics = []
                 if not drainage_policy_ref:
                     row_diagnostics.append("warning:inlet_recommendation_drainage_policy_missing")
                 if not tuple(getattr(zone, "boundary_edge_refs", ()) or ()) and not tuple(getattr(zone, "source_edge_refs", ()) or ()):
                     row_diagnostics.append("warning:inlet_recommendation_boundary_edges_missing")
+                if drainage_mode in {"outside_gutter", "central_island"}:
+                    row_diagnostics.append("warning:inlet_candidate_requires_user_drainage_element")
                 hint_rows.append(
                     IntersectionDrainageHintRow(
                         hint_id=f"intersection-drainage-hint:{_id_token(surface_zones.intersection_id)}:inlet-{len(hint_rows) + 1:02d}",
                         intersection_id=surface_zones.intersection_id,
                         hint_kind="inlet_recommendation",
-                        zone_ref=str(getattr(zone, "zone_id", "") or ""),
+                        zone_ref=zone_ref,
                         zone_role=design_role or str(getattr(zone, "zone_role", "") or ""),
                         surface_role=str(getattr(zone, "surface_role", "") or ""),
                         recommended_element_kind="inlet",
                         drainage_policy_ref=drainage_policy_ref,
+                        drainage_mode=drainage_mode,
+                        grading_context_ref=str(getattr(grading_row, "context_id", "") or ""),
+                        crossfall_context=str(getattr(grading_row, "crossfall_context", "") or ""),
                         control_area_refs=tuple(getattr(zone, "control_area_refs", ()) or ()),
                         source_edge_refs=tuple(getattr(zone, "source_edge_refs", ()) or ()),
                         boundary_edge_refs=tuple(getattr(zone, "boundary_edge_refs", ()) or ()),
                         station_ranges=_station_ranges_for_refs(control_ranges, getattr(zone, "control_area_refs", ()) or ()),
                         status="warning" if row_diagnostics else "ready",
                         diagnostic_rows=tuple(row_diagnostics),
-                        notes="Recommended inlet review near curb-return/slope-zone transition; create Drainage Elements explicitly before build.",
+                        notes=_drainage_hint_note("inlet_recommendation", drainage_mode, design_role or zone_family),
                     )
                 )
+        outlet_hints = _intersection_drainage_outlet_hint_rows(
+            surface_zones,
+            drainage_policy_ref=drainage_policy_ref,
+            drainage_mode=drainage_mode,
+            control_ranges=control_ranges,
+            start_index=len(hint_rows) + 1,
+        )
+        hint_rows.extend(outlet_hints)
 
         if not hint_rows:
             diagnostics.append("warning:intersection_drainage_hint_rows_missing")
+        if any(str(getattr(row, "status", "") or "") == "warning" for row in hint_rows):
+            diagnostics.append("warning:intersection_drainage_hint_rows_require_review")
         status = _topology_status(diagnostics)
+        missing_coverage_count = len(
+            [
+                row
+                for row in hint_rows
+                if any("requires_user_drainage_element" in item or "requires_explicit_drainage_element" in item for item in row.diagnostic_rows)
+            ]
+        )
         return IntersectionDrainageHintResult(
             schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
             project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
@@ -184,6 +314,8 @@ class IntersectionEvaluationService:
             hint_row_count=len(hint_rows),
             low_point_hint_count=len([row for row in hint_rows if row.hint_kind == "low_point_candidate"]),
             inlet_recommendation_count=len([row for row in hint_rows if row.hint_kind == "inlet_recommendation"]),
+            outlet_handoff_count=len([row for row in hint_rows if row.hint_kind == "outlet_handoff"]),
+            missing_coverage_count=missing_coverage_count,
             ready_hint_count=len([row for row in hint_rows if row.status == "ready"]),
             warning_hint_count=len([row for row in hint_rows if row.status == "warning"]),
             diagnostic_rows=diagnostics,
@@ -309,6 +441,7 @@ class IntersectionEvaluationService:
         pavement_edges = [row for row in edge_rows if str(getattr(row, "edge_role", "") or "") == "pavement_edge"]
         daylight_edges = [row for row in edge_rows if str(getattr(row, "edge_role", "") or "") == "daylight_hinge"]
         curb_edges = [row for row in edge_rows if str(getattr(row, "edge_family", "") or "") == "curb_return"]
+        roundabout_edges = [row for row in edge_rows if str(getattr(row, "edge_family", "") or "") == "roundabout"]
         zone_rows: list[IntersectionSurfaceZoneRow] = []
 
         if len(_unique_text_values([row.alignment_ref for row in pavement_edges])) >= 2:
@@ -325,6 +458,7 @@ class IntersectionEvaluationService:
                     alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in pavement_edges])),
                     control_area_refs=tuple(_unique_text_values([row.control_area_ref for row in pavement_edges])),
                     vertical_policy_ref=_surface_zone_grading_policy_ref(intersection_model, edge_network.intersection_id),
+                    surface_priority=_surface_priority("central_pavement"),
                     triangulation_method="pending_structured_zone",
                     status="candidate",
                     notes="Central junction zone contract only; no triangulation generated.",
@@ -348,6 +482,7 @@ class IntersectionEvaluationService:
                     alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in edges])),
                     control_area_refs=tuple(_unique_text_values([row.control_area_ref for row in edges])),
                     vertical_policy_ref=_surface_zone_grading_policy_ref(intersection_model, edge_network.intersection_id),
+                    surface_priority=_surface_priority(design_zone_role),
                     triangulation_method="pending_structured_strip",
                     status="candidate",
                     notes=f"{design_zone_role} contract only; no triangulation generated.",
@@ -371,6 +506,7 @@ class IntersectionEvaluationService:
                     alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in curb_context_edges])),
                     control_area_refs=tuple(_unique_text_values([row.control_area_ref for row in curb_context_edges])),
                     vertical_policy_ref=_surface_zone_grading_policy_ref(intersection_model, edge_network.intersection_id),
+                    surface_priority=_surface_priority("curb_return_pavement"),
                     triangulation_method="pending_curb_return_fan",
                     status="candidate",
                     notes="curb_return_pavement contract only; no triangulation generated.",
@@ -408,6 +544,7 @@ class IntersectionEvaluationService:
                     leg_refs=(str(edge.leg_ref),),
                     alignment_refs=(str(edge.alignment_ref),) if str(edge.alignment_ref) else (),
                     control_area_refs=(str(edge.control_area_ref),) if str(edge.control_area_ref) else (),
+                    surface_priority=_surface_priority("exterior_slope_face"),
                     triangulation_method="pending_daylight_zone",
                     status="ready" if not slope_diagnostics else "warning",
                     diagnostic_rows=tuple(slope_diagnostics),
@@ -416,6 +553,8 @@ class IntersectionEvaluationService:
             )
         if not daylight_edges:
             diagnostics.append("warning:surface_zone_daylight_edges_missing")
+
+        zone_rows.extend(_roundabout_surface_zone_rows(intersection_model, edge_network, roundabout_edges))
 
         if not zone_rows:
             diagnostics.append("error:intersection_surface_zone_rows_missing")
@@ -435,6 +574,7 @@ class IntersectionEvaluationService:
             side_pavement_zone_count=len([row for row in zone_rows if row.design_zone_role == "side_pavement"]),
             central_pavement_zone_count=len([row for row in zone_rows if row.design_zone_role == "central_pavement"]),
             curb_return_zone_count=len([row for row in zone_rows if row.zone_family == "curb_return"]),
+            roundabout_zone_count=len([row for row in zone_rows if row.zone_family == "roundabout"]),
             slope_zone_count=len([row for row in zone_rows if row.zone_family == "slope"]),
             slope_zone_ready_count=len([row for row in zone_rows if row.zone_family == "slope" and row.status == "ready"]),
             slope_zone_warning_count=len([row for row in zone_rows if row.zone_family == "slope" and row.status == "warning"]),
@@ -534,6 +674,10 @@ class IntersectionEvaluationService:
                 )
                 if float(getattr(policy, "radius", 0.0) or 0.0) <= 0.0:
                     diagnostics.append(f"warning:curb_return_radius_missing:{getattr(policy, 'policy_id', '')}")
+
+        if str(getattr(topology, "intersection_kind", "") or "") == "roundabout":
+            edge_rows.extend(_roundabout_edge_network_rows(intersection_model, topology))
+            diagnostics.append("warning:roundabout_edge_network_first_slice_source_only")
 
         if not edge_rows:
             diagnostics.append("error:intersection_edge_rows_missing")
@@ -986,6 +1130,310 @@ def _curb_return_contact_station_refs(
             start = center - radius
             end = center + radius
         output[alignment_ref] = tuple(_unique_float_values([start, center - radius * 0.5, center, center + radius * 0.5, end]))
+    return output
+
+
+def _roundabout_edge_network_rows(
+    intersection_model: IntersectionModel,
+    topology_result: IntersectionTopologyResult,
+) -> list[IntersectionEdgeNetworkRow]:
+    """Return first-slice roundabout edge-family rows for source/topology review."""
+
+    row = IntersectionEvaluationService._find_topology_intersection_row(
+        intersection_model,
+        str(getattr(topology_result, "intersection_id", "") or ""),
+    )
+    if row is None:
+        return []
+    policies = _curb_return_policies_for_intersection(intersection_model, topology_result.intersection_id)
+    policy = policies[0] if policies else None
+    policy_ref = str(getattr(policy, "policy_id", "") or f"roundabout-policy:{topology_result.intersection_id}:default")
+    radius = float(getattr(policy, "radius", 0.0) or 18.0)
+    if radius <= 0.0:
+        radius = 18.0
+    contact_station_refs = _curb_return_contact_station_refs(
+        intersection_model,
+        topology_result,
+        policy
+        or IntersectionCurbReturnPolicyRow(
+            policy_id=policy_ref,
+            intersection_id=topology_result.intersection_id,
+            radius=radius,
+        ),
+    )
+    alignment_refs = _unique_text_values(
+        [
+            str(getattr(row, "primary_alignment_ref", "") or ""),
+            *[str(ref) for ref in list(getattr(row, "secondary_alignment_refs", []) or [])],
+            *[str(getattr(span, "alignment_ref", "") or "") for span in list(getattr(topology_result, "leg_span_rows", []) or [])],
+        ]
+    )
+    leg_refs = _unique_text_values(
+        [str(getattr(span, "leg_ref", "") or "") for span in list(getattr(topology_result, "leg_span_rows", []) or [])]
+    )
+    rows = [
+        IntersectionEdgeNetworkRow(
+            edge_id=_edge_network_row_id(topology_result.intersection_id, "roundabout", 1, 1, "central_island_edge", "inside"),
+            intersection_id=topology_result.intersection_id,
+            edge_role="central_island_edge",
+            edge_family="roundabout",
+            source_policy_ref=policy_ref,
+            leg_ref=",".join(leg_refs),
+            alignment_ref=",".join(alignment_refs),
+            side="inside",
+            radius=radius * 0.5,
+            contact_station_refs=contact_station_refs,
+            status="candidate",
+            notes="roundabout_first_slice_central_island_edge",
+        ),
+        IntersectionEdgeNetworkRow(
+            edge_id=_edge_network_row_id(topology_result.intersection_id, "roundabout", 1, 2, "circulatory_outer_edge", "outside"),
+            intersection_id=topology_result.intersection_id,
+            edge_role="circulatory_outer_edge",
+            edge_family="roundabout",
+            source_policy_ref=policy_ref,
+            leg_ref=",".join(leg_refs),
+            alignment_ref=",".join(alignment_refs),
+            side="outside",
+            radius=radius,
+            contact_station_refs=contact_station_refs,
+            status="candidate",
+            notes="roundabout_first_slice_circulatory_edge",
+        ),
+    ]
+    for index, span in enumerate(list(getattr(topology_result, "leg_span_rows", []) or []), start=1):
+        rows.append(
+            IntersectionEdgeNetworkRow(
+                edge_id=_edge_network_row_id(topology_result.intersection_id, "roundabout-entry", 1, index, "entry_exit_edge", f"leg-{index:02d}"),
+                intersection_id=topology_result.intersection_id,
+                edge_role="entry_exit_edge",
+                edge_family="roundabout",
+                source_policy_ref=policy_ref,
+                leg_ref=str(getattr(span, "leg_ref", "") or ""),
+                leg_role=str(getattr(span, "leg_role", "") or ""),
+                alignment_ref=str(getattr(span, "alignment_ref", "") or ""),
+                control_area_ref=str(getattr(span, "control_area_ref", "") or ""),
+                side=f"leg-{index:02d}",
+                station_start=float(getattr(span, "station_start", 0.0) or 0.0),
+                station_end=float(getattr(span, "station_end", 0.0) or 0.0),
+                radius=radius,
+                contact_station_refs={
+                    str(getattr(span, "alignment_ref", "") or ""): contact_station_refs.get(
+                        str(getattr(span, "alignment_ref", "") or ""),
+                        (),
+                    )
+                },
+                status="candidate",
+                notes="roundabout_first_slice_entry_exit_edge",
+            )
+        )
+    return rows
+
+
+def _roundabout_surface_zone_rows(
+    intersection_model: IntersectionModel,
+    edge_network: IntersectionEdgeNetworkResult,
+    roundabout_edges: list[IntersectionEdgeNetworkRow],
+) -> list[IntersectionSurfaceZoneRow]:
+    """Return first-slice roundabout surface-zone contracts from roundabout edge rows."""
+
+    if not roundabout_edges:
+        return []
+    grading_ref = _surface_zone_grading_policy_ref(intersection_model, edge_network.intersection_id)
+    zone_rows: list[IntersectionSurfaceZoneRow] = []
+    central_edges = [row for row in roundabout_edges if str(getattr(row, "edge_role", "") or "") == "central_island_edge"]
+    circulatory_edges = [row for row in roundabout_edges if str(getattr(row, "edge_role", "") or "") == "circulatory_outer_edge"]
+    entry_edges = [row for row in roundabout_edges if str(getattr(row, "edge_role", "") or "") == "entry_exit_edge"]
+    if central_edges:
+        zone_rows.append(
+            IntersectionSurfaceZoneRow(
+                zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-central-island",
+                intersection_id=edge_network.intersection_id,
+                zone_role="roundabout_central_island",
+                zone_family="roundabout",
+                design_zone_role="roundabout_central_island",
+                surface_role="design",
+                source_edge_refs=tuple(str(row.edge_id) for row in central_edges),
+                boundary_edge_refs=tuple(str(row.edge_id) for row in central_edges),
+                inner_edge_refs=tuple(str(row.edge_id) for row in central_edges),
+                leg_refs=tuple(_unique_text_values([row.leg_ref for row in central_edges])),
+                alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in central_edges])),
+                vertical_policy_ref=grading_ref,
+                surface_priority=_surface_priority("roundabout_central_island"),
+                triangulation_method="pending_roundabout_island_zone",
+                status="candidate",
+                notes="Roundabout central island source-zone contract only; no triangulation generated.",
+            )
+        )
+    if circulatory_edges:
+        zone_rows.append(
+            IntersectionSurfaceZoneRow(
+                zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-circulatory",
+                intersection_id=edge_network.intersection_id,
+                zone_role="roundabout_circulatory_roadway",
+                zone_family="roundabout",
+                design_zone_role="roundabout_circulatory_pavement",
+                surface_role="design",
+                source_edge_refs=tuple(str(row.edge_id) for row in [*central_edges, *circulatory_edges]),
+                boundary_edge_refs=tuple(str(row.edge_id) for row in [*central_edges, *circulatory_edges]),
+                inner_edge_refs=tuple(str(row.edge_id) for row in central_edges),
+                outer_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                leg_refs=tuple(_unique_text_values([row.leg_ref for row in [*central_edges, *circulatory_edges]])),
+                alignment_refs=tuple(_unique_text_values([row.alignment_ref for row in [*central_edges, *circulatory_edges]])),
+                vertical_policy_ref=grading_ref,
+                surface_priority=_surface_priority("roundabout_circulatory_pavement"),
+                triangulation_method="pending_roundabout_ring_zone",
+                status="candidate",
+                notes="Roundabout circulatory roadway source-zone contract only; no triangulation generated.",
+            )
+        )
+    for index, edge in enumerate(entry_edges, start=1):
+        zone_rows.append(
+            IntersectionSurfaceZoneRow(
+                zone_id=f"intersection-zone:{_id_token(edge_network.intersection_id)}:roundabout-entry-exit-{index:02d}",
+                intersection_id=edge_network.intersection_id,
+                zone_role="roundabout_entry_exit",
+                zone_family="roundabout",
+                design_zone_role="roundabout_entry_exit_pavement",
+                surface_role="design",
+                source_edge_refs=(str(edge.edge_id),),
+                boundary_edge_refs=(str(edge.edge_id),),
+                tie_edge_refs=tuple(str(row.edge_id) for row in circulatory_edges),
+                leg_refs=(str(edge.leg_ref),) if str(edge.leg_ref) else (),
+                alignment_refs=(str(edge.alignment_ref),) if str(edge.alignment_ref) else (),
+                control_area_refs=(str(edge.control_area_ref),) if str(edge.control_area_ref) else (),
+                vertical_policy_ref=grading_ref,
+                surface_priority=_surface_priority("roundabout_entry_exit_pavement"),
+                triangulation_method="pending_roundabout_entry_exit_zone",
+                status="candidate",
+                notes="Roundabout entry/exit source-zone contract only; no triangulation generated.",
+            )
+        )
+    return zone_rows
+
+
+def _surface_priority(design_zone_role: str) -> int:
+    role = str(design_zone_role or "").strip()
+    priorities = {
+        "central_pavement": 100,
+        "roundabout_central_island": 98,
+        "roundabout_circulatory_pavement": 96,
+        "curb_return_pavement": 90,
+        "roundabout_entry_exit_pavement": 88,
+        "main_pavement": 70,
+        "side_pavement": 70,
+        "leg_pavement": 70,
+        "exterior_slope_face": 40,
+    }
+    return priorities.get(role, 50)
+
+
+def _grading_policy_by_ref(intersection_model: IntersectionModel, policy_ref: str, intersection_id: str):
+    rows = list(getattr(intersection_model, "grading_policy_rows", []) or [])
+    wanted = str(policy_ref or "").strip()
+    for row in rows:
+        if wanted and str(getattr(row, "policy_id", "") or "") == wanted:
+            return row
+    for row in rows:
+        if str(getattr(row, "intersection_id", "") or "") == str(intersection_id or ""):
+            return row
+    return rows[0] if rows else None
+
+
+def _intersection_crossfall_context(zone_role: str, grading_mode: str) -> str:
+    role = str(zone_role or "").strip()
+    mode = str(grading_mode or "").strip()
+    if role == "exterior_slope_face":
+        return "normal_superelevation"
+    if role in {
+        "central_pavement",
+        "curb_return_pavement",
+        "roundabout_central_island",
+        "roundabout_circulatory_pavement",
+        "roundabout_entry_exit_pavement",
+    }:
+        return "intersection_override" if mode != "use_normal_superelevation" else "normal_superelevation"
+    if mode in {"flatten_intersection", "blend_primary_side", "keep_primary_crown", "roundabout_radial_crossfall"}:
+        return "intersection_override"
+    return "normal_superelevation"
+
+
+def _grading_context_note(zone_role: str, grading_mode: str, crossfall_context: str) -> str:
+    role = str(zone_role or "").strip()
+    mode = str(grading_mode or "").strip()
+    context = str(crossfall_context or "").strip()
+    if context == "normal_superelevation":
+        return "Normal Superelevation/Assembly crossfall remains the governing context outside the intersection override."
+    if mode == "flatten_intersection":
+        return f"{role} uses a flattened intersection grading override."
+    if mode == "blend_primary_side":
+        return f"{role} blends primary and secondary approach grading inside the control area."
+    if mode == "keep_primary_crown":
+        return f"{role} preserves the primary alignment crown through the intersection control area."
+    if mode == "roundabout_radial_crossfall":
+        return f"{role} uses roundabout radial crossfall intent; final ring grading remains a later geometry step."
+    return f"{role} uses intersection grading override mode {mode or 'unknown'}."
+
+
+def _drainage_hint_note(hint_kind: str, drainage_mode: str, zone_role: str) -> str:
+    mode = str(drainage_mode or "review_low_points").strip()
+    role = str(zone_role or "").strip()
+    if str(hint_kind or "") == "outlet_handoff":
+        return f"Drainage mode {mode} requires explicit outlet/outfall review after intersection grading is accepted."
+    if str(hint_kind or "") == "low_point_candidate":
+        if mode == "outside_gutter":
+            return f"Review {role} as an outside-gutter low-point search zone before inlet placement."
+        if mode == "central_island":
+            return f"Review {role} for central-island drainage; confirm whether runoff drains inward or outward."
+        return f"Review {role} for intersection low-point candidates before inlet placement."
+    if mode == "outside_gutter":
+        return f"Recommended inlet review near {role}; outside-gutter drainage needs explicit Drainage Elements."
+    if mode == "central_island":
+        return f"Recommended inlet/drain review near {role}; central-island drainage needs explicit collection and outlet design."
+    return f"Recommended inlet review near {role}; create Drainage Elements explicitly before build."
+
+
+def _intersection_drainage_outlet_hint_rows(
+    surface_zones: IntersectionSurfaceZoneResult,
+    *,
+    drainage_policy_ref: str,
+    drainage_mode: str,
+    control_ranges: dict[str, tuple[tuple[float, float], ...]],
+    start_index: int,
+) -> list[IntersectionDrainageHintRow]:
+    mode = str(drainage_mode or "review_low_points").strip()
+    if mode not in {"outside_gutter", "central_island"}:
+        return []
+    candidate_zones = [
+        row
+        for row in list(getattr(surface_zones, "zone_rows", []) or [])
+        if str(getattr(row, "design_zone_role", "") or "") in {"central_pavement", "roundabout_circulatory_pavement"}
+    ]
+    if not candidate_zones:
+        return []
+    output: list[IntersectionDrainageHintRow] = []
+    for index, zone in enumerate(candidate_zones, start=start_index):
+        control_area_refs = tuple(getattr(zone, "control_area_refs", ()) or ())
+        output.append(
+            IntersectionDrainageHintRow(
+                hint_id=f"intersection-drainage-hint:{_id_token(surface_zones.intersection_id)}:outlet-{index:02d}",
+                intersection_id=surface_zones.intersection_id,
+                hint_kind="outlet_handoff",
+                zone_ref=str(getattr(zone, "zone_id", "") or ""),
+                zone_role=str(getattr(zone, "design_zone_role", "") or getattr(zone, "zone_role", "") or ""),
+                surface_role=str(getattr(zone, "surface_role", "") or ""),
+                recommended_element_kind="outlet_review",
+                drainage_policy_ref=drainage_policy_ref,
+                drainage_mode=mode,
+                control_area_refs=control_area_refs,
+                source_edge_refs=tuple(getattr(zone, "source_edge_refs", ()) or ()),
+                boundary_edge_refs=tuple(getattr(zone, "boundary_edge_refs", ()) or ()),
+                station_ranges=_station_ranges_for_refs(control_ranges, control_area_refs),
+                status="warning",
+                diagnostic_rows=("warning:outlet_handoff_requires_user_drainage_element",),
+                notes=_drainage_hint_note("outlet_handoff", mode, str(getattr(zone, "design_zone_role", "") or "")),
+            )
+        )
     return output
 
 

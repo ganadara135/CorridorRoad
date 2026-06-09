@@ -687,21 +687,41 @@ def _source_owner_status(*, object_label: str, source_ref: str) -> str:
     return "unresolved"
 
 
+def _display_source_id(value: object, prefix: str = "") -> str:
+    """Return a compact source id for table labels without changing stored refs."""
+
+    text = str(value or "").strip()
+    prefix_text = str(prefix or "").strip()
+    if prefix_text and text.startswith(prefix_text):
+        return text[len(prefix_text) :]
+    return text
+
+
 def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[dict[str, object]]:
     """Build viewer station rows from a v1 AppliedSectionSet result contract."""
 
     rows = []
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
     for index, row in enumerate(list(getattr(applied_section_set, "station_rows", []) or [])):
         try:
             station = float(getattr(row, "station", 0.0) or 0.0)
         except Exception:
             continue
+        section_id = str(getattr(row, "applied_section_id", "") or "")
+        section = sections.get(section_id)
+        alignment_id = str(getattr(section, "alignment_id", "") or getattr(applied_section_set, "alignment_id", "") or "").strip()
+        alignment_label = _display_source_id(alignment_id, "alignment:") if alignment_id else ""
+        label = f"{alignment_label} | STA {station:.3f}" if alignment_label else f"STA {station:.3f}"
         rows.append(
             {
                 "index": index,
                 "station": station,
-                "label": f"STA {station:.3f}",
-                "applied_section_id": str(getattr(row, "applied_section_id", "") or ""),
+                "label": label,
+                "applied_section_id": section_id,
+                "alignment_id": alignment_id,
                 "kind": str(getattr(row, "kind", "") or ""),
             }
         )
@@ -716,8 +736,13 @@ def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[d
             {
                 "index": index,
                 "station": station,
-                "label": f"STA {station:.3f}",
+                "label": (
+                    f"{_display_source_id(str(getattr(section, 'alignment_id', '') or ''), 'alignment:')} | STA {station:.3f}"
+                    if str(getattr(section, "alignment_id", "") or "").strip()
+                    else f"STA {station:.3f}"
+                ),
                 "applied_section_id": str(getattr(section, "applied_section_id", "") or ""),
+                "alignment_id": str(getattr(section, "alignment_id", "") or ""),
                 "kind": "applied_section",
             }
         )
@@ -727,7 +752,7 @@ def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[d
 def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> list[dict[str, object]]:
     """Merge station navigation rows without dropping v1 result stations."""
 
-    by_station: dict[float, dict[str, object]] = {}
+    by_key: dict[tuple[str, float], dict[str, object]] = {}
     for rows in row_groups:
         for row in list(rows or []):
             item = dict(row or {})
@@ -735,11 +760,23 @@ def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> l
                 station = round(float(item.get("station", 0.0) or 0.0), 6)
             except Exception:
                 continue
-            existing = by_station.get(station, {})
+            section_id = str(item.get("applied_section_id", "") or "").strip()
+            alignment_id = str(item.get("alignment_id", "") or "").strip()
+            base_key = (f"station:{station}", station)
+            key = (section_id or alignment_id or f"station:{station}", station)
+            if (section_id or alignment_id) and base_key in by_key:
+                key = base_key
+            existing = by_key.get(key, {})
             merged = dict(existing)
             merged.update({key: value for key, value in item.items() if value not in (None, "")})
-            by_station[station] = merged
-    merged_rows = [by_station[key] for key in sorted(by_station)]
+            by_key[key] = merged
+    merged_rows = [
+        by_key[key]
+        for key in sorted(
+            by_key,
+            key=lambda value: (value[1], str(by_key[value].get("alignment_id", "") or ""), str(value[0])),
+        )
+    ]
     for index, row in enumerate(merged_rows):
         row["index"] = index
         row["station"] = float(row.get("station", 0.0) or 0.0)
@@ -1388,6 +1425,7 @@ def build_document_section_preview(
     *,
     preferred_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
 ) -> dict[str, object] | None:
     """Build a v1 section viewer payload from a FreeCAD document when possible."""
 
@@ -1398,6 +1436,7 @@ def build_document_section_preview(
         project=project,
         preferred_applied_section_set=preferred_section_set,
         preferred_station=preferred_station,
+        preferred_applied_section_id=preferred_applied_section_id,
     )
 
 
@@ -1407,6 +1446,7 @@ def _build_v1_applied_section_set_preview(
     project=None,
     preferred_applied_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
 ) -> dict[str, object] | None:
     """Build a section viewer payload directly from a persisted v1 AppliedSectionSet."""
 
@@ -1453,14 +1493,28 @@ def _build_v1_applied_section_set_preview(
     else:
         target_station = float(preferred_station)
 
-    applied_section = min(
-        sections,
-        key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station),
-    )
+    preferred_section_id = str(preferred_applied_section_id or "").strip()
+    applied_section = None
+    if preferred_section_id:
+        for section in sections:
+            if str(getattr(section, "applied_section_id", "") or "").strip() == preferred_section_id:
+                applied_section = section
+                break
+    if applied_section is None:
+        applied_section = min(
+            sections,
+            key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station),
+        )
     target_station = float(getattr(applied_section, "station", target_station) or target_station)
-    station_payload = _nearest_station_payload(station_rows, target_station) or {
+    station_payload = _nearest_station_payload(
+        station_rows,
+        target_station,
+        applied_section_id=str(getattr(applied_section, "applied_section_id", "") or ""),
+    ) or {
         "station": target_station,
         "label": f"STA {target_station:.3f}",
+        "applied_section_id": str(getattr(applied_section, "applied_section_id", "") or ""),
+        "alignment_id": str(getattr(applied_section, "alignment_id", "") or ""),
     }
     section_output = SectionOutputMapper().map_applied_section(applied_section)
     drawing_payload = CrossSectionDrawingMapper().map_applied_section_set(
@@ -1565,11 +1619,22 @@ def _build_v1_applied_section_set_preview(
     }
 
 
-def _nearest_station_payload(rows: list[dict[str, object]], station: float) -> dict[str, object] | None:
+def _nearest_station_payload(
+    rows: list[dict[str, object]],
+    station: float,
+    *,
+    applied_section_id: str = "",
+) -> dict[str, object] | None:
     """Return the station navigation row nearest to a target station."""
 
     if not rows:
         return None
+    section_id = str(applied_section_id or "").strip()
+    if section_id:
+        for row in [dict(item or {}) for item in rows]:
+            if str(row.get("applied_section_id", "") or "").strip() == section_id:
+                row["is_current"] = True
+                return row
     best = min(
         [dict(row or {}) for row in rows],
         key=lambda row: abs(float(row.get("station", 0.0) or 0.0) - float(station)),
@@ -1814,6 +1879,7 @@ def show_v1_section_preview(
     document=None,
     preferred_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
     extra_context: dict[str, object] | None = None,
     app_module=None,
     gui_module=None,
@@ -1835,6 +1901,7 @@ def show_v1_section_preview(
             active_document,
             preferred_section_set=preferred_section_set,
             preferred_station=preferred_station,
+            preferred_applied_section_id=preferred_applied_section_id,
         )
     if preview is None and active_document is not None:
         preview = _build_missing_v1_applied_section_set_preview(document_label=document_label)
@@ -1842,9 +1909,11 @@ def show_v1_section_preview(
         preview = build_demo_section_preview(document_label=document_label)
     explicit_review_marker_rows = None
     if extra_context:
-        preview.update(dict(extra_context))
-        explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
-        _retarget_preview_to_station(preview)
+        context = dict(extra_context)
+        preview.update(context)
+        explicit_review_marker_rows = context.get("review_marker_rows", None)
+        if "station_row" in context or context.get("preferred_applied_section_id"):
+            _retarget_preview_to_station(preview)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     active_structure_ref = _applied_section_structure_ref(preview.get("applied_section", None))
     if active_structure_ref and not str(viewer_context.get("active_structure_ref", "") or "").strip():
@@ -1961,6 +2030,17 @@ def _retarget_preview_to_station(preview: dict[str, object]) -> None:
     if not sections:
         return
     station_row = dict(preview.get("station_row", {}) or {})
+    target_section_id = str(station_row.get("applied_section_id", "") or "").strip()
+    if target_section_id:
+        for section in sections:
+            if str(getattr(section, "applied_section_id", "") or "").strip() == target_section_id:
+                preview["applied_section"] = section
+                preview["section_output"] = SectionOutputMapper().map_applied_section(section)
+                preview["drawing_payload"] = CrossSectionDrawingMapper().map_applied_section_set(
+                    section_set,
+                    station=float(getattr(section, "station", 0.0) or 0.0),
+                )
+                return
     try:
         target_station = float(station_row.get("station", getattr(preview.get("applied_section"), "station", 0.0)) or 0.0)
     except Exception:
@@ -1976,6 +2056,7 @@ def run_v1_section_view_command() -> dict[str, object]:
 
     preferred_section_set = None
     preferred_station = None
+    preferred_applied_section_id = ""
     extra_context = None
     ui_context = get_ui_context()
     clear_ui_context()
@@ -1997,6 +2078,7 @@ def run_v1_section_view_command() -> dict[str, object]:
                 preferred_station = float(ui_context.get("preferred_station"))
             except Exception:
                 preferred_station = None
+        preferred_applied_section_id = str(ui_context.get("preferred_applied_section_id", "") or "").strip()
         extra_context = {}
         for key in (
             "viewer_context",
@@ -2014,6 +2096,7 @@ def run_v1_section_view_command() -> dict[str, object]:
         document=getattr(App, "ActiveDocument", None) if App is not None else None,
         preferred_section_set=preferred_section_set,
         preferred_station=preferred_station,
+        preferred_applied_section_id=preferred_applied_section_id,
         extra_context=extra_context,
         app_module=App,
         gui_module=Gui,

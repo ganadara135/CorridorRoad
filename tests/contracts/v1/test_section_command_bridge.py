@@ -1101,6 +1101,133 @@ def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None
         App.closeDocument(doc.Name)
 
 
+def test_cross_section_viewer_navigation_keeps_secondary_alignment_intersection_rows() -> None:
+    doc = App.newDocument("V1SectionViewerSecondaryIntersectionNavigationTest")
+    try:
+        intersection_model = IntersectionModel(
+            schema_version=1,
+            project_id="project:test",
+            intersection_model_id="intersection-model:main",
+            intersection_rows=[
+                IntersectionRow(
+                    intersection_id="intersection:t-01",
+                    intersection_kind="t_intersection",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:secondary"],
+                    leg_rows=[
+                        IntersectionLegRow(
+                            leg_id="leg:primary",
+                            leg_role="primary_through",
+                            alignment_ref="alignment:primary",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:primary-intersection",
+                            approach_station_start=90.0,
+                            approach_station_end=110.0,
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                        IntersectionLegRow(
+                            leg_id="leg:secondary",
+                            leg_role="secondary_approach",
+                            alignment_ref="alignment:secondary",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:secondary-intersection",
+                            approach_station_start=90.0,
+                            approach_station_end=110.0,
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                    ],
+                )
+            ],
+            control_area_rows=[
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:primary",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:primary",
+                    station_ranges=[(90.0, 110.0)],
+                    control_region_refs=["region:primary-intersection"],
+                    grading_policy_ref="grading:intersection:t-01:default",
+                ),
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:secondary",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:secondary",
+                    station_ranges=[(90.0, 110.0)],
+                    control_region_refs=["region:secondary-intersection"],
+                    grading_policy_ref="grading:intersection:t-01:default",
+                ),
+            ],
+            grading_policy_rows=[
+                IntersectionGradingPolicyRow(
+                    "grading:intersection:t-01:default",
+                    "intersection:t-01",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:secondary"],
+                )
+            ],
+        )
+        create_or_update_v1_intersection_model_object(doc, intersection_model=intersection_model)
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:multi-alignment-intersection",
+            alignment_id="alignment:multiple",
+            station_rows=[
+                AppliedSectionStationRow("station:primary-100", 100.0, "section:primary-100"),
+                AppliedSectionStationRow("station:secondary-100", 100.0, "section:secondary-100"),
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:primary-100",
+                    alignment_id="alignment:primary",
+                    station=100.0,
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:primary",
+                    active_intersection_leg_id="leg:primary",
+                    active_intersection_leg_role="primary_through",
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                ),
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:secondary-100",
+                    alignment_id="alignment:secondary",
+                    station=100.0,
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:secondary",
+                    active_intersection_leg_id="leg:secondary",
+                    active_intersection_leg_role="secondary_approach",
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                ),
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Multi Alignment Intersection",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=100.0,
+            preferred_applied_section_id="section:secondary-100",
+            app_module=None,
+            gui_module=None,
+        )
+
+        station_rows = list(preview.get("station_rows", []) or [])
+        assert len([row for row in station_rows if round(float(row.get("station", 0.0)), 3) == 100.0]) == 2
+        assert {row.get("alignment_id") for row in station_rows} == {"alignment:primary", "alignment:secondary"}
+        assert getattr(preview["applied_section"], "applied_section_id") == "section:secondary-100"
+        assert getattr(preview["applied_section"], "alignment_id") == "alignment:secondary"
+        context_rows = build_intersection_context_rows(preview)
+        assert context_rows
+        assert any(row[3] == "secondary_approach" for row in context_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
 def test_format_section_preview_includes_focus_component_line() -> None:
     summary = format_section_preview(
         show_v1_section_preview(

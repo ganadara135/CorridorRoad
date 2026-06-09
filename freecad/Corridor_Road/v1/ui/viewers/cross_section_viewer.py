@@ -1973,6 +1973,7 @@ class CrossSectionViewerTaskPanel:
             "source": "v1_cross_section_navigation",
             "preferred_applied_section_set_name": applied_section_set_name,
             "preferred_station": station_value,
+            "preferred_applied_section_id": str(row.get("applied_section_id", "") or "").strip(),
             "station_row": dict(row),
             "viewer_context": dict(self.preview.get("viewer_context", {}) or {}),
         }

@@ -214,6 +214,11 @@ def find_project(doc):
     for o in doc.Objects:
         if o.Name.startswith("CorridorRoadProject"):
             return o
+        proxy = getattr(o, "Proxy", None)
+        if proxy is not None and getattr(proxy, "Type", "") == "CorridorRoadProject":
+            return o
+        if str(getattr(o, "Label", "") or "") in {"CorridorRoad Project", "Parametric Road Project"}:
+            return o
     return None
 
 
@@ -1339,6 +1344,8 @@ def _is_v1_intersection_build_parametric_output(child):
         "v1_corridor_intersection_tie_in_edge_preview",
         "v1_corridor_intersection_boundary_segment_preview",
         "v1_corridor_intersection_exclusion_zone_preview",
+        "v1_corridor_intersection_slope_face_boundary_preview",
+        "v1_intersection_contract_review_highlight",
     }:
         return True
     if record_kind in {"v1_corridor_surface_preview", "v1_corridor_surface_preview_diagnostic"}:
@@ -1354,6 +1361,7 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
             "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         ),
         name_prefixes=(
             "V1IntersectionEdgeNetworkPreview",
@@ -1361,6 +1369,7 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
             "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         ),
     ):
         return True
@@ -1370,6 +1379,7 @@ def _is_v1_intersection_build_parametric_output(child):
         "Intersection Tie-in Edges",
         "Intersection Boundary Segments",
         "Intersection Exclusion Zone",
+        "Intersection Slope Face Boundary",
     }:
         return True
     # Starter-source helper objects are created from the Intersections panel and
@@ -1521,6 +1531,8 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
         return tree.get(V1_TREE_CENTERLINE3D, None)
+    if record_kind == "v1_intersection_model":
+        return tree.get(V1_TREE_INTERSECTIONS, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
@@ -1559,6 +1571,9 @@ def resolve_v1_target_container(prj, child):
     if record_kind == "v1_quantity_model":
         return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind == "v1_drainage_model":
+        drainage_id = str(getattr(child, "DrainageModelId", "") or "").lower()
+        if drainage_id.startswith("drainage:intersection-preset-"):
+            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_drainage_pipeline_candidate_preview":
         return tree.get(V1_TREE_DRAINAGE, None)
@@ -1591,6 +1606,13 @@ def resolve_v1_target_container(prj, child):
     ):
         return tree.get(V1_TREE_STATIONS, None)
     if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
+        superelevation_id = str(getattr(child, "SuperelevationId", "") or "").lower()
+        superelevation_kind = str(getattr(child, "SuperelevationKind", "") or "").lower()
+        if (
+            superelevation_id.startswith("superelevation:intersection-preset-")
+            or superelevation_kind == "intersection_superelevation_handoff"
+        ):
+            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_SUPERELEVATION, None)
     if record_kind == "v1_intersection_review_overlay":
         return tree.get(V1_TREE_INTERSECTIONS, None)

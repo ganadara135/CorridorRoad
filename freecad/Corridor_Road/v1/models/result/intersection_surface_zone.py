@@ -26,6 +26,7 @@ class IntersectionSurfaceZoneRow:
     alignment_refs: tuple[str, ...] = ()
     control_area_refs: tuple[str, ...] = ()
     vertical_policy_ref: str = ""
+    surface_priority: int = 0
     triangulation_method: str = "not_assigned"
     status: str = "candidate"
     diagnostic_rows: tuple[str, ...] = ()
@@ -47,6 +48,7 @@ class IntersectionSurfaceZoneResult(ResultModelBase):
     side_pavement_zone_count: int = 0
     central_pavement_zone_count: int = 0
     curb_return_zone_count: int = 0
+    roundabout_zone_count: int = 0
     slope_zone_count: int = 0
     slope_zone_ready_count: int = 0
     slope_zone_warning_count: int = 0

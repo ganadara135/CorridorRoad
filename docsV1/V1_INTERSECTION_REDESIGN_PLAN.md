@@ -277,6 +277,92 @@ Rules:
 - main-road Slope Face must stop at the control area and resume outside it
 - if an edge relation is missing, report a topology diagnostic instead of creating a guessed triangle
 
+### 5.5 Intersection Slope Face Boundary
+
+Intersection Slope Face generation should not rely only on ordinary corridor daylight sampling.
+
+For the junction edge zone, Build Parametric should first create an explicit `IntersectionSlopeFaceBoundaryResult`.
+
+The boundary result uses:
+
+- the `Intersection Surface` outer boundary as the inner Slope Face boundary
+- Applied Section left/right start points as the inner Slope Face boundary candidates
+- Applied Section left/right end points as the outer Slope Face boundary candidates
+- Alignment context to separate primary-road and side-road strips
+- side context to separate left and right strips
+- station order to connect boundary points without crossing
+- the Applied Sections that actually define each tie-in edge, not the full alignment section list
+- a distance-based extension before and after the tie-in edge
+
+The intended strip is:
+
+```text
+Applied Section end points
+  -> outer boundary
+
+Intersection Surface boundary edge
+  -> inner boundary
+
+start/end connector edges
+  -> strip closure
+
+closed strip
+  -> Intersection Slope Face Surface
+```
+
+The boundary extension must be distance-based, not "one more station" based.
+
+Default rule:
+
+- extend the boundary by `5.0 m` before the tie-in start station
+- extend the boundary by `5.0 m` after the tie-in end station
+- create virtual Applied Sections at the extension stations by interpolation
+- if the extension station is outside the available section range, project the nearest Applied Section along its tangent
+
+This keeps the transition zone stable when Applied Section spacing is coarse or irregular.
+
+The extension must apply to both Applied Section start points and end points.
+
+Using only end points makes the preview strip become a trapezoid that does not follow the section boundary.
+
+For the first implementation, Build Parametric should create this boundary only for the primary-road outside tie-in edge that needs Slope Face completion.
+
+It must not generate all primary/secondary left/right boundary candidates as visible white rectangles.
+
+This boundary is a result contract, not an editable source object.
+
+It must record:
+
+- `intersection_id`
+- `alignment_ref`
+- `side`
+- `inner_boundary_points`
+- `outer_boundary_points`
+- `start_tie_edge`
+- `end_tie_edge`
+- `source_applied_section_refs`
+- `source_intersection_surface_ref`
+- `status`
+- `diagnostics`
+
+Build Parametric should expose the boundary before using it for triangulation.
+
+The first implementation step is a preview-only boundary object so users can verify whether the strip is correct.
+
+The second implementation step is strip triangulation between the inner and outer boundary polylines.
+
+This step appends `intersection_slope_face_boundary_strip` triangles to the Slope Face Surface result.
+
+The strip result must remain traceable through quality rows:
+
+- `intersection_slope_face_boundary_strip_count`
+- `intersection_slope_face_boundary_strip_sample_count`
+- `intersection_slope_face_boundary_strip_triangle_count`
+
+The ordinary `Corridor Slope Face Surface` remains responsible outside the intersection boundary strips.
+
+The `Intersection Surface` remains responsible inside the intersection footprint.
+
 ## 6. Vertical And Crossfall Strategy
 
 Intersection vertical control should be separate from ordinary Superelevation.
