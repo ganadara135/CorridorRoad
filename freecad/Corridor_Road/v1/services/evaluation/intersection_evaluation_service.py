@@ -28,6 +28,10 @@ from ...models.result.intersection_drainage_hint import (
     IntersectionDrainageHintResult,
     IntersectionDrainageHintRow,
 )
+from ...models.result.intersection_slope_face_loop import (
+    IntersectionSlopeFaceLoopResult,
+    IntersectionSlopeFaceLoopRow,
+)
 from ...models.result.intersection_surface_zone import (
     IntersectionSurfaceZoneResult,
     IntersectionSurfaceZoneRow,
@@ -581,6 +585,152 @@ class IntersectionEvaluationService:
             diagnostic_rows=diagnostics,
             zone_rows=zone_rows,
             source_refs=list(getattr(edge_network, "source_refs", []) or []),
+        )
+
+    def evaluate_slope_face_loops(
+        self,
+        intersection_model: IntersectionModel | None,
+        surface_zone_result: IntersectionSurfaceZoneResult | None = None,
+        edge_network_result: IntersectionEdgeNetworkResult | None = None,
+        *,
+        intersection_id: str = "",
+    ) -> IntersectionSlopeFaceLoopResult:
+        """Evaluate source-traceable Slope Face loop candidates from surface zones."""
+
+        if intersection_model is None:
+            return IntersectionSlopeFaceLoopResult(
+                schema_version=1,
+                project_id="corridorroad-v1",
+                status="error",
+                diagnostic_rows=["error:intersection_model_missing"],
+            )
+        edge_network = edge_network_result
+        if edge_network is None:
+            topology = self.evaluate_topology(intersection_model, intersection_id=intersection_id)
+            edge_network = self.evaluate_edge_network(intersection_model, topology, intersection_id=intersection_id)
+        surface_zones = surface_zone_result or self.evaluate_surface_zones(intersection_model, edge_network, intersection_id=intersection_id)
+        diagnostics = list(getattr(surface_zones, "diagnostic_rows", []) or [])
+        edge_by_id = {
+            str(getattr(edge, "edge_id", "") or ""): edge
+            for edge in list(getattr(edge_network, "edge_rows", []) or [])
+            if str(getattr(edge, "edge_id", "") or "")
+        }
+        if str(getattr(surface_zones, "status", "") or "") == "error":
+            return IntersectionSlopeFaceLoopResult(
+                schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+                project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+                loop_result_id=f"intersection-slope-face-loops:{surface_zones.intersection_id or 'error'}",
+                intersection_id=str(getattr(surface_zones, "intersection_id", "") or ""),
+                intersection_kind=str(getattr(surface_zones, "intersection_kind", "") or ""),
+                status="error",
+                diagnostic_rows=diagnostics,
+                source_refs=list(getattr(surface_zones, "source_refs", []) or []),
+            )
+
+        loop_rows: list[IntersectionSlopeFaceLoopRow] = []
+        slope_zones = [
+            row for row in list(getattr(surface_zones, "zone_rows", []) or [])
+            if str(getattr(row, "surface_role", "") or "") == "slope_face"
+            or str(getattr(row, "zone_family", "") or "") == "slope"
+        ]
+        for index, zone in enumerate(slope_zones, start=1):
+            loop_diagnostics = list(getattr(zone, "diagnostic_rows", ()) or ())
+            inner_edge_refs = tuple(str(value) for value in tuple(getattr(zone, "inner_edge_refs", ()) or ()))
+            outer_edge_refs = tuple(str(value) for value in tuple(getattr(zone, "outer_edge_refs", ()) or ()))
+            tie_edge_refs = tuple(str(value) for value in tuple(getattr(zone, "tie_edge_refs", ()) or ()))
+            boundary_edge_refs = tuple(str(value) for value in tuple(getattr(zone, "boundary_edge_refs", ()) or ()))
+            if not boundary_edge_refs:
+                boundary_edge_refs = (*inner_edge_refs, *outer_edge_refs, *tie_edge_refs)
+            if not inner_edge_refs:
+                loop_diagnostics.append("warning:slope_face_loop_inner_edge_refs_missing")
+                diagnostics.append(f"warning:slope_face_loop_inner_edge_refs_missing:{getattr(zone, 'zone_id', '')}")
+            if not outer_edge_refs:
+                loop_diagnostics.append("warning:slope_face_loop_outer_edge_refs_missing")
+                diagnostics.append(f"warning:slope_face_loop_outer_edge_refs_missing:{getattr(zone, 'zone_id', '')}")
+            if not tie_edge_refs:
+                loop_diagnostics.append("warning:slope_face_loop_tie_edge_refs_missing")
+                diagnostics.append(f"warning:slope_face_loop_tie_edge_refs_missing:{getattr(zone, 'zone_id', '')}")
+            loop_points = _slope_face_loop_points_from_edges(boundary_edge_refs, edge_by_id)
+            missing_edge_refs = tuple(ref for ref in boundary_edge_refs if ref and ref not in edge_by_id)
+            duplicate_edge_refs = _duplicate_text_values(boundary_edge_refs)
+            closed_xy = _points_closed_xy(loop_points)
+            self_crossing = _polyline_self_crosses_xy(loop_points)
+            if missing_edge_refs:
+                loop_diagnostics.append(
+                    "error:slope_face_loop_boundary_edge_refs_unresolved:" + ",".join(missing_edge_refs)
+                )
+                diagnostics.append(
+                    f"error:slope_face_loop_boundary_edge_refs_unresolved:{getattr(zone, 'zone_id', '')}:{','.join(missing_edge_refs)}"
+                )
+            if duplicate_edge_refs:
+                loop_diagnostics.append(
+                    "warning:slope_face_loop_duplicate_edge_refs:" + ",".join(duplicate_edge_refs)
+                )
+                diagnostics.append(
+                    f"warning:slope_face_loop_duplicate_edge_refs:{getattr(zone, 'zone_id', '')}:{','.join(duplicate_edge_refs)}"
+                )
+            if len(loop_points) < 4:
+                loop_diagnostics.append("warning:slope_face_loop_point_count_too_low")
+                diagnostics.append(f"warning:slope_face_loop_point_count_too_low:{getattr(zone, 'zone_id', '')}:{len(loop_points)}")
+            if loop_points and not closed_xy:
+                loop_diagnostics.append("warning:slope_face_loop_open_xy")
+                diagnostics.append(f"warning:slope_face_loop_open_xy:{getattr(zone, 'zone_id', '')}")
+            if self_crossing:
+                loop_diagnostics.append("error:slope_face_loop_self_crossing")
+                diagnostics.append(f"error:slope_face_loop_self_crossing:{getattr(zone, 'zone_id', '')}")
+            if not tuple(getattr(zone, "source_edge_refs", ()) or ()):
+                loop_diagnostics.append("warning:slope_face_loop_source_edge_refs_missing")
+                diagnostics.append(f"warning:slope_face_loop_source_edge_refs_missing:{getattr(zone, 'zone_id', '')}")
+            loop_family = _slope_face_loop_family(zone)
+            status = "error" if any(str(item).startswith("error:") for item in loop_diagnostics) else ("ready" if not loop_diagnostics else "warning")
+            loop_rows.append(
+                IntersectionSlopeFaceLoopRow(
+                    loop_id=f"intersection-slope-face-loop:{_id_token(surface_zones.intersection_id)}:{index:02d}",
+                    intersection_id=str(getattr(surface_zones, "intersection_id", "") or ""),
+                    loop_family=loop_family,
+                    alignment_ref=str((tuple(getattr(zone, "alignment_refs", ()) or ("",))[0] if tuple(getattr(zone, "alignment_refs", ()) or ()) else "")),
+                    leg_ref=str((tuple(getattr(zone, "leg_refs", ()) or ("",))[0] if tuple(getattr(zone, "leg_refs", ()) or ()) else "")),
+                    side=_slope_face_loop_side(zone),
+                    inner_edge_refs=inner_edge_refs,
+                    outer_edge_refs=outer_edge_refs,
+                    tie_edge_refs=tie_edge_refs,
+                    boundary_edge_refs=boundary_edge_refs,
+                    loop_points_xyz=tuple(loop_points),
+                    source_edge_network_refs=tuple(str(value) for value in tuple(getattr(zone, "source_edge_refs", ()) or ())),
+                    source_surface_zone_refs=(str(getattr(zone, "zone_id", "") or ""),),
+                    closed_xy=closed_xy,
+                    self_crossing=self_crossing,
+                    overlaps_intersection_surface=False,
+                    point_count=len(loop_points),
+                    status=status,
+                    diagnostics=tuple(loop_diagnostics),
+                    notes="Slope Face loop candidate from surface-zone contract; no triangulation generated.",
+                )
+            )
+        if not slope_zones:
+            diagnostics.append("warning:slope_face_loop_source_zones_missing")
+        if not loop_rows:
+            diagnostics.append("error:slope_face_loop_rows_missing")
+        status = _topology_status(diagnostics)
+        return IntersectionSlopeFaceLoopResult(
+            schema_version=int(getattr(intersection_model, "schema_version", 1) or 1),
+            project_id=str(getattr(intersection_model, "project_id", "") or "corridorroad-v1"),
+            label=f"Intersection Slope Face Loops - {surface_zones.intersection_id}",
+            loop_result_id=f"intersection-slope-face-loops:{surface_zones.intersection_id or 'main'}",
+            intersection_id=str(getattr(surface_zones, "intersection_id", "") or ""),
+            intersection_kind=str(getattr(surface_zones, "intersection_kind", "") or ""),
+            status=status,
+            loop_count=len(loop_rows),
+            ready_count=len([row for row in loop_rows if row.status == "ready"]),
+            warning_count=len([row for row in loop_rows if row.status == "warning"]),
+            error_count=len([row for row in loop_rows if row.status == "error"]),
+            primary_outside_loop_count=len([row for row in loop_rows if row.loop_family == "primary_outside_loop"]),
+            secondary_outside_loop_count=len([row for row in loop_rows if row.loop_family == "secondary_outside_loop"]),
+            curb_return_loop_count=len([row for row in loop_rows if row.loop_family.startswith("curb_return")]),
+            corner_gap_loop_count=len([row for row in loop_rows if row.loop_family == "corner_gap_loop"]),
+            diagnostic_rows=diagnostics,
+            loop_rows=loop_rows,
+            source_refs=list(getattr(surface_zones, "source_refs", []) or []),
         )
 
     def evaluate_edge_network(
@@ -1326,6 +1476,131 @@ def _surface_priority(design_zone_role: str) -> int:
         "exterior_slope_face": 40,
     }
     return priorities.get(role, 50)
+
+
+def _slope_face_loop_family(zone: IntersectionSurfaceZoneRow) -> str:
+    leg_text = " ".join(
+        [
+            " ".join(str(value or "") for value in tuple(getattr(zone, "leg_refs", ()) or ())),
+            " ".join(str(value or "") for value in tuple(getattr(zone, "alignment_refs", ()) or ())),
+            str(getattr(zone, "zone_id", "") or ""),
+            str(getattr(zone, "notes", "") or ""),
+        ]
+    ).lower()
+    if "secondary" in leg_text or "side" in leg_text:
+        return "secondary_outside_loop"
+    if "primary" in leg_text or "main" in leg_text:
+        return "primary_outside_loop"
+    if tuple(getattr(zone, "tie_edge_refs", ()) or ()):
+        return "curb_return_loop"
+    return "corner_gap_loop"
+
+
+def _slope_face_loop_side(zone: IntersectionSurfaceZoneRow) -> str:
+    text = " ".join(
+        [
+            str(getattr(zone, "zone_id", "") or ""),
+            str(getattr(zone, "notes", "") or ""),
+            " ".join(str(value or "") for value in tuple(getattr(zone, "boundary_edge_refs", ()) or ())),
+        ]
+    ).lower()
+    if "left" in text:
+        return "left"
+    if "right" in text:
+        return "right"
+    return ""
+
+
+def _slope_face_loop_points_from_edges(
+    edge_refs: tuple[str, ...],
+    edge_by_id: dict[str, IntersectionEdgeNetworkRow],
+) -> list[tuple[float, float, float]]:
+    points: list[tuple[float, float, float]] = []
+    for edge_ref in edge_refs:
+        edge = edge_by_id.get(str(edge_ref or ""))
+        if edge is None:
+            continue
+        start = _xyz_tuple(getattr(edge, "start_xyz", (0.0, 0.0, 0.0)))
+        end = _xyz_tuple(getattr(edge, "end_xyz", (0.0, 0.0, 0.0)))
+        if not points or not _same_xy(points[-1], start):
+            points.append(start)
+        if not _same_xy(points[-1], end):
+            points.append(end)
+    return points
+
+
+def _xyz_tuple(value) -> tuple[float, float, float]:
+    try:
+        seq = tuple(value or ())
+    except Exception:
+        seq = ()
+    x = float(seq[0]) if len(seq) > 0 else 0.0
+    y = float(seq[1]) if len(seq) > 1 else 0.0
+    z = float(seq[2]) if len(seq) > 2 else 0.0
+    return (x, y, z)
+
+
+def _same_xy(a: tuple[float, float, float], b: tuple[float, float, float], tolerance: float = 1.0e-6) -> bool:
+    return abs(float(a[0]) - float(b[0])) <= tolerance and abs(float(a[1]) - float(b[1])) <= tolerance
+
+
+def _points_closed_xy(points: list[tuple[float, float, float]], tolerance: float = 1.0e-6) -> bool:
+    if len(points) < 4:
+        return False
+    return _same_xy(points[0], points[-1], tolerance)
+
+
+def _polyline_self_crosses_xy(points: list[tuple[float, float, float]], tolerance: float = 1.0e-9) -> bool:
+    if len(points) < 5:
+        return False
+    segments = list(zip(points[:-1], points[1:]))
+    for i, first in enumerate(segments):
+        for j, second in enumerate(segments):
+            if j <= i + 1:
+                continue
+            if i == 0 and j == len(segments) - 1:
+                continue
+            if _segments_intersect_xy(first[0], first[1], second[0], second[1], tolerance):
+                return True
+    return False
+
+
+def _segments_intersect_xy(a1, a2, b1, b2, tolerance: float = 1.0e-9) -> bool:
+    def orient(p, q, r):
+        return (float(q[0]) - float(p[0])) * (float(r[1]) - float(p[1])) - (float(q[1]) - float(p[1])) * (float(r[0]) - float(p[0]))
+
+    def on_segment(p, q, r):
+        return (
+            min(float(p[0]), float(r[0])) - tolerance <= float(q[0]) <= max(float(p[0]), float(r[0])) + tolerance
+            and min(float(p[1]), float(r[1])) - tolerance <= float(q[1]) <= max(float(p[1]), float(r[1])) + tolerance
+        )
+
+    o1 = orient(a1, a2, b1)
+    o2 = orient(a1, a2, b2)
+    o3 = orient(b1, b2, a1)
+    o4 = orient(b1, b2, a2)
+    if abs(o1) <= tolerance and on_segment(a1, b1, a2):
+        return True
+    if abs(o2) <= tolerance and on_segment(a1, b2, a2):
+        return True
+    if abs(o3) <= tolerance and on_segment(b1, a1, b2):
+        return True
+    if abs(o4) <= tolerance and on_segment(b1, a2, b2):
+        return True
+    return (o1 > tolerance) != (o2 > tolerance) and (o3 > tolerance) != (o4 > tolerance)
+
+
+def _duplicate_text_values(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if text in seen and text not in duplicates:
+            duplicates.append(text)
+        seen.add(text)
+    return tuple(duplicates)
 
 
 def _grading_policy_by_ref(intersection_model: IntersectionModel, policy_ref: str, intersection_id: str):

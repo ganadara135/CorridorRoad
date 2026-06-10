@@ -1,7 +1,7 @@
 # Parametric Road V1 Intersection Manual QA
 
-Date: 2026-06-09
-Status: manual QA procedure; preset QA added, execution pending real FreeCAD document
+Date: 2026-06-10
+Status: manual QA procedure; preset and Slope Face loop QA added, execution pending real FreeCAD document
 
 ## Purpose
 
@@ -51,6 +51,8 @@ The QA passes only when:
 - ordinary corridor surfaces stop at or are clipped by the intersection control area
 - intersection surface zones explain ownership before geometry is trusted
 - no Slope Face is accepted inside the pavement/control-area interior
+- ordinary `Slope Face Surface` and `Intersection Slope Face Surface` can be reviewed separately
+- accepted intersection Slope Face triangles come only from `ready` Slope Face loop rows
 - diagnostics are `ready` or actionable `warning`
 - no Report View traceback appears
 
@@ -83,7 +85,7 @@ Steps:
 15. Confirm Intersection Context rows are visible at primary and secondary control-area stations.
 16. Run `Build Parametric`.
 17. Open the `Intersections` tab in Build Parametric.
-18. Confirm topology, edge-network, surface-zone, grading-context, corridor-clip, and drainage-hint rows are visible or represented in the notes/context rows.
+18. Confirm topology, edge-network, surface-zone, slope-face-loop, grading-context, corridor-clip, and drainage-hint rows are visible or represented in the notes/context rows.
 19. Confirm warnings are reviewable source/contract warnings, not Python exceptions.
 
 Pass criteria:
@@ -156,9 +158,17 @@ Fail conditions:
 22. Show ordinary Slope Face outputs.
 23. Confirm ordinary Slope Face does not fill the control-area pavement interior.
 24. Confirm side-road Slope Face responsibility reaches the curb-return boundary through explicit surface-zone rows.
-25. Open Watertight Solids.
-26. Confirm `Intersection Patch` target remains discoverable.
-27. Confirm planned intersection zone targets appear for pavement, subgrade, Slope Face, and curb-return bodies.
+25. Show only `Intersection Slope Face Surface`.
+26. Confirm it is generated only from ready Slope Face loop rows.
+27. Show only ordinary `Slope Face Surface`.
+28. Confirm its review notes or object properties report loop suppression status, ready loop count, tested triangle count, suppressed triangle count, and kept triangle count.
+29. Double-click representative `slope_face_loop` rows in the `Intersections` tab.
+30. Confirm the selected loop itself is highlighted as one thick yellow closed or ordered boundary line in 3D and no arbitrary mesh repair marker is created.
+31. Confirm warning or error loop rows remain diagnostics and do not create intersection Slope Face triangles.
+32. Confirm `Intersection Slope Face Loops` and `Intersection Slope Face Surface` preview/output objects are under `04_Parametric Model > Intersections`.
+33. Open Watertight Solids.
+34. Confirm `Intersection Patch` target remains discoverable.
+35. Confirm planned intersection zone targets appear for pavement, subgrade, Slope Face, and curb-return bodies.
 
 ## Cross Intersection QA
 
@@ -174,9 +184,12 @@ Fail conditions:
 10. Confirm the `Intersections` tab has no topology `error` rows.
 11. Confirm central pavement zone responsibility is not duplicated by ordinary corridor surface ownership.
 12. Confirm curb-return zones do not overlap each other in a self-crossing way.
-13. Confirm corridor-clip rows exist for both participating alignments.
-14. Confirm drainage-hint rows identify low-point and inlet review candidates.
-15. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
+13. Confirm Slope Face loop rows exist for the participating legs or report actionable warnings.
+14. Confirm ready Slope Face loops can be focused in 3D.
+15. Confirm ordinary `Slope Face Surface` and `Intersection Slope Face Surface` are separate review/output families.
+16. Confirm corridor-clip rows exist for both participating alignments.
+17. Confirm drainage-hint rows identify low-point and inlet review candidates.
+18. Open Watertight Solids and confirm planned intersection zone target rows are discoverable.
 
 ## Roundabout Preset QA
 
@@ -234,8 +247,11 @@ Fail conditions:
 10. Build Parametric.
 11. Confirm surface-zone rows remain non-self-crossing.
 12. Confirm Slope Face zone rows have explicit daylight, pavement, and curb-return boundary refs.
-13. Confirm Cross Section Viewer reports the correct active leg and control area at a focused station.
-14. Confirm Watertight Solids reports planned intersection zone targets.
+13. Confirm Slope Face loop rows do not silently fall back to global-axis rectangular assumptions.
+14. Confirm ready Slope Face loops can generate separate `Intersection Slope Face Surface` output.
+15. Confirm warning/error Slope Face loops remain diagnostics only.
+16. Confirm Cross Section Viewer reports the correct active leg and control area at a focused station.
+17. Confirm Watertight Solids reports planned intersection zone targets.
 
 ## Diagnostic Review
 
@@ -246,6 +262,12 @@ For each starter type, record:
 - number of control areas
 - edge-network row count
 - surface-zone row count
+- Slope Face loop row count
+- Slope Face ready loop count
+- Slope Face warning loop count
+- Slope Face error loop count
+- ordinary Slope Face tested/suppressed/kept triangle counts
+- intersection Slope Face triangle count
 - corridor-clip row count
 - drainage-hint row count
 - grading-context row count
@@ -278,6 +300,24 @@ If ordinary Slope Face crosses the junction:
 1. Check corridor-clip rows.
 2. Check control-area station ranges.
 3. Check control Region refs.
+4. Check `slope_face_loop` rows.
+5. Check ordinary Slope Face loop suppression properties.
+
+If Intersection Slope Face is missing:
+
+1. Check `slope_face_loop` rows in the Build Parametric `Intersections` tab.
+2. Confirm at least one loop status is `ready`.
+3. Double-click the loop row and confirm the loop boundary is closed in 3D.
+4. Check unresolved, duplicate, open-loop, self-crossing, or missing-source diagnostics.
+5. Confirm the preview objects are under `04_Parametric Model > Intersections`.
+
+If Intersection Slope Face appears broken:
+
+1. Hide ordinary `Slope Face Surface`.
+2. Show only `Intersection Slope Face Surface`.
+3. Confirm warning/error loops did not generate mesh triangles.
+4. Confirm the problem is not caused by a hidden ordinary Slope Face object.
+5. Record the loop id, loop family, source edge refs, and diagnostics.
 
 If Watertight intersection zone targets are missing:
 

@@ -20,6 +20,7 @@ from .intersection_tie_in_edge import IntersectionTieInEdgeResult, IntersectionT
 from .intersection_edge_network import IntersectionEdgeNetworkResult, IntersectionEdgeNetworkRow
 from .intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_slope_face_boundary import IntersectionSlopeFaceBoundaryResult, IntersectionSlopeFaceBoundaryRow
+from .intersection_slope_face_loop import IntersectionSlopeFaceLoopResult, IntersectionSlopeFaceLoopRow
 from .intersection_surface_zone import IntersectionSurfaceZoneResult, IntersectionSurfaceZoneRow
 from .intersection_topology import (
     IntersectionTopologyControlAreaRow,
@@ -62,6 +63,8 @@ __all__ = [
     "IntersectionGradingContextRow",
     "IntersectionSlopeFaceBoundaryResult",
     "IntersectionSlopeFaceBoundaryRow",
+    "IntersectionSlopeFaceLoopResult",
+    "IntersectionSlopeFaceLoopRow",
     "IntersectionSurfaceZoneResult",
     "IntersectionSurfaceZoneRow",
     "IntersectionTopologyControlAreaRow",

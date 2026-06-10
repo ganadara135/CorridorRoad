@@ -888,13 +888,13 @@ Slope Face clipping rule:
 - The normal Slope Face builder must create the side-road-to-curb-return daylight surface from those generated section rows.
 - Intersection Surface preview must also use the build-time generated `intersection_tie_in` Applied Sections so the patch boundary, curb-return blend, and side-road stem remain aligned to the same section context.
 - If an intersection tie-in candidate has only one Applied Section, use that section frame tangent as the temporary tie-in edge direction instead of falling back to global X/Y axes.
-- Where the side-road Applied Section exposes a valid slope-face edge, add an `intersection_slope_tie_in` strip from that side-road edge to the nearest curb-return slope-band radial edge.
+- Side-road corner Slope Face boundary strips are deferred; do not infer them from nearest curb-return arc sample points.
 - The `intersection_slope_tie_in` strip is a source-traceable Slope Face surface, not a free cap or arbitrary bridge.
 - If the existing side-road Slope Face boundary stops short of the side-road Applied Section edge, add `intersection_side_slope_extension` strips from nearby existing side-road Slope Face boundary edges to that Applied Section edge.
 - The side extension is limited to the nearest existing Slope Face boundary edges and must not connect to unrelated main-road or curb-return generated edges.
 - Generated `intersection_slope_tie_in` and `intersection_side_slope_extension` triangles must not be appended when they intrude into representative pavement strip polygons.
 - Intersection Surface preview displays `curb_return_blend` and `curb_return_core` faces so the curb-return half-round patch remains visible during intersection review.
-- Curb-return Slope Face continuity is reviewed on the Daylight/Slope Face surface. The build should expose generated section rows through section diagnostics and curb-return slope-band counts, not endpoint cap or bridge triangle counts.
+- Intersection corner Slope Face continuity is reviewed on the Daylight/Slope Face surface. The build should expose generated section rows through section diagnostics and corner boundary strip counts, not full curb-return slope-band counts.
 - Build Parametric should expose `IntersectionExclusionControlSectionClippedTriangleCount` so this source-context suppression is visible during QA.
 - The expected Slope Face role is exterior terrain/daylight tie-in only, not filling the main-road/side-road junction interior.
 

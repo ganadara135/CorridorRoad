@@ -1344,6 +1344,8 @@ def _is_v1_intersection_build_parametric_output(child):
         "v1_corridor_intersection_tie_in_edge_preview",
         "v1_corridor_intersection_boundary_segment_preview",
         "v1_corridor_intersection_exclusion_zone_preview",
+        "v1_corridor_intersection_slope_face_loop_preview",
+        "v1_corridor_intersection_slope_face_surface_preview",
         "v1_corridor_intersection_slope_face_boundary_preview",
         "v1_intersection_contract_review_highlight",
     }:
@@ -1361,6 +1363,8 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
             "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceLoopPreview",
+            "V1CorridorIntersectionSlopeFaceSurfacePreview",
             "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         ),
         name_prefixes=(
@@ -1369,6 +1373,8 @@ def _is_v1_intersection_build_parametric_output(child):
             "V1CorridorIntersectionTieInEdgePreview",
             "V1CorridorIntersectionBoundarySegmentPreview",
             "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceLoopPreview",
+            "V1CorridorIntersectionSlopeFaceSurfacePreview",
             "V1CorridorIntersectionSlopeFaceBoundaryPreview",
         ),
     ):
@@ -1379,6 +1385,8 @@ def _is_v1_intersection_build_parametric_output(child):
         "Intersection Tie-in Edges",
         "Intersection Boundary Segments",
         "Intersection Exclusion Zone",
+        "Intersection Slope Face Loops",
+        "Intersection Slope Face Surface",
         "Intersection Slope Face Boundary",
     }:
         return True

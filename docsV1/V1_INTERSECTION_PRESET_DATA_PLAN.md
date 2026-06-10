@@ -88,7 +88,7 @@ Expected outputs:
 - primary pavement strip
 - side-road pavement strip
 - two curb-return edge arcs
-- two curb-return slope-face bands
+- intersection corner slope-face boundary strips deferred
 - central blended intersection surface
 - low-point candidate near the curb-return or gutter edge
 
@@ -136,7 +136,7 @@ Expected outputs:
 - primary through pavement strip
 - secondary through pavement strip
 - four curb-return edge arcs
-- four curb-return slope-face bands
+- intersection corner slope-face boundary strips deferred
 - central blended intersection surface
 - topology diagnostics for all four corners
 

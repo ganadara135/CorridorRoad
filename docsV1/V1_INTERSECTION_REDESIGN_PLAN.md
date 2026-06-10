@@ -363,6 +363,38 @@ The ordinary `Corridor Slope Face Surface` remains responsible outside the inter
 
 The `Intersection Surface` remains responsible inside the intersection footprint.
 
+### 5.6 Deferred: Intersection Corner Slope Face Boundary
+
+The old curb-return-wide Slope Face band strategy is removed from the active build path.
+
+Build Parametric should not create a full Slope Face band around the entire curb-return arc.
+
+The attempted corner-specific Slope Face boundary rows are also removed from the active build path.
+
+The removed approach tried to use:
+
+- side-road Applied Section start/end slope edge points
+- one nearest curb-return arc sample point for each start/end slope edge point
+- the intersection id
+- the secondary alignment ref
+- side context
+
+The approach is deferred because robust point selection is harder than expected with the current TIN-first intersection output.
+
+Do not reintroduce this as a quick helper that guesses nearest arc points.
+
+Future work should solve this at the topology/control-edge level before surface generation.
+
+The deferred target remains:
+
+```text
+explicit intersection control edges
+  -> validated boundary loops
+  -> Slope Face Surface generation from those loops
+```
+
+For now, Build Parametric keeps only the stable primary outside Slope Face boundary strip support.
+
 ## 6. Vertical And Crossfall Strategy
 
 Intersection vertical control should be separate from ordinary Superelevation.
@@ -518,6 +550,7 @@ Double-click behavior:
 | 12 | Done | Drainage hints | Generates low-point and inlet recommendation rows from surface zones. |
 | 13 | Done | Watertight target handoff | Discovers planned intersection pavement/subgrade/slope/curb-return targets from surface-zone contracts. |
 | 14 | Ready | Manual QA | T, Cross, and Y starter intersection manual QA procedure is documented; real-document execution remains manual. |
+| 15 | Ready | Slope Face loop stabilization | Source-traceable intersection Slope Face loop contracts and reviewed TIN output are implemented; real-document visual QA remains manual. |
 
 ## 11. Migration Strategy
 
@@ -716,5 +749,268 @@ Phase 14 readiness note:
 - The procedure checks source creation, multi-alignment 3D Centerline, Applied Sections, Build Parametric `Intersections` contracts, Cross Section Viewer context, drainage hints, and Watertight Solid target handoff.
 - Phase 14 is marked `Ready`, not `Done`, because actual visual QA must be executed in FreeCAD on a real document.
 - Passing manual QA must not rely on manually deleting or hiding generated geometry.
+
+## 15. Intersection Slope Face Stabilization Plan
+
+### 15.1 Purpose
+
+The current Slope Face issue is not a display-only problem.
+
+It comes from trying to repair generated TIN triangles after ordinary corridor surfaces and intersection patch surfaces already exist.
+
+The next implementation should stop adding ad-hoc corner strips, cap faces, or guessed arc-to-section bridges.
+
+Slope Face near an intersection should be generated from explicit intersection control edges and validated boundary loops.
+
+### 15.2 Current Problem
+
+Observed issues:
+
+- ordinary `Corridor Slope Face Surface` can remain inside or across the intersection control area
+- side-road Slope Face can stop before the curb-return or intersection edge
+- main-road Slope Face can leave holes near the intersection boundary
+- generated repair strips can pick wrong curb-return points
+- generated repair strips can overlap or protrude through the `Intersection Surface`
+- nearest-point matching is unreliable around curb-return arcs
+
+### 15.3 Core Rule
+
+Do not infer intersection Slope Face geometry from nearest mesh points.
+
+Do not create new geometry by connecting arbitrary generated TIN vertices.
+
+Use this order instead:
+
+```text
+Intersection source intent
+  -> topology result
+  -> edge network result
+  -> surface zone result
+  -> Slope Face boundary loop result
+  -> Slope Face TIN output
+  -> review/solid handoff
+```
+
+### 15.4 Boundary Loop Strategy
+
+Create a new `IntersectionSlopeFaceLoopResult`.
+
+Each loop row should describe one closed Slope Face responsibility area.
+
+Minimum loop families:
+
+- `primary_outside_loop`
+- `secondary_outside_loop`
+- `curb_return_left_loop`
+- `curb_return_right_loop`
+- `corner_gap_loop`
+
+Each row should carry:
+
+- `loop_id`
+- `intersection_id`
+- `alignment_ref`
+- `leg_ref`
+- `side`
+- `loop_family`
+- `inner_edge_refs`
+- `outer_edge_refs`
+- `tie_edge_refs`
+- ordered `loop_points_xyz`
+- source Applied Section refs
+- source edge-network refs
+- status
+- diagnostics
+
+The loop is valid only when:
+
+- it has at least four ordered points
+- it is closed in XY within tolerance
+- it does not self-cross
+- it does not overlap the `Intersection Surface` interior
+- it has source refs back to accepted topology or Applied Sections
+
+### 15.5 Applied Section Role
+
+Applied Sections remain important, but they should not be used as free-floating repair anchors.
+
+They should provide:
+
+- pavement edge points
+- daylight hinge points
+- slope edge points
+- station/frame context
+- active intersection context
+
+Build Parametric may add generated intersection tie-in Applied Sections, but only when they are represented as source-traceable section rows before Slope Face generation.
+
+The Slope Face builder should consume these rows through the same section contract used by ordinary corridor surfaces.
+
+### 15.6 Surface Generation Strategy
+
+The next Slope Face generation path should be:
+
+1. Evaluate intersection topology and edge network.
+2. Evaluate surface zones.
+3. Build Slope Face loops from accepted surface-zone rows.
+4. Triangulate each loop independently.
+5. Suppress ordinary corridor Slope Face inside accepted intersection loops.
+6. Keep intersection Slope Face output as a separate reviewable family before final merge.
+
+Do not append loose triangles after TIN construction.
+
+Do not use curb-return arc bands as a standalone repair surface.
+
+Do not use nearest arc sample matching as a production rule.
+
+### 15.7 UI And Review Plan
+
+Build Parametric should expose:
+
+- `Intersection Slope Face Loops` review row
+- loop count
+- ready/warning/error count
+- loop family summary
+- self-crossing diagnostics
+- overlap diagnostics
+- source edge refs
+
+The `Intersections` tab should allow double-click focus for:
+
+- topology row
+- edge network row
+- surface zone row
+- Slope Face loop row
+- Slope Face output row
+
+The 3D view should use distinct colors:
+
+- edge network: green
+- surface zone boundary: magenta
+- Slope Face loop boundary: white
+- loop diagnostics: red
+- overlap/cut line diagnostics: yellow
+
+### 15.8 Implementation Order
+
+| Step | Status | Work Item | Acceptance |
+| --- | --- | --- | --- |
+| 15.1 | Done | Freeze ad-hoc corner repair path | No active code creates corner Slope Face strips from nearest curb-return arc points. |
+| 15.2 | Done | Add `IntersectionSlopeFaceLoopResult` contract | Loop rows can be created and validated without generating mesh. |
+| 15.3 | Done | Build loop evaluator from surface zones | Primary, secondary, curb-return, and gap loop candidates are listed with source edge refs. |
+| 15.4 | Done | Add loop preview | Build Parametric can display and focus each loop boundary in 3D. |
+| 15.5 | Done | Add loop diagnostics | Open, self-crossing, overlap, and missing-source loops report actionable diagnostics. |
+| 15.6 | Done | Triangulate ready loops only | Ready loop rows generate separate intersection Slope Face TIN triangles. |
+| 15.7 | Done | Suppress ordinary Slope Face by loop ownership | Ordinary Slope Face is removed only where accepted intersection loops own the area. |
+| 15.8 | Done | Merge review output | Build Parametric shows ordinary Slope Face and intersection Slope Face as separate review families before final merge. |
+| 15.9 | Done | Manual QA update | T, Cross, and Y QA include Slope Face loop visibility and diagnostics. |
+
+### 15.9 Acceptance Criteria
+
+For the T-intersection starter:
+
+- no ordinary Slope Face exists inside the `Intersection Surface`
+- no Slope Face triangle protrudes through the intersection pavement surface
+- side-road Slope Face reaches the accepted intersection tie-in boundary
+- main-road Slope Face stops and resumes at accepted loop boundaries
+- curb-return exterior Slope Face is generated from a validated loop, not a guessed band
+- all Slope Face loop rows have source edge refs and diagnostics
+- failed loops remain visible as diagnostics instead of generating broken mesh
+
+Manual QA must also verify:
+
+- `Guided Review` step `4. Slope Face Issues` reports both ordinary and intersection-owned Slope Face output.
+- `Results` includes separate rows for `Slope Face Surface` and `Intersection Slope Face Surface`.
+- The `Intersections` contract table includes `slope_face_loop` rows.
+- Double-clicking a `slope_face_loop` row highlights the selected loop itself as one thick yellow closed or ordered boundary line, not arbitrary mesh vertices.
+- Showing only `Intersection Slope Face Surface` displays only geometry generated from `ready` loop rows.
+- Showing only ordinary `Slope Face Surface` confirms ordinary triangles are suppressed only where accepted intersection loops own the area.
+- Ordinary Slope Face preview properties expose loop suppression status, ready loop count, tested triangle count, suppressed triangle count, and kept triangle count.
+- Intersection Slope Face preview objects are routed under `04_Parametric Model > Intersections`.
+- Warning or error loop rows remain visible as diagnostics and do not create `Intersection Slope Face Surface` triangles.
+
+Fail conditions:
+
+- ordinary Slope Face triangles remain inside an accepted loop-owned area
+- intersection-owned Slope Face mesh is generated from a warning or error loop
+- `slope_face_loop` rows cannot be focused in 3D
+- loop preview or intersection Slope Face preview objects appear at the tree root
+- empty ready-loop input causes a traceback
+
+### 15.10 Non-goals
+
+- complete lane-based intersection design
+- traffic island design
+- final watertight solid construction
+- automatic hydraulic design
+- arbitrary mesh boolean cleanup
+- hidden repair triangles with no source refs
+
+### 15.11 Phase 15.1 Completion Note
+
+- Removed the attempted corner-specific Slope Face boundary row generator from the active build path.
+- Removed nearest-arc and arc-intersection helper code used by the deferred corner repair approach.
+- Removed unused gap/corner closure helper code that could append ad-hoc repair triangles after TIN construction.
+- Removed obsolete gap/corner closure preview properties from Slope Face preview output.
+- The remaining Slope Face stabilization work must proceed through `IntersectionSlopeFaceLoopResult`, not mesh repair helpers.
+
+### 15.12 Phase 15.2 Completion Note
+
+- Added `IntersectionSlopeFaceLoopRow` as the row-level contract for one closed Slope Face responsibility loop.
+- Added `IntersectionSlopeFaceLoopResult` as the result-level handoff before triangulation.
+- Loop rows carry loop family, source edge refs, source Applied Section refs, ordered loop points, closure/self-crossing/overlap flags, status, diagnostics, and notes.
+- The result contract tracks ready, warning, error, primary outside, secondary outside, curb-return, and corner-gap loop counts.
+- This phase does not generate mesh geometry or alter Build Parametric surface output.
+
+### 15.13 Phase 15.3 Completion Note
+
+- Added `IntersectionEvaluationService.evaluate_slope_face_loops()`.
+- The evaluator consumes `IntersectionSurfaceZoneResult` and creates one loop candidate per slope-face surface zone.
+- Loop candidates carry inner, outer, tie, boundary, source edge-network, and source surface-zone refs.
+- Missing inner, outer, or tie edge refs are reported as warnings instead of generating guessed geometry.
+- Loop family classification is first-slice and source-ref based; detailed point ordering and loop validation remain Phase 15.4 and Phase 15.5 work.
+- This phase does not generate mesh geometry or alter Build Parametric surface output.
+
+### 15.14 Phase 15.4 Completion Note
+
+- Build Parametric now creates `V1CorridorIntersectionSlopeFaceLoopPreview` from `IntersectionSlopeFaceLoopResult` and the evaluated edge network.
+- The preview is linework only; it exposes candidate loop references before any new Slope Face mesh generation is attempted.
+- Intersection contract review includes `slope_face_loop` rows, and double-click focus highlights the related loop boundary edges in 3D.
+- The preview is routed under `04_Parametric Model > Intersections` with the other intersection review/output objects.
+
+### 15.15 Phase 15.5 Completion Note
+
+- `evaluate_slope_face_loops()` now consumes the evaluated edge network so loop rows can derive candidate point sequences from source edge refs.
+- Loop rows now report unresolved edge refs, duplicate edge refs, too-few points, open XY loops, self-crossing risk, and missing source-edge refs before mesh generation.
+- Loop status is promoted to `ready`, `warning`, or `error` from diagnostics instead of remaining a generic candidate.
+- The loop preview object exposes open-loop, self-crossing, overlap, and point-count summary properties for review.
+
+### 15.16 Phase 15.6 Completion Note
+
+- Build Parametric now creates a separate `V1CorridorIntersectionSlopeFaceSurfacePreview` from `ready` Slope Face loop rows only.
+- Non-ready loop rows are skipped; they remain review diagnostics and do not generate hidden repair triangles.
+- The first-slice triangulation is a simple loop fan TIN for review handoff, not the final production Slope Face algorithm.
+- The generated preview is routed under `04_Parametric Model > Intersections` and carries source loop refs, ready/skipped loop counts, and triangle count.
+
+### 15.17 Phase 15.7 Completion Note
+
+- Ordinary `Corridor Slope Face Surface` now checks the ready-loop `Intersection Slope Face Surface` footprint before final preview output.
+- Daylight triangles overlapping accepted intersection Slope Face loop ownership are suppressed with quality metadata.
+- If no ready loops exist, suppression is skipped and recorded as such; warning/error loops still do not remove ordinary geometry.
+- The ordinary Slope Face preview exposes ready loop count, tested/suppressed/kept triangle counts, and reference surface id.
+
+### 15.18 Phase 15.8 Completion Note
+
+- Build Parametric review now lists `Intersection Slope Face Surface` separately from ordinary `Slope Face Surface`.
+- Guided Review `4. Slope Face Issues` now considers both ordinary Slope Face and intersection-owned Slope Face output.
+- Ordinary Slope Face review notes include loop-ownership suppression counts when available.
+- Intersection Slope Face review notes expose ready loop count, skipped loop count, and source loop count so users can distinguish accepted loop output from diagnostics.
+
+### 15.19 Phase 15.9 Completion Note
+
+- Updated the manual QA expectation for T, Cross, and Y intersections to include Slope Face loop review.
+- QA now requires separate review of ordinary `Slope Face Surface` and `Intersection Slope Face Surface`.
+- QA now checks loop focus, loop diagnostics, ready-loop-only triangulation, ordinary Slope Face suppression metadata, and project-tree routing.
+- Phase 15 is implementation-complete for the current loop-owned Slope Face review path, but final pass/fail still depends on manual FreeCAD visual QA on real T, Cross, and Y documents.
 
 This matches the direction used by mature road design tools: intersections are controlled by dedicated junction intent, road arms, edge geometry, targets, and structured zones before final surfaces are generated.

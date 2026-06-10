@@ -197,7 +197,11 @@ Curb-return and Applied Section tie-in faces should be generated outside that fo
 
 Build Parametric also uses both side-road and primary-through Applied Sections as slope-face tie-in edges around curb-return bands.
 
-Primary-through Applied Sections use a wider tie-in search window so the opposite main-road side can fill against the curb-return Slope Face Surface.
+Primary-through Applied Sections use a distance-based boundary extension so the opposite main-road side can fill against the intersection Slope Face boundary.
+
+Side-road corner Slope Face boundary strips are deferred.
+
+Nearest curb-return arc sample matching was removed because it was not reliable enough for production geometry.
 
 The next Slope Face rule is boundary-first.
 
