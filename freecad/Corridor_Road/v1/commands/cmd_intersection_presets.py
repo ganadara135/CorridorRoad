@@ -157,7 +157,7 @@ class V1IntersectionPresetsTaskPanel:
 
         intro = QtWidgets.QLabel(
             "Create editable source objects for intersection starter design. "
-            "This panel does not build final corridor geometry."
+            "Create From Preset also prepares the Assembly / Subassembly source used by Regions and Build Sections."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -340,11 +340,11 @@ class V1IntersectionPresetsTaskPanel:
                 **self._selected_options(),
             )
             self._last_created_sources = created
-            self._update_status("Preset source creation complete.")
+            self._update_status("Preset source creation complete, including Assembly / Subassembly source.")
             _show_message(
                 self.form,
                 "Intersection Presets",
-                "Preset source creation complete.\n\nNext: open Intersections, review/apply the source model, then Build Sections.",
+                "Preset source creation complete.\n\nCreated sources include Assembly / Subassembly intent.\nNext: review/apply the source model, then Build Sections.",
             )
         except Exception as exc:
             self._update_status(f"Preset source creation failed: {exc}")
@@ -498,6 +498,7 @@ class V1IntersectionPresetsTaskPanel:
                 "- Build Parametric: generate and review corridor/intersection outputs",
                 "",
                 "Note:",
+                "- Create From Preset creates editable Alignment/Profile/Station/Region and Assembly/Subassembly sources.",
                 "- Existing Alignments mode links user-created Alignment and Region sources in this panel.",
                 "- The existing Intersections panel remains available for source-model review.",
                 "- Final surface-zone and roundabout geometry expansion remain planned follow-up phases.",

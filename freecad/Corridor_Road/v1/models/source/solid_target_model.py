@@ -28,6 +28,7 @@ SOLID_TARGET_SCOPE_KINDS = {
     "whole_corridor",
     "region",
     "station_range",
+    "assembly_subassembly",
     "assembly_component",
     "structure",
     "drainage",
@@ -65,6 +66,7 @@ class SolidTargetRow:
     region_ref: str = ""
     assembly_ref: str = ""
     component_ref: str = ""
+    subassembly_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
     flow_route_ref: str = ""

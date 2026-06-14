@@ -305,6 +305,24 @@ ASSEMBLY_PRESETS = {
     },
 }
 
+
+def _ensure_subassembly_preset_rows() -> None:
+    """Populate active Subassembly preset rows from shared Assembly preset data."""
+
+    for preset in ASSEMBLY_PRESETS.values():
+        if list(preset.get("subassemblies", []) or []):
+            continue
+        rows = []
+        for row in list(preset.get("components", []) or []):
+            values = list(row)
+            if values:
+                values[0] = str(values[0]).replace("component:", "subassembly:")
+            rows.append(tuple(values))
+        preset["subassemblies"] = rows
+
+
+_ensure_subassembly_preset_rows()
+
 NEW_ASSEMBLY_SOURCE_KEY = "__new_assembly_create__"
 NEW_ASSEMBLY_SOURCE_LABEL = "New Assembly Create"
 
@@ -598,12 +616,12 @@ class V1AssemblyEditorTaskPanel:
 
     def _build_ui(self):
         widget = QtWidgets.QWidget()
-        widget.setWindowTitle("CorridorRoad v1 - Assembly")
+        widget.setWindowTitle("Parametric Road - Assembly (Legacy)")
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        title = QtWidgets.QLabel("Assembly")
+        title = QtWidgets.QLabel("Assembly (Legacy)")
         font = title.font()
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
@@ -611,13 +629,13 @@ class V1AssemblyEditorTaskPanel:
         layout.addWidget(title)
 
         note = QtWidgets.QLabel(
-            "Define reusable section components. Apply stores source rows only; it does not build corridor geometry."
+            "Legacy component-based editor for compatibility review. Prefer Assembly / Subassembly for new road-section authoring."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
         source_row = QtWidgets.QHBoxLayout()
-        source_row.addWidget(QtWidgets.QLabel("Assembly Source:"))
+        source_row.addWidget(QtWidgets.QLabel("Legacy Assembly Source:"))
         self._source_combo = QtWidgets.QComboBox()
         source_row.addWidget(self._source_combo, 1)
         layout.addLayout(source_row)
@@ -666,7 +684,18 @@ class V1AssemblyEditorTaskPanel:
 
         self._table = QtWidgets.QTableWidget(0, 10)
         self._table.setHorizontalHeaderLabels(
-            ["Component ID", "Kind", "Side", "Width", "Slope", "Thickness", "Material", "Enabled", "Parameters", "Notes"]
+            [
+                "Compatibility ID",
+                "Kind",
+                "Side",
+                "Width",
+                "Slope",
+                "Thickness",
+                "Material",
+                "Enabled",
+                "Parameters",
+                "Notes",
+            ]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -688,7 +717,7 @@ class V1AssemblyEditorTaskPanel:
         layout.addWidget(self._table, 1)
 
         edit_row = QtWidgets.QHBoxLayout()
-        add_button = QtWidgets.QPushButton("Add Component")
+        add_button = QtWidgets.QPushButton("Add Compatibility Row")
         add_button.clicked.connect(self._add_component_row)
         edit_row.addWidget(add_button)
         delete_button = QtWidgets.QPushButton("Delete Selected")
@@ -874,7 +903,7 @@ class V1AssemblyEditorTaskPanel:
             self._update_editing_summary()
             return
         self._replace_model(model)
-        self._set_status(f"Loaded {sum(len(t.component_rows) for t in model.template_rows)} component row(s).")
+        self._set_status(f"Loaded {sum(len(t.component_rows) for t in model.template_rows)} compatibility component row(s).")
 
     def _refresh_assembly_sources(self, *_, select_obj=None) -> None:
         if not hasattr(self, "_source_combo"):
@@ -1024,7 +1053,7 @@ class V1AssemblyEditorTaskPanel:
     def _add_component_row(self) -> None:
         self._append_row()
         self._mark_dirty()
-        self._set_status("Added an Assembly component row.")
+        self._set_status("Added a legacy compatibility component row.")
 
     def _delete_selected_rows(self) -> None:
         rows = sorted({item.row() for item in list(self._table.selectedItems() or [])}, reverse=True)
@@ -1035,7 +1064,7 @@ class V1AssemblyEditorTaskPanel:
         self._locked_component_row = -1
         self._refresh_cell_widget_row_properties()
         self._mark_dirty()
-        self._set_status(f"Deleted {len(rows)} component row(s).")
+        self._set_status(f"Deleted {len(rows)} compatibility component row(s).")
 
     def _prepare_cell_widget(self, widget, row_index: int, column_index: int) -> None:
         try:
@@ -1141,10 +1170,10 @@ class V1AssemblyEditorTaskPanel:
     def _apply_ditch_parameters_to_selection(self) -> None:
         row_index = self._selected_row_index()
         if row_index < 0:
-            self._set_status("Select a ditch component row before applying ditch parameters.")
+            self._set_status("Select a ditch compatibility row before applying ditch parameters.")
             return
         if _item_text(self._table, row_index, 1) != "ditch":
-            self._set_status("Selected component is not a ditch. Change Kind to ditch first.")
+            self._set_status("Selected compatibility row is not a ditch. Change Kind to ditch first.")
             return
         existing = _split_parameters(_item_text(self._table, row_index, 8))
         params = _merge_ditch_parameters(existing, self._ditch_editor_parameters())
@@ -1273,10 +1302,10 @@ class V1AssemblyEditorTaskPanel:
     def _apply_bench_parameters_to_selection(self) -> None:
         row_index = self._selected_row_index()
         if row_index < 0:
-            self._set_status("Select a side_slope component row before applying bench parameters.")
+            self._set_status("Select a side_slope compatibility row before applying bench parameters.")
             return
         if _item_text(self._table, row_index, 1) != "side_slope":
-            self._set_status("Selected component is not a side_slope. Change Kind to side_slope first.")
+            self._set_status("Selected compatibility row is not a side_slope. Change Kind to side_slope first.")
             return
         existing = _split_parameters(_item_text(self._table, row_index, 8))
         params = _merge_bench_parameters(existing, self._bench_editor_parameters())
@@ -1419,7 +1448,7 @@ class V1AssemblyEditorTaskPanel:
             _show_message(
                 self.form,
                 "Assembly",
-                f"Assembly has been applied.\nAction: {action}\nComponents: {len(model.template_rows[0].component_rows)}",
+                f"Assembly has been applied.\nAction: {action}\nCompatibility rows: {len(model.template_rows[0].component_rows)}",
             )
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -1523,8 +1552,8 @@ class CmdV1AssemblyEditor:
     def GetResources(self):
         return {
             "Pixmap": icon_path("typical_section.svg"),
-            "MenuText": "Assembly",
-            "ToolTip": "Define v1 assembly source components for region references",
+            "MenuText": "Assembly (Legacy)",
+            "ToolTip": "Legacy component-based Assembly editor; prefer Assembly / Subassembly for new work",
         }
 
     def IsActive(self):

@@ -24,6 +24,7 @@ class WatertightSimulationQaSolidInput:
     bound_box: tuple[float, float, float, float, float, float] | None = None
     # Segment order: X1, Y1, X2, Y2. Used for first-slice contact edge diagnostics.
     edge_xy_segments: list[tuple[float, float, float, float]] = field(default_factory=list)
+    subassembly_refs: list[str] = field(default_factory=list)
     structure_refs: list[str] = field(default_factory=list)
     flow_route_refs: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
@@ -116,7 +117,10 @@ class WatertightSimulationQaService:
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or "corridorroad-v1"),
             simulation_qa_output_id=str(getattr(request, "simulation_qa_output_id", "") or "simulation-qa:watertight-solids"),
-            source_refs=_unique_refs(getattr(request, "output_refs", []) or []),
+            source_refs=_simulation_source_refs(
+                getattr(request, "output_refs", []) or [],
+                inputs,
+            ),
             output_count=len(inputs),
             road_body_status="ready" if road_ready else "missing",
             terrain_status="ready" if terrain_ready else "missing",
@@ -159,6 +163,16 @@ def _diagnostics(*, missing_contexts: list[str], invalid_count: int, zero_volume
     if zero_volume_count > 0:
         rows.append(_diagnostic("error", "zero_volume_solid_outputs", f"{zero_volume_count} Watertight Solid output object(s) have zero volume."))
     return rows
+
+
+def _simulation_source_refs(output_refs: object, inputs: list[WatertightSimulationQaSolidInput]) -> list[str]:
+    refs: list[str] = [str(ref or "") for ref in list(output_refs or [])]
+    for row in list(inputs or []):
+        refs.extend(str(ref or "") for ref in list(getattr(row, "subassembly_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "structure_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "flow_route_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "source_refs", []) or []))
+    return _unique_refs(refs)
 
 
 def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list[SimulationQaDiagnosticRow]:

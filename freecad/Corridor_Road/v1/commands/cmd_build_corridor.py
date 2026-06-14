@@ -502,9 +502,11 @@ def corridor_build_review_rows(document=None) -> list[dict[str, object]]:
     for role, title, object_name in CORRIDOR_BUILD_REVIEW_OBJECTS:
         obj = doc.getObject(object_name) if doc is not None else None
         diagnostic = _corridor_build_preview_diagnostic_object(doc, role)
+        row = _corridor_build_review_row(role, title, object_name, obj, diagnostic=diagnostic)
+        row = _with_subassembly_surface_role_review_note(row, doc)
         rows.append(
             _with_applied_section_review_summary(
-                _corridor_build_review_row(role, title, object_name, obj, diagnostic=diagnostic),
+                row,
                 applied_summary,
             )
         )
@@ -518,6 +520,64 @@ def corridor_build_review_outcome_matrix() -> list[dict[str, str]]:
         {"status": str(status), "meaning": str(meaning)}
         for status, meaning in CORRIDOR_BUILD_REVIEW_OUTCOME_MATRIX
     ]
+
+
+def _with_subassembly_surface_role_review_note(row: dict[str, object], document) -> dict[str, object]:
+    surface_role = _review_surface_role_for_result_role(str(row.get("role", "") or ""))
+    if not surface_role:
+        return row
+    note = _subassembly_surface_role_review_note(document, surface_role=surface_role)
+    if not note:
+        return row
+    output = dict(row)
+    existing = str(output.get("notes", "") or "").strip()
+    output["notes"] = f"{existing} | {note}" if existing else note
+    return output
+
+
+def _review_surface_role_for_result_role(role: str) -> str:
+    if role == "design":
+        return "design_surface"
+    if role == "subgrade":
+        return "subgrade_surface"
+    if role == "daylight":
+        return "slope_face_surface"
+    if role == "drainage":
+        return "drainage_surface"
+    return ""
+
+
+def _subassembly_surface_role_review_note(document, *, surface_role: str) -> str:
+    applied = to_applied_section_set(find_v1_applied_section_set(document))
+    if applied is None:
+        return ""
+    sections = list(getattr(applied, "sections", []) or [])
+    if not sections:
+        return ""
+    linked_section_count = 0
+    link_count = 0
+    subassembly_refs: list[str] = []
+    role = str(surface_role or "").strip()
+    for section in sections:
+        section_has_role = False
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            if str(getattr(link, "surface_role", "") or "").strip() != role:
+                continue
+            section_has_role = True
+            link_count += 1
+            subassembly_refs.append(str(getattr(link, "subassembly_ref", "") or ""))
+        if section_has_role:
+            linked_section_count += 1
+    if not link_count:
+        return f"subassembly role={role}: not linked; legacy point-role fallback"
+    refs = _unique_refs(subassembly_refs)
+    ref_note = f"; refs={','.join(_display_source_ref(ref) for ref in refs[:3])}" if refs else ""
+    if len(refs) > 3:
+        ref_note += f"; +{len(refs) - 3} more"
+    coverage = f"subassembly role={role}: linked sections={linked_section_count}/{len(sections)}, links={link_count}{ref_note}"
+    if linked_section_count < len(sections):
+        coverage += "; fallback used for unlinked sections"
+    return coverage
 
 
 def corridor_slope_face_issue_rows(document=None) -> list[dict[str, str]]:
@@ -5064,16 +5124,41 @@ def corridor_applied_sections_review_summary(document=None) -> dict[str, object]
 
 
 def _first_active_structure_ref(section) -> str:
+    for value in _section_structure_refs(section):
+        if value:
+            return value
+    return ""
+
+
+def _section_structure_refs(section) -> list[str]:
+    refs: list[str] = []
     for value in list(getattr(section, "active_structure_ids", []) or []):
         text = str(value or "").strip()
         if text:
-            return text
+            refs.append(text)
+    subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                refs.append(text)
+        text = str(getattr(subassembly, "structure_ref", "") or "").strip()
+        if text:
+            refs.append(text)
+    if subassembly_rows:
+        return _unique_text_values(refs)
+    refs.extend(_compatibility_component_structure_refs(section))
+    return _unique_text_values(refs)
+
+
+def _compatibility_component_structure_refs(section) -> list[str]:
+    refs: list[str] = []
     for component in list(getattr(section, "component_rows", []) or []):
         for value in list(getattr(component, "structure_ids", []) or []):
             text = str(value or "").strip()
             if text:
-                return text
-    return ""
+                refs.append(text)
+    return refs
 
 
 def _format_structure_review_summary(applied_summary: dict[str, object]) -> str:
@@ -8503,19 +8588,19 @@ def _drainage_source_surface_mismatch_notes(active_ditch_rows: list[object], dit
     notes: list[str] = []
     for row in active_ditch_rows:
         drainage_ref = str(getattr(row, "drainage_element_id", "") or "").strip()
-        component_ref = str(getattr(row, "assembly_component_ref", "") or "").strip()
+        subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
         for side in _drainage_row_sides(row):
             data = point_data.get(side, {})
             point_count = int(data.get("point_count", 0) or 0)
             drainage_refs = set(data.get("drainage_refs", []) or [])
-            component_refs = set(data.get("component_refs", []) or [])
+            subassembly_refs = set(data.get("subassembly_refs", []) or [])
             if point_count <= 0:
                 notes.append(f"missing_side={side};drainage_ref={drainage_ref or '-'}")
                 continue
             if drainage_ref and drainage_ref not in drainage_refs:
                 notes.append(f"missing_drainage_ref={drainage_ref};side={side}")
-            if component_ref and component_ref not in component_refs:
-                notes.append(f"component_mismatch={component_ref};side={side}")
+            if subassembly_ref and subassembly_ref not in subassembly_refs:
+                notes.append(f"subassembly_mismatch={subassembly_ref};side={side}")
     return _unique_refs(notes)
 
 
@@ -8525,17 +8610,17 @@ def _ditch_point_context_by_side(ditch_points: list[object]) -> dict[str, dict[s
         side = _long_drainage_side(_drainage_point_side(point))
         if side not in {"left", "right"}:
             continue
-        data = output.setdefault(side, {"point_count": 0, "drainage_refs": [], "component_refs": []})
+        data = output.setdefault(side, {"point_count": 0, "drainage_refs": [], "subassembly_refs": []})
         data["point_count"] = int(data.get("point_count", 0) or 0) + 1
         drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
-        component_ref = str(getattr(point, "component_ref", "") or "").strip()
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
         if drainage_ref:
             data.setdefault("drainage_refs", []).append(drainage_ref)
-        if component_ref:
-            data.setdefault("component_refs", []).append(component_ref)
+        if subassembly_ref:
+            data.setdefault("subassembly_refs", []).append(subassembly_ref)
     for data in output.values():
         data["drainage_refs"] = _unique_refs(list(data.get("drainage_refs", []) or []))
-        data["component_refs"] = _unique_refs(list(data.get("component_refs", []) or []))
+        data["subassembly_refs"] = _unique_refs(list(data.get("subassembly_refs", []) or []))
     return output
 
 
@@ -8548,7 +8633,7 @@ def _drainage_row_sides(row) -> list[str]:
     ref_text = " ".join(
         [
             str(getattr(row, "drainage_element_id", "") or ""),
-            str(getattr(row, "assembly_component_ref", "") or ""),
+            str(getattr(row, "subassembly_ref", "") or ""),
         ]
     ).lower()
     if "left" in ref_text or ":l" in ref_text or "-l" in ref_text:

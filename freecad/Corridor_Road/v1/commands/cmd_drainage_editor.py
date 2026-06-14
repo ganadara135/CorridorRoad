@@ -60,7 +60,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.0,
                 "end": 1.0,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:lined-concrete",
             },
             {
@@ -105,7 +105,7 @@ DRAINAGE_PRESETS = {
                 "side": "left",
                 "start": 0.0,
                 "end": 1.0,
-                "component": "ditch:left",
+                "subassembly": "ditch:left",
                 "policy": "drainage-policy:lined-concrete",
             },
             {
@@ -114,7 +114,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.0,
                 "end": 1.0,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:lined-concrete",
             },
             {
@@ -177,7 +177,7 @@ DRAINAGE_PRESETS = {
                 "side": "left",
                 "start": 0.0,
                 "end": 1.0,
-                "component": "ditch:left",
+                "subassembly": "ditch:left",
                 "policy": "drainage-policy:roadside-ditch",
             },
             {
@@ -186,7 +186,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.0,
                 "end": 1.0,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:roadside-ditch",
             },
             {
@@ -195,7 +195,7 @@ DRAINAGE_PRESETS = {
                 "side": "center",
                 "start": 0.48,
                 "end": 0.52,
-                "component": "",
+                "subassembly": "",
                 "policy": "drainage-policy:cross-drain",
             },
         ],
@@ -241,7 +241,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.0,
                 "end": 0.24,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:roadside-ditch",
             },
             {
@@ -250,7 +250,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.24,
                 "end": 0.38,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:roadside-ditch",
             },
             {
@@ -259,7 +259,7 @@ DRAINAGE_PRESETS = {
                 "side": "right",
                 "start": 0.38,
                 "end": 0.52,
-                "component": "ditch:right",
+                "subassembly": "ditch:right",
                 "policy": "drainage-policy:roadside-ditch",
             },
             {
@@ -695,7 +695,7 @@ class V1DrainageEditorTaskPanel:
                 "Side",
                 "Start STA",
                 "End STA",
-                "Assembly",
+                "Subassembly",
                 "Policy",
                 "Structure Ref",
             ]
@@ -884,7 +884,7 @@ class V1DrainageEditorTaskPanel:
             getattr(row, "side", "") or "",
             _format_float(row.station_start),
             _format_float(row.station_end),
-            getattr(row, "assembly_component_ref", "") or "",
+            _element_subassembly_ref(row),
             _display_prefixed_id(row.policy_set_ref, "drainage-policy:"),
             _display_prefixed_id(row.structure_ref, "structure:"),
         ]
@@ -940,7 +940,7 @@ class V1DrainageEditorTaskPanel:
             drainage_element_id=self._unique_element_id(base_id),
             element_kind="ditch",
             side=normalized_side,
-            assembly_component_ref=f"ditch:{normalized_side}",
+            subassembly_ref=f"ditch:{normalized_side}",
             station_start=0.0,
             station_end=100.0,
             policy_set_ref=self._first_policy_ref(),
@@ -1283,7 +1283,7 @@ class V1DrainageEditorTaskPanel:
                     side=_item_text(self._element_table, index, 2),
                     station_start=_float_value(_item_text(self._element_table, index, 3)),
                     station_end=_float_value(_item_text(self._element_table, index, 4)),
-                    assembly_component_ref="" if _assembly_disabled_for_kind(element_kind) else _item_text(
+                    subassembly_ref="" if _assembly_disabled_for_kind(element_kind) else _item_text(
                         self._element_table,
                         index,
                         ELEMENT_ASSEMBLY_COLUMN,
@@ -1808,7 +1808,7 @@ class V1DrainageEditorTaskPanel:
             if disabled:
                 item.setText("")
                 item.setFlags((flags & ~QtCore.Qt.ItemIsEditable) & ~QtCore.Qt.ItemIsEnabled)
-                item.setToolTip("Assembly is only used for ditch elements.")
+                item.setToolTip("Subassembly is only used for ditch elements.")
                 item.setBackground(QtGui.QColor(48, 48, 48))
                 item.setForeground(QtGui.QColor(140, 140, 140))
             else:
@@ -2094,6 +2094,10 @@ def _assembly_disabled_for_kind(kind: object) -> bool:
     return str(kind or "").strip().lower() != "ditch"
 
 
+def _element_subassembly_ref(row) -> str:
+    return str(getattr(row, "subassembly_ref", "") or "")
+
+
 def _document_station_range(document) -> tuple[float, float]:
     values = _document_station_values(document)
     if values:
@@ -2125,7 +2129,7 @@ def _preset_element_rows(preset: dict, *, station_start: float, station_end: flo
                 structure_ref=str(spec.get("structure", "") or ""),
                 connection_point_ref="",
                 region_ref="",
-                assembly_component_ref=str(spec.get("component", "") or ""),
+                subassembly_ref=str(spec.get("subassembly", "") or ""),
                 station_start=_preset_station_value(spec.get("start", 0.0), station_start=station_start, station_end=station_end),
                 station_end=_preset_station_value(spec.get("end", 1.0), station_start=station_start, station_end=station_end),
                 policy_set_ref=str(spec.get("policy", "") or ""),

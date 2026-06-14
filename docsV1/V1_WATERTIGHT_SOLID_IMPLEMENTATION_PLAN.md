@@ -51,7 +51,7 @@ It must not:
 
 - make generated solids editable source geometry
 - infer durable engineering intent from viewer meshes
-- require boolean union of every component body in the first implementation
+- require boolean union of every Subassembly body in the first implementation
 - replace `SurfaceModel`
 
 ## 3. Core Decision: Topology First
@@ -290,7 +290,7 @@ Controls:
 - target family combo
 - Region combo
 - station range combo or start/end station controls
-- Assembly component combo
+- Subassembly combo
 - Structure combo
 - Drainage reference combo
 
@@ -331,7 +331,8 @@ Required first fields:
 - `station_end`
 - `region_ref`
 - `assembly_ref`
-- `component_ref`
+- `subassembly_ref`
+- `component_ref` as legacy compatibility provenance only
 - `structure_ref`
 - `drainage_ref`
 - `enabled`
@@ -361,7 +362,8 @@ Scope kinds:
 - `whole_corridor`
 - `region`
 - `station_range`
-- `assembly_component`
+- `assembly_subassembly` for Subassembly-scoped road-section targets
+- `assembly_component` as the legacy enum name for older Subassembly-scoped road-section targets
 - `structure`
 - `drainage`
 - `intersection`
@@ -452,6 +454,13 @@ Required first fields:
 - `edge_count`
 - `diagnostic_refs`
 
+Traceability fields:
+
+- `subassembly_ref` is the active owner reference for Subassembly-scoped pavement, subbase, shoulder, and lined-ditch targets.
+- `component_ref` is compatibility provenance only and should be empty whenever `subassembly_ref` is present.
+- `scope_kind=assembly_subassembly` identifies current Subassembly-scoped road-section targets.
+- `scope_kind=assembly_component` is accepted only as a legacy alias for older target rows.
+
 ## 9. Build Algorithms
 
 ### 9.1 Target discovery
@@ -461,7 +470,7 @@ First discovery rules:
 - if Applied Sections and CorridorModel exist, create one `road_body_envelope` candidate
 - if RegionModel exists, create one `region_body` candidate per Region
 - if StructureModel rows exist, create one `structure_body` candidate per eligible structure
-- if Assembly component/layer semantics exist, create future `pavement_layer_body` candidates
+- if Applied Sections contain Subassembly layer semantics, create `pavement_layer_body`, `subbase_body`, and `shoulder_body` candidates
 - if ditch material policy indicates lining or structural material, create future `lined_ditch_body` candidates
 
 ### 9.2 Road body envelope profile
@@ -490,9 +499,9 @@ Region body generation uses the same profile rule as road body envelope, but fil
 
 ### 9.4 Pavement layer profile
 
-Deferred until component/layer semantics are stable.
+Available for Subassembly-owned pavement layer targets.
 
-Profile should use material layer thickness and component boundaries rather than the simplified envelope depth.
+Profile should use Subassembly material layer thickness and Subassembly boundary offsets rather than the simplified envelope depth.
 
 ### 9.5 Lined ditch profile
 
@@ -505,7 +514,7 @@ Current first TS3 rule:
 - `ditch_surface` rows may discover side-specific `lined_ditch_body` target candidates.
 - candidates without material and positive lining thickness remain blocked.
 - candidates with surface rows and lining policy are available.
-- Applied Section component rows preserve ditch parameters such as `lining_thickness`.
+- Applied Section Subassembly rows and compatibility fallback rows preserve ditch parameters such as `lining_thickness`.
 - the profile builder uses the side-specific ditch surface polyline plus section-normal lining-thickness offsets.
 - when intermediate ditch surface points are present, they are preserved as profile nodes and an info diagnostic records `lined_ditch_polyline_normal_offset`.
 
@@ -861,9 +870,9 @@ Acceptance:
 - Region boundary diagnostics identify missing source rows
 - station profiles from other Regions inside the target range are skipped with diagnostics
 
-### Phase WS7: Component target expansion
+### Phase WS7: Subassembly target expansion
 
-Status: Complete for first-slice pavement-layer, subbase, shoulder, and lined-ditch target discovery, component-scoped closed profile building from Applied Section component width/thickness/side, independent topology/Part/output validation, StructureModel `structure_body` target discovery for review, and contract tests. Lined ditch generation supports multi-point ditch surface polylines with section-normal lining offsets. Lined ditch output diagnostics now preserve shape and lining-policy provenance, exchange source context preserves drainage/material refs, panel show/hide/focus status keeps drainage side context visible, target discovery can promote a matching `DrainageModel` ditch/channel element to the lined ditch solid owner, persisted `V1DrainageModel` document objects feed Watertight Solid discovery, and component parameters can control `normal_average` versus `miter` join behavior with a miter limit fallback diagnostic.
+Status: Complete for first-slice pavement-layer, subbase, shoulder, and lined-ditch target discovery, Subassembly-scoped closed profile building from Applied Section width/thickness/side, independent topology/Part/output validation, StructureModel `structure_body` target discovery for review, and contract tests. Lined ditch generation supports multi-point ditch surface polylines with section-normal lining offsets. Lined ditch output diagnostics now preserve shape and lining-policy provenance, exchange source context preserves Subassembly, drainage, and material refs, panel show/hide/focus status keeps drainage side context visible, target discovery can promote a matching `DrainageModel` ditch/channel element to the lined ditch solid owner, persisted `V1DrainageModel` document objects feed Watertight Solid discovery, and Subassembly parameters can control `normal_average` versus `miter` join behavior with a miter limit fallback diagnostic.
 
 Tasks:
 
@@ -873,13 +882,13 @@ Tasks:
 
 Acceptance:
 
-- component targets appear only when their source semantics are available
+- Subassembly targets appear only when their source semantics are available
 - each target remains independently validatable
 - structure targets appear when StructureModel rows expose station placement and native geometry specs
 
 ### Phase WS8: Quantity and exchange handoff
 
-Status: Complete for accepted watertight solid volume quantity fragments, total volume aggregation, exchange package metadata, separate watertight solid rows/segments, watertight source-context rows, and contract tests. IFC-specific solid entity mapping remains a later exchange-format specialization.
+Status: Complete for accepted watertight solid volume quantity fragments, total volume aggregation, exchange package metadata, separate watertight solid rows/segments, watertight source-context rows, Subassembly refs in exchange contexts, and contract tests. IFC-specific solid entity mapping remains a later exchange-format specialization.
 
 Tasks:
 

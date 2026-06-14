@@ -86,7 +86,7 @@ def ensure_v1_drainage_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ElementConnectionPointRefs", "Drainage Elements", "structure connection point refs")
     _add_property(obj, "App::PropertyStringList", "ElementSides", "Drainage Elements", "element sides")
     _add_property(obj, "App::PropertyStringList", "ElementRegionRefs", "Drainage Elements", "region refs")
-    _add_property(obj, "App::PropertyStringList", "ElementAssemblyComponentRefs", "Drainage Elements", "assembly component refs")
+    _add_property(obj, "App::PropertyStringList", "ElementSubassemblyRefs", "Drainage Elements", "subassembly refs")
     _add_property(obj, "App::PropertyFloatList", "ElementStationStarts", "Drainage Elements", "element start stations")
     _add_property(obj, "App::PropertyFloatList", "ElementStationEnds", "Drainage Elements", "element end stations")
     _add_property(obj, "App::PropertyStringList", "ElementPolicySetRefs", "Drainage Elements", "policy set refs")
@@ -189,7 +189,8 @@ def update_v1_drainage_model_object(obj, drainage_model: DrainageModel, *, label
     obj.ElementConnectionPointRefs = [str(getattr(row, "connection_point_ref", "") or "") for row in element_rows]
     obj.ElementSides = [str(getattr(row, "side", "") or "") for row in element_rows]
     obj.ElementRegionRefs = [str(getattr(row, "region_ref", "") or "") for row in element_rows]
-    obj.ElementAssemblyComponentRefs = [str(getattr(row, "assembly_component_ref", "") or "") for row in element_rows]
+    subassembly_refs = [_element_subassembly_ref(row) for row in element_rows]
+    obj.ElementSubassemblyRefs = subassembly_refs
     obj.ElementStationStarts = [float(row.station_start) for row in element_rows]
     obj.ElementStationEnds = [float(row.station_end) for row in element_rows]
     obj.ElementPolicySetRefs = [str(row.policy_set_ref) for row in element_rows]
@@ -248,7 +249,11 @@ def to_drainage_model(obj) -> DrainageModel | None:
             connection_point_ref=_list_value(getattr(obj, "ElementConnectionPointRefs", []), index, ""),
             side=_list_value(getattr(obj, "ElementSides", []), index, ""),
             region_ref=_list_value(getattr(obj, "ElementRegionRefs", []), index, ""),
-            assembly_component_ref=_list_value(getattr(obj, "ElementAssemblyComponentRefs", []), index, ""),
+            subassembly_ref=_list_value(
+                getattr(obj, "ElementSubassemblyRefs", []),
+                index,
+                "",
+            ),
             station_start=_float_list_value(getattr(obj, "ElementStationStarts", []), index),
             station_end=_float_list_value(getattr(obj, "ElementStationEnds", []), index),
             policy_set_ref=_list_value(getattr(obj, "ElementPolicySetRefs", []), index, ""),
@@ -327,6 +332,10 @@ def _flow_route_rows_from_object(obj) -> list[DrainageFlowRoute]:
         )
         for index in range(route_count)
     ]
+
+
+def _element_subassembly_ref(row) -> str:
+    return str(getattr(row, "subassembly_ref", "") or "")
 
 
 def _add_property(obj, property_type: str, name: str, group: str, doc: str = "") -> None:

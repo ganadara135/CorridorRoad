@@ -25,23 +25,96 @@ def _preview_station_label(preview: dict[str, object]) -> str:
     return f"STA {station_value:.3f}"
 
 
-def _preview_focused_component_label(preview: dict[str, object]) -> str:
-    """Return a compact focused-component label for one viewer payload."""
+def _preview_focused_subassembly_label(preview: dict[str, object]) -> str:
+    """Return a compact focused Subassembly label for one viewer payload."""
 
     viewer_context = dict(preview.get("viewer_context", {}) or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     explicit = str(focused.get("label", "") or "").strip()
     if explicit:
         return explicit
-    component_type = str(focused.get("type", "") or "").strip()
+    subassembly_type = str(focused.get("type", "") or "").strip()
     side = str(focused.get("side", "") or "").strip()
     scope = str(focused.get("scope", "") or "").strip()
     source = str(focused.get("source", "") or "").strip()
-    component_id = str(focused.get("id", "") or "").strip()
-    pieces = [value for value in (component_type, side, scope, source) if value and value != "-"]
-    if component_id and component_id != "-":
-        pieces.append(f"[{component_id}]")
+    subassembly_id = str(focused.get("id", "") or "").strip()
+    pieces = [value for value in (subassembly_type, side, scope, source) if value and value != "-"]
+    if subassembly_id and subassembly_id != "-":
+        pieces.append(f"[{subassembly_id}]")
     return " / ".join(pieces)
+
+
+def _viewer_context_focused_subassembly(viewer_context: dict[str, object]) -> dict[str, object]:
+    """Return the active focused Subassembly context with compatibility fallback."""
+
+    context = dict(viewer_context or {})
+    focused = dict(context.get("focused_subassembly", {}) or {})
+    if focused:
+        return focused
+    return dict(context.get("focused_component", {}) or {})
+
+
+def _section_output_subassembly_count(section_output) -> int:
+    """Count active Subassembly rows only."""
+
+    return len(list(getattr(section_output, "subassembly_rows", []) or []))
+
+
+def _section_output_compatibility_count(section_output) -> int:
+    """Count old component compatibility rows separately from Subassemblies."""
+
+    return len(_section_output_compatibility_rows(section_output))
+
+
+def _section_output_subassembly_table_rows(section_output) -> list[list[str]]:
+    """Build Subassembly table rows with a compatibility fallback."""
+
+    subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+    if subassembly_rows:
+        return [
+            [
+                str(getattr(row, "subassembly_id", "") or ""),
+                str(getattr(row, "kind", "") or ""),
+                str(getattr(row, "template_ref", "") or ""),
+                str(getattr(row, "region_ref", "") or ""),
+                str(getattr(row, "notes", "") or ""),
+            ]
+            for row in subassembly_rows
+        ]
+    return _section_output_compatibility_table_rows(section_output)
+
+
+def _section_output_compatibility_rows(section_output) -> list[object]:
+    """Return legacy component rows only as compatibility fallback rows."""
+
+    if list(getattr(section_output, "subassembly_rows", []) or []):
+        return []
+    return list(getattr(section_output, "component_rows", []) or [])
+
+
+def _section_output_compatibility_table_rows(section_output) -> list[list[str]]:
+    """Build fallback table rows for legacy component output only."""
+
+    return [
+        [
+            f"compatibility:{str(getattr(row, 'component_id', '') or '')}",
+            str(getattr(row, "kind", "") or ""),
+            str(getattr(row, "template_ref", "") or ""),
+            str(getattr(row, "region_ref", "") or ""),
+            str(getattr(row, "notes", "") or ""),
+        ]
+        for row in _section_output_compatibility_rows(section_output)
+    ]
+
+
+def _viewer_context_source_rows(viewer_context: dict[str, object]) -> list[dict[str, object]]:
+    """Return active Subassembly source rows, or legacy compatibility rows only as fallback."""
+
+    context = dict(viewer_context or {})
+    subassembly_rows = list(context.get("subassembly_rows", []) or [])
+    if subassembly_rows:
+        return subassembly_rows
+    return list(context.get("component_rows", []) or [])
 
 
 def _superelevation_summary_line(section_output) -> str:
@@ -88,7 +161,7 @@ def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     source_objects = _preview_source_objects(preview)
     inspector = dict(preview.get("source_inspector", {}) or {})
     station_label = _preview_station_label(preview)
-    focused_label = _preview_focused_component_label(preview)
+    focused_label = _preview_focused_subassembly_label(preview)
     focused_suffix = f" | Focus={focused_label}" if focused_label else ""
 
     target_specs = [
@@ -537,14 +610,14 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
 
 
 def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[str]]:
-    """Build detailed selected-component source inspector rows."""
+    """Build detailed selected Subassembly source inspector rows."""
 
     inspector = dict(preview.get("source_inspector", {}) or {})
     mapping = [
         ("Station", "station_label"),
-        ("Component Id", "component_id"),
-        ("Component Kind", "component_kind"),
-        ("Component Side", "component_side"),
+        ("Subassembly Id", "subassembly_id"),
+        ("Subassembly Kind", "subassembly_kind"),
+        ("Subassembly Side", "subassembly_side"),
         ("Owner Template Ref", "owner_template"),
         ("Owner Region Ref", "owner_region"),
         ("Owner Structure Ref", "owner_structure"),
@@ -557,17 +630,66 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
     ]
     rows = []
     for label, key in mapping:
-        value = str(inspector.get(key, "") or "").strip()
+        value = _inspector_value(inspector, key)
         if value:
             rows.append([label, value])
+    rows.extend(_inspector_compatibility_rows(inspector))
     unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
     if unresolved_fields:
         rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
-    for label, key in (("Component Count", "component_count"), ("Quantity Count", "quantity_count")):
-        value = inspector.get(key, None)
+    for label, key in (
+        ("Subassembly Count", "subassembly_count"),
+        ("Compatibility Fallback Rows", ("compatibility_component_count", "component_count")),
+        ("Quantity Count", "quantity_count"),
+    ):
+        value = _inspector_value(inspector, key)
         if value not in (None, ""):
             rows.append([label, str(value)])
     return rows
+
+
+def _inspector_value(inspector: dict[str, object], key_or_keys) -> str:
+    keys = key_or_keys if isinstance(key_or_keys, (list, tuple)) else (key_or_keys,)
+    for key in keys:
+        key_text = str(key)
+        value = str(inspector.get(key_text, "") or "").strip()
+        if value:
+            if key_text in {
+                "compatibility_component_id",
+                "compatibility_component_kind",
+                "compatibility_component_side",
+                "compatibility_component_ref",
+                "component_id",
+                "component_kind",
+                "component_side",
+                "component_ref",
+            }:
+                return f"compatibility:{value}"
+            return value
+    return ""
+
+
+def _inspector_compatibility_rows(inspector: dict[str, object]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for label, key in (
+        ("Compatibility Id", ("compatibility_component_id", "component_id")),
+        ("Compatibility Kind", ("compatibility_component_kind", "component_kind")),
+        ("Compatibility Side", ("compatibility_component_side", "component_side")),
+    ):
+        value = _inspector_value(inspector, key)
+        if value:
+            rows.append([label, value])
+    return rows
+
+
+def _quantity_subassembly_ref(row) -> str:
+    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
+    if subassembly_ref:
+        return subassembly_ref
+    component_ref = str(getattr(row, "component_ref", "") or "").strip()
+    if component_ref:
+        return f"compatibility:{component_ref}"
+    return ""
 
 
 def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: set[str]) -> list[list[str]]:
@@ -1381,23 +1503,23 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
-        layout.addWidget(QtWidgets.QLabel("Components"))
+        layout.addWidget(QtWidgets.QLabel("Subassemblies"))
         self._component_table = self._table_widget(
             headers=["Id", "Kind", "Assembly Template", "Region", "Notes"],
-            rows=[
-                [
-                    str(getattr(row, "component_id", "") or ""),
-                    str(getattr(row, "kind", "") or ""),
-                    str(getattr(row, "template_ref", "") or ""),
-                    str(getattr(row, "region_ref", "") or ""),
-                    str(getattr(row, "notes", "") or ""),
-                ]
-                for row in list(getattr(self.preview.get("section_output"), "component_rows", []) or [])
-            ],
-            empty_text="No component rows.",
+            rows=_section_output_subassembly_table_rows(self.preview.get("section_output")),
+            empty_text="No Subassembly rows.",
         )
         layout.addWidget(self._component_table)
-        self._select_focused_component_row(self._component_table)
+        self._select_focused_subassembly_row(self._component_table)
+
+        layout.addWidget(QtWidgets.QLabel("Subassembly Results"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Family", "Code", "Subassembly", "Side", "Offset", "Refs"],
+                rows=self._subassembly_result_rows(),
+                empty_text="No Subassembly point/link/shape result rows.",
+            )
+        )
 
         layout.addWidget(QtWidgets.QLabel("Section Summary"))
         layout.addWidget(
@@ -1420,13 +1542,13 @@ class CrossSectionViewerTaskPanel:
         layout.addWidget(QtWidgets.QLabel("Quantities"))
         layout.addWidget(
             self._table_widget(
-                headers=["Kind", "Value", "Unit", "Component"],
+                headers=["Kind", "Value", "Unit", "Subassembly"],
                 rows=[
                     [
                         str(getattr(row, "quantity_kind", "") or ""),
                         str(getattr(row, "value", "") or ""),
                         str(getattr(row, "unit", "") or ""),
-                        str(getattr(row, "component_ref", "") or ""),
+                        _quantity_subassembly_ref(row),
                     ]
                     for row in list(getattr(self.preview.get("section_output"), "quantity_rows", []) or [])
                 ],
@@ -1576,7 +1698,8 @@ class CrossSectionViewerTaskPanel:
             _superelevation_summary_line(section_output),
             _intersection_summary_line(section_output),
             f"Stations: {len(self._navigation_station_rows())}",
-            f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
+            f"Subassemblies: {_section_output_subassembly_count(section_output)}",
+            f"Compatibility Fallback Rows: {_section_output_compatibility_count(section_output)}",
             f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
             f"Geometry Rows: {len(self._section_geometry_rows())}",
             f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
@@ -1595,9 +1718,9 @@ class CrossSectionViewerTaskPanel:
     def _viewer_context_summary_lines(self) -> list[str]:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
         lines = []
-        focused_label = self._focused_component_label()
+        focused_label = self._focused_subassembly_label()
         if focused_label:
-            lines.append(f"Focus Component: {focused_label}")
+            lines.append(f"Focus Subassembly: {focused_label}")
         if viewer_context.get("tag_summary"):
             lines.append(f"Station Tags: {viewer_context.get('tag_summary', '')}")
         if viewer_context.get("top_profile_edge_summary"):
@@ -1683,9 +1806,9 @@ class CrossSectionViewerTaskPanel:
             ("Structure Label", "structure_label"),
             ("Drainage Label", "drainage_label"),
             ("Intersection Label", "intersection_label"),
-            ("Component Id", "component_id"),
-            ("Component Kind", "component_kind"),
-            ("Component Side", "component_side"),
+            ("Subassembly Id", "subassembly_id"),
+            ("Subassembly Kind", "subassembly_kind"),
+            ("Subassembly Side", "subassembly_side"),
             ("Owner Assembly Template", "owner_template"),
             ("Owner Region", "owner_region"),
             ("Owner Structure", "owner_structure"),
@@ -1695,14 +1818,19 @@ class CrossSectionViewerTaskPanel:
         ]
         rows = []
         for label, key in mapping:
-            value = str(inspector.get(key, "") or "").strip()
+            value = _inspector_value(inspector, key)
             if value:
                 rows.append([label, value])
+        rows.extend(_inspector_compatibility_rows(inspector))
         unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
         if unresolved_fields:
             rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
-        for label, key in (("Component Count", "component_count"), ("Quantity Count", "quantity_count")):
-            value = inspector.get(key, None)
+        for label, key in (
+            ("Subassembly Count", "subassembly_count"),
+            ("Compatibility Fallback Rows", ("compatibility_component_count", "component_count")),
+            ("Quantity Count", "quantity_count"),
+        ):
+            value = _inspector_value(inspector, key)
             if value not in (None, ""):
                 rows.append([label, str(value)])
         return rows
@@ -1715,6 +1843,51 @@ class CrossSectionViewerTaskPanel:
 
     def _intersection_context_rows(self) -> list[list[str]]:
         return build_intersection_context_rows(self.preview)
+
+    def _subassembly_result_rows(self) -> list[list[str]]:
+        section_output = self.preview.get("section_output")
+        rows: list[list[str]] = []
+        for point in list(getattr(section_output, "subassembly_point_rows", []) or []):
+            rows.append(
+                [
+                    "point",
+                    str(getattr(point, "point_code", "") or ""),
+                    str(getattr(point, "subassembly_ref", "") or ""),
+                    str(getattr(point, "side", "") or ""),
+                    f"{float(getattr(point, 'lateral_offset', 0.0) or 0.0):.3f}",
+                    str(getattr(point, "point_id", "") or ""),
+                ]
+            )
+        for link in list(getattr(section_output, "subassembly_link_rows", []) or []):
+            rows.append(
+                [
+                    "link",
+                    str(getattr(link, "surface_role", "") or getattr(link, "link_code", "") or ""),
+                    str(getattr(link, "subassembly_ref", "") or ""),
+                    "",
+                    "",
+                    " -> ".join(
+                        value
+                        for value in (
+                            str(getattr(link, "start_point_ref", "") or ""),
+                            str(getattr(link, "end_point_ref", "") or ""),
+                        )
+                        if value
+                    ),
+                ]
+            )
+        for shape in list(getattr(section_output, "subassembly_shape_rows", []) or []):
+            rows.append(
+                [
+                    "shape",
+                    str(getattr(shape, "shape_code", "") or ""),
+                    str(getattr(shape, "subassembly_ref", "") or ""),
+                    "",
+                    "",
+                    str(getattr(shape, "shape_id", "") or ""),
+                ]
+            )
+        return rows
 
     def _connect_corridor_result_table(self, table) -> None:
         if not hasattr(table, "cellDoubleClicked"):
@@ -1838,7 +2011,7 @@ class CrossSectionViewerTaskPanel:
         mapping = [
             ("Section Set", "section_set_label"),
             ("Station", "station_label"),
-            ("Focus Component", ""),
+            ("Focus Subassembly", ""),
             ("Station Tags", "tag_summary"),
             ("Earthwork Window", "earthwork_window_summary"),
             ("Earthwork Cut/Fill", "earthwork_cut_fill_summary"),
@@ -1850,8 +2023,8 @@ class CrossSectionViewerTaskPanel:
             ("Intersection Contracts", "intersection_contract_summary"),
         ]
         for label, key in mapping:
-            if label == "Focus Component":
-                value = self._focused_component_label()
+            if label == "Focus Subassembly":
+                value = self._focused_subassembly_label()
             else:
                 value = str(viewer_context.get(key, "") or "").strip()
             if value:
@@ -1985,38 +2158,40 @@ class CrossSectionViewerTaskPanel:
             pass
         Gui.runCommand("CorridorRoad_V1ViewSections", 0)
 
-    def _focused_component(self) -> dict[str, object]:
-        return dict(dict(self.preview.get("viewer_context", {}) or {}).get("focused_component", {}) or {})
+    def _focused_subassembly(self) -> dict[str, object]:
+        return _viewer_context_focused_subassembly(dict(self.preview.get("viewer_context", {}) or {}))
 
-    def _focused_component_label(self) -> str:
-        return _preview_focused_component_label(self.preview)
+    def _focused_subassembly_label(self) -> str:
+        return _preview_focused_subassembly_label(self.preview)
 
-    def _focused_component_id(self) -> str:
-        focused = self._focused_component()
+    def _focused_subassembly_id(self) -> str:
+        focused = self._focused_subassembly()
         return str(focused.get("id", "") or "").strip()
 
-    def _select_focused_component_row(self, table) -> None:
-        focused_id = self._focused_component_id()
+    def _select_focused_subassembly_row(self, table) -> None:
+        focused_id = self._focused_subassembly_id()
         if not focused_id or not hasattr(table, "rowCount"):
             return
         for row_index in range(int(table.rowCount())):
             item = table.item(row_index, 0)
             if item is None:
                 continue
-            if str(item.text() or "").strip() == focused_id:
+            item_text = str(item.text() or "").strip()
+            if item_text in {focused_id, f"compatibility:{focused_id}"}:
                 table.selectRow(row_index)
                 table.scrollToItem(item)
                 return
 
     def _select_focused_source_row(self, table) -> None:
-        focused = self._focused_component()
+        focused = self._focused_subassembly()
         focused_key = str(focused.get("key", "") or "").strip()
         focused_id = str(focused.get("id", "") or "").strip()
         focused_type = str(focused.get("type", "") or "").strip()
         focused_side = str(focused.get("side", "") or "").strip()
         if not (focused_key or focused_id or focused_type):
             return
-        source_rows = list(dict(self.preview.get("viewer_context", {}) or {}).get("component_rows", []) or [])
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        source_rows = _viewer_context_source_rows(viewer_context)
         for row_index, row in enumerate(source_rows):
             row_key = str(row.get("key", "") or "").strip()
             row_id = str(row.get("id", "") or "").strip()

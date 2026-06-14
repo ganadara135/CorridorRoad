@@ -105,6 +105,7 @@ def ensure_v1_simulation_package_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyInteger", "SolidRowCount", "Solids", "solid manifest row count")
     _add_property(obj, "App::PropertyStringList", "SolidOutputRefs", "Solids", "solid output refs")
     _add_property(obj, "App::PropertyStringList", "SolidTargetFamilies", "Solids", "solid target families")
+    _add_property(obj, "App::PropertyStringList", "SolidSubassemblyRefs", "Solids", "solid subassembly refs")
     _add_property(obj, "App::PropertyStringList", "SolidStructureRefs", "Solids", "solid structure refs")
     _add_property(obj, "App::PropertyStringList", "SolidDrainageRefs", "Solids", "solid drainage refs")
     _add_property(obj, "App::PropertyStringList", "SolidFlowRouteRefs", "Solids", "solid flow route refs")
@@ -236,6 +237,7 @@ def update_v1_simulation_package_output_object(
     obj.SolidRowCount = len(rows)
     obj.SolidOutputRefs = [str(getattr(row, "output_ref", "") or "") for row in rows]
     obj.SolidTargetFamilies = [_join_refs(getattr(row, "target_families", []) or []) for row in rows]
+    obj.SolidSubassemblyRefs = [_join_refs(getattr(row, "subassembly_refs", []) or []) for row in rows]
     obj.SolidStructureRefs = [_join_refs(getattr(row, "structure_refs", []) or []) for row in rows]
     obj.SolidDrainageRefs = [_join_refs(getattr(row, "drainage_refs", []) or []) for row in rows]
     obj.SolidFlowRouteRefs = [_join_refs(getattr(row, "flow_route_refs", []) or []) for row in rows]
@@ -261,6 +263,7 @@ def to_simulation_package_output(obj) -> SimulationPackageOutput | None:
         SimulationPackageSolidRow(
             output_ref=_list_value(output_refs, index, ""),
             target_families=_split_refs(_list_value(getattr(obj, "SolidTargetFamilies", []), index, "")),
+            subassembly_refs=_split_refs(_list_value(getattr(obj, "SolidSubassemblyRefs", []), index, "")),
             structure_refs=_split_refs(_list_value(getattr(obj, "SolidStructureRefs", []), index, "")),
             drainage_refs=_split_refs(_list_value(getattr(obj, "SolidDrainageRefs", []), index, "")),
             flow_route_refs=_split_refs(_list_value(getattr(obj, "SolidFlowRouteRefs", []), index, "")),

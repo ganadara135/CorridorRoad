@@ -21,7 +21,13 @@ from .exchange_output import ExchangeOutput
 from .plan_output import PlanOutput
 from .profile_output import ProfileOutput
 from .quantity_output import QuantityOutput
-from .section_output import SectionOutput
+from .section_output import (
+    SectionOutput,
+    SectionSubassemblyLinkRow,
+    SectionSubassemblyPointRow,
+    SectionSubassemblyRow,
+    SectionSubassemblyShapeRow,
+)
 from .simulation_qa_output import SimulationQaDiagnosticRow, SimulationQaFamilyRow, SimulationQaOutput
 from .simulation_package_output import SimulationPackageOutput, SimulationPackageSolidRow
 from .surface_output import SurfaceOutput, SurfaceSpanOutputRow
@@ -58,6 +64,10 @@ __all__ = [
     "ProfileOutput",
     "QuantityOutput",
     "SectionOutput",
+    "SectionSubassemblyLinkRow",
+    "SectionSubassemblyPointRow",
+    "SectionSubassemblyRow",
+    "SectionSubassemblyShapeRow",
     "SimulationQaDiagnosticRow",
     "SimulationQaFamilyRow",
     "SimulationQaOutput",

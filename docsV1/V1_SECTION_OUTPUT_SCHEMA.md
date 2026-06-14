@@ -98,6 +98,7 @@ Recommended top-level fields:
 - `coordinate_context`
 - `summary_rows`
 - `geometry_rows`
+- `subassembly_rows`
 - `component_rows`
 - `dimension_rows`
 - `terrain_rows`
@@ -187,18 +188,18 @@ The Cross Section Viewer should use this metadata to explain where the station f
 
 Geometry rows should carry enough structure for rendering but should not replace semantic rows.
 
-## 9. Component Rows
+## 9. Subassembly Rows
 
 ### 9.1 Purpose
 
-`component_rows` are the most important semantic rows for section review.
+`subassembly_rows` are the active semantic rows for section review.
 
 They identify what the user is actually looking at.
 
-### 9.2 Recommended component row fields
+### 9.2 Recommended Subassembly row fields
 
-- `component_id`
-- `component_kind`
+- `subassembly_id`
+- `subassembly_kind`
 - `template_id`
 - `assembly_ref`
 - `region_ref`
@@ -215,11 +216,12 @@ They identify what the user is actually looking at.
 
 Current implementation note:
 
-- `SectionComponentRow` preserves `assembly_ref` and `region_ref` so exchange packages and review surfaces can trace evaluated side-slope and bench rows back to the active source Assembly and Region.
+- `SectionSubassemblyRow` preserves `assembly_ref`, `region_ref`, and `subassembly_ref` so exchange packages, watertight solids, simulation packages, and review surfaces can trace evaluated rows back to the active source Assembly, Region, and Subassembly.
+- `component_rows` may still be present as transition compatibility rows until old consumers are retired.
 
-### 9.3 Recommended component row semantics
+### 9.3 Recommended Subassembly row semantics
 
-Component rows should survive even when:
+Subassembly rows should survive even when:
 
 - labels are hidden
 - rendering style changes
@@ -227,7 +229,7 @@ Component rows should survive even when:
 
 ### 9.4 Supported kinds
 
-Initial component kinds should align with the section model, including:
+Initial Subassembly kinds should align with the section model, including:
 
 - `lane`
 - `shoulder`
@@ -259,11 +261,13 @@ Initial component kinds should align with the section model, including:
 - `display_label`
 - `priority`
 - `band_role`
-- `related_component_id`
+- `related_subassembly_id`
+- optional compatibility `related_component_id`
 
 ### 10.3 Recommended roles
 
-- `component_width`
+- `subassembly_width`
+- compatibility `component_width`
 - `overall_width`
 - `offset`
 - `structure_clearance`
@@ -471,7 +475,18 @@ Current implementation note:
 - `frame_status`
 - `terrain_summary`
 - `structure_summary`
+- `subassembly_count`
+- `subassembly_point_count`
+- `subassembly_link_count`
+- `subassembly_shape_count`
+- `compatibility_component_count`
 - `quantity_summary`
+
+Current implementation note:
+
+- `subassembly_count` is the active user-facing count for road-section building units.
+- `compatibility_component_count` is the transition fallback row count for old Component rows.
+- `component_count` may still be read from old payloads only as a compatibility fallback; new SectionOutput rows should not emit it.
 
 ## 18. SectionSheetOutput Structure
 

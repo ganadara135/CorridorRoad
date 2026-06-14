@@ -1,6 +1,13 @@
 """Derived result models for CorridorRoad v1."""
 
-from .applied_section import AppliedSection, AppliedSectionFrame
+from .applied_section import (
+    AppliedSection,
+    AppliedSectionFrame,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+    AppliedSectionSubassemblyRow,
+    AppliedSectionSubassemblyShape,
+)
 from .applied_section_solid_profile import (
     AppliedSectionSolidProfile,
     AppliedSectionSolidProfileSet,
@@ -38,6 +45,10 @@ from .tin_surface import TINSurface
 __all__ = [
     "AppliedSection",
     "AppliedSectionFrame",
+    "AppliedSectionSubassemblyLink",
+    "AppliedSectionSubassemblyPoint",
+    "AppliedSectionSubassemblyRow",
+    "AppliedSectionSubassemblyShape",
     "AppliedSectionSolidProfile",
     "AppliedSectionSolidProfileSet",
     "AppliedSectionSet",

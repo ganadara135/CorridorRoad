@@ -125,12 +125,12 @@ class SolidTargetDiscoveryService:
         target_rows.extend(intersection_zone_rows)
         diagnostics.extend(intersection_zone_diagnostics)
 
-        component_rows, component_diagnostics = _component_target_rows(
+        subassembly_rows, subassembly_diagnostics = _subassembly_target_rows(
             applied,
             source_refs=source_refs,
         )
-        target_rows.extend(component_rows)
-        diagnostics.extend(component_diagnostics)
+        target_rows.extend(subassembly_rows)
+        diagnostics.extend(subassembly_diagnostics)
 
         lined_ditch_rows, lined_ditch_diagnostics = _lined_ditch_target_rows(
             applied,
@@ -286,7 +286,6 @@ def _intersection_surface_zone_target_rows(
                         station_start=station_start,
                         station_end=station_end,
                         region_ref=",".join(control_refs),
-                        component_ref=zone_id,
                         enabled=False,
                         readiness_status=readiness,
                         source_refs=_unique_refs(
@@ -500,61 +499,77 @@ def _intersection_patch_target_rows(
     return rows, diagnostics
 
 
-def _component_target_rows(
+def _subassembly_target_rows(
     applied: AppliedSectionSet | None,
     *,
     source_refs: list[str],
 ) -> tuple[list[SolidTargetRow], list[SolidTargetDiagnosticRow]]:
     if applied is None:
         return [], []
-    component_targets: dict[tuple[str, str], dict[str, object]] = {}
+    subassembly_targets: dict[tuple[str, str], dict[str, object]] = {}
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
-        for component in list(getattr(section, "component_rows", []) or []):
-            kind = str(getattr(component, "kind", "") or "").strip().lower()
-            family = _component_target_family(kind)
+        source_rows, using_subassemblies = _section_subassembly_or_compatibility_rows(section)
+        for source_row in source_rows:
+            kind = str(getattr(source_row, "kind", "") or "").strip().lower()
+            family = _subassembly_target_family(kind)
             if not family:
                 continue
-            component_id = str(getattr(component, "component_id", "") or "").strip()
-            width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
-            thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
-            if not component_id:
+            subassembly_ref = ""
+            component_id = ""
+            if using_subassemblies:
+                subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
+            else:
+                component_id = str(getattr(source_row, "component_id", "") or "").strip()
+                subassembly_ref = _subassembly_ref_for_compatibility_component(section, component_id)
+            if not (subassembly_ref or component_id):
                 continue
-            key = (family, component_id)
-            data = component_targets.setdefault(
+            width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
+            thickness = max(float(getattr(source_row, "thickness", 0.0) or 0.0), 0.0)
+            owner_ref = subassembly_ref or component_id
+            key = (family, owner_ref)
+            data = subassembly_targets.setdefault(
                 key,
                 {
                     "stations": [],
                     "kind": kind,
                     "family": family,
-                    "material": str(getattr(component, "material", "") or ""),
+                    "material": str(getattr(source_row, "material", "") or ""),
                     "region_refs": [],
                     "assembly_refs": [],
+                    "compatibility_refs": [],
+                    "subassembly_refs": [],
                     "invalid_dimension_stations": [],
                 },
             )
             data["stations"].append(station)
-            data["region_refs"].append(str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""))
+            data["region_refs"].append(str(getattr(source_row, "region_id", "") or getattr(section, "region_id", "") or ""))
             data["assembly_refs"].append(str(getattr(section, "assembly_id", "") or ""))
+            data["compatibility_refs"].append(component_id)
+            data["subassembly_refs"].append(subassembly_ref)
             if width <= 0.0 or thickness <= 0.0:
                 data["invalid_dimension_stations"].append(station)
             if not str(data.get("material", "") or ""):
-                data["material"] = str(getattr(component, "material", "") or "")
+                data["material"] = str(getattr(source_row, "material", "") or "")
 
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
-    for (family, component_id), data in sorted(component_targets.items()):
+    for (family, owner_ref), data in sorted(subassembly_targets.items()):
         stations = sorted(float(value) for value in list(data.get("stations", []) or []))
         station_count = len(set(round(value, 6) for value in stations))
-        target_prefix = _component_target_prefix(family)
-        target_id = f"solid-target:{target_prefix}:{_safe_id(component_id)}"
+        compatibility_refs = _unique_refs(list(data.get("compatibility_refs", []) or []))
+        subassembly_refs = _unique_refs(list(data.get("subassembly_refs", []) or []))
+        compatibility_ref = _single_ref(compatibility_refs)
+        active_ref = _single_ref(subassembly_refs) or str(owner_ref or compatibility_ref)
+        target_prefix = _subassembly_target_prefix(family)
+        target_id = f"solid-target:{target_prefix}:{_safe_id(active_ref)}"
         diagnostic_refs: list[str] = []
         if station_count < 2:
             diagnostic = _diagnostic(
                 "error",
-                "component_target_insufficient_profiles",
+                "subassembly_target_insufficient_profiles",
                 target_id,
-                f"Component {component_id} needs at least two Applied Section profiles before it can become a solid target.",
+                f"Subassembly {active_ref} needs at least two Applied Section profiles before it can become a solid target.",
             )
             diagnostics.append(diagnostic)
             diagnostic_refs.append(diagnostic.diagnostic_id)
@@ -562,9 +577,9 @@ def _component_target_rows(
         if invalid_stations:
             diagnostic = _diagnostic(
                 "error",
-                "component_target_invalid_dimensions",
+                "subassembly_target_invalid_dimensions",
                 target_id,
-                f"Component {component_id} needs positive width and thickness at every target station.",
+                f"Subassembly {active_ref} needs positive width and thickness at every target station.",
                 notes=f"stations={','.join(f'{station:g}' for station in invalid_stations)}",
             )
             diagnostics.append(diagnostic)
@@ -573,18 +588,23 @@ def _component_target_rows(
             SolidTargetRow(
                 target_id=target_id,
                 target_family=family,
-                scope_kind="assembly_component",
+                scope_kind="assembly_subassembly",
                 station_start=min(stations) if stations else 0.0,
                 station_end=max(stations) if stations else 0.0,
                 region_ref=_single_ref(data.get("region_refs", [])),
                 assembly_ref=_single_ref(data.get("assembly_refs", [])),
-                component_ref=component_id,
+                component_ref=compatibility_ref,
+                subassembly_ref=_single_ref(subassembly_refs),
                 enabled=False,
                 material_ref=str(data.get("material", "") or ""),
                 readiness_status="available" if station_count >= 2 and not invalid_stations else "blocked",
-                source_refs=source_refs + [component_id],
+                source_refs=_unique_refs(source_refs + subassembly_refs + compatibility_refs),
                 diagnostic_refs=diagnostic_refs,
-                notes=f"{_component_target_label(family)} target discovered from Applied Section component rows; component_kind={data.get('kind', '')}.",
+                notes=(
+                    f"{_subassembly_target_label(family)} target discovered from Applied Section Subassembly rows; "
+                    f"subassembly_refs={_join_refs(subassembly_refs) or '-'}; compatibility_refs={_join_refs(compatibility_refs) or '-'}; "
+                    f"source_kind={data.get('kind', '')}."
+                ),
             )
         )
     return rows, diagnostics
@@ -600,7 +620,7 @@ def _lined_ditch_target_rows(
     if applied is None:
         return [], []
     surface_stations_by_side: dict[str, list[float]] = {"left": [], "right": []}
-    component_data_by_side: dict[str, dict[str, object]] = {"left": {}, "right": {}}
+    ditch_data_by_side: dict[str, dict[str, object]] = {"left": {}, "right": {}}
     drainage_owner_by_side = _drainage_lined_ditch_owner_by_side(drainage_model)
     flow_route_by_drainage_ref = _flow_route_by_drainage_ref(drainage_model)
     for section in list(getattr(applied, "sections", []) or []):
@@ -608,25 +628,34 @@ def _lined_ditch_target_rows(
         section_sides = _ditch_surface_sides(section)
         for side in section_sides:
             surface_stations_by_side.setdefault(side, []).append(station)
-        for component in list(getattr(section, "component_rows", []) or []):
-            if str(getattr(component, "kind", "") or "").strip().lower() != "ditch":
+        source_rows, using_subassemblies = _section_subassembly_or_compatibility_rows(section, kind_filter="ditch")
+        for source_row in source_rows:
+            if str(getattr(source_row, "kind", "") or "").strip().lower() != "ditch":
                 continue
-            for side in _component_sides(component):
-                data = component_data_by_side.setdefault(side, {})
+            for side in _component_sides(source_row):
+                data = ditch_data_by_side.setdefault(side, {})
+                subassembly_ref = ""
+                component_ref = ""
+                if using_subassemblies:
+                    subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
+                else:
+                    component_ref = str(getattr(source_row, "component_id", "") or "").strip()
+                    subassembly_ref = _subassembly_ref_for_compatibility_component(section, component_ref)
                 data.setdefault("stations", []).append(station)
-                data.setdefault("component_refs", []).append(str(getattr(component, "component_id", "") or ""))
-                data.setdefault("materials", []).append(str(getattr(component, "material", "") or ""))
-                data.setdefault("thicknesses", []).append(_ditch_lining_thickness(component))
-                data.setdefault("region_refs", []).append(str(getattr(component, "region_id", "") or getattr(section, "region_id", "") or ""))
+                data.setdefault("compatibility_refs", []).append(component_ref)
+                data.setdefault("subassembly_refs", []).append(subassembly_ref)
+                data.setdefault("materials", []).append(str(getattr(source_row, "material", "") or ""))
+                data.setdefault("thicknesses", []).append(_ditch_lining_thickness(source_row))
+                data.setdefault("region_refs", []).append(str(getattr(source_row, "region_id", "") or getattr(section, "region_id", "") or ""))
                 data.setdefault("assembly_refs", []).append(str(getattr(section, "assembly_id", "") or ""))
 
     rows: list[SolidTargetRow] = []
     diagnostics: list[SolidTargetDiagnosticRow] = []
     for side in ("left", "right"):
         surface_stations = _unique_sorted_floats(surface_stations_by_side.get(side, []))
-        component_data = component_data_by_side.get(side, {})
-        component_stations = _unique_sorted_floats(list(component_data.get("stations", []) or []))
-        all_stations = _unique_sorted_floats(surface_stations + component_stations)
+        ditch_data = ditch_data_by_side.get(side, {})
+        ditch_stations = _unique_sorted_floats(list(ditch_data.get("stations", []) or []))
+        all_stations = _unique_sorted_floats(surface_stations + ditch_stations)
         if len(all_stations) < 2:
             continue
         target_id = f"solid-target:lined-ditch:{side}"
@@ -647,9 +676,10 @@ def _lined_ditch_target_rows(
         if not drainage_ref:
             drainage_ref = f"lined_ditch:{side}"
         flow_route_ref = context_flow_route_refs[0] if context_flow_route_refs else flow_route_by_drainage_ref.get(drainage_ref, "")
-        component_refs = _unique_refs(list(component_data.get("component_refs", []) or []))
-        materials = _unique_refs(list(component_data.get("materials", []) or []))
-        thicknesses = [float(value) for value in list(component_data.get("thicknesses", []) or [])]
+        compatibility_refs = _unique_refs(list(ditch_data.get("compatibility_refs", []) or []))
+        subassembly_refs = _unique_refs(list(ditch_data.get("subassembly_refs", []) or []))
+        materials = _unique_refs(list(ditch_data.get("materials", []) or []))
+        thicknesses = [float(value) for value in list(ditch_data.get("thicknesses", []) or [])]
         has_surface = len(surface_stations) >= 2
         has_material = len(materials) == 1 and bool(materials[0])
         has_lining_thickness = bool(thicknesses) and all(value > 0.0 for value in thicknesses)
@@ -680,7 +710,8 @@ def _lined_ditch_target_rows(
                 scope_kind="drainage",
                 station_start=min(all_stations),
                 station_end=max(all_stations),
-                component_ref=_single_ref(component_refs),
+                component_ref=_single_ref(compatibility_refs),
+                subassembly_ref=_single_ref(subassembly_refs),
                 drainage_ref=drainage_ref,
                 flow_route_ref=flow_route_ref,
                 enabled=False,
@@ -688,7 +719,8 @@ def _lined_ditch_target_rows(
                 readiness_status="available" if has_surface and has_material and has_lining_thickness else "blocked",
                 source_refs=_unique_refs(
                     source_refs
-                    + component_refs
+                    + compatibility_refs
+                    + subassembly_refs
                     + [f"ditch_surface:{side}"]
                     + _drainage_owner_source_refs(drainage_model, drainage_owner)
                     + ([flow_route_ref] if flow_route_ref else [])
@@ -700,6 +732,7 @@ def _lined_ditch_target_rows(
                     drainage_ref=drainage_ref,
                     flow_route_ref=flow_route_ref,
                     station_context=station_context,
+                    subassembly_refs=subassembly_refs,
                 ),
             )
         )
@@ -956,8 +989,12 @@ def _lined_ditch_target_notes(
     drainage_ref: str,
     flow_route_ref: str,
     station_context,
+    subassembly_refs: list[str] | None = None,
 ) -> str:
-    notes = f"Lined ditch {side} target discovered from ditch_surface rows and Assembly ditch component context."
+    notes = f"Lined ditch {side} target discovered from ditch_surface rows and Subassembly ditch context."
+    refs = _unique_refs(subassembly_refs or [])
+    if refs:
+        notes += f" Subassembly refs={_join_refs(refs)}."
     if drainage_owner is not None:
         notes += (
             f" DrainageModel owner={drainage_ref};"
@@ -968,6 +1005,44 @@ def _lined_ditch_target_notes(
         region_id = str(getattr(getattr(station_context, "region_context", None), "region_id", "") or "").strip()
         notes += f" StationContext region={region_id or '-'}."
     return notes
+
+
+def _subassembly_ref_for_compatibility_component(section, component_ref: str) -> str:
+    expected = str(component_ref or "").strip()
+    if not expected:
+        return ""
+    for row in list(getattr(section, "subassembly_rows", []) or []):
+        subassembly_id = str(getattr(row, "subassembly_id", "") or "").strip()
+        if subassembly_id == expected:
+            return subassembly_id
+    for point in list(getattr(section, "point_rows", []) or []):
+        if str(getattr(point, "component_ref", "") or "").strip() == expected:
+            subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
+            if subassembly_ref:
+                return subassembly_ref
+    for point in list(getattr(section, "subassembly_point_rows", []) or []):
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
+        if subassembly_ref == expected:
+            return subassembly_ref
+    return ""
+
+
+def _section_subassembly_or_compatibility_rows(section, *, kind_filter: str = "") -> tuple[list[object], bool]:
+    """Return active Subassembly rows, falling back to legacy component rows only when needed."""
+
+    normalized_kind = str(kind_filter or "").strip().lower()
+    subassembly_rows = [
+        row
+        for row in list(getattr(section, "subassembly_rows", []) or [])
+        if not normalized_kind or str(getattr(row, "kind", "") or "").strip().lower() == normalized_kind
+    ]
+    if subassembly_rows:
+        return subassembly_rows, True
+    return [
+        row
+        for row in list(getattr(section, "component_rows", []) or [])
+        if not normalized_kind or str(getattr(row, "kind", "") or "").strip().lower() == normalized_kind
+    ], False
 
 
 def _drainage_owner_source_refs(drainage_model: DrainageModel | None, drainage_owner: object | None) -> list[str]:
@@ -1139,7 +1214,7 @@ def _join_refs(values) -> str:
     return ", ".join(_unique_refs(values))
 
 
-def _component_target_family(kind: str) -> str:
+def _subassembly_target_family(kind: str) -> str:
     text = str(kind or "").strip().lower()
     if text == "pavement_layer":
         return "pavement_layer_body"
@@ -1150,7 +1225,7 @@ def _component_target_family(kind: str) -> str:
     return ""
 
 
-def _component_target_prefix(family: str) -> str:
+def _subassembly_target_prefix(family: str) -> str:
     text = str(family or "").strip().lower()
     if text == "subbase_body":
         return "subbase"
@@ -1159,7 +1234,7 @@ def _component_target_prefix(family: str) -> str:
     return "pavement-layer"
 
 
-def _component_target_label(family: str) -> str:
+def _subassembly_target_label(family: str) -> str:
     text = str(family or "").strip().lower()
     if text == "subbase_body":
         return "Subbase body"

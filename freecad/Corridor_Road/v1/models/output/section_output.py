@@ -23,7 +23,7 @@ class SectionGeometryRow:
 
 @dataclass(frozen=True)
 class SectionComponentRow:
-    """Minimal component row for section output."""
+    """Legacy compatibility component row for section output."""
 
     component_row_id: str
     component_id: str
@@ -35,14 +35,76 @@ class SectionComponentRow:
 
 
 @dataclass(frozen=True)
+class SectionSubassemblyRow:
+    """Minimal subassembly row for section output."""
+
+    subassembly_row_id: str
+    subassembly_id: str
+    kind: str
+    template_ref: str = ""
+    assembly_ref: str = ""
+    region_ref: str = ""
+    side: str = ""
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class SectionSubassemblyPointRow:
+    """Output point row produced by a Subassembly."""
+
+    point_row_id: str
+    point_id: str
+    subassembly_ref: str
+    point_code: str
+    lateral_offset: float = 0.0
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    side: str = ""
+    target_ref: str = ""
+
+
+@dataclass(frozen=True)
+class SectionSubassemblyLinkRow:
+    """Output link row produced by a Subassembly."""
+
+    link_row_id: str
+    link_id: str
+    subassembly_ref: str
+    start_point_ref: str
+    end_point_ref: str
+    link_code: str
+    surface_role: str = ""
+    material: str = ""
+
+
+@dataclass(frozen=True)
+class SectionSubassemblyShapeRow:
+    """Output shape row produced by a Subassembly."""
+
+    shape_row_id: str
+    shape_id: str
+    subassembly_ref: str
+    point_refs: list[str] = field(default_factory=list)
+    shape_code: str = ""
+    material: str = ""
+    thickness: float = 0.0
+    solid_family: str = ""
+
+
+@dataclass(frozen=True)
 class SectionQuantityRow:
-    """Minimal quantity row attached to section output."""
+    """Minimal quantity row attached to section output.
+
+    component_ref is retained only as legacy compatibility provenance.
+    """
 
     quantity_row_id: str
     quantity_kind: str
     value: float
     unit: str
     component_ref: str = ""
+    subassembly_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,12 +120,20 @@ class SectionSummaryRow:
 
 @dataclass
 class SectionOutput(OutputModelBase):
-    """Normalized section output payload."""
+    """Normalized section output payload.
+
+    subassembly_rows are the active section owner rows. component_rows are
+    retained only as a legacy compatibility fallback.
+    """
 
     section_output_id: str = ""
     alignment_id: str = ""
     station: float = 0.0
     geometry_rows: list[SectionGeometryRow] = field(default_factory=list)
     component_rows: list[SectionComponentRow] = field(default_factory=list)
+    subassembly_rows: list[SectionSubassemblyRow] = field(default_factory=list)
+    subassembly_point_rows: list[SectionSubassemblyPointRow] = field(default_factory=list)
+    subassembly_link_rows: list[SectionSubassemblyLinkRow] = field(default_factory=list)
+    subassembly_shape_rows: list[SectionSubassemblyShapeRow] = field(default_factory=list)
     quantity_rows: list[SectionQuantityRow] = field(default_factory=list)
     summary_rows: list[SectionSummaryRow] = field(default_factory=list)

@@ -13,7 +13,7 @@ from ...models.result.applied_section import AppliedSection
 from ...models.result.applied_section_set import AppliedSectionSet
 
 
-_FG_COMPONENT_KINDS = {
+_FG_SUBASSEMBLY_KINDS = {
     "lane",
     "shoulder",
     "median",
@@ -118,25 +118,25 @@ def _geometry_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingG
     rows: list[CrossSectionDrawingGeometryRow] = []
     rows.extend(_point_role_geometry_rows(applied_section, "fg_surface", "finished_grade", "fg"))
     if not any(row.kind == "fg" for row in rows):
-        component_fg_row = _component_fg_geometry_row(applied_section)
-        rows.append(component_fg_row if component_fg_row is not None else _fallback_fg_geometry_row(applied_section))
+        span_fg_row = _span_fg_geometry_row(applied_section)
+        rows.append(span_fg_row if span_fg_row is not None else _fallback_fg_geometry_row(applied_section))
     rows.extend(_point_role_geometry_rows(applied_section, "subgrade_surface", "subgrade", "subgrade"))
     if not any(row.kind == "subgrade" for row in rows):
-        component_subgrade_row = _component_subgrade_geometry_row(applied_section)
+        span_subgrade_row = _span_subgrade_geometry_row(applied_section)
         rows.append(
-            component_subgrade_row
-            if component_subgrade_row is not None
+            span_subgrade_row
+            if span_subgrade_row is not None
             else _fallback_subgrade_geometry_row(applied_section)
         )
     rows.extend(_point_role_geometry_rows(applied_section, "ditch_surface", "drainage", "ditch"))
     if not any(row.kind == "ditch" for row in rows):
-        rows.extend(_component_ditch_geometry_rows(applied_section))
+        rows.extend(_span_ditch_geometry_rows(applied_section))
     side_slope_point_rows = _side_slope_point_geometry_rows(applied_section)
     if side_slope_point_rows:
         rows.extend(side_slope_point_rows)
         return [row for row in rows if len(row.offset_values) >= 2 and len(row.elevation_values) >= 2]
-    component_slope_rows = _component_slope_face_rows(applied_section)
-    rows.extend(component_slope_rows if component_slope_rows else _fallback_slope_face_rows(applied_section))
+    span_slope_rows = _span_slope_face_rows(applied_section)
+    rows.extend(span_slope_rows if span_slope_rows else _fallback_slope_face_rows(applied_section))
     return [row for row in rows if len(row.offset_values) >= 2 and len(row.elevation_values) >= 2]
 
 
@@ -194,11 +194,11 @@ def _fallback_subgrade_geometry_row(applied_section: AppliedSection) -> CrossSec
     )
 
 
-def _component_fg_geometry_row(applied_section: AppliedSection) -> CrossSectionDrawingGeometryRow | None:
+def _span_fg_geometry_row(applied_section: AppliedSection) -> CrossSectionDrawingGeometryRow | None:
     spans = [
         span
-        for span in _component_spans(applied_section)
-        if str(span.get("kind", "") or "") in _FG_COMPONENT_KINDS
+        for span in _subassembly_spans(applied_section)
+        if str(span.get("kind", "") or "") in _FG_SUBASSEMBLY_KINDS
     ]
     if not spans:
         return None
@@ -219,8 +219,8 @@ def _component_fg_geometry_row(applied_section: AppliedSection) -> CrossSectionD
     )
 
 
-def _component_subgrade_geometry_row(applied_section: AppliedSection) -> CrossSectionDrawingGeometryRow | None:
-    fg_row = _component_fg_geometry_row(applied_section)
+def _span_subgrade_geometry_row(applied_section: AppliedSection) -> CrossSectionDrawingGeometryRow | None:
+    fg_row = _span_fg_geometry_row(applied_section)
     if fg_row is None:
         return None
     depth = max(0.0, float(getattr(applied_section, "subgrade_depth", 0.0) or 0.0))
@@ -234,9 +234,9 @@ def _component_subgrade_geometry_row(applied_section: AppliedSection) -> CrossSe
     )
 
 
-def _component_ditch_geometry_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
+def _span_ditch_geometry_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
     rows: list[CrossSectionDrawingGeometryRow] = []
-    for span in _component_spans(applied_section):
+    for span in _subassembly_spans(applied_section):
         if str(span.get("kind", "") or "") != "ditch":
             continue
         start = float(span["start"])
@@ -252,15 +252,15 @@ def _component_ditch_geometry_rows(applied_section: AppliedSection) -> list[Cros
                 offset_values=[start, mid_offset, end],
                 elevation_values=[start_z, invert_z, end_z],
                 style_role="drainage",
-                source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+                source_ref=str(span.get("source_ref", "") or ""),
             )
         )
     return rows
 
 
-def _component_slope_face_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
+def _span_slope_face_rows(applied_section: AppliedSection) -> list[CrossSectionDrawingGeometryRow]:
     rows: list[CrossSectionDrawingGeometryRow] = []
-    for span in _component_spans(applied_section):
+    for span in _subassembly_spans(applied_section):
         if str(span.get("kind", "") or "") != "side_slope":
             continue
         rows.append(
@@ -270,7 +270,7 @@ def _component_slope_face_rows(applied_section: AppliedSection) -> list[CrossSec
                 offset_values=[float(span["start"]), float(span["end"])],
                 elevation_values=[float(span["start_z"]), float(span["end_z"])],
                 style_role="slope_face",
-                source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+                source_ref=str(span.get("source_ref", "") or ""),
             )
         )
     return rows
@@ -417,19 +417,19 @@ def _label_rows(
                 source_ref=row.source_ref,
             )
         )
-    for span in _component_spans(applied_section):
+    for span in _subassembly_spans(applied_section):
         width = abs(float(span["end"]) - float(span["start"]))
         if width <= 1.0e-9:
             continue
         rows.append(
             CrossSectionDrawingLabelRow(
-                row_id=f"{applied_section.applied_section_id}:component-label-{span['row_id']}",
-                text=_component_label(span),
+                row_id=f"{applied_section.applied_section_id}:subassembly-label-{span['row_id']}",
+                text=_subassembly_label(span),
                 offset=0.5 * (float(span["start"]) + float(span["end"])),
                 elevation=max(float(span["start_z"]), float(span["end_z"])),
-                role=f"component:{span.get('kind', '')}",
+                role=f"subassembly:{span.get('kind', '')}",
                 value=f"{width:.3f} m",
-                source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+                source_ref=str(span.get("source_ref", "") or ""),
             )
         )
     for point in _daylight_marker_points(applied_section):
@@ -478,24 +478,24 @@ def _dimension_rows(
             source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
         )
     ]
-    component_spans = [
+    subassembly_spans = [
         span
-        for span in _component_spans(applied_section)
+        for span in _subassembly_spans(applied_section)
         if abs(float(span["end"]) - float(span["start"])) > 1.0e-9
     ]
-    if component_spans:
-        for span in component_spans:
+    if subassembly_spans:
+        for span in subassembly_spans:
             rows.append(
                 CrossSectionDrawingDimensionRow(
-                    row_id=f"{applied_section.applied_section_id}:dim-component-{span['row_id']}",
-                    kind="component_width",
+                    row_id=f"{applied_section.applied_section_id}:dim-subassembly-{span['row_id']}",
+                    kind="subassembly_width",
                     start_offset=float(span["start"]),
                     end_offset=float(span["end"]),
                     baseline_elevation=baseline - 0.35,
-                    label=_component_label(span),
+                    label=_subassembly_label(span),
                     value=abs(float(span["end"]) - float(span["start"])),
-                    role=f"component:{span.get('kind', '')}",
-                    source_ref=str(getattr(applied_section, "applied_section_id", "") or ""),
+                    role=f"subassembly:{span.get('kind', '')}",
+                    source_ref=str(span.get("source_ref", "") or ""),
                 )
             )
         return rows
@@ -506,7 +506,7 @@ def _dimension_rows(
         rows.append(
             CrossSectionDrawingDimensionRow(
                 row_id=f"{applied_section.applied_section_id}:dim-right-fg",
-                kind="component_width",
+                kind="subassembly_width",
                 start_offset=-right,
                 end_offset=0.0,
                 baseline_elevation=baseline - 0.5,
@@ -520,7 +520,7 @@ def _dimension_rows(
         rows.append(
             CrossSectionDrawingDimensionRow(
                 row_id=f"{applied_section.applied_section_id}:dim-left-fg",
-                kind="component_width",
+                kind="subassembly_width",
                 start_offset=0.0,
                 end_offset=left,
                 baseline_elevation=baseline - 0.5,
@@ -533,8 +533,8 @@ def _dimension_rows(
     return rows
 
 
-def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]:
-    """Return section-local component spans with start/end elevations."""
+def _subassembly_spans(applied_section: AppliedSection) -> list[dict[str, object]]:
+    """Return section-local Subassembly spans with start/end elevations."""
 
     spans: list[dict[str, object]] = []
     base_z = _frame_elevation(applied_section)
@@ -542,17 +542,21 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
         "left": [0.0, base_z],
         "right": [0.0, base_z],
     }
-    derived_side_slope_parents = _derived_side_slope_parent_ids(applied_section)
-    for index, component in enumerate(list(getattr(applied_section, "component_rows", []) or []), start=1):
-        kind = str(getattr(component, "kind", "") or "").strip().lower()
-        width = max(0.0, float(getattr(component, "width", 0.0) or 0.0))
+    span_rows, using_active_subassemblies = _section_span_source_rows(applied_section)
+    compatibility_side_slope_parents = (
+        set() if using_active_subassemblies else _legacy_compatibility_side_slope_parent_ids(applied_section)
+    )
+    for index, row in enumerate(span_rows, start=1):
+        kind = str(getattr(row, "kind", "") or "").strip().lower()
+        width = max(0.0, float(getattr(row, "width", 0.0) or 0.0))
         if not kind or width <= 1.0e-9:
             continue
-        component_id = str(getattr(component, "component_id", "") or "")
-        if kind == "side_slope" and component_id in derived_side_slope_parents:
+        row_id = _span_source_row_id(row, using_active_subassemblies)
+        source_ref = _span_source_ref(row_id, using_active_subassemblies)
+        if not using_active_subassemblies and kind == "side_slope" and row_id in compatibility_side_slope_parents:
             continue
-        side = str(getattr(component, "side", "") or "center").strip().lower() or "center"
-        slope = float(getattr(component, "slope", 0.0) or 0.0)
+        side = str(getattr(row, "side", "") or "center").strip().lower() or "center"
+        slope = float(getattr(row, "slope", 0.0) or 0.0)
         sides = [side]
         if side == "both":
             sides = ["left", "right"]
@@ -562,7 +566,9 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
             spans.append(
                 {
                     "row_id": f"{index}:center",
-                    "component_id": component_id,
+                    "subassembly_id": row_id,
+                    "source_ref": source_ref,
+                    "source_family": "subassembly" if using_active_subassemblies else "compatibility",
                     "kind": kind,
                     "side": "center",
                     "start": -half_width,
@@ -587,7 +593,9 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
             spans.append(
                 {
                     "row_id": f"{index}:{side_name}",
-                    "component_id": component_id,
+                    "subassembly_id": row_id,
+                    "source_ref": source_ref,
+                    "source_family": "subassembly" if using_active_subassemblies else "compatibility",
                     "kind": kind,
                     "side": side_name,
                     "start": start,
@@ -601,7 +609,33 @@ def _component_spans(applied_section: AppliedSection) -> list[dict[str, object]]
     return spans
 
 
-def _derived_side_slope_parent_ids(applied_section: AppliedSection) -> set[str]:
+def _section_span_source_rows(applied_section: AppliedSection) -> tuple[list[object], bool]:
+    """Return active Subassembly rows, or legacy compatibility rows only as fallback."""
+
+    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
+    if subassembly_rows:
+        return subassembly_rows, True
+    return list(getattr(applied_section, "component_rows", []) or []), False
+
+
+def _span_source_row_id(row: object, using_active_subassemblies: bool) -> str:
+    if using_active_subassemblies:
+        return str(getattr(row, "subassembly_id", "") or "")
+    return str(getattr(row, "component_id", "") or "")
+
+
+def _span_source_ref(row_id: str, using_active_subassemblies: bool) -> str:
+    row_id = str(row_id or "").strip()
+    if not row_id:
+        return ""
+    if using_active_subassemblies:
+        return row_id
+    if row_id.startswith("compatibility:"):
+        return row_id
+    return f"compatibility:{row_id}"
+
+
+def _legacy_compatibility_side_slope_parent_ids(applied_section: AppliedSection) -> set[str]:
     output: set[str] = set()
     for component in list(getattr(applied_section, "component_rows", []) or []):
         component_id = str(getattr(component, "component_id", "") or "")
@@ -611,7 +645,7 @@ def _derived_side_slope_parent_ids(applied_section: AppliedSection) -> set[str]:
     return output
 
 
-def _component_label(span: dict[str, object]) -> str:
+def _subassembly_label(span: dict[str, object]) -> str:
     kind = str(span.get("kind", "") or "").strip().lower()
     side = str(span.get("side", "") or "").strip().lower()
     side_label = {"left": "L", "right": "R", "center": "C"}.get(side, "")
@@ -628,7 +662,7 @@ def _component_label(span: dict[str, object]) -> str:
         "side_slope": "daylight",
         "bench": "bench",
         "daylight": "daylight",
-    }.get(kind, kind.replace("_", " ") or "component")
+    }.get(kind, kind.replace("_", " ") or "subassembly")
     return f"{label} {side_label}".strip()
 
 

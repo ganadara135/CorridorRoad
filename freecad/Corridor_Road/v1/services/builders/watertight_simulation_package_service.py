@@ -39,6 +39,7 @@ class WatertightSimulationPackageService:
             SimulationPackageSolidRow(
                 output_ref=str(getattr(row, "output_ref", "") or ""),
                 target_families=_unique_refs(getattr(row, "target_families", []) or []),
+                subassembly_refs=_split_refs(getattr(row, "subassembly_refs", []) or []),
                 structure_refs=_split_refs(getattr(row, "structure_refs", []) or []),
                 drainage_refs=[],
                 flow_route_refs=_split_refs(getattr(row, "flow_route_refs", []) or []),
@@ -65,7 +66,11 @@ class WatertightSimulationPackageService:
             simulation_package_output_id=str(getattr(request, "package_output_id", "") or "simulation-package:watertight-solids"),
             label="Simulation Package",
             selection_scope={"scope_kind": "simulation_package", "source": "watertight_solids"},
-            source_refs=_unique_refs([qa_ref, *output_refs]),
+            source_refs=_unique_refs([
+                qa_ref,
+                *output_refs,
+                *[ref for solid in solids for ref in solid.subassembly_refs],
+            ]),
             result_refs=diagnostic_kinds,
             package_status="ready" if package_ready else "blocked",
             simulation_ready=package_ready,

@@ -169,25 +169,40 @@ def _build_source_inspector(
     """Build a compact source-inspector payload for the v1 section viewer."""
 
     viewer_context = dict(viewer_context or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_id = str(focused.get("id", "") or "").strip()
     focused_kind = str(focused.get("type", "") or "").strip()
     focused_side = str(focused.get("side", "") or "").strip()
 
-    selected_component = None
-    for row in list(getattr(section_output, "component_rows", []) or []):
-        row_id = str(getattr(row, "component_id", "") or "").strip()
+    selected_subassembly = None
+    for row in list(getattr(section_output, "subassembly_rows", []) or []):
+        row_id = str(getattr(row, "subassembly_id", "") or "").strip()
         if focused_id and row_id == focused_id:
-            selected_component = row
+            selected_subassembly = row
             break
-    if selected_component is None:
-        component_rows = list(getattr(section_output, "component_rows", []) or [])
+    if selected_subassembly is None:
+        subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+        if subassembly_rows:
+            selected_subassembly = subassembly_rows[0]
+
+    selected_component = None
+    if selected_subassembly is None:
+        for row in _section_output_compatibility_rows(section_output):
+            row_id = str(getattr(row, "component_id", "") or "").strip()
+            if focused_id and row_id == focused_id:
+                selected_component = row
+                break
+    if selected_component is None and selected_subassembly is None:
+        component_rows = _section_output_compatibility_rows(section_output)
         if component_rows:
             selected_component = component_rows[0]
 
-    component_id = focused_id or str(getattr(selected_component, "component_id", "") or "").strip()
-    component_kind = focused_kind or str(getattr(selected_component, "kind", "") or "").strip()
-    component_side = focused_side or str(focused.get("scope", "") or "").strip()
+    subassembly_id = focused_id or str(getattr(selected_subassembly, "subassembly_id", "") or "").strip()
+    subassembly_kind = focused_kind or str(getattr(selected_subassembly, "kind", "") or "").strip()
+    subassembly_side = focused_side or str(getattr(selected_subassembly, "side", "") or "").strip()
+    compatibility_component_id = str(getattr(selected_component, "component_id", "") or "").strip()
+    compatibility_component_kind = str(getattr(selected_component, "kind", "") or "").strip()
+    compatibility_component_side = str(focused.get("scope", "") or "").strip()
     applied_section_set_label = str(
         getattr(applied_section_set, "label", "")
         or getattr(applied_section_set, "applied_section_set_id", "")
@@ -203,9 +218,9 @@ def _build_source_inspector(
     owner_template = str(getattr(applied_section, "template_id", "") or "").strip()
     owner_region = str(getattr(applied_section, "region_id", "") or "").strip()
     if not owner_template:
-        owner_template = _first_component_ref(section_output, "template_ref")
+        owner_template = _first_subassembly_or_compatibility_ref(section_output, "template_ref")
     if not owner_region:
-        owner_region = _first_component_ref(section_output, "region_ref")
+        owner_region = _first_subassembly_or_compatibility_ref(section_output, "region_ref")
     template_object_label = str(getattr(assembly_model, "Label", "") or getattr(assembly_model, "Name", "") or "").strip()
     region_object_label = str(getattr(region_model, "Label", "") or getattr(region_model, "Name", "") or "").strip()
     structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
@@ -271,6 +286,7 @@ def _build_source_inspector(
     else:
         ownership_status = "partial"
 
+    compatibility_component_count = int(len(_section_output_compatibility_rows(section_output)))
     return {
         "station_label": str((station_row or {}).get("label", "") or "").strip(),
         "section_set_label": section_set_label,
@@ -299,9 +315,12 @@ def _build_source_inspector(
         "intersection_control_area_ref": owner_intersection_control_area,
         "intersection_leg_ref": owner_intersection_leg,
         "intersection_leg_role": owner_intersection_leg_role,
-        "component_id": component_id,
-        "component_kind": component_kind,
-        "component_side": component_side,
+        "subassembly_id": subassembly_id,
+        "subassembly_kind": subassembly_kind,
+        "subassembly_side": subassembly_side,
+        "compatibility_component_id": compatibility_component_id,
+        "compatibility_component_kind": compatibility_component_kind,
+        "compatibility_component_side": compatibility_component_side,
         "owner_template": owner_template,
         "owner_region": owner_region,
         "owner_structure": owner_structure,
@@ -310,7 +329,8 @@ def _build_source_inspector(
         "owner_intersection": owner_intersection,
         "ownership_status": ownership_status,
         "unresolved_fields": list(unresolved_fields),
-        "component_count": int(len(list(getattr(section_output, "component_rows", []) or []))),
+        "subassembly_count": int(len(list(getattr(section_output, "subassembly_rows", []) or []))),
+        "compatibility_component_count": compatibility_component_count,
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
     }
 
@@ -637,14 +657,47 @@ def _intersection_context_summary(rows: list[dict[str, object]]) -> str:
     return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
 
 
-def _first_component_ref(section_output, attr_name: str) -> str:
-    """Return the first non-empty component source reference from section output."""
+def _viewer_context_focused_subassembly(viewer_context: dict[str, object] | None) -> dict[str, object]:
+    """Return focused Subassembly context with old focused_component fallback."""
 
-    for row in list(getattr(section_output, "component_rows", []) or []):
+    context = dict(viewer_context or {})
+    focused = dict(context.get("focused_subassembly", {}) or {})
+    if focused:
+        return focused
+    return dict(context.get("focused_component", {}) or {})
+
+
+def _first_subassembly_or_compatibility_ref(section_output, attr_name: str) -> str:
+    """Return the first non-empty Subassembly source ref, with compatibility fallback."""
+
+    subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+    for row in subassembly_rows:
+        value = str(getattr(row, attr_name, "") or "").strip()
+        if value:
+            return value
+    if subassembly_rows:
+        return ""
+    for row in _section_output_compatibility_rows(section_output):
         value = str(getattr(row, attr_name, "") or "").strip()
         if value:
             return value
     return ""
+
+
+def _section_output_compatibility_rows(section_output) -> list[object]:
+    """Return legacy SectionOutput component rows only as compatibility fallback."""
+
+    if list(getattr(section_output, "subassembly_rows", []) or []):
+        return []
+    return list(getattr(section_output, "component_rows", []) or [])
+
+
+def _applied_section_compatibility_component_rows(applied_section) -> list[object]:
+    """Return legacy AppliedSection component rows only when no Subassembly rows exist."""
+
+    if list(getattr(applied_section, "subassembly_rows", []) or []):
+        return []
+    return list(getattr(applied_section, "component_rows", []) or [])
 
 
 def _applied_section_structure_ref(applied_section) -> str:
@@ -654,7 +707,13 @@ def _applied_section_structure_ref(applied_section) -> str:
         text = str(value or "").strip()
         if text:
             return text
-    for component in list(getattr(applied_section, "component_rows", []) or []):
+    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "structure_ids", []) or []):
+            text = str(value or "").strip()
+            if text:
+                return text
+    for component in _applied_section_compatibility_component_rows(applied_section):
         for value in list(getattr(component, "structure_ids", []) or []):
             text = str(value or "").strip()
             if text:
@@ -669,7 +728,13 @@ def _applied_section_drainage_ref(applied_section) -> str:
         text = str(getattr(point, "drainage_ref", "") or "").strip()
         if text:
             return text
-    for component in list(getattr(applied_section, "component_rows", []) or []):
+    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "drainage_refs", []) or []):
+            text = str(value or "").strip()
+            if text:
+                return text
+    for component in _applied_section_compatibility_component_rows(applied_section):
         for value in list(getattr(component, "drainage_refs", []) or []):
             text = str(value or "").strip()
             if text:
@@ -1354,7 +1419,7 @@ def _build_review_marker_rows(
 
     viewer_context = dict(viewer_context or {})
     station_label = str((station_row or {}).get("label", "") or "").strip() or "Current station"
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_label = str(focused.get("label", "") or "").strip()
     notes = "Placeholder only; persistent bookmark storage is not implemented yet."
     if focused_label:
@@ -1369,7 +1434,7 @@ def _build_review_marker_rows(
         {
             "kind": "review_issue_placeholder",
             "label": "Issue Marker Slot",
-            "value": focused_label or "(no focused component)",
+            "value": focused_label or "(no focused Subassembly)",
             "notes": "Use this slot for future section review issue markers.",
         },
     ]
@@ -1766,7 +1831,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
     station_row = dict(preview.get("station_row", {}) or {})
     station_label = str(station_row.get("label", f"STA {section_output.station:.3f}") or f"STA {section_output.station:.3f}")
     viewer_context = dict(preview.get("viewer_context", {}) or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_label = str(focused.get("label", "") or "").strip()
     result_state = dict(preview.get("result_state", {}) or {})
     state_text = str(result_state.get("state", "unknown") or "unknown").strip()
@@ -1785,7 +1850,11 @@ def format_section_preview(preview: dict[str, object]) -> str:
         f"Result State: {state_text}",
         f"Station: {section_output.station}",
         f"Station Label: {station_label}",
-        f"Components: {len(section_output.component_rows)}",
+        f"Subassemblies: {len(list(getattr(section_output, 'subassembly_rows', []) or []))}",
+        f"Subassembly Points: {len(list(getattr(section_output, 'subassembly_point_rows', []) or []))}",
+        f"Subassembly Links: {len(list(getattr(section_output, 'subassembly_link_rows', []) or []))}",
+        f"Subassembly Shapes: {len(list(getattr(section_output, 'subassembly_shape_rows', []) or []))}",
+        f"Compatibility Fallback Rows: {len(_section_output_compatibility_rows(section_output))}",
         f"Quantities: {len(section_output.quantity_rows)}",
         f"Drawing Geometry: {len(list(getattr(drawing_payload, 'geometry_rows', []) or []))}",
         f"Drawing Labels: {len(list(getattr(drawing_payload, 'label_rows', []) or []))}",
@@ -1829,7 +1898,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
     if corridor_text:
         lines.append(corridor_text)
     if focused_label:
-        lines.append(f"Focus Component: {focused_label}")
+        lines.append(f"Focus Subassembly: {focused_label}")
     return "\n".join(lines)
 
 

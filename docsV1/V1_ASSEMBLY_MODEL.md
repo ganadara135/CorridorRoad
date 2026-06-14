@@ -25,13 +25,13 @@ The first v1 Assembly slice covers:
 
 Regions decide where an assembly applies.
 
-Assemblies decide what section components are available at that station.
+Assemblies decide what section Subassemblies are available at that station.
 
 Applied sections and corridor solids are downstream results.
 
 ## Design Goals
 
-- Keep component intent editable before corridor generation.
+- Keep Subassembly intent editable before corridor generation.
 - Let `RegionRow.assembly_ref` point to a durable `AssemblyModel`.
 - Keep bridge, ramp, intersection, and drainage behavior explicit through references and layers.
 - Avoid storing engineering meaning inside viewer geometry.
@@ -40,9 +40,15 @@ Applied sections and corridor solids are downstream results.
 
 - `AssemblyModel`
 - `SectionTemplate`
+- `TemplateSubassembly`
+- `SubassemblySectionTemplate`
 - `TemplateComponent`
 - future `AssemblyPolicySet`
 - future `AssemblyVariant`
+
+`TemplateSubassembly` and `SubassemblySectionTemplate` are the active v1 contracts.
+
+`TemplateComponent` remains a transition compatibility contract until the Subassembly cutover is complete.
 
 ## Root Fields
 
@@ -68,12 +74,16 @@ Applied sections and corridor solids are downstream results.
 - `component_rows`
 - `notes`
 
-## Component Fields
+`SubassemblySectionTemplate` uses the same template identity fields and stores:
 
-`TemplateComponent` uses:
+- `subassembly_rows`
 
-- `component_id`
-- `component_index`
+## Subassembly Fields
+
+`TemplateSubassembly` uses:
+
+- `subassembly_id`
+- `subassembly_index`
 - `kind`
 - `side`
 - `width`
@@ -91,17 +101,11 @@ The governing shape contract is `docsV1/V1_DITCH_SHAPE_CONTRACT.md`.
 
 Recommended `parameters["shape"]` values include `trapezoid`, `u`, `l`, `rectangular`, `v`, and `custom_polyline`.
 
-The current Assembly editor preserves component parameters through a raw `Parameters` column using `key=value;key=value` text.
+The current Subassembly editor preserves parameters through a raw `Parameters` field using `key=value;key=value` text.
 
-It also provides a first-slice `Ditch Parameters` helper panel.
+The `Selected Subassembly Detail` area exposes first-slice helpers for ditch shape, side-slope bench, material, and preview rows.
 
-The helper panel reads the selected `ditch` row, edits common shape parameters, and writes them back to the raw `Parameters` column.
-
-It shows only the fields that are relevant to the selected ditch shape and can load starter defaults for common shapes.
-
-It also shows a compact shape diagram so users can understand the selected cross-section before applying it.
-
-It reads the selected component `material` and shows material-specific guidance.
+It reads the selected Subassembly `material` and shows material-specific guidance.
 
 Lined materials expose `lining_thickness`.
 
@@ -141,9 +145,28 @@ Assembly owns these reusable side-slope bench rules.
 
 Region applies the Assembly over station ranges, but it does not own bench geometry.
 
-The current Assembly editor provides a first-slice `Side Slope Bench` helper panel.
+## Deprecated Component Compatibility Fields
 
-The helper panel reads the selected `side_slope` row, edits bench rows, repeat-to-daylight settings, daylight mode, and daylight limits, then writes them back to the raw `Parameters` column.
+`TemplateComponent` is retained only as a transition compatibility contract.
+
+`TemplateComponent` uses:
+
+- `component_id`
+- `component_index`
+- `kind`
+- `side`
+- `width`
+- `slope`
+- `thickness`
+- `material`
+- `target_ref`
+- `parameters`
+- `enabled`
+- `notes`
+
+New v1 source, result, output, review, watertight solid, exchange, and simulation package paths should prefer `subassembly_ref`.
+
+`component_ref` may appear only as compatibility provenance while older documents and old editor paths remain loadable.
 
 ## Relationships
 
@@ -151,7 +174,7 @@ The helper panel reads the selected `side_slope` row, edits bench rows, repeat-t
 
 `RegionRow.template_ref` may reference `SectionTemplate.template_id` until richer Assembly lookup is implemented.
 
-`target_ref` may point to drainage, structure, override, or other domain sources when a component is tied to a specific external control.
+`target_ref` may point to drainage, structure, override, or other domain sources when a Subassembly is tied to a specific external control.
 
 The Region editor should list existing v1 Assembly ids for `assembly_ref`.
 
@@ -176,8 +199,8 @@ The first editor-level validation checks:
 - assembly id exists
 - at least one template exists
 - template id exists
-- component ids are present and unique within the template
-- component width is not negative
+- Subassembly ids are present and unique within the template
+- Subassembly width is not negative
 - ditch `shape` values are supported
 - required ditch shape parameters such as `depth` and `bottom_width` are present and numeric
 - `custom_polyline` ditch definitions provide at least two section points
@@ -213,7 +236,7 @@ The Assembly editor may provide a `Show` action.
 
 `Show` reads the current editable table values and creates a generated `Assembly Show Preview` cross-section in the 3D View.
 
-For `ditch` components, `Show` should use the same shape-aware ditch profile interpretation as Applied Section generation.
+For `ditch` Subassemblies, `Show` should use the same shape-aware ditch profile interpretation as Applied Section generation.
 
 The preview should be shown in Front view.
 
@@ -231,10 +254,10 @@ The Assembly source object does not replace Region, Structure, Drainage, Ramp, o
 
 ## Initial Workflow
 
-1. Open `Assembly`.
+1. Open `Assembly / Subassembly`.
 2. Select an Assembly preset.
 3. Click `Load Preset`.
-4. Edit component rows.
+4. Edit Subassembly rows.
 5. Click `Show` to review the cross-section line when needed.
 6. Click `Validate`.
 7. Click `Apply`.

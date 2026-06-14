@@ -10,6 +10,10 @@ from ...models.result.applied_section import (
     AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+    AppliedSectionSubassemblyRow,
+    AppliedSectionSubassemblyShape,
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...models.result.tin_surface import TINSurface
@@ -18,7 +22,9 @@ from ...common.diagnostics import DiagnosticMessage
 from ...models.source.alignment_model import AlignmentModel
 from ...models.source.assembly_model import (
     AssemblyModel,
+    AssemblySubassemblyModel,
     SectionTemplate,
+    SubassemblySectionTemplate,
     assembly_bench_validation_messages,
     normalize_bench_rows,
 )
@@ -74,6 +80,7 @@ class AppliedSectionBuildRequest:
     station: float
     applied_section_id: str
     assembly_models: list[AssemblyModel] = field(default_factory=list)
+    assembly_subassembly_models: list[AssemblySubassemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
@@ -97,6 +104,7 @@ class AppliedSectionSetBuildRequest:
     applied_section_set_id: str
     station_kinds: dict[float, str] = field(default_factory=dict)
     assembly_models: list[AssemblyModel] = field(default_factory=list)
+    assembly_subassembly_models: list[AssemblySubassemblyModel] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
@@ -107,13 +115,19 @@ class AppliedSectionSetBuildRequest:
 
 @dataclass(frozen=True)
 class _BenchEvaluation:
-    component: object
+    source_row: object
     side_label: str
     edge_offset: float
     edge_z: float
     direction: float
     segments: list[dict[str, object]]
     diagnostics: list[DiagnosticMessage] = field(default_factory=list)
+
+    @property
+    def component(self) -> object:
+        """Compatibility alias for older side-slope bench helper code."""
+
+        return self.source_row
 
 
 class AppliedSectionService:
@@ -188,11 +202,22 @@ class AppliedSectionService:
             assembly,
             template_id,
         )
+        subassembly_model = self._resolve_subassembly_model(
+            request.assembly_subassembly_models,
+            assembly_ref=region_context.assembly_ref or assembly.assembly_id,
+        )
+        subassembly_template_id = self._resolve_subassembly_template_id(
+            subassembly_model,
+            assembly_ref=region_context.assembly_ref or assembly.assembly_id,
+            template_ref=region_context.template_ref or template_id,
+        )
+        subassembly_template = self._find_subassembly_template(subassembly_model, subassembly_template_id)
         diagnostics = self._build_diagnostics(
             assembly,
             assembly_ref=region_context.assembly_ref,
             template_id=template_id,
             template=template,
+            subassembly_template=subassembly_template,
         )
 
         centerline_frame = self.centerline_frame_service.resolve_station(request.centerline3d_result, request.station)
@@ -211,13 +236,17 @@ class AppliedSectionService:
             active_rule_ids=active_rule_ids,
             active_influence_zone_ids=active_influence_zone_ids,
         )
-        left_width, right_width = self._surface_widths(template)
-        subgrade_depth = self._subgrade_depth(template)
-        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(template)
+        left_width, right_width = self._surface_widths(template, subassembly_template=subassembly_template)
+        subgrade_depth = self._subgrade_depth(template, subassembly_template=subassembly_template)
+        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(
+            template,
+            subassembly_template=subassembly_template,
+        )
         superelevation_result = self._evaluate_superelevation(
             request.superelevation_model,
             request.station,
             template=template,
+            subassembly_template=subassembly_template,
         )
         intersection_result = self._evaluate_intersection(
             request.intersection_model,
@@ -225,11 +254,17 @@ class AppliedSectionService:
             alignment_ref=request.alignment.alignment_id,
         )
         effective_template = _template_with_superelevation(template, superelevation_result)
+        effective_subassembly_template = _subassembly_template_with_superelevation(subassembly_template, superelevation_result)
         diagnostics.extend(list(getattr(superelevation_result, "diagnostic_rows", []) or []))
         diagnostics.extend(_intersection_context_diagnostics(intersection_result))
-        fg_points = _surface_section_offsets(effective_template, frame=frame)
+        fg_points = _surface_section_offsets(
+            effective_template,
+            frame=frame,
+            subassembly_template=effective_subassembly_template,
+        )
         bench_evaluations = _bench_evaluations(
             effective_template,
+            subassembly_template=effective_subassembly_template,
             frame=frame,
             fg_points=fg_points,
             surface_left_width=left_width,
@@ -238,8 +273,8 @@ class AppliedSectionService:
             sampling_service=self.tin_sampling_service,
         )
         diagnostics.extend(_bench_evaluation_diagnostics(bench_evaluations))
-        component_rows = self._build_component_rows(
-            effective_template,
+        subassembly_rows = self._build_subassembly_rows(
+            effective_subassembly_template,
             region_id=region_context.region_id,
             override_ids=override_result.active_override_ids,
             structure_ids=_unique_refs(
@@ -249,7 +284,23 @@ class AppliedSectionService:
             ),
             drainage_refs=active_drainage_refs,
             drainage_refs_by_side=active_drainage_refs_by_side,
-            bench_evaluations=bench_evaluations,
+        )
+        compatibility_component_rows = (
+            []
+            if subassembly_rows
+            else self._build_compatibility_component_rows(
+                effective_template,
+                region_id=region_context.region_id,
+                override_ids=override_result.active_override_ids,
+                structure_ids=_unique_refs(
+                    structure_result.active_structure_ids
+                    if structure_result is not None
+                    else []
+                ),
+                drainage_refs=active_drainage_refs,
+                drainage_refs_by_side=active_drainage_refs_by_side,
+                bench_evaluations=bench_evaluations,
+            )
         )
         point_rows = self._build_point_rows(
             effective_template,
@@ -260,8 +311,27 @@ class AppliedSectionService:
             subgrade_depth=subgrade_depth,
             drainage_refs=active_drainage_refs,
             drainage_refs_by_side=active_drainage_refs_by_side,
+            subassembly_template=effective_subassembly_template,
             bench_evaluations=bench_evaluations,
         )
+        point_rows = _points_with_compatibility_subassembly_refs(point_rows, subassembly_rows)
+        subassembly_point_rows = _subassembly_point_rows(point_rows, subassembly_rows)
+        subassembly_point_rows.extend(
+            _surface_subassembly_point_rows(
+                fg_points,
+                subassembly_rows,
+                subgrade_depth=subgrade_depth,
+            )
+        )
+        subassembly_point_rows.extend(
+            _bench_subassembly_point_rows(
+                bench_evaluations,
+                subassembly_rows,
+                frame=frame,
+            )
+        )
+        subassembly_link_rows = _subassembly_link_rows(subassembly_point_rows, subassembly_rows)
+        subassembly_shape_rows = _subassembly_shape_rows(subassembly_point_rows, subassembly_rows)
 
         return AppliedSection(
             schema_version=1,
@@ -275,7 +345,8 @@ class AppliedSectionService:
             frame=frame,
             template_id=template_id,
             region_id=region_context.region_id,
-            component_rows=component_rows,
+            component_rows=compatibility_component_rows,
+            subassembly_rows=subassembly_rows,
             surface_left_width=left_width,
             surface_right_width=right_width,
             subgrade_depth=subgrade_depth,
@@ -296,6 +367,9 @@ class AppliedSectionService:
             active_intersection_grading_policy_ref=str(getattr(intersection_result, "grading_policy_ref", "") or ""),
             intersection_diagnostic_rows=list(getattr(intersection_result, "diagnostic_rows", ()) or ()),
             point_rows=point_rows,
+            subassembly_point_rows=subassembly_point_rows,
+            subassembly_link_rows=subassembly_link_rows,
+            subassembly_shape_rows=subassembly_shape_rows,
             active_structure_ids=active_structure_ids,
             active_structure_rule_ids=active_rule_ids,
             active_structure_influence_zone_ids=active_influence_zone_ids,
@@ -307,6 +381,7 @@ class AppliedSectionService:
                     request.alignment.alignment_id,
                     request.profile.profile_id,
                     assembly.assembly_id,
+                    str(getattr(subassembly_model, "assembly_id", "") or "") if subassembly_model is not None else "",
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
                     request.structure_model.structure_model_id
@@ -348,6 +423,20 @@ class AppliedSectionService:
                 if str(getattr(model, "assembly_id", "") or "").strip() == requested:
                     return model
         return fallback
+
+    @staticmethod
+    def _resolve_subassembly_model(
+        assembly_subassembly_models: list[AssemblySubassemblyModel],
+        *,
+        assembly_ref: str,
+    ) -> AssemblySubassemblyModel | None:
+        requested = str(assembly_ref or "").strip()
+        candidates = [model for model in list(assembly_subassembly_models or []) if model is not None]
+        if requested:
+            for model in candidates:
+                if str(getattr(model, "assembly_id", "") or "").strip() == requested:
+                    return model
+        return candidates[0] if candidates else None
 
     @staticmethod
     def _build_frame(
@@ -413,10 +502,14 @@ class AppliedSectionService:
         station: float,
         *,
         template: SectionTemplate | None,
+        subassembly_template: SubassemblySectionTemplate | None = None,
     ) -> SuperelevationStationResult | None:
         if superelevation_model is None:
             return None
-        left_default, right_default = _default_crossfall_percent_by_side(template)
+        left_default, right_default = _default_crossfall_percent_by_side(
+            template,
+            subassembly_template=subassembly_template,
+        )
         return self.superelevation_service.evaluate_station(
             superelevation_model,
             station,
@@ -450,6 +543,18 @@ class AppliedSectionService:
         return None
 
     @staticmethod
+    def _find_subassembly_template(
+        assembly: AssemblySubassemblyModel | None,
+        template_id: str,
+    ) -> SubassemblySectionTemplate | None:
+        if assembly is None:
+            return None
+        for template in list(getattr(assembly, "template_rows", []) or []):
+            if str(getattr(template, "template_id", "") or "") == str(template_id or ""):
+                return template
+        return None
+
+    @staticmethod
     def _resolve_template_id(
         assembly: AssemblyModel,
         *,
@@ -468,12 +573,31 @@ class AppliedSectionService:
         return str(getattr(assembly, "active_template_id", "") or "").strip()
 
     @staticmethod
+    def _resolve_subassembly_template_id(
+        assembly: AssemblySubassemblyModel | None,
+        *,
+        assembly_ref: str,
+        template_ref: str,
+    ) -> str:
+        if assembly is None:
+            return ""
+        requested_assembly = str(assembly_ref or "").strip()
+        assembly_id = str(getattr(assembly, "assembly_id", "") or "").strip()
+        if requested_assembly and requested_assembly != assembly_id:
+            return ""
+        requested_template = str(template_ref or "").strip()
+        if requested_template:
+            return requested_template
+        return str(getattr(assembly, "active_template_id", "") or "").strip()
+
+    @staticmethod
     def _build_diagnostics(
         assembly: AssemblyModel,
         *,
         assembly_ref: str,
         template_id: str,
         template: SectionTemplate | None,
+        subassembly_template: SubassemblySectionTemplate | None = None,
     ) -> list[DiagnosticMessage]:
         diagnostics: list[DiagnosticMessage] = []
         requested_assembly = str(assembly_ref or "").strip()
@@ -502,13 +626,13 @@ class AppliedSectionService:
                     message=f"Resolved template {template_id} was not found in Assembly {assembly_id}.",
                 )
             )
-        if template is not None:
-            diagnostics.extend(_ditch_shape_diagnostics(template))
-            diagnostics.extend(_bench_diagnostics(template))
+        if template is not None or subassembly_template is not None:
+            diagnostics.extend(_ditch_shape_diagnostics(template, subassembly_template=subassembly_template))
+            diagnostics.extend(_bench_diagnostics(template, subassembly_template=subassembly_template))
         return diagnostics
 
     @staticmethod
-    def _build_component_rows(
+    def _build_compatibility_component_rows(
         template: SectionTemplate | None,
         *,
         region_id: str,
@@ -518,6 +642,8 @@ class AppliedSectionService:
         drainage_refs_by_side: dict[str, list[str]] | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionComponentRow]:
+        """Build the legacy AppliedSection component cache from old templates."""
+
         if template is None:
             return []
 
@@ -534,7 +660,7 @@ class AppliedSectionService:
                 material=str(getattr(component, "material", "") or ""),
                 override_ids=list(override_ids),
                 structure_ids=list(structure_ids),
-                drainage_refs=_component_drainage_refs(component, drainage_refs, drainage_refs_by_side),
+                drainage_refs=_section_row_drainage_refs(component, drainage_refs, drainage_refs_by_side),
                 parameters=dict(getattr(component, "parameters", {}) or {}),
             )
             for component in template.component_rows
@@ -552,11 +678,51 @@ class AppliedSectionService:
         return rows
 
     @staticmethod
-    def _surface_widths(template: SectionTemplate | None) -> tuple[float, float]:
-        """Resolve first-slice FG surface widths from enabled Assembly components."""
-
+    def _build_subassembly_rows(
+        template: SubassemblySectionTemplate | None,
+        *,
+        region_id: str,
+        override_ids: list[str],
+        structure_ids: list[str],
+        drainage_refs: list[str],
+        drainage_refs_by_side: dict[str, list[str]] | None = None,
+    ) -> list[AppliedSectionSubassemblyRow]:
         if template is None:
-            return 0.0, 0.0
+            return []
+        rows: list[AppliedSectionSubassemblyRow] = []
+        for subassembly in list(getattr(template, "subassembly_rows", []) or []):
+            if not bool(getattr(subassembly, "enabled", True)):
+                continue
+            rows.append(
+                AppliedSectionSubassemblyRow(
+                    subassembly_id=str(getattr(subassembly, "subassembly_id", "") or ""),
+                    kind=str(getattr(subassembly, "kind", "") or ""),
+                    source_template_id=str(getattr(template, "template_id", "") or ""),
+                    region_id=str(region_id or ""),
+                    side=str(getattr(subassembly, "side", "") or "center"),
+                    width=max(float(getattr(subassembly, "width", 0.0) or 0.0), 0.0),
+                    slope=float(getattr(subassembly, "slope", 0.0) or 0.0),
+                    thickness=max(float(getattr(subassembly, "thickness", 0.0) or 0.0), 0.0),
+                    material=str(getattr(subassembly, "material", "") or ""),
+                    override_ids=list(override_ids or []),
+                    structure_ids=list(structure_ids or []),
+                    drainage_refs=_section_row_drainage_refs(subassembly, drainage_refs, drainage_refs_by_side),
+                    parameters=dict(getattr(subassembly, "parameters", {}) or {}),
+                    point_code_rules=tuple(getattr(subassembly, "point_code_rules", ()) or ()),
+                    link_code_rules=tuple(getattr(subassembly, "link_code_rules", ()) or ()),
+                    shape_code_rules=tuple(getattr(subassembly, "shape_code_rules", ()) or ()),
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _surface_widths(
+        template: SectionTemplate | None,
+        *,
+        subassembly_template: SubassemblySectionTemplate | None = None,
+    ) -> tuple[float, float]:
+        """Resolve first-slice FG surface widths from enabled section rows."""
+
         surface_kinds = {
             "lane",
             "shoulder",
@@ -567,15 +733,19 @@ class AppliedSectionService:
             "bike_lane",
             "green_strip",
         }
+        rows = _active_section_source_rows(
+            template,
+            subassembly_template=subassembly_template,
+        )
+        if not rows:
+            return 0.0, 0.0
         left_width = 0.0
         right_width = 0.0
-        for component in list(template.component_rows or []):
-            if not bool(getattr(component, "enabled", True)):
+        for source_row in rows:
+            if str(getattr(source_row, "kind", "") or "") not in surface_kinds:
                 continue
-            if str(getattr(component, "kind", "") or "") not in surface_kinds:
-                continue
-            width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
-            side = str(getattr(component, "side", "") or "center")
+            width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
+            side = str(getattr(source_row, "side", "") or "center")
             if side == "left":
                 left_width += width
             elif side == "right":
@@ -589,11 +759,13 @@ class AppliedSectionService:
         return left_width, right_width
 
     @staticmethod
-    def _subgrade_depth(template: SectionTemplate | None) -> float:
-        """Resolve first-slice subgrade depth from enabled Assembly component thickness."""
+    def _subgrade_depth(
+        template: SectionTemplate | None,
+        *,
+        subassembly_template: SubassemblySectionTemplate | None = None,
+    ) -> float:
+        """Resolve first-slice subgrade depth from enabled section row thickness."""
 
-        if template is None:
-            return 0.0
         thickness_kinds = {
             "lane",
             "shoulder",
@@ -606,35 +778,43 @@ class AppliedSectionService:
             "pavement_layer",
             "subbase",
         }
+        rows = _active_section_source_rows(
+            template,
+            subassembly_template=subassembly_template,
+        )
         depths = []
-        for component in list(template.component_rows or []):
-            if not bool(getattr(component, "enabled", True)):
+        for source_row in rows:
+            if str(getattr(source_row, "kind", "") or "") not in thickness_kinds:
                 continue
-            if str(getattr(component, "kind", "") or "") not in thickness_kinds:
-                continue
-            thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
+            thickness = max(float(getattr(source_row, "thickness", 0.0) or 0.0), 0.0)
             if thickness > 0.0:
                 depths.append(thickness)
         return max(depths) if depths else 0.0
 
     @staticmethod
-    def _daylight_policy(template: SectionTemplate | None) -> tuple[float, float, float, float]:
-        """Resolve first-slice daylight widths and slopes from side-slope components."""
+    def _daylight_policy(
+        template: SectionTemplate | None,
+        *,
+        subassembly_template: SubassemblySectionTemplate | None = None,
+    ) -> tuple[float, float, float, float]:
+        """Resolve first-slice daylight widths and slopes from side-slope Subassembly rows."""
 
-        if template is None:
+        rows = _active_section_source_rows(
+            template,
+            subassembly_template=subassembly_template,
+        )
+        if not rows:
             return 0.0, 0.0, 0.0, 0.0
         left_width = 0.0
         right_width = 0.0
         left_slopes: list[float] = []
         right_slopes: list[float] = []
-        for component in list(template.component_rows or []):
-            if not bool(getattr(component, "enabled", True)):
+        for source_row in rows:
+            if str(getattr(source_row, "kind", "") or "") != "side_slope":
                 continue
-            if str(getattr(component, "kind", "") or "") != "side_slope":
-                continue
-            width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
-            slope = float(getattr(component, "slope", 0.0) or 0.0)
-            side = str(getattr(component, "side", "") or "center")
+            width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
+            slope = float(getattr(source_row, "slope", 0.0) or 0.0)
+            side = str(getattr(source_row, "side", "") or "center")
             if side == "left":
                 left_width += width
                 left_slopes.append(slope)
@@ -669,11 +849,16 @@ class AppliedSectionService:
         subgrade_depth: float,
         drainage_refs: list[str] | None = None,
         drainage_refs_by_side: dict[str, list[str]] | None = None,
+        subassembly_template: SubassemblySectionTemplate | None = None,
         bench_evaluations: list[_BenchEvaluation] | None = None,
     ) -> list[AppliedSectionPoint]:
-        """Resolve first-slice FG, subgrade, and ditch section points from enabled components."""
+        """Resolve first-slice FG, subgrade, and ditch section points from enabled section rows."""
 
-        fg_points = list(fg_points if fg_points is not None else _surface_section_offsets(template, frame=frame))
+        fg_points = list(
+            fg_points
+            if fg_points is not None
+            else _surface_section_offsets(template, frame=frame, subassembly_template=subassembly_template)
+        )
         if not fg_points:
             return []
         output: list[AppliedSectionPoint] = []
@@ -709,6 +894,7 @@ class AppliedSectionService:
                 surface_right_width=surface_right_width,
                 drainage_refs=list(drainage_refs or []),
                 drainage_refs_by_side=drainage_refs_by_side,
+                subassembly_template=subassembly_template,
             )
         )
         output.extend(
@@ -718,6 +904,7 @@ class AppliedSectionService:
                 fg_points=fg_points,
                 surface_left_width=surface_left_width,
                 surface_right_width=surface_right_width,
+                subassembly_template=subassembly_template,
                 bench_evaluations=bench_evaluations,
             )
         )
@@ -746,6 +933,7 @@ class AppliedSectionSetService:
                     profile=request.profile,
                     assembly=request.assembly,
                     assembly_models=list(request.assembly_models or []),
+                    assembly_subassembly_models=list(request.assembly_subassembly_models or []),
                     region_model=request.region_model,
                     override_model=request.override_model,
                     station=station,
@@ -784,6 +972,10 @@ class AppliedSectionSetService:
                     *[
                         str(getattr(assembly, "assembly_id", "") or "")
                         for assembly in _unique_assembly_models([request.assembly] + list(request.assembly_models or []))
+                    ],
+                    *[
+                        str(getattr(assembly, "assembly_id", "") or "")
+                        for assembly in list(request.assembly_subassembly_models or [])
                     ],
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
@@ -843,6 +1035,47 @@ def _template_with_superelevation(
     return replace(template, component_rows=rows)
 
 
+def _subassembly_template_with_superelevation(
+    template: SubassemblySectionTemplate | None,
+    superelevation_result: SuperelevationStationResult | None,
+) -> SubassemblySectionTemplate | None:
+    if template is None or superelevation_result is None:
+        return template
+    rows = []
+    for subassembly in list(getattr(template, "subassembly_rows", []) or []):
+        rows.append(_subassembly_with_superelevation(subassembly, superelevation_result))
+    return replace(template, subassembly_rows=rows)
+
+
+def _active_section_source_rows(
+    template: SectionTemplate | None,
+    *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
+) -> list[object]:
+    """Return active Subassembly rows, falling back to legacy component rows."""
+
+    subassembly_rows = [
+        row
+        for row in list(getattr(subassembly_template, "subassembly_rows", []) or [])
+        if bool(getattr(row, "enabled", True))
+    ]
+    if subassembly_rows:
+        return subassembly_rows
+    return [
+        row
+        for row in list(getattr(template, "component_rows", []) or [])
+        if bool(getattr(row, "enabled", True))
+    ]
+
+
+def _section_source_sort_index(row: object) -> int:
+    """Return the active row order for Subassembly or legacy component rows."""
+
+    if hasattr(row, "subassembly_index"):
+        return int(getattr(row, "subassembly_index", 0) or 0)
+    return int(getattr(row, "component_index", 0) or 0)
+
+
 def _component_with_superelevation(component, superelevation_result: SuperelevationStationResult):
     kind = str(getattr(component, "kind", "") or "").strip().lower()
     if kind not in {"lane", "shoulder"}:
@@ -871,26 +1104,482 @@ def _component_with_superelevation(component, superelevation_result: Superelevat
     return replace(component, slope=effective_slope, parameters=params)
 
 
-def _default_crossfall_percent_by_side(template: SectionTemplate | None) -> tuple[float, float]:
-    if template is None:
-        return 0.0, 0.0
+def _subassembly_with_superelevation(subassembly, superelevation_result: SuperelevationStationResult):
+    kind = str(getattr(subassembly, "kind", "") or "").strip().lower()
+    if kind not in {"lane", "shoulder"}:
+        return subassembly
+    side = str(getattr(subassembly, "side", "") or "").strip().lower()
+    if side == "left":
+        effective_slope = float(getattr(superelevation_result, "left_crossfall", 0.0) or 0.0) / 100.0
+        source = str(getattr(superelevation_result, "left_source", "") or "")
+    elif side == "right":
+        effective_slope = float(getattr(superelevation_result, "right_crossfall", 0.0) or 0.0) / 100.0
+        source = str(getattr(superelevation_result, "right_source", "") or "")
+    else:
+        return subassembly
+    if not source:
+        return subassembly
+    params = dict(getattr(subassembly, "parameters", {}) or {})
+    params.update(
+        {
+            "assembly_default_slope": float(getattr(subassembly, "slope", 0.0) or 0.0),
+            "effective_slope_source": "superelevation",
+            "superelevation_source": source,
+            "superelevation_transition": str(getattr(superelevation_result, "active_transition_id", "") or ""),
+            "superelevation_crossfall_percent": effective_slope * 100.0,
+        }
+    )
+    return replace(subassembly, slope=effective_slope, parameters=params)
+
+
+def _points_with_compatibility_subassembly_refs(
+    point_rows: list[AppliedSectionPoint],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+) -> list[AppliedSectionPoint]:
+    if not point_rows or not subassembly_rows:
+        return point_rows
+    subassembly_ids = {
+        str(getattr(row, "subassembly_id", "") or "").strip()
+        for row in list(subassembly_rows or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    if not subassembly_ids:
+        return point_rows
+    output: list[AppliedSectionPoint] = []
+    for point in list(point_rows or []):
+        component_ref = str(getattr(point, "component_ref", "") or "").strip()
+        if component_ref and component_ref in subassembly_ids and not str(getattr(point, "subassembly_ref", "") or "").strip():
+            output.append(
+                replace(
+                    point,
+                    subassembly_ref=component_ref,
+                    component_ref="",
+                )
+            )
+        else:
+            output.append(point)
+    return output
+
+
+def _subassembly_point_rows(
+    point_rows: list[AppliedSectionPoint],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+) -> list[AppliedSectionSubassemblyPoint]:
+    if not point_rows or not subassembly_rows:
+        return []
+    row_by_id = {
+        str(getattr(row, "subassembly_id", "") or "").strip(): row
+        for row in list(subassembly_rows or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    output: list[AppliedSectionSubassemblyPoint] = []
+    for point in list(point_rows or []):
+        if str(getattr(point, "point_role", "") or "") in {"side_slope_surface", "bench_surface", "daylight_marker"}:
+            continue
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
+        if not subassembly_ref or subassembly_ref not in row_by_id:
+            continue
+        output.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=str(getattr(point, "point_id", "") or ""),
+                subassembly_ref=subassembly_ref,
+                point_code=_subassembly_point_code(point, row_by_id.get(subassembly_ref)),
+                x=float(getattr(point, "x", 0.0) or 0.0),
+                y=float(getattr(point, "y", 0.0) or 0.0),
+                z=float(getattr(point, "z", 0.0) or 0.0),
+                lateral_offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                side=str(getattr(point, "side", "") or getattr(row_by_id.get(subassembly_ref), "side", "") or ""),
+                target_ref=str(getattr(point, "drainage_ref", "") or ""),
+            )
+        )
+    return output
+
+
+def _surface_subassembly_point_rows(
+    fg_points: list[tuple[float, float, float, float]],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+    *,
+    subgrade_depth: float = 0.0,
+) -> list[AppliedSectionSubassemblyPoint]:
+    """Create Subassembly-owned FG/subgrade endpoint rows without changing legacy point rows."""
+
+    if not fg_points or not subassembly_rows:
+        return []
+    fg_by_offset = {round(float(offset), 9): (float(x), float(y), float(z)) for offset, x, y, z in fg_points}
+    output: list[AppliedSectionSubassemblyPoint] = []
+    left_offset = 0.0
+    right_offset = 0.0
+    for row in sorted(list(subassembly_rows or []), key=lambda item: int(getattr(item, "parameters", {}).get("subassembly_index", 0) or 0)):
+        kind = str(getattr(row, "kind", "") or "").strip().lower()
+        if kind not in {"lane", "shoulder", "median", "curb", "gutter", "sidewalk", "bike_lane", "green_strip"}:
+            continue
+        subassembly_ref = str(getattr(row, "subassembly_id", "") or "").strip()
+        if not subassembly_ref:
+            continue
+        width = max(float(getattr(row, "width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        side = str(getattr(row, "side", "") or "center").strip().lower()
+        intervals: list[tuple[str, float, float]] = []
+        if side == "left":
+            intervals.append(("left", left_offset, left_offset + width))
+            left_offset += width
+        elif side == "right":
+            intervals.append(("right", -right_offset, -(right_offset + width)))
+            right_offset += width
+        elif side == "both":
+            intervals.append(("left", left_offset, left_offset + width))
+            intervals.append(("right", -right_offset, -(right_offset + width)))
+            left_offset += width
+            right_offset += width
+        else:
+            half_width = width * 0.5
+            intervals.append(("center", -half_width, half_width))
+        for side_label, start_offset, end_offset in intervals:
+            output.extend(
+                _surface_subassembly_endpoint_rows(
+                    subassembly_ref,
+                    side_label=side_label,
+                    start_offset=start_offset,
+                    end_offset=end_offset,
+                    fg_by_offset=fg_by_offset,
+                    subgrade_depth=subgrade_depth,
+                )
+            )
+    return output
+
+
+def _surface_subassembly_endpoint_rows(
+    subassembly_ref: str,
+    *,
+    side_label: str,
+    start_offset: float,
+    end_offset: float,
+    fg_by_offset: dict[float, tuple[float, float, float]],
+    subgrade_depth: float,
+) -> list[AppliedSectionSubassemblyPoint]:
+    rows: list[AppliedSectionSubassemblyPoint] = []
+    endpoints = [
+        ("start", float(start_offset)),
+        ("end", float(end_offset)),
+    ]
+    for endpoint_label, offset in endpoints:
+        xyz = fg_by_offset.get(round(float(offset), 9))
+        if xyz is None:
+            continue
+        x, y, z = xyz
+        point_id = f"{subassembly_ref}:fg:{side_label}:{endpoint_label}"
+        rows.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=point_id,
+                subassembly_ref=subassembly_ref,
+                point_code="fg_surface",
+                x=x,
+                y=y,
+                z=z,
+                lateral_offset=offset,
+                side=side_label,
+            )
+        )
+        depth = max(float(subgrade_depth or 0.0), 0.0)
+        if depth > 0.0:
+            rows.append(
+                AppliedSectionSubassemblyPoint(
+                    point_id=f"{subassembly_ref}:subgrade:{side_label}:{endpoint_label}",
+                    subassembly_ref=subassembly_ref,
+                    point_code="subgrade_surface",
+                    x=x,
+                    y=y,
+                    z=z - depth,
+                    lateral_offset=offset,
+                    side=side_label,
+                )
+            )
+    return rows
+
+
+def _bench_subassembly_point_rows(
+    bench_evaluations: list[_BenchEvaluation],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+    *,
+    frame: AppliedSectionFrame,
+) -> list[AppliedSectionSubassemblyPoint]:
+    """Create Subassembly-owned side-slope/bench points from evaluated bench geometry."""
+
+    if not bench_evaluations or not subassembly_rows:
+        return []
+    source_by_side = _side_slope_subassembly_rows_by_side(subassembly_rows)
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    output: list[AppliedSectionSubassemblyPoint] = []
+    used_by_side: dict[str, int] = {}
+    for evaluation in list(bench_evaluations or []):
+        side_label = str(getattr(evaluation, "side_label", "") or "center").strip().lower()
+        candidates = source_by_side.get(side_label, [])
+        if not candidates:
+            candidates = source_by_side.get("both", []) or source_by_side.get("center", [])
+        if not candidates:
+            continue
+        index = used_by_side.get(side_label, 0)
+        source_row = candidates[min(index, len(candidates) - 1)]
+        used_by_side[side_label] = index + 1
+        output.extend(
+            _oriented_bench_subassembly_points(
+                source_row,
+                list(getattr(evaluation, "segments", []) or []),
+                side_label=side_label,
+                edge_offset=float(getattr(evaluation, "edge_offset", 0.0) or 0.0),
+                edge_z=float(getattr(evaluation, "edge_z", 0.0) or 0.0),
+                direction=float(getattr(evaluation, "direction", 1.0) or 1.0),
+                base_x=base_x,
+                base_y=base_y,
+                normal_x=normal_x,
+                normal_y=normal_y,
+            )
+        )
+    return output
+
+
+def _side_slope_subassembly_rows_by_side(
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+) -> dict[str, list[AppliedSectionSubassemblyRow]]:
+    rows_by_side: dict[str, list[AppliedSectionSubassemblyRow]] = {}
+    for row in list(subassembly_rows or []):
+        if str(getattr(row, "kind", "") or "").strip().lower() != "side_slope":
+            continue
+        subassembly_ref = str(getattr(row, "subassembly_id", "") or "").strip()
+        if not subassembly_ref:
+            continue
+        side = str(getattr(row, "side", "") or "center").strip().lower()
+        rows_by_side.setdefault(side or "center", []).append(row)
+    return rows_by_side
+
+
+def _oriented_bench_subassembly_points(
+    source_row: AppliedSectionSubassemblyRow,
+    segments: list[dict[str, object]],
+    *,
+    side_label: str,
+    edge_offset: float,
+    edge_z: float,
+    direction: float,
+    base_x: float,
+    base_y: float,
+    normal_x: float,
+    normal_y: float,
+) -> list[AppliedSectionSubassemblyPoint]:
+    output: list[AppliedSectionSubassemblyPoint] = []
+    subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
+    if not subassembly_ref:
+        return []
+    offset = float(edge_offset)
+    z = float(edge_z)
+    for index, segment in enumerate(list(segments or []), start=1):
+        width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
+        if width <= 1.0e-9:
+            continue
+        slope = float(segment.get("slope", 0.0) or 0.0)
+        kind = str(segment.get("kind", "") or "side_slope")
+        offset += float(direction) * width
+        z += slope * width
+        point_code = "bench_surface" if kind == "bench" else "side_slope_surface"
+        output.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=f"{subassembly_ref}:{side_label}:{point_code}:{index}",
+                subassembly_ref=subassembly_ref,
+                point_code=point_code,
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=z,
+                lateral_offset=offset,
+                side=side_label,
+            )
+        )
+    if output:
+        output.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=f"{subassembly_ref}:{side_label}:daylight",
+                subassembly_ref=subassembly_ref,
+                point_code="daylight_marker",
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=z,
+                lateral_offset=offset,
+                side=side_label,
+            )
+        )
+    return output
+
+
+def _subassembly_link_rows(
+    subassembly_point_rows: list[AppliedSectionSubassemblyPoint],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+) -> list[AppliedSectionSubassemblyLink]:
+    if not subassembly_point_rows:
+        return []
+    row_by_id = {
+        str(getattr(row, "subassembly_id", "") or "").strip(): row
+        for row in list(subassembly_rows or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    groups: dict[tuple[str, str], list[AppliedSectionSubassemblyPoint]] = {}
+    for point in list(subassembly_point_rows or []):
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "")
+        link_code = _subassembly_link_code(getattr(point, "point_code", ""), row_by_id.get(subassembly_ref))
+        groups.setdefault((subassembly_ref, link_code), []).append(point)
+    output: list[AppliedSectionSubassemblyLink] = []
+    for (subassembly_ref, link_code), points in groups.items():
+        ordered = sorted(points, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+        if len(ordered) < 2:
+            continue
+        source_row = row_by_id.get(subassembly_ref)
+        for index in range(len(ordered) - 1):
+            start = ordered[index]
+            end = ordered[index + 1]
+            output.append(
+                AppliedSectionSubassemblyLink(
+                    link_id=f"{subassembly_ref}:link:{link_code}:{index + 1}",
+                    subassembly_ref=subassembly_ref,
+                    start_point_ref=str(getattr(start, "point_id", "") or ""),
+                    end_point_ref=str(getattr(end, "point_id", "") or ""),
+                    link_code=link_code,
+                    surface_role=_surface_role_for_link_code(link_code),
+                    material=str(getattr(source_row, "material", "") or "") if source_row is not None else "",
+                )
+            )
+    return output
+
+
+def _subassembly_shape_rows(
+    subassembly_point_rows: list[AppliedSectionSubassemblyPoint],
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+) -> list[AppliedSectionSubassemblyShape]:
+    if not subassembly_point_rows:
+        return []
+    row_by_id = {
+        str(getattr(row, "subassembly_id", "") or "").strip(): row
+        for row in list(subassembly_rows or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    groups: dict[tuple[str, str], list[AppliedSectionSubassemblyPoint]] = {}
+    for point in list(subassembly_point_rows or []):
+        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "")
+        shape_code = _subassembly_shape_code(getattr(point, "point_code", ""), row_by_id.get(subassembly_ref))
+        groups.setdefault((subassembly_ref, shape_code), []).append(point)
+    output: list[AppliedSectionSubassemblyShape] = []
+    for (subassembly_ref, shape_code), points in groups.items():
+        ordered = sorted(points, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+        if len(ordered) < 3:
+            continue
+        source_row = row_by_id.get(subassembly_ref)
+        output.append(
+            AppliedSectionSubassemblyShape(
+                shape_id=f"{subassembly_ref}:shape:{shape_code}",
+                subassembly_ref=subassembly_ref,
+                point_refs=[str(getattr(point, "point_id", "") or "") for point in ordered],
+                shape_code=shape_code,
+                material=str(getattr(source_row, "material", "") or "") if source_row is not None else "",
+                thickness=float(getattr(source_row, "thickness", 0.0) or 0.0) if source_row is not None else 0.0,
+                solid_family=_solid_family_for_shape_code(shape_code),
+            )
+        )
+    return output
+
+
+def _subassembly_point_code(point: AppliedSectionPoint, source_row: AppliedSectionSubassemblyRow | None) -> str:
+    role = str(getattr(point, "point_role", "") or "").strip()
+    if role:
+        return role
+    rules = tuple(getattr(source_row, "point_code_rules", ()) or ()) if source_row is not None else ()
+    return str(rules[0]) if rules else "section_point"
+
+
+def _subassembly_link_code(point_code: str, source_row: AppliedSectionSubassemblyRow | None) -> str:
+    role = str(point_code or "").strip()
+    if role:
+        return _surface_role_for_link_code(role)
+    rules = tuple(getattr(source_row, "link_code_rules", ()) or ()) if source_row is not None else ()
+    return str(rules[0]) if rules else "section_link"
+
+
+def _subassembly_shape_code(point_code: str, source_row: AppliedSectionSubassemblyRow | None) -> str:
+    rules = tuple(getattr(source_row, "shape_code_rules", ()) or ()) if source_row is not None else ()
+    if rules:
+        return str(rules[0])
+    return _surface_role_for_link_code(point_code)
+
+
+def _surface_role_for_link_code(code: str) -> str:
+    text = str(code or "").strip().lower()
+    if text in {"fg_surface", "lane", "shoulder", "roadway"}:
+        return "design_surface"
+    if text in {"subgrade_surface", "subbase"}:
+        return "subgrade_surface"
+    if text in {"ditch_surface", "gutter_surface", "swale_surface", "channel_surface"}:
+        return "drainage_surface"
+    if text in {"side_slope_surface", "bench_surface", "daylight_marker", "daylight"}:
+        return "slope_face_surface"
+    return text or "section_link"
+
+
+def _solid_family_for_shape_code(code: str) -> str:
+    role = _surface_role_for_link_code(code)
+    if role == "design_surface":
+        return "road_body"
+    if role == "subgrade_surface":
+        return "subgrade"
+    if role == "drainage_surface":
+        return "drainage"
+    if role == "slope_face_surface":
+        return "grading"
+    return "section_shape"
+
+
+def _default_crossfall_percent_by_side(
+    template: SectionTemplate | None,
+    *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
+) -> tuple[float, float]:
     left_values: list[float] = []
     right_values: list[float] = []
+    for subassembly in list(getattr(subassembly_template, "subassembly_rows", []) or []):
+        if not bool(getattr(subassembly, "enabled", True)):
+            continue
+        if str(getattr(subassembly, "kind", "") or "").strip().lower() not in {"lane", "shoulder"}:
+            continue
+        _append_crossfall_by_side(
+            left_values,
+            right_values,
+            side=str(getattr(subassembly, "side", "") or "").strip().lower(),
+            slope_percent=float(getattr(subassembly, "slope", 0.0) or 0.0) * 100.0,
+        )
+    if left_values or right_values:
+        return _average(left_values), _average(right_values)
     for component in list(getattr(template, "component_rows", []) or []):
         if not bool(getattr(component, "enabled", True)):
             continue
         if str(getattr(component, "kind", "") or "").strip().lower() not in {"lane", "shoulder"}:
             continue
-        slope_percent = float(getattr(component, "slope", 0.0) or 0.0) * 100.0
-        side = str(getattr(component, "side", "") or "").strip().lower()
-        if side == "left":
-            left_values.append(slope_percent)
-        elif side == "right":
-            right_values.append(slope_percent)
-        elif side == "both":
-            left_values.append(slope_percent)
-            right_values.append(slope_percent)
+        _append_crossfall_by_side(
+            left_values,
+            right_values,
+            side=str(getattr(component, "side", "") or "").strip().lower(),
+            slope_percent=float(getattr(component, "slope", 0.0) or 0.0) * 100.0,
+        )
     return _average(left_values), _average(right_values)
+
+
+def _append_crossfall_by_side(left_values: list[float], right_values: list[float], *, side: str, slope_percent: float) -> None:
+    if side == "left":
+        left_values.append(float(slope_percent))
+    elif side == "right":
+        right_values.append(float(slope_percent))
+    elif side == "both":
+        left_values.append(float(slope_percent))
+        right_values.append(float(slope_percent))
 
 
 def _superelevation_source_rows(result: SuperelevationStationResult | None) -> list[str]:
@@ -907,10 +1596,12 @@ def _superelevation_source_rows(result: SuperelevationStationResult | None) -> l
     return rows
 
 
-def _component_drainage_refs(component, drainage_refs: list[str], drainage_refs_by_side: dict[str, list[str]] | None = None) -> list[str]:
-    if str(getattr(component, "kind", "") or "").strip().lower() not in {"ditch", "gutter", "swale", "channel"}:
+def _section_row_drainage_refs(row, drainage_refs: list[str], drainage_refs_by_side: dict[str, list[str]] | None = None) -> list[str]:
+    """Return Drainage refs for one active Subassembly or compatibility row."""
+
+    if str(getattr(row, "kind", "") or "").strip().lower() not in {"ditch", "gutter", "swale", "channel"}:
         return []
-    side = str(getattr(component, "side", "") or "center").strip().lower()
+    side = str(getattr(row, "side", "") or "center").strip().lower()
     if side in {"left", "right"}:
         return _unique_refs(_drainage_refs_for_side(drainage_refs, side, drainage_refs_by_side))
     if side == "both":
@@ -953,6 +1644,7 @@ def _drainage_refs_for_side(
 def _bench_evaluations(
     template: SectionTemplate | None,
     *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
     frame: AppliedSectionFrame | None = None,
     fg_points: list[tuple[float, float, float, float]] | None = None,
     surface_left_width: float = 0.0,
@@ -960,30 +1652,34 @@ def _bench_evaluations(
     existing_ground_surface: TINSurface | None = None,
     sampling_service: TinSamplingService | None = None,
 ) -> list[_BenchEvaluation]:
-    if template is None:
+    if template is None and subassembly_template is None:
         return []
     frame_z = float(getattr(frame, "z", 0.0) or 0.0) if frame is not None else 0.0
     points = list(fg_points or [])
     side_edges = _bench_terminal_side_edges(
         template,
+        subassembly_template=subassembly_template,
         frame=frame,
         fg_points=points,
         surface_left_width=surface_left_width,
         surface_right_width=surface_right_width,
     )
     output: list[_BenchEvaluation] = []
-    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
-        if not bool(getattr(component, "enabled", True)):
+    for source_row in sorted(
+        _active_section_source_rows(template, subassembly_template=subassembly_template),
+        key=_section_source_sort_index,
+    ):
+        if not bool(getattr(source_row, "enabled", True)):
             continue
-        if str(getattr(component, "kind", "") or "") != "side_slope":
+        if str(getattr(source_row, "kind", "") or "") != "side_slope":
             continue
-        base_segments = _bench_profile_segments(component)
+        base_segments = _bench_profile_segments(source_row)
         if not base_segments:
             continue
-        side = str(getattr(component, "side", "") or "center")
+        side = str(getattr(source_row, "side", "") or "center")
         for side_label, edge_offset, edge_z, direction in _bench_side_edges(side, side_edges=side_edges, default_z=frame_z):
             segments, diagnostics = _clip_bench_segments_to_terrain(
-                component,
+                source_row,
                 list(base_segments),
                 side_label=side_label,
                 edge_offset=edge_offset,
@@ -995,7 +1691,7 @@ def _bench_evaluations(
             )
             output.append(
                 _BenchEvaluation(
-                    component=component,
+                    source_row=source_row,
                     side_label=side_label,
                     edge_offset=edge_offset,
                     edge_z=edge_z,
@@ -1010,6 +1706,7 @@ def _bench_evaluations(
 def _bench_terminal_side_edges(
     template: SectionTemplate | None,
     *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
     frame: AppliedSectionFrame | None,
     fg_points: list[tuple[float, float, float, float]],
     surface_left_width: float,
@@ -1033,6 +1730,7 @@ def _bench_terminal_side_edges(
             frame=frame,
             surface_left_width=surface_left_width,
             surface_right_width=surface_right_width,
+            subassembly_template=subassembly_template,
         ):
             offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
             z = float(getattr(point, "z", frame_z) or frame_z)
@@ -1081,37 +1779,37 @@ def _bench_component_rows(
     rows: list[AppliedSectionComponentRow] = []
     evaluations = list(bench_evaluations or _bench_evaluations(template))
     for evaluation in evaluations:
-        component = evaluation.component
+        source_row = evaluation.source_row
         segments = list(evaluation.segments or [])
         if not segments:
             continue
-        side = str(getattr(evaluation, "side_label", "") or getattr(component, "side", "") or "center")
+        side = str(getattr(evaluation, "side_label", "") or getattr(source_row, "side", "") or "center")
         for index, segment in enumerate(segments, start=1):
             kind = str(segment.get("kind", "") or "side_slope")
             rows.append(
                 AppliedSectionComponentRow(
-                    component_id=f"{component.component_id}:{kind}:{index}",
+                    component_id=f"{source_row.component_id}:{kind}:{index}",
                     kind=kind,
                     source_template_id=template.template_id,
                     region_id=region_id,
                     side=side,
                     width=max(float(segment.get("width", 0.0) or 0.0), 0.0),
                     slope=float(segment.get("slope", 0.0) or 0.0),
-                    material=str(getattr(component, "material", "") or ""),
+                    material=str(getattr(source_row, "material", "") or ""),
                     override_ids=list(override_ids),
                     structure_ids=list(structure_ids),
                 )
             )
         rows.append(
             AppliedSectionComponentRow(
-                component_id=f"{component.component_id}:daylight",
+                component_id=f"{source_row.component_id}:daylight",
                 kind="daylight",
                 source_template_id=template.template_id,
                 region_id=region_id,
                 side=side,
                 width=0.0,
                 slope=0.0,
-                material=str(getattr(component, "material", "") or ""),
+                material=str(getattr(source_row, "material", "") or ""),
                 override_ids=list(override_ids),
                 structure_ids=list(structure_ids),
             )
@@ -1126,11 +1824,12 @@ def _bench_section_points(
     fg_points: list[tuple[float, float, float, float]],
     surface_left_width: float,
     surface_right_width: float,
+    subassembly_template: SubassemblySectionTemplate | None = None,
     bench_evaluations: list[_BenchEvaluation] | None = None,
 ) -> list[AppliedSectionPoint]:
     """Return evaluated side-slope and bench break points outside FG edges."""
 
-    if template is None or not fg_points:
+    if (template is None and subassembly_template is None) or not fg_points:
         return []
     angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
     normal_x = -math.sin(angle_rad)
@@ -1142,6 +1841,7 @@ def _bench_section_points(
         bench_evaluations
         or _bench_evaluations(
             template,
+            subassembly_template=subassembly_template,
             frame=frame,
             fg_points=fg_points,
             surface_left_width=surface_left_width,
@@ -1151,7 +1851,7 @@ def _bench_section_points(
     for evaluation in evaluations:
         output.extend(
             _oriented_bench_points(
-                evaluation.component,
+                evaluation.source_row,
                 evaluation.segments,
                 side_label=evaluation.side_label,
                 edge_offset=evaluation.edge_offset,
@@ -1167,7 +1867,7 @@ def _bench_section_points(
 
 
 def _oriented_bench_points(
-    component,
+    source_row,
     segments: list[dict[str, object]],
     *,
     side_label: str,
@@ -1182,7 +1882,9 @@ def _oriented_bench_points(
     output: list[AppliedSectionPoint] = []
     offset = float(edge_offset)
     z = float(edge_z)
-    component_id = str(getattr(component, "component_id", "") or "side_slope")
+    source_id = _subassembly_or_compatibility_id(source_row, fallback="side_slope")
+    subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
+    compatibility_ref = "" if subassembly_ref else str(getattr(source_row, "component_id", "") or "").strip()
     for index, segment in enumerate(segments, start=1):
         width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
         if width <= 1.0e-9:
@@ -1193,38 +1895,44 @@ def _oriented_bench_points(
         z += slope * width
         output.append(
             AppliedSectionPoint(
-                point_id=f"bench:{side_label}:{component_id}:{index}",
+                point_id=f"bench:{side_label}:{source_id}:{index}",
                 x=base_x + normal_x * offset,
                 y=base_y + normal_y * offset,
                 z=z,
                 point_role="bench_surface" if kind == "bench" else "side_slope_surface",
                 lateral_offset=offset,
+                component_ref=compatibility_ref,
+                subassembly_ref=subassembly_ref,
+                side=side_label,
             )
         )
     if output:
         output.append(
             AppliedSectionPoint(
-                point_id=f"bench:{side_label}:{component_id}:daylight",
+                point_id=f"bench:{side_label}:{source_id}:daylight",
                 x=base_x + normal_x * offset,
                 y=base_y + normal_y * offset,
                 z=z,
                 point_role="daylight_marker",
                 lateral_offset=offset,
+                component_ref=compatibility_ref,
+                subassembly_ref=subassembly_ref,
+                side=side_label,
             )
         )
     return output
 
 
-def _bench_profile_segments(component, *, total_width: float | None = None) -> list[dict[str, object]]:
-    params = dict(getattr(component, "parameters", {}) or {})
+def _bench_profile_segments(row, *, total_width: float | None = None) -> list[dict[str, object]]:
+    params = dict(getattr(row, "parameters", {}) or {})
     rows = normalize_bench_rows(params.get("bench_rows", []))
     if not rows:
         return []
     remaining = max(
-        float(total_width if total_width is not None else getattr(component, "width", 0.0) or 0.0),
+        float(total_width if total_width is not None else getattr(row, "width", 0.0) or 0.0),
         0.0,
     )
-    current_slope = float(getattr(component, "slope", 0.0) or 0.0)
+    current_slope = float(getattr(row, "slope", 0.0) or 0.0)
     repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
     source_rows = [rows[0]] if repeat else rows
     segments: list[dict[str, object]] = []
@@ -1280,15 +1988,15 @@ def _clip_bench_segments_to_terrain(
     params = dict(getattr(component, "parameters", {}) or {})
     if str(params.get("daylight_mode", "") or "").strip().lower() != "terrain":
         return segments, []
-    component_id = str(getattr(component, "component_id", "") or "side_slope")
-    notes = f"component_id={component_id}; side={side_label}"
+    subassembly_id = _subassembly_or_compatibility_id(component, fallback="side_slope")
+    notes = f"{_subassembly_or_compatibility_note(component, fallback='side_slope')}; side={side_label}"
     if existing_ground_surface is None or frame is None:
         return segments, [
             DiagnosticMessage(
                 severity="warning",
                 kind="bench_daylight_fallback",
                 message=(
-                    f"side-slope component {component_id} uses terrain daylight mode, "
+                    f"side-slope subassembly {subassembly_id} uses terrain daylight mode, "
                     "but no existing-ground TIN is available; Assembly side-slope width was used."
                 ),
                 notes=notes,
@@ -1334,7 +2042,7 @@ def _clip_bench_segments_to_terrain(
                 severity="warning",
                 kind="bench_daylight_no_hit",
                 message=(
-                    f"side-slope component {component_id} did not intersect terrain within "
+                    f"side-slope subassembly {subassembly_id} did not intersect terrain within "
                     "the evaluated bench profile; full Assembly side-slope width was used."
                 ),
                 notes=notes,
@@ -1434,14 +2142,18 @@ def _bench_terrain_context(
         return None
     terrain_z = float(sample.z)
     context = "cut" if terrain_z > float(edge_z) else "fill" if terrain_z < float(edge_z) else "balanced"
+    subassembly_id = _subassembly_or_compatibility_id(component, fallback="side_slope")
     return DiagnosticMessage(
         severity="info",
         kind="bench_cut_fill_context",
         message=(
-            f"side-slope component {getattr(component, 'component_id', '') or 'side_slope'} "
+            f"side-slope subassembly {subassembly_id} "
             f"evaluated {context} terrain context on {side_label} side."
         ),
-        notes=f"design_edge_z={float(edge_z):g}; terrain_edge_z={terrain_z:g}; direction={float(direction):g}",
+        notes=(
+            f"{_subassembly_or_compatibility_note(component, fallback='side_slope')}; "
+            f"design_edge_z={float(edge_z):g}; terrain_edge_z={terrain_z:g}; direction={float(direction):g}"
+        ),
     )
 
 
@@ -1645,16 +2357,17 @@ def _bench_clip_diagnostics(
     clip_distance: float,
     clip_info: dict[str, object],
 ) -> list[DiagnosticMessage]:
-    component_id = str(getattr(component, "component_id", "") or "side_slope")
+    subassembly_id = _subassembly_or_compatibility_id(component, fallback="side_slope")
+    notes = f"{_subassembly_or_compatibility_note(component, fallback='side_slope')}; side={side_label}"
     diagnostics = [
         DiagnosticMessage(
             severity="info",
             kind="bench_daylight_shortened",
             message=(
-                f"side-slope component {component_id} was shortened at terrain daylight "
+                f"side-slope subassembly {subassembly_id} was shortened at terrain daylight "
                 f"from {float(total_width):g} to {float(clip_distance):g}."
             ),
-            notes=f"component_id={component_id}; side={side_label}",
+            notes=notes,
         )
     ]
     skipped_count = int(clip_info.get("skipped_count", 0) or 0)
@@ -1664,10 +2377,10 @@ def _bench_clip_diagnostics(
                 severity="info",
                 kind="bench_daylight_skipped",
                 message=(
-                    f"side-slope component {component_id} skipped {skipped_count} downstream "
+                    f"side-slope subassembly {subassembly_id} skipped {skipped_count} downstream "
                     "bench/slope segment(s) after terrain daylight intersection."
                 ),
-                notes=f"component_id={component_id}; side={side_label}; shortened_kind={clip_info.get('shortened_kind', '')}",
+                notes=f"{notes}; shortened_kind={clip_info.get('shortened_kind', '')}",
             )
         )
     return diagnostics
@@ -1677,20 +2390,27 @@ def _segments_total_width(segments: list[dict[str, object]]) -> float:
     return sum(max(float(segment.get("width", 0.0) or 0.0), 0.0) for segment in list(segments or []))
 
 
-def _bench_diagnostics(template: SectionTemplate) -> list[DiagnosticMessage]:
+def _bench_diagnostics(
+    template: SectionTemplate | None,
+    *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
+) -> list[DiagnosticMessage]:
     diagnostics: list[DiagnosticMessage] = []
-    for component in list(getattr(template, "component_rows", []) or []):
-        if not bool(getattr(component, "enabled", True)):
+    template_id = str(
+        getattr(subassembly_template, "template_id", "")
+        or getattr(template, "template_id", "")
+        or ""
+    )
+    for source_row in _active_section_source_rows(template, subassembly_template=subassembly_template):
+        if str(getattr(source_row, "kind", "") or "") != "side_slope":
             continue
-        if str(getattr(component, "kind", "") or "") != "side_slope":
-            continue
-        for message in assembly_bench_validation_messages(component):
+        for message in assembly_bench_validation_messages(source_row):
             diagnostics.append(
                 DiagnosticMessage(
                     severity="warning",
                     kind="side_slope_bench_parameter",
                     message=message,
-                    notes=f"template_id={template.template_id}",
+                    notes=f"template_id={template_id}",
                 )
             )
     return diagnostics
@@ -1759,10 +2479,12 @@ def _surface_section_offsets(
     template: SectionTemplate | None,
     *,
     frame: AppliedSectionFrame,
+    subassembly_template: SubassemblySectionTemplate | None = None,
 ) -> list[tuple[float, float, float, float]]:
     """Return ordered FG points as lateral offset and world xyz tuples."""
 
-    if template is None:
+    rows = _active_section_source_rows(template, subassembly_template=subassembly_template)
+    if not rows:
         return []
     fg_kinds = {
         "lane",
@@ -1778,16 +2500,14 @@ def _surface_section_offsets(
     right_points = [(0.0, float(getattr(frame, "z", 0.0) or 0.0))]
     center_half_width = 0.0
     center_z = float(getattr(frame, "z", 0.0) or 0.0)
-    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
-        if not bool(getattr(component, "enabled", True)):
+    for source_row in sorted(rows, key=_section_source_sort_index):
+        if str(getattr(source_row, "kind", "") or "") not in fg_kinds:
             continue
-        if str(getattr(component, "kind", "") or "") not in fg_kinds:
-            continue
-        width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+        width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
         if width <= 0.0:
             continue
-        side = str(getattr(component, "side", "") or "center")
-        slope = float(getattr(component, "slope", 0.0) or 0.0)
+        side = str(getattr(source_row, "side", "") or "center")
+        slope = float(getattr(source_row, "slope", 0.0) or 0.0)
         if side == "left":
             _append_offset_point(left_points, width, slope)
         elif side == "right":
@@ -1840,10 +2560,11 @@ def _ditch_section_points(
     surface_right_width: float,
     drainage_refs: list[str] | None = None,
     drainage_refs_by_side: dict[str, list[str]] | None = None,
+    subassembly_template: SubassemblySectionTemplate | None = None,
 ) -> list[AppliedSectionPoint]:
     """Return first-slice ditch surface strip points outside FG edges."""
 
-    if template is None:
+    if template is None and subassembly_template is None:
         return []
     angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
     normal_x = -math.sin(angle_rad)
@@ -1853,17 +2574,12 @@ def _ditch_section_points(
     base_z = float(getattr(frame, "z", 0.0) or 0.0)
     left_width = max(float(surface_left_width or 0.0), 0.0)
     right_width = max(float(surface_right_width or 0.0), 0.0)
-    rows: list[tuple[float, float, str, str, str, str]] = []
-    for component in sorted(list(getattr(template, "component_rows", []) or []), key=lambda row: int(getattr(row, "component_index", 0) or 0)):
-        if not bool(getattr(component, "enabled", True)):
-            continue
-        if str(getattr(component, "kind", "") or "") != "ditch":
-            continue
-        side = str(getattr(component, "side", "") or "center")
-        local_profile = _ditch_local_profile(component)
+    rows: list[tuple[float, float, str, str, str, str, str]] = []
+    for source, source_ref, compatibility_ref in _ditch_source_rows(template, subassembly_template=subassembly_template):
+        side = str(getattr(source, "side", "") or "center")
+        local_profile = _ditch_local_profile(source)
         if not local_profile:
             continue
-        component_ref = str(getattr(component, "component_id", "") or "")
         if side in {"left", "both", "center"}:
             rows.extend(
                 _oriented_ditch_rows(
@@ -1871,7 +2587,8 @@ def _ditch_section_points(
                     edge_offset=left_width,
                     direction=1.0,
                     side_label="left",
-                    component_ref=component_ref,
+                    subassembly_ref=source_ref,
+                    component_ref=compatibility_ref,
                     drainage_ref=_drainage_ref_for_side(drainage_refs, "left", drainage_refs_by_side),
                 )
             )
@@ -1882,13 +2599,14 @@ def _ditch_section_points(
                     edge_offset=-right_width,
                     direction=-1.0,
                     side_label="right",
-                    component_ref=component_ref,
+                    subassembly_ref=source_ref,
+                    component_ref=compatibility_ref,
                     drainage_ref=_drainage_ref_for_side(drainage_refs, "right", drainage_refs_by_side),
                 )
             )
     output: list[AppliedSectionPoint] = []
     sorted_rows = sorted(rows, key=lambda item: (item[0], item[2]))
-    for index, (offset, z_delta, role, component_ref, side_label, drainage_ref) in enumerate(sorted_rows):
+    for index, (offset, z_delta, role, subassembly_ref, component_ref, side_label, drainage_ref) in enumerate(sorted_rows):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:{role}:{index + 1}",
@@ -1898,11 +2616,12 @@ def _ditch_section_points(
                 point_role="ditch_surface",
                 lateral_offset=offset,
                 component_ref=component_ref,
+                subassembly_ref=subassembly_ref,
                 side=side_label,
                 drainage_ref=drainage_ref,
             )
         )
-    for index, (offset, z_delta, component_ref, side_label, drainage_ref) in enumerate(_ditch_flowline_rows(sorted_rows), start=1):
+    for index, (offset, z_delta, subassembly_ref, component_ref, side_label, drainage_ref) in enumerate(_ditch_flowline_rows(sorted_rows), start=1):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:flowline:{side_label}:{index}",
@@ -1912,6 +2631,7 @@ def _ditch_section_points(
                 point_role="ditch_flowline",
                 lateral_offset=offset,
                 component_ref=component_ref,
+                subassembly_ref=subassembly_ref,
                 side=side_label,
                 drainage_ref=drainage_ref,
             )
@@ -1919,14 +2639,40 @@ def _ditch_section_points(
     return output
 
 
-def _ditch_flowline_rows(rows: list[tuple[float, float, str, str, str, str]]) -> list[tuple[float, float, str, str, str]]:
-    grouped: dict[tuple[str, str, str], list[tuple[float, float]]] = {}
-    for offset, z_delta, _role, component_ref, side_label, drainage_ref in list(rows or []):
-        key = (str(component_ref or ""), str(side_label or ""), str(drainage_ref or ""))
+def _ditch_source_rows(
+    template: SectionTemplate | None,
+    *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
+) -> list[tuple[object, str, str]]:
+    subassemblies = [
+        source
+        for source in sorted(
+            list(getattr(subassembly_template, "subassembly_rows", []) or []),
+            key=_section_source_sort_index,
+        )
+        if bool(getattr(source, "enabled", True)) and str(getattr(source, "kind", "") or "") == "ditch"
+    ]
+    if subassemblies:
+        return [(source, str(getattr(source, "subassembly_id", "") or ""), "") for source in subassemblies]
+    components = [
+        source
+        for source in sorted(
+            list(getattr(template, "component_rows", []) or []),
+            key=_section_source_sort_index,
+        )
+        if bool(getattr(source, "enabled", True)) and str(getattr(source, "kind", "") or "") == "ditch"
+    ]
+    return [(source, "", str(getattr(source, "component_id", "") or "")) for source in components]
+
+
+def _ditch_flowline_rows(rows: list[tuple[float, float, str, str, str, str, str]]) -> list[tuple[float, float, str, str, str, str]]:
+    grouped: dict[tuple[str, str, str, str], list[tuple[float, float]]] = {}
+    for offset, z_delta, _role, subassembly_ref, component_ref, side_label, drainage_ref in list(rows or []):
+        key = (str(subassembly_ref or ""), str(component_ref or ""), str(side_label or ""), str(drainage_ref or ""))
         grouped.setdefault(key, []).append((float(offset), float(z_delta)))
-    output: list[tuple[float, float, str, str, str]] = []
-    for component_ref, side_label, drainage_ref in sorted(grouped):
-        values = grouped[(component_ref, side_label, drainage_ref)]
+    output: list[tuple[float, float, str, str, str, str]] = []
+    for subassembly_ref, component_ref, side_label, drainage_ref in sorted(grouped):
+        values = grouped[(subassembly_ref, component_ref, side_label, drainage_ref)]
         if not values:
             continue
         min_z = min(z for _offset, z in values)
@@ -1934,18 +2680,18 @@ def _ditch_flowline_rows(rows: list[tuple[float, float, str, str, str, str]]) ->
         if not low_offsets:
             continue
         flow_offset = sum(low_offsets) / len(low_offsets)
-        output.append((flow_offset, min_z, component_ref, side_label, drainage_ref))
+        output.append((flow_offset, min_z, subassembly_ref, component_ref, side_label, drainage_ref))
     return output
 
 
 def _ditch_local_profile(component) -> list[tuple[float, float, str]]:
-    """Return local outward distance, z delta, and semantic role for one ditch component."""
+    """Return local outward distance, z delta, and semantic role for one ditch Subassembly row."""
 
     params = dict(getattr(component, "parameters", {}) or {})
     shape = str(params.get("shape", "") or "").strip().lower().replace("-", "_")
-    width = max(_parameter_float(params, "top_width", _component_width(component)), 0.0)
+    width = max(_parameter_float(params, "top_width", _section_row_width(component)), 0.0)
     if not shape:
-        fallback_width = _component_width(component)
+        fallback_width = _section_row_width(component)
         if fallback_width <= 0.0:
             return []
         slope = float(getattr(component, "slope", 0.0) or 0.0)
@@ -1966,38 +2712,44 @@ def _ditch_local_profile(component) -> list[tuple[float, float, str]]:
     return []
 
 
-def ditch_component_local_profile(component) -> list[tuple[float, float, str]]:
+def ditch_section_row_local_profile(row) -> list[tuple[float, float, str]]:
     """Return the local ditch profile used by viewers and section builders."""
 
-    return _ditch_local_profile(component)
+    return _ditch_local_profile(row)
 
 
-def ditch_component_validation_messages(component) -> list[str]:
-    """Return user-facing validation messages for one ditch component."""
+def ditch_component_local_profile(component) -> list[tuple[float, float, str]]:
+    """Compatibility alias for older Assembly editor callers."""
 
-    if str(getattr(component, "kind", "") or "") != "ditch":
+    return ditch_section_row_local_profile(component)
+
+
+def ditch_section_row_validation_messages(row) -> list[str]:
+    """Return user-facing validation messages for one ditch Subassembly or compatibility row."""
+
+    if str(getattr(row, "kind", "") or "") != "ditch":
         return []
-    params = dict(getattr(component, "parameters", {}) or {})
+    params = dict(getattr(row, "parameters", {}) or {})
     shape = str(params.get("shape", "") or "").strip().lower().replace("-", "_")
-    component_id = str(getattr(component, "component_id", "") or "ditch")
-    material_policy = ditch_material_policy(getattr(component, "material", ""))
+    subassembly_id = str(getattr(row, "subassembly_id", "") or getattr(row, "component_id", "") or "ditch")
+    material_policy = ditch_material_policy(getattr(row, "material", ""))
     messages: list[str] = []
     if not shape:
         return messages
     if shape not in {"trapezoid", "u", "l", "rectangular", "v", "custom_polyline"}:
-        return [f"ditch component {component_id} uses unsupported shape '{shape}'."]
+        return [f"ditch subassembly {subassembly_id} uses unsupported shape '{shape}'."]
 
     def require_positive(key: str) -> None:
         if key not in params or str(params.get(key, "") or "").strip() == "":
-            messages.append(f"ditch component {component_id} missing required parameter {key}.")
+            messages.append(f"ditch subassembly {subassembly_id} missing required parameter {key}.")
             return
         try:
             value = float(params.get(key))
         except Exception:
-            messages.append(f"ditch component {component_id} parameter {key} must be numeric.")
+            messages.append(f"ditch subassembly {subassembly_id} parameter {key} must be numeric.")
             return
         if value <= 0.0:
-            messages.append(f"ditch component {component_id} parameter {key} must be greater than zero.")
+            messages.append(f"ditch subassembly {subassembly_id} parameter {key} must be greater than zero.")
 
     def validate_positive_if_present(key: str) -> None:
         if key not in params or str(params.get(key, "") or "").strip() == "":
@@ -2005,10 +2757,10 @@ def ditch_component_validation_messages(component) -> list[str]:
         try:
             value = float(params.get(key))
         except Exception:
-            messages.append(f"ditch component {component_id} parameter {key} must be numeric.")
+            messages.append(f"ditch subassembly {subassembly_id} parameter {key} must be numeric.")
             return
         if value < 0.0:
-            messages.append(f"ditch component {component_id} parameter {key} must not be negative.")
+            messages.append(f"ditch subassembly {subassembly_id} parameter {key} must not be negative.")
 
     if shape == "trapezoid":
         require_positive("depth")
@@ -2026,13 +2778,13 @@ def ditch_component_validation_messages(component) -> list[str]:
             wall_side = str(params.get("wall_side", "inner") or "inner").strip().lower()
             if wall_side not in {"inner", "outer", "left", "right"}:
                 messages.append(
-                    f"ditch component {component_id} parameter wall_side must be inner or outer."
+                    f"ditch subassembly {subassembly_id} parameter wall_side must be inner or outer."
                 )
     elif shape == "v":
         require_positive("depth")
-        if _component_width(component) <= 0.0 and _parameter_float(params, "top_width", 0.0) <= 0.0:
+        if _section_row_width(row) <= 0.0 and _parameter_float(params, "top_width", 0.0) <= 0.0:
             messages.append(
-                f"ditch component {component_id} requires positive width or top_width for V shape."
+                f"ditch subassembly {subassembly_id} requires positive width or top_width for V shape."
             )
         validate_positive_if_present("top_width")
         validate_positive_if_present("invert_offset")
@@ -2040,19 +2792,25 @@ def ditch_component_validation_messages(component) -> list[str]:
         points = _custom_ditch_profile(params)
         if len(points) < 2:
             messages.append(
-                f"ditch component {component_id} custom_polyline requires at least two section_points."
+                f"ditch subassembly {subassembly_id} custom_polyline requires at least two section_points."
             )
     if material_policy == "structural" and shape in {"u", "l", "rectangular"}:
         if _parameter_float(params, "wall_thickness", 0.0) <= 0.0:
             messages.append(
-                f"ditch component {component_id} uses structural material and requires wall_thickness."
+                f"ditch subassembly {subassembly_id} uses structural material and requires wall_thickness."
             )
     if material_policy == "lined" and shape in {"trapezoid", "v", "rectangular"}:
         if _parameter_float(params, "lining_thickness", 0.0) <= 0.0:
             messages.append(
-                f"ditch component {component_id} uses lined material and should define lining_thickness."
+                f"ditch subassembly {subassembly_id} uses lined material and should define lining_thickness."
             )
     return messages
+
+
+def ditch_component_validation_messages(component) -> list[str]:
+    """Compatibility alias for older Assembly editor callers."""
+
+    return ditch_section_row_validation_messages(component)
 
 
 def ditch_material_policy(material: object) -> str:
@@ -2073,18 +2831,25 @@ def ditch_material_policy(material: object) -> str:
     return "general"
 
 
-def _ditch_shape_diagnostics(template: SectionTemplate) -> list[DiagnosticMessage]:
+def _ditch_shape_diagnostics(
+    template: SectionTemplate | None,
+    *,
+    subassembly_template: SubassemblySectionTemplate | None = None,
+) -> list[DiagnosticMessage]:
     diagnostics: list[DiagnosticMessage] = []
-    for component in list(getattr(template, "component_rows", []) or []):
-        if not bool(getattr(component, "enabled", True)):
-            continue
-        for message in ditch_component_validation_messages(component):
+    template_id = str(
+        getattr(subassembly_template, "template_id", "")
+        or getattr(template, "template_id", "")
+        or ""
+    )
+    for source_row in _active_section_source_rows(template, subassembly_template=subassembly_template):
+        for message in ditch_section_row_validation_messages(source_row):
             diagnostics.append(
                 DiagnosticMessage(
                     severity="warning",
                     kind="ditch_shape_parameter",
                     message=message,
-                    notes=f"template_id={template.template_id}",
+                    notes=f"template_id={template_id}",
                 )
             )
     return diagnostics
@@ -2174,7 +2939,7 @@ def _custom_ditch_profile(params: dict[str, object]) -> list[tuple[float, float,
 
 
 def _ditch_local_profile_without_shape(component) -> list[tuple[float, float, str]]:
-    width = _component_width(component)
+    width = _section_row_width(component)
     if width <= 0.0:
         return []
     slope = float(getattr(component, "slope", 0.0) or 0.0)
@@ -2190,9 +2955,10 @@ def _oriented_ditch_rows(
     edge_offset: float,
     direction: float,
     side_label: str,
+    subassembly_ref: str = "",
     component_ref: str = "",
     drainage_ref: str = "",
-) -> list[tuple[float, float, str, str, str, str]]:
+) -> list[tuple[float, float, str, str, str, str, str]]:
     rows = []
     for local_offset, z_delta, role in local_profile:
         rows.append(
@@ -2200,6 +2966,7 @@ def _oriented_ditch_rows(
                 float(edge_offset) + float(direction) * float(local_offset),
                 float(z_delta),
                 f"{side_label}:{role}",
+                subassembly_ref,
                 component_ref,
                 str(side_label or ""),
                 drainage_ref,
@@ -2221,8 +2988,21 @@ def _edge_z_at_offset(
     return float(nearest[3])
 
 
-def _component_width(component) -> float:
+def _section_row_width(component) -> float:
+    """Return the width carried by an active Subassembly or compatibility row."""
+
     return max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
+
+
+def _subassembly_or_compatibility_id(row, *, fallback: str = "") -> str:
+    return str(getattr(row, "subassembly_id", "") or getattr(row, "component_id", "") or fallback)
+
+
+def _subassembly_or_compatibility_note(row, *, fallback: str = "") -> str:
+    subassembly_id = str(getattr(row, "subassembly_id", "") or "").strip()
+    if subassembly_id:
+        return f"subassembly_ref={subassembly_id}"
+    return f"compatibility_ref={str(getattr(row, 'component_id', '') or fallback)}"
 
 
 def _truthy(value: object) -> bool:

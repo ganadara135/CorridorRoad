@@ -349,14 +349,25 @@ def _section_has_structure(section, structure_ref: str) -> bool:
     expected = str(structure_ref or "").strip()
     if not expected:
         return False
+    return expected in _section_structure_refs(section)
+
+
+def _section_structure_refs(section) -> list[str]:
+    """Return structure refs from active section state, with legacy rows as fallback."""
+
+    refs: list[str] = []
     for value in list(getattr(section, "active_structure_ids", []) or []):
-        if str(value or "").strip() == expected:
-            return True
+        refs.append(str(value or "").strip())
+    subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "structure_ids", []) or []):
+            refs.append(str(value or "").strip())
+    if subassembly_rows:
+        return _unique_refs(refs)
     for component in list(getattr(section, "component_rows", []) or []):
         for value in list(getattr(component, "structure_ids", []) or []):
-            if str(value or "").strip() == expected:
-                return True
-    return False
+            refs.append(str(value or "").strip())
+    return _unique_refs(refs)
 
 
 def _unique_refs(values: list[str]) -> list[str]:
@@ -372,15 +383,9 @@ def _unique_refs(values: list[str]) -> list[str]:
 
 
 def _first_section_structure_ref(section) -> str:
-    for value in list(getattr(section, "active_structure_ids", []) or []):
-        text = str(value or "").strip()
-        if text:
-            return text
-    for component in list(getattr(section, "component_rows", []) or []):
-        for value in list(getattr(component, "structure_ids", []) or []):
-            text = str(value or "").strip()
-            if text:
-                return text
+    for value in _section_structure_refs(section):
+        if value:
+            return value
     return ""
 
 

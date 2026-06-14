@@ -9,7 +9,11 @@ from .base import ResultModelBase
 
 @dataclass(frozen=True)
 class AppliedSectionPoint:
-    """Minimal point row inside an applied section."""
+    """Legacy-compatible point row inside an applied section.
+
+    `subassembly_ref` is the active owner reference. `component_ref` is retained
+    only as compatibility provenance for legacy point-role consumers.
+    """
 
     point_id: str
     x: float
@@ -18,6 +22,7 @@ class AppliedSectionPoint:
     point_role: str = "section_point"
     lateral_offset: float = 0.0
     component_ref: str = ""
+    subassembly_ref: str = ""
     side: str = ""
     drainage_ref: str = ""
 
@@ -43,7 +48,7 @@ class AppliedSectionFrame:
 
 @dataclass(frozen=True)
 class AppliedSectionComponentRow:
-    """Minimal semantic component row inside an applied section."""
+    """Legacy compatibility component cache row inside an applied section."""
 
     component_id: str
     kind: str
@@ -61,19 +66,100 @@ class AppliedSectionComponentRow:
 
 
 @dataclass(frozen=True)
+class AppliedSectionSubassemblyRow:
+    """Resolved subassembly row inside an applied section.
+
+    This is the v1 target result contract. During the transition period,
+    AppliedSectionComponentRow is still emitted as a compatibility view for
+    existing surface, solid, quantity, and viewer services.
+    """
+
+    subassembly_id: str
+    kind: str
+    source_template_id: str = ""
+    region_id: str = ""
+    side: str = "center"
+    width: float = 0.0
+    slope: float = 0.0
+    thickness: float = 0.0
+    material: str = ""
+    override_ids: list[str] = field(default_factory=list)
+    structure_ids: list[str] = field(default_factory=list)
+    drainage_refs: list[str] = field(default_factory=list)
+    parameters: dict[str, object] = field(default_factory=dict)
+    point_code_rules: tuple[str, ...] = field(default_factory=tuple)
+    link_code_rules: tuple[str, ...] = field(default_factory=tuple)
+    shape_code_rules: tuple[str, ...] = field(default_factory=tuple)
+    diagnostics: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class AppliedSectionSubassemblyPoint:
+    """Evaluated point emitted by one Subassembly."""
+
+    point_id: str
+    subassembly_ref: str
+    point_code: str
+    x: float
+    y: float
+    z: float
+    lateral_offset: float = 0.0
+    side: str = ""
+    target_ref: str = ""
+    diagnostics: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class AppliedSectionSubassemblyLink:
+    """Evaluated link emitted by one Subassembly."""
+
+    link_id: str
+    subassembly_ref: str
+    start_point_ref: str
+    end_point_ref: str
+    link_code: str
+    surface_role: str = ""
+    material: str = ""
+    diagnostics: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class AppliedSectionSubassemblyShape:
+    """Evaluated closed shape emitted by one Subassembly."""
+
+    shape_id: str
+    subassembly_ref: str
+    point_refs: list[str] = field(default_factory=list)
+    shape_code: str = ""
+    material: str = ""
+    thickness: float = 0.0
+    solid_family: str = ""
+    diagnostics: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class AppliedSectionQuantityFragment:
-    """Minimal quantity fragment attached to one applied section."""
+    """Minimal quantity fragment attached to one applied section.
+
+    `subassembly_id` is the active owner reference. `component_id` is retained
+    only as compatibility provenance while old output contracts are retired.
+    """
 
     fragment_id: str
     quantity_kind: str
     value: float
     unit: str
     component_id: str = ""
+    subassembly_id: str = ""
 
 
 @dataclass
 class AppliedSection(ResultModelBase):
-    """Station-specific resolved section result."""
+    """Station-specific resolved section result.
+
+    `subassembly_rows` and Subassembly point/link/shape rows are the active
+    result contract. `component_rows` remains a legacy compatibility cache.
+    """
 
     applied_section_id: str = ""
     corridor_id: str = ""
@@ -105,6 +191,10 @@ class AppliedSection(ResultModelBase):
     intersection_diagnostic_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
     component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
+    subassembly_rows: list[AppliedSectionSubassemblyRow] = field(default_factory=list)
+    subassembly_point_rows: list[AppliedSectionSubassemblyPoint] = field(default_factory=list)
+    subassembly_link_rows: list[AppliedSectionSubassemblyLink] = field(default_factory=list)
+    subassembly_shape_rows: list[AppliedSectionSubassemblyShape] = field(default_factory=list)
     quantity_rows: list[AppliedSectionQuantityFragment] = field(default_factory=list)
     active_structure_ids: list[str] = field(default_factory=list)
     active_structure_rule_ids: list[str] = field(default_factory=list)

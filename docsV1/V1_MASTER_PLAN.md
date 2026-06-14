@@ -167,7 +167,7 @@ Use this table as the decision baseline when adding or refactoring v1 features.
 |---|---|---|
 | Source models | semantic-first | Source state should preserve design intent, ownership, references, policies, and editable engineering meaning rather than generated geometry. |
 | Alignment and Profile | geometry plus parametric semantics | Horizontal and vertical design need geometric evaluation, stationing, curves, and grades, but source rows must keep parametric intent. |
-| Assembly | semantic-first | Components, layers, roles, materials, ditch rules, and template meaning are more important than preview geometry. |
+| Assembly / Subassembly | semantic-first | Subassemblies, layers, roles, materials, ditch rules, and template meaning are more important than preview geometry. |
 | Region | semantic/range-first | Region rows own station ranges, active source references, precedence, and domain ownership. |
 | Applied Sections | semantic geometry basis | Applied Sections combine station frames, active source context, semantic point roles, and evaluated coordinates for downstream builders. |
 | Intersection Applied Sections | semantic geometry basis | Intersection control areas should add result-only supplemental Applied Sections on each participating Alignment at control boundaries, center stations, and curb-return control/contact stations so Build Parametric consumes shared section frames instead of creating hidden late patches. |

@@ -1541,6 +1541,8 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_CENTERLINE3D, None)
     if record_kind == "v1_intersection_model":
         return tree.get(V1_TREE_INTERSECTIONS, None)
+    if record_kind == "v1_assembly_subassembly_model":
+        return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
@@ -1638,8 +1640,20 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_DRAINAGE, None)
     if _is_type(
         child,
-        proxy_types=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
-        name_prefixes=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
+        proxy_types=(
+            "V1AssemblySubassemblyModel",
+            "V1AssemblyModel",
+            "AssemblyModel",
+            "AssemblyTemplate",
+            "TypicalSectionTemplate",
+        ),
+        name_prefixes=(
+            "V1AssemblySubassemblyModel",
+            "V1AssemblyModel",
+            "AssemblyModel",
+            "AssemblyTemplate",
+            "TypicalSectionTemplate",
+        ),
     ):
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if _is_type(

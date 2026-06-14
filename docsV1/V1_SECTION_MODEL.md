@@ -174,25 +174,30 @@ It should be reusable across:
 
 ### 6.2 Template organization
 
-A `SectionTemplate` should be composed of semantic components rather than untyped raw polylines.
+A `SectionTemplate` should be composed of semantic Subassemblies rather than untyped raw polylines.
 
 Recommended internal concepts:
 
 - `TemplateId`
-- `ComponentId`
-- `ComponentKind`
+- `SubassemblyId`
+- `SubassemblyKind`
 - `Side`
 - `Order`
 - `Enabled`
 
-### 6.3 Component categories
+Compatibility note:
+
+- older documents and compatibility rows may still use `ComponentId` and `ComponentKind`
+- new v1 source/result/output contracts should prefer `SubassemblyId`, `SubassemblyKind`, and `subassembly_ref`
+
+### 6.3 Subassembly categories
 
 Recommended high-level categories:
 
-- carriageway components
-- roadside components
+- carriageway Subassemblies
+- roadside Subassemblies
 - pavement layers
-- side-slope and bench components
+- side-slope and bench Subassemblies
 - daylight-related terminal behavior
 - structure-aware modifiers
 
@@ -202,7 +207,7 @@ Terminology note:
 - `daylight` means the terminal condition where that slope face ties into existing ground.
 - In Korean practice, the user-facing design object is the slope face; internally some v1 contracts still use `daylight` for the terrain tie-in family.
 
-### 6.4 Recommended component kinds
+### 6.4 Recommended Subassembly kinds
 
 Initial practical kinds may include:
 
@@ -226,14 +231,14 @@ Templates should support:
 
 - left/right asymmetry
 - parametric widths and slopes
-- optional components
+- optional Subassemblies
 - ordering rules
-- component grouping
+- Subassembly grouping
 - type-specific validation
 
-## 7. Component Parameter Model
+## 7. Subassembly Parameter Model
 
-Each component kind may have a different parameter grammar, but the section model should keep the contract explicit.
+Each Subassembly kind may have a different parameter grammar, but the section model should keep the contract explicit.
 
 Recommended common parameters:
 
@@ -254,13 +259,13 @@ Recommended type-specific parameters:
 - `BenchWidth`
 - `BenchDrop`
 
-For `ditch` components, use `docsV1/V1_DITCH_SHAPE_CONTRACT.md` as the shape-specific parameter contract.
+For `ditch` Subassemblies, use `docsV1/V1_DITCH_SHAPE_CONTRACT.md` as the shape-specific parameter contract.
 
 The first-slice implementation may use simple `width` and `slope`, but U-shaped, L-shaped, trapezoidal, rectangular, and V-shaped ditches require explicit `parameters`.
 
 ### 7.1 Parameter semantics rule
 
-The meaning of a parameter must be tied to the component kind.
+The meaning of a parameter must be tied to the Subassembly kind.
 
 Example:
 

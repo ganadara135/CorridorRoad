@@ -39,7 +39,7 @@ The 3D review object shows short crossfall bars at station samples. These bars h
 
 Applied Sections then show the resolved Superelevation summary by station.
 
-Cross Section Viewer can expose Superelevation source/provenance through section output summary rows and component notes.
+Cross Section Viewer can expose Superelevation source/provenance through section output summary rows and Subassembly notes.
 
 ## Build Parametric
 

@@ -1567,6 +1567,8 @@ def _target_id(row: object) -> str:
 def _target_display_label(row: object) -> str:
     family = str(getattr(row, "target_family", "") or "").strip().lower()
     component_ref = str(getattr(row, "component_ref", "") or "").strip()
+    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
+    active_or_compatibility_ref = _target_subassembly_or_compatibility_display_ref(row)
     region_ref = str(getattr(row, "region_ref", "") or "").strip()
     structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
     drainage_ref = str(getattr(row, "drainage_ref", "") or "").strip()
@@ -1575,13 +1577,14 @@ def _target_display_label(row: object) -> str:
     if family == "region_body":
         return f"Region Body - {region_ref}" if region_ref else "Region Body"
     if family == "pavement_layer_body":
-        return f"Pavement Layer - {component_ref}" if component_ref else "Pavement Layer"
+        return f"Pavement Layer - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Pavement Layer"
     if family == "subbase_body":
-        return f"Subbase - {component_ref}" if component_ref else "Subbase"
+        return f"Subbase - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Subbase"
     if family == "shoulder_body":
-        return f"Shoulder - {component_ref}" if component_ref else "Shoulder"
+        return f"Shoulder - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Shoulder"
     if family == "lined_ditch_body":
-        return f"Drainage Lined Ditch Solid - {drainage_ref or component_ref}" if drainage_ref or component_ref else "Drainage Lined Ditch Solid"
+        ref = drainage_ref or active_or_compatibility_ref
+        return f"Drainage Lined Ditch Solid - {ref}" if ref else "Drainage Lined Ditch Solid"
     if family == "drainage_pipeline_body":
         flow_route_ref = str(getattr(row, "flow_route_ref", "") or "").strip()
         return f"Drainage Pipe Segment Solid - {flow_route_ref or drainage_ref}" if flow_route_ref or drainage_ref else "Drainage Pipe Segment Solid"
@@ -1594,7 +1597,7 @@ def _target_display_label(row: object) -> str:
     if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
-        zone_ref = component_ref or next((str(ref) for ref in source_refs if "surface-zone" in str(ref)), "")
+        zone_ref = active_or_compatibility_ref or next((str(ref) for ref in source_refs if "surface-zone" in str(ref)), "")
         label = {
             "intersection_pavement_body": "Intersection Pavement Solid",
             "intersection_subgrade_body": "Intersection Subgrade Solid",
@@ -1608,12 +1611,22 @@ def _target_display_label(row: object) -> str:
     return str(getattr(row, "target_family", "") or _target_id(row))
 
 
+def _target_subassembly_or_compatibility_display_ref(row: object) -> str:
+    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
+    if subassembly_ref:
+        return subassembly_ref
+    component_ref = str(getattr(row, "component_ref", "") or "").strip()
+    if component_ref:
+        return f"compatibility:{component_ref}"
+    return ""
+
+
 def _target_family_label(row: object) -> str:
     family = str(getattr(row, "target_family", "") or "").strip().lower()
     if family in {"road_body_envelope", "region_body"}:
         return "Envelope"
     if family in {"pavement_layer_body", "subbase_body", "shoulder_body"}:
-        return "Assembly Component"
+        return "Subassembly"
     if family == "lined_ditch_body":
         return "Drainage: Lined Ditch"
     if family == "drainage_pipeline_body":
@@ -1642,17 +1655,40 @@ def _target_scope_text(row: object) -> str:
     if region_ref:
         return f"{region_ref} | STA {station_start:.3f}-{station_end:.3f}"
     if scope:
-        return f"{scope} | STA {station_start:.3f}-{station_end:.3f}"
+        return f"{_target_scope_label(scope)} | STA {station_start:.3f}-{station_end:.3f}"
     return f"STA {station_start:.3f}-{station_end:.3f}"
 
 
+def _target_scope_label(scope_kind: object) -> str:
+    scope = str(scope_kind or "").strip().lower()
+    if scope in {"assembly_subassembly", "assembly_component"}:
+        return "Subassembly"
+    if scope == "whole_corridor":
+        return "Whole Corridor"
+    if scope == "station_range":
+        return "Station Range"
+    if scope == "region":
+        return "Region"
+    if scope == "structure":
+        return "Structure"
+    if scope == "drainage":
+        return "Drainage"
+    if scope == "intersection":
+        return "Intersection"
+    return str(scope_kind or "")
+
+
 def _target_source_text(row: object) -> str:
+    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "")
+    component_ref = str(getattr(row, "component_ref", "") or "")
+    compatibility_ref = f"compatibility:{component_ref}" if component_ref and not subassembly_ref else ""
     values = [
         str(getattr(row, "assembly_ref", "") or ""),
         str(getattr(row, "structure_ref", "") or ""),
         str(getattr(row, "drainage_ref", "") or ""),
         str(getattr(row, "flow_route_ref", "") or ""),
-        str(getattr(row, "component_ref", "") or ""),
+        subassembly_ref,
+        compatibility_ref,
         str(getattr(row, "material_ref", "") or ""),
     ]
     text = ", ".join(value for value in values if value)
@@ -1668,8 +1704,11 @@ def _target_context_text(row: object) -> str:
         if side:
             values.append(f"side={side}")
     component_ref = str(getattr(row, "component_ref", "") or "")
-    if component_ref:
-        values.append(f"component={component_ref}")
+    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "")
+    if subassembly_ref:
+        values.append(f"subassembly={subassembly_ref}")
+    if component_ref and not subassembly_ref:
+        values.append(f"compatibility_ref={component_ref}")
     material_ref = str(getattr(row, "material_ref", "") or "")
     if material_ref:
         values.append(f"material={material_ref}")
@@ -1941,6 +1980,7 @@ def _intersection_patch_watertight_output(target_row, *, patch: dict[str, object
         edge_count=_shape_count(shape, "Edges"),
         profile_count=int(patch.get("boundary_count", 0) or 0),
         region_ref=str(getattr(target_row, "region_ref", "") or ""),
+        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
         material_ref=str(getattr(target_row, "material_ref", "") or "intersection-patch"),
         path_source=str(patch.get("boundary_source", "") or "intersection_patch_fg_surface"),
         notes=(
@@ -2680,6 +2720,7 @@ def _structure_body_watertight_output(
         profile_count=1,
         region_ref=str(getattr(solid_row, "region_ref", "") or ""),
         assembly_ref=str(getattr(solid_row, "assembly_ref", "") or ""),
+        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
         structure_ref=structure_ref,
         material_ref=str(getattr(target_row, "material_ref", "") or getattr(solid_row, "material", "") or ""),
         path_source=str(getattr(solid_row, "path_source", "") or ""),
@@ -3454,6 +3495,7 @@ def _drainage_pipeline_watertight_output(
         face_count=face_count,
         edge_count=edge_count,
         profile_count=len(list(getattr(geometry_row, "centerline_points", []) or [])),
+        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
         drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
         flow_route_ref=str(getattr(target_row, "flow_route_ref", "") or ""),
         material_ref=str(getattr(target_row, "material_ref", "") or ""),
@@ -3555,6 +3597,7 @@ def _drainage_pipeline_network_watertight_output(
         face_count=face_count,
         edge_count=edge_count,
         profile_count=sum(len(list(getattr(row, "centerline_points", []) or [])) for row in list(geometry_rows or [])),
+        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
         structure_ref=",".join(structure_refs),
         drainage_ref=str(getattr(target_row, "drainage_ref", "") or ""),
         flow_route_ref=",".join(flow_route_refs),
@@ -3651,6 +3694,7 @@ def _external_structure_body_watertight_output(
         face_count=_shape_count(shape, "Faces"),
         edge_count=_shape_count(shape, "Edges"),
         profile_count=1,
+        subassembly_ref=str(getattr(target_row, "subassembly_ref", "") or ""),
         structure_ref=structure_ref,
         path_source="external_ref",
         notes=(
@@ -5320,6 +5364,7 @@ def _simulation_qa_solid_inputs(document) -> list[WatertightSimulationQaSolidInp
                 shape_valid=_watertight_output_object_shape_is_valid(obj),
                 bound_box=_shape_bound_box_tuple(getattr(obj, "Shape", None)),
                 edge_xy_segments=_shape_edge_xy_segments(getattr(obj, "Shape", None)),
+                subassembly_refs=[str(value or "") for value in list(getattr(obj, "SubassemblyRefs", []) or [])],
                 structure_refs=[str(value or "") for value in list(getattr(obj, "StructureRefs", []) or [])],
                 flow_route_refs=[str(value or "") for value in list(getattr(obj, "FlowRouteRefs", []) or [])],
                 source_refs=[str(value or "") for value in list(getattr(obj, "SourceRefs", []) or [])],

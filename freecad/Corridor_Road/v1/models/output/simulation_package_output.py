@@ -13,6 +13,7 @@ class SimulationPackageSolidRow:
 
     output_ref: str
     target_families: list[str] = field(default_factory=list)
+    subassembly_refs: list[str] = field(default_factory=list)
     structure_refs: list[str] = field(default_factory=list)
     drainage_refs: list[str] = field(default_factory=list)
     flow_route_refs: list[str] = field(default_factory=list)

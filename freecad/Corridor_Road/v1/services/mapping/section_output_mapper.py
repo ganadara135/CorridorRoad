@@ -8,6 +8,10 @@ from ...models.output.section_output import (
     SectionOutput,
     SectionQuantityRow,
     SectionSummaryRow,
+    SectionSubassemblyLinkRow,
+    SectionSubassemblyPointRow,
+    SectionSubassemblyRow,
+    SectionSubassemblyShapeRow,
 )
 from ...models.result.applied_section import AppliedSection
 
@@ -18,17 +22,60 @@ class SectionOutputMapper:
     def map_applied_section(self, applied_section: AppliedSection) -> SectionOutput:
         """Create a normalized section output from one applied section."""
 
-        component_rows = [
-            SectionComponentRow(
-                component_row_id=f"{applied_section.applied_section_id}:{index}",
-                component_id=row.component_id,
+        subassembly_rows = [
+            SectionSubassemblyRow(
+                subassembly_row_id=f"{applied_section.applied_section_id}:subassembly:{index}",
+                subassembly_id=row.subassembly_id,
                 kind=row.kind,
                 template_ref=row.source_template_id,
                 assembly_ref=applied_section.assembly_id,
                 region_ref=row.region_id,
-                notes=_component_notes(row),
+                side=str(getattr(row, "side", "") or ""),
+                notes=_subassembly_notes(row),
             )
-            for index, row in enumerate(applied_section.component_rows, start=1)
+            for index, row in enumerate(list(getattr(applied_section, "subassembly_rows", []) or []), start=1)
+        ]
+        component_rows = _compatibility_component_rows(applied_section, has_subassembly_rows=bool(subassembly_rows))
+        subassembly_point_rows = [
+            SectionSubassemblyPointRow(
+                point_row_id=f"{applied_section.applied_section_id}:subassembly-point:{index}",
+                point_id=str(getattr(row, "point_id", "") or ""),
+                subassembly_ref=str(getattr(row, "subassembly_ref", "") or ""),
+                point_code=str(getattr(row, "point_code", "") or ""),
+                lateral_offset=float(getattr(row, "lateral_offset", 0.0) or 0.0),
+                x=float(getattr(row, "x", 0.0) or 0.0),
+                y=float(getattr(row, "y", 0.0) or 0.0),
+                z=float(getattr(row, "z", 0.0) or 0.0),
+                side=str(getattr(row, "side", "") or ""),
+                target_ref=str(getattr(row, "target_ref", "") or ""),
+            )
+            for index, row in enumerate(list(getattr(applied_section, "subassembly_point_rows", []) or []), start=1)
+        ]
+        subassembly_link_rows = [
+            SectionSubassemblyLinkRow(
+                link_row_id=f"{applied_section.applied_section_id}:subassembly-link:{index}",
+                link_id=str(getattr(row, "link_id", "") or ""),
+                subassembly_ref=str(getattr(row, "subassembly_ref", "") or ""),
+                start_point_ref=str(getattr(row, "start_point_ref", "") or ""),
+                end_point_ref=str(getattr(row, "end_point_ref", "") or ""),
+                link_code=str(getattr(row, "link_code", "") or ""),
+                surface_role=str(getattr(row, "surface_role", "") or ""),
+                material=str(getattr(row, "material", "") or ""),
+            )
+            for index, row in enumerate(list(getattr(applied_section, "subassembly_link_rows", []) or []), start=1)
+        ]
+        subassembly_shape_rows = [
+            SectionSubassemblyShapeRow(
+                shape_row_id=f"{applied_section.applied_section_id}:subassembly-shape:{index}",
+                shape_id=str(getattr(row, "shape_id", "") or ""),
+                subassembly_ref=str(getattr(row, "subassembly_ref", "") or ""),
+                point_refs=[str(value) for value in list(getattr(row, "point_refs", []) or []) if str(value)],
+                shape_code=str(getattr(row, "shape_code", "") or ""),
+                material=str(getattr(row, "material", "") or ""),
+                thickness=float(getattr(row, "thickness", 0.0) or 0.0),
+                solid_family=str(getattr(row, "solid_family", "") or ""),
+            )
+            for index, row in enumerate(list(getattr(applied_section, "subassembly_shape_rows", []) or []), start=1)
         ]
 
         quantity_rows = [
@@ -37,7 +84,8 @@ class SectionOutputMapper:
                 quantity_kind=fragment.quantity_kind,
                 value=fragment.value,
                 unit=fragment.unit,
-                component_ref=fragment.component_id,
+                component_ref=_compatibility_component_ref(fragment),
+                subassembly_ref=str(getattr(fragment, "subassembly_ref", "") or getattr(fragment, "subassembly_id", "") or ""),
             )
             for fragment in applied_section.quantity_rows
         ]
@@ -46,9 +94,33 @@ class SectionOutputMapper:
 
         summary_rows = [
             SectionSummaryRow(
-                summary_id=f"{applied_section.applied_section_id}:component-count",
-                kind="component_count",
-                label="Component Count",
+                summary_id=f"{applied_section.applied_section_id}:subassembly-count",
+                kind="subassembly_count",
+                label="Subassembly Count",
+                value=len(subassembly_rows),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:subassembly-point-count",
+                kind="subassembly_point_count",
+                label="Subassembly Point Count",
+                value=len(subassembly_point_rows),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:subassembly-link-count",
+                kind="subassembly_link_count",
+                label="Subassembly Link Count",
+                value=len(subassembly_link_rows),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:subassembly-shape-count",
+                kind="subassembly_shape_count",
+                label="Subassembly Shape Count",
+                value=len(subassembly_shape_rows),
+            ),
+            SectionSummaryRow(
+                summary_id=f"{applied_section.applied_section_id}:compatibility-component-count",
+                kind="compatibility_component_count",
+                label="Compatibility Fallback Row Count",
                 value=len(component_rows),
             ),
             SectionSummaryRow(
@@ -73,6 +145,10 @@ class SectionOutputMapper:
             result_refs=[applied_section.applied_section_id],
             geometry_rows=geometry_rows,
             component_rows=component_rows,
+            subassembly_rows=subassembly_rows,
+            subassembly_point_rows=subassembly_point_rows,
+            subassembly_link_rows=subassembly_link_rows,
+            subassembly_shape_rows=subassembly_shape_rows,
             quantity_rows=quantity_rows,
             summary_rows=summary_rows,
             diagnostic_rows=list(applied_section.diagnostic_rows),
@@ -255,7 +331,7 @@ class SectionOutputMapper:
         return rows
 
 
-def _component_notes(row) -> str:
+def _subassembly_notes(row) -> str:
     kind = str(getattr(row, "kind", "") or "").strip().lower()
     notes = []
     if kind in {"side_slope", "bench", "daylight"}:
@@ -279,6 +355,36 @@ def _component_notes(row) -> str:
     if structure_ids:
         notes.append(f"structure_refs={','.join(str(value) for value in structure_ids if str(value).strip())}")
     return "; ".join(notes)
+
+
+def _compatibility_component_ref(fragment) -> str:
+    subassembly_ref = str(getattr(fragment, "subassembly_ref", "") or getattr(fragment, "subassembly_id", "") or "").strip()
+    if subassembly_ref:
+        return ""
+    return str(getattr(fragment, "component_ref", "") or getattr(fragment, "component_id", "") or "").strip()
+
+
+def _compatibility_component_rows(
+    applied_section: AppliedSection,
+    *,
+    has_subassembly_rows: bool,
+) -> list[SectionComponentRow]:
+    """Return legacy component output rows only for sections without Subassembly rows."""
+
+    if has_subassembly_rows:
+        return []
+    return [
+        SectionComponentRow(
+            component_row_id=f"{applied_section.applied_section_id}:{index}",
+            component_id=row.component_id,
+            kind=row.kind,
+            template_ref=row.source_template_id,
+            assembly_ref=applied_section.assembly_id,
+            region_ref=row.region_id,
+            notes=_subassembly_notes(row),
+        )
+        for index, row in enumerate(applied_section.component_rows, start=1)
+    ]
 
 
 def _side_slope_geometry_rows(applied_section: AppliedSection, points: list[object]) -> list[SectionGeometryRow]:

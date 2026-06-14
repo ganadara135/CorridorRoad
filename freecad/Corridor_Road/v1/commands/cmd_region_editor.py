@@ -20,7 +20,8 @@ from ...objects.obj_project import (
 )
 from ..models.source.region_model import RegionModel, RegionRow
 from ..objects.obj_alignment import find_v1_alignment
-from ..objects.obj_assembly import assembly_model_ids, list_v1_assembly_models, to_assembly_model
+from ..objects.obj_assembly import list_v1_assembly_models, to_assembly_model
+from ..objects.obj_subassembly_assembly import list_v1_assembly_subassembly_models, to_assembly_subassembly_model
 from ..objects.obj_region import (
     create_or_update_v1_region_model_object,
     find_v1_region_model,
@@ -263,7 +264,7 @@ class V1RegionEditorTaskPanel:
     def __init__(self, *, document=None):
         self.document = document or (getattr(App, "ActiveDocument", None) if App is not None else None)
         self.region_obj = find_v1_region_model(self.document)
-        self._assembly_refs = assembly_model_ids(self.document)
+        self._assembly_refs = _assembly_source_ids(self.document)
         self._station_values = _document_station_values(self.document)
         self._station_range = _document_station_range(self.document, find_v1_alignment(self.document))
         self.form = self._build_ui()
@@ -295,7 +296,7 @@ class V1RegionEditorTaskPanel:
         layout.addWidget(title)
 
         note = QtWidgets.QLabel(
-            "Define station ranges with one base Assembly and priority. "
+            "Define station ranges with one base Assembly / Subassembly source and priority. "
             "Structures and Drainage reference Regions from their own panels. "
             "Apply stores source rows only; it does not build corridor geometry."
         )
@@ -320,7 +321,7 @@ class V1RegionEditorTaskPanel:
 
         self._table = QtWidgets.QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["Start STA", "End STA (Auto)", "Assembly", "Priority", "Notes"]
+            ["Start STA", "End STA (Auto)", "Assembly Source", "Priority", "Notes"]
         )
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -630,7 +631,7 @@ class CmdV1RegionEditor:
         return {
             "Pixmap": icon_path("edit_regions.svg"),
             "MenuText": "Regions",
-            "ToolTip": "Define v1 corridor regions by station range and base Assembly",
+            "ToolTip": "Define v1 corridor regions by station range and Assembly / Subassembly source",
         }
 
     def IsActive(self):
@@ -700,14 +701,14 @@ def _region_station_membership_errors(region_model: RegionModel, station_values:
 
 
 def region_assembly_reference_warnings(region_model: RegionModel, assembly_refs: list[str]) -> list[str]:
-    """Return Region editor warnings for Assembly refs that do not exist yet."""
+    """Return Region editor warnings for Assembly/Subassembly source refs that do not exist yet."""
 
     known = {str(value).strip() for value in list(assembly_refs or []) if str(value).strip()}
     warnings: list[str] = []
     for row in list(getattr(region_model, "region_rows", []) or []):
         assembly_ref = str(getattr(row, "assembly_ref", "") or "").strip()
         if assembly_ref and assembly_ref not in known:
-            warnings.append(f"WARNING: {row.region_id} references missing assembly_ref {assembly_ref}.")
+            warnings.append(f"WARNING: {row.region_id} references missing Assembly / Subassembly source {assembly_ref}.")
     return warnings
 
 
@@ -828,6 +829,14 @@ def _format_float(value: float) -> str:
 
 
 def _preferred_assembly_and_template_refs(document) -> tuple[str, str]:
+    for subassembly_obj in list_v1_assembly_subassembly_models(document):
+        model = to_assembly_subassembly_model(subassembly_obj)
+        if model is None:
+            continue
+        assembly_ref = str(getattr(model, "assembly_id", "") or "").strip()
+        template_ref = str(getattr(model, "active_template_id", "") or "").strip()
+        if assembly_ref:
+            return assembly_ref, template_ref
     for assembly_obj in list_v1_assembly_models(document):
         model = to_assembly_model(assembly_obj)
         if model is None:
@@ -837,6 +846,21 @@ def _preferred_assembly_and_template_refs(document) -> tuple[str, str]:
         if assembly_ref:
             return assembly_ref, template_ref
     return "", ""
+
+
+def _assembly_source_ids(document) -> list[str]:
+    refs: list[str] = []
+    for subassembly_obj in list_v1_assembly_subassembly_models(document):
+        model = to_assembly_subassembly_model(subassembly_obj)
+        ref = str(getattr(model, "assembly_id", "") or getattr(subassembly_obj, "AssemblyId", "") or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    for assembly_obj in list_v1_assembly_models(document):
+        model = to_assembly_model(assembly_obj)
+        ref = str(getattr(model, "assembly_id", "") or getattr(assembly_obj, "AssemblyId", "") or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
 
 
 def _project_id(project) -> str:

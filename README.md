@@ -136,7 +136,7 @@ Current toolbar order is organized around the v1 workflow:
 - Earthwork Viewer and v1-native earthwork report path
 - Outputs & Exchange entry point
 - AI Assist entry point
-- Watertight Solids final-stage panel for selected road, component, drainage, and structure solid targets
+- Watertight Solids final-stage panel for selected road, Subassembly, drainage, and structure solid targets
 
 ## In Progress
 

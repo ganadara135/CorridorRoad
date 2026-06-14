@@ -720,7 +720,7 @@ class V1IntersectionEditorTaskPanel:
 
         self._alignment_note = QtWidgets.QLabel(
             "Existing Alignments mode will use selected primary and secondary Alignment sources. "
-            "Starter Sources mode will create editable Alignment/Profile/Station/Region source drafts in a later phase."
+            "Starter Sources mode creates editable Alignment, Profile, Station, Region, and Assembly / Subassembly sources."
         )
         self._alignment_note.setWordWrap(True)
         layout.addWidget(self._alignment_note)
@@ -825,7 +825,7 @@ class V1IntersectionEditorTaskPanel:
             _populate_alignment_combo(self._secondary_alignment_combo, self._alignment_choices)
             if len(self._alignment_choices) > 1:
                 self._secondary_alignment_combo.setCurrentIndex(1)
-            self._update_status(prefix="Starter Sources created.")
+            self._update_status(prefix="Starter Sources created, including Assembly / Subassembly source.")
         except Exception as exc:
             self._last_created_sources = []
             self._update_status(prefix=f"Starter Sources were not created: {exc}")
@@ -1931,8 +1931,27 @@ def _starter_region_model_for_alignment(
 
 
 def _ensure_starter_assembly_for_intersections(document, *, project=None, created: list[str] | None = None) -> tuple[str, str]:
-    """Ensure starter intersection sources have an Assembly source for Build Sections."""
+    """Ensure starter intersection sources have an Assembly/Subassembly source for Build Sections."""
 
+    try:
+        from ..objects.obj_subassembly_assembly import (
+            find_v1_assembly_subassembly_model,
+            to_assembly_subassembly_model,
+        )
+
+        existing_subassembly_obj = find_v1_assembly_subassembly_model(document)
+        existing_subassembly_model = (
+            to_assembly_subassembly_model(existing_subassembly_obj)
+            if existing_subassembly_obj is not None
+            else None
+        )
+        if existing_subassembly_model is not None:
+            assembly_id = str(getattr(existing_subassembly_model, "assembly_id", "") or "").strip()
+            template_id = str(getattr(existing_subassembly_model, "active_template_id", "") or "").strip()
+            if assembly_id:
+                return assembly_id, template_id
+    except Exception:
+        pass
     existing_obj = find_v1_assembly_model(document)
     existing_model = to_assembly_model(existing_obj) if existing_obj is not None else None
     if existing_model is not None:
@@ -1941,17 +1960,20 @@ def _ensure_starter_assembly_for_intersections(document, *, project=None, create
         if assembly_id:
             return assembly_id, template_id
     try:
-        from .cmd_assembly_editor import apply_v1_assembly_model, starter_assembly_model_from_document
+        from .cmd_subassembly_editor import (
+            apply_v1_assembly_subassembly_model,
+            assembly_subassembly_preset_model_from_document,
+        )
 
-        model = starter_assembly_model_from_document(document=document, project=project)
-        obj = apply_v1_assembly_model(
+        model = assembly_subassembly_preset_model_from_document("Basic Road", document=document, project=project)
+        obj = apply_v1_assembly_subassembly_model(
             document=document,
             project=project,
             assembly_model=model,
-            object_name="V1IntersectionStarterAssembly",
+            object_name="V1IntersectionStarterAssemblySubassembly",
         )
         if created is not None:
-            created.append(f"Assembly: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {model.assembly_id}")
+            created.append(f"Assembly / Subassembly: {getattr(obj, 'Label', '') or getattr(obj, 'Name', '')} | {model.assembly_id}")
         return str(getattr(model, "assembly_id", "") or ""), str(getattr(model, "active_template_id", "") or "")
     except Exception:
         return "", ""

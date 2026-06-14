@@ -7,6 +7,10 @@ from .cmd_assembly_editor import (
     run_v1_assembly_editor_command,
     starter_assembly_model_from_document,
 )
+from .cmd_subassembly_editor import (
+    apply_v1_assembly_subassembly_model,
+    run_v1_assembly_subassembly_editor_command,
+)
 from .cmd_generate_applied_sections import (
     apply_v1_applied_section_set,
     build_document_applied_section_set,
@@ -57,6 +61,7 @@ __all__ = [
     "apply_tin_editor_operations",
     "apply_v1_applied_section_set",
     "apply_v1_assembly_model",
+    "apply_v1_assembly_subassembly_model",
     "apply_v1_corridor_model",
     "apply_v1_region_model",
     "apply_v1_structure_model",
@@ -69,6 +74,7 @@ __all__ = [
     "run_v1_alignment_editor_command",
     "run_v1_applied_sections_command",
     "run_v1_assembly_editor_command",
+    "run_v1_assembly_subassembly_editor_command",
     "run_v1_build_corridor_command",
     "run_v1_centerline3d_command",
     "create_v1_sample_profile",

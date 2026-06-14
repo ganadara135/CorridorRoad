@@ -9,7 +9,12 @@ from .base import ResultModelBase
 
 @dataclass(frozen=True)
 class QuantityFragment:
-    """Minimal quantity fragment row."""
+    """Minimal quantity fragment row.
+
+    `subassembly_ref` is the active owner reference for v1 road-section
+    quantities. `component_ref` is retained only as legacy compatibility
+    provenance and should be blank whenever a Subassembly owner exists.
+    """
 
     fragment_id: str
     quantity_kind: str
@@ -19,6 +24,7 @@ class QuantityFragment:
     station_start: float | None = None
     station_end: float | None = None
     component_ref: str = ""
+    subassembly_ref: str = ""
     assembly_ref: str = ""
     region_ref: str = ""
     structure_ref: str = ""

@@ -9,7 +9,7 @@ from ...models.output.base import OutputModelBase
 from ...models.output.exchange_output import ExchangeOutput, ExchangeOutputRef
 
 
-_SIDE_SLOPE_COMPONENT_KINDS = {"side_slope", "bench", "daylight"}
+_SIDE_SLOPE_SUBASSEMBLY_KINDS = {"side_slope", "bench", "daylight"}
 _SIDE_SLOPE_QUANTITY_KINDS = {"bench_surface_length", "slope_face_length"}
 _SIDE_SLOPE_MEASUREMENT_KINDS = {"section_side_slope_breakline"}
 
@@ -89,6 +89,8 @@ class ExchangeOutputMapper:
                 "bench_source_context_count": self._bench_source_context_count(source_context_rows),
                 "region_ref_count": len(self._source_ref_values(request.outputs, "region_ref")),
                 "assembly_ref_count": len(self._source_ref_values(request.outputs, "assembly_ref")),
+                "subassembly_ref_count": len(self._source_ref_values(request.outputs, "subassembly_ref")),
+                "compatibility_ref_count": len(self._source_ref_values(request.outputs, "compatibility_ref")),
                 "structure_ref_count": len(self._source_ref_values(request.outputs, "structure_ref")),
                 "surface_span_count": len(surface_span_rows),
                 "surface_transition_span_count": self._surface_transition_span_count(surface_span_rows),
@@ -235,7 +237,7 @@ class ExchangeOutputMapper:
 
     def _source_context_rows(self, outputs: list[OutputModelBase]) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
-        seen: set[tuple[str, str, str, str, str, str, str]] = set()
+        seen: set[tuple[str, str, str, str, str, str, str, str]] = set()
         for output in list(outputs or []):
             output_id = self._output_id(output)
             output_kind = self._output_kind(output)
@@ -246,7 +248,8 @@ class ExchangeOutputMapper:
                     str(payload.get("region_ref", "") or ""),
                     str(payload.get("assembly_ref", "") or ""),
                     str(payload.get("structure_ref", "") or ""),
-                    str(payload.get("component_ref", "") or ""),
+                    str(payload.get("subassembly_ref", "") or ""),
+                    str(payload.get("compatibility_ref", "") or ""),
                     str(payload.get("source_row_ref", "") or ""),
                 )
                 if key in seen:
@@ -270,7 +273,11 @@ class ExchangeOutputMapper:
                         "structure_ref": str(getattr(row, "structure_ref", "") or ""),
                         "drainage_ref": str(getattr(row, "drainage_ref", "") or ""),
                         "flow_route_ref": str(getattr(row, "flow_route_ref", "") or ""),
-                        "component_ref": str(getattr(row, "component_ref", "") or ""),
+                        "subassembly_ref": str(getattr(row, "subassembly_ref", "") or ""),
+                        "compatibility_ref": _compatibility_ref(
+                            getattr(row, "component_ref", ""),
+                            getattr(row, "subassembly_ref", ""),
+                        ),
                         "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
                         "target_id": str(getattr(row, "target_id", "") or ""),
                         "target_family": str(getattr(row, "target_family", "") or ""),
@@ -290,12 +297,32 @@ class ExchangeOutputMapper:
                         "source_row_ref": str(getattr(row, "output_object_id", "") or ""),
                     }
                 )
-        for row in list(getattr(output, "component_rows", []) or []):
-            if not self._is_side_slope_component_row(row):
+        for row in list(getattr(output, "subassembly_rows", []) or []):
+            if not self._is_side_slope_subassembly_row(row):
                 continue
             payloads.append(
                 {
-                    "context_kind": "section_side_slope_component",
+                    "context_kind": "section_side_slope_subassembly",
+                    "scope": "side_slope",
+                    "region_ref": str(getattr(row, "region_ref", "") or ""),
+                    "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
+                    "structure_ref": self._structure_ref_from_notes(str(getattr(row, "notes", "") or "")),
+                    "source_row_ref": str(
+                        getattr(row, "subassembly_row_id", "") or getattr(row, "subassembly_id", "") or ""
+                    ),
+                    "subassembly_ref": str(getattr(row, "subassembly_id", "") or ""),
+                    "compatibility_ref": "",
+                    "template_ref": str(getattr(row, "template_ref", "") or ""),
+                    "subassembly_kind": str(getattr(row, "kind", "") or ""),
+                    "notes": str(getattr(row, "notes", "") or ""),
+                }
+            )
+        for row in _section_output_compatibility_rows(output):
+            if not self._is_side_slope_compatibility_row(row):
+                continue
+            payloads.append(
+                {
+                    "context_kind": "section_side_slope_compatibility",
                     "scope": "side_slope",
                     "region_ref": str(getattr(row, "region_ref", "") or ""),
                     "assembly_ref": str(getattr(row, "assembly_ref", "") or ""),
@@ -303,7 +330,8 @@ class ExchangeOutputMapper:
                     "source_row_ref": str(
                         getattr(row, "component_row_id", "") or getattr(row, "component_id", "") or ""
                     ),
-                    "component_ref": str(getattr(row, "component_id", "") or ""),
+                    "subassembly_ref": "",
+                    "compatibility_ref": str(getattr(row, "component_id", "") or ""),
                     "template_ref": str(getattr(row, "template_ref", "") or ""),
                     "component_kind": str(getattr(row, "kind", "") or ""),
                     "notes": str(getattr(row, "notes", "") or ""),
@@ -321,7 +349,11 @@ class ExchangeOutputMapper:
                     "drainage_ref": str(getattr(row, "drainage_ref", "") or ""),
                     "flow_route_ref": str(getattr(row, "flow_route_ref", "") or ""),
                     "source_row_ref": str(getattr(row, "fragment_row_id", "") or getattr(row, "fragment_id", "") or ""),
-                    "component_ref": str(getattr(row, "component_ref", "") or ""),
+                    "subassembly_ref": str(getattr(row, "subassembly_ref", "") or ""),
+                    "compatibility_ref": _compatibility_ref(
+                        getattr(row, "component_ref", ""),
+                        getattr(row, "subassembly_ref", ""),
+                    ),
                     "quantity_kind": str(getattr(row, "quantity_kind", "") or ""),
                     "measurement_kind": str(getattr(row, "measurement_kind", "") or ""),
                 }
@@ -345,8 +377,8 @@ class ExchangeOutputMapper:
             )
         return [
             payload
-            for payload in payloads
-            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref", "component_ref"))
+            for payload in (_source_context_compatibility_payload(payload) for payload in payloads)
+            if any(str(payload.get(key, "") or "") for key in ("region_ref", "assembly_ref", "structure_ref", "subassembly_ref", "compatibility_ref"))
         ]
 
     def _is_structure_solid_output(self, output: OutputModelBase) -> bool:
@@ -355,10 +387,15 @@ class ExchangeOutputMapper:
     def _is_watertight_solid_output(self, output: OutputModelBase) -> bool:
         return bool(str(getattr(output, "watertight_solid_output_id", "") or ""))
 
-    def _is_side_slope_component_row(self, row: object) -> bool:
+    def _is_side_slope_compatibility_row(self, row: object) -> bool:
         kind = str(getattr(row, "kind", "") or "").strip().lower()
         notes = str(getattr(row, "notes", "") or "").strip().lower()
-        return kind in _SIDE_SLOPE_COMPONENT_KINDS or "scope=side_slope" in notes
+        return kind in _SIDE_SLOPE_SUBASSEMBLY_KINDS or "scope=side_slope" in notes
+
+    def _is_side_slope_subassembly_row(self, row: object) -> bool:
+        kind = str(getattr(row, "kind", "") or "").strip().lower()
+        notes = str(getattr(row, "notes", "") or "").strip().lower()
+        return kind in _SIDE_SLOPE_SUBASSEMBLY_KINDS or "scope=side_slope" in notes
 
     def _is_side_slope_quantity_row(self, row: object) -> bool:
         quantity_kind = str(getattr(row, "quantity_kind", "") or "").strip().lower()
@@ -389,7 +426,15 @@ class ExchangeOutputMapper:
         return sum(
             1
             for row in source_context_rows
-            if str(row.get("component_kind", "") or "").strip().lower() == "bench"
+            if str(
+                row.get("subassembly_kind", "")
+                or row.get("compatibility_component_kind", "")
+                or row.get("component_kind", "")
+                or ""
+            )
+            .strip()
+            .lower()
+            == "bench"
             or str(row.get("quantity_kind", "") or "").strip().lower() == "bench_surface_length"
         )
 
@@ -435,3 +480,34 @@ class ExchangeOutputMapper:
             for row in list(diagnostic_rows or [])
             if str(row.get("kind", "") or "").startswith("surface_transition")
         )
+
+
+def _compatibility_ref(component_ref: object, subassembly_ref: object = "") -> str:
+    """Emit component compatibility refs only when no Subassembly owner exists."""
+
+    return "" if str(subassembly_ref or "").strip() else str(component_ref or "").strip()
+
+
+def _section_output_compatibility_rows(output: OutputModelBase) -> list[object]:
+    """Return legacy section component rows only when no Subassembly rows exist."""
+
+    if list(getattr(output, "subassembly_rows", []) or []):
+        return []
+    return list(getattr(output, "component_rows", []) or [])
+
+
+def _source_context_compatibility_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Expose old component provenance through compatibility_ref in exchange payloads."""
+
+    row = dict(payload or {})
+    compatibility_ref = str(row.get("compatibility_ref", "") or "").strip()
+    if not compatibility_ref:
+        compatibility_ref = _compatibility_ref(row.get("component_ref", ""), row.get("subassembly_ref", ""))
+    row["compatibility_ref"] = compatibility_ref
+    compatibility_kind = str(row.get("compatibility_component_kind", "") or "").strip()
+    if not compatibility_kind:
+        compatibility_kind = str(row.get("component_kind", "") or "").strip()
+    row["compatibility_component_kind"] = compatibility_kind
+    row["component_ref"] = ""
+    row["component_kind"] = ""
+    return row
