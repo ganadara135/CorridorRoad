@@ -63,7 +63,6 @@ class AppliedSectionSolidProfileService:
             station_end=station_end,
             target_region_ref=str(getattr(target, "region_ref", "") or ""),
             is_region_target=_is_region_target(target),
-            target_compatibility_ref=str(getattr(target, "component_ref", "") or ""),
             target_subassembly_ref=str(getattr(target, "subassembly_ref", "") or ""),
             is_subassembly_target=_is_subassembly_scoped_target(target),
             target_drainage_ref=str(getattr(target, "drainage_ref", "") or ""),
@@ -139,10 +138,9 @@ class _ProfileBasis:
 
 def _subassembly_note(subassembly_ref: str, compatibility_ref: str = "") -> str:
     subassembly = str(subassembly_ref or "").strip()
-    compatibility = str(compatibility_ref or "").strip()
     if subassembly:
         return f"subassembly={subassembly}"
-    return f"compatibility_ref={compatibility}"
+    return "subassembly=(none)"
 
 
 def _target_range(target: SolidTargetRow, applied: AppliedSectionSet) -> tuple[float, float]:
@@ -249,13 +247,10 @@ def _basis_from_subassembly_section(
     target: SolidTargetRow,
 ) -> tuple[_ProfileBasis | None, list[DiagnosticMessage]]:
     diagnostics: list[DiagnosticMessage] = []
-    target_id = str(getattr(target, "target_id", "") or "solid-target:component")
-    component_ref = str(getattr(target, "component_ref", "") or "").strip()
+    target_id = str(getattr(target, "target_id", "") or "solid-target:subassembly")
     subassembly_ref = str(getattr(target, "subassembly_ref", "") or "").strip()
-    if subassembly_ref:
-        component_ref = ""
     station = float(getattr(section, "station", 0.0) or 0.0)
-    source_row = _section_subassembly_or_compatibility_row(section, subassembly_ref, component_ref)
+    source_row = _section_subassembly_row(section, subassembly_ref)
     if source_row is None:
         return None, diagnostics
     frame = getattr(section, "frame", None)
@@ -265,7 +260,7 @@ def _basis_from_subassembly_section(
                 severity="error",
                 kind="missing_subassembly_profile_frame",
                 message="Subassembly solid profile requires an Applied Section frame.",
-                notes=f"{target_id};{_subassembly_note(subassembly_ref, component_ref)};station={station:g}",
+                notes=f"{target_id};subassembly_ref={subassembly_ref};station={station:g}",
             )
         )
         return None, diagnostics
@@ -277,12 +272,12 @@ def _basis_from_subassembly_section(
                 severity="error",
                 kind="invalid_subassembly_profile_dimensions",
                 message="Subassembly solid profile requires positive width and thickness.",
-                notes=f"{target_id};{_subassembly_note(subassembly_ref, component_ref)};station={station:g};width={width:g};thickness={thickness:g}",
+                notes=f"{target_id};subassembly_ref={subassembly_ref};station={station:g};width={width:g};thickness={thickness:g}",
             )
         )
         return None, diagnostics
     left_offset, right_offset = _subassembly_dimension_offsets(source_row)
-    active_ref = subassembly_ref or component_ref or str(getattr(source_row, "subassembly_id", "") or getattr(source_row, "component_id", "") or "")
+    active_ref = subassembly_ref or str(getattr(source_row, "subassembly_id", "") or "")
     top_left = _point_at_offset(frame, left_offset, point_id=f"{active_ref}:top-left")
     top_right = _point_at_offset(frame, right_offset, point_id=f"{active_ref}:top-right")
     bottom_left = _offset_point_from(top_left, z_delta=-thickness, point_id=f"{active_ref}:bottom-left")
@@ -302,7 +297,6 @@ def _basis_from_subassembly_section(
             ),
             notes=(
                 f"subassembly_ref={subassembly_ref};"
-                f"compatibility_ref={component_ref};"
                 f"material={str(getattr(source_row, 'material', '') or '')}"
             ),
         ),
@@ -319,7 +313,6 @@ def _basis_from_lined_ditch_section(
     target_id = str(getattr(target, "target_id", "") or "solid-target:lined-ditch")
     side = _lined_ditch_side(target)
     target_subassembly_ref = str(getattr(target, "subassembly_ref", "") or "").strip()
-    target_component_ref = "" if target_subassembly_ref else str(getattr(target, "component_ref", "") or "").strip()
     station = float(getattr(section, "station", 0.0) or 0.0)
     frame = getattr(section, "frame", None)
     if frame is None:
@@ -335,10 +328,10 @@ def _basis_from_lined_ditch_section(
     points = _ditch_surface_points(section, side)
     if len(points) < 2:
         return None, diagnostics
-    source_row = _ditch_subassembly_or_compatibility_row(
+    source_row = _ditch_subassembly_row(
         section,
         side,
-        target_ref=target_subassembly_ref or target_component_ref,
+        target_ref=target_subassembly_ref,
     )
     thickness = _ditch_lining_thickness(source_row)
     if thickness <= 0.0:
@@ -382,7 +375,6 @@ def _basis_from_lined_ditch_section(
         return None, diagnostics
     frame_z = float(getattr(frame, "z", 0.0) or 0.0)
     subassembly_ref = str(getattr(target, "subassembly_ref", "") or getattr(source_row, "subassembly_id", "") or "")
-    component_ref = "" if subassembly_ref else str(getattr(source_row, "component_id", "") or getattr(target, "component_ref", "") or "")
     material = str(getattr(source_row, "material", "") or getattr(target, "material_ref", "") or "")
     top_nodes = [
         _basis_node(_lined_ditch_top_role(index, len(top_points)), point, frame_z)
@@ -403,7 +395,7 @@ def _basis_from_lined_ditch_section(
                 f"drainage_ref={str(getattr(target, 'drainage_ref', '') or '')};"
                 f"flow_route_ref={str(getattr(target, 'flow_route_ref', '') or '')};"
                 f"subassembly_ref={subassembly_ref};"
-                f"compatibility_ref={component_ref};side={side};material={material};"
+                f"side={side};material={material};"
                 f"lining_thickness={thickness:g};join_policy={join_policy};miter_limit={miter_limit:g}"
             ),
         ),
@@ -540,7 +532,6 @@ def _profile_stations(
     station_end: float,
     target_region_ref: str = "",
     is_region_target: bool = False,
-    target_compatibility_ref: str = "",
     target_subassembly_ref: str = "",
     is_subassembly_target: bool = False,
     target_drainage_ref: str = "",
@@ -551,7 +542,6 @@ def _profile_stations(
         station_start, station_end = station_end, station_start
     diagnostics: list[DiagnosticMessage] = []
     region_ref = str(target_region_ref or "").strip()
-    component_ref = str(target_compatibility_ref or "").strip()
     subassembly_ref = str(target_subassembly_ref or "").strip()
     lined_ditch_side = _lined_ditch_side_from_refs(target_drainage_ref, target_id)
     values = [float(station_start), float(station_end)]
@@ -574,15 +564,15 @@ def _profile_stations(
             continue
         if (
             is_subassembly_target
-            and (subassembly_ref or component_ref)
-            and _section_subassembly_or_compatibility_row(section, subassembly_ref, component_ref) is None
+            and subassembly_ref
+            and _section_subassembly_row(section, subassembly_ref) is None
         ):
             diagnostics.append(
                 DiagnosticMessage(
                     severity="info",
                     kind="skipped_missing_subassembly_profile",
                     message="A station profile inside the target range was skipped because the target Subassembly is not active.",
-                    notes=f"{target_id};station={station:g};{_subassembly_note(subassembly_ref, component_ref)}",
+                    notes=f"{target_id};station={station:g};{_subassembly_note(subassembly_ref)}",
                 )
             )
             continue
@@ -599,7 +589,7 @@ def _profile_stations(
             continue
         if is_region_target and region_ref:
             matching_region_count += 1
-        if is_subassembly_target and (subassembly_ref or component_ref):
+        if is_subassembly_target and subassembly_ref:
             matching_subassembly_count += 1
         if is_lined_ditch_target:
             matching_lined_ditch_count += 1
@@ -613,13 +603,13 @@ def _profile_stations(
                 notes=f"{target_id};region={region_ref};range={station_start:g}->{station_end:g}",
             )
         )
-    if is_subassembly_target and (subassembly_ref or component_ref) and matching_subassembly_count == 0:
+    if is_subassembly_target and subassembly_ref and matching_subassembly_count == 0:
         diagnostics.append(
             DiagnosticMessage(
                 severity="warning",
                 kind="subassembly_target_no_matching_source_profiles",
                 message="Subassembly solid target has no Applied Section profiles explicitly carrying the target Subassembly inside its range.",
-                notes=f"{target_id};{_subassembly_note(subassembly_ref, component_ref)};range={station_start:g}->{station_end:g}",
+                notes=f"{target_id};{_subassembly_note(subassembly_ref)};range={station_start:g}->{station_end:g}",
             )
         )
     if is_lined_ditch_target and matching_lined_ditch_count == 0:
@@ -766,7 +756,7 @@ def _is_subassembly_scoped_target(target: SolidTargetRow) -> bool:
     family = str(getattr(target, "target_family", "") or "").strip().lower()
     scope = str(getattr(target, "scope_kind", "") or "").strip().lower()
     return (
-        scope in {"assembly_subassembly", "assembly_component"}
+        scope == "assembly_subassembly"
         or family in {"pavement_layer_body", "subbase_body", "shoulder_body"}
     )
 
@@ -780,7 +770,6 @@ def _lined_ditch_side(target: SolidTargetRow) -> str:
         str(getattr(target, "drainage_ref", "") or ""),
         str(getattr(target, "target_id", "") or ""),
         str(getattr(target, "subassembly_ref", "") or ""),
-        str(getattr(target, "component_ref", "") or ""),
     )
 
 
@@ -794,56 +783,19 @@ def _lined_ditch_side_from_refs(*values: str) -> str:
     return "left"
 
 
-def _compatibility_component_row(section: AppliedSection, component_ref: str):
-    expected = str(component_ref or "").strip()
-    if not expected:
-        return None
-    for component in _compatibility_component_rows(section):
-        if str(getattr(component, "component_id", "") or "").strip() == expected:
-            return component
-    return None
-
-
-def _section_subassembly_or_compatibility_row(section: AppliedSection, subassembly_ref: str, compatibility_ref: str = ""):
+def _section_subassembly_row(section: AppliedSection, subassembly_ref: str):
     expected_subassembly = str(subassembly_ref or "").strip()
     subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
     if expected_subassembly:
         for subassembly in subassembly_rows:
             if str(getattr(subassembly, "subassembly_id", "") or "").strip() == expected_subassembly:
                 return subassembly
-        if subassembly_rows:
-            return None
-        for component in _compatibility_component_rows(section):
-            component_id = str(getattr(component, "component_id", "") or "").strip()
-            if _subassembly_ref_for_compatibility_component(section, component_id) == expected_subassembly:
-                return component
-    if subassembly_rows:
-        return None
-    return _compatibility_component_row(section, compatibility_ref)
+    return None
 
 
-def _subassembly_ref_for_compatibility_component(section: AppliedSection, component_ref: str) -> str:
-    expected = str(component_ref or "").strip()
-    if not expected:
-        return ""
-    if any(str(getattr(row, "subassembly_id", "") or "").strip() == expected for row in list(getattr(section, "subassembly_rows", []) or [])):
-        return expected
-    for point in list(getattr(section, "point_rows", []) or []):
-        if str(getattr(point, "component_ref", "") or "").strip() != expected:
-            continue
-        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-        if subassembly_ref:
-            return subassembly_ref
-    for point in list(getattr(section, "subassembly_point_rows", []) or []):
-        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-        if subassembly_ref == expected:
-            return subassembly_ref
-    return ""
-
-
-def _subassembly_dimension_offsets(component) -> tuple[float, float]:
-    width = max(float(getattr(component, "width", 0.0) or 0.0), 0.0)
-    side = str(getattr(component, "side", "") or "center").strip().lower()
+def _subassembly_dimension_offsets(subassembly) -> tuple[float, float]:
+    width = max(float(getattr(subassembly, "width", 0.0) or 0.0), 0.0)
+    side = str(getattr(subassembly, "side", "") or "center").strip().lower()
     if side == "left":
         return width, 0.0
     if side == "right":
@@ -865,7 +817,7 @@ def _ditch_surface_points(section: AppliedSection, side: str) -> list[AppliedSec
     return sorted(rows, key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
 
 
-def _ditch_subassembly_or_compatibility_row(section: AppliedSection, side: str, *, target_ref: str = ""):
+def _ditch_subassembly_row(section: AppliedSection, side: str, *, target_ref: str = ""):
     expected_ref = str(target_ref or "").strip()
     expected_side = str(side or "").strip().lower()
     fallback = None
@@ -881,34 +833,16 @@ def _ditch_subassembly_or_compatibility_row(section: AppliedSection, side: str, 
             fallback = subassembly
     if fallback is not None:
         return fallback
-    if subassembly_rows:
-        return None
-    for component in _compatibility_component_rows(section):
-        if str(getattr(component, "kind", "") or "").strip().lower() != "ditch":
-            continue
-        if expected_ref and str(getattr(component, "component_id", "") or "").strip() == expected_ref:
-            return component
-        component_side = str(getattr(component, "side", "") or "center").strip().lower()
-        if component_side == expected_side or component_side in {"both", "center"}:
-            fallback = component
-    return fallback
+    return None
 
 
-def _compatibility_component_rows(section: AppliedSection) -> list[object]:
-    """Return legacy component rows only after active Subassembly rows are unavailable."""
-
-    if list(getattr(section, "subassembly_rows", []) or []):
-        return []
-    return list(getattr(section, "component_rows", []) or [])
-
-
-def _ditch_lining_thickness(component) -> float:
-    if component is None:
+def _ditch_lining_thickness(subassembly) -> float:
+    if subassembly is None:
         return 0.0
-    thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
+    thickness = max(float(getattr(subassembly, "thickness", 0.0) or 0.0), 0.0)
     if thickness > 0.0:
         return thickness
-    params = dict(getattr(component, "parameters", {}) or {})
+    params = dict(getattr(subassembly, "parameters", {}) or {})
     for key in ("lining_thickness", "wall_thickness"):
         try:
             value = max(float(params.get(key, 0.0) or 0.0), 0.0)
@@ -919,8 +853,8 @@ def _ditch_lining_thickness(component) -> float:
     return 0.0
 
 
-def _ditch_lining_join_policy(component) -> str:
-    params = dict(getattr(component, "parameters", {}) or {}) if component is not None else {}
+def _ditch_lining_join_policy(subassembly) -> str:
+    params = dict(getattr(subassembly, "parameters", {}) or {}) if subassembly is not None else {}
     raw = str(
         params.get("lining_join_policy", "")
         or params.get("lining_join", "")
@@ -932,8 +866,8 @@ def _ditch_lining_join_policy(component) -> str:
     return "normal_average"
 
 
-def _ditch_lining_miter_limit(component) -> float:
-    params = dict(getattr(component, "parameters", {}) or {}) if component is not None else {}
+def _ditch_lining_miter_limit(subassembly) -> float:
+    params = dict(getattr(subassembly, "parameters", {}) or {}) if subassembly is not None else {}
     for key in ("lining_miter_limit", "miter_limit"):
         try:
             value = float(params.get(key, 0.0) or 0.0)

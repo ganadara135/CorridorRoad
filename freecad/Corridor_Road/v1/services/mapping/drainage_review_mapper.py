@@ -499,13 +499,6 @@ def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tupl
             continue
         refs = _unique_refs([str(getattr(point, "drainage_ref", "") or "") for point in points])
         subassembly_refs = _unique_refs([str(getattr(point, "subassembly_ref", "") or "") for point in points])
-        compatibility_refs = _unique_refs(
-            [
-                _compatibility_ref_value(getattr(point, "component_ref", ""))
-                for point in points
-                if not str(getattr(point, "subassembly_ref", "") or "").strip()
-            ]
-        )
         sides = _unique_refs([str(getattr(point, "side", "") or "") for point in points])
         ditch_point_count += len(points)
         ditch_point_with_ref_count += sum(1 for point in points if str(getattr(point, "drainage_ref", "") or "").strip())
@@ -522,7 +515,6 @@ def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tupl
                     f"ditch_points={len(points)};"
                     f"drainage_refs={','.join(refs)};"
                     f"subassembly_refs={','.join(subassembly_refs)};"
-                    f"compatibility_refs={','.join(compatibility_refs)};"
                     f"sides={','.join(sides)}"
                 ),
             )
@@ -581,10 +573,7 @@ def _flowline_continuity_rows(applied_section_set: AppliedSectionSet | None) -> 
                             f"z_end={z1:.3f}",
                             f"fall={fall:.3f}",
                             f"grade={grade:.6g}",
-                            *_subassembly_note_fields(
-                                str(getattr(point0, "subassembly_ref", "") or getattr(point1, "subassembly_ref", "") or ""),
-                                _compatibility_ref_for_points(point0, point1),
-                            ),
+                            *_subassembly_note_fields(str(getattr(point0, "subassembly_ref", "") or getattr(point1, "subassembly_ref", "") or "")),
                             f"side={str(getattr(point0, 'side', '') or getattr(point1, 'side', '') or '')}",
                         ]
                     ),
@@ -606,27 +595,14 @@ def _flowline_candidate_point(point):
 def _flowline_group_key(point) -> str:
     drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
     subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-    component_ref = str(getattr(point, "component_ref", "") or "").strip()
     side = str(getattr(point, "side", "") or "").strip()
     if drainage_ref:
         return drainage_ref
     if subassembly_ref:
         return subassembly_ref
-    if component_ref:
-        return _compatibility_ref_value(component_ref)
     if side:
         return f"side:{side}"
     return "unassigned-flowline"
-
-
-def _compatibility_ref_for_points(*points: object) -> str:
-    for point in points:
-        if str(getattr(point, "subassembly_ref", "") or "").strip():
-            continue
-        component_ref = str(getattr(point, "component_ref", "") or "").strip()
-        if component_ref:
-            return _compatibility_ref_value(component_ref)
-    return ""
 
 
 def _point_lateral_offset(point) -> float:
@@ -636,23 +612,11 @@ def _point_lateral_offset(point) -> float:
         return 0.0
 
 
-def _subassembly_note_fields(subassembly_ref: str, compatibility_ref: str = "") -> list[str]:
+def _subassembly_note_fields(subassembly_ref: str) -> list[str]:
     subassembly_ref = str(subassembly_ref or "").strip()
-    compatibility_ref = _compatibility_ref_value(compatibility_ref)
     if subassembly_ref:
         return [f"subassembly_ref={subassembly_ref}"]
-    if compatibility_ref:
-        return [f"compatibility_ref={compatibility_ref}"]
     return []
-
-
-def _compatibility_ref_value(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if text.startswith("compatibility:"):
-        return text
-    return f"compatibility:{text}"
 
 
 def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageElementOutputRow], float, float]:
@@ -684,10 +648,7 @@ def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageE
                         f"quantity_kind={quantity_kind}",
                         f"value={value:.6g}",
                         f"unit={str(getattr(row, 'unit', '') or '')}",
-                        *_subassembly_note_fields(
-                            str(getattr(row, "subassembly_ref", "") or ""),
-                            str(getattr(row, "component_ref", "") or ""),
-                        ),
+                        *_subassembly_note_fields(str(getattr(row, "subassembly_ref", "") or "")),
                         f"flow_route_ref={str(getattr(row, 'flow_route_ref', '') or '')}",
                     ] if value.split("=", 1)[-1]
                 ),

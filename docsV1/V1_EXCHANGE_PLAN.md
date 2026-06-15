@@ -368,7 +368,7 @@ Required bench source context should include:
 
 - `assembly_ref`
 - `region_ref`
-- `component_ref`
+- `subassembly_ref`
 - `context_kind`
 - quantity kind when the row is quantity-derived
 

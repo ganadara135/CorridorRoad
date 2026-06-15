@@ -103,7 +103,7 @@ Create the source-layer object skeletons without full behavior yet.
 - `IntersectionModel`
 - `ProfileModel`
 - `SuperelevationModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 - `DrainageModel`
 - `OverrideModel`

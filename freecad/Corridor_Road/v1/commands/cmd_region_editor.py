@@ -20,7 +20,6 @@ from ...objects.obj_project import (
 )
 from ..models.source.region_model import RegionModel, RegionRow
 from ..objects.obj_alignment import find_v1_alignment
-from ..objects.obj_assembly import list_v1_assembly_models, to_assembly_model
 from ..objects.obj_subassembly_assembly import list_v1_assembly_subassembly_models, to_assembly_subassembly_model
 from ..objects.obj_region import (
     create_or_update_v1_region_model_object,
@@ -837,14 +836,6 @@ def _preferred_assembly_and_template_refs(document) -> tuple[str, str]:
         template_ref = str(getattr(model, "active_template_id", "") or "").strip()
         if assembly_ref:
             return assembly_ref, template_ref
-    for assembly_obj in list_v1_assembly_models(document):
-        model = to_assembly_model(assembly_obj)
-        if model is None:
-            continue
-        assembly_ref = str(getattr(model, "assembly_id", "") or "").strip()
-        template_ref = str(getattr(model, "active_template_id", "") or "").strip()
-        if assembly_ref:
-            return assembly_ref, template_ref
     return "", ""
 
 
@@ -853,11 +844,6 @@ def _assembly_source_ids(document) -> list[str]:
     for subassembly_obj in list_v1_assembly_subassembly_models(document):
         model = to_assembly_subassembly_model(subassembly_obj)
         ref = str(getattr(model, "assembly_id", "") or getattr(subassembly_obj, "AssemblyId", "") or "").strip()
-        if ref and ref not in refs:
-            refs.append(ref)
-    for assembly_obj in list_v1_assembly_models(document):
-        model = to_assembly_model(assembly_obj)
-        ref = str(getattr(model, "assembly_id", "") or getattr(assembly_obj, "AssemblyId", "") or "").strip()
         if ref and ref not in refs:
             refs.append(ref)
     return refs

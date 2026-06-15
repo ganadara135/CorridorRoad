@@ -39,7 +39,6 @@ def corridorroad_workflow_command_groups():
         ],
         "assembly_region": [
             "CorridorRoad_V1EditAssemblySubassembly",
-            "CorridorRoad_V1EditAssembly",
             "CorridorRoad_V1EditRegions",
             "CorridorRoad_V1EditIntersections",
             "CorridorRoad_V1IntersectionPresets",
@@ -103,7 +102,6 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
-        import freecad.Corridor_Road.v1.commands.cmd_assembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_subassembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_intersection_editor  # noqa: F401

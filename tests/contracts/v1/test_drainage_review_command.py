@@ -77,7 +77,7 @@ def _drainage_model() -> DrainageModel:
                 region_ref="region:drainage",
                 station_start=0.0,
                 station_end=100.0,
-                assembly_component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 policy_set_ref="drainage-policy:lined-concrete",
             ),
             DrainageElementRow(
@@ -398,7 +398,7 @@ def _applied_set() -> AppliedSectionSet:
                         10.0,
                         "ditch_surface",
                         -5.0,
-                        component_ref="ditch:right",
+                        subassembly_ref="ditch:right",
                         side="right",
                         drainage_ref="drainage:side-ditch-right",
                     ),
@@ -409,7 +409,7 @@ def _applied_set() -> AppliedSectionSet:
                         9.8,
                         "ditch_surface",
                         -6.0,
-                        component_ref="ditch:right",
+                        subassembly_ref="ditch:right",
                         side="right",
                         drainage_ref="drainage:side-ditch-right",
                     ),
@@ -451,7 +451,7 @@ def test_drainage_review_mapper_reports_source_handoff_and_applied_context() -> 
         and "status=ok" in row.notes
         for row in region_rows
     )
-    assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;component_refs=ditch:right;sides=right"
+    assert applied_rows[0].notes == "ditch_points=2;drainage_refs=drainage:side-ditch-right;subassembly_refs=ditch:right;sides=right"
     assert output.source_refs == ["drainage:main", "regions:main", "applied:main"]
 
 
@@ -560,7 +560,7 @@ def test_ditch_to_inlet_flow_route_is_capture_only_not_pipe_warning() -> None:
                 element_kind="ditch",
                 station_start=0.0,
                 station_end=50.0,
-                assembly_component_ref="ditch:right",
+                subassembly_ref="ditch:right",
             ),
             DrainageElementRow(
                 drainage_element_id="drainage:inlet-01",
@@ -1638,7 +1638,7 @@ def test_drainage_review_mapper_reports_drainage_quantity_summary() -> None:
                 unit="m",
                 station_start=0.0,
                 station_end=20.0,
-                component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 drainage_ref="drainage:side-ditch-right",
             ),
             QuantityFragment(
@@ -1649,7 +1649,7 @@ def test_drainage_review_mapper_reports_drainage_quantity_summary() -> None:
                 unit="m",
                 station_start=0.0,
                 station_end=20.0,
-                component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 drainage_ref="drainage:side-ditch-right",
                 flow_route_ref="flow-route:right",
             ),

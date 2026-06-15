@@ -22,7 +22,7 @@ Depends on:
 
 The higher-level goal is to support terrain-inclusive whole-road simulation.
 
-That means the final output must be able to represent the road body, terrain boundary, drainage bodies, structure bodies, and physical component bodies as validated watertight solids where the simulation domain requires them.
+That means the final output must be able to represent the road body, terrain boundary, drainage bodies, structure bodies, and physical Subassembly bodies as validated watertight solids where the simulation domain requires them.
 
 The Watertight Solids panel now includes a first-slice `Simulation QA` summary backed by `SimulationQaOutput` and `WatertightSimulationQaService`. It scans built `V1WatertightSolidOutput` objects and reports:
 
@@ -50,7 +50,7 @@ This plan defines how to expand solid targets from the current `road_body_envelo
 - road body envelope
 - Region body envelope
 - pavement and subbase layer bodies
-- shoulder, curb, gutter, barrier, and other Assembly component bodies
+- shoulder, curb, gutter, barrier, and other Assembly Subassembly bodies
 - lined ditch and channel bodies
 - drainage structure bodies
 - StructureModel bodies such as retaining walls, culverts, slabs, and bridge-related objects
@@ -75,7 +75,7 @@ They overlap visually at the top face, but they are not the same product object.
 - can the system validate profile, edge, face, and shell topology?
 - can the corridor produce a solid handoff baseline?
 
-The real target expansion is physical component solids.
+The real target expansion is physical Subassembly solids.
 
 ## 3. Target Principle
 
@@ -96,11 +96,11 @@ Do not create solids for open grading surfaces unless a source model defines a p
 |---|---|---:|---|---:|
 | `road_body_envelope` | Applied Sections / CorridorModel | first path implemented | closed top and bottom envelope | P0 baseline |
 | `region_body` | RegionModel / Applied Sections | first path implemented | clipped envelope with Region start/end cap profiles | P0 baseline |
-| `pavement_layer_body` | Assembly component rows / Applied Sections | first slice available | component closed profiles from width and thickness | P1 |
-| `subbase_body` | Assembly component rows / Applied Sections | first slice available | component closed profiles from width and thickness | P1 |
-| `shoulder_body` | Assembly component rows / Applied Sections | first slice available | same component body pipeline with shoulder semantics | P2 |
-| `curb_gutter_body` | Assembly component rows / Applied Sections | not yet implemented | shape-specific closed component profile | P2 |
-| `barrier_body` | Assembly component rows / Applied Sections | not yet implemented | shape-specific closed component profile or structure-style body | P2 |
+| `pavement_layer_body` | Assembly Subassembly rows / Applied Sections | first slice available | Subassembly closed profiles from width and thickness | P1 |
+| `subbase_body` | Assembly Subassembly rows / Applied Sections | first slice available | Subassembly closed profiles from width and thickness | P1 |
+| `shoulder_body` | Assembly Subassembly rows / Applied Sections | first slice available | same Subassembly body pipeline with shoulder semantics | P2 |
+| `curb_gutter_body` | Assembly Subassembly rows / Applied Sections | not yet implemented | shape-specific closed Subassembly profile | P2 |
+| `barrier_body` | Assembly Subassembly rows / Applied Sections | not yet implemented | shape-specific closed Subassembly profile or structure-style body | P2 |
 | `lined_ditch_body` | Assembly ditch shape / DrainageModel | first slice available | offset ditch profile by lining thickness and material | P1 |
 | `drainage_channel_body` | DrainageModel / Assembly ditch shape | deferred | closed channel lining or precast channel section | P2 |
 | `pipe_body` | DrainageModel / StructureModel | deferred | swept circular or box profile along drainage alignment | P2 |
@@ -163,7 +163,7 @@ independent target solids
   -> optional boolean composition
 ```
 
-The system should not hide a failed component, drainage body, structure body, or terrain boundary inside one large boolean result.
+The system should not hide a failed Subassembly body, drainage body, structure body, or terrain boundary inside one large boolean result.
 
 Final composition can be offered after each participating solid is valid and its source identity is preserved.
 
@@ -187,17 +187,17 @@ Do not use:
 
 - generated viewer mesh triangles as source truth
 
-### 6.2 Assembly Component Bodies
+### 6.2 Assembly Subassembly Bodies
 
 Owner:
 
-- `AssemblyModel`
-- evaluated `AppliedSection.component_rows`
+- `AssemblySubassemblyModel`
+- evaluated `AppliedSection.subassembly_rows`
 
 Use:
 
-- component id
-- component kind
+- subassembly id
+- subassembly kind
 - side
 - offset range
 - width
@@ -216,14 +216,14 @@ Shape-specific later targets:
 - curb
 - gutter
 - barrier
-- median component
+- median Subassembly
 
 ### 6.3 Drainage Bodies
 
 Owner:
 
 - `DrainageModel`
-- Assembly ditch or channel component
+- Assembly ditch or channel Subassembly
 - `StructureModel` for culvert-like drainage structures
 
 Use:
@@ -284,7 +284,7 @@ Recommended family labels:
 
 - `Envelope`
 - `Region`
-- `Assembly Component`
+- `Assembly Subassembly`
 - `Drainage`
 - `Structure`
 
@@ -304,7 +304,7 @@ Add a compact target-family filter:
 
 - `All`
 - `Envelope`
-- `Components`
+- `Subassemblies`
 - `Drainage`
 - `Structures`
 
@@ -340,8 +340,8 @@ Goal:
 Tasks:
 
 - keep `road_body_envelope` and `region_body`
-- keep existing pavement/subbase component discovery
-- mark unsupported component kinds as blocked with clear diagnostics
+- keep existing pavement/subbase Subassembly discovery
+- mark unsupported Subassembly kinds as blocked with clear diagnostics
 - list structure targets as available only when compatible native geometry or Structure Output exists
 - keep drainage body targets blocked until material/thickness/shape rules exist
 
@@ -355,9 +355,9 @@ Status:
 - In progress.
 - `Road Body Envelope` is now presented as a user-facing target label instead of exposing only `road_body_envelope`.
 - Solid target rows separate `pavement_layer_body`, `subbase_body`, and `shoulder_body`.
-- Component targets with invalid width or thickness are blocked with readiness diagnostics instead of being silently ignored.
+- Subassembly targets with invalid width or thickness are blocked with readiness diagnostics instead of being silently ignored.
 
-### Phase TS2: Assembly Component Solid Profiles
+### Phase TS2: Assembly Subassembly Solid Profiles
 
 Goal:
 
@@ -365,20 +365,20 @@ Goal:
 
 Tasks:
 
-- extend component profile creation to preserve component family and material
-- add support for shoulder components when width and thickness exist
+- extend Subassembly profile creation to preserve Subassembly family and material
+- add support for shoulder Subassemblies when width and thickness exist
 - add diagnostics for missing thickness, missing material, or discontinuous station coverage
-- keep component bodies independent from `road_body_envelope`
+- keep Subassembly bodies independent from `road_body_envelope`
 
 Acceptance:
 
 - pavement/subbase/shoulder targets validate and build as separate solids
-- output rows preserve component refs and material refs
+- output rows preserve Subassembly refs and material refs
 
 Status:
 
-- In progress for rectangular component-profile bodies.
-- Pavement, subbase, and shoulder targets share the closed component-profile pipeline.
+- In progress for rectangular Subassembly-profile bodies.
+- Pavement, subbase, and shoulder targets share the closed Subassembly-profile pipeline.
 - Shape-specific curb, gutter, and barrier profile rules remain deferred.
 
 ### Phase TS3: Lined Ditch Solid
@@ -454,7 +454,7 @@ Goal:
 
 Tasks:
 
-- detect overlaps between road envelope, component solids, drainage solids, and structures
+- detect overlaps between road envelope, Subassembly solids, drainage solids, and structures
 - report gap/overlap diagnostics
 - provide optional clipping or boolean operation planning
 - keep boolean union out of the default first build path
@@ -470,10 +470,10 @@ Acceptance:
 |---|---|---|
 | Treating Design Surface as a solid source | incorrect closed bodies | use Applied Section semantic profiles, not surface mesh triangles |
 | Building one monolithic boolean solid too early | fragile failures and poor diagnostics | build independent solids first |
-| Missing material/thickness on components | fake volumes | block target or warn with explicit fallback policy |
+| Missing material/thickness on Subassemblies | fake volumes | block target or warn with explicit fallback policy |
 | Open ditch surfaces accidentally become solids | misleading drainage quantities | require lining/channel/pipe/structure identity |
 | Structure Output and Watertight Solids duplicate ownership | conflicting objects | StructureModel remains source; Watertight stage references or maps outputs |
-| Region boundaries split component bodies incorrectly | gaps or duplicate caps | use Region only as scope unless component ownership changes |
+| Region boundaries split Subassembly bodies incorrectly | gaps or duplicate caps | use Region only as scope unless Subassembly ownership changes |
 | Non-planar corridor faces fail Part creation | build failure | keep Part mapper triangulation fallback with diagnostics |
 
 ## 10. Contract Tests
@@ -481,7 +481,7 @@ Acceptance:
 Add focused tests for:
 
 - unsupported surface-only target is not discovered as buildable
-- pavement and subbase targets preserve material and component refs
+- pavement and subbase targets preserve material and Subassembly refs
 - shoulder target appears only with width and thickness
 - lined ditch target is blocked without lining thickness
 - lined ditch target builds when ditch shape, material, and thickness are present
@@ -496,14 +496,14 @@ The next implementation should continue TS3.
 Completed TS3 follow-up:
 
 - lined ditch output diagnostics include `lined_ditch_shape_provenance`
-- provenance records drainage ref, component ref, side, material, lining thickness, offset method, profile/node counts, station list, and top source point refs
+- provenance records drainage ref, Subassembly ref, side, material, lining thickness, offset method, profile/node counts, station list, and top source point refs
 - exchange source-context rows preserve watertight solid drainage and material refs
-- the Watertight Solids panel source column and show/hide/focus status preserve lined ditch drainage, side, component, and material context
+- the Watertight Solids panel source column and show/hide/focus status preserve lined ditch drainage, side, Subassembly, and material context
 - target discovery can accept `DrainageModel` and promote matching ditch/channel elements to the lined ditch target owner
 - when a DrainageModel owner is present, the target keeps the drainage element id, drainage model id, and policy ref in source refs while still using Applied Section ditch geometry for the first solid slice
-- lined ditch component parameters can request `lining_join_policy=miter`
+- lined ditch Subassembly parameters can request `lining_join_policy=miter`
 - `lining_miter_limit` limits sharp corner miter length; when exceeded, the profile builder falls back to normal-average offset and records `lined_ditch_miter_limit_fallback`
 - output provenance records `join_policy` and `miter_limit`
 - `V1DrainageModel` document objects can now feed Watertight Solid discovery, so persisted DrainageModel ditch/channel elements can own lined ditch targets
 
-Drainage solids should start after the component body path is stable because lined ditch solids need explicit thickness and material policy.
+Drainage solids should start after the Subassembly body path is stable because lined ditch solids need explicit thickness and material policy.

@@ -45,13 +45,13 @@ def _preview_focused_subassembly_label(preview: dict[str, object]) -> str:
 
 
 def _viewer_context_focused_subassembly(viewer_context: dict[str, object]) -> dict[str, object]:
-    """Return the active focused Subassembly context with compatibility fallback."""
+    """Return the active focused Subassembly context."""
 
     context = dict(viewer_context or {})
     focused = dict(context.get("focused_subassembly", {}) or {})
     if focused:
         return focused
-    return dict(context.get("focused_component", {}) or {})
+    return {}
 
 
 def _section_output_subassembly_count(section_output) -> int:
@@ -60,61 +60,27 @@ def _section_output_subassembly_count(section_output) -> int:
     return len(list(getattr(section_output, "subassembly_rows", []) or []))
 
 
-def _section_output_compatibility_count(section_output) -> int:
-    """Count old component compatibility rows separately from Subassemblies."""
-
-    return len(_section_output_compatibility_rows(section_output))
-
-
 def _section_output_subassembly_table_rows(section_output) -> list[list[str]]:
-    """Build Subassembly table rows with a compatibility fallback."""
+    """Build Subassembly table rows."""
 
     subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
-    if subassembly_rows:
-        return [
-            [
-                str(getattr(row, "subassembly_id", "") or ""),
-                str(getattr(row, "kind", "") or ""),
-                str(getattr(row, "template_ref", "") or ""),
-                str(getattr(row, "region_ref", "") or ""),
-                str(getattr(row, "notes", "") or ""),
-            ]
-            for row in subassembly_rows
-        ]
-    return _section_output_compatibility_table_rows(section_output)
-
-
-def _section_output_compatibility_rows(section_output) -> list[object]:
-    """Return legacy component rows only as compatibility fallback rows."""
-
-    if list(getattr(section_output, "subassembly_rows", []) or []):
-        return []
-    return list(getattr(section_output, "component_rows", []) or [])
-
-
-def _section_output_compatibility_table_rows(section_output) -> list[list[str]]:
-    """Build fallback table rows for legacy component output only."""
-
     return [
         [
-            f"compatibility:{str(getattr(row, 'component_id', '') or '')}",
+            str(getattr(row, "subassembly_id", "") or ""),
             str(getattr(row, "kind", "") or ""),
             str(getattr(row, "template_ref", "") or ""),
             str(getattr(row, "region_ref", "") or ""),
             str(getattr(row, "notes", "") or ""),
         ]
-        for row in _section_output_compatibility_rows(section_output)
+        for row in subassembly_rows
     ]
 
 
 def _viewer_context_source_rows(viewer_context: dict[str, object]) -> list[dict[str, object]]:
-    """Return active Subassembly source rows, or legacy compatibility rows only as fallback."""
+    """Return active Subassembly source rows."""
 
     context = dict(viewer_context or {})
-    subassembly_rows = list(context.get("subassembly_rows", []) or [])
-    if subassembly_rows:
-        return subassembly_rows
-    return list(context.get("component_rows", []) or [])
+    return list(context.get("subassembly_rows", []) or [])
 
 
 def _superelevation_summary_line(section_output) -> str:
@@ -205,6 +171,25 @@ def _preview_source_objects(preview: dict[str, object]) -> dict[str, object]:
     return dict(preview.get("source_objects", {}) or {})
 
 
+def _mapping_row(row: object) -> dict[str, object]:
+    """Return a mapping row while tolerating optional empty review rows."""
+
+    if isinstance(row, dict):
+        return dict(row)
+    if hasattr(row, "items"):
+        try:
+            return dict(row.items())
+        except Exception:
+            return {}
+    return {}
+
+
+def _mapping_rows(rows: object) -> list[dict[str, object]]:
+    """Return mapping rows from optional table payloads."""
+
+    return [_mapping_row(row) for row in list(rows or [])]
+
+
 def build_handoff_status(preview: dict[str, object]) -> dict[str, str]:
     """Build a compact handoff status summary for the section viewer."""
 
@@ -235,8 +220,7 @@ def build_corridor_result_review_table_rows(preview: dict[str, object]) -> list[
     """Build compact corridor-build result rows for section review."""
 
     rows = []
-    for row in list(preview.get("corridor_review_rows", []) or []):
-        item = dict(row or {})
+    for item in _mapping_rows(preview.get("corridor_review_rows", [])):
         rows.append(
             [
                 str(item.get("result", "") or ""),
@@ -254,7 +238,7 @@ def build_corridor_result_review_table_rows(preview: dict[str, object]) -> list[
 def build_corridor_result_status(preview: dict[str, object]) -> dict[str, object]:
     """Summarize whether corridor build outputs are available for section review."""
 
-    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    rows = _mapping_rows(preview.get("corridor_review_rows", []))
     if not rows:
         return {
             "state": "not_available",
@@ -286,7 +270,7 @@ def build_corridor_result_status(preview: dict[str, object]) -> dict[str, object
 def corridor_result_object_name_for_row(preview: dict[str, object], row_index: int) -> str:
     """Return the document object name behind one corridor-build result row."""
 
-    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    rows = _mapping_rows(preview.get("corridor_review_rows", []))
     if row_index < 0 or row_index >= len(rows):
         raise IndexError("Corridor result row index is out of range.")
     row = rows[int(row_index)]
@@ -633,13 +617,11 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
         value = _inspector_value(inspector, key)
         if value:
             rows.append([label, value])
-    rows.extend(_inspector_compatibility_rows(inspector))
     unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
     if unresolved_fields:
         rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
     for label, key in (
         ("Subassembly Count", "subassembly_count"),
-        ("Compatibility Fallback Rows", ("compatibility_component_count", "component_count")),
         ("Quantity Count", "quantity_count"),
     ):
         value = _inspector_value(inspector, key)
@@ -654,42 +636,12 @@ def _inspector_value(inspector: dict[str, object], key_or_keys) -> str:
         key_text = str(key)
         value = str(inspector.get(key_text, "") or "").strip()
         if value:
-            if key_text in {
-                "compatibility_component_id",
-                "compatibility_component_kind",
-                "compatibility_component_side",
-                "compatibility_component_ref",
-                "component_id",
-                "component_kind",
-                "component_side",
-                "component_ref",
-            }:
-                return f"compatibility:{value}"
             return value
     return ""
 
 
-def _inspector_compatibility_rows(inspector: dict[str, object]) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for label, key in (
-        ("Compatibility Id", ("compatibility_component_id", "component_id")),
-        ("Compatibility Kind", ("compatibility_component_kind", "component_kind")),
-        ("Compatibility Side", ("compatibility_component_side", "component_side")),
-    ):
-        value = _inspector_value(inspector, key)
-        if value:
-            rows.append([label, value])
-    return rows
-
-
 def _quantity_subassembly_ref(row) -> str:
-    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
-    if subassembly_ref:
-        return subassembly_ref
-    component_ref = str(getattr(row, "component_ref", "") or "").strip()
-    if component_ref:
-        return f"compatibility:{component_ref}"
-    return ""
+    return str(getattr(row, "subassembly_ref", "") or "").strip()
 
 
 def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: set[str]) -> list[list[str]]:
@@ -777,8 +729,7 @@ def build_intersection_context_rows(preview: dict[str, object]) -> list[list[str
     """Build readable intersection contract rows for one selected section."""
 
     rows = []
-    for row in list(preview.get("intersection_context_rows", []) or []):
-        item = dict(row or {})
+    for item in _mapping_rows(preview.get("intersection_context_rows", [])):
         source_refs = ", ".join(str(value) for value in list(item.get("source_refs", []) or []) if str(value or "").strip())
         boundary_refs = ", ".join(str(value) for value in list(item.get("boundary_refs", []) or []) if str(value or "").strip())
         rows.append(
@@ -818,7 +769,7 @@ def plan_cross_section_text_layout(
 
     placed: list[dict[str, object]] = []
     ordered = sorted(
-        [dict(row or {}) for row in list(candidates or [])],
+        _mapping_rows(candidates),
         key=lambda row: (float(row.get("priority", 0.0) or 0.0), float(row.get("x", 0.0) or 0.0)),
     )
     lane_offsets = _text_layout_lane_offsets(vertical_step=vertical_step, max_lanes=max_lanes)
@@ -1160,10 +1111,10 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             text = str(getattr(row, "text", "") or "")
             value = str(getattr(row, "value", "") or "")
             role = str(getattr(row, "role", "") or "")
-            if role.startswith("component:"):
-                component_font = QtGui.QFont(font)
-                component_font.setPointSize(max(7, font.pointSize() - 1))
-                painter.setFont(component_font)
+            if role.startswith("subassembly:"):
+                subassembly_font = QtGui.QFont(font)
+                subassembly_font.setPointSize(max(7, font.pointSize() - 1))
+                painter.setFont(subassembly_font)
                 painter.setPen(QtGui.QPen(self._label_color(role)))
                 self._draw_rotated_text(
                     painter,
@@ -1249,7 +1200,7 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             unit = str(getattr(row, "unit", "") or "")
             label = str(getattr(row, "label", "") or "").strip()
             mid = self._scale_point(((start + end) * 0.5, baseline), plot, x_min, x_max, y_min, y_max)
-            if kind == "component_width":
+            if kind == "subassembly_width":
                 painter.setPen(QtGui.QPen(color))
                 section_y = self._section_elevation_at_offset((start + end) * 0.5)
                 section_point = self._scale_point(((start + end) * 0.5, section_y), plot, x_min, x_max, y_min, y_max)
@@ -1504,13 +1455,13 @@ class CrossSectionViewerTaskPanel:
         )
 
         layout.addWidget(QtWidgets.QLabel("Subassemblies"))
-        self._component_table = self._table_widget(
+        self._subassembly_table = self._table_widget(
             headers=["Id", "Kind", "Assembly Template", "Region", "Notes"],
             rows=_section_output_subassembly_table_rows(self.preview.get("section_output")),
             empty_text="No Subassembly rows.",
         )
-        layout.addWidget(self._component_table)
-        self._select_focused_subassembly_row(self._component_table)
+        layout.addWidget(self._subassembly_table)
+        self._select_focused_subassembly_row(self._subassembly_table)
 
         layout.addWidget(QtWidgets.QLabel("Subassembly Results"))
         layout.addWidget(
@@ -1629,7 +1580,7 @@ class CrossSectionViewerTaskPanel:
 
         button_row = QtWidgets.QHBoxLayout()
         for label, command_name in (
-            ("Open Assembly", "CorridorRoad_V1EditAssembly"),
+            ("Open Assembly", "CorridorRoad_V1EditAssemblySubassembly"),
             ("Open Regions", "CorridorRoad_V1EditRegions"),
             ("Open Structures", "CorridorRoad_V1EditStructures"),
             ("Open Drainage", "CorridorRoad_V1EditDrainage"),
@@ -1699,7 +1650,6 @@ class CrossSectionViewerTaskPanel:
             _intersection_summary_line(section_output),
             f"Stations: {len(self._navigation_station_rows())}",
             f"Subassemblies: {_section_output_subassembly_count(section_output)}",
-            f"Compatibility Fallback Rows: {_section_output_compatibility_count(section_output)}",
             f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
             f"Geometry Rows: {len(self._section_geometry_rows())}",
             f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
@@ -1821,13 +1771,11 @@ class CrossSectionViewerTaskPanel:
             value = _inspector_value(inspector, key)
             if value:
                 rows.append([label, value])
-        rows.extend(_inspector_compatibility_rows(inspector))
         unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
         if unresolved_fields:
             rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
         for label, key in (
             ("Subassembly Count", "subassembly_count"),
-            ("Compatibility Fallback Rows", ("compatibility_component_count", "component_count")),
             ("Quantity Count", "quantity_count"),
         ):
             value = _inspector_value(inspector, key)
@@ -1913,7 +1861,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("terrain_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("terrain_rows", []))
         ]
 
     def _section_geometry_rows(self) -> list[object]:
@@ -1970,7 +1918,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("structure_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("structure_rows", []))
         ]
 
     def _diagnostic_review_rows(self) -> list[list[str]]:
@@ -1981,7 +1929,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("message", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("diagnostic_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("diagnostic_rows", []))
         ]
 
     def _earthwork_hint_rows(self) -> list[list[str]]:
@@ -1992,7 +1940,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("earthwork_hint_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("earthwork_hint_rows", []))
         ]
 
     def _review_marker_rows(self) -> list[list[str]]:
@@ -2003,7 +1951,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("review_marker_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("review_marker_rows", []))
         ]
 
     def _viewer_context_rows(self, viewer_context: dict[str, object]) -> list[list[str]]:
@@ -2061,7 +2009,7 @@ class CrossSectionViewerTaskPanel:
         return build_handoff_status(self.preview)
 
     def _navigation_station_rows(self) -> list[dict[str, object]]:
-        rows = [dict(row or {}) for row in list(self.preview.get("station_rows", []) or [])]
+        rows = _mapping_rows(self.preview.get("station_rows", []))
         if not rows:
             station_row = dict(self.preview.get("station_row", {}) or {})
             if station_row:
@@ -2210,7 +2158,7 @@ class CrossSectionViewerTaskPanel:
     def _open_v1_command(self, command_name: str) -> None:
         source_objects = _preview_source_objects(self.preview)
         objects_to_select = []
-        if command_name == "CorridorRoad_V1EditAssembly":
+        if command_name == "CorridorRoad_V1EditAssemblySubassembly":
             objects_to_select = [source_objects.get("assembly_model")]
         elif command_name == "CorridorRoad_V1EditRegions":
             objects_to_select = [source_objects.get("region_model")]

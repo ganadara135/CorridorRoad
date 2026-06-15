@@ -369,7 +369,7 @@ Use these Region fields as downstream references:
 - `assembly_ref` points to the Assembly source to apply at the station.
 - `template_ref` remains a compatibility/template-level hint until Assembly authoring is complete.
 - `ramp_ref` and `intersection_ref` point to Ramp and Intersection sources when the Region is tied to those domains.
-- `override_refs` points to station-specific or component-specific overrides.
+- `override_refs` points to station-specific or Subassembly-specific overrides.
 
 Viewer and review tools should use `RegionContextSummary.to_review_items`.
 
@@ -415,7 +415,7 @@ Phase R1, R2, R3, R4, and the initial R5 handoff slice are complete.
 
 The next code change should begin the Assembly source/editor slice:
 
-- define v1 `AssemblyModel` source rows around lanes, shoulders, side slopes, and layer components
+- define v1 `AssemblySubassemblyModel` source rows around lanes, shoulders, side slopes, and material layers
 - add an Assembly editor MVP that stores source rows only
 - connect Region `assembly_ref` to Assembly lookup without generating corridor geometry yet
 

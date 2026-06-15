@@ -16,7 +16,7 @@ def _area_fragment(
         unit="m2",
         station_start=station,
         station_end=station,
-        component_ref="section_earthwork_area",
+        subassembly_ref="section_earthwork_area",
     )
 
 

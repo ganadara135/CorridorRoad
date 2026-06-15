@@ -9,11 +9,7 @@ from .base import ResultModelBase
 
 @dataclass(frozen=True)
 class AppliedSectionPoint:
-    """Legacy-compatible point row inside an applied section.
-
-    `subassembly_ref` is the active owner reference. `component_ref` is retained
-    only as compatibility provenance for legacy point-role consumers.
-    """
+    """Point row inside an applied section."""
 
     point_id: str
     x: float
@@ -21,7 +17,6 @@ class AppliedSectionPoint:
     z: float
     point_role: str = "section_point"
     lateral_offset: float = 0.0
-    component_ref: str = ""
     subassembly_ref: str = ""
     side: str = ""
     drainage_ref: str = ""
@@ -47,32 +42,8 @@ class AppliedSectionFrame:
 
 
 @dataclass(frozen=True)
-class AppliedSectionComponentRow:
-    """Legacy compatibility component cache row inside an applied section."""
-
-    component_id: str
-    kind: str
-    source_template_id: str = ""
-    region_id: str = ""
-    side: str = "center"
-    width: float = 0.0
-    slope: float = 0.0
-    thickness: float = 0.0
-    material: str = ""
-    override_ids: list[str] = field(default_factory=list)
-    structure_ids: list[str] = field(default_factory=list)
-    drainage_refs: list[str] = field(default_factory=list)
-    parameters: dict[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class AppliedSectionSubassemblyRow:
-    """Resolved subassembly row inside an applied section.
-
-    This is the v1 target result contract. During the transition period,
-    AppliedSectionComponentRow is still emitted as a compatibility view for
-    existing surface, solid, quantity, and viewer services.
-    """
+    """Resolved Subassembly row inside an applied section."""
 
     subassembly_id: str
     kind: str
@@ -139,17 +110,12 @@ class AppliedSectionSubassemblyShape:
 
 @dataclass(frozen=True)
 class AppliedSectionQuantityFragment:
-    """Minimal quantity fragment attached to one applied section.
-
-    `subassembly_id` is the active owner reference. `component_id` is retained
-    only as compatibility provenance while old output contracts are retired.
-    """
+    """Minimal quantity fragment attached to one applied section."""
 
     fragment_id: str
     quantity_kind: str
     value: float
     unit: str
-    component_id: str = ""
     subassembly_id: str = ""
 
 
@@ -158,7 +124,7 @@ class AppliedSection(ResultModelBase):
     """Station-specific resolved section result.
 
     `subassembly_rows` and Subassembly point/link/shape rows are the active
-    result contract. `component_rows` remains a legacy compatibility cache.
+    result contract.
     """
 
     applied_section_id: str = ""
@@ -190,7 +156,6 @@ class AppliedSection(ResultModelBase):
     active_intersection_grading_policy_ref: str = ""
     intersection_diagnostic_rows: list[str] = field(default_factory=list)
     point_rows: list[AppliedSectionPoint] = field(default_factory=list)
-    component_rows: list[AppliedSectionComponentRow] = field(default_factory=list)
     subassembly_rows: list[AppliedSectionSubassemblyRow] = field(default_factory=list)
     subassembly_point_rows: list[AppliedSectionSubassemblyPoint] = field(default_factory=list)
     subassembly_link_rows: list[AppliedSectionSubassemblyLink] = field(default_factory=list)

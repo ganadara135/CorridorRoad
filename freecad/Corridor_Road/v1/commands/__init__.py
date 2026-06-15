@@ -2,11 +2,6 @@
 
 from .cmd_create_alignment import create_v1_sample_alignment
 from .cmd_alignment_editor import run_v1_alignment_editor_command
-from .cmd_assembly_editor import (
-    apply_v1_assembly_model,
-    run_v1_assembly_editor_command,
-    starter_assembly_model_from_document,
-)
 from .cmd_subassembly_editor import (
     apply_v1_assembly_subassembly_model,
     run_v1_assembly_subassembly_editor_command,
@@ -60,7 +55,6 @@ from .cmd_watertight_solids import run_v1_watertight_solids_command
 __all__ = [
     "apply_tin_editor_operations",
     "apply_v1_applied_section_set",
-    "apply_v1_assembly_model",
     "apply_v1_assembly_subassembly_model",
     "apply_v1_corridor_model",
     "apply_v1_region_model",
@@ -73,7 +67,6 @@ __all__ = [
     "document_has_v1_applied_sections",
     "run_v1_alignment_editor_command",
     "run_v1_applied_sections_command",
-    "run_v1_assembly_editor_command",
     "run_v1_assembly_subassembly_editor_command",
     "run_v1_build_corridor_command",
     "run_v1_centerline3d_command",
@@ -99,5 +92,4 @@ __all__ = [
     "starter_region_model_from_document",
     "starter_structure_model_from_document",
     "starter_superelevation_model_from_document",
-    "starter_assembly_model_from_document",
 ]

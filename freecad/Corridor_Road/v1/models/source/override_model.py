@@ -17,7 +17,7 @@ class OverrideScope:
     station_end: float | None = None
     region_ref: str = ""
     event_ref: str = ""
-    component_side: str = ""
+    subassembly_side: str = ""
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class OverrideTarget:
     target_id: str
     target_kind: str
     target_ref: str
-    component_ref: str = ""
+    subassembly_ref: str = ""
     side: str = ""
 
 

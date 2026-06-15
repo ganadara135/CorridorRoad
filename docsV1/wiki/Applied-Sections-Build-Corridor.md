@@ -24,7 +24,7 @@ Applied Section rows preserve Subassembly ownership when available.
 
 Generated point, link, shape, quantity, surface, watertight solid, exchange, and simulation package outputs should use `subassembly_ref` as the preferred traceability field.
 
-`component_ref` can still appear in older compatibility rows, but it is not the active user-facing concept.
+Active v1 result rows use Subassembly ownership as the user-facing source owner.
 
 The `Build Sections` action validates source handoff readiness and then builds result rows.
 

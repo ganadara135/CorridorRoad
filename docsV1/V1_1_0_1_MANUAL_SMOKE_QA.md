@@ -133,7 +133,7 @@ Confirm the main workflow order is visible and understandable:
 
 - [x] Open Watertight Solids after Build Corridor.
 - [x] Confirm target discovery is available.
-- [x] Confirm road, component, drainage, or structure targets appear where prerequisites exist.
+- [x] Confirm road, Subassembly, drainage, or structure targets appear where prerequisites exist.
 - [ ] Select one available Structure or Drainage target.
 - [x] Validate selected target.
 - [x] Build selected target.

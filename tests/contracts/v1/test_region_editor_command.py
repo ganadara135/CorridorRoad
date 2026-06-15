@@ -16,10 +16,10 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import (
     starter_region_model_from_document,
 )
 from freecad.Corridor_Road.qt_compat import QtWidgets
-from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import starter_assembly_model_from_document
+from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import assembly_subassembly_preset_model_from_document
 from freecad.Corridor_Road.v1.models.source.region_model import RegionModel, RegionRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
-from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
+from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import create_or_update_v1_assembly_subassembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_region import find_v1_region_model, to_region_model
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
 
@@ -97,8 +97,8 @@ def test_drainage_control_preset_uses_fixed_100m_control_station() -> None:
 def test_starter_region_model_uses_existing_v1_assembly_ref() -> None:
     doc, project, _tree = _new_project_doc()
     try:
-        assembly_model = starter_assembly_model_from_document(doc, project=project)
-        create_or_update_v1_assembly_model_object(
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project)
+        create_or_update_v1_assembly_subassembly_model_object(
             document=doc,
             project=project,
             assembly_model=assembly_model,

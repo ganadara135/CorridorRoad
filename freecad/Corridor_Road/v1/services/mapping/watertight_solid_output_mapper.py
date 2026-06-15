@@ -84,10 +84,6 @@ class WatertightSolidOutputMapper:
             diagnostic_refs=diagnostic_refs,
             region_ref=str(getattr(target, "region_ref", "") or ""),
             assembly_ref=str(getattr(target, "assembly_ref", "") or ""),
-            component_ref=_compatibility_component_ref(
-                getattr(target, "component_ref", ""),
-                getattr(target, "subassembly_ref", ""),
-            ),
             subassembly_ref=str(getattr(target, "subassembly_ref", "") or ""),
             structure_ref=str(getattr(target, "structure_ref", "") or ""),
             drainage_ref=str(getattr(target, "drainage_ref", "") or ""),
@@ -235,7 +231,6 @@ def _provenance_diagnostic_rows(
             f"drainage_ref={str(getattr(target, 'drainage_ref', '') or first_notes.get('drainage_ref', ''))}",
             f"flow_route_ref={str(getattr(target, 'flow_route_ref', '') or first_notes.get('flow_route_ref', ''))}",
             f"subassembly_ref={subassembly_ref}",
-            f"compatibility_ref={_display_compatibility_ref(_compatibility_component_ref(str(getattr(target, 'component_ref', '') or first_notes.get('component_ref', '')), subassembly_ref))}",
             f"side={first_notes.get('side', _side_from_ref(str(getattr(target, 'drainage_ref', '') or getattr(target, 'target_id', '') or '')))}",
             f"material={str(getattr(target, 'material_ref', '') or first_notes.get('material', ''))}",
             f"lining_thickness={first_notes.get('lining_thickness', '')}",
@@ -282,23 +277,6 @@ def _side_from_ref(value: str) -> str:
     if "left" in text:
         return "left"
     return ""
-
-
-def _compatibility_component_ref(component_ref: object, subassembly_ref: object = "") -> str:
-    """Return legacy component provenance only when no Subassembly owner exists."""
-
-    return "" if str(subassembly_ref or "").strip() else str(component_ref or "").strip()
-
-
-def _display_compatibility_ref(component_ref: object) -> str:
-    text = str(component_ref or "").strip()
-    if not text:
-        return ""
-    if text.startswith("compatibility:"):
-        return text
-    return f"compatibility:{text}"
-
-
 def _profile_path_source(profile_set: AppliedSectionSolidProfileSet) -> str:
     profiles = list(getattr(profile_set, "profile_rows", []) or [])
     if any("path_source=centerline3d_result" in str(getattr(profile, "notes", "") or "") for profile in profiles):

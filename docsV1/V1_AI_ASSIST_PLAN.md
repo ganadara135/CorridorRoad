@@ -282,7 +282,7 @@ AI should recommend changes against known source families, including:
 
 - `AlignmentModel`
 - `ProfileModel`
-- `SectionTemplate`
+- `SubassemblySectionTemplate`
 - `RegionModel`
 - `StructureModel`
 - `SectionOverrideModel`

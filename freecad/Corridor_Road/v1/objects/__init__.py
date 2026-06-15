@@ -12,14 +12,6 @@ from .obj_applied_section import (
     find_v1_applied_section_set,
     to_applied_section_set,
 )
-from .obj_assembly import (
-    V1AssemblyModelObject,
-    assembly_model_ids,
-    create_or_update_v1_assembly_model_object,
-    find_v1_assembly_model,
-    list_v1_assembly_models,
-    to_assembly_model,
-)
 from .obj_subassembly_assembly import (
     V1AssemblySubassemblyModelObject,
     assembly_subassembly_model_ids,
@@ -126,7 +118,6 @@ from .obj_simulation_package import (
 __all__ = [
     "V1AlignmentObject",
     "V1AppliedSectionSetObject",
-    "V1AssemblyModelObject",
     "V1AssemblySubassemblyModelObject",
     "V1CorridorModelObject",
     "V1DrainageModelObject",
@@ -144,9 +135,7 @@ __all__ = [
     "V1SimulationPackageOutputObject",
     "V1SimulationQaOutputObject",
     "V1WatertightSolidOutputObject",
-    "assembly_model_ids",
     "assembly_subassembly_model_ids",
-    "create_or_update_v1_assembly_model_object",
     "create_or_update_v1_assembly_subassembly_model_object",
     "create_or_update_v1_applied_section_set_object",
     "create_or_update_v1_region_model_object",
@@ -168,7 +157,6 @@ __all__ = [
     "create_v1_stationing",
     "find_v1_alignment",
     "find_v1_applied_section_set",
-    "find_v1_assembly_model",
     "find_v1_assembly_subassembly_model",
     "find_v1_corridor_model",
     "find_v1_drainage_model",
@@ -185,12 +173,10 @@ __all__ = [
     "find_v1_stationing",
     "find_v1_structure_model",
     "find_v1_superelevation_source",
-    "list_v1_assembly_models",
     "list_v1_assembly_subassembly_models",
     "station_value_rows",
     "to_alignment_model",
     "to_applied_section_set",
-    "to_assembly_model",
     "to_assembly_subassembly_model",
     "to_corridor_model",
     "to_drainage_model",

@@ -1566,9 +1566,7 @@ def _target_id(row: object) -> str:
 
 def _target_display_label(row: object) -> str:
     family = str(getattr(row, "target_family", "") or "").strip().lower()
-    component_ref = str(getattr(row, "component_ref", "") or "").strip()
     subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
-    active_or_compatibility_ref = _target_subassembly_or_compatibility_display_ref(row)
     region_ref = str(getattr(row, "region_ref", "") or "").strip()
     structure_ref = str(getattr(row, "structure_ref", "") or "").strip()
     drainage_ref = str(getattr(row, "drainage_ref", "") or "").strip()
@@ -1577,13 +1575,13 @@ def _target_display_label(row: object) -> str:
     if family == "region_body":
         return f"Region Body - {region_ref}" if region_ref else "Region Body"
     if family == "pavement_layer_body":
-        return f"Pavement Layer - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Pavement Layer"
+        return f"Pavement Layer - {subassembly_ref}" if subassembly_ref else "Pavement Layer"
     if family == "subbase_body":
-        return f"Subbase - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Subbase"
+        return f"Subbase - {subassembly_ref}" if subassembly_ref else "Subbase"
     if family == "shoulder_body":
-        return f"Shoulder - {active_or_compatibility_ref}" if active_or_compatibility_ref else "Shoulder"
+        return f"Shoulder - {subassembly_ref}" if subassembly_ref else "Shoulder"
     if family == "lined_ditch_body":
-        ref = drainage_ref or active_or_compatibility_ref
+        ref = drainage_ref or subassembly_ref
         return f"Drainage Lined Ditch Solid - {ref}" if ref else "Drainage Lined Ditch Solid"
     if family == "drainage_pipeline_body":
         flow_route_ref = str(getattr(row, "flow_route_ref", "") or "").strip()
@@ -1597,7 +1595,7 @@ def _target_display_label(row: object) -> str:
     if family in {"intersection_pavement_body", "intersection_subgrade_body", "intersection_slope_body", "intersection_curb_return_body"}:
         source_refs = list(getattr(row, "source_refs", []) or [])
         intersection_ref = next((str(ref) for ref in source_refs if str(ref).startswith("intersection:")), "")
-        zone_ref = active_or_compatibility_ref or next((str(ref) for ref in source_refs if "surface-zone" in str(ref)), "")
+        zone_ref = subassembly_ref or next((str(ref) for ref in source_refs if "surface-zone" in str(ref)), "")
         label = {
             "intersection_pavement_body": "Intersection Pavement Solid",
             "intersection_subgrade_body": "Intersection Subgrade Solid",
@@ -1612,13 +1610,7 @@ def _target_display_label(row: object) -> str:
 
 
 def _target_subassembly_or_compatibility_display_ref(row: object) -> str:
-    subassembly_ref = str(getattr(row, "subassembly_ref", "") or "").strip()
-    if subassembly_ref:
-        return subassembly_ref
-    component_ref = str(getattr(row, "component_ref", "") or "").strip()
-    if component_ref:
-        return f"compatibility:{component_ref}"
-    return ""
+    return str(getattr(row, "subassembly_ref", "") or "").strip()
 
 
 def _target_family_label(row: object) -> str:
@@ -1661,7 +1653,7 @@ def _target_scope_text(row: object) -> str:
 
 def _target_scope_label(scope_kind: object) -> str:
     scope = str(scope_kind or "").strip().lower()
-    if scope in {"assembly_subassembly", "assembly_component"}:
+    if scope == "assembly_subassembly":
         return "Subassembly"
     if scope == "whole_corridor":
         return "Whole Corridor"
@@ -1680,15 +1672,12 @@ def _target_scope_label(scope_kind: object) -> str:
 
 def _target_source_text(row: object) -> str:
     subassembly_ref = str(getattr(row, "subassembly_ref", "") or "")
-    component_ref = str(getattr(row, "component_ref", "") or "")
-    compatibility_ref = f"compatibility:{component_ref}" if component_ref and not subassembly_ref else ""
     values = [
         str(getattr(row, "assembly_ref", "") or ""),
         str(getattr(row, "structure_ref", "") or ""),
         str(getattr(row, "drainage_ref", "") or ""),
         str(getattr(row, "flow_route_ref", "") or ""),
         subassembly_ref,
-        compatibility_ref,
         str(getattr(row, "material_ref", "") or ""),
     ]
     text = ", ".join(value for value in values if value)
@@ -1703,12 +1692,9 @@ def _target_context_text(row: object) -> str:
         side = _side_from_ref(drainage_ref)
         if side:
             values.append(f"side={side}")
-    component_ref = str(getattr(row, "component_ref", "") or "")
     subassembly_ref = str(getattr(row, "subassembly_ref", "") or "")
     if subassembly_ref:
         values.append(f"subassembly={subassembly_ref}")
-    if component_ref and not subassembly_ref:
-        values.append(f"compatibility_ref={component_ref}")
     material_ref = str(getattr(row, "material_ref", "") or "")
     if material_ref:
         values.append(f"material={material_ref}")

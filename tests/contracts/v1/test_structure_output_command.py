@@ -17,7 +17,7 @@ from freecad.Corridor_Road.v1.commands.cmd_build_corridor import (
 from freecad.Corridor_Road.v1.exchange.exchange_package_export import exchange_package_payload
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -136,9 +136,9 @@ def _sample_benched_section(section_id: str, station: float, elevation: float) -
         daylight_right_width=3.0,
         daylight_left_slope=-0.5,
         daylight_right_slope=-0.5,
-        component_rows=[
-            AppliedSectionComponentRow(
-                component_id="side-slope-right:bench:1",
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow(
+                subassembly_id="side-slope-right:bench:1",
                 kind="bench",
                 source_template_id="template:bench-road:side-slope-right",
                 region_id="region:bench-01",
@@ -615,8 +615,8 @@ def test_structure_output_package_json_preserves_bench_source_context() -> None:
         package_obj = apply_v1_structure_output_package(document=doc, project=project, package_result=result)
         persisted_payload = exchange_package_payload(package_obj)
         persisted_context = list(persisted_payload["source_context_rows"])
-        component_contexts = [
-            row for row in persisted_context if row.get("context_kind") == "section_side_slope_component"
+        subassembly_contexts = [
+            row for row in persisted_context if row.get("context_kind") == "section_side_slope_subassembly"
         ]
         quantity_contexts = [
             row for row in persisted_context if row.get("context_kind") == "side_slope_quantity_fragment"
@@ -626,12 +626,12 @@ def test_structure_output_package_json_preserves_bench_source_context() -> None:
         assert result.exchange_output.payload_metadata["bench_source_context_count"] >= 2
         assert persisted_payload["payload_metadata"]["side_slope_source_context_count"] >= 2
         assert persisted_payload["payload_metadata"]["bench_source_context_count"] >= 2
-        assert component_contexts
+        assert subassembly_contexts
         assert quantity_contexts
-        assert component_contexts[0]["assembly_ref"] == "assembly:bench-road"
-        assert component_contexts[0]["region_ref"] == "region:bench-01"
-        assert component_contexts[0]["component_ref"] == "side-slope-right:bench:1"
-        assert component_contexts[0]["component_kind"] == "bench"
+        assert subassembly_contexts[0]["assembly_ref"] == "assembly:bench-road"
+        assert subassembly_contexts[0]["region_ref"] == "region:bench-01"
+        assert subassembly_contexts[0]["subassembly_ref"] == "side-slope-right:bench:1"
+        assert subassembly_contexts[0]["subassembly_kind"] == "bench"
         assert quantity_contexts[0]["assembly_ref"] == "assembly:bench-road"
         assert quantity_contexts[0]["region_ref"] == "region:bench-01"
         assert quantity_contexts[0]["measurement_kind"] == "section_side_slope_breakline"
@@ -647,8 +647,8 @@ def test_structure_output_package_json_preserves_bench_source_context() -> None:
             )
             exported = json.loads(export_path.read_text(encoding="utf-8"))
             exported_context = list(exported["source_context_rows"])
-            exported_component_contexts = [
-                row for row in exported_context if row.get("context_kind") == "section_side_slope_component"
+            exported_subassembly_contexts = [
+                row for row in exported_context if row.get("context_kind") == "section_side_slope_subassembly"
             ]
             exported_quantity_contexts = [
                 row for row in exported_context if row.get("context_kind") == "side_slope_quantity_fragment"
@@ -658,9 +658,9 @@ def test_structure_output_package_json_preserves_bench_source_context() -> None:
             assert info["bench_source_context_count"] >= 2
             assert exported["payload_metadata"]["side_slope_source_context_count"] >= 2
             assert exported["payload_metadata"]["bench_source_context_count"] >= 2
-            assert exported_component_contexts[0]["assembly_ref"] == "assembly:bench-road"
-            assert exported_component_contexts[0]["region_ref"] == "region:bench-01"
-            assert exported_component_contexts[0]["component_ref"] == "side-slope-right:bench:1"
+            assert exported_subassembly_contexts[0]["assembly_ref"] == "assembly:bench-road"
+            assert exported_subassembly_contexts[0]["region_ref"] == "region:bench-01"
+            assert exported_subassembly_contexts[0]["subassembly_ref"] == "side-slope-right:bench:1"
             exported_bench_quantity_contexts = [
                 row for row in exported_quantity_contexts if row.get("quantity_kind") == "bench_surface_length"
             ]
@@ -677,7 +677,7 @@ def test_structure_output_package_json_preserves_bench_source_context() -> None:
             after_ifc_bench_contexts = [
                 row
                 for row in list(after_ifc_payload["source_context_rows"])
-                if row.get("component_kind") == "bench" or row.get("quantity_kind") == "bench_surface_length"
+                if row.get("subassembly_kind") == "bench" or row.get("quantity_kind") == "bench_surface_length"
             ]
             assert ifc_info["export_diagnostic_count"] == 1
             assert after_ifc_bench_contexts

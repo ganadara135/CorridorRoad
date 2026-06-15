@@ -77,7 +77,7 @@ The result object should persist source/result rows immediately, but its visual 
 
 Default Apply behavior:
 
-- write `StationValues`, `Frame*`, `PointRows`, `ComponentRows`, diagnostics, and source refs
+- write `StationValues`, `Frame*`, `PointRows`, `SubassemblyRows`, diagnostics, and source refs
 - set a lightweight empty shape
 - set `ReviewShapeStatus = "not_built"`
 - keep the object hidden

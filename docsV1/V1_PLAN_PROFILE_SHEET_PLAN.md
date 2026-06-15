@@ -81,7 +81,7 @@ Section sheets are one of the highest-priority v1 drawing families.
 
 They should communicate:
 
-- component composition
+- Subassembly composition
 - dimensions
 - terrain interaction
 - structure interaction
@@ -162,7 +162,7 @@ Recommended content blocks:
 
 - station title
 - section geometry
-- component labels
+- Subassembly labels
 - dimension rows
 - terrain rows
 - structure rows

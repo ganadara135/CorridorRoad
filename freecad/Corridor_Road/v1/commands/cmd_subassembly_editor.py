@@ -35,7 +35,7 @@ from ..objects.obj_subassembly_assembly import (
     find_v1_assembly_subassembly_model,
     to_assembly_subassembly_model,
 )
-from .cmd_assembly_editor import (
+from .assembly_preset_data import (
     ASSEMBLY_BENCH_MODES,
     ASSEMBLY_DAYLIGHT_MODES,
     ASSEMBLY_PRESETS,
@@ -521,24 +521,10 @@ def _preset_subassemblies(preset: dict) -> list[TemplateSubassembly]:
 
 
 def _preset_subassembly_rows(preset: dict) -> list[tuple]:
-    """Return active Subassembly preset rows, with old Assembly presets isolated."""
+    """Return active Subassembly preset rows."""
 
     rows = list(preset.get("subassemblies", []) or [])
-    if rows:
-        return [tuple(row) for row in rows]
-    return _compatibility_component_preset_rows(preset)
-
-
-def _compatibility_component_preset_rows(preset: dict) -> list[tuple]:
-    """Convert old Assembly preset component rows for the Subassembly editor."""
-
-    rows: list[tuple] = []
-    for row in list(preset.get("components", []) or []):
-        values = list(row)
-        if values:
-            values[0] = str(values[0]).replace("component:", "subassembly:")
-        rows.append(tuple(values))
-    return rows
+    return [tuple(row) for row in rows]
 
 
 def _validate_subassembly_model(model: AssemblySubassemblyModel) -> list[str]:

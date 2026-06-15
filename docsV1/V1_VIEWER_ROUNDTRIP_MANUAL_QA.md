@@ -77,7 +77,7 @@ Important interpretation note:
    - the viewer reopens
    - `Current Focus` changed to the selected station
    - the selected station row is now marked as current
-   - `Focused Component`, if present, still makes sense
+   - `Focused Subassembly`, if present, still makes sense
 
 ### 4.3 Handoff to Typical Section
 

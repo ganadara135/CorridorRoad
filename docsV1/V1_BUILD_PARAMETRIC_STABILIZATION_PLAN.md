@@ -66,7 +66,7 @@ Source ownership remains:
 
 - Alignment/Profile/Stationing own baseline source intent.
 - `Centerline3DResult` owns the shared station/offset/elevation baseline result.
-- Assembly owns reusable section components.
+- Assembly owns reusable section Subassemblies.
 - Region owns station-span and base Assembly assignment.
 - Structures and Drainage own their own Region assignments and domain references.
 - Applied Sections own station-wise evaluated section result rows.

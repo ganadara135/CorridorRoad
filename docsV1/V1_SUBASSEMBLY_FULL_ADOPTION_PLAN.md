@@ -2,7 +2,7 @@
 
 Date: 2026-06-11
 
-Status: implementation started
+Status: active v1 cutover complete; compatibility notes retained for audit
 
 ## Purpose
 
@@ -32,6 +32,27 @@ This plan does not attempt to import Civil 3D `.pkt` files as executable Subasse
 
 `.pkt` is treated as a future import-assist or metadata reference, not as the native Parametric Road Subassembly runtime.
 
+## Current Baseline
+
+As of 2026-06-15, the active v1 road-section contract is Subassembly-first.
+
+The current baseline is:
+
+- source authoring uses `AssemblySubassemblyModel`, `SubassemblySectionTemplate`, and `TemplateSubassembly`
+- Build Sections emits `AppliedSectionSubassemblyRow` and Subassembly point/link/shape rows
+- Section output and Cross Section Viewer review use Subassembly rows as the visible contract
+- Build Parametric, Drainage, Quantity, Watertight Solid, and Exchange flows use `subassembly_ref` as the active road-section owner
+- `component_rows`, `component_ref`, `component_id`, and `component_kind` are not active v1 ownership fields
+- old Component terminology may appear only in explicit compatibility, historical migration, external-product, or generic CAD-picking notes
+
+The remaining work is no longer a source/result/output contract migration.
+
+Future work should focus on:
+
+- manual QA in FreeCAD for the Subassembly-first workflow
+- removal of old compatibility properties only when no old payload or saved-object reader still needs them
+- continuing intersection, drainage, and watertight-solid features on top of Subassembly refs
+
 ## Core Decision
 
 Parametric Road should replace the current `Component` concept with `Subassembly`.
@@ -40,8 +61,8 @@ The new rule is:
 
 ```text
 Assembly
-  -> SectionTemplate
-  -> Subassembly rows
+  -> SubassemblySectionTemplate
+  -> TemplateSubassembly rows
   -> evaluated AppliedSection Subassembly rows
   -> point/link/shape/code output
   -> surfaces, solids, quantities, review
@@ -49,7 +70,7 @@ Assembly
 
 `Component` should not remain as a long-term user-facing or source-contract term.
 
-## Current State
+## Historical Starting State
 
 Current source/result/output contracts use `component` language:
 
@@ -489,7 +510,7 @@ Solid targets should remain scoped by physical output family:
 
 ### Phase S1: Contract Inventory Freeze
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -505,7 +526,7 @@ Acceptance:
 
 ### Phase S2: Source Model Replacement
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -538,7 +559,7 @@ Implementation note, 2026-06-11:
 
 ### Phase S2.5: Assembly/Subassembly Detail Editors
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -573,7 +594,7 @@ Implementation note, 2026-06-11:
 
 ### Phase S3: Applied Section Result Replacement
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -607,7 +628,7 @@ Implementation note, 2026-06-11:
 
 ### Phase S4: Point/Link/Shape Rows
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -632,7 +653,7 @@ Implementation notes:
 
 ### Phase S5: Surface Builder Refactor
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -668,7 +689,7 @@ Implementation notes:
 
 ### Phase S6: Drainage And Structures Update
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -691,7 +712,7 @@ Implementation notes:
 
 ### Phase S7: Cross Section Viewer And Review UX
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -713,14 +734,14 @@ Implementation notes:
 - Section preview text now reports focused Subassembly wording and keeps compatibility row counts out of primary Component terminology.
 - SectionOutput mapping now emits compatibility component rows only for legacy-only sections with no Subassembly rows.
 - Cross-section drawing labels and dimensions now emit `subassembly-label`, `dim-subassembly`, `subassembly_width`, and `subassembly:*` roles when section spans are available.
-- Cross-section drawing span generation now prefers `AppliedSection.subassembly_rows` and falls back to `component_rows` only for transition compatibility.
+- Cross-section drawing span generation now reads `AppliedSection.subassembly_rows` only.
 - SectionOutput summary labels now present `subassembly_count` as the active count and describe old compatibility rows as fallback rows only.
 - Applied Sections review rows now prefer Subassembly summaries and label old component-derived ditch summaries as fallback-only.
-- Cross-section drawing mapper internal helpers now use Subassembly/span wording for active rows and only inspect `component_rows` when no Subassembly rows are present.
+- Cross-section drawing mapper internal helpers now use Subassembly/span wording for active rows and no longer inspect `component_rows`.
 
 ### Phase S8: Watertight Solid And Quantity Refactor
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -743,7 +764,7 @@ Implementation notes:
 - WatertightSolidOutputRow and the FreeCAD output object now preserve `subassembly_ref`.
 - WatertightSolidOutputRow emits `component_ref` only for legacy-only targets; Subassembly-owned targets keep the old component id as diagnostic `compatibility_ref` only.
 - Watertight Solid target discovery groups pavement, subbase, and shoulder targets by `subassembly_ref` first; compatibility component ids remain only as fallback/profile-dimension references.
-- Watertight Solid profile building matches Subassembly-owned targets by `subassembly_ref` before falling back to the old component id.
+- Watertight Solid profile building matches Subassembly-owned targets by `subassembly_ref`; old component-id profile lookup is no longer part of the active v1 path.
 - Watertight Solid target/profile diagnostics now use Subassembly-first diagnostic names; old component ids appear only as `compatibility_ref` notes.
 - Watertight Solid target discovery/profile helper names now use Subassembly-scoped terminology for active pavement/subbase/shoulder target flow; old component wording is limited to compatibility fields and legacy fallback readers.
 - Solid target discovery now propagates Subassembly refs for pavement layer, subbase, shoulder, and lined ditch targets when Applied Sections contain Subassembly rows or point provenance.
@@ -763,16 +784,16 @@ Implementation notes:
 - Applied Sections review payloads now expose `compatibility_component_count` / `compatibility_component_summary` beside the old keys so new review code can avoid treating `component_rows` as active state.
 - Cross Section Viewer internal focused-row helpers now use Subassembly naming; old `focused_component` context is retained only as a fallback input key.
 - Section Output quantity rows now leave `component_ref` blank when `subassembly_ref` is present, preserving the old field only for legacy-only quantities.
-- Quantity builder count fragments now read `AppliedSection.subassembly_rows` first and use `component_rows` only when no Subassembly rows exist.
+- Quantity builder count fragments now read `AppliedSection.subassembly_rows` directly and no longer create count fragments from legacy `component_rows`.
 - Quantity builder station-fragment rows now keep `subassembly_ref` and `component_ref` separate instead of copying a legacy component id into the Subassembly field.
 - Surface transition and supplemental sampling sections now preserve `subassembly_rows` while relying on interpolated point `subassembly_ref` values for generated geometry provenance.
-- Cross-section drawing mapper internal span helpers now use Subassembly naming and reserve `component_rows` reads for legacy-only fallback spans.
-- Watertight Solid target discovery now reads `AppliedSection.subassembly_rows` directly for pavement, subbase, and shoulder targets before falling back to component compatibility rows.
-- Solid profile generation now resolves Subassembly-scoped target dimensions from `subassembly_rows` before using component compatibility rows.
+- Cross-section drawing mapper internal span helpers now use Subassembly naming only.
+- Watertight Solid target discovery now reads `AppliedSection.subassembly_rows` directly for pavement, subbase, shoulder, and lined-ditch targets without component-row fallback.
+- Solid profile generation now resolves Subassembly-scoped target dimensions from `subassembly_rows` and no longer uses component-row fallback.
 - Solid profile generation now stops falling through to legacy component rows when a section has Subassembly rows but no matching Subassembly target.
-- Solid target discovery source summaries now use `compatibility_refs` internally for legacy component provenance while keeping `subassembly_refs` as the active target owner field.
+- Solid target discovery source summaries now use `subassembly_refs` as the active target owner field and leave `component_ref` blank for Subassembly-owned targets.
 - Corridor solid structure context helpers now inspect Subassembly `structure_ids` before legacy component `structure_ids`.
-- Lined ditch solid target discovery now reads ditch Subassembly rows for material and lining thickness before falling back to component compatibility rows.
+- Lined ditch solid target discovery now reads ditch Subassembly rows for material and lining thickness without component-row fallback.
 - Lined ditch solid profile generation now resolves side, material, and lining thickness from ditch Subassembly rows when the target carries `subassembly_ref`.
 - Cross Section Viewer now exposes a `Subassembly Results` review table for Subassembly point/link/shape rows.
 - Cross Section Viewer quantity rows now display `subassembly_ref` first and use old `component_ref` only as fallback text.
@@ -784,7 +805,7 @@ Implementation notes:
 
 ### Phase S9: Documentation And Wiki Cutover
 
-Status: in progress
+Status: complete
 
 Work:
 
@@ -808,7 +829,7 @@ Implementation notes:
 
 ### Phase S10: Removal Of Compatibility Fields
 
-Status: in progress
+Status: active contract complete; compatibility audit remains
 
 Work:
 
@@ -821,37 +842,41 @@ Removal inventory:
 
 | Area | Current dependency | S10 position |
 | --- | --- | --- |
-| Cross Section Viewer labels | Visible `Component` wording leaked from compatibility fields | Replace visible wording with `Subassembly`; keep internal compatibility keys until builders move fully |
-| `AppliedSection.component_rows` | Build Sections, surface builders, solid target discovery, and exchange mappers still read it as a compatibility cache | Keep temporarily; remove after direct `subassembly_rows` consumption is verified end to end |
-| `component_ref` provenance | Quantity, surface, watertight solid, and exchange rows still carry it beside `subassembly_ref` | Stop presenting it as active terminology first; remove after downstream contracts use `subassembly_ref` only |
-| Old Assembly editor/object bridge | Still useful as a transition path for existing commands | Do not delete before the new Assembly / Subassembly editor is the default toolbar path |
-| Drainage Subassembly reference | Drainage now carries `subassembly_ref` for ditch-related source intent; new object/editor writes do not synchronize the old assembly-component field | Keep old object-property reads only as temporary fallback, then remove the fallback field from the source model |
+| Cross Section Viewer labels | Visible `Component` wording leaked from compatibility fields | Complete; active viewer text uses Subassembly wording |
+| `TemplateComponent` / `SectionTemplate` / `AssemblyModel` | Removed from the active source dataclass contract | Keep removed; source authoring now uses `AssemblySubassemblyModel` only |
+| `AppliedSection.component_rows` | Removed from the active result dataclass | Keep removed; results now expose Subassembly rows only |
+| `SectionOutput.component_rows` | Removed from the active output dataclass | Keep removed; section outputs now expose Subassembly rows only |
+| `component_ref` provenance | Old payloads and compatibility notes may still mention it | Keep only as explicit compatibility provenance; active v1 ownership uses `subassembly_ref` |
+| Old Assembly editor/object bridge | Removed from the active v1 workflow | Keep deleted; new work must use Assembly/Subassembly source objects |
+| Drainage Subassembly reference | Drainage carries `subassembly_ref` for ditch-related source intent | Complete; new presets and editor rows must provide active Subassembly refs |
 
 S10 dependency classes:
 
 | Class | Meaning | Action |
 | --- | --- | --- |
 | Active Subassembly contract | `TemplateSubassembly`, `SubassemblySectionTemplate`, `AppliedSection.subassembly_rows`, Subassembly point/link/shape rows | Keep and expand |
-| Compatibility cache | `AppliedSection.component_rows`, `SectionOutput.component_rows`, `component_ref` output fields | Keep readable, stop presenting as active, remove after direct Subassembly consumers are complete |
-| Legacy editor bridge | old Assembly editor `TemplateComponent` table/object fields | Keep until the Assembly / Subassembly editor is the default path, then hide or remove |
+| Compatibility cache | old `component_ref` payload or saved-object readers | Keep only where old external payload shape still requires explicit compatibility provenance; `AppliedSection.component_rows` and `SectionOutput.component_rows` are removed |
+| Legacy editor bridge | old Assembly editor `TemplateComponent` table/object fields | Removed from active v1 command/object registration |
 | Deprecated provenance | copied `component_ref` values on rows that also have `subassembly_ref` | Suppress immediately where found |
 
 S10 file inventory:
 
 | File or area | Class | Next action |
 | --- | --- | --- |
-| `services/builders/applied_section_service.py` | Compatibility cache generator | Keep `component_rows` generation named as compatibility until all downstream consumers read Subassembly point/link rows directly |
-| `commands/cmd_assembly_editor.py` | Legacy editor bridge | Keep temporarily; panel title, source label, and status text now mark it as legacy compatibility editing |
-| `models/source/assembly_model.py` | Source compatibility bridge | `TemplateComponent`, `SectionTemplate`, and `AssemblyModel` docstrings now identify the old component contract as compatibility/legacy; active authoring uses `TemplateSubassembly` |
-| `models/result/applied_section.py` | Result compatibility cache | Result docstrings now identify `component_rows`, `component_ref`, and `component_id` as legacy compatibility provenance/cache |
-| `models/output/section_output.py` | Output compatibility cache | Keep `SectionComponentRow` as legacy output row; new outputs should prefer `SectionSubassemblyRow` and leave component rows empty when Subassemblies exist |
-| Surface, Quantity, Solid, Exchange mappers | Compatibility readers | Continue converting reads to `subassembly_ref` first and emit `component_ref` only when no Subassembly owner exists |
-| UI viewers | Compatibility display | Show Subassembly counts first; expose old rows only as `Compatibility Fallback Rows` |
+| `services/builders/applied_section_service.py` | Subassembly result generator | Keep emitting Subassembly rows, points, links, and shapes only |
+| `commands/cmd_assembly_editor.py` | Legacy editor bridge | Removed; shared preset data now lives in `commands/assembly_preset_data.py` |
+| `models/source/assembly_model.py` | Active source contract | `TemplateComponent`, `SectionTemplate`, and `AssemblyModel` are removed; active authoring uses `AssemblySubassemblyModel`, `SubassemblySectionTemplate`, and `TemplateSubassembly` |
+| `models/result/applied_section.py` | Active result contract | `AppliedSectionComponentRow` and `AppliedSection.component_rows` are removed |
+| `models/output/section_output.py` | Active output contract | `SectionComponentRow` and `SectionOutput.component_rows` are removed |
+| Surface, Quantity, Solid, Exchange mappers | Compatibility readers | Active outputs use `subassembly_ref`; any old component values must be exposed only as `compatibility_ref` or explicit audit notes |
+| UI viewers | Subassembly review display | Show Subassembly counts and rows only; do not expose old Component compatibility rows in active review UI |
 
 Acceptance:
 
 - new documents created by Parametric Road no longer store active component fields
 - focused tests fail if active source/result/output contracts reintroduce component fields
+- user-facing road-section UI uses Subassembly terminology
+- compatibility wording is explicit when old component refs are discussed
 
 Implementation notes:
 
@@ -864,7 +889,7 @@ Implementation notes:
 - Cross Section Viewer summary counts now keep `Subassemblies` and `Compatibility Fallback Rows` separate instead of counting compatibility rows as Subassemblies.
 - SectionOutput compatibility row docs now label `SectionComponentRow` as a legacy compatibility row, not the active output contract.
 - SectionOutput mapping now builds legacy component rows through an explicit `_compatibility_component_rows` helper and returns none when Subassembly rows exist.
-- The old Assembly editor panel now presents itself as `Assembly (Legacy)` and labels row operations as compatibility-row editing; new road-section authoring should use Assembly / Subassembly.
+- The old Assembly editor panel and legacy `obj_assembly.py` object adapter have been removed from the active v1 package; new road-section authoring must use Assembly / Subassembly.
 - Assembly source model docs and side-slope bench validation messages now label old `TemplateComponent` rows as compatibility rows, while Subassembly validation still reports Subassembly wording.
 - Watertight Solid and Exchange docs now describe Subassembly-scoped targets and reserve old component wording for explicit compatibility notes.
 - Drainage Review output notes now report ditch context and flowline traceability as `subassembly_ref` / `subassembly_refs`.
@@ -897,15 +922,14 @@ Implementation notes:
 - These side-slope Subassembly point rows create `slope_face_surface` links for the result contract while keeping the existing compatibility Slope Face surface generation unchanged.
 - Build Parametric surface geometry now reads linked `AppliedSectionSubassemblyPoint` rows directly when Subassembly surface links exist, instead of filtering only legacy `point_rows`.
 - The Slope Face surface point selection now accepts Subassembly-owned `side_slope_surface`, `bench_surface`, and `daylight_marker` points as the preferred geometry source.
-- Surface transition and supplemental generated sections now drop legacy `component_rows` when Subassembly rows are present, keeping compatibility rows only for legacy-only sections.
+- Surface transition and supplemental generated sections no longer copy legacy `component_rows`; generated surface sections preserve active `subassembly_rows` and point-level Subassembly provenance only.
 - QuantityModel source refs now include Subassembly refs from Applied Section Subassembly point and link rows, not only row/shape summaries.
-- Watertight Solid profile and target discovery compatibility helpers now resolve matching Subassembly refs from `AppliedSectionSubassemblyPoint` rows before falling back to old component provenance.
-- Watertight Solid target discovery now names legacy component-to-Subassembly resolution as a compatibility-component helper.
+- Watertight Solid profile and target discovery now require active Subassembly rows for Subassembly-scoped targets; legacy component-to-Subassembly resolution helpers are removed.
 - Simulation QA and package handoff traceability now carries Subassembly refs through the watertight-solid QA source refs and packaged solid rows.
-- Structure solid context lookup now treats `AppliedSection.subassembly_rows` as authoritative. Legacy `component_rows` are inspected only when no Subassembly rows exist for that section.
-- Corridor solid structure-ref lookup now uses one Subassembly-first helper, keeping the legacy `component_rows` fallback isolated.
-- Build Parametric applied-section review summaries now read structure context from `subassembly_rows` before falling back to legacy compatibility rows.
-- Build Parametric structure-ref review lookup now uses the same Subassembly-first helper pattern and keeps legacy component rows as fallback-only.
+- Structure solid context lookup now treats `AppliedSection.subassembly_rows` as authoritative.
+- Corridor solid structure-ref lookup now uses active `active_structure_ids` and Subassembly `structure_ids` only, without legacy `component_rows` fallback.
+- Build Parametric applied-section review summaries read structure context from `subassembly_rows` and active structure ids only.
+- Build Parametric structure-ref review lookup uses Subassembly rows and active structure ids without component-row fallback.
 - Watertight Solid lined-ditch provenance diagnostics now suppress `compatibility_ref` when a `subassembly_ref` owner is present, matching the output row behavior.
 - Solid profile lined-ditch lookup helper is now named as a Subassembly-or-compatibility row resolver instead of presenting ditch Component lookup as the active path.
 - Solid profile Subassembly body lookup now uses a Subassembly-or-compatibility row resolver and names legacy component-to-Subassembly matching as compatibility-only.
@@ -937,29 +961,66 @@ Implementation notes:
 - Applied Sections review payloads no longer emit new `component_count` / `component_summary` keys; the panel still reads those keys only as old-payload fallbacks.
 - Cross Section Viewer source-inspector payloads now emit `compatibility_component_*` keys for legacy fallback rows instead of creating new `component_*` fields; the viewer still reads old keys only as old-payload fallback.
 - Structure solid quantity fragments no longer write solid output object ids into `component_ref`; structure provenance stays in `structure_ref` and fragment ids.
-- SectionOutput quantity rows now read current `QuantityFragment.subassembly_ref` / `component_ref` fields, suppressing compatibility component refs whenever a Subassembly owner exists.
+- AppliedSection point rows, AppliedSection quantity fragments, SectionOutput quantity rows, and Quantity result/output rows no longer carry `component_ref` / `component_id` compatibility fields in the active dataclass contract.
+- SectionOutput and Quantity output mappers now emit quantity ownership through `subassembly_ref`, `structure_ref`, `drainage_ref`, and `flow_route_ref` only.
 - Solid target discovery now labels target row kind notes as `source_kind` instead of `compatibility_kind` for Subassembly-owned targets.
 - Drainage surface grouping now uses the centralized compatibility-ref helper so legacy `component_ref` is ignored whenever a point already has `subassembly_ref`.
-- Solid target discovery now emits `scope_kind=assembly_subassembly` for Subassembly-scoped road-section targets; `assembly_component` remains a legacy accepted scope kind.
-- Watertight Solid panel scope text now displays both `assembly_subassembly` and legacy `assembly_component` as `Subassembly` instead of exposing raw enum names.
+- Solid target discovery now emits `scope_kind=assembly_subassembly` for Subassembly-scoped road-section targets; `assembly_component` is no longer part of the active SolidTarget scope enum.
+- Watertight Solid panel scope text now displays `assembly_subassembly` as `Subassembly` and no longer presents `assembly_component` as an active scope.
 - Exchange source-context row builders now write `compatibility_ref` directly for legacy component provenance; `component_ref` is kept only as an old-payload normalization input and is cleared in normalized rows.
 - Drainage editor preset materialization no longer reads old `component` keys; preset data must provide active `subassembly` refs directly.
 - Assembly/Subassembly editor preset materialization now reads active `subassemblies` rows first; shared old Assembly `components` presets are converted only through an explicit compatibility helper.
 - Shared Assembly presets now populate active `subassemblies` rows at module load, so the new Assembly/Subassembly editor can consume Subassembly rows without duplicating every preset literal.
 - Applied Section bench evaluation now stores its owner as `source_row`; the old `component` accessor remains only as a compatibility alias for transitional helper code.
-- Build Sections command now isolates the temporary Subassembly-to-AssemblyModel request bridge in `_request_assembly_models`; active source discovery remains `AssemblySubassemblyModel` first.
-- Applied Section surface width, subgrade depth, and daylight policy calculations now read `SubassemblySectionTemplate.subassembly_rows` first and use legacy `SectionTemplate.component_rows` only as fallback.
-- Applied Section FG offset, ditch point, bench evaluation, and ditch/bench validation helpers now consume active Subassembly rows first; legacy component rows remain fallback inputs only.
-- Applied Section side-slope and bench `point_rows` now carry `subassembly_ref` directly for active Subassembly rows; `component_ref` is filled only for legacy compatibility rows.
-- Quantity builder legacy `component_rows` reads are now isolated behind a compatibility helper and are skipped whenever active `subassembly_rows` exist.
-- Solid target discovery now uses a single Subassembly-or-compatibility row helper for assembly target and lined-ditch discovery, keeping old component rows as fallback-only input.
-- Solid profile generation now names active Subassembly/legacy inputs as `source_row` and reads legacy component rows only through compatibility helpers.
+- Build Sections command no longer reads legacy AssemblyModel objects or converts Subassembly rows into `TemplateComponent` / `SectionTemplate` compatibility rows; it now passes `AssemblySourceIdentity` request identities beside active `AssemblySubassemblyModel` sources.
+- Applied Section surface width, subgrade depth, daylight policy, crossfall defaults, ditch rows, and bench diagnostics now read `SubassemblySectionTemplate.subassembly_rows` only; legacy `SectionTemplate.component_rows` is no longer used by the active Build Sections service.
+- Applied Section FG offset, ditch point, bench evaluation, and ditch/bench validation helpers now consume active Subassembly rows directly; legacy component-row fallback is no longer part of active Build Sections.
+- Applied Section side-slope, bench, and ditch `point_rows` now carry `subassembly_ref` directly for active Subassembly rows; point-level `component_ref` has been removed from the active result contract.
+- Quantity builder no longer reads legacy `component_rows` for active count fragments or Structure refs.
+- Solid target discovery now reads `AppliedSection.subassembly_rows` directly for assembly-subassembly and lined-ditch targets; legacy component-to-Subassembly discovery helpers are removed.
+- Solid profile generation now names active Subassembly inputs as `source_row` and requires active Subassembly rows for Subassembly-scoped and lined-ditch profiles.
 - Cross Section Viewer command and UI helpers now suppress legacy SectionOutput component rows whenever active Subassembly rows are present.
 - Exchange output source-context mapping now reads SectionOutput component rows only through a compatibility helper that is disabled when Subassembly rows exist.
 - SectionOutput model docstrings now state that `component_rows` and quantity `component_ref` are legacy compatibility provenance, not active section ownership.
 - Assembly source model docstrings now mark `TemplateComponent`, `SectionTemplate`, and `AssemblyModel` as deprecated compatibility contracts, and Subassembly bench validation isolates its legacy validation proxy in a compatibility helper.
+- Build Sections request dataclasses now use `AssemblySourceIdentity` instead of the deprecated component-based `AssemblyModel`, so assembly/template routing is separated from old component geometry ownership.
+- Cross Section Viewer command and UI payloads no longer read or display old SectionOutput/AppliedSection `component_rows` as fallback review data; source inspector and summary rows now present Subassembly ownership only.
+- Build Parametric structure review now collects Structure refs from active `AppliedSection.active_structure_ids` and `subassembly_rows` only, without falling back to legacy component rows.
+- Quantity builder no longer reads `AppliedSection.component_rows` for fallback count fragments or structure refs; sections without active Subassembly rows simply do not produce Subassembly-owned count fragments.
+- Watertight Solid profile generation no longer resolves profile source rows through legacy `component_ref` or `component_rows`; Subassembly-scoped and lined-ditch profiles require active Subassembly rows.
+- Watertight Solid target discovery no longer reconstructs `component_ref` for Subassembly-owned road-section or lined-ditch targets; `SolidTargetRow` no longer carries `component_ref` in the active contract.
+- Corridor solid service no longer inspects `AppliedSection.component_rows` when resolving Structure refs for section/solid context.
+- Applied Section service no longer reads `SectionTemplate.component_rows` for superelevation, default crossfall, source-row ordering, ditch rows, surface widths, subgrade depth, daylight policy, or bench diagnostics.
+- Corridor surface geometry service no longer copies `AppliedSection.component_rows` into transition or supplemental generated sections.
+- Cross-section drawing mapper and exchange output mapper no longer read `component_rows` fallback rows from AppliedSection or SectionOutput.
 - Exchange source-context normalization now moves legacy `component_kind` into `compatibility_component_kind` and clears `component_kind`, matching the existing `component_ref` to `compatibility_ref` behavior.
 - The legacy Assembly editor now labels its table id and add-row action as compatibility rows instead of presenting old Component rows as active authoring units.
+- Quantity result/output rows and Watertight Solid target/output rows now remove `component_ref`; Subassembly-scoped solid ownership is expressed through `subassembly_ref`.
+- SectionOutput mapping now uses neutral section-owner note wording for shared Subassembly/compatibility metadata instead of naming compatibility-row notes as Subassembly-only.
+- SolidTargetRow and OverrideTarget now use `subassembly_ref` as the active target owner and no longer carry `component_ref` in their active contracts.
+- Legacy Assembly preview objects now write `CompatibilityRowCount` beside the old `ComponentCount` property so Property View can expose the compatibility meaning without breaking old readers.
+- Assembly and AppliedSection FreeCAD objects now write `CompatibilityRowCount(s)` beside legacy `ComponentCount(s)` so object properties expose compatibility rows without treating Component counts as active ownership.
+- AppliedSection FreeCAD object persistence now skips `ComponentRows` and compatibility counts for sections that already carry active `SubassemblyRows`; legacy rows remain stored only for legacy-only sections.
+- New legacy Assembly and AppliedSection FreeCAD properties now group old component fields under `Compatibility Rows` instead of presenting them as active Components.
+- AppliedSection FreeCAD object restore now reads `CompatibilityRowCounts` first and suppresses legacy component placeholders whenever Subassembly rows are present.
+- Section earthwork analysis, area, and volume services no longer write calculation provenance into legacy `component_ref`; earthwork rows are identified by their quantity kind and row ids instead of pretending to be road-section components.
+- Cross Section Viewer section-earthwork refresh now replaces current row-id based earthwork area rows and old `component_ref=section_earthwork_area` rows, keeping duplicate cleanup compatible with the new non-component quantity provenance.
+- Earthwork Balance demo/recovery Applied Sections now emit active `AppliedSectionSubassemblyRow` rows instead of legacy `AppliedSectionComponentRow` rows.
+- Applied Section generation no longer emits legacy `component_rows` at all, and the FreeCAD AppliedSection object now writes empty `ComponentRows` / compatibility count fields and restores only `SubassemblyRows`.
+- New AppliedSection FreeCAD objects no longer add legacy `ComponentRows`, `ComponentCounts`, or `CompatibilityRowCounts` properties; existing objects are cleared opportunistically when rewritten.
+- Build Sections source diagnostics now require the Assembly/Subassembly source contract directly and no longer advertise legacy Assembly sources as a compatibility fallback.
+- Applied Sections review rows now display Subassembly source counts and summaries only; legacy component count/summary fallback display has been removed from the Build Sections UI path.
+- SectionOutput mapping no longer creates legacy `SectionComponentRow` output rows or quantity `component_ref` provenance; output payloads now carry active Subassembly rows and Subassembly quantity ownership only.
+- Drainage Review mapping no longer reports ditch/flowline/quantity component compatibility refs; drainage review ownership is now expressed through `drainage_ref`, `flow_route_ref`, and `subassembly_ref`.
+- Cross Section Viewer and Earthwork Review quantity displays no longer use `component_ref` fallback text; section quantity provenance is Subassembly-only.
+- Applied Section ditch and side-slope helpers no longer carry `component_ref` / `component_id` tuple slots or compatibility aliases; generated point rows and diagnostics use `subassembly_ref` only.
+- `AppliedSectionComponentRow`, `AppliedSection.component_rows`, `SectionComponentRow`, and `SectionOutput.component_rows` have been removed from the active dataclass contracts.
+- `TemplateComponent`, `SectionTemplate`, and the component-based `AssemblyModel` have been removed from the active source dataclass contract.
+- Subassembly bench validation now operates directly on `TemplateSubassembly`; the old component validation proxy is removed.
+- Legacy document preview adaptation no longer creates Applied Section component-cache rows from old TypicalSectionTemplate component data.
+- The legacy Component-based Assembly editor command is no longer registered in the workbench, no longer appears in the workflow toolbar/menu, and v1 navigation paths now open the Assembly/Subassembly editor instead.
+- Region, Intersection starter-source, Drainage Review, and Cross Section Viewer navigation now resolve Assembly/Subassembly source objects directly instead of offering legacy Assembly source fallbacks.
+- Shared Assembly/Subassembly preset and ditch-parameter data has been moved into `assembly_preset_data.py`, so the active Assembly/Subassembly editor no longer imports the legacy Component-based Assembly editor module.
 
 ## Migration Position
 
@@ -1050,3 +1111,15 @@ Then execute the Subassembly cutover as one focused breaking-change branch:
 Do not interleave this cutover with additional intersection geometry experiments.
 
 The Subassembly cutover changes the foundation that intersection geometry will consume.
+
+## Current Implementation Notes
+
+- Corridor surface geometry now uses `compatibility_ref` only as an explicitly named legacy-provenance field inside surface summaries; internal surface point rows no longer carry a `component_ref` field.
+- Assembly/Subassembly preset data now stores `subassemblies` directly; the Subassembly editor no longer converts old `components` rows at load time.
+- OverrideTarget and Exchange source-context mapping no longer read or emit active `component_ref` / `component_kind` fields; Subassembly ownership uses `subassembly_ref`.
+- Legacy Assembly Component command/object contract tests were replaced with Assembly/Subassembly contract tests.
+- Applied Sections and Regions command tests now create Assembly/Subassembly source objects directly instead of importing the removed legacy Assembly editor/object modules.
+- Applied Sections, Build Parametric drainage review, Cross Section Viewer focus context, Watertight Solid target diagnostics, and Structure exchange context tests now assert Subassembly wording and `subassembly_ref` ownership.
+- Active v1 code searches should treat the TIN editor's FreeCAD view-event `component` wording as CAD picking terminology, not road-section ownership.
+- The active v1 documentation set now uses Subassembly terminology for road-section ownership; remaining Component references outside this plan are explicit compatibility notes, external-product terminology, or generic structural/CAD wording.
+- Phase statuses are updated to show that S1-S9 are complete and S10 is complete for active contracts, with compatibility audit notes retained for old payload/readability checks.

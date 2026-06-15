@@ -24,7 +24,7 @@ from ...objects.obj_project import (
 )
 from ..models.result.centerline3d import Centerline3DResult
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
-from ..models.source.assembly_model import AssemblyModel, SectionTemplate, TemplateComponent
+from ..models.source.assembly_model import AssemblySourceIdentity
 from ..models.source.override_model import OverrideModel
 from ..objects.obj_alignment import find_v1_alignment, to_alignment_model
 from ..objects.obj_applied_section import (
@@ -32,7 +32,6 @@ from ..objects.obj_applied_section import (
     find_v1_applied_section_set,
     to_applied_section_set,
 )
-from ..objects.obj_assembly import find_v1_assembly_model, list_v1_assembly_models, to_assembly_model
 from ..objects.obj_subassembly_assembly import (
     find_v1_assembly_subassembly_model,
     list_v1_assembly_subassembly_models,
@@ -72,9 +71,7 @@ def build_document_applied_section_set(
     source_bundles = _applied_section_source_bundles(doc)
     alignment_obj = find_v1_alignment(doc)
     profile_obj = find_v1_profile(doc)
-    assembly_objs = list_v1_assembly_models(doc)
     subassembly_objs = list_v1_assembly_subassembly_models(doc)
-    assembly_obj = assembly_objs[0] if assembly_objs else find_v1_assembly_model(doc)
     subassembly_obj = subassembly_objs[0] if subassembly_objs else find_v1_assembly_subassembly_model(doc)
     region_obj = find_v1_region_model(doc)
     stationing_obj = find_v1_stationing(doc)
@@ -85,7 +82,6 @@ def build_document_applied_section_set(
 
     alignment = to_alignment_model(alignment_obj)
     profile = to_profile_model(profile_obj)
-    legacy_assembly_models = [model for model in (to_assembly_model(obj) for obj in assembly_objs) if model is not None]
     assembly_subassembly_models = [
         model for model in (to_assembly_subassembly_model(obj) for obj in subassembly_objs) if model is not None
     ]
@@ -93,11 +89,8 @@ def build_document_applied_section_set(
         single_subassembly_model = to_assembly_subassembly_model(subassembly_obj)
         if single_subassembly_model is not None:
             assembly_subassembly_models = [single_subassembly_model]
-    assembly_models = _request_assembly_models(
-        assembly_subassembly_models=assembly_subassembly_models,
-        legacy_assembly_models=legacy_assembly_models,
-    )
-    assembly = assembly_models[0] if assembly_models else to_assembly_model(assembly_obj)
+    assembly_models = _request_assembly_identity_models(assembly_subassembly_models)
+    assembly = assembly_models[0] if assembly_models else None
     region_model = to_region_model(region_obj)
     structure_model = to_structure_model(structure_obj)
     drainage_model = to_drainage_model(drainage_obj)
@@ -357,72 +350,32 @@ def _safe_source_token(value: object) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in text).strip("-") or "source"
 
 
-def _compatibility_assembly_model_from_subassembly_model(model) -> AssemblyModel:
-    """Return a temporary legacy AssemblyModel bridge for compatibility builders."""
+def _assembly_identity_model_from_subassembly_model(model) -> AssemblySourceIdentity:
+    """Return an id-only assembly identity for Subassembly builds."""
 
-    templates: list[SectionTemplate] = []
-    for template_index, template in enumerate(list(getattr(model, "template_rows", []) or []), start=1):
-        components: list[TemplateComponent] = []
-        for row_index, subassembly in enumerate(list(getattr(template, "subassembly_rows", []) or []), start=1):
-            components.append(
-                TemplateComponent(
-                    component_id=str(getattr(subassembly, "subassembly_id", "") or f"subassembly:{row_index}"),
-                    kind=str(getattr(subassembly, "kind", "") or "lane"),
-                    component_index=int(getattr(subassembly, "subassembly_index", row_index) or row_index),
-                    side=str(getattr(subassembly, "side", "") or "center"),
-                    width=float(getattr(subassembly, "width", 0.0) or 0.0),
-                    slope=float(getattr(subassembly, "slope", 0.0) or 0.0),
-                    thickness=float(getattr(subassembly, "thickness", 0.0) or 0.0),
-                    material=str(getattr(subassembly, "material", "") or ""),
-                    target_ref=str(getattr(subassembly, "target_ref", "") or ""),
-                    parameters=dict(getattr(subassembly, "parameters", {}) or {}),
-                    notes=str(getattr(subassembly, "notes", "") or ""),
-                    enabled=bool(getattr(subassembly, "enabled", True)),
-                )
-            )
-        templates.append(
-            SectionTemplate(
-                template_id=str(getattr(template, "template_id", "") or f"template:{template_index}"),
-                template_kind=str(getattr(template, "template_kind", "") or "roadway"),
-                template_index=int(getattr(template, "template_index", template_index) or template_index),
-                label=str(getattr(template, "label", "") or getattr(template, "template_id", "") or f"Template {template_index}"),
-                component_rows=components,
-                notes=str(getattr(template, "notes", "") or ""),
-            )
-        )
-    return AssemblyModel(
+    return AssemblySourceIdentity(
         schema_version=int(getattr(model, "schema_version", 1) or 1),
         project_id=str(getattr(model, "project_id", "") or "corridorroad-v1"),
         assembly_id=str(getattr(model, "assembly_id", "") or "assembly:subassembly-main"),
         alignment_id=str(getattr(model, "alignment_id", "") or ""),
-        active_template_id=str(getattr(model, "active_template_id", "") or (templates[0].template_id if templates else "")),
+        active_template_id=str(getattr(model, "active_template_id", "") or ""),
         label=str(getattr(model, "label", "") or "Assembly / Subassembly"),
-        template_rows=templates,
     )
 
 
-def _request_assembly_models(
-    *,
-    assembly_subassembly_models: list[object],
-    legacy_assembly_models: list[AssemblyModel],
-) -> list[AssemblyModel]:
-    """Build the AssemblyModel list required by current Applied Section requests.
+def _request_assembly_identity_models(assembly_subassembly_models: list[object]) -> list[AssemblySourceIdentity]:
+    """Build id-only assembly request identities from active Subassembly sources."""
 
-    The active source is AssemblySubassemblyModel. The temporary AssemblyModel
-    bridge exists only because part of AppliedSectionService still evaluates
-    fixed-width section geometry through SectionTemplate during the cutover.
-    """
-
-    compatibility_bridge_models = [
-        _compatibility_assembly_model_from_subassembly_model(model)
+    identity_models = [
+        _assembly_identity_model_from_subassembly_model(model)
         for model in list(assembly_subassembly_models or [])
         if model is not None
     ]
-    return _unique_assembly_models_for_build(compatibility_bridge_models + list(legacy_assembly_models or []))
+    return _unique_assembly_models_for_build(identity_models)
 
 
-def _unique_assembly_models_for_build(values: list[AssemblyModel]) -> list[AssemblyModel]:
-    output: list[AssemblyModel] = []
+def _unique_assembly_models_for_build(values: list[AssemblySourceIdentity]) -> list[AssemblySourceIdentity]:
+    output: list[AssemblySourceIdentity] = []
     seen = set()
     for model in list(values or []):
         if model is None:
@@ -495,11 +448,7 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
         section = section_by_id.get(section_id)
         frame = getattr(section, "frame", None) if section is not None else None
         diagnostic_count = len(list(getattr(section, "diagnostic_rows", []) or [])) if section is not None else 1
-        compatibility_component_count = (
-            len(list(getattr(section, "component_rows", []) or [])) if section is not None else 0
-        )
         subassembly_count = len(list(getattr(section, "subassembly_rows", []) or [])) if section is not None else 0
-        compatibility_component_summary = _compatibility_fallback_component_summary(section)
         subassembly_summary = _subassembly_summary(section)
         ditch_summary = _ditch_review_summary(section)
         slope_face_summary = _slope_face_review_summary(section)
@@ -522,8 +471,6 @@ def applied_section_review_rows(applied_section_set) -> list[dict[str, object]]:
                 "subgrade_depth": float(getattr(section, "subgrade_depth", 0.0) or 0.0) if section is not None else 0.0,
                 "daylight_left_width": float(getattr(section, "daylight_left_width", 0.0) or 0.0) if section is not None else 0.0,
                 "daylight_right_width": float(getattr(section, "daylight_right_width", 0.0) or 0.0) if section is not None else 0.0,
-                "compatibility_component_count": compatibility_component_count,
-                "compatibility_component_summary": compatibility_component_summary,
                 "subassembly_count": subassembly_count,
                 "subassembly_summary": subassembly_summary,
                 "ditch_summary": ditch_summary,
@@ -1231,21 +1178,14 @@ def _assembly_source_status(document) -> str:
         if len(subassembly_objs) == 1:
             return "Subassembly source: " + _source_status(subassembly_objs[0])
         return f"{len(subassembly_objs)} Subassembly source model(s)"
-    objs = list_v1_assembly_models(document)
-    if not objs:
-        return "missing"
-    if len(objs) == 1:
-        return "Legacy Assembly source: " + _source_status(objs[0])
-    return f"{len(objs)} legacy Assembly source model(s)"
+    return "missing"
 
 
 def _applied_sections_source_diagnostics(document) -> list[str]:
     diagnostics: list[str] = []
     alignment_obj = find_v1_alignment(document)
     profile_obj = find_v1_profile(document)
-    assembly_objs = list_v1_assembly_models(document)
     subassembly_objs = list_v1_assembly_subassembly_models(document)
-    assembly_obj = assembly_objs[0] if assembly_objs else find_v1_assembly_model(document)
     region_obj = find_v1_region_model(document)
     stationing_obj = find_v1_stationing(document)
     stations = _station_values(stationing_obj)
@@ -1254,7 +1194,7 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
         missing.append("Alignment")
     if profile_obj is None:
         missing.append("Profile")
-    if assembly_obj is None and not subassembly_objs:
+    if not subassembly_objs:
         missing.append("Assembly / Subassembly")
     if region_obj is None:
         missing.append("Regions")
@@ -1264,8 +1204,7 @@ def _applied_sections_source_diagnostics(document) -> list[str]:
         diagnostics.append("missing_required_sources: " + ", ".join(missing))
         if "Assembly / Subassembly" in missing:
             diagnostics.append(
-                "missing_required_sources_detail: Create or apply an Assembly / Subassembly source before Build Sections. "
-                "A legacy Assembly source can still be used as compatibility fallback during the transition."
+                "missing_required_sources_detail: Create or apply an Assembly / Subassembly source before Build Sections."
             )
         return diagnostics
 
@@ -1299,15 +1238,9 @@ def _review_subassembly_summary_text(row: dict[str, object]) -> str:
     subassembly_summary = str(row.get("subassembly_summary", "") or "").strip()
     if subassembly_summary:
         return subassembly_summary
-    compatibility_summary = str(row.get("compatibility_component_summary", "") or row.get("component_summary", "") or "").strip()
-    if compatibility_summary:
-        return compatibility_summary
     subassembly_count = int(row.get("subassembly_count", 0) or 0)
     if subassembly_count:
         return str(subassembly_count)
-    compatibility_count = int(row.get("compatibility_component_count", 0) or row.get("component_count", 0) or 0)
-    if compatibility_count:
-        return f"compatibility:{compatibility_count}"
     return "0"
 
 
@@ -1322,28 +1255,6 @@ def applied_section_review_row_color(status: object) -> tuple[int, int, int] | N
     """Return dark-theme-readable Applied Sections review-row background color."""
 
     return APPLIED_SECTION_REVIEW_ROW_COLORS.get(str(status or "").strip())
-
-
-def _compatibility_component_summary(section) -> str:
-    component_rows = list(getattr(section, "component_rows", []) or []) if section is not None else []
-    if not component_rows:
-        return ""
-    counts: dict[str, int] = {}
-    order: list[str] = []
-    for component in component_rows:
-        kind = str(getattr(component, "kind", "") or "component").strip() or "component"
-        if kind not in counts:
-            order.append(kind)
-            counts[kind] = 0
-        counts[kind] += 1
-    return ", ".join(f"{kind}:{counts[kind]}" for kind in order)
-
-
-def _compatibility_fallback_component_summary(section) -> str:
-    summary = _compatibility_component_summary(section)
-    if not summary:
-        return ""
-    return f"fallback:{summary}"
 
 
 def _subassembly_summary(section) -> str:
@@ -1365,22 +1276,16 @@ def _ditch_review_summary(section) -> str:
     if section is None:
         return ""
     subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
-    component_rows = list(getattr(section, "component_rows", []) or [])
     point_rows = list(getattr(section, "point_rows", []) or [])
     ditch_subassemblies = [row for row in subassembly_rows if str(getattr(row, "kind", "") or "") == "ditch"]
-    ditch_components = [] if ditch_subassemblies else [row for row in component_rows if str(getattr(row, "kind", "") or "") == "ditch"]
     ditch_points = [row for row in point_rows if str(getattr(row, "point_role", "") or "") == "ditch_surface"]
-    if not ditch_subassemblies and not ditch_components and not ditch_points:
+    if not ditch_subassemblies and not ditch_points:
         return ""
     parts = []
     if ditch_subassemblies:
         sides = sorted({str(getattr(row, "side", "") or "").strip() for row in ditch_subassemblies if str(getattr(row, "side", "") or "").strip()})
         side_text = f" ({'/'.join(sides)})" if sides else ""
         parts.append(f"subassemblies:{len(ditch_subassemblies)}{side_text}")
-    elif ditch_components:
-        sides = sorted({str(getattr(row, "side", "") or "").strip() for row in ditch_components if str(getattr(row, "side", "") or "").strip()})
-        side_text = f" ({'/'.join(sides)})" if sides else ""
-        parts.append(f"fallback:{len(ditch_components)}{side_text}")
     if ditch_points:
         parts.append(f"points:{len(ditch_points)}")
     return " | ".join(parts)

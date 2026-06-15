@@ -62,7 +62,7 @@ Recommended source setup:
 19. Double-click an Applied Section row in the affected range.
 20. Confirm the section preview shows rolled lane/shoulder geometry.
 21. Open `Cross Section Viewer`.
-22. Confirm component notes or summary rows expose Superelevation source/provenance.
+22. Confirm Subassembly notes or summary rows expose Superelevation source/provenance.
 23. Run `Build Corridor` / `Build Parametric`.
 24. Confirm Design Surface preview reflects the rolled lane/shoulder elevations.
 25. Confirm generated Build Parametric objects remain under `04_Parametric Model / Build Parametric Outputs`.

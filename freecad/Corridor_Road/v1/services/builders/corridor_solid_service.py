@@ -353,7 +353,7 @@ def _section_has_structure(section, structure_ref: str) -> bool:
 
 
 def _section_structure_refs(section) -> list[str]:
-    """Return structure refs from active section state, with legacy rows as fallback."""
+    """Return structure refs from active section state."""
 
     refs: list[str] = []
     for value in list(getattr(section, "active_structure_ids", []) or []):
@@ -361,11 +361,6 @@ def _section_structure_refs(section) -> list[str]:
     subassembly_rows = list(getattr(section, "subassembly_rows", []) or [])
     for subassembly in subassembly_rows:
         for value in list(getattr(subassembly, "structure_ids", []) or []):
-            refs.append(str(value or "").strip())
-    if subassembly_rows:
-        return _unique_refs(refs)
-    for component in list(getattr(section, "component_rows", []) or []):
-        for value in list(getattr(component, "structure_ids", []) or []):
             refs.append(str(value or "").strip())
     return _unique_refs(refs)
 

@@ -210,7 +210,7 @@ def _span_fg_geometry_row(applied_section: AppliedSection) -> CrossSectionDrawin
         return None
     ordered = sorted(points.items(), key=lambda item: item[0])
     return CrossSectionDrawingGeometryRow(
-        row_id=f"{applied_section.applied_section_id}:fg-components",
+        row_id=f"{applied_section.applied_section_id}:fg-subassemblies",
         kind="fg",
         offset_values=[offset for offset, _z in ordered],
         elevation_values=[z for _offset, z in ordered],
@@ -225,7 +225,7 @@ def _span_subgrade_geometry_row(applied_section: AppliedSection) -> CrossSection
         return None
     depth = max(0.0, float(getattr(applied_section, "subgrade_depth", 0.0) or 0.0))
     return CrossSectionDrawingGeometryRow(
-        row_id=f"{applied_section.applied_section_id}:subgrade-components",
+        row_id=f"{applied_section.applied_section_id}:subgrade-subassemblies",
         kind="subgrade",
         offset_values=list(fg_row.offset_values or []),
         elevation_values=[float(z) - depth for z in list(fg_row.elevation_values or [])],
@@ -542,19 +542,14 @@ def _subassembly_spans(applied_section: AppliedSection) -> list[dict[str, object
         "left": [0.0, base_z],
         "right": [0.0, base_z],
     }
-    span_rows, using_active_subassemblies = _section_span_source_rows(applied_section)
-    compatibility_side_slope_parents = (
-        set() if using_active_subassemblies else _legacy_compatibility_side_slope_parent_ids(applied_section)
-    )
+    span_rows = _section_span_source_rows(applied_section)
     for index, row in enumerate(span_rows, start=1):
         kind = str(getattr(row, "kind", "") or "").strip().lower()
         width = max(0.0, float(getattr(row, "width", 0.0) or 0.0))
         if not kind or width <= 1.0e-9:
             continue
-        row_id = _span_source_row_id(row, using_active_subassemblies)
-        source_ref = _span_source_ref(row_id, using_active_subassemblies)
-        if not using_active_subassemblies and kind == "side_slope" and row_id in compatibility_side_slope_parents:
-            continue
+        row_id = _span_source_row_id(row)
+        source_ref = _span_source_ref(row_id)
         side = str(getattr(row, "side", "") or "center").strip().lower() or "center"
         slope = float(getattr(row, "slope", 0.0) or 0.0)
         sides = [side]
@@ -568,7 +563,7 @@ def _subassembly_spans(applied_section: AppliedSection) -> list[dict[str, object
                     "row_id": f"{index}:center",
                     "subassembly_id": row_id,
                     "source_ref": source_ref,
-                    "source_family": "subassembly" if using_active_subassemblies else "compatibility",
+                    "source_family": "subassembly",
                     "kind": kind,
                     "side": "center",
                     "start": -half_width,
@@ -595,7 +590,7 @@ def _subassembly_spans(applied_section: AppliedSection) -> list[dict[str, object
                     "row_id": f"{index}:{side_name}",
                     "subassembly_id": row_id,
                     "source_ref": source_ref,
-                    "source_family": "subassembly" if using_active_subassemblies else "compatibility",
+                    "source_family": "subassembly",
                     "kind": kind,
                     "side": side_name,
                     "start": start,
@@ -609,40 +604,21 @@ def _subassembly_spans(applied_section: AppliedSection) -> list[dict[str, object
     return spans
 
 
-def _section_span_source_rows(applied_section: AppliedSection) -> tuple[list[object], bool]:
-    """Return active Subassembly rows, or legacy compatibility rows only as fallback."""
+def _section_span_source_rows(applied_section: AppliedSection) -> list[object]:
+    """Return active Subassembly rows."""
 
-    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
-    if subassembly_rows:
-        return subassembly_rows, True
-    return list(getattr(applied_section, "component_rows", []) or []), False
+    return list(getattr(applied_section, "subassembly_rows", []) or [])
 
 
-def _span_source_row_id(row: object, using_active_subassemblies: bool) -> str:
-    if using_active_subassemblies:
-        return str(getattr(row, "subassembly_id", "") or "")
-    return str(getattr(row, "component_id", "") or "")
+def _span_source_row_id(row: object) -> str:
+    return str(getattr(row, "subassembly_id", "") or "")
 
 
-def _span_source_ref(row_id: str, using_active_subassemblies: bool) -> str:
+def _span_source_ref(row_id: str) -> str:
     row_id = str(row_id or "").strip()
     if not row_id:
         return ""
-    if using_active_subassemblies:
-        return row_id
-    if row_id.startswith("compatibility:"):
-        return row_id
-    return f"compatibility:{row_id}"
-
-
-def _legacy_compatibility_side_slope_parent_ids(applied_section: AppliedSection) -> set[str]:
-    output: set[str] = set()
-    for component in list(getattr(applied_section, "component_rows", []) or []):
-        component_id = str(getattr(component, "component_id", "") or "")
-        parts = component_id.split(":")
-        if len(parts) >= 3 and parts[1] in {"side_slope", "bench", "daylight"}:
-            output.add(parts[0])
-    return output
+    return row_id
 
 
 def _subassembly_label(span: dict[str, object]) -> str:

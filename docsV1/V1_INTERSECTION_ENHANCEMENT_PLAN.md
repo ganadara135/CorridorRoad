@@ -516,7 +516,7 @@ Implementation tasks:
 2. Done: For each participating Alignment, read the center-nearest Applied Section rows around the control area.
 3. Done: Identify left/right pavement edge candidates from `fg_surface` points.
 4. Done: Store edge role, Alignment ref, Region ref, station, side, XYZ start/end, and source section refs.
-5. Optional follow-up: Prefer component metadata over simple left/right offset extremes when stable component edge ids are available.
+5. Optional follow-up: Prefer Subassembly metadata over simple left/right offset extremes when stable Subassembly edge ids are available.
 6. Done: Expose tie-in edge rows as optional Build Parametric preview linework.
 7. Done: Expose Build Parametric review notes when a leg has missing or ambiguous tie-in edges.
 

@@ -82,7 +82,7 @@ def test_section_earthwork_area_rows_convert_to_section_quantity_rows() -> None:
     assert rows[0].quantity_kind == "cut_area"
     assert rows[0].value == 10.0
     assert rows[0].unit == "m2"
-    assert rows[0].component_ref == "section_earthwork_area"
+    assert rows[0].subassembly_ref == "section_earthwork_area"
 
 
 def test_section_earthwork_area_service_requires_design_and_ground_lines() -> None:

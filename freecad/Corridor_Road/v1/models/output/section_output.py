@@ -22,19 +22,6 @@ class SectionGeometryRow:
 
 
 @dataclass(frozen=True)
-class SectionComponentRow:
-    """Legacy compatibility component row for section output."""
-
-    component_row_id: str
-    component_id: str
-    kind: str
-    template_ref: str = ""
-    assembly_ref: str = ""
-    region_ref: str = ""
-    notes: str = ""
-
-
-@dataclass(frozen=True)
 class SectionSubassemblyRow:
     """Minimal subassembly row for section output."""
 
@@ -94,16 +81,12 @@ class SectionSubassemblyShapeRow:
 
 @dataclass(frozen=True)
 class SectionQuantityRow:
-    """Minimal quantity row attached to section output.
-
-    component_ref is retained only as legacy compatibility provenance.
-    """
+    """Minimal quantity row attached to section output."""
 
     quantity_row_id: str
     quantity_kind: str
     value: float
     unit: str
-    component_ref: str = ""
     subassembly_ref: str = ""
 
 
@@ -122,15 +105,13 @@ class SectionSummaryRow:
 class SectionOutput(OutputModelBase):
     """Normalized section output payload.
 
-    subassembly_rows are the active section owner rows. component_rows are
-    retained only as a legacy compatibility fallback.
+    subassembly_rows are the active section owner rows.
     """
 
     section_output_id: str = ""
     alignment_id: str = ""
     station: float = 0.0
     geometry_rows: list[SectionGeometryRow] = field(default_factory=list)
-    component_rows: list[SectionComponentRow] = field(default_factory=list)
     subassembly_rows: list[SectionSubassemblyRow] = field(default_factory=list)
     subassembly_point_rows: list[SectionSubassemblyPointRow] = field(default_factory=list)
     subassembly_link_rows: list[SectionSubassemblyLinkRow] = field(default_factory=list)

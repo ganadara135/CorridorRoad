@@ -172,7 +172,7 @@ Purpose:
 Typical content:
 
 - applied section geometry
-- semantic component rows
+- semantic Subassembly rows
 - terrain intersection rows
 - drainage interaction rows
 - structure interaction rows
@@ -218,7 +218,7 @@ Typical content:
 - cut/fill totals
 - range-based summaries
 - pavement quantities
-- corridor component quantities
+- corridor Subassembly quantities
 - structure-related quantity notes
 
 ### 5.8 ExchangeOutput
@@ -247,7 +247,7 @@ Primary sources:
 - `IntersectionModel`
 - `ProfileModel`
 - `SuperelevationModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 - `DrainageModel`
 - `StructureModel`
@@ -313,7 +313,7 @@ V1 is corridor-centric, so section outputs should be treated as the highest-prio
 
 Sections are where users verify:
 
-- component composition
+- Subassembly composition
 - terrain daylight behavior
 - structure conflicts
 - local design correctness
@@ -331,7 +331,7 @@ Sections are where users verify:
 
 - section output is derived from `AppliedSection`
 - never edit generated section output directly
-- semantic component identity must survive into output rows
+- semantic Subassembly identity must survive into output rows
 - labels and dimensions should be layout-driven, not hard-coded in renderers
 
 ## 9. Whole-Corridor Section Sheets
@@ -404,7 +404,7 @@ Priority quantity families:
 
 - cut/fill
 - pavement quantities
-- section-based component quantities
+- section-based Subassembly quantities
 - region-based quantity summaries
 - structure interaction quantity notes
 

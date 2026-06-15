@@ -44,7 +44,7 @@ Required fields:
 - `start_station`
 - `end_station`
 - `region_ref`
-- `assembly_component_ref`
+- `subassembly_ref`
 - `policy_ref`
 
 Supported node families:
@@ -55,7 +55,7 @@ Supported node families:
 - `outfall_reference`
 - future structure-backed drainage references
 
-Assembly-generated drainage geometry is limited to ditch components for the current slice. Culverts, inlets, and outfalls remain valid Drainage Elements, but they should be Structure-backed or reference nodes rather than Assembly-generated drainage components.
+Assembly-generated drainage geometry is limited to ditch Subassemblies for the current slice. Culverts, inlets, and outfalls remain valid Drainage Elements, but they should be Structure-backed or reference nodes rather than Assembly-generated drainage Subassemblies.
 
 ### Flow Route Rows
 
@@ -120,7 +120,7 @@ Required behavior:
 
 - Keep `Kind` next to `Region`.
 - Use a Region combo per row.
-- Use an Assembly combo for ditch components.
+- Use an Assembly combo for ditch Subassemblies.
 - Disable and clear `Structure` for `ditch` rows.
 - Enable `Structure` for non-ditch reference rows where a structure-backed drainage node is needed.
 - Show Policy as the hydraulic or design policy selector for the Element.
@@ -174,7 +174,7 @@ Errors:
 - `end_station` outside selected Region boundary
 - `end_station` before `start_station`
 - missing Policy when the Element participates in routing
-- missing Assembly component for `ditch`
+- missing Assembly Subassembly for `ditch`
 - Structure assigned to `ditch`
 
 Warnings:

@@ -1,6 +1,6 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -42,8 +42,8 @@ def _applied_set() -> AppliedSectionSet:
                 applied_section_id="section:0",
                 station=0.0,
                 frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0),
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "pavement:base",
                         "pavement_layer",
                         width=6.0,
@@ -58,8 +58,8 @@ def _applied_set() -> AppliedSectionSet:
                 applied_section_id="section:50",
                 station=50.0,
                 frame=AppliedSectionFrame(50.0, 50.0, 0.0, 10.0),
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "pavement:base",
                         "pavement_layer",
                         width=6.0,
@@ -74,8 +74,8 @@ def _applied_set() -> AppliedSectionSet:
                 applied_section_id="section:100",
                 station=100.0,
                 frame=AppliedSectionFrame(100.0, 100.0, 0.0, 10.0),
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "pavement:base",
                         "pavement_layer",
                         width=6.0,
@@ -329,7 +329,7 @@ def test_solid_target_discovery_adds_station_context_summary_to_region_body_note
     assert "flow_routes=flow-route:main-left" in target.notes
 
 
-def test_solid_target_discovery_creates_pavement_layer_component_candidates() -> None:
+def test_solid_target_discovery_creates_pavement_layer_subassembly_candidates() -> None:
     model = SolidTargetDiscoveryService().discover(
         SolidTargetDiscoveryRequest(
             project_id="proj-1",
@@ -342,15 +342,15 @@ def test_solid_target_discovery_creates_pavement_layer_component_candidates() ->
     targets = {row.target_id: row for row in model.target_rows}
     target = targets["solid-target:pavement-layer:pavement-base"]
     assert target.target_family == "pavement_layer_body"
-    assert target.scope_kind == "assembly_component"
-    assert target.component_ref == "pavement:base"
+    assert target.scope_kind == "assembly_subassembly"
+    assert target.subassembly_ref == "pavement:base"
     assert target.material_ref == "asphalt"
     assert target.station_start == 0.0
     assert target.station_end == 100.0
     assert target.readiness_status == "available"
 
 
-def test_solid_target_discovery_separates_subbase_and_shoulder_component_bodies() -> None:
+def test_solid_target_discovery_separates_subbase_and_shoulder_subassembly_bodies() -> None:
     applied = AppliedSectionSet(
         schema_version=1,
         project_id="proj-1",
@@ -363,10 +363,10 @@ def test_solid_target_discovery_separates_subbase_and_shoulder_component_bodies(
                 applied_section_id="section:0",
                 station=0.0,
                 frame=AppliedSectionFrame(0.0, 0.0, 0.0, 10.0),
-                component_rows=[
-                    AppliedSectionComponentRow("subbase:main", "subbase", width=6.0, thickness=0.3, material="crushed_stone"),
-                    AppliedSectionComponentRow("shoulder:left", "shoulder", side="left", width=1.5, thickness=0.2, material="aggregate"),
-                    AppliedSectionComponentRow("shoulder:right", "shoulder", side="right", width=0.0, thickness=0.2, material="aggregate"),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow("subbase:main", "subbase", width=6.0, thickness=0.3, material="crushed_stone"),
+                    AppliedSectionSubassemblyRow("shoulder:left", "shoulder", side="left", width=1.5, thickness=0.2, material="aggregate"),
+                    AppliedSectionSubassemblyRow("shoulder:right", "shoulder", side="right", width=0.0, thickness=0.2, material="aggregate"),
                 ],
             ),
             AppliedSection(
@@ -375,10 +375,10 @@ def test_solid_target_discovery_separates_subbase_and_shoulder_component_bodies(
                 applied_section_id="section:100",
                 station=100.0,
                 frame=AppliedSectionFrame(100.0, 100.0, 0.0, 10.0),
-                component_rows=[
-                    AppliedSectionComponentRow("subbase:main", "subbase", width=6.0, thickness=0.3, material="crushed_stone"),
-                    AppliedSectionComponentRow("shoulder:left", "shoulder", side="left", width=1.5, thickness=0.2, material="aggregate"),
-                    AppliedSectionComponentRow("shoulder:right", "shoulder", side="right", width=1.5, thickness=0.2, material="aggregate"),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow("subbase:main", "subbase", width=6.0, thickness=0.3, material="crushed_stone"),
+                    AppliedSectionSubassemblyRow("shoulder:left", "shoulder", side="left", width=1.5, thickness=0.2, material="aggregate"),
+                    AppliedSectionSubassemblyRow("shoulder:right", "shoulder", side="right", width=1.5, thickness=0.2, material="aggregate"),
                 ],
             ),
         ],
@@ -404,7 +404,7 @@ def test_solid_target_discovery_separates_subbase_and_shoulder_component_bodies(
     assert shoulder_left.readiness_status == "available"
     assert shoulder_right.target_family == "shoulder_body"
     assert shoulder_right.readiness_status == "blocked"
-    assert {row.kind for row in model.target_diagnostic_rows} == {"component_target_invalid_dimensions"}
+    assert {row.kind for row in model.target_diagnostic_rows} == {"subassembly_target_invalid_dimensions"}
 
 
 def test_solid_target_discovery_blocks_lined_ditch_body_without_lining_policy() -> None:
@@ -424,8 +424,8 @@ def test_solid_target_discovery_blocks_lined_ditch_body_without_lining_policy() 
                     AppliedSectionPoint("ditch:left-edge", 0.0, 5.0, 10.0, "ditch_surface", 5.0),
                     AppliedSectionPoint("ditch:left-flow", 0.0, 6.2, 9.8, "ditch_surface", 6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow("ditch:left", "ditch", side="left", width=1.2, material=""),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow("ditch:left", "ditch", side="left", width=1.2, material=""),
                 ],
             ),
             AppliedSection(
@@ -438,8 +438,8 @@ def test_solid_target_discovery_blocks_lined_ditch_body_without_lining_policy() 
                     AppliedSectionPoint("ditch:left-edge", 100.0, 5.0, 10.0, "ditch_surface", 5.0),
                     AppliedSectionPoint("ditch:left-flow", 100.0, 6.2, 9.8, "ditch_surface", 6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow("ditch:left", "ditch", side="left", width=1.2, material=""),
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow("ditch:left", "ditch", side="left", width=1.2, material=""),
                 ],
             ),
         ],
@@ -458,7 +458,7 @@ def test_solid_target_discovery_blocks_lined_ditch_body_without_lining_policy() 
     target = targets["solid-target:lined-ditch:left"]
     assert target.target_family == "lined_ditch_body"
     assert target.scope_kind == "drainage"
-    assert target.component_ref == "ditch:left"
+    assert target.subassembly_ref == "ditch:left"
     assert target.drainage_ref == "lined_ditch:left"
     assert target.readiness_status == "blocked"
     assert target.station_start == 0.0
@@ -483,8 +483,8 @@ def test_solid_target_discovery_marks_lined_ditch_body_available_when_lining_pol
                     AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -504,8 +504,8 @@ def test_solid_target_discovery_marks_lined_ditch_body_available_when_lining_pol
                     AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -552,8 +552,8 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                     AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -573,8 +573,8 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                     AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -597,7 +597,7 @@ def test_solid_target_discovery_uses_drainage_model_owner_for_lined_ditch_body()
                 side="right",
                 station_start=0.0,
                 station_end=100.0,
-                assembly_component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 policy_set_ref="drainage-policy:lined-concrete",
             )
         ],
@@ -652,8 +652,8 @@ def test_solid_target_discovery_uses_station_context_for_lined_ditch_drainage_ow
                     AppliedSectionPoint("ditch:right-edge", 0.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 0.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -675,8 +675,8 @@ def test_solid_target_discovery_uses_station_context_for_lined_ditch_drainage_ow
                     AppliedSectionPoint("ditch:right-edge", 100.0, -5.0, 10.0, "ditch_surface", -5.0),
                     AppliedSectionPoint("ditch:right-flow", 100.0, -6.2, 9.8, "ditch_surface", -6.2),
                 ],
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "ditch:right",
                         "ditch",
                         side="right",
@@ -717,7 +717,7 @@ def test_solid_target_discovery_uses_station_context_for_lined_ditch_drainage_ow
                 region_ref="region:main",
                 station_start=0.0,
                 station_end=100.0,
-                assembly_component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 policy_set_ref="drainage-policy:lined-concrete",
             ),
         ],

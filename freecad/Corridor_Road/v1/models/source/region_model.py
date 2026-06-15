@@ -25,7 +25,7 @@ class RegionPolicyRow:
     """Minimal region policy row."""
 
     policy_id: str
-    component_scope: str
+    subassembly_scope: str
     parameter: str
     value: float | str
     unit: str = ""
@@ -51,7 +51,7 @@ class RegionPolicySet:
     policy_set_id: str
     template_ref: str = ""
     assembly_ref: str = ""
-    component_policy_rows: list[RegionPolicyRow] = field(default_factory=list)
+    subassembly_policy_rows: list[RegionPolicyRow] = field(default_factory=list)
     daylight_policy: dict[str, Any] = field(default_factory=dict)
     drainage_policy: dict[str, Any] = field(default_factory=dict)
     structure_policy: dict[str, Any] = field(default_factory=dict)

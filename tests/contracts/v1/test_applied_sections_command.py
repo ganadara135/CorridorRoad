@@ -2,10 +2,9 @@ import FreeCAD as App
 
 from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import V1_TREE_APPLIED_SECTIONS, CorridorRoadProject, ensure_project_tree
-from freecad.Corridor_Road.v1.commands.cmd_assembly_editor import (
-    apply_v1_assembly_model,
-    assembly_preset_model_from_document,
-    starter_assembly_model_from_document,
+from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
+    apply_v1_assembly_subassembly_model,
+    assembly_subassembly_preset_model_from_document,
 )
 import freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections as applied_sections_command
 from freecad.Corridor_Road.v1.commands.cmd_generate_applied_sections import (
@@ -28,7 +27,7 @@ from freecad.Corridor_Road.v1.commands.cmd_region_editor import starter_region_m
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageModel
 from freecad.Corridor_Road.v1.models.source.superelevation_model import CrossfallControlRow, RunoffTransitionRow, SuperelevationModel
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
-from freecad.Corridor_Road.v1.objects.obj_assembly import create_or_update_v1_assembly_model_object
+from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import create_or_update_v1_assembly_subassembly_model_object
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     build_v1_applied_section_set_review_shape,
     find_v1_applied_section_set,
@@ -62,8 +61,8 @@ def test_build_document_applied_section_set_uses_v1_sources() -> None:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
@@ -83,8 +82,8 @@ def test_build_document_applied_section_set_uses_superelevation_source() -> None
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
         create_or_update_v1_superelevation_source_object(
@@ -105,7 +104,7 @@ def test_build_document_applied_section_set_uses_superelevation_source() -> None
 
         result = build_document_applied_section_set(doc, project=project)
         section = next(section for section in result.sections if round(section.station, 3) == 60.0)
-        right_rows = [row for row in section.component_rows if row.kind in {"lane", "shoulder"} and row.side == "right"]
+        right_rows = [row for row in section.subassembly_rows if row.kind in {"lane", "shoulder"} and row.side == "right"]
         review_rows = applied_section_review_rows(result)
         review_row = next(row for row in review_rows if round(float(row["station"]), 3) == 60.0)
 
@@ -126,17 +125,17 @@ def test_assembly_preset_apply_syncs_region_refs_for_benched_build() -> None:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        apply_v1_assembly_model(
+        apply_v1_assembly_subassembly_model(
             document=doc,
             project=project,
-            assembly_model=starter_assembly_model_from_document(doc, project=project, alignment=alignment),
+            assembly_model=assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment),
         )
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
-        apply_v1_assembly_model(
+        apply_v1_assembly_subassembly_model(
             document=doc,
             project=project,
-            assembly_model=assembly_preset_model_from_document("Benched Slope Road", doc, project=project, alignment=alignment),
+            assembly_model=assembly_subassembly_preset_model_from_document("Benched Slope Road", doc, project=project, alignment=alignment),
         )
 
         result = build_document_applied_section_set(doc, project=project)
@@ -144,7 +143,7 @@ def test_assembly_preset_apply_syncs_region_refs_for_benched_build() -> None:
         assert result.sections
         assert result.sections[0].assembly_id == "assembly:benched-slope-road"
         assert result.sections[0].template_id == "template:benched-slope-road"
-        assert any(row.kind == "bench" for row in result.sections[0].component_rows)
+        assert any(row.kind == "bench" for row in result.sections[0].subassembly_rows)
         assert any(point.point_role == "bench_surface" for point in result.sections[0].point_rows)
         polylines = applied_sections_command._applied_section_preview_polylines(
             result.sections[0],
@@ -162,8 +161,8 @@ def test_applied_section_review_rows_summarize_station_context() -> None:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=60.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
         result = build_document_applied_section_set(doc, project=project)
@@ -176,8 +175,8 @@ def test_applied_section_review_rows_summarize_station_context() -> None:
         assert rows[0]["template_id"] == "template:basic-road"
         assert rows[0]["surface_left_width"] > 0.0
         assert rows[0]["surface_right_width"] > 0.0
-        assert rows[0]["component_count"] == 6
-        assert rows[0]["component_summary"] == "lane:2, shoulder:2, side_slope:2"
+        assert rows[0]["subassembly_count"] == 6
+        assert rows[0]["subassembly_summary"] == "lane:2, shoulder:2, side_slope:2"
         assert rows[0]["slope_face_summary"]
         assert rows[0]["diagnostic_summary"] == ""
         assert rows[0]["status"] == "ok"
@@ -191,8 +190,8 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
-        assembly_model = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         first = region_model.region_rows[0]
         region_model.region_rows[0] = type(first)(
@@ -209,8 +208,8 @@ def test_applied_section_review_rows_expose_ditch_context() -> None:
         result = build_document_applied_section_set(doc, project=project)
         rows = applied_section_review_rows(result)
 
-        assert "ditch:2" in rows[0]["component_summary"]
-        assert "components:2" in rows[0]["ditch_summary"]
+        assert "ditch:2" in rows[0]["subassembly_summary"]
+        assert "subassemblies:2" in rows[0]["ditch_summary"]
         assert "points:" in rows[0]["ditch_summary"]
         assert rows[0]["slope_face_summary"]
         polylines = applied_sections_command._applied_section_preview_polylines(
@@ -229,8 +228,8 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
-        assembly_model = assembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Drainage Ditch Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         first = region_model.region_rows[0]
         region_model.region_rows[0] = type(first)(
@@ -273,10 +272,10 @@ def test_build_document_applied_sections_resolves_drainage_from_drainage_model_r
 
         result = build_document_applied_section_set(doc, project=project)
 
-        ditch_components = [row for row in result.sections[0].component_rows if row.kind == "ditch"]
+        ditch_subassemblies = [row for row in result.sections[0].subassembly_rows if row.kind == "ditch"]
         ditch_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_surface"]
         flowline_points = [row for row in result.sections[0].point_rows if row.point_role == "ditch_flowline"]
-        assert [row.drainage_refs for row in ditch_components] == [["drainage:plain-left"], ["drainage:plain-right"]]
+        assert [row.drainage_refs for row in ditch_subassemblies] == [["drainage:plain-left"], ["drainage:plain-right"]]
         assert {row.drainage_ref for row in ditch_points} == {"drainage:plain-left", "drainage:plain-right"}
         assert {row.drainage_ref for row in flowline_points} == {"drainage:plain-left", "drainage:plain-right"}
         assert {row.side for row in flowline_points} == {"left", "right"}
@@ -291,20 +290,20 @@ def test_build_document_applied_section_set_uses_region_specific_assembly_object
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=120.0)
-        road_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        bridge_model = assembly_preset_model_from_document("Bridge Interface", doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(
+        road_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        bridge_model = assembly_subassembly_preset_model_from_document("Bridge Interface", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(
             doc,
             project=project,
             assembly_model=road_model,
-            object_name="V1AssemblyModelRoad",
+            object_name="V1AssemblySubassemblyModelRoad",
             label="Road Assembly",
         )
-        create_or_update_v1_assembly_model_object(
+        create_or_update_v1_assembly_subassembly_model_object(
             doc,
             project=project,
             assembly_model=bridge_model,
-            object_name="V1AssemblyModelBridge",
+            object_name="V1AssemblySubassemblyModelBridge",
             label="Bridge Assembly",
         )
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
@@ -324,7 +323,7 @@ def test_build_document_applied_section_set_uses_region_specific_assembly_object
         assert result.sections
         assert {section.assembly_id for section in result.sections} == {"assembly:bridge-interface"}
         assert {section.template_id for section in result.sections} == {"template:bridge-interface"}
-        assert result.sections[0].component_rows[0].source_template_id == "template:bridge-interface"
+        assert result.sections[0].subassembly_rows[0].source_template_id == "template:bridge-interface"
     finally:
         App.closeDocument(doc.Name)
 
@@ -335,8 +334,8 @@ def test_apply_v1_applied_section_set_creates_result_object() -> None:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
@@ -382,8 +381,8 @@ def test_applied_sections_panel_shows_progress_bar_and_completes_apply() -> None
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
@@ -418,8 +417,8 @@ def test_applied_sections_validate_allows_drainage_element_without_region() -> N
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
         create_or_update_v1_drainage_model_object(
@@ -459,8 +458,8 @@ def test_applied_sections_validate_requires_centerline3d_ready_sources() -> None
     try:
         alignment = create_sample_v1_alignment(doc, project=project)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
 
@@ -550,8 +549,8 @@ def test_show_applied_section_preview_object_creates_selected_section_line() -> 
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=90.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
         result = build_document_applied_section_set(doc, project=project)
@@ -583,8 +582,8 @@ def test_show_all_applied_sections_preview_object_creates_combined_section_lines
         alignment = create_sample_v1_alignment(doc, project=project)
         create_sample_v1_profile(doc, project=project, alignment=alignment)
         create_v1_stationing(doc, project=project, alignment=alignment, interval=45.0)
-        assembly_model = starter_assembly_model_from_document(doc, project=project, alignment=alignment)
-        create_or_update_v1_assembly_model_object(doc, project=project, assembly_model=assembly_model)
+        assembly_model = assembly_subassembly_preset_model_from_document("Basic Road", doc, project=project, alignment=alignment)
+        create_or_update_v1_assembly_subassembly_model_object(doc, project=project, assembly_model=assembly_model)
         region_model = starter_region_model_from_document(doc, project=project, alignment=alignment)
         create_or_update_v1_region_model_object(doc, project=project, region_model=region_model)
         result = build_document_applied_section_set(doc, project=project)

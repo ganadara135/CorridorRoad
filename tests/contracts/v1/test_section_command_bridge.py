@@ -4,11 +4,12 @@ from freecad.Corridor_Road.v1.commands.cmd_view_sections import (
     build_demo_section_preview,
     format_section_preview,
     show_v1_section_preview,
+    _show_cross_section_viewer_dialog,
 )
 from freecad.Corridor_Road.v1.models.result import TINSurface
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import (
@@ -146,6 +147,25 @@ class _FakeGui:
         pass
 
 
+class _RetryControl:
+    def __init__(self) -> None:
+        self.show_count = 0
+        self.close_count = 0
+
+    def showDialog(self, _panel) -> None:
+        self.show_count += 1
+        if self.show_count == 1:
+            raise RuntimeError("stale task panel")
+
+    def closeDialog(self) -> None:
+        self.close_count += 1
+
+
+class _FakeDialogGui:
+    def __init__(self) -> None:
+        self.Control = _RetryControl()
+
+
 def _square_tin_surface() -> TINSurface:
     return TINSurface(
         schema_version=1,
@@ -192,7 +212,7 @@ def test_build_demo_section_preview_returns_section_output() -> None:
     assert preview["section_output"].section_output_id == "section:0"
     assert preview["section_output"].station == 0.0
     assert preview["result_state"]["state"] == "current"
-    assert preview["source_inspector"]["component_count"] == 8
+    assert preview["source_inspector"]["subassembly_count"] == 8
     assert preview["terrain_rows"][0]["label"] == "Terrain Source"
     assert preview["structure_rows"][0]["label"] == "Structure Summary"
     assert preview["earthwork_hint_rows"][0]["label"] == "Earthwork Window"
@@ -458,7 +478,7 @@ def test_show_v1_section_preview_merges_extra_context() -> None:
         extra_context={
             "viewer_context": {
                 "tag_summary": "Selected / Current",
-                "focused_component": {
+                "focused_subassembly": {
                     "key": "id:lane_left",
                     "id": "lane_left",
                     "label": "lane / left / typical [lane_left]",
@@ -470,8 +490,8 @@ def test_show_v1_section_preview_merges_extra_context() -> None:
     )
 
     assert preview["viewer_context"]["tag_summary"] == "Selected / Current"
-    assert preview["viewer_context"]["focused_component"]["key"] == "id:lane_left"
-    assert preview["source_inspector"]["component_id"] == "lane_left"
+    assert preview["viewer_context"]["focused_subassembly"]["key"] == "id:lane_left"
+    assert preview["source_inspector"]["subassembly_id"] == "lane_left"
     assert "lane / left / typical [lane_left]" in preview["review_marker_rows"][0]["notes"]
     assert preview["diagnostic_rows"]
 
@@ -534,9 +554,9 @@ def test_show_v1_section_preview_uses_v1_result_refs_for_source_ownership() -> N
             applied_section_id=f"section:{index}",
             station=float(station),
             region_id="region:mainline",
-            component_rows=[
-                AppliedSectionComponentRow(
-                    component_id="lane-left",
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
+                    subassembly_id="lane-left",
                     kind="lane",
                     source_template_id="template:basic-road",
                     region_id="region:mainline",
@@ -600,9 +620,9 @@ def test_show_v1_section_preview_opens_document_v1_applied_section_set_before_de
                 station=float(station),
                 template_id="template:basic-road",
                 region_id="region:mainline",
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-left",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-left",
                         kind="lane",
                         source_template_id="template:basic-road",
                         region_id="region:mainline",
@@ -661,9 +681,9 @@ def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
                 template_id="template:basic-road",
                 region_id="region:mainline",
                 active_structure_ids=["structure:bridge-01"],
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-left",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-left",
                         kind="lane",
                         source_template_id="template:basic-road",
                         region_id="region:mainline",
@@ -753,9 +773,9 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
                     station=20.0,
                     template_id="template:basic-road",
                     region_id="region:mainline",
-                    component_rows=[
-                        AppliedSectionComponentRow(
-                            component_id="lane-left",
+                    subassembly_rows=[
+                        AppliedSectionSubassemblyRow(
+                            subassembly_id="lane-left",
                             kind="lane",
                             source_template_id="template:basic-road",
                             region_id="region:mainline",
@@ -1228,13 +1248,13 @@ def test_cross_section_viewer_navigation_keeps_secondary_alignment_intersection_
         App.closeDocument(doc.Name)
 
 
-def test_format_section_preview_includes_focus_component_line() -> None:
+def test_format_section_preview_includes_focus_subassembly_line() -> None:
     summary = format_section_preview(
         show_v1_section_preview(
             document=None,
             extra_context={
                 "viewer_context": {
-                    "focused_component": {
+                    "focused_subassembly": {
                         "key": "id:lane_left",
                         "id": "lane_left",
                         "label": "lane / left / typical [lane_left]",
@@ -1246,7 +1266,18 @@ def test_format_section_preview_includes_focus_component_line() -> None:
         )
     )
 
-    assert "Focus Component: lane / left / typical [lane_left]" in summary
+    assert "Focus Subassembly: lane / left / typical [lane_left]" in summary
+
+
+def test_show_cross_section_viewer_dialog_retries_after_stale_panel(monkeypatch) -> None:
+    import freecad.Corridor_Road.v1.commands.cmd_view_sections as command_module
+
+    fake_gui = _FakeDialogGui()
+    monkeypatch.setattr(command_module, "CrossSectionViewerTaskPanel", lambda preview: object())
+
+    assert _show_cross_section_viewer_dialog(fake_gui, {"source": "test"}, app_module=None) is True
+    assert fake_gui.Control.show_count == 2
+    assert fake_gui.Control.close_count == 1
 
 
 def test_show_v1_section_preview_carries_result_state_reason() -> None:
@@ -1485,7 +1516,7 @@ def test_show_v1_section_preview_adds_section_cut_fill_area_quantities() -> None
     area_rows = [
         row
         for row in quantity_rows
-        if row.component_ref == "section_earthwork_area"
+        if row.subassembly_ref == "section_earthwork_area"
     ]
 
     assert preview["section_earthwork_area_result"].status == "ok"
@@ -1568,3 +1599,37 @@ def test_build_handoff_status_reports_missing_targets() -> None:
     assert "Source=v1_cross_section_viewer" in status["text"]
     assert "Missing=" in status["text"]
     assert status["style"] == "color: #b36b00;"
+
+
+def test_cross_section_handoff_tolerates_missing_focused_subassembly() -> None:
+    preview = show_v1_section_preview(
+        document=None,
+        extra_context={
+            "source": "v1_cross_section_viewer",
+            "viewer_context": {},
+        },
+        app_module=None,
+        gui_module=None,
+    )
+
+    rows = build_handoff_target_rows(preview)
+
+    assert rows
+    assert "Focus=" not in rows[0][3]
+
+
+def test_cross_section_review_tables_tolerate_empty_optional_rows() -> None:
+    preview = {
+        "corridor_review_rows": [None, {"result": "Design Surface", "status": "ready"}],
+        "intersection_context_rows": [None, {"family": "surface_zone", "status": "ready"}],
+    }
+
+    corridor_rows = build_corridor_result_review_table_rows(preview)
+    intersection_rows = build_intersection_context_rows(preview)
+    status = build_corridor_result_status(preview)
+
+    assert corridor_rows[0][0] == ""
+    assert corridor_rows[1][0] == "Design Surface"
+    assert intersection_rows[0][0] == ""
+    assert intersection_rows[1][0] == "surface_zone"
+    assert status["total_count"] == 2

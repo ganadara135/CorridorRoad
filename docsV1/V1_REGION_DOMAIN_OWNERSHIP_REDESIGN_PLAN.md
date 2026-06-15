@@ -58,9 +58,9 @@ The new direction is:
 | Domain | Owns | References |
 |---|---|---|
 | Region | station span, priority, base Assembly | Assembly |
-| Assembly | reusable section components and ditch component shape where applicable | none or component-local refs |
+| Assembly | reusable section Subassemblies and ditch Subassembly shape where applicable | none or Subassembly-local refs |
 | Structure | bridge, culvert, retaining wall, wall, headwall, inlet/outlet body intent | Region, geometry specs, optional alignment/profile context |
-| Drainage Element | ditch, gutter, swale, channel, culvert reference, inlet reference, outfall reference | Region, Policy, optional Assembly component for ditch, optional Structure ref for structure-backed drainage nodes |
+| Drainage Element | ditch, gutter, swale, channel, culvert reference, inlet reference, outfall reference | Region, Policy, optional Assembly Subassembly for ditch, optional Structure ref for structure-backed drainage nodes |
 | Drainage Flow Route | connection graph between Drainage Elements and final Outlet context | Drainage Elements, optional Structure or Outlet ref |
 | Applied Sections | evaluated station section result | Region, Assembly, resolved Structure, resolved Drainage |
 | Build Corridor | generated corridor surfaces and review previews | Applied Sections and resolved context |
@@ -93,7 +93,7 @@ The source-authoring toolbar should follow the ownership dependency order:
 
 Reason:
 
-- Assembly defines reusable section components.
+- Assembly defines reusable section Subassemblies.
 - Regions assign base Assembly over station spans.
 - Structures then choose their owning Region.
 - Drainage Elements and Flow Routes then choose their owning Region and optional Structure refs.
@@ -252,7 +252,7 @@ Introduce or update an active context resolver.
 Input:
 
 - RegionModel
-- AssemblyModel
+- AssemblySubassemblyModel
 - StructureModel
 - DrainageModel
 - station
@@ -454,7 +454,7 @@ Implemented notes:
 - `AppliedSectionBuildRequest` and `AppliedSectionSetBuildRequest` now accept `drainage_model`.
 - Structure context is resolved from StructureModel rows whose placement covers the station and whose `region_ref` matches the active Region.
 - Drainage context is resolved from DrainageModel Elements whose station span covers the station and whose `region_ref` matches the active Region.
-- Ditch/gutter/swale/channel component rows and `ditch_surface` points keep `drainage_refs`/`drainage_ref`, but the source of those refs is DrainageModel, not RegionModel.
+- Ditch/gutter/swale/channel Subassembly rows and `ditch_surface` points keep `drainage_refs`/`drainage_ref`, but the source of those refs is DrainageModel, not RegionModel.
 
 Deferred:
 

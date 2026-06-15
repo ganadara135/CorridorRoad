@@ -67,7 +67,7 @@ It is a corridor-level analysis and optimization subsystem that sits between:
 It should connect to:
 
 - `ProfileModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 - `StructureModel`
 - `CorridorModel`

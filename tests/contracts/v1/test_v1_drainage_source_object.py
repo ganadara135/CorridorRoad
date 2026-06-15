@@ -44,7 +44,7 @@ def _drainage_model() -> DrainageModel:
                 alignment_ref="alignment:main",
                 side="right",
                 region_ref="region:1",
-                assembly_component_ref="ditch:right",
+                subassembly_ref="ditch:right",
                 station_start=0.0,
                 station_end=100.0,
                 policy_set_ref="drainage-policy:lined-concrete",
@@ -118,7 +118,7 @@ def test_v1_drainage_model_object_roundtrips_to_drainage_model() -> None:
         assert model.element_rows[0].drainage_element_id == "drainage:side-ditch-right"
         assert model.element_rows[0].side == "right"
         assert model.element_rows[0].region_ref == "region:1"
-        assert model.element_rows[0].assembly_component_ref == "ditch:right"
+        assert model.element_rows[0].subassembly_ref == "ditch:right"
         assert model.element_rows[1].connection_point_ref == "connection:outfall-1:pipe-in"
         assert list(obj.ElementConnectionPointRefs) == ["", "connection:outfall-1:pipe-in"]
         assert model.policy_rows[0].policy_set_id == "drainage-policy:lined-concrete"
@@ -149,7 +149,7 @@ def test_create_or_update_v1_drainage_model_object_updates_existing_object() -> 
                     element_kind="ditch",
                     side="left",
                     region_ref="region:2",
-                    assembly_component_ref="ditch:left",
+                    subassembly_ref="ditch:left",
                     station_start=10.0,
                     station_end=50.0,
                 )

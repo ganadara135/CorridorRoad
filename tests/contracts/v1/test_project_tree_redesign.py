@@ -234,7 +234,7 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
         cases = [
             ("RampModel", V1_TREE_RAMPS),
             ("IntersectionModel", V1_TREE_INTERSECTIONS),
-            ("V1AssemblyModel", V1_TREE_ASSEMBLIES),
+            ("V1AssemblySubassemblyModel", V1_TREE_ASSEMBLIES),
             ("AssemblyTemplate", V1_TREE_ASSEMBLIES),
             ("V1RegionModel", V1_TREE_REGIONS),
             ("RegionPlan", V1_TREE_REGIONS),

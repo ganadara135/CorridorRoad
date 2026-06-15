@@ -4,8 +4,8 @@ This folder contains the Parametric Road v1 redesign documents.
 
 Current public release:
 
-- `Parametric Road 1.0.4`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
+- `Parametric Road 1.0.5`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 
@@ -143,7 +143,7 @@ Preferred review workflow:
 - continue Structures enhancement as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, Drainage handoff, and Watertight Solid readiness as described in `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
-- treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
+- treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical Subassembly bodies with thickness, material, volume, or export identity
 - use the representation strategy table in `V1_MASTER_PLAN.md` when deciding whether a subsystem should be semantic-first, geometry-first, topology-first, or contract-first
 - generate watertight solids through a topology-first pipeline: closed semantic Applied Section profiles, deterministic edge networks, face adjacency, shell validation, then Part solid geometry
 - use the existing v0 viewers as secondary support paths during transition

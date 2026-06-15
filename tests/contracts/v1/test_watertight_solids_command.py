@@ -19,7 +19,7 @@ from freecad.Corridor_Road.init_gui import corridorroad_workflow_toolbar_command
 from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -102,9 +102,9 @@ def _new_project_doc(name: str):
     return doc, project
 
 
-def _sample_sections(*, include_component: bool = False, include_lined_ditch: bool = False) -> AppliedSectionSet:
-    component_rows = [
-        AppliedSectionComponentRow(
+def _sample_sections(*, include_subassembly: bool = False, include_lined_ditch: bool = False) -> AppliedSectionSet:
+    subassembly_rows = [
+        AppliedSectionSubassemblyRow(
             "pavement:base",
             "pavement_layer",
             side="center",
@@ -112,10 +112,10 @@ def _sample_sections(*, include_component: bool = False, include_lined_ditch: bo
             thickness=0.25,
             material="asphalt",
         )
-    ] if include_component else []
+    ] if include_subassembly else []
     if include_lined_ditch:
-        component_rows.append(
-            AppliedSectionComponentRow(
+        subassembly_rows.append(
+            AppliedSectionSubassemblyRow(
                 "ditch:right",
                 "ditch",
                 side="right",
@@ -157,7 +157,7 @@ def _sample_sections(*, include_component: bool = False, include_lined_ditch: bo
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
                 point_rows=point_rows(0.0),
-                component_rows=list(component_rows),
+                subassembly_rows=list(subassembly_rows),
             ),
             AppliedSection(
                 schema_version=1,
@@ -171,7 +171,7 @@ def _sample_sections(*, include_component: bool = False, include_lined_ditch: bo
                 surface_right_width=4.0,
                 subgrade_depth=0.25,
                 point_rows=point_rows(20.0),
-                component_rows=list(component_rows),
+                subassembly_rows=list(subassembly_rows),
             ),
         ],
     )
@@ -390,13 +390,13 @@ def _populate_ready_build_corridor_outputs(
     doc,
     project,
     *,
-    include_component: bool = False,
+    include_subassembly: bool = False,
     include_lined_ditch: bool = False,
 ) -> None:
     create_or_update_v1_applied_section_set_object(
         doc,
         project=project,
-        applied_section_set=_sample_sections(include_component=include_component, include_lined_ditch=include_lined_ditch),
+        applied_section_set=_sample_sections(include_subassembly=include_subassembly, include_lined_ditch=include_lined_ditch),
     )
     create_or_update_v1_corridor_model_object(doc, project=project, corridor_model=_sample_corridor())
     create_or_update_v1_surface_model_object(doc, project=project, surface_model=_sample_surface())
@@ -1751,7 +1751,7 @@ def test_watertight_solids_panel_show_hide_focus_preserves_lined_ditch_side_cont
         assert f"Hidden solid: {obj.Name}" in panel._status.toPlainText()
         assert "drainage=lined_ditch:right" in panel._status.toPlainText()
         assert "side=right" in panel._status.toPlainText()
-        assert "component=ditch:right" in panel._status.toPlainText()
+        assert "subassembly=ditch:right" in panel._status.toPlainText()
         assert "material=concrete" in panel._status.toPlainText()
 
         panel._show_button.click()
@@ -2367,7 +2367,7 @@ def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_indepe
     _ensure_qapp()
     doc, project = _new_project_doc("V1WatertightSolidsPanelBuildEnabledTest")
     try:
-        _populate_ready_build_corridor_outputs(doc, project, include_component=True)
+        _populate_ready_build_corridor_outputs(doc, project, include_subassembly=True)
 
         panel = V1WatertightSolidsTaskPanel(document=doc)
 
@@ -2380,18 +2380,18 @@ def test_watertight_solids_panel_build_enabled_builds_each_enabled_target_indepe
         panel._build_enabled_button.click()
 
         road_state = panel._target_state_by_id["solid-target:road-body-envelope"]
-        component_state = panel._target_state_by_id["solid-target:pavement-layer:pavement-base"]
+        subassembly_state = panel._target_state_by_id["solid-target:pavement-layer:pavement-base"]
         assert road_state.build_status == "built"
-        assert component_state.build_status == "built"
+        assert subassembly_state.build_status == "built"
         assert road_state.volume > 0.0
-        assert component_state.volume > 0.0
+        assert subassembly_state.volume > 0.0
         assert doc.getObject(road_state.output_object_ref) is not None
-        assert doc.getObject(component_state.output_object_ref) is not None
-        assert road_state.output_object_ref != component_state.output_object_ref
+        assert doc.getObject(subassembly_state.output_object_ref) is not None
+        assert road_state.output_object_ref != subassembly_state.output_object_ref
         tree = ensure_project_tree(project, include_references=False)
         names = _group_names(tree[V1_TREE_WATERTIGHT_SOLIDS])
         assert road_state.output_object_ref in names
-        assert component_state.output_object_ref in names
+        assert subassembly_state.output_object_ref in names
         assert "Build Enabled summary: built=2; failed=0; targets=2; volume=" in panel._status.toPlainText()
     finally:
         App.closeDocument(doc.Name)

@@ -17,9 +17,9 @@ Examples:
 
 Assembly can define ditch shapes and side-slope bench behavior. These are source definitions, not generated corridor geometry.
 
-Use `Assembly / Subassembly` as the primary v1 editor when creating new section intent.
+Use `Assembly / Subassembly` as the active v1 editor when creating new section intent.
 
-The older `Assembly` editor may still be available during the cutover, but `Subassembly` is the current user-facing term for reusable section parts.
+`Subassembly` is the user-facing term for reusable section parts. The old Assembly editor path is not part of the active v1 workflow.
 
 ## Region
 

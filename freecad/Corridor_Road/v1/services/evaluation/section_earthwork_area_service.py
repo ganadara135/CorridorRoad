@@ -149,7 +149,6 @@ class SectionEarthworkAreaService:
                 quantity_kind=row.quantity_kind,
                 value=row.value,
                 unit=row.unit,
-                component_ref="section_earthwork_area",
             )
             for index, row in enumerate(result.rows, start=1)
         ]

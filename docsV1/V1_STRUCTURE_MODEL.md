@@ -67,7 +67,7 @@ Typical examples:
 
 The architectural distinction is:
 
-- `AssemblyModel` defines reusable section intent
+- `AssemblySubassemblyModel` defines reusable section intent
 - `RegionModel` defines station-range policy
 - `OverrideModel` defines narrow explicit exceptions
 - `StructureModel` defines structure presence and interaction context
@@ -351,7 +351,7 @@ Resolution results are derived evaluation objects, not new source data.
 
 - clearance checks
 - local notch or skip behavior
-- local component replacement behavior
+- local Subassembly replacement behavior
 - wall-adjacent treatment
 
 `CorridorModel` must consume resolved structure interaction rather than hiding structure effects in scattered build code.

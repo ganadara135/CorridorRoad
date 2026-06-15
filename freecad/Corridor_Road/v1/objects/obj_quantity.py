@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 import json
 
 try:
@@ -184,7 +184,7 @@ def to_quantity_model(obj) -> QuantityModel | None:
         project_id=str(getattr(obj, "ProjectId", "") or "corridorroad-v1"),
         quantity_model_id=str(getattr(obj, "QuantityModelId", "") or "quantity:main"),
         corridor_id=str(getattr(obj, "CorridorId", "") or ""),
-        fragment_rows=[QuantityFragment(**row) for row in _json_rows(getattr(obj, "FragmentRowsJson", []) or [])],
+        fragment_rows=[QuantityFragment(**_known_dataclass_values(QuantityFragment, row)) for row in _json_rows(getattr(obj, "FragmentRowsJson", []) or [])],
         aggregate_rows=[QuantityAggregate(**row) for row in _json_rows(getattr(obj, "AggregateRowsJson", []) or [])],
         grouping_rows=[QuantityGroupingRow(**row) for row in _json_rows(getattr(obj, "GroupingRowsJson", []) or [])],
         comparison_rows=[QuantityComparisonRow(**row) for row in _json_rows(getattr(obj, "ComparisonRowsJson", []) or [])],
@@ -201,6 +201,11 @@ def _is_v1_quantity_model_object(obj) -> bool:
         return True
     proxy = getattr(obj, "Proxy", None)
     return str(getattr(proxy, "Type", "") or "") == "V1QuantityModel"
+
+
+def _known_dataclass_values(row_type, values: dict[str, object]) -> dict[str, object]:
+    known = {field.name for field in fields(row_type)}
+    return {str(key): value for key, value in dict(values or {}).items() if str(key) in known}
 
 
 def _json_rows(values) -> list[dict[str, object]]:
@@ -230,4 +235,3 @@ def _add_property(obj, prop_type: str, name: str, group: str, doc: str) -> None:
 
 def _project_id(project) -> str:
     return str(getattr(project, "ProjectId", "") or getattr(project, "Name", "") or "corridorroad-v1")
-

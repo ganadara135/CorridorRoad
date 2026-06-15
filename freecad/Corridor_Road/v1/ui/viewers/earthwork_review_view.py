@@ -236,12 +236,6 @@ def _side_slope_quantity_source_tokens(rows: list[object]) -> list[str]:
             ("assembly", getattr(row, "assembly_ref", "")),
             ("region", getattr(row, "region_ref", "")),
             ("subassembly", getattr(row, "subassembly_ref", "")),
-            (
-                "compatibility",
-                ""
-                if str(getattr(row, "subassembly_ref", "") or "").strip()
-                else _compatibility_ref(getattr(row, "component_ref", "")),
-            ),
         ):
             text = str(value or "").strip()
             if not text:
@@ -252,15 +246,6 @@ def _side_slope_quantity_source_tokens(rows: list[object]) -> list[str]:
             seen.add(token)
             tokens.append(token)
     return tokens
-
-
-def _compatibility_ref(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if text.startswith("compatibility:"):
-        return text
-    return f"compatibility:{text}"
 
 
 def _earthwork_window_summary(row) -> str:

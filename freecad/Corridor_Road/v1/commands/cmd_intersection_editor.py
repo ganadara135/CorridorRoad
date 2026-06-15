@@ -39,7 +39,6 @@ from ..objects.obj_profile import create_sample_v1_profile
 from ..objects.obj_intersection import create_or_update_v1_intersection_model_object
 from ..objects.obj_region import create_or_update_v1_region_model_object, to_region_model
 from ..objects.obj_stationing import create_v1_stationing
-from ..objects.obj_assembly import find_v1_assembly_model, to_assembly_model
 from ..models.source.region_model import RegionModel, RegionRow
 from ..services.evaluation.intersection_alignment_detection_service import AlignmentIntersectionDetectionService
 from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
@@ -1952,13 +1951,6 @@ def _ensure_starter_assembly_for_intersections(document, *, project=None, create
                 return assembly_id, template_id
     except Exception:
         pass
-    existing_obj = find_v1_assembly_model(document)
-    existing_model = to_assembly_model(existing_obj) if existing_obj is not None else None
-    if existing_model is not None:
-        assembly_id = str(getattr(existing_model, "assembly_id", "") or "").strip()
-        template_id = str(getattr(existing_model, "active_template_id", "") or "").strip()
-        if assembly_id:
-            return assembly_id, template_id
     try:
         from .cmd_subassembly_editor import (
             apply_v1_assembly_subassembly_model,

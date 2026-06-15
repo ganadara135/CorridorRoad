@@ -63,7 +63,7 @@ from freecad.Corridor_Road.v1.services.mapping.tin_mesh_preview_mapper import ti
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -4943,9 +4943,9 @@ def test_corridor_applied_sections_review_summary_tracks_singular_structure_owne
                     corridor_id="corridor:main",
                     station=10.0,
                     active_structure_ids=["structure:bridge-01", "structure:wall-ignored"],
-                    component_rows=[
-                        AppliedSectionComponentRow(
-                            component_id="lane-1",
+                    subassembly_rows=[
+                        AppliedSectionSubassemblyRow(
+                            subassembly_id="lane-1",
                             kind="lane",
                             structure_ids=["structure:bridge-01"],
                         )
@@ -5097,7 +5097,7 @@ def test_corridor_drainage_review_rows_explain_missing_ditch_points() -> None:
         App.closeDocument(doc.Name)
 
 
-def test_corridor_drainage_review_rows_report_source_side_component_mismatch() -> None:
+def test_corridor_drainage_review_rows_report_source_side_subassembly_mismatch() -> None:
     doc, project = _new_project_doc()
     try:
         applied = AppliedSectionSet(
@@ -5125,7 +5125,7 @@ def test_corridor_drainage_review_rows_report_source_side_component_mismatch() -
                             9.8,
                             "ditch_surface",
                             6.0,
-                            component_ref="ditch:left",
+                            subassembly_ref="ditch:left",
                             side="left",
                             drainage_ref="drainage:left",
                         ),
@@ -5136,7 +5136,7 @@ def test_corridor_drainage_review_rows_report_source_side_component_mismatch() -
                             10.0,
                             "ditch_surface",
                             5.0,
-                            component_ref="ditch:left",
+                            subassembly_ref="ditch:left",
                             side="left",
                             drainage_ref="drainage:left",
                         ),
@@ -5168,7 +5168,7 @@ def test_corridor_drainage_review_rows_report_source_side_component_mismatch() -
                         "ditch",
                         side="right",
                         region_ref="region:road",
-                        assembly_component_ref="ditch:right",
+                        subassembly_ref="ditch:right",
                         station_start=0.0,
                         station_end=20.0,
                     )
@@ -5215,7 +5215,7 @@ def test_corridor_drainage_review_rows_report_source_tag_mismatch() -> None:
                         "ditch",
                         side="right",
                         region_ref="region:road",
-                        assembly_component_ref="ditch:right",
+                        subassembly_ref="ditch:right",
                         station_start=0.0,
                         station_end=20.0,
                     )
@@ -5227,7 +5227,7 @@ def test_corridor_drainage_review_rows_report_source_tag_mismatch() -> None:
 
         assert rows[0]["status"] == "warn"
         assert "missing_drainage_ref=drainage:right" in str(rows[0]["notes"])
-        assert "component_mismatch=ditch:right" in str(rows[0]["notes"])
+        assert "subassembly_mismatch=ditch:right" in str(rows[0]["notes"])
     finally:
         App.closeDocument(doc.Name)
 

@@ -42,7 +42,7 @@ Use it when checking whether the current v1 viewers are strong enough to be trea
 - [ ] viewer is not limited to `demo section viewer payload`
 - [x] 2D section drawing is visually dominant and readable
 - [x] FG, EG when available, subgrade, ditch, and slope-face styles are distinguishable
-- [x] component labels are visible near the relevant section spans
+- [x] Subassembly labels are visible near the relevant section spans
 - [x] dimension annotations are visible in the lower drawing band
 - [ ] label and dimension overlap is acceptable in normal panel size
 - [x] `Source Inspector` is visible

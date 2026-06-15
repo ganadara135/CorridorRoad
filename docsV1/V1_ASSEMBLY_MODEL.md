@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`AssemblyModel` defines reusable cross-section intent for corridor regions.
+`AssemblySubassemblyModel` defines reusable cross-section intent for corridor regions.
 
 It is source data.
 
@@ -32,27 +32,22 @@ Applied sections and corridor solids are downstream results.
 ## Design Goals
 
 - Keep Subassembly intent editable before corridor generation.
-- Let `RegionRow.assembly_ref` point to a durable `AssemblyModel`.
+- Let `RegionRow.assembly_ref` point to a durable Assembly/Subassembly source.
 - Keep bridge, ramp, intersection, and drainage behavior explicit through references and layers.
 - Avoid storing engineering meaning inside viewer geometry.
 
 ## Object Families
 
-- `AssemblyModel`
-- `SectionTemplate`
 - `TemplateSubassembly`
 - `SubassemblySectionTemplate`
-- `TemplateComponent`
 - future `AssemblyPolicySet`
 - future `AssemblyVariant`
 
 `TemplateSubassembly` and `SubassemblySectionTemplate` are the active v1 contracts.
 
-`TemplateComponent` remains a transition compatibility contract until the Subassembly cutover is complete.
-
 ## Root Fields
 
-`AssemblyModel` uses:
+`AssemblySubassemblyModel` uses:
 
 - `schema_version`
 - `project_id`
@@ -65,18 +60,14 @@ Applied sections and corridor solids are downstream results.
 
 ## Template Fields
 
-`SectionTemplate` uses:
+`SubassemblySectionTemplate` uses:
 
 - `template_id`
 - `template_kind`
 - `template_index`
 - `label`
-- `component_rows`
-- `notes`
-
-`SubassemblySectionTemplate` uses the same template identity fields and stores:
-
 - `subassembly_rows`
+- `notes`
 
 ## Subassembly Fields
 
@@ -145,34 +136,11 @@ Assembly owns these reusable side-slope bench rules.
 
 Region applies the Assembly over station ranges, but it does not own bench geometry.
 
-## Deprecated Component Compatibility Fields
-
-`TemplateComponent` is retained only as a transition compatibility contract.
-
-`TemplateComponent` uses:
-
-- `component_id`
-- `component_index`
-- `kind`
-- `side`
-- `width`
-- `slope`
-- `thickness`
-- `material`
-- `target_ref`
-- `parameters`
-- `enabled`
-- `notes`
-
-New v1 source, result, output, review, watertight solid, exchange, and simulation package paths should prefer `subassembly_ref`.
-
-`component_ref` may appear only as compatibility provenance while older documents and old editor paths remain loadable.
-
 ## Relationships
 
-`RegionRow.assembly_ref` should reference `AssemblyModel.assembly_id`.
+`RegionRow.assembly_ref` should reference `AssemblySubassemblyModel.assembly_id`.
 
-`RegionRow.template_ref` may reference `SectionTemplate.template_id` until richer Assembly lookup is implemented.
+`RegionRow.template_ref` may reference `SubassemblySectionTemplate.template_id`.
 
 `target_ref` may point to drainage, structure, override, or other domain sources when a Subassembly is tied to a specific external control.
 
@@ -182,13 +150,13 @@ If a Region references an Assembly id that does not exist in the document, valid
 
 `AppliedSectionService` should consume Region context through `RegionResolutionService.resolve_handoff`.
 
-If `RegionRow.template_ref` is blank and `RegionRow.assembly_ref` matches the provided `AssemblyModel.assembly_id`, the builder should use `AssemblyModel.active_template_id`.
+If `RegionRow.template_ref` is blank and `RegionRow.assembly_ref` matches the provided Assembly/Subassembly source, the builder should use `AssemblySubassemblyModel.active_template_id`.
 
-If multiple `AssemblyModel` sources exist in the document, Applied Section generation should select the model matching `RegionRow.assembly_ref`.
+If multiple Assembly/Subassembly sources exist in the document, Applied Section generation should select the model matching `RegionRow.assembly_ref`.
 
 If `RegionRow.assembly_ref` cannot be matched to any available Assembly source, the builder should emit diagnostics instead of silently applying the wrong Assembly.
 
-When the primary Assembly source object is reapplied with a new `AssemblyModel.assembly_id` or active template id, the Assembly apply command may update Region rows that referenced the previous primary Assembly/template pair.
+When the primary Assembly source object is reapplied with a new assembly id or active template id, the Assembly/Subassembly apply command may update Region rows that referenced the previous primary Assembly/template pair.
 
 This keeps the common single-Assembly workflow coherent after changing presets while preserving explicit Region references that point elsewhere.
 
@@ -204,7 +172,7 @@ The first editor-level validation checks:
 - ditch `shape` values are supported
 - required ditch shape parameters such as `depth` and `bottom_width` are present and numeric
 - `custom_polyline` ditch definitions provide at least two section points
-- structural ditch materials provide wall thickness where the selected shape needs a future component body
+- structural ditch materials provide wall thickness where the selected shape needs a future Subassembly body
 - lined ditch materials provide lining thickness for quantity and review
 - side-slope `bench_mode` values are supported
 - side-slope `daylight_mode` values are supported

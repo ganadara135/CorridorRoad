@@ -34,7 +34,7 @@ It consumes:
 - `V1CorridorModel`
 - `V1SurfaceModel` where available
 - `RegionModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `StructureModel`
 - future `DrainageModel`
 
@@ -332,7 +332,6 @@ Required first fields:
 - `region_ref`
 - `assembly_ref`
 - `subassembly_ref`
-- `component_ref` as legacy compatibility provenance only
 - `structure_ref`
 - `drainage_ref`
 - `enabled`
@@ -363,7 +362,6 @@ Scope kinds:
 - `region`
 - `station_range`
 - `assembly_subassembly` for Subassembly-scoped road-section targets
-- `assembly_component` as the legacy enum name for older Subassembly-scoped road-section targets
 - `structure`
 - `drainage`
 - `intersection`
@@ -457,9 +455,8 @@ Required first fields:
 Traceability fields:
 
 - `subassembly_ref` is the active owner reference for Subassembly-scoped pavement, subbase, shoulder, and lined-ditch targets.
-- `component_ref` is compatibility provenance only and should be empty whenever `subassembly_ref` is present.
 - `scope_kind=assembly_subassembly` identifies current Subassembly-scoped road-section targets.
-- `scope_kind=assembly_component` is accepted only as a legacy alias for older target rows.
+- Watertight solid target and output rows use Subassembly ownership as the active contract.
 
 ## 9. Build Algorithms
 

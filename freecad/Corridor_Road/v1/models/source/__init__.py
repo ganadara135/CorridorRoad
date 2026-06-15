@@ -2,11 +2,9 @@
 
 from .alignment_model import AlignmentModel
 from .assembly_model import (
-    AssemblyModel,
+    AssemblySourceIdentity,
     AssemblySubassemblyModel,
-    SectionTemplate,
     SubassemblySectionTemplate,
-    TemplateComponent,
     TemplateSubassembly,
 )
 from .drainage_model import DrainageModel
@@ -48,11 +46,9 @@ from .tin_edit_model import TINEditOperation, TINEditSet
 
 __all__ = [
     "AlignmentModel",
-    "AssemblyModel",
+    "AssemblySourceIdentity",
     "AssemblySubassemblyModel",
-    "SectionTemplate",
     "SubassemblySectionTemplate",
-    "TemplateComponent",
     "TemplateSubassembly",
     "DrainageModel",
     "IntersectionModel",

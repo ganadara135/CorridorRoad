@@ -453,7 +453,7 @@ Earthwork and quantity outputs are related but distinct.
 
 The rule is:
 
-- `QuantityOutput` carries measurable component and reporting quantities
+- `QuantityOutput` carries measurable Subassembly and reporting quantities
 - `EarthworkBalanceOutput` and `MassHaulOutput` carry balance and haul analysis
 
 Cross-references may exist, but the payload families should remain conceptually separate.

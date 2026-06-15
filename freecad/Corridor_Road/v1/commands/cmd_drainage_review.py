@@ -862,9 +862,9 @@ def _open_drainage_review_navigation_target(target: str, *, document=None):
 
         return run_v1_region_editor_command()
     if target == "assembly":
-        from .cmd_assembly_editor import run_v1_assembly_editor_command
+        from .cmd_subassembly_editor import run_v1_assembly_subassembly_editor_command
 
-        return run_v1_assembly_editor_command()
+        return run_v1_assembly_subassembly_editor_command()
     if target == "structures":
         from .cmd_structure_editor import run_v1_structure_editor_command
 

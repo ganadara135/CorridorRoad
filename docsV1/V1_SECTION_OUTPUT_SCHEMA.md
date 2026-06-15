@@ -99,7 +99,6 @@ Recommended top-level fields:
 - `summary_rows`
 - `geometry_rows`
 - `subassembly_rows`
-- `component_rows`
 - `dimension_rows`
 - `terrain_rows`
 - `structure_rows`
@@ -168,7 +167,7 @@ The Cross Section Viewer should use this metadata to explain where the station f
 ### 8.2 Recommended geometry row kinds
 
 - `section_polyline`
-- `component_span_polyline`
+- `subassembly_span_polyline`
 - `terrain_intersection_polyline`
 - `structure_outline_polyline`
 - `guide_line`
@@ -217,7 +216,6 @@ They identify what the user is actually looking at.
 Current implementation note:
 
 - `SectionSubassemblyRow` preserves `assembly_ref`, `region_ref`, and `subassembly_ref` so exchange packages, watertight solids, simulation packages, and review surfaces can trace evaluated rows back to the active source Assembly, Region, and Subassembly.
-- `component_rows` may still be present as transition compatibility rows until old consumers are retired.
 
 ### 9.3 Recommended Subassembly row semantics
 
@@ -262,12 +260,10 @@ Initial Subassembly kinds should align with the section model, including:
 - `priority`
 - `band_role`
 - `related_subassembly_id`
-- optional compatibility `related_component_id`
 
 ### 10.3 Recommended roles
 
 - `subassembly_width`
-- compatibility `component_width`
 - `overall_width`
 - `offset`
 - `structure_clearance`
@@ -338,7 +334,7 @@ This row family is required by the viewer model.
 - `ownership_id`
 - `target_kind`
 - `target_id`
-- `component_id`
+- `subassembly_id`
 - `template_id`
 - `region_id`
 - `override_id`
@@ -372,7 +368,7 @@ An ownership row should provide enough information for the viewer to identify th
 - `severity`
 - `kind`
 - `message`
-- `related_component_id`
+- `related_subassembly_id`
 - `related_region_id`
 - `related_structure_id`
 - `related_geometry_ref`
@@ -403,7 +399,7 @@ An ownership row should provide enough information for the viewer to identify th
 
 - `quantity_row_id`
 - `kind`
-- `component_id`
+- `subassembly_id`
 - `value`
 - `unit`
 - `notes`
@@ -414,7 +410,7 @@ An ownership row should provide enough information for the viewer to identify th
 - `pavement_thickness`
 - `cut_area`
 - `fill_area`
-- `component_area`
+- `subassembly_area`
 
 Current implementation note:
 
@@ -439,7 +435,7 @@ Current implementation note:
 - `label`
 - `message`
 - `priority`
-- `related_component_id`
+- `related_subassembly_id`
 
 ### 16.3 Recommended kinds
 
@@ -479,14 +475,11 @@ Current implementation note:
 - `subassembly_point_count`
 - `subassembly_link_count`
 - `subassembly_shape_count`
-- `compatibility_component_count`
 - `quantity_summary`
 
 Current implementation note:
 
-- `subassembly_count` is the active user-facing count for road-section building units.
-- `compatibility_component_count` is the transition fallback row count for old Component rows.
-- `component_count` may still be read from old payloads only as a compatibility fallback; new SectionOutput rows should not emit it.
+- `subassembly_count` is the user-facing count for road-section building units.
 
 ## 18. SectionSheetOutput Structure
 
@@ -533,7 +526,7 @@ Recommended values:
 Every section output should retain strong mapping back to:
 
 - `AppliedSection`
-- component semantics
+- Subassembly semantics
 - source ownership rows
 
 This is required for:
@@ -549,7 +542,7 @@ The Cross Section Viewer should be able to operate using, at minimum:
 
 - station metadata
 - geometry rows
-- component rows
+- Subassembly rows
 - ownership rows
 - diagnostic rows
 - dimension rows
@@ -563,7 +556,7 @@ Drawing-oriented exports should be able to operate using:
 
 - geometry rows
 - dimension rows
-- component rows
+- Subassembly rows
 - summary rows
 - layout hints
 
@@ -575,7 +568,7 @@ Earthwork and quantity consumers should be able to reuse:
 
 - quantity rows
 - terrain rows
-- component rows
+- Subassembly rows
 - station metadata
 
 This reduces duplication of section meaning across systems.
@@ -585,7 +578,7 @@ This reduces duplication of section meaning across systems.
 The output schema should be validated for:
 
 - missing required root metadata
-- duplicate component identities
+- duplicate Subassembly identities
 - broken geometry references
 - ownership rows that reference unknown targets
 - invalid unit metadata

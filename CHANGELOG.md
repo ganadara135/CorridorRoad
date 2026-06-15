@@ -9,6 +9,23 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-15
+
+### Added
+- Added the active Subassembly editor path as the practical replacement for the old Assembly Component workflow.
+- Added Subassembly-focused contract coverage for Applied Sections, Build Parametric, Cross Section Viewer, quantity, watertight solid, and output mapper handoff paths.
+- Added Intersection review refinements for edge-network preview, tree routing, contract visibility, and Build Parametric review handoff.
+
+### Changed
+- Changed v1 cross-section and output terminology from Component-centered wording to Subassembly-centered wording across active source/result/output/viewer paths.
+- Changed Cross Section Viewer handoff actions to open the Subassembly-based Assembly workflow and report focused Subassembly context.
+- Changed documentation and Wiki drafts to describe Subassembly as the active v1 cross-section building block.
+
+### Fixed
+- Fixed Applied Sections build failures caused by stale Component-to-Subassembly rename leftovers.
+- Fixed Cross Section Viewer panel creation so missing focused Subassembly context and optional empty review rows no longer fall back to a summary-only error dialog.
+- Fixed 3D Centerline Apply feedback so successful generation is reported to the user.
+
 ## [1.0.4] - 2026-06-04
 
 ### Added

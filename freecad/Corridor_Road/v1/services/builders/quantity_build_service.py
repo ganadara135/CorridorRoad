@@ -115,7 +115,6 @@ class QuantityBuildService:
                     station_start=section.station,
                     station_end=section.station,
                     subassembly_ref=str(getattr(row, "subassembly_id", "") or ""),
-                    component_ref=_compatibility_ref(row.component_id, str(getattr(row, "subassembly_id", "") or "")),
                     assembly_ref=section.assembly_id,
                     region_ref=section.region_id,
                     structure_ref=self._structure_ref_for_quantity_row(section, row),
@@ -135,7 +134,6 @@ class QuantityBuildService:
                     station_start=section.station,
                     station_end=section.station,
                     subassembly_ref=str(getattr(subassembly, "subassembly_id", "") or ""),
-                    component_ref="",
                     assembly_ref=section.assembly_id,
                     region_ref=section.region_id,
                     structure_ref=_first_ref(getattr(subassembly, "structure_ids", []) or []),
@@ -143,26 +141,7 @@ class QuantityBuildService:
                 for subassembly in subassembly_rows
             ]
 
-        rows: list[QuantityFragment] = []
-        for component in _compatibility_component_rows(section):
-            subassembly_ref = _subassembly_ref_for_compatibility_component(section, component.component_id)
-            rows.append(
-                QuantityFragment(
-                    fragment_id=new_entity_id("quantity_fragment"),
-                    quantity_kind=f"{component.kind}_count",
-                    measurement_kind="count",
-                    value=1.0,
-                    unit="ea",
-                    station_start=section.station,
-                    station_end=section.station,
-                    subassembly_ref=subassembly_ref,
-                    component_ref=_compatibility_ref(component.component_id, subassembly_ref),
-                    assembly_ref=section.assembly_id,
-                    region_ref=section.region_id,
-                    structure_ref=_first_ref(component.structure_ids),
-                )
-            )
-        return rows
+        return []
 
     def _structure_ref_for_quantity_row(
         self,
@@ -177,12 +156,6 @@ class QuantityBuildService:
                 if str(getattr(subassembly, "subassembly_id", "") or "").strip() == subassembly_id:
                     return _first_ref(getattr(subassembly, "structure_ids", []) or [])
             return ""
-        if list(getattr(section, "subassembly_rows", []) or []):
-            return ""
-        component_id = str(getattr(quantity_row, "component_id", "") or "").strip()
-        for component in _compatibility_component_rows(section):
-            if component.component_id == component_id:
-                return _first_ref(component.structure_ids)
         return ""
 
     def _structure_solid_fragment_rows(
@@ -325,7 +298,6 @@ def _side_slope_surface_fragment_rows(section: AppliedSection) -> list[QuantityF
                     station_start=section.station,
                     station_end=section.station,
                     subassembly_ref=subassembly_ref,
-                    component_ref=_compatibility_ref(_joined_refs(_compatibility_refs_for_points([start, end])), subassembly_ref),
                     assembly_ref=section.assembly_id,
                     region_ref=section.region_id,
                 )
@@ -470,10 +442,6 @@ def _drainage_length_rows_for_ref(
                     station_start=_section_station(start_section),
                     station_end=_section_station(end_section),
                     subassembly_ref=_joined_refs(_subassembly_refs_for_points(start_points + end_points)),
-                    component_ref=_compatibility_ref(
-                        _joined_refs(_compatibility_refs_for_points(start_points + end_points)),
-                        _joined_refs(_subassembly_refs_for_points(start_points + end_points)),
-                    ),
                     assembly_ref=str(getattr(start_section, "assembly_id", "") or ""),
                     region_ref=str(getattr(start_section, "region_id", "") or ""),
                     drainage_ref=drainage_ref,
@@ -497,10 +465,6 @@ def _drainage_length_rows_for_ref(
                 station_start=_section_station(start_section),
                 station_end=_section_station(end_section),
                 subassembly_ref=_joined_refs(_subassembly_refs_for_points(start_flow + end_flow)),
-                component_ref=_compatibility_ref(
-                    _joined_refs(_compatibility_refs_for_points(start_flow + end_flow)),
-                    _joined_refs(_subassembly_refs_for_points(start_flow + end_flow)),
-                ),
                 assembly_ref=str(getattr(start_section, "assembly_id", "") or ""),
                 region_ref=str(getattr(start_section, "region_id", "") or ""),
                 drainage_ref=drainage_ref,
@@ -608,29 +572,6 @@ def _section_station(section: AppliedSection) -> float:
         return float(getattr(frame, "station", getattr(section, "station", 0.0)) or 0.0)
     except Exception:
         return float(getattr(section, "station", 0.0) or 0.0)
-
-
-def _compatibility_refs_for_points(points: list[object]) -> list[str]:
-    refs: list[str] = []
-    for point in list(points or []):
-        if str(getattr(point, "subassembly_ref", "") or "").strip():
-            continue
-        refs.append(str(getattr(point, "component_ref", "") or ""))
-    return _unique_refs(refs)
-
-
-def _compatibility_ref(component_ref: object, subassembly_ref: object = "") -> str:
-    return "" if str(subassembly_ref or "").strip() else str(component_ref or "").strip()
-
-
-def _compatibility_component_rows(section: AppliedSection) -> list[object]:
-    """Return legacy component rows only when no active Subassembly rows exist."""
-
-    if list(getattr(section, "subassembly_rows", []) or []):
-        return []
-    return list(getattr(section, "component_rows", []) or [])
-
-
 def _subassembly_refs_for_sections(sections: list[AppliedSection]) -> list[str]:
     refs: list[str] = []
     for section in list(sections or []):
@@ -644,26 +585,6 @@ def _subassembly_refs_for_sections(sections: list[AppliedSection]) -> list[str]:
 
 def _subassembly_refs_for_points(points: list[object]) -> list[str]:
     return _unique_refs(str(getattr(point, "subassembly_ref", "") or "") for point in list(points or []))
-
-
-def _subassembly_ref_for_compatibility_component(section: AppliedSection, component_ref: str) -> str:
-    expected = str(component_ref or "").strip()
-    if not expected:
-        return ""
-    for row in list(getattr(section, "subassembly_rows", []) or []):
-        subassembly_id = str(getattr(row, "subassembly_id", "") or "").strip()
-        if subassembly_id == expected:
-            return subassembly_id
-    for point in list(getattr(section, "point_rows", []) or []):
-        if str(getattr(point, "component_ref", "") or "").strip() == expected:
-            subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-            if subassembly_ref:
-                return subassembly_ref
-    for point in list(getattr(section, "subassembly_point_rows", []) or []):
-        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-        if subassembly_ref == expected:
-            return subassembly_ref
-    return ""
 
 
 def _joined_refs(values) -> str:
@@ -874,7 +795,6 @@ def _structure_fragment(
         unit=unit,
         station_start=getattr(solid, "station_start", None),
         station_end=getattr(solid, "station_end", None),
-        component_ref="",
         structure_ref=str(getattr(solid, "structure_id", "") or ""),
     )
 

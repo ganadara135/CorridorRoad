@@ -27,7 +27,7 @@ class _SectionPointLite:
     z: float
     lateral_offset: float
     point_role: str = ""
-    component_ref: str = ""
+    compatibility_ref: str = ""
     subassembly_ref: str = ""
 
 
@@ -781,12 +781,12 @@ def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, obje
     for points in list(point_grid or []):
         for point in list(points or []):
             role = str(getattr(point, "point_role", "") or "")
-            component_ref = _point_compatibility_ref(point)
+            compatibility_ref = _point_compatibility_ref(point)
             subassembly_ref = _point_subassembly_ref(point)
             drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
             side = str(getattr(point, "side", "") or "").strip()
-            if component_ref:
-                compatibility_refs.append(component_ref)
+            if compatibility_ref:
+                compatibility_refs.append(compatibility_ref)
             if subassembly_ref:
                 subassembly_refs.append(subassembly_ref)
             if drainage_ref:
@@ -830,7 +830,7 @@ def _point_grid_provenance_notes(surface_kind: str, source_summary: dict[str, ob
 def _point_source_notes(point) -> str:
     rows = []
     role = str(getattr(point, "point_role", "") or "").strip()
-    component_ref = _point_compatibility_ref(point)
+    compatibility_ref = _point_compatibility_ref(point)
     subassembly_ref = _point_subassembly_ref(point)
     side = str(getattr(point, "side", "") or "").strip()
     drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
@@ -838,8 +838,8 @@ def _point_source_notes(point) -> str:
         rows.append(f"role={role}")
     if subassembly_ref:
         rows.append(f"subassembly_ref={subassembly_ref}")
-    if component_ref:
-        rows.append(f"compatibility_ref={component_ref}")
+    if compatibility_ref:
+        rows.append(f"compatibility_ref={compatibility_ref}")
     if side:
         rows.append(f"side={side}")
     if drainage_ref:
@@ -854,11 +854,11 @@ def _side_slope_grid_source_summary(side_grids: dict[str, list[list[_SectionPoin
     for grid in list(side_grids.values()):
         for row in list(grid or []):
             for point in list(row or []):
-                component_ref = _point_compatibility_ref(point)
+                compatibility_ref = _point_compatibility_ref(point)
                 subassembly_ref = _point_subassembly_ref(point)
                 role = str(getattr(point, "point_role", "") or "").strip()
-                if component_ref:
-                    compatibility_refs.append(component_ref)
+                if compatibility_ref:
+                    compatibility_refs.append(compatibility_ref)
                 if subassembly_ref:
                     subassembly_refs.append(subassembly_ref)
                 if role:
@@ -887,14 +887,14 @@ def _side_slope_grid_provenance_notes(source_summary: dict[str, object]) -> str:
 def _section_point_lite_notes(point: _SectionPointLite) -> str:
     rows: list[str] = []
     role = str(getattr(point, "point_role", "") or "").strip()
-    component_ref = _point_compatibility_ref(point)
+    compatibility_ref = _point_compatibility_ref(point)
     subassembly_ref = _point_subassembly_ref(point)
     if role:
         rows.append(f"role={role}")
     if subassembly_ref:
         rows.append(f"subassembly_ref={subassembly_ref}")
-    if component_ref:
-        rows.append(f"compatibility_ref={component_ref}")
+    if compatibility_ref:
+        rows.append(f"compatibility_ref={compatibility_ref}")
     return ";".join(rows)
 
 
@@ -906,7 +906,7 @@ def _point_compatibility_ref(point) -> str:
     subassembly_ref = _point_subassembly_ref(point)
     if subassembly_ref:
         return ""
-    return str(getattr(point, "component_ref", "") or "").strip()
+    return str(getattr(point, "compatibility_ref", "") or "").strip()
 
 
 def _interpolated_subassembly_ref(first_point, second_point) -> str:
@@ -917,7 +917,7 @@ def _interpolated_compatibility_ref(first_point, second_point) -> str:
     subassembly_ref = _interpolated_subassembly_ref(first_point, second_point)
     if subassembly_ref:
         return ""
-    return _interpolated_point_context(first_point, second_point, "component_ref")
+    return _interpolated_point_context(first_point, second_point, "compatibility_ref")
 
 
 def _surface_request_source_refs(
@@ -1159,7 +1159,7 @@ def _interpolate_side_slope_point_at_param(row: list[_SectionPointLite], param: 
         z=_lerp(start.z, end.z, ratio),
         lateral_offset=_lerp(start.lateral_offset, end.lateral_offset, ratio),
         point_role=role,
-        component_ref=_interpolated_compatibility_ref(start, end),
+        compatibility_ref=_interpolated_compatibility_ref(start, end),
         subassembly_ref=_interpolated_subassembly_ref(start, end),
     )
 
@@ -1280,7 +1280,7 @@ def _side_slope_points_for_section(
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=offset,
                 point_role=role,
-                component_ref=_point_compatibility_ref(point),
+                compatibility_ref=_point_compatibility_ref(point),
                 subassembly_ref=_point_subassembly_ref(point),
             )
         )
@@ -1557,7 +1557,7 @@ def _interpolate_between_side_slope_points(
         z=float(start.z) + (float(end.z) - float(start.z)) * t,
         lateral_offset=float(start.lateral_offset) + (float(end.lateral_offset) - float(start.lateral_offset)) * t,
         point_role=role,
-        component_ref=_interpolated_compatibility_ref(start, end),
+        compatibility_ref=_interpolated_compatibility_ref(start, end),
         subassembly_ref=_interpolated_subassembly_ref(start, end),
     )
 
@@ -1570,7 +1570,7 @@ def _as_daylight_marker(point: _SectionPointLite) -> _SectionPointLite:
         z=point.z,
         lateral_offset=point.lateral_offset,
         point_role="daylight_marker",
-        component_ref=_point_compatibility_ref(point),
+        compatibility_ref=_point_compatibility_ref(point),
         subassembly_ref=_point_subassembly_ref(point),
     )
 
@@ -1604,7 +1604,7 @@ def _terrain_oriented_side_slope_point(
         z=oriented_z,
         lateral_offset=point.lateral_offset,
         point_role=point.point_role,
-        component_ref=_point_compatibility_ref(point),
+        compatibility_ref=_point_compatibility_ref(point),
         subassembly_ref=_point_subassembly_ref(point),
     )
 
@@ -1877,7 +1877,6 @@ def _interpolate_transition_applied_section(
         daylight_left_slope=float(getattr(section, "daylight_left_slope", 0.0) or 0.0),
         daylight_right_slope=float(getattr(section, "daylight_right_slope", 0.0) or 0.0),
         point_rows=point_rows,
-        component_rows=_compatibility_component_rows(section),
         subassembly_rows=list(getattr(section, "subassembly_rows", []) or []),
         quantity_rows=[],
         active_intersection_id=str(getattr(section, "active_intersection_id", "") or ""),
@@ -2063,7 +2062,6 @@ def _interpolate_applied_section(first, second, ratio: float, *, sequence_index:
         daylight_left_slope=_lerp(getattr(first, "daylight_left_slope", 0.0), getattr(second, "daylight_left_slope", 0.0), t),
         daylight_right_slope=_lerp(getattr(first, "daylight_right_slope", 0.0), getattr(second, "daylight_right_slope", 0.0), t),
         point_rows=_interpolate_applied_section_points(first, second, t),
-        component_rows=_compatibility_component_rows(first),
         subassembly_rows=list(getattr(first, "subassembly_rows", []) or []),
         quantity_rows=[],
         active_structure_ids=list(getattr(first, "active_structure_ids", []) or []),
@@ -2071,14 +2069,6 @@ def _interpolate_applied_section(first, second, ratio: float, *, sequence_index:
         active_structure_influence_zone_ids=list(getattr(first, "active_structure_influence_zone_ids", []) or []),
         structure_diagnostic_rows=list(getattr(first, "structure_diagnostic_rows", []) or []),
     )
-
-
-def _compatibility_component_rows(section) -> list[object]:
-    """Return legacy Component rows only for sections without Subassembly rows."""
-
-    if list(getattr(section, "subassembly_rows", []) or []):
-        return []
-    return list(getattr(section, "component_rows", []) or [])
 
 
 def _interpolate_applied_section_frame(first, second, ratio: float) -> AppliedSectionFrame:
@@ -2125,7 +2115,6 @@ def _interpolate_applied_section_points(first, second, ratio: float) -> list[App
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=first_role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
-                component_ref=_interpolated_compatibility_ref(first_point, second_point),
                 subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
@@ -2160,7 +2149,6 @@ def _interpolate_matching_role_points(first, second, *, role: str, ratio: float)
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
-                component_ref=_interpolated_compatibility_ref(first_point, second_point),
                 subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
@@ -2216,7 +2204,6 @@ def _interpolate_side_slope_applied_section_points(first, second, ratio: float) 
                     z=_lerp(first_point.z, second_point.z, t),
                     point_role=role,
                     lateral_offset=_lerp(first_point.lateral_offset, second_point.lateral_offset, t),
-                    component_ref=_interpolated_compatibility_ref(first_point, second_point),
                     subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 )
             )
@@ -2244,7 +2231,7 @@ def _side_slope_source_row_for_interpolation(section, *, side_label: str) -> lis
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=offset,
                 point_role=role,
-                component_ref=_point_compatibility_ref(point),
+                compatibility_ref=_point_compatibility_ref(point),
                 subassembly_ref=_point_subassembly_ref(point),
             )
         )
@@ -2530,7 +2517,7 @@ def _subassembly_points_for_surface_role(section, *, surface_role: str) -> list[
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
                 point_role=str(getattr(point, "point_code", "") or ""),
-                component_ref="",
+                compatibility_ref="",
                 subassembly_ref=_point_subassembly_ref(point),
             )
         )

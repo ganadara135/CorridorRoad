@@ -29,7 +29,6 @@ SOLID_TARGET_SCOPE_KINDS = {
     "region",
     "station_range",
     "assembly_subassembly",
-    "assembly_component",
     "structure",
     "drainage",
     "intersection",
@@ -65,7 +64,6 @@ class SolidTargetRow:
     station_end: float = 0.0
     region_ref: str = ""
     assembly_ref: str = ""
-    component_ref: str = ""
     subassembly_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""

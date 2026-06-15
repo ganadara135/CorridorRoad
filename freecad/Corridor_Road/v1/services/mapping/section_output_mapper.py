@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ...models.output.section_output import (
-    SectionComponentRow,
     SectionGeometryRow,
     SectionOutput,
     SectionQuantityRow,
@@ -31,11 +30,10 @@ class SectionOutputMapper:
                 assembly_ref=applied_section.assembly_id,
                 region_ref=row.region_id,
                 side=str(getattr(row, "side", "") or ""),
-                notes=_subassembly_notes(row),
+                notes=_section_owner_notes(row),
             )
             for index, row in enumerate(list(getattr(applied_section, "subassembly_rows", []) or []), start=1)
         ]
-        component_rows = _compatibility_component_rows(applied_section, has_subassembly_rows=bool(subassembly_rows))
         subassembly_point_rows = [
             SectionSubassemblyPointRow(
                 point_row_id=f"{applied_section.applied_section_id}:subassembly-point:{index}",
@@ -84,7 +82,6 @@ class SectionOutputMapper:
                 quantity_kind=fragment.quantity_kind,
                 value=fragment.value,
                 unit=fragment.unit,
-                component_ref=_compatibility_component_ref(fragment),
                 subassembly_ref=str(getattr(fragment, "subassembly_ref", "") or getattr(fragment, "subassembly_id", "") or ""),
             )
             for fragment in applied_section.quantity_rows
@@ -118,12 +115,6 @@ class SectionOutputMapper:
                 value=len(subassembly_shape_rows),
             ),
             SectionSummaryRow(
-                summary_id=f"{applied_section.applied_section_id}:compatibility-component-count",
-                kind="compatibility_component_count",
-                label="Compatibility Fallback Row Count",
-                value=len(component_rows),
-            ),
-            SectionSummaryRow(
                 summary_id=f"{applied_section.applied_section_id}:quantity-count",
                 kind="quantity_count",
                 label="Quantity Count",
@@ -144,7 +135,6 @@ class SectionOutputMapper:
             source_refs=list(applied_section.source_refs),
             result_refs=[applied_section.applied_section_id],
             geometry_rows=geometry_rows,
-            component_rows=component_rows,
             subassembly_rows=subassembly_rows,
             subassembly_point_rows=subassembly_point_rows,
             subassembly_link_rows=subassembly_link_rows,
@@ -331,7 +321,9 @@ class SectionOutputMapper:
         return rows
 
 
-def _subassembly_notes(row) -> str:
+def _section_owner_notes(row) -> str:
+    """Return notes shared by active Subassembly and legacy compatibility rows."""
+
     kind = str(getattr(row, "kind", "") or "").strip().lower()
     notes = []
     if kind in {"side_slope", "bench", "daylight"}:
@@ -355,36 +347,6 @@ def _subassembly_notes(row) -> str:
     if structure_ids:
         notes.append(f"structure_refs={','.join(str(value) for value in structure_ids if str(value).strip())}")
     return "; ".join(notes)
-
-
-def _compatibility_component_ref(fragment) -> str:
-    subassembly_ref = str(getattr(fragment, "subassembly_ref", "") or getattr(fragment, "subassembly_id", "") or "").strip()
-    if subassembly_ref:
-        return ""
-    return str(getattr(fragment, "component_ref", "") or getattr(fragment, "component_id", "") or "").strip()
-
-
-def _compatibility_component_rows(
-    applied_section: AppliedSection,
-    *,
-    has_subassembly_rows: bool,
-) -> list[SectionComponentRow]:
-    """Return legacy component output rows only for sections without Subassembly rows."""
-
-    if has_subassembly_rows:
-        return []
-    return [
-        SectionComponentRow(
-            component_row_id=f"{applied_section.applied_section_id}:{index}",
-            component_id=row.component_id,
-            kind=row.kind,
-            template_ref=row.source_template_id,
-            assembly_ref=applied_section.assembly_id,
-            region_ref=row.region_id,
-            notes=_subassembly_notes(row),
-        )
-        for index, row in enumerate(applied_section.component_rows, start=1)
-    ]
 
 
 def _side_slope_geometry_rows(applied_section: AppliedSection, points: list[object]) -> list[SectionGeometryRow]:

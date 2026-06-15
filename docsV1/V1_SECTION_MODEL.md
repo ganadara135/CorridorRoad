@@ -54,7 +54,7 @@ It is a parametric engineering slice of the corridor.
 
 The section concept is split into four distinct layers:
 
-- `SectionTemplate`
+- `SubassemblySectionTemplate`
 - `AppliedSection`
 - `AppliedSectionSet`
 - `SectionView`
@@ -67,7 +67,7 @@ They must not become the durable place where users store design intent.
 
 ## 4. Core Section Layers
 
-### 4.1 SectionTemplate
+### 4.1 SubassemblySectionTemplate
 
 This is the authored section intent.
 
@@ -160,11 +160,11 @@ The viewer does not own:
 - engineering section intent
 - durable geometry overrides
 
-## 6. SectionTemplate Structure
+## 6. SubassemblySectionTemplate Structure
 
 ### 6.1 Template role
 
-`SectionTemplate` should represent reusable cross-section design intent.
+`SubassemblySectionTemplate` should represent reusable cross-section design intent.
 
 It should be reusable across:
 
@@ -174,7 +174,7 @@ It should be reusable across:
 
 ### 6.2 Template organization
 
-A `SectionTemplate` should be composed of semantic Subassemblies rather than untyped raw polylines.
+`SubassemblySectionTemplate` should be composed of semantic Subassemblies rather than untyped raw polylines.
 
 Recommended internal concepts:
 
@@ -187,8 +187,7 @@ Recommended internal concepts:
 
 Compatibility note:
 
-- older documents and compatibility rows may still use `ComponentId` and `ComponentKind`
-- new v1 source/result/output contracts should prefer `SubassemblyId`, `SubassemblyKind`, and `subassembly_ref`
+- new v1 source/result/output contracts use `SubassemblyId`, `SubassemblyKind`, and `subassembly_ref`
 
 ### 6.3 Subassembly categories
 
@@ -275,26 +274,26 @@ Example:
 
 All section parameters must resolve through the project unit policy.
 
-## 8. SectionTemplate and AssemblyModel Relationship
+## 8. SubassemblySectionTemplate and AssemblySubassemblyModel Relationship
 
 V1 should avoid splitting section logic into confusing overlapping authoring systems.
 
 Recommended rule:
 
-- `AssemblyModel` is the broader authoring subsystem
-- `SectionTemplate` is the reusable section-intent object within that subsystem
+- `AssemblySubassemblyModel` is the broader authoring subsystem
+- `SubassemblySectionTemplate` is the reusable section-intent object within that subsystem
 
-This means `AssemblyModel` may own:
+This means `AssemblySubassemblyModel` may own:
 
 - template libraries
 - subassembly definitions
 - validation rules
 - shared defaults
 
-And `SectionTemplate` may own:
+And `SubassemblySectionTemplate` may own:
 
 - a concrete section recipe
-- a list of section components
+- a list of section Subassemblies
 - template-specific defaults
 
 ## 9. Region Interaction Model
@@ -443,7 +442,7 @@ An applied section should contain:
 - local frame reference
 - evaluated centerline/elevation reference
 - semantic section points
-- component span definitions
+- Subassembly span definitions
 - pavement interpretation
 - terrain interaction results
 - drainage interaction results
@@ -457,7 +456,7 @@ Current implementation note:
 - frame fields include station, centerline `x/y`, FG `z`, tangent direction, profile grade, alignment/profile evaluation status, active alignment element, active profile segment, and active vertical curve metadata
 - `AppliedSectionService` now builds this frame from `AlignmentEvaluationService` and `ProfileEvaluationService`
 - `V1AppliedSectionSet` now persists enough frame coordinates for downstream corridor surface preview generation
-- `AppliedSectionService` now emits first-slice `AppliedSectionPoint` rows for FG and subgrade surface points from enabled Assembly components
+- `AppliedSectionService` emits first-slice `AppliedSectionPoint` rows for FG and subgrade surface points from enabled Assembly Subassemblies
 - `V1AppliedSectionSet` persists those point rows so Corridor Build can rebuild multi-point surface TINs without re-reading UI state
 - `SectionOutputMapper` exposes frame values through `SectionSummaryRow` entries so viewers and downstream outputs can inspect the same station basis
 
@@ -476,20 +475,20 @@ Applied section data should be sufficient to support:
 `AppliedSection` may contribute to both surface and solid outputs, but it should not collapse them into one geometry type.
 
 - terrain-like station points and daylight edges contribute to `SurfaceModel` and TIN-family outputs
-- pavement layers, curbs, gutters, walls, structures, and drainage components contribute to later solid or component-body outputs when thickness, material, volume, or asset identity matters
+- pavement layers, curbs, gutters, walls, structures, and drainage Subassemblies contribute to later solid or Subassembly-body outputs when thickness, material, volume, or asset identity matters
 - generated wires, meshes, or solids remain derived outputs and must not become the place where section intent is edited
 
 Current implementation note:
 
-- `AppliedSectionService` resolves first-slice left/right design-surface widths from enabled Assembly components such as lanes, shoulders, medians, curbs, gutters, sidewalks, bike lanes, and green strips
-- `AppliedSectionService` resolves first-slice `subgrade_depth` from the maximum enabled Assembly component thickness for pavement-like components
-- `AppliedSectionService` resolves first-slice daylight widths and slopes from enabled `side_slope` Assembly components
+- `AppliedSectionService` resolves first-slice left/right design-surface widths from enabled Assembly Subassemblies such as lanes, shoulders, medians, curbs, gutters, sidewalks, bike lanes, and green strips
+- `AppliedSectionService` resolves first-slice `subgrade_depth` from the maximum enabled Assembly Subassembly thickness for pavement-like Subassemblies
+- `AppliedSectionService` resolves first-slice daylight widths and slopes from enabled `side_slope` Assembly Subassemblies
 - `V1AppliedSectionSet` persists those left/right surface widths with the station frame so corridor surface preview can rebuild without re-reading UI state
 - `V1AppliedSectionSet` also persists `subgrade_depth` so subgrade preview can rebuild from result data
 - `V1AppliedSectionSet` also persists slope-face width/slope policy so the daylight/tie-in preview can rebuild from result data
-- `V1AppliedSectionSet` also persists first-slice FG and subgrade point rows for component-boundary-aware corridor surface generation
-- ditch components are intentionally not folded into the finished-grade width
-- `AppliedSectionService` emits first-slice `ditch_surface` point rows from enabled ditch components so Corridor Build can create a separate drainage surface
+- `V1AppliedSectionSet` also persists first-slice FG and subgrade point rows for Subassembly-boundary-aware corridor surface generation
+- ditch Subassemblies are intentionally not folded into the finished-grade width
+- `AppliedSectionService` emits first-slice `ditch_surface` point rows from enabled ditch Subassemblies so Build Parametric can create a separate drainage surface
 - slope-face/daylight generation should treat `ditch_surface` outer points as built Assembly terminal edges, so side slopes start beyond the ditch instead of at the shoulder/FG edge
 - `AppliedSectionService` derives `ditch_surface` points from shape-specific ditch parameters when `shape` is `trapezoid`, `u`, `l`, `rectangular`, or `v`
 - `AppliedSectionService` emits warnings when supported ditch shapes are missing required parameters or use unsupported shape names
@@ -505,10 +504,10 @@ The initial v1 `Applied Sections` command builds this result from:
 - `AlignmentModel`
 - `ProfileModel`
 - generated `Stations`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 
-When multiple v1 `AssemblyModel` source objects exist, the command should pass all available Assembly sources to the evaluator.
+When multiple v1 `AssemblySubassemblyModel` source objects exist, the command should pass all available Assembly sources to the evaluator.
 
 Each station should use the Assembly matching the resolved `RegionRow.assembly_ref`.
 
@@ -527,7 +526,7 @@ The review table should expose:
 - station and evaluated frame coordinates
 - resolved region, assembly, and template ids
 - left/right surface widths
-- component count
+- Subassembly count
 - diagnostic status
 
 This makes the Alignment/Profile/Assembly/Region handoff visible before Corridor Build.
@@ -574,7 +573,7 @@ Recommended evaluation order for one station:
 8. apply drainage rules and constraints
 9. apply structure interaction rules
 10. evaluate terrain/daylight behavior
-11. finalize semantic component spans
+11. finalize semantic Subassembly spans
 12. derive quantity fragments and diagnostics
 
 This pipeline should be implemented in a reusable section-evaluation service, not inside the viewer.
@@ -585,12 +584,12 @@ Current implementation status:
 - [x] resolve profile elevation and grade through `ProfileEvaluationService`
 - [x] store the combined basis in `AppliedSection.frame`
 - [x] resolve station-specific Assembly source from Region `assembly_ref` when multiple Assembly models exist
-- [x] generate first-slice FG and subgrade `AppliedSectionPoint` rows from Assembly component widths and slopes
+- [x] generate first-slice FG and subgrade `AppliedSectionPoint` rows from Assembly Subassembly widths and slopes
 - [x] generate first-slice ditch `AppliedSectionPoint` rows as `ditch_surface` rows instead of folding ditch into FG width
-- [x] derive shape-aware ditch `ditch_surface` rows from `TemplateComponent.parameters`
+- [x] derive shape-aware ditch `ditch_surface` rows from `TemplateSubassembly.parameters`
 - [x] report first-slice diagnostics for invalid or incomplete ditch shape parameters
 - [x] persist and restore Applied Section point rows through the `V1AppliedSectionSet` result object
-- [x] show an Applied Sections review table with station frame, Region, Assembly, Template, component, ditch, slope-face, and diagnostic summaries
+- [x] show an Applied Sections review table with station frame, Region, Assembly, Template, Subassembly, ditch, slope-face, and diagnostic summaries
 - [x] show a selected Applied Section row as a 3D review preview using point rows when available
 - [ ] apply superelevation/crossfall state
 - [ ] apply full terrain/daylight terminal behavior
@@ -614,7 +613,7 @@ A plain polyline is not enough for:
 
 Each evaluated section should preserve rows such as:
 
-- component rows
+- Subassembly rows
 - pavement rows
 - terrain interaction rows
 - structure interaction rows
@@ -628,8 +627,8 @@ Each semantic row should be linkable to the geometry span or points it represent
 
 Recommended identities:
 
-- `SectionTemplateId`
-- `ComponentId`
+- `SubassemblySectionTemplateId`
+- `SubassemblyId`
 - `AppliedSectionId`
 - `RegionId`
 - `OverrideId`
@@ -637,7 +636,7 @@ Recommended identities:
 
 Traceability should allow the system to answer:
 
-- which template defined this component
+- which template defined this Subassembly
 - which region changed it
 - which override modified it
 - which structure affected it
@@ -663,7 +662,7 @@ The viewer should operate on section outputs and source mappings, not on source 
 The viewer should support:
 
 - station selection
-- component inspection
+- Subassembly inspection
 - source ownership display
 - editor handoff
 - same-context return
@@ -705,7 +704,7 @@ The section model should support validation at multiple levels.
 
 Examples:
 
-- missing component order
+- missing Subassembly order
 - invalid parameter values
 - unsupported type combinations
 
@@ -730,7 +729,7 @@ Examples:
 
 The section subsystem should eventually expose service boundaries such as:
 
-- `SectionTemplateValidationService`
+- `SubassemblySectionTemplateValidationService`
 - `SectionResolutionService`
 - `AppliedSectionService`
 - `SectionOutputMappingService`
@@ -745,7 +744,7 @@ Avoid the following:
 - storing section intent as edited result polylines
 - mixing viewer layout logic with section evaluation logic
 - treating overrides as unbounded free-form patches
-- losing component identity during evaluation
+- losing Subassembly identity during evaluation
 - reducing applied sections to unlabeled geometry too early
 
 ## 25. Follow-Up Documents

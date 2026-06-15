@@ -25,7 +25,7 @@ This plan does not make Region own bench geometry.
 
 ## 3. Core Rule
 
-Slope bench intent belongs to `AssemblyModel`.
+Slope bench intent belongs to `AssemblySubassemblyModel`.
 
 `RegionModel` decides where an Assembly applies.
 
@@ -83,7 +83,7 @@ The v0 section/profile logic resolved a side into alternating slope and bench se
 
 When repeat-to-daylight was enabled, the first bench row could repeat until the available side-slope width or daylight target was reached.
 
-The v0 viewer work also separated side-slope semantics from typical roadway components:
+The v0 viewer work also separated side-slope semantics from typical roadway Subassemblies:
 
 - `scope=typical`
 - `scope=side_slope`
@@ -97,17 +97,17 @@ Recommended side-slope labels included:
 
 ## 5. V1 Ownership Mapping
 
-### 5.1 AssemblyModel
+### 5.1 AssemblySubassemblyModel
 
-`AssemblyModel` owns reusable bench intent.
+`AssemblySubassemblyModel` owns reusable bench intent.
 
-The first v1 implementation should store bench policy on side-slope components through `TemplateComponent.parameters`.
+The v1 implementation stores bench policy on side-slope Subassemblies through `TemplateSubassembly.parameters`.
 
-Recommended side-slope component shape:
+Recommended side-slope Subassembly shape:
 
 ```json
 {
-  "component_id": "side_slope:left",
+  "subassembly_id": "side_slope:left",
   "kind": "side_slope",
   "side": "left",
   "width": 12.0,
@@ -127,7 +127,7 @@ Recommended side-slope component shape:
 
 Use side-specific rows instead of global left/right Assembly fields.
 
-This keeps v1 source rows composable and avoids adding another parallel property family outside `TemplateComponent`.
+This keeps v1 source rows composable and avoids adding another parallel property family outside `TemplateSubassembly`.
 
 ### 5.2 RegionModel
 
@@ -145,7 +145,7 @@ Recommended Region usage:
 
 `AppliedSection` should carry evaluated bench geometry as result rows.
 
-The first implementation can represent benches through component rows:
+The first implementation can represent benches through Subassembly rows:
 
 - `kind = "cut_slope"`
 - `kind = "fill_slope"`
@@ -153,7 +153,7 @@ The first implementation can represent benches through component rows:
 - `kind = "daylight"`
 - `scope = "side_slope"` in output/viewer payloads
 
-If the current result model cannot store `scope` directly, the mapper should derive it from component kind until the result contract is extended.
+If the current result model cannot store `scope` directly, the mapper should derive it from Subassembly kind until the result contract is extended.
 
 ### 5.4 Corridor Surface
 
@@ -167,19 +167,19 @@ The acceptance target is to replace that fallback with bench-aware side-slope br
 
 ## 6. Source Contract
 
-### 6.1 Component Kind
+### 6.1 Subassembly Kind
 
-Keep `side_slope` as the durable Assembly component kind.
+Keep `side_slope` as the durable Assembly Subassembly kind.
 
-Do not add `bench` as a primary Assembly component kind for the first slice.
+Do not add `bench` as a primary Assembly Subassembly kind for the first slice.
 
-Bench rows are parameters of the side-slope component.
+Bench rows are parameters of the side-slope Subassembly.
 
 This follows the v1 ownership decision and is consistent with the useful v0 lesson that mid-slope benching should stay with Assembly-like side-slope intent, not with generated geometry.
 
 ### 6.2 Parameters
 
-Recommended `TemplateComponent.parameters` keys:
+Recommended `TemplateSubassembly.parameters` keys:
 
 - `bench_mode`
 - `bench_rows`
@@ -215,7 +215,7 @@ Recommended bench row fields:
 
 `drop` and `width` are length values.
 
-`slope` and `post_slope` should use the same decimal slope convention as v1 Assembly components.
+`slope` and `post_slope` should use the same decimal slope convention as v1 Assembly Subassemblies.
 
 V0 bench import and migration helpers are outside this plan.
 
@@ -234,7 +234,7 @@ Assembly validation should warn when:
 - side-slope width is zero while bench rows are present
 - left/right side-slope signs conflict with the evaluated cut/fill direction
 
-Diagnostics should preserve the source row and component id.
+Diagnostics should preserve the source row and Subassembly id.
 
 ## 7. Evaluation Rules
 
@@ -242,7 +242,7 @@ The bench evaluator should produce a station-local side profile.
 
 Input:
 
-- side-slope component
+- side-slope Subassembly
 - side
 - station frame
 - terrain/daylight sampler if available
@@ -271,7 +271,7 @@ Recommended segment row fields:
 - `slope`
 - `region_ref`
 - `assembly_ref`
-- `component_ref`
+- `subassembly_ref`
 
 ## 8. Cut and Fill Behavior
 
@@ -317,7 +317,7 @@ Cross Section Viewer should show bench geometry as side-slope context.
 
 Recommended display:
 
-- typical roadway components retain higher label priority
+- typical roadway Subassemblies retain higher label priority
 - side-slope segments use secondary styling
 - benches show labels only when there is enough space
 - daylight marker remains visible or appears in summary when crowded
@@ -326,7 +326,7 @@ Viewer source rows should show:
 
 - `region_ref`
 - `assembly_ref`
-- `component_ref`
+- `subassembly_ref`
 - `side`
 - `bench row id` when available
 
@@ -346,7 +346,7 @@ Exchange output should carry source context:
 
 - `region_ref`
 - `assembly_ref`
-- `component_ref`
+- `subassembly_ref`
 - `structure_ref` when a structure constrains daylight
 - `drainage_ref` when ditch or drainage context affects the bench side
 
@@ -374,14 +374,14 @@ Acceptance criteria:
 Tasks:
 
 - [x] add bench parameter normalization helpers
-- [x] support `bench_rows` in `TemplateComponent.parameters`
+- [x] support `bench_rows` in `TemplateSubassembly.parameters`
 - [x] add Assembly validation diagnostics for bench rows
 - [x] add a `Bench Cut Road` or `Benched Slope Road` preset
 - [x] add focused source model tests
 
 Acceptance criteria:
 
-- [x] a side-slope component can store one or more bench rows
+- [x] a side-slope Subassembly can store one or more bench rows
 - [x] invalid bench rows produce diagnostics
 - [x] presets round-trip through the Assembly object bridge
 
@@ -397,7 +397,7 @@ Tasks:
 
 Acceptance criteria:
 
-- [x] users can assign bench rows to left and right side-slope components
+- [x] users can assign bench rows to left and right side-slope Subassemblies
 - [x] applying Assembly preserves bench parameters
 - [x] opening the editor remains non-destructive
 
@@ -406,7 +406,7 @@ Acceptance criteria:
 Tasks:
 
 - [x] add a bench profile evaluator service
-- [x] convert side-slope component parameters into station-local side-slope/bench/daylight points
+- [x] convert side-slope Subassembly parameters into station-local side-slope/bench/daylight points
 - [x] classify cut/fill where terrain context is available
 - [x] preserve fallback behavior when terrain is missing
 - [x] add result diagnostics
@@ -420,7 +420,7 @@ Acceptance criteria:
 
 Implementation note:
 
-- `AppliedSectionService` now expands side-slope `bench_rows` into evaluated `side_slope`, `bench`, and `daylight` component rows.
+- `AppliedSectionService` now expands side-slope `bench_rows` into evaluated `side_slope`, `bench`, and `daylight` Subassembly rows.
 - `AppliedSectionService` now adds `side_slope_surface`, `bench_surface`, and `daylight_marker` point rows outside the finished-grade edge.
 - When `daylight_mode = terrain` is requested without terrain/daylight sampling in this service, the evaluator uses Assembly side-slope width and emits a `bench_daylight_fallback` warning.
 - When an existing-ground TIN is supplied to the Applied Section build request, the evaluator samples along the station-local bench profile, clips the profile at terrain daylight, and emits `bench_daylight_shortened` / `bench_daylight_skipped` diagnostics when planned rows are shortened or removed.
@@ -431,18 +431,18 @@ Tasks:
 
 - [x] expose bench segments in Section output with `scope=side_slope`
 - [x] show bench labels and source rows in Cross Section Viewer
-- [x] keep typical component labels higher priority than side-slope labels
+- [x] keep typical Subassembly labels higher priority than side-slope labels
 - [x] add viewer contract tests
 
 Acceptance criteria:
 
-- [x] Cross Section Viewer distinguishes roadway components from side-slope benches
+- [x] Cross Section Viewer distinguishes roadway Subassemblies from side-slope benches
 - [x] bench source traceability is visible
 - [x] crowded sections remain readable
 
 Implementation note:
 
-- `SectionOutputMapper` now annotates `side_slope`, `bench`, and `daylight` component rows with `scope=side_slope`.
+- `SectionOutputMapper` now annotates `side_slope`, `bench`, and `daylight` Subassembly rows with `scope=side_slope`.
 - `CrossSectionDrawingMapper` now prefers evaluated `side_slope_surface`, `bench_surface`, and `daylight_marker` point rows over side-slope fallback geometry.
 - The viewer style map now colors bench rows separately from typical finished-grade rows while preserving existing FG/subgrade/ditch priority.
 
@@ -466,13 +466,13 @@ Implementation note:
 - `CorridorSurfaceGeometryService.build_daylight_surface` now prefers evaluated `side_slope_surface` and `bench_surface` point rows when every sampled station has matching bench breaklines.
 - Duplicate daylight markers at the same terminal bench point are kept in Applied Section review rows but are not emitted as duplicate mesh vertices.
 - `QuantityBuildService` now emits first-slice `slope_face_length` and `bench_surface_length` fragments from evaluated side-slope breakline points.
-- Quantity fragments now preserve `assembly_ref`, and Earthwork Review handoff rows summarize bench/slope-face length traces with Assembly, Region, and component refs.
+- Quantity fragments now preserve `assembly_ref`, and Earthwork Review handoff rows summarize bench/slope-face length traces with Assembly, Region, and Subassembly refs.
 
 ### Phase AB7: Exchange Source Traceability
 
 Tasks:
 
-- [x] add exchange source context rows for bench segment component rows
+- [x] add exchange source context rows for bench segment Subassembly rows
 - [x] add exchange source context rows for bench and slope-face quantity fragments
 - [x] expose side-slope and bench source context counts in exchange metadata
 - [x] document v0 bench import as out of scope for this phase
@@ -480,15 +480,15 @@ Tasks:
 
 Acceptance criteria:
 
-- [x] exchange payloads can identify bench source Assembly/component rows
+- [x] exchange payloads can identify bench source Assembly/Subassembly rows
 - [x] exchange payloads can identify bench and slope-face quantity fragments as side-slope context
 - [x] v0 bench import is not part of AB7
 - [x] no migration slope-unit conversion is introduced by this phase
 
 Implementation note:
 
-- `SectionOutput` component rows now preserve `assembly_ref` so evaluated bench component rows can be traced back to the active Assembly.
-- `ExchangeOutputMapper` now emits `section_side_slope_component` source context rows for `side_slope`, `bench`, and `daylight` section component rows.
+- `SectionOutput` Subassembly rows now preserve `assembly_ref` so evaluated bench Subassembly rows can be traced back to the active Assembly.
+- `ExchangeOutputMapper` now emits `section_side_slope_subassembly` source context rows for `side_slope`, `bench`, and `daylight` section Subassembly rows.
 - `ExchangeOutputMapper` now emits `side_slope_quantity_fragment` source context rows for `bench_surface_length`, `slope_face_length`, and `section_side_slope_breakline` quantity fragments.
 - Exchange package metadata now reports `side_slope_source_context_count` and `bench_source_context_count`.
 - V0 bench import and migration tests are intentionally not included.
@@ -505,7 +505,7 @@ Tasks:
 
 - [x] identify the active Structure Output / Outputs & Exchange command path that builds exchange packages
 - [x] build or reuse a v1 bench sample that produces Applied Section, Section Output, Quantity Output, and Exchange Output rows
-- [x] verify package JSON includes `source_context_rows` for bench component rows
+- [x] verify package JSON includes `source_context_rows` for bench Subassembly rows
 - [x] verify package JSON includes `side_slope_quantity_fragment` rows for bench/slope-face quantities
 - [x] verify package metadata reports `side_slope_source_context_count` and `bench_source_context_count`
 - [x] verify export-readiness diagnostics do not drop bench source context
@@ -514,7 +514,7 @@ Tasks:
 
 Acceptance criteria:
 
-- [x] a package built through the command/export path contains bench `assembly_ref`, `region_ref`, and `component_ref`
+- [x] a package built through the command/export path contains bench `assembly_ref`, `region_ref`, and `subassembly_ref`
 - [x] bench source context appears in persisted JSON package data, not only in an in-memory mapper result
 - [x] side-slope quantity fragments remain distinguishable from generic quantity fragments
 - [x] structure/IFC handoff paths preserve exchange diagnostics and do not remove bench source context rows
@@ -522,7 +522,7 @@ Acceptance criteria:
 
 Implementation note:
 
-- `AppliedSectionSet` persistence now stores and restores component rows so bench component source context is not lost when command paths rebuild from the document object.
+- `AppliedSectionSet` persistence stores and restores Subassembly rows so bench Subassembly source context is not lost when command paths rebuild from the document object.
 - `build_document_structure_output_package` now includes mapped `SectionOutput` rows with structure solid and quantity outputs in the exchange package input set.
 - Persisted exchange package JSON now reports source context counts through export info and keeps `source_context_rows` in the exported payload.
 - Structure Output panel summary text now exposes total, side-slope, and bench source context counts.

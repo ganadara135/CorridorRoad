@@ -30,7 +30,6 @@ class QuantityOutputMapper:
                 station_start=row.station_start,
                 station_end=row.station_end,
                 subassembly_ref=getattr(row, "subassembly_ref", ""),
-                component_ref=_compatibility_component_ref(row.component_ref, getattr(row, "subassembly_ref", "")),
                 assembly_ref=getattr(row, "assembly_ref", ""),
                 region_ref=row.region_ref,
                 structure_ref=row.structure_ref,
@@ -121,10 +120,6 @@ class QuantityOutputMapper:
                 station_start=float(row.station_start),
                 station_end=float(row.station_end),
                 subassembly_ref=str(getattr(row, "subassembly_ref", "") or ""),
-                component_ref=_compatibility_component_ref(
-                    str(getattr(row, "component_ref", "") or ""),
-                    str(getattr(row, "subassembly_ref", "") or ""),
-                ),
                 assembly_ref=str(getattr(row, "assembly_ref", "") or ""),
                 region_ref=str(getattr(row, "region_ref", "") or ""),
                 structure_ref=str(getattr(row, "structure_ref", "") or ""),
@@ -182,9 +177,3 @@ class QuantityOutputMapper:
             summary_rows=summary_rows,
             diagnostic_rows=list(watertight_solid_output.diagnostic_rows),
         )
-
-
-def _compatibility_component_ref(component_ref: object, subassembly_ref: object = "") -> str:
-    """Return legacy component provenance only when no Subassembly owner exists."""
-
-    return "" if str(subassembly_ref or "").strip() else str(component_ref or "").strip()

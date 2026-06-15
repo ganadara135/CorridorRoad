@@ -32,7 +32,7 @@ This plan does not cover:
 
 - editing generated TIN vertices directly
 - making Region own Assembly or Structure geometry
-- replacing `AssemblyModel`, `RegionModel`, or `DrainageModel`
+- replacing `AssemblySubassemblyModel`, `RegionModel`, or `DrainageModel`
 - full hydraulic drainage analysis
 - final drawing-sheet production
 
@@ -182,7 +182,7 @@ Interpolated values:
 - `daylight_left_slope`
 - `daylight_right_slope`
 
-Do not invent missing component rows.
+Do not invent missing Subassembly rows.
 
 Do not map ditch points to curb or sidewalk points.
 

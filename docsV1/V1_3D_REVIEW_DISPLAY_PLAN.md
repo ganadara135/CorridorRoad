@@ -126,7 +126,7 @@ It should visually connect the active viewer station to the actual 3D corridor e
 
 - section plane
 - applied section wire
-- component-colored section spans
+- Subassembly-colored section spans
 - terrain intersection markers
 - structure interaction markers
 
@@ -308,7 +308,7 @@ At minimum, 3D review displays should have access to:
 
 - stable station identity
 - geometry references or geometry rows
-- component or overlay semantics
+- Subassembly or overlay semantics
 - diagnostic links
 - ownership links when selection should support handoff
 

@@ -1,6 +1,6 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -236,8 +236,8 @@ def test_solid_profile_service_builds_lined_ditch_profiles_from_ditch_surface_an
                 AppliedSectionPoint("ditch:left-mid", station, 5.6, 9.7, "ditch_surface", 5.6),
                 AppliedSectionPoint("ditch:left-flow", station, 6.2, 9.8, "ditch_surface", 6.2),
             ],
-            component_rows=[
-                AppliedSectionComponentRow(
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
                     "ditch:left",
                     "ditch",
                     side="left",
@@ -256,7 +256,7 @@ def test_solid_profile_service_builds_lined_ditch_profiles_from_ditch_surface_an
                 target_family="lined_ditch_body",
                 scope_kind="drainage",
                 drainage_ref="lined_ditch:left",
-                component_ref="ditch:left",
+                subassembly_ref="ditch:left",
                 material_ref="concrete",
                 station_start=0.0,
                 station_end=100.0,
@@ -299,8 +299,8 @@ def test_solid_profile_service_can_use_lined_ditch_miter_join_policy() -> None:
                 AppliedSectionPoint("ditch:left-corner", station, 5.0, 10.0, "ditch_surface", 5.0),
                 AppliedSectionPoint("ditch:left-flow", station, 5.0, 9.0, "ditch_surface", 5.0),
             ],
-            component_rows=[
-                AppliedSectionComponentRow(
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
                     "ditch:left",
                     "ditch",
                     side="left",
@@ -323,7 +323,7 @@ def test_solid_profile_service_can_use_lined_ditch_miter_join_policy() -> None:
                 target_family="lined_ditch_body",
                 scope_kind="drainage",
                 drainage_ref="lined_ditch:left",
-                component_ref="ditch:left",
+                subassembly_ref="ditch:left",
                 material_ref="concrete",
                 station_start=0.0,
                 station_end=100.0,
@@ -358,8 +358,8 @@ def test_solid_profile_service_falls_back_when_lined_ditch_miter_limit_is_exceed
                 AppliedSectionPoint("ditch:left-corner", station, 5.0, 10.0, "ditch_surface", 5.0),
                 AppliedSectionPoint("ditch:left-flow", station, 5.0, 9.0, "ditch_surface", 5.0),
             ],
-            component_rows=[
-                AppliedSectionComponentRow(
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
                     "ditch:left",
                     "ditch",
                     side="left",
@@ -382,7 +382,7 @@ def test_solid_profile_service_falls_back_when_lined_ditch_miter_limit_is_exceed
                 target_family="lined_ditch_body",
                 scope_kind="drainage",
                 drainage_ref="lined_ditch:left",
-                component_ref="ditch:left",
+                subassembly_ref="ditch:left",
                 material_ref="concrete",
                 station_start=0.0,
                 station_end=100.0,

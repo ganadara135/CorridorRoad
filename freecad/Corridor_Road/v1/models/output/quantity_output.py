@@ -9,11 +9,7 @@ from .base import OutputModelBase
 
 @dataclass(frozen=True)
 class QuantityFragmentRow:
-    """Minimal quantity fragment row for quantity output.
-
-    `subassembly_ref` is the active owner reference. `component_ref` is legacy
-    compatibility provenance and should be empty for Subassembly-owned rows.
-    """
+    """Minimal quantity fragment row for quantity output."""
 
     fragment_row_id: str
     fragment_id: str
@@ -23,7 +19,6 @@ class QuantityFragmentRow:
     unit: str
     station_start: float | None = None
     station_end: float | None = None
-    component_ref: str = ""
     subassembly_ref: str = ""
     assembly_ref: str = ""
     region_ref: str = ""

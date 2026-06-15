@@ -5145,20 +5145,7 @@ def _section_structure_refs(section) -> list[str]:
         text = str(getattr(subassembly, "structure_ref", "") or "").strip()
         if text:
             refs.append(text)
-    if subassembly_rows:
-        return _unique_text_values(refs)
-    refs.extend(_compatibility_component_structure_refs(section))
     return _unique_text_values(refs)
-
-
-def _compatibility_component_structure_refs(section) -> list[str]:
-    refs: list[str] = []
-    for component in list(getattr(section, "component_rows", []) or []):
-        for value in list(getattr(component, "structure_ids", []) or []):
-            text = str(value or "").strip()
-            if text:
-                refs.append(text)
-    return refs
 
 
 def _format_structure_review_summary(applied_summary: dict[str, object]) -> str:

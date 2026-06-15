@@ -397,9 +397,9 @@ An exchange package should make it possible to trace:
 Current implementation note:
 
 - `format_payload.source_context_rows` carries normalized source context rows for structure solids, watertight solids, section side-slope Subassemblies, and quantity fragments.
-- Side-slope benches use `context_kind = "section_side_slope_subassembly"` for active Subassembly rows; `context_kind = "section_side_slope_component"` is reserved for legacy compatibility rows only.
+- Side-slope benches use `context_kind = "section_side_slope_subassembly"` for active Subassembly rows.
 - Bench source context rows should include `assembly_ref`, `region_ref`, and `subassembly_ref` when those source refs are available.
-- `compatibility_ref` is the only exported source-context field for old component provenance; `component_ref` is normalized to blank when older payloads are read.
+- `compatibility_ref` is the only explicitly named source-context compatibility field; active source ownership uses `subassembly_ref`.
 - Package metadata reports `subassembly_ref_count` and `compatibility_ref_count` so export consumers can quickly confirm whether Subassembly traceability survived packaging without exposing old component refs as active owners.
 - Package export paths should persist these rows unchanged so command-created JSON packages and downstream handoff flows can be audited against the same source context.
 

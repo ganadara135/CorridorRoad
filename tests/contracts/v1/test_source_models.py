@@ -1,6 +1,6 @@
 from freecad.Corridor_Road.v1.models.source import (
     AlignmentModel,
-    AssemblyModel,
+    AssemblySubassemblyModel,
     OverrideModel,
     ProfileModel,
     ProjectModel,
@@ -17,8 +17,8 @@ from freecad.Corridor_Road.v1.models.source.alignment_model import (
     AlignmentElement,
 )
 from freecad.Corridor_Road.v1.models.source.assembly_model import (
-    SectionTemplate,
-    TemplateComponent,
+    SubassemblySectionTemplate,
+    TemplateSubassembly,
     normalize_bench_rows,
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import (
@@ -64,16 +64,16 @@ def test_source_models_can_be_instantiated() -> None:
             )
         ],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent(component_id="lane-1", kind="lane"),
+                subassembly_rows=[
+                    TemplateSubassembly(subassembly_id="lane-1", kind="lane"),
                 ],
             )
         ],
@@ -132,7 +132,7 @@ def test_source_models_can_be_instantiated() -> None:
     assert project.project_name == "Demo"
     assert alignment.geometry_sequence[0].kind == "tangent"
     assert profile.control_rows[0].elevation == 10.0
-    assert assembly.template_rows[0].component_rows[0].kind == "lane"
+    assert assembly.template_rows[0].subassembly_rows[0].kind == "lane"
     assert region.region_rows[0].template_ref == "tmpl-1"
     assert not hasattr(region.region_rows[0], "structure_ref")
     assert not hasattr(region.region_rows[0], "structure_refs")
@@ -145,9 +145,9 @@ def test_source_models_can_be_instantiated() -> None:
     assert superelevation.superelevation_id == "sup-1"
 
 
-def test_side_slope_component_normalizes_bench_rows_in_parameters() -> None:
-    component = TemplateComponent(
-        component_id="side-slope-left",
+def test_side_slope_subassembly_normalizes_bench_rows_in_parameters() -> None:
+    subassembly = TemplateSubassembly(
+        subassembly_id="side-slope-left",
         kind="side_slope",
         side="left",
         width=12.0,
@@ -158,11 +158,11 @@ def test_side_slope_component_normalizes_bench_rows_in_parameters() -> None:
         },
     )
 
-    assert component.parameters["bench_mode"] == "rows"
-    assert component.parameters["bench_rows"] == [
+    assert subassembly.parameters["bench_mode"] == "rows"
+    assert subassembly.parameters["bench_rows"] == [
         {"drop": 3.0, "width": 1.5, "slope": -0.02, "post_slope": -0.5, "row_id": "bench:1"}
     ]
-    assert component.parameters["repeat_first_bench_to_daylight"] is True
+    assert subassembly.parameters["repeat_first_bench_to_daylight"] is True
 
 
 def test_bench_rows_can_be_normalized_from_compact_text() -> None:

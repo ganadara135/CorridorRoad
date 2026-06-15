@@ -76,7 +76,7 @@ It changes by station because of:
 
 The architectural distinction is:
 
-- `AssemblyModel` defines reusable section intent
+- `AssemblySubassemblyModel` defines reusable section intent
 - `RegionModel` assigns that intent over station ranges and attaches applicable design context layers
 - explicit override models handle narrow exceptions
 
@@ -322,7 +322,7 @@ It does not create Applied Sections, Corridor surfaces, solids, or viewer-only g
 - `policy_set_id`
 - `template_ref`
 - `assembly_ref`
-- `component_policy_rows`
+- `subassembly_policy_rows`
 - `daylight_policy`
 - `drainage_policy`
 - `structure_policy`
@@ -335,16 +335,16 @@ It does not create Applied Sections, Corridor surfaces, solids, or viewer-only g
 
 Policy sets should preserve engineering meaning rather than turning into arbitrary key-value blobs.
 
-## 13. Component Policy Rows
+## 13. Subassembly Policy Rows
 
 ### 13.1 Purpose
 
-Component policy rows describe structured changes to template behavior over a region.
+Subassembly policy rows describe structured changes to template behavior over a region.
 
 ### 13.2 Recommended fields
 
-- `component_policy_id`
-- `component_scope`
+- `subassembly_policy_id`
+- `subassembly_scope`
 - `parameter`
 - `value`
 - `unit`
@@ -354,8 +354,8 @@ Component policy rows describe structured changes to template behavior over a re
 ### 13.3 Recommended policy kinds
 
 - `parameter_override`
-- `component_enable`
-- `component_disable`
+- `subassembly_enable`
+- `subassembly_disable`
 - `side_specific_policy`
 - `transition_policy`
 
@@ -384,7 +384,7 @@ These rows are structured region policy, not free-form geometry edits.
 
 - `linear_blend`
 - `step_change`
-- `component_specific_blend`
+- `subassembly_specific_blend`
 - `structure_forced_transition`
 
 ### 14.4 Rule

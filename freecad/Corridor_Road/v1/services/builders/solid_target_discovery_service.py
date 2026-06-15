@@ -509,24 +509,18 @@ def _subassembly_target_rows(
     subassembly_targets: dict[tuple[str, str], dict[str, object]] = {}
     for section in list(getattr(applied, "sections", []) or []):
         station = float(getattr(section, "station", 0.0) or 0.0)
-        source_rows, using_subassemblies = _section_subassembly_or_compatibility_rows(section)
+        source_rows = _section_subassembly_rows(section)
         for source_row in source_rows:
             kind = str(getattr(source_row, "kind", "") or "").strip().lower()
             family = _subassembly_target_family(kind)
             if not family:
                 continue
-            subassembly_ref = ""
-            component_id = ""
-            if using_subassemblies:
-                subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
-            else:
-                component_id = str(getattr(source_row, "component_id", "") or "").strip()
-                subassembly_ref = _subassembly_ref_for_compatibility_component(section, component_id)
-            if not (subassembly_ref or component_id):
+            subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
+            if not subassembly_ref:
                 continue
             width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
             thickness = max(float(getattr(source_row, "thickness", 0.0) or 0.0), 0.0)
-            owner_ref = subassembly_ref or component_id
+            owner_ref = subassembly_ref
             key = (family, owner_ref)
             data = subassembly_targets.setdefault(
                 key,
@@ -537,7 +531,6 @@ def _subassembly_target_rows(
                     "material": str(getattr(source_row, "material", "") or ""),
                     "region_refs": [],
                     "assembly_refs": [],
-                    "compatibility_refs": [],
                     "subassembly_refs": [],
                     "invalid_dimension_stations": [],
                 },
@@ -545,7 +538,6 @@ def _subassembly_target_rows(
             data["stations"].append(station)
             data["region_refs"].append(str(getattr(source_row, "region_id", "") or getattr(section, "region_id", "") or ""))
             data["assembly_refs"].append(str(getattr(section, "assembly_id", "") or ""))
-            data["compatibility_refs"].append(component_id)
             data["subassembly_refs"].append(subassembly_ref)
             if width <= 0.0 or thickness <= 0.0:
                 data["invalid_dimension_stations"].append(station)
@@ -557,10 +549,8 @@ def _subassembly_target_rows(
     for (family, owner_ref), data in sorted(subassembly_targets.items()):
         stations = sorted(float(value) for value in list(data.get("stations", []) or []))
         station_count = len(set(round(value, 6) for value in stations))
-        compatibility_refs = _unique_refs(list(data.get("compatibility_refs", []) or []))
         subassembly_refs = _unique_refs(list(data.get("subassembly_refs", []) or []))
-        compatibility_ref = _single_ref(compatibility_refs)
-        active_ref = _single_ref(subassembly_refs) or str(owner_ref or compatibility_ref)
+        active_ref = _single_ref(subassembly_refs) or str(owner_ref or "")
         target_prefix = _subassembly_target_prefix(family)
         target_id = f"solid-target:{target_prefix}:{_safe_id(active_ref)}"
         diagnostic_refs: list[str] = []
@@ -593,16 +583,15 @@ def _subassembly_target_rows(
                 station_end=max(stations) if stations else 0.0,
                 region_ref=_single_ref(data.get("region_refs", [])),
                 assembly_ref=_single_ref(data.get("assembly_refs", [])),
-                component_ref=compatibility_ref,
                 subassembly_ref=_single_ref(subassembly_refs),
                 enabled=False,
                 material_ref=str(data.get("material", "") or ""),
                 readiness_status="available" if station_count >= 2 and not invalid_stations else "blocked",
-                source_refs=_unique_refs(source_refs + subassembly_refs + compatibility_refs),
+                source_refs=_unique_refs(source_refs + subassembly_refs),
                 diagnostic_refs=diagnostic_refs,
                 notes=(
                     f"{_subassembly_target_label(family)} target discovered from Applied Section Subassembly rows; "
-                    f"subassembly_refs={_join_refs(subassembly_refs) or '-'}; compatibility_refs={_join_refs(compatibility_refs) or '-'}; "
+                    f"subassembly_refs={_join_refs(subassembly_refs) or '-'}; "
                     f"source_kind={data.get('kind', '')}."
                 ),
             )
@@ -628,21 +617,14 @@ def _lined_ditch_target_rows(
         section_sides = _ditch_surface_sides(section)
         for side in section_sides:
             surface_stations_by_side.setdefault(side, []).append(station)
-        source_rows, using_subassemblies = _section_subassembly_or_compatibility_rows(section, kind_filter="ditch")
+        source_rows = _section_subassembly_rows(section, kind_filter="ditch")
         for source_row in source_rows:
             if str(getattr(source_row, "kind", "") or "").strip().lower() != "ditch":
                 continue
-            for side in _component_sides(source_row):
+            for side in _subassembly_sides(source_row):
                 data = ditch_data_by_side.setdefault(side, {})
-                subassembly_ref = ""
-                component_ref = ""
-                if using_subassemblies:
-                    subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
-                else:
-                    component_ref = str(getattr(source_row, "component_id", "") or "").strip()
-                    subassembly_ref = _subassembly_ref_for_compatibility_component(section, component_ref)
+                subassembly_ref = str(getattr(source_row, "subassembly_id", "") or "").strip()
                 data.setdefault("stations", []).append(station)
-                data.setdefault("compatibility_refs", []).append(component_ref)
                 data.setdefault("subassembly_refs", []).append(subassembly_ref)
                 data.setdefault("materials", []).append(str(getattr(source_row, "material", "") or ""))
                 data.setdefault("thicknesses", []).append(_ditch_lining_thickness(source_row))
@@ -676,7 +658,6 @@ def _lined_ditch_target_rows(
         if not drainage_ref:
             drainage_ref = f"lined_ditch:{side}"
         flow_route_ref = context_flow_route_refs[0] if context_flow_route_refs else flow_route_by_drainage_ref.get(drainage_ref, "")
-        compatibility_refs = _unique_refs(list(ditch_data.get("compatibility_refs", []) or []))
         subassembly_refs = _unique_refs(list(ditch_data.get("subassembly_refs", []) or []))
         materials = _unique_refs(list(ditch_data.get("materials", []) or []))
         thicknesses = [float(value) for value in list(ditch_data.get("thicknesses", []) or [])]
@@ -710,7 +691,6 @@ def _lined_ditch_target_rows(
                 scope_kind="drainage",
                 station_start=min(all_stations),
                 station_end=max(all_stations),
-                component_ref=_single_ref(compatibility_refs),
                 subassembly_ref=_single_ref(subassembly_refs),
                 drainage_ref=drainage_ref,
                 flow_route_ref=flow_route_ref,
@@ -719,7 +699,6 @@ def _lined_ditch_target_rows(
                 readiness_status="available" if has_surface and has_material and has_lining_thickness else "blocked",
                 source_refs=_unique_refs(
                     source_refs
-                    + compatibility_refs
                     + subassembly_refs
                     + [f"ditch_surface:{side}"]
                     + _drainage_owner_source_refs(drainage_model, drainage_owner)
@@ -1007,42 +986,15 @@ def _lined_ditch_target_notes(
     return notes
 
 
-def _subassembly_ref_for_compatibility_component(section, component_ref: str) -> str:
-    expected = str(component_ref or "").strip()
-    if not expected:
-        return ""
-    for row in list(getattr(section, "subassembly_rows", []) or []):
-        subassembly_id = str(getattr(row, "subassembly_id", "") or "").strip()
-        if subassembly_id == expected:
-            return subassembly_id
-    for point in list(getattr(section, "point_rows", []) or []):
-        if str(getattr(point, "component_ref", "") or "").strip() == expected:
-            subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-            if subassembly_ref:
-                return subassembly_ref
-    for point in list(getattr(section, "subassembly_point_rows", []) or []):
-        subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
-        if subassembly_ref == expected:
-            return subassembly_ref
-    return ""
-
-
-def _section_subassembly_or_compatibility_rows(section, *, kind_filter: str = "") -> tuple[list[object], bool]:
-    """Return active Subassembly rows, falling back to legacy component rows only when needed."""
+def _section_subassembly_rows(section, *, kind_filter: str = "") -> list[object]:
+    """Return active Subassembly rows."""
 
     normalized_kind = str(kind_filter or "").strip().lower()
-    subassembly_rows = [
+    return [
         row
         for row in list(getattr(section, "subassembly_rows", []) or [])
         if not normalized_kind or str(getattr(row, "kind", "") or "").strip().lower() == normalized_kind
     ]
-    if subassembly_rows:
-        return subassembly_rows, True
-    return [
-        row
-        for row in list(getattr(section, "component_rows", []) or [])
-        if not normalized_kind or str(getattr(row, "kind", "") or "").strip().lower() == normalized_kind
-    ], False
 
 
 def _drainage_owner_source_refs(drainage_model: DrainageModel | None, drainage_owner: object | None) -> list[str]:
@@ -1256,8 +1208,8 @@ def _ditch_surface_sides(section) -> set[str]:
     return sides
 
 
-def _component_sides(component) -> list[str]:
-    side = str(getattr(component, "side", "") or "center").strip().lower()
+def _subassembly_sides(subassembly) -> list[str]:
+    side = str(getattr(subassembly, "side", "") or "center").strip().lower()
     if side in {"left", "right"}:
         return [side]
     if side in {"both", "center"}:
@@ -1275,11 +1227,11 @@ def _side_from_values(*values: str) -> str:
     return ""
 
 
-def _ditch_lining_thickness(component) -> float:
-    thickness = max(float(getattr(component, "thickness", 0.0) or 0.0), 0.0)
+def _ditch_lining_thickness(subassembly) -> float:
+    thickness = max(float(getattr(subassembly, "thickness", 0.0) or 0.0), 0.0)
     if thickness > 0.0:
         return thickness
-    params = dict(getattr(component, "parameters", {}) or {})
+    params = dict(getattr(subassembly, "parameters", {}) or {})
     for key in ("lining_thickness", "wall_thickness"):
         try:
             value = max(float(params.get(key, 0.0) or 0.0), 0.0)

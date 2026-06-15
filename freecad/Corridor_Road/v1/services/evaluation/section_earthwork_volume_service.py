@@ -74,7 +74,6 @@ class SectionEarthworkVolumeService:
                         unit="m3",
                         station_start=station_start,
                         station_end=station_end,
-                        component_ref="section_earthwork_area",
                     )
                 )
 

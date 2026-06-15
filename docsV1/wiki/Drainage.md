@@ -24,7 +24,7 @@ Current drainage-related behavior appears through:
 - `V1DrainageModel` document persistence
 - side, Region ref, and Subassembly ref persistence on drainage elements
 - Subassembly ditch shapes
-- Applied Section `ditch_surface` rows with `subassembly_ref`, compatibility `component_ref`, `side`, and `drainage_ref`
+- Applied Section `ditch_surface` rows with `subassembly_ref`, `side`, and `drainage_ref`
 - Drainage Review read-only tables for source assignment and Applied Section context
 - Build Corridor drainage diagnostics
 - drainage surface preview where ditch points exist
@@ -159,7 +159,6 @@ For ditch Subassemblies, generated result rows preserve:
 
 - Subassembly Drainage refs
 - ditch surface `subassembly_ref`
-- compatibility ditch surface `component_ref` where older output paths still need it
 - ditch surface side
 - ditch surface `drainage_ref`
 
