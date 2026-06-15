@@ -214,6 +214,11 @@ def find_project(doc):
     for o in doc.Objects:
         if o.Name.startswith("CorridorRoadProject"):
             return o
+        proxy = getattr(o, "Proxy", None)
+        if proxy is not None and getattr(proxy, "Type", "") == "CorridorRoadProject":
+            return o
+        if str(getattr(o, "Label", "") or "") in {"CorridorRoad Project", "Parametric Road Project"}:
+            return o
     return None
 
 
@@ -559,29 +564,161 @@ def _find_child_folder(owner, key: str):
     return None
 
 
+def _find_document_tree_folder(doc, key: str, obj_name: str | None = None):
+    if doc is None:
+        return None
+    if obj_name:
+        obj = doc.getObject(str(obj_name))
+        if _is_group_obj(obj):
+            return obj
+    for obj in list(getattr(doc, "Objects", []) or []):
+        if not _is_group_obj(obj):
+            continue
+        if _tree_key(obj) == str(key):
+            if obj_name and _name(obj) != str(obj_name):
+                continue
+            return obj
+    return None
+
+
 def _ensure_child_folder(doc, owner, key: str, label: str, obj_name: str):
     if doc is None or owner is None:
         return None
 
-    folder = _find_child_folder(owner, key)
+    folder = doc.getObject(str(obj_name))
+    if folder is not None and not _is_group_obj(folder):
+        folder = None
+    if folder is None:
+        folder = _find_child_folder(owner, key)
+        if folder is not None and _name(folder) != str(obj_name):
+            folder = None
     if folder is None:
         # Label fallback for compatibility with manually created folders.
         for ch in _group_get(owner):
-            if _is_group_obj(ch) and not _tree_key(ch) and _label(ch) == str(label):
+            if _is_group_obj(ch) and not _tree_key(ch) and _label(ch) == str(label) and _name(ch) == str(obj_name):
                 folder = ch
                 break
     if folder is None:
+        folder = _find_document_tree_folder(doc, key, obj_name)
+    if folder is None:
         folder = doc.addObject("App::DocumentObjectGroup", str(obj_name))
-        folder.Label = str(label)
-    else:
-        _update_folder_label(folder, key, label)
 
     _ensure_folder_meta(folder, key)
+    _update_folder_label(folder, key, label, force=True)
     _group_add(owner, folder)
     return folder
 
 
-def _update_folder_label(folder, key: str, label: str) -> None:
+def _enforce_project_tree_folder_parents(obj_project, tree: dict) -> None:
+    """Keep each fixed project-tree folder under its declared parent only."""
+
+    if obj_project is None:
+        return
+    root_parent_by_key = {key: obj_project for key, _label, _obj_name in V1_ROOT_TREE_DEFS}
+    subtree_parent_by_key = {key: parent_key for parent_key, key, _label, _obj_name in V1_SUBTREE_DEFS}
+    all_owners = [obj_project] + _iter_tree_folders(obj_project)
+    for key, folder in list(tree.items()):
+        if folder is None:
+            continue
+        expected_parent = root_parent_by_key.get(key)
+        if expected_parent is None:
+            expected_parent_key = subtree_parent_by_key.get(key)
+            expected_parent = tree.get(expected_parent_key, None)
+        if expected_parent is None:
+            continue
+        for owner in list(all_owners):
+            if owner is None or owner == folder or owner == expected_parent:
+                continue
+            _group_remove(owner, folder)
+        _group_add(expected_parent, folder)
+
+
+def _dedupe_project_tree_folders(obj_project, tree: dict) -> None:
+    """Merge duplicate fixed tree folders left by older tree definitions."""
+
+    if obj_project is None:
+        return
+    doc = getattr(obj_project, "Document", None)
+    if doc is None:
+        return
+    known_keys = {
+        key for key, _label, _obj_name in V1_ROOT_TREE_DEFS
+    } | {
+        key for _parent_key, key, _label, _obj_name in V1_SUBTREE_DEFS
+    }
+    subtree_parent_by_key = {key: parent_key for parent_key, key, _label, _obj_name in V1_SUBTREE_DEFS}
+    owners = [obj_project] + _iter_tree_folders(obj_project)
+    for folder in list(getattr(doc, "Objects", []) or []):
+        key = _tree_key(folder)
+        inferred_key = ""
+        if not key and _looks_like_intersections_tree_folder(folder):
+            inferred_key = V1_TREE_INTERSECTIONS
+        if key == "v1_build_parametric_intersections":
+            key = V1_TREE_INTERSECTIONS
+        folder_key = key or inferred_key
+        if not folder_key or folder_key not in known_keys:
+            continue
+        canonical = tree.get(folder_key, None)
+        if canonical is None or folder == canonical:
+            continue
+        _merge_duplicate_tree_folder_payload(folder, canonical, tree, known_keys)
+        for owner in owners:
+            if owner is None or owner == folder:
+                continue
+            _group_remove(owner, folder)
+        expected_parent_key = subtree_parent_by_key.get(folder_key, "")
+        expected_parent = tree.get(expected_parent_key, obj_project)
+        if expected_parent is not None and canonical is not None:
+            _group_add(expected_parent, canonical)
+        if not _group_get(folder):
+            try:
+                doc.removeObject(_name(folder))
+            except Exception:
+                pass
+
+
+def _merge_duplicate_tree_folder_payload(folder, canonical, tree: dict, known_keys: set[str]) -> None:
+    """Move duplicate tree-folder payload into canonical destinations."""
+
+    if folder is None or canonical is None:
+        return
+    doc = getattr(folder, "Document", None)
+    for child in list(_group_get(folder)):
+        child_key = _tree_key(child)
+        child_target = tree.get(child_key, None) if child_key in known_keys else None
+        if child_target is None and _looks_like_intersections_tree_folder(child):
+            child_target = tree.get(V1_TREE_INTERSECTIONS, None)
+            if _is_group_obj(child):
+                _merge_duplicate_tree_folder_payload(child, child_target, tree, known_keys)
+        if child_target is None and _is_v1_intersection_build_parametric_output(child):
+            child_target = tree.get(V1_TREE_INTERSECTIONS, None)
+        if child_target is None or child_target == folder:
+            child_target = canonical
+        if child != child_target:
+            _group_add(child_target, child)
+        _group_remove(folder, child)
+        if _is_group_obj(child) and child_target is not None and child != child_target and not _group_get(child):
+            _group_remove(child_target, child)
+            try:
+                if doc is not None:
+                    doc.removeObject(_name(child))
+            except Exception:
+                pass
+
+
+def _looks_like_intersections_tree_folder(folder) -> bool:
+    if not _is_group_obj(folder):
+        return False
+    return bool(
+        re.match(r"^Intersections\d*$", _label(folder))
+        or re.match(r"^Intersections\d*$", _name(folder))
+        or _label(folder) == "Intersection Sources"
+        or _name(folder) == "CRV1_Intersections"
+        or _name(folder) == "CRV1_Build_Parametric_Intersections"
+    )
+
+
+def _update_folder_label(folder, key: str, label: str, *, force: bool = False) -> None:
     if folder is None:
         return
     desired = str(label)
@@ -589,7 +726,7 @@ def _update_folder_label(folder, key: str, label: str) -> None:
     if current == desired:
         return
     legacy_labels = V1_LEGACY_TREE_LABELS.get(str(key), set())
-    if current and current not in legacy_labels:
+    if (not force) and current and current not in legacy_labels:
         return
     try:
         folder.Label = desired
@@ -775,6 +912,8 @@ def ensure_project_tree(obj_project, include_references: bool = False):
         parent = out.get(parent_key, None)
         if parent is not None:
             out[key] = _ensure_child_folder(doc, parent, key, label, obj_name)
+    _enforce_project_tree_folder_parents(obj_project, out)
+    _dedupe_project_tree_folders(obj_project, out)
     for parent_key in dict.fromkeys(parent_key for parent_key, _key, _label, _obj_name in V1_SUBTREE_DEFS):
         parent = out.get(parent_key, None)
         if parent is not None:
@@ -1193,6 +1332,76 @@ def _is_v1_intersection(child):
     )
 
 
+def _is_v1_intersection_build_parametric_output(child):
+    """Return True for intersection review/preview objects generated by Build Parametric."""
+
+    if child is None:
+        return False
+    record_kind = str(getattr(child, "CRRecordKind", "") or "")
+    if record_kind in {
+        "v1_intersection_review_overlay",
+        "v1_intersection_edge_network_preview",
+        "v1_corridor_intersection_tie_in_edge_preview",
+        "v1_corridor_intersection_boundary_segment_preview",
+        "v1_corridor_intersection_exclusion_zone_preview",
+        "v1_corridor_intersection_slope_face_loop_preview",
+        "v1_corridor_intersection_slope_face_surface_preview",
+        "v1_corridor_intersection_slope_face_boundary_preview",
+        "v1_intersection_contract_review_highlight",
+    }:
+        return True
+    if record_kind in {"v1_corridor_surface_preview", "v1_corridor_surface_preview_diagnostic"}:
+        role = str(getattr(child, "SurfaceRole", "") or getattr(child, "Role", "") or "").lower()
+        surface_kind = str(getattr(child, "SurfaceKind", "") or "").lower()
+        if role == "intersection" or surface_kind == "intersection_surface":
+            return True
+    if _is_type(
+        child,
+        proxy_types=(
+            "V1IntersectionEdgeNetworkPreview",
+            "V1CorridorIntersectionSurfacePreview",
+            "V1CorridorIntersectionTieInEdgePreview",
+            "V1CorridorIntersectionBoundarySegmentPreview",
+            "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceLoopPreview",
+            "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "V1CorridorIntersectionSlopeFaceBoundaryPreview",
+        ),
+        name_prefixes=(
+            "V1IntersectionEdgeNetworkPreview",
+            "V1CorridorIntersectionSurfacePreview",
+            "V1CorridorIntersectionTieInEdgePreview",
+            "V1CorridorIntersectionBoundarySegmentPreview",
+            "V1CorridorIntersectionExclusionZonePreview",
+            "V1CorridorIntersectionSlopeFaceLoopPreview",
+            "V1CorridorIntersectionSlopeFaceSurfacePreview",
+            "V1CorridorIntersectionSlopeFaceBoundaryPreview",
+        ),
+    ):
+        return True
+    label = _label(child)
+    if label in {
+        "Intersection Edge Network Preview",
+        "Intersection Tie-in Edges",
+        "Intersection Boundary Segments",
+        "Intersection Exclusion Zone",
+        "Intersection Slope Face Loops",
+        "Intersection Slope Face Surface",
+        "Intersection Slope Face Boundary",
+    }:
+        return True
+    # Starter-source helper objects are created from the Intersections panel and
+    # should stay grouped with the generated intersection workflow artifacts.
+    if label.startswith("Intersection ") and (
+        label.endswith(" FG Profile")
+        or label.endswith(" Stations")
+        or label.endswith(" Regions")
+        or label in {"Intersection Main Road", "Intersection Side Road"}
+    ):
+        return True
+    return False
+
+
 def _is_v1_drainage(child):
     return _is_type(
         child,
@@ -1303,6 +1512,8 @@ def resolve_v1_target_container(prj, child):
 
     tree = ensure_project_tree(prj, include_references=False)
     record_kind = str(getattr(child, "CRRecordKind", "") or "")
+    if _is_v1_intersection_build_parametric_output(child):
+        return tree.get(V1_TREE_INTERSECTIONS, None)
     if record_kind == "tin_source_csv":
         return tree.get(V1_TREE_SURVEY_POINTS, None)
     if record_kind == "tin_surface_source":
@@ -1328,6 +1539,10 @@ def resolve_v1_target_container(prj, child):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
     if record_kind in {"v1_centerline3d_review", "v1_centerline3d_station_markers"}:
         return tree.get(V1_TREE_CENTERLINE3D, None)
+    if record_kind == "v1_intersection_model":
+        return tree.get(V1_TREE_INTERSECTIONS, None)
+    if record_kind == "v1_assembly_subassembly_model":
+        return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_structure_show_preview":
@@ -1336,9 +1551,26 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_STRUCTURES, None)
     if record_kind == "v1_structure_connection_point_preview":
         return tree.get(V1_TREE_STRUCTURES, None)
-    if record_kind in {"v1_applied_section_show_preview", "v1_applied_section_station_marker"}:
+    if record_kind in {
+        "v1_applied_section_show_preview",
+        "v1_applied_sections_show_all_preview",
+        "v1_applied_section_station_marker",
+    }:
         return tree.get(V1_TREE_APPLIED_SECTIONS, None)
-    if record_kind == "v1_watertight_solid_output":
+    if record_kind in {
+        "v1_watertight_solid_output",
+        "v1_watertight_trim_preview",
+        "v1_watertight_trim_application_preview",
+        "v1_watertight_trim_application_output",
+        "v1_watertight_trim_closure_surface_preview",
+        "v1_watertight_trim_closure_surface_output",
+        "v1_watertight_trim_closure_cell_output",
+        "v1_watertight_trim_shell_candidate_output",
+        "v1_watertight_trim_fuse_candidate_output",
+        "v1_watertight_trim_shell_reconstruction_output",
+        "v1_watertight_trim_solid_reconstruction_output",
+        "v1_intersection_trim_boundary_result",
+    }:
         return tree.get(V1_TREE_WATERTIGHT_SOLIDS, None)
     if record_kind == "v1_simulation_qa_output":
         return tree.get(V1_TREE_REPORTS, None)
@@ -1349,6 +1581,9 @@ def resolve_v1_target_container(prj, child):
     if record_kind == "v1_quantity_model":
         return tree.get(V1_TREE_QUANTITIES, None)
     if record_kind == "v1_drainage_model":
+        drainage_id = str(getattr(child, "DrainageModelId", "") or "").lower()
+        if drainage_id.startswith("drainage:intersection-preset-"):
+            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_DRAINAGE, None)
     if record_kind == "v1_drainage_pipeline_candidate_preview":
         return tree.get(V1_TREE_DRAINAGE, None)
@@ -1381,6 +1616,13 @@ def resolve_v1_target_container(prj, child):
     ):
         return tree.get(V1_TREE_STATIONS, None)
     if record_kind in {"v1_superelevation_source", "v1_superelevation_review"}:
+        superelevation_id = str(getattr(child, "SuperelevationId", "") or "").lower()
+        superelevation_kind = str(getattr(child, "SuperelevationKind", "") or "").lower()
+        if (
+            superelevation_id.startswith("superelevation:intersection-preset-")
+            or superelevation_kind == "intersection_superelevation_handoff"
+        ):
+            return tree.get(V1_TREE_INTERSECTIONS, None)
         return tree.get(V1_TREE_SUPERELEVATION, None)
     if record_kind == "v1_intersection_review_overlay":
         return tree.get(V1_TREE_INTERSECTIONS, None)
@@ -1398,8 +1640,20 @@ def resolve_v1_target_container(prj, child):
         return tree.get(V1_TREE_DRAINAGE, None)
     if _is_type(
         child,
-        proxy_types=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
-        name_prefixes=("V1AssemblyModel", "AssemblyModel", "AssemblyTemplate", "TypicalSectionTemplate"),
+        proxy_types=(
+            "V1AssemblySubassemblyModel",
+            "V1AssemblyModel",
+            "AssemblyModel",
+            "AssemblyTemplate",
+            "TypicalSectionTemplate",
+        ),
+        name_prefixes=(
+            "V1AssemblySubassemblyModel",
+            "V1AssemblyModel",
+            "AssemblyModel",
+            "AssemblyTemplate",
+            "TypicalSectionTemplate",
+        ),
     ):
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if _is_type(
@@ -1485,6 +1739,10 @@ def route_to_v1_tree(prj, child):
     folder = resolve_v1_target_container(prj, child)
     if folder is None:
         return None
+    try:
+        _detach_from_other_tree_folders(prj, child, keep_owner=folder)
+    except Exception:
+        pass
     _group_add(folder, child)
     return folder
 

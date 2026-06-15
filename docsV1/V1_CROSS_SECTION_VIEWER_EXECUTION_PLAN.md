@@ -71,7 +71,7 @@ The first promoted v1 viewer should include:
 
 - current station section display
 - station label and full station navigation
-- component table
+- Subassembly table
 - quantity summary table
 - viewer context summary
 - source row summary
@@ -85,7 +85,7 @@ The current station section display should be a drawing-style 2D section preview
 It should preserve the visual expectations of the v0 `Cross Section Viewer`:
 
 - section shape is drawn as a review drawing, not only as rows or a tiny plot
-- component labels and values appear on or near section spans
+- Subassembly labels and values appear on or near section spans
 - dimensions appear in a lower drawing band
 - ditch, slope, subgrade, drainage, FG, and EG have distinct visual treatment
 - labels and dimension text should use placement rules rather than ad-hoc fixed positions
@@ -129,7 +129,7 @@ Completion signal:
 
 Required outcomes:
 
-- selected component resolves to source owner
+- selected Subassembly resolves to source owner
 - viewer shows source fields clearly
 - viewer can distinguish template, region, structure, and section-set context
 
@@ -142,7 +142,7 @@ Completion signal:
 Required outcomes:
 
 - open relevant existing v0 source editor from v1 viewer
-- pass station and component context
+- pass station and Subassembly context
 - return to the same station after save/rebuild
 
 Completion signal:
@@ -155,7 +155,7 @@ Required outcomes:
 
 - terrain interaction rows visible
 - structure interaction rows visible
-- focused component highlighting
+- focused Subassembly highlighting
 - local earthwork hint attachment where available
 
 Completion signal:
@@ -215,7 +215,7 @@ The promoted v1 viewer should visibly present:
 
 - station
 - station label
-- selected component
+- selected Subassembly
 - source owner
 - current/old result state
 - available handoff targets
@@ -224,7 +224,7 @@ Recommended layout:
 
 - top summary
 - section canvas or section summary block
-- component table
+- Subassembly table
 - source inspector panel
 - context/diagnostic panel
 - handoff button row
@@ -261,7 +261,7 @@ The promoted viewer should be validated through:
 - contract tests for preview payload and context merge
 - handoff tests
 - same-context return tests
-- focused component tests
+- focused Subassembly tests
 - smoke tests for opening the v1 viewer command
 - manual review of at least one real corridor document
 
@@ -274,7 +274,7 @@ Current implementation notes:
 - [x] Cross Section drawing payload can be generated from v1 `AppliedSectionSet`
 - [x] Cross Section drawing payload includes label/value rows and lower-band dimension rows
 - [x] Cross Section Viewer renders v1 `CrossSectionDrawingPayload` in the 2D canvas
-- [x] Cross Section Viewer shows component labels and values directly in the 2D drawing
+- [x] Cross Section Viewer shows Subassembly labels and values directly in the 2D drawing
 - [x] Cross Section Viewer shows lower-band dimension annotations from v1 drawing payload rows
 - [x] Cross Section Viewer shows ditch, slope-face, subgrade, drainage, FG, and EG with distinct drawing styles
 - [x] Cross Section Viewer shows explicit source-owner rows for `Section Set`, `Template`, `Region`, and `Structure`
@@ -286,7 +286,7 @@ Current implementation notes:
 Minimum manual scenarios:
 
 1. open viewer at a selected station
-2. inspect component ownership
+2. inspect Subassembly ownership
 3. open `Typical Section`
 4. save and return
 5. verify same station context

@@ -378,7 +378,7 @@ It may store:
 - active interaction rule ids
 - active influence zone ids
 - clearance diagnostics
-- structure-specific component or point roles where relevant
+- structure-specific Subassembly or point roles where relevant
 
 It should not store editable structure geometry.
 

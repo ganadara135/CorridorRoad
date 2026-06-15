@@ -11,9 +11,9 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
 
 from ..models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionQuantityFragment,
+    AppliedSectionSubassemblyRow,
 )
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ..models.result.corridor_model import CorridorModel, CorridorSamplingPolicy
@@ -431,7 +431,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
-                component_rows=_demo_section_components(),
+                subassembly_rows=_demo_section_subassemblies(),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:0",
@@ -467,7 +467,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
-                component_rows=_demo_section_components(),
+                subassembly_rows=_demo_section_subassemblies(),
                 quantity_rows=[
                     AppliedSectionQuantityFragment(
                         fragment_id="fragment:cut:20",
@@ -503,7 +503,7 @@ def build_demo_earthwork_report(
                     alignment_status="ok",
                     profile_status="ok",
                 ),
-                component_rows=_demo_section_components(),
+                subassembly_rows=_demo_section_subassemblies(),
             ),
         ],
     )
@@ -568,18 +568,18 @@ def build_demo_earthwork_report(
     }
 
 
-def _demo_section_components() -> list[AppliedSectionComponentRow]:
-    """Return a practical section template for demo/recovery previews."""
+def _demo_section_subassemblies() -> list[AppliedSectionSubassemblyRow]:
+    """Return a practical Subassembly section template for demo/recovery previews."""
 
     return [
-        AppliedSectionComponentRow("lane:left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
-        AppliedSectionComponentRow("lane:right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
-        AppliedSectionComponentRow("shoulder:left", "shoulder", side="left", width=1.5, slope=-0.04, thickness=0.20),
-        AppliedSectionComponentRow("shoulder:right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
-        AppliedSectionComponentRow("ditch:left", "ditch", side="left", width=2.4, slope=-0.08),
-        AppliedSectionComponentRow("ditch:right", "ditch", side="right", width=2.4, slope=-0.08),
-        AppliedSectionComponentRow("daylight:left", "side_slope", side="left", width=8.0, slope=0.33),
-        AppliedSectionComponentRow("daylight:right", "side_slope", side="right", width=8.0, slope=0.33),
+        AppliedSectionSubassemblyRow("lane:left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+        AppliedSectionSubassemblyRow("lane:right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+        AppliedSectionSubassemblyRow("shoulder:left", "shoulder", side="left", width=1.5, slope=-0.04, thickness=0.20),
+        AppliedSectionSubassemblyRow("shoulder:right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+        AppliedSectionSubassemblyRow("ditch:left", "ditch", side="left", width=2.4, slope=-0.08),
+        AppliedSectionSubassemblyRow("ditch:right", "ditch", side="right", width=2.4, slope=-0.08),
+        AppliedSectionSubassemblyRow("daylight:left", "side_slope", side="left", width=8.0, slope=0.33),
+        AppliedSectionSubassemblyRow("daylight:right", "side_slope", side="right", width=8.0, slope=0.33),
     ]
 
 

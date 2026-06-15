@@ -19,7 +19,7 @@ class QuantityFragmentRow:
     unit: str
     station_start: float | None = None
     station_end: float | None = None
-    component_ref: str = ""
+    subassembly_ref: str = ""
     assembly_ref: str = ""
     region_ref: str = ""
     structure_ref: str = ""

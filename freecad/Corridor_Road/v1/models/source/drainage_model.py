@@ -46,7 +46,7 @@ class DrainageElementRow:
     connection_point_ref: str = ""
     side: str = ""
     region_ref: str = ""
-    assembly_component_ref: str = ""
+    subassembly_ref: str = ""
     station_start: float = 0.0
     station_end: float = 0.0
     policy_set_ref: str = ""

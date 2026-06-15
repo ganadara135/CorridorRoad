@@ -31,9 +31,9 @@ Current implementation entry points:
 - [x] v1 viewer task panel opens from command
 - [x] current station summary is shown
 - [x] station label is shown
-- [x] component rows are shown
+- [x] Subassembly rows are shown
 - [x] quantity rows are shown
-- [x] focused component summary line is supported
+- [x] focused Subassembly summary line is supported
 - [x] rename visible UI strings from `Preview` toward `Viewer` when promotion begins
 - [x] add explicit stale/current result indicator in the v1 viewer UI
 - [x] add direct open path from preferred review command without relying on existing v0 viewer bridge wording
@@ -49,7 +49,7 @@ Current implementation entry points:
   - `Region`
   - `Structure`
   - `Section Set`
-- [x] show selected component id, kind, side, and ownership in one compact panel
+- [x] show selected Subassembly id, kind, side, and ownership in one compact panel
 - [x] show unresolved ownership state explicitly when source tracing is incomplete
 - [x] add source-inspector-specific contract tests
 
@@ -59,7 +59,7 @@ Current implementation entry points:
 - [x] handoff to v1 `Region` editor exists
 - [x] handoff to v1 `Structure` editor exists
 - [x] station context is passed through handoff
-- [x] component context is passed through handoff
+- [x] Subassembly context is passed through handoff
 - [x] same-context return path exists through v1 editor commands
 - [x] show active handoff context more clearly in the v1 viewer status area
 - [x] verify structure handoff selects linked `StructureModel` consistently in real documents
@@ -69,7 +69,7 @@ Current implementation entry points:
 
 ## 6. Milestone D: Review-Quality Improvements
 
-- [x] focused component highlighting exists
+- [x] focused Subassembly highlighting exists
 - [x] structure summary can be shown in viewer context
 - [x] render terrain interaction rows in the main viewer UI
 - [x] render structure interaction rows in the main viewer UI
@@ -87,9 +87,9 @@ Current implementation entry points:
 - [x] generate subgrade drawing line from station-local applied section data
 - [x] generate ditch/drainage drawing spans from `ditch_surface` points
 - [x] generate slope-face drawing spans from daylight policy/result rows
-- [x] generate component label rows from v1 component or point roles
-- [x] generate value rows for component dimensions when available
-- [x] generate lower-band dimension rows for total width and component widths
+- [x] generate Subassembly label rows from v1 Subassembly or point roles
+- [x] generate value rows for Subassembly dimensions when available
+- [x] generate lower-band dimension rows for total width and Subassembly widths
 - [x] port v0-style label collision/placement rules into v1 drawing payload rendering
 - [x] render the 2D drawing in a dominant canvas area
 - [x] keep `Show dimensions` behavior
@@ -111,7 +111,7 @@ Current implementation entry points:
 
 - [x] contract test for basic section preview
 - [x] contract test for extra-context merge
-- [x] contract test for focused component summary
+- [x] contract test for focused Subassembly summary
 - [x] add contract test for stale/current status payload
 - [x] add contract test for source-inspector ownership fields
 - [ ] add contract test for terrain/structure/diagnostic rows rendering

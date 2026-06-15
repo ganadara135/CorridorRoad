@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from .base import SourceModelBase
 
 
-ASSEMBLY_COMPONENT_KINDS = (
+ASSEMBLY_SUBASSEMBLY_KINDS = (
     "lane",
     "shoulder",
     "median",
@@ -24,9 +24,11 @@ ASSEMBLY_COMPONENT_KINDS = (
     "pavement_layer",
     "subbase",
     "structure_interface",
+    "intersection_transition",
+    "curb_return_transition",
 )
 
-ASSEMBLY_COMPONENT_SIDES = ("left", "right", "center", "both")
+ASSEMBLY_SUBASSEMBLY_SIDES = ("left", "right", "center", "both")
 
 ASSEMBLY_BENCH_MODES = ("none", "single", "rows")
 ASSEMBLY_DAYLIGHT_MODES = ("off", "terrain", "fixed_width")
@@ -44,13 +46,35 @@ ASSEMBLY_BENCH_PARAMETER_KEYS = (
 )
 
 
-@dataclass(frozen=True)
-class TemplateComponent:
-    """Minimal reusable section component definition."""
+@dataclass
+class AssemblySourceIdentity(SourceModelBase):
+    """Minimal active assembly identity used for section build routing.
 
-    component_id: str
+    Build Sections resolves actual geometry from AssemblySubassemblyModel. This
+    identity keeps Region and template routing separate from Subassembly
+    geometry ownership.
+    """
+
+    assembly_id: str = ""
+    alignment_id: str = ""
+    active_template_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.assembly_id = str(self.assembly_id or "").strip()
+        self.alignment_id = str(self.alignment_id or "").strip()
+        self.active_template_id = str(self.active_template_id or "").strip()
+
+
+@dataclass(frozen=True)
+class TemplateSubassembly:
+    """Reusable v1 Subassembly definition.
+
+    This is the durable source contract for assembly composition.
+    """
+
+    subassembly_id: str
     kind: str
-    component_index: int = 0
+    subassembly_index: int = 0
     side: str = "center"
     width: float = 0.0
     slope: float = 0.0
@@ -58,51 +82,57 @@ class TemplateComponent:
     material: str = ""
     target_ref: str = ""
     parameters: dict[str, object] = field(default_factory=dict)
+    point_code_rules: tuple[str, ...] = field(default_factory=tuple)
+    link_code_rules: tuple[str, ...] = field(default_factory=tuple)
+    shape_code_rules: tuple[str, ...] = field(default_factory=tuple)
     notes: str = ""
     enabled: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "component_id", str(self.component_id or "").strip())
-        object.__setattr__(self, "kind", normalize_component_kind(self.kind))
-        object.__setattr__(self, "side", normalize_component_side(self.side))
-        object.__setattr__(self, "component_index", int(self.component_index or 0))
+        object.__setattr__(self, "subassembly_id", str(self.subassembly_id or "").strip())
+        object.__setattr__(self, "kind", normalize_subassembly_kind(self.kind))
+        object.__setattr__(self, "side", normalize_subassembly_side(self.side))
+        object.__setattr__(self, "subassembly_index", int(self.subassembly_index or 0))
         object.__setattr__(self, "width", _float(self.width))
         object.__setattr__(self, "slope", _float(self.slope))
         object.__setattr__(self, "thickness", _float(self.thickness))
         object.__setattr__(self, "material", str(self.material or "").strip())
         object.__setattr__(self, "target_ref", str(self.target_ref or "").strip())
-        object.__setattr__(self, "parameters", normalize_component_parameters(self.kind, self.parameters))
+        object.__setattr__(self, "parameters", normalize_subassembly_parameters(self.kind, self.parameters))
+        object.__setattr__(self, "point_code_rules", _string_tuple(self.point_code_rules))
+        object.__setattr__(self, "link_code_rules", _string_tuple(self.link_code_rules))
+        object.__setattr__(self, "shape_code_rules", _string_tuple(self.shape_code_rules))
         object.__setattr__(self, "notes", str(self.notes or "").strip())
 
 
 @dataclass(frozen=True)
-class SectionTemplate:
-    """Minimal section template definition."""
+class SubassemblySectionTemplate:
+    """Active v1 section template composed from TemplateSubassembly rows."""
 
     template_id: str
     template_kind: str
     template_index: int = 0
     label: str = ""
-    component_rows: list[TemplateComponent] = field(default_factory=list)
+    subassembly_rows: list[TemplateSubassembly] = field(default_factory=list)
     notes: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "template_id", str(self.template_id or "").strip())
         object.__setattr__(self, "template_kind", str(self.template_kind or "roadway").strip() or "roadway")
         object.__setattr__(self, "template_index", int(self.template_index or 0))
-        object.__setattr__(self, "label", str(self.label or self.template_id or "Assembly Template").strip())
-        object.__setattr__(self, "component_rows", list(self.component_rows or []))
+        object.__setattr__(self, "label", str(self.label or self.template_id or "Subassembly Template").strip())
+        object.__setattr__(self, "subassembly_rows", list(self.subassembly_rows or []))
         object.__setattr__(self, "notes", str(self.notes or "").strip())
 
 
 @dataclass
-class AssemblyModel(SourceModelBase):
-    """Durable assembly and section-template source contract."""
+class AssemblySubassemblyModel(SourceModelBase):
+    """Durable v1 assembly source model using explicit Subassembly rows."""
 
     assembly_id: str = ""
     alignment_id: str = ""
     active_template_id: str = ""
-    template_rows: list[SectionTemplate] = field(default_factory=list)
+    template_rows: list[SubassemblySectionTemplate] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.assembly_id = str(self.assembly_id or "").strip()
@@ -114,31 +144,31 @@ class AssemblyModel(SourceModelBase):
             self.active_template_id = str(self.active_template_id or "").strip()
 
 
-def normalize_component_kind(value: object) -> str:
-    """Normalize component kind while preserving unknown future kinds as text."""
+def normalize_subassembly_kind(value: object) -> str:
+    """Normalize subassembly kind while preserving unknown future kinds."""
 
     text = str(value or "lane").strip().lower().replace(" ", "_").replace("-", "_")
     return text or "lane"
 
 
-def normalize_component_side(value: object) -> str:
-    """Normalize component side values used by Assembly editors and services."""
+def normalize_subassembly_side(value: object) -> str:
+    """Normalize subassembly side values."""
 
     text = str(value or "center").strip().lower().replace(" ", "_").replace("-", "_")
     if text in ("l", "lt"):
         return "left"
     if text in ("r", "rt"):
         return "right"
-    if text in ASSEMBLY_COMPONENT_SIDES:
+    if text in ASSEMBLY_SUBASSEMBLY_SIDES:
         return text
     return "center"
 
 
-def normalize_component_parameters(kind: object, parameters: dict[str, object] | None) -> dict[str, object]:
-    """Normalize source component parameters while preserving future keys."""
+def normalize_subassembly_parameters(kind: object, parameters: dict[str, object] | None) -> dict[str, object]:
+    """Normalize subassembly parameters while preserving future keys."""
 
     output = {str(key).strip(): value for key, value in dict(parameters or {}).items() if str(key).strip()}
-    if normalize_component_kind(kind) != "side_slope":
+    if normalize_subassembly_kind(kind) != "side_slope":
         return output
     bench_mode = str(output.get("bench_mode", "") or "").strip().lower().replace("-", "_")
     bench_rows = normalize_bench_rows(output.get("bench_rows", []))
@@ -180,36 +210,38 @@ def normalize_bench_rows(value: object) -> list[dict[str, object]]:
     return rows
 
 
-def assembly_bench_validation_messages(component: TemplateComponent) -> list[str]:
-    """Return warning strings for side-slope bench parameters."""
 
-    if normalize_component_kind(getattr(component, "kind", "")) != "side_slope":
+def subassembly_bench_validation_messages(subassembly: TemplateSubassembly) -> list[str]:
+    """Return warning strings for side-slope bench parameters on subassemblies."""
+
+    if normalize_subassembly_kind(getattr(subassembly, "kind", "")) != "side_slope":
         return []
-    params = dict(getattr(component, "parameters", {}) or {})
+    subassembly_id = str(getattr(subassembly, "subassembly_id", "") or "")
+    params = dict(getattr(subassembly, "parameters", {}) or {})
     messages: list[str] = []
     bench_mode = str(params.get("bench_mode", "") or "").strip().lower().replace("-", "_")
     if bench_mode and bench_mode not in ASSEMBLY_BENCH_MODES:
-        messages.append(f"side_slope component {component.component_id} has unknown bench_mode {bench_mode}.")
+        messages.append(f"side_slope subassembly {subassembly_id} has unknown bench_mode {bench_mode}.")
     raw_rows_present = "bench_rows" in params and str(params.get("bench_rows", "") or "").strip() not in {"", "[]"}
     bench_rows = normalize_bench_rows(params.get("bench_rows", []))
     if raw_rows_present and not bench_rows:
-        messages.append(f"side_slope component {component.component_id} has no valid bench_rows.")
-    if bench_rows and float(getattr(component, "width", 0.0) or 0.0) <= 0.0:
-        messages.append(f"side_slope component {component.component_id} has bench_rows but zero side-slope width.")
+        messages.append(f"side_slope subassembly {subassembly_id} has no valid bench_rows.")
+    if bench_rows and float(getattr(subassembly, "width", 0.0) or 0.0) <= 0.0:
+        messages.append(f"side_slope subassembly {subassembly_id} has bench_rows but zero side-slope width.")
     if bench_rows and _bool(params.get("repeat_first_bench_to_daylight")):
         daylight_mode = str(params.get("daylight_mode", "") or "").strip().lower()
         max_width = _float(params.get("daylight_max_width", params.get("daylight_max_search_width")), 0.0)
         if daylight_mode and daylight_mode not in ASSEMBLY_DAYLIGHT_MODES:
-            messages.append(f"side_slope component {component.component_id} has unknown daylight_mode {daylight_mode}.")
+            messages.append(f"side_slope subassembly {subassembly_id} has unknown daylight_mode {daylight_mode}.")
         if daylight_mode in {"", "none", "off"} or max_width <= 0.0:
             messages.append(
-                f"side_slope component {component.component_id} repeats bench rows to daylight without daylight mode and max width."
+                f"side_slope subassembly {subassembly_id} repeats bench rows to daylight without daylight mode and max width."
             )
     return messages
 
 
-def serialize_component_parameters(parameters: dict[str, object]) -> str:
-    """Serialize component parameters for FreeCAD string-list storage."""
+def serialize_subassembly_parameters(parameters: dict[str, object]) -> str:
+    """Serialize Subassembly parameters for FreeCAD string-list storage."""
 
     tokens: list[str] = []
     for key, value in sorted(dict(parameters or {}).items()):
@@ -224,8 +256,8 @@ def serialize_component_parameters(parameters: dict[str, object]) -> str:
     return ";".join(tokens)
 
 
-def parse_component_parameters(value: object) -> dict[str, object]:
-    """Parse component parameters stored as key=value rows."""
+def parse_subassembly_parameters(value: object) -> dict[str, object]:
+    """Parse Subassembly parameters stored as key=value rows."""
 
     output: dict[str, object] = {}
     for token in str(value or "").split(";"):
@@ -237,6 +269,20 @@ def parse_component_parameters(value: object) -> dict[str, object]:
             continue
         output[key] = _parse_parameter_value(raw.strip())
     return output
+
+
+def serialize_code_rules(values: object) -> str:
+    """Serialize point/link/shape code rules for compact FreeCAD storage."""
+
+    return ";".join(_string_tuple(values))
+
+
+def parse_code_rules(value: object) -> tuple[str, ...]:
+    """Parse point/link/shape code rules from compact storage."""
+
+    if isinstance(value, (list, tuple)):
+        return _string_tuple(value)
+    return tuple(part.strip() for part in str(value or "").split(";") if part.strip())
 
 
 def _bench_raw_rows(value: object) -> list[object]:
@@ -309,3 +355,16 @@ def _bool(value: object) -> bool:
         return value
     text = str(value or "").strip().lower()
     return text in {"1", "true", "yes", "y", "on"}
+
+
+def _string_tuple(values: object) -> tuple[str, ...]:
+    if values is None:
+        return tuple()
+    if isinstance(values, str):
+        raw_values = [part.strip() for part in values.split(";")]
+    else:
+        try:
+            raw_values = list(values)
+        except Exception:
+            raw_values = [values]
+    return tuple(str(value or "").strip() for value in raw_values if str(value or "").strip())

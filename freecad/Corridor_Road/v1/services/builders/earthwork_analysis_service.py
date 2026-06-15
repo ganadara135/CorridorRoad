@@ -334,7 +334,6 @@ class EarthworkAnalysisService:
                     unit=str(getattr(row, "unit", "m2") or "m2"),
                     station_start=station,
                     station_end=station,
-                    component_ref="section_earthwork_area",
                     assembly_ref=str(getattr(section, "assembly_id", "") or ""),
                     region_ref=str(getattr(section, "region_id", "") or ""),
                 )

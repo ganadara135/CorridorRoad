@@ -4,11 +4,12 @@ from freecad.Corridor_Road.v1.commands.cmd_view_sections import (
     build_demo_section_preview,
     format_section_preview,
     show_v1_section_preview,
+    _show_cross_section_viewer_dialog,
 )
 from freecad.Corridor_Road.v1.models.result import TINSurface
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import (
@@ -42,6 +43,7 @@ from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     build_corridor_result_review_table_rows,
     build_corridor_result_status,
     build_drainage_context_rows,
+    build_intersection_context_rows,
     build_section_geometry_table_rows,
     build_source_inspector_detail_rows,
     build_source_inspector_owner_rows,
@@ -55,6 +57,18 @@ from freecad.Corridor_Road.v1.ui.viewers.cross_section_viewer import (
     show_corridor_result_object_from_preview,
     show_station_focus_from_preview,
     station_focus_point_from_preview,
+)
+from freecad.Corridor_Road.v1.objects.obj_intersection import create_or_update_v1_intersection_model_object
+from freecad.Corridor_Road.v1.models.source.intersection_model import (
+    IntersectionArmPolicyRow,
+    IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionDrainagePolicyRow,
+    IntersectionEdgePolicyRow,
+    IntersectionGradingPolicyRow,
+    IntersectionLegRow,
+    IntersectionModel,
+    IntersectionRow,
 )
 
 
@@ -133,6 +147,25 @@ class _FakeGui:
         pass
 
 
+class _RetryControl:
+    def __init__(self) -> None:
+        self.show_count = 0
+        self.close_count = 0
+
+    def showDialog(self, _panel) -> None:
+        self.show_count += 1
+        if self.show_count == 1:
+            raise RuntimeError("stale task panel")
+
+    def closeDialog(self) -> None:
+        self.close_count += 1
+
+
+class _FakeDialogGui:
+    def __init__(self) -> None:
+        self.Control = _RetryControl()
+
+
 def _square_tin_surface() -> TINSurface:
     return TINSurface(
         schema_version=1,
@@ -179,7 +212,7 @@ def test_build_demo_section_preview_returns_section_output() -> None:
     assert preview["section_output"].section_output_id == "section:0"
     assert preview["section_output"].station == 0.0
     assert preview["result_state"]["state"] == "current"
-    assert preview["source_inspector"]["component_count"] == 8
+    assert preview["source_inspector"]["subassembly_count"] == 8
     assert preview["terrain_rows"][0]["label"] == "Terrain Source"
     assert preview["structure_rows"][0]["label"] == "Structure Summary"
     assert preview["earthwork_hint_rows"][0]["label"] == "Earthwork Window"
@@ -445,7 +478,7 @@ def test_show_v1_section_preview_merges_extra_context() -> None:
         extra_context={
             "viewer_context": {
                 "tag_summary": "Selected / Current",
-                "focused_component": {
+                "focused_subassembly": {
                     "key": "id:lane_left",
                     "id": "lane_left",
                     "label": "lane / left / typical [lane_left]",
@@ -457,8 +490,8 @@ def test_show_v1_section_preview_merges_extra_context() -> None:
     )
 
     assert preview["viewer_context"]["tag_summary"] == "Selected / Current"
-    assert preview["viewer_context"]["focused_component"]["key"] == "id:lane_left"
-    assert preview["source_inspector"]["component_id"] == "lane_left"
+    assert preview["viewer_context"]["focused_subassembly"]["key"] == "id:lane_left"
+    assert preview["source_inspector"]["subassembly_id"] == "lane_left"
     assert "lane / left / typical [lane_left]" in preview["review_marker_rows"][0]["notes"]
     assert preview["diagnostic_rows"]
 
@@ -521,9 +554,9 @@ def test_show_v1_section_preview_uses_v1_result_refs_for_source_ownership() -> N
             applied_section_id=f"section:{index}",
             station=float(station),
             region_id="region:mainline",
-            component_rows=[
-                AppliedSectionComponentRow(
-                    component_id="lane-left",
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
+                    subassembly_id="lane-left",
                     kind="lane",
                     source_template_id="template:basic-road",
                     region_id="region:mainline",
@@ -587,9 +620,9 @@ def test_show_v1_section_preview_opens_document_v1_applied_section_set_before_de
                 station=float(station),
                 template_id="template:basic-road",
                 region_id="region:mainline",
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-left",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-left",
                         kind="lane",
                         source_template_id="template:basic-road",
                         region_id="region:mainline",
@@ -648,9 +681,9 @@ def test_show_v1_section_preview_resolves_document_v1_structure_model() -> None:
                 template_id="template:basic-road",
                 region_id="region:mainline",
                 active_structure_ids=["structure:bridge-01"],
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-left",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-left",
                         kind="lane",
                         source_template_id="template:basic-road",
                         region_id="region:mainline",
@@ -740,9 +773,9 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
                     station=20.0,
                     template_id="template:basic-road",
                     region_id="region:mainline",
-                    component_rows=[
-                        AppliedSectionComponentRow(
-                            component_id="lane-left",
+                    subassembly_rows=[
+                        AppliedSectionSubassemblyRow(
+                            subassembly_id="lane-left",
                             kind="lane",
                             source_template_id="template:basic-road",
                             region_id="region:mainline",
@@ -847,13 +880,381 @@ def test_show_v1_section_preview_uses_station_context_for_domain_owned_sources()
         App.closeDocument(doc.Name)
 
 
-def test_format_section_preview_includes_focus_component_line() -> None:
+def test_cross_section_viewer_summary_shows_intersection_grading_context() -> None:
+    doc = App.newDocument("V1SectionViewerIntersectionGradingSummaryTest")
+    try:
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:intersection-context",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id="section:96:station",
+                    station=96.0,
+                    applied_section_id="section:96",
+                )
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:96",
+                    station=96.0,
+                    template_id="template:intersection-road",
+                    region_id="region:primary-intersection",
+                    active_superelevation_id="superelevation:main",
+                    superelevation_left_crossfall=-2.0,
+                    superelevation_right_crossfall=3.0,
+                    active_superelevation_transition_id="transition:runoff",
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:primary",
+                    active_intersection_leg_id="leg:primary",
+                    active_intersection_leg_role="primary_through",
+                    active_intersection_control_region_refs=["region:primary-intersection"],
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Intersection Context",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=96.0,
+            app_module=None,
+            gui_module=None,
+        )
+        panel = CrossSectionViewerTaskPanel.__new__(CrossSectionViewerTaskPanel)
+        panel.preview = preview
+
+        summary_text = panel._summary_text()
+        section_rows = panel._section_summary_rows()
+
+        assert "Intersection: intersection:t-01" in summary_text
+        assert "Control Area control-area:t-01:primary" in summary_text
+        assert "Leg leg:primary | primary_through" in summary_text
+        assert "Grading Policy grading:intersection:t-01:default" in summary_text
+        assert "Superelevation: superelevation:main" in summary_text
+        assert ["intersection_grading_policy", "Intersection Grading Policy", "grading:intersection:t-01:default", ""] in section_rows
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_cross_section_viewer_shows_intersection_contract_context_rows() -> None:
+    doc = App.newDocument("V1SectionViewerIntersectionContractContextTest")
+    try:
+        intersection_model = IntersectionModel(
+            schema_version=1,
+            project_id="project:test",
+            intersection_model_id="intersection-model:main",
+            intersection_rows=[
+                IntersectionRow(
+                    intersection_id="intersection:t-01",
+                    intersection_kind="t_intersection",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:side"],
+                    leg_rows=[
+                        IntersectionLegRow(
+                            leg_id="leg:primary",
+                            leg_role="primary_through",
+                            alignment_ref="alignment:primary",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:primary-intersection",
+                            approach_station_start=90.0,
+                            approach_station_end=110.0,
+                            arm_policy_ref="arm-policy:primary",
+                            edge_policy_refs=["edge-policy:primary:pavement", "edge-policy:primary:daylight"],
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                        IntersectionLegRow(
+                            leg_id="leg:side",
+                            leg_role="side_approach",
+                            alignment_ref="alignment:side",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:side-intersection",
+                            approach_station_start=0.0,
+                            approach_station_end=40.0,
+                            arm_policy_ref="arm-policy:side",
+                            edge_policy_refs=["edge-policy:side:pavement", "edge-policy:side:daylight"],
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                    ],
+                )
+            ],
+            control_area_rows=[
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:primary",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:primary",
+                    station_ranges=[(90.0, 110.0)],
+                    influence_ranges=[(80.0, 120.0)],
+                    control_region_refs=["region:primary-intersection"],
+                    curb_return_policy_ref="curb-return:intersection:t-01:default",
+                    grading_policy_ref="grading:intersection:t-01:default",
+                    drainage_policy_ref="drainage:intersection:t-01:default",
+                ),
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:side",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:side",
+                    station_ranges=[(0.0, 40.0)],
+                    influence_ranges=[(0.0, 50.0)],
+                    control_region_refs=["region:side-intersection"],
+                    curb_return_policy_ref="curb-return:intersection:t-01:default",
+                    grading_policy_ref="grading:intersection:t-01:default",
+                    drainage_policy_ref="drainage:intersection:t-01:default",
+                ),
+            ],
+            arm_policy_rows=[
+                IntersectionArmPolicyRow("arm-policy:primary", "intersection:t-01", "leg:primary"),
+                IntersectionArmPolicyRow("arm-policy:side", "intersection:t-01", "leg:side"),
+            ],
+            edge_policy_rows=[
+                IntersectionEdgePolicyRow("edge-policy:primary:pavement", "intersection:t-01", "leg:primary"),
+                IntersectionEdgePolicyRow(
+                    "edge-policy:primary:daylight",
+                    "intersection:t-01",
+                    "leg:primary",
+                    edge_role="daylight_hinge",
+                ),
+                IntersectionEdgePolicyRow("edge-policy:side:pavement", "intersection:t-01", "leg:side"),
+                IntersectionEdgePolicyRow(
+                    "edge-policy:side:daylight",
+                    "intersection:t-01",
+                    "leg:side",
+                    edge_role="daylight_hinge",
+                ),
+            ],
+            curb_return_policy_rows=[
+                IntersectionCurbReturnPolicyRow(
+                    "curb-return:intersection:t-01:default",
+                    "intersection:t-01",
+                    radius=12.0,
+                    approach_leg_refs=["leg:primary", "leg:side"],
+                )
+            ],
+            grading_policy_rows=[
+                IntersectionGradingPolicyRow(
+                    "grading:intersection:t-01:default",
+                    "intersection:t-01",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:side"],
+                )
+            ],
+            drainage_policy_rows=[
+                IntersectionDrainagePolicyRow(
+                    "drainage:intersection:t-01:default",
+                    "intersection:t-01",
+                    drainage_element_refs=["drainage:low-point-review"],
+                    gutter_edge_refs=["edge-policy:side:pavement"],
+                )
+            ],
+        )
+        create_or_update_v1_intersection_model_object(doc, intersection_model=intersection_model)
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:intersection-contract-context",
+            station_rows=[
+                AppliedSectionStationRow(
+                    station_row_id="section:96:station",
+                    station=96.0,
+                    applied_section_id="section:96",
+                )
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:96",
+                    alignment_id="alignment:primary",
+                    station=96.0,
+                    template_id="template:intersection-road",
+                    region_id="region:primary-intersection",
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:primary",
+                    active_intersection_leg_id="leg:primary",
+                    active_intersection_leg_role="primary_through",
+                    active_intersection_control_region_refs=["region:primary-intersection"],
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                )
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Intersection Contract Context",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=96.0,
+            app_module=None,
+            gui_module=None,
+        )
+        panel = CrossSectionViewerTaskPanel.__new__(CrossSectionViewerTaskPanel)
+        panel.preview = preview
+
+        context_rows = build_intersection_context_rows(preview)
+        families = {row[0] for row in context_rows}
+        summary_text = panel._summary_text()
+
+        assert "topology" in families
+        assert "edge_network" in families
+        assert "surface_zone" in families
+        assert "corridor_clip" in families
+        assert "drainage_hint" in families
+        assert "grading" in families
+        assert "drainage" in families
+        assert any(row[3] == "primary_through" for row in context_rows)
+        assert any(row[3] == "pavement_edge" for row in context_rows)
+        assert any(row[3] == "main_pavement" for row in context_rows)
+        assert any(row[3] == "design" for row in context_rows)
+        assert any(row[3] == "low_point_candidate" for row in context_rows)
+        assert any(row[3] == "inlet_recommendation" for row in context_rows)
+        assert "Intersection Context Rows:" in summary_text
+        assert "Intersection Contracts:" in summary_text
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_cross_section_viewer_navigation_keeps_secondary_alignment_intersection_rows() -> None:
+    doc = App.newDocument("V1SectionViewerSecondaryIntersectionNavigationTest")
+    try:
+        intersection_model = IntersectionModel(
+            schema_version=1,
+            project_id="project:test",
+            intersection_model_id="intersection-model:main",
+            intersection_rows=[
+                IntersectionRow(
+                    intersection_id="intersection:t-01",
+                    intersection_kind="t_intersection",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:secondary"],
+                    leg_rows=[
+                        IntersectionLegRow(
+                            leg_id="leg:primary",
+                            leg_role="primary_through",
+                            alignment_ref="alignment:primary",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:primary-intersection",
+                            approach_station_start=90.0,
+                            approach_station_end=110.0,
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                        IntersectionLegRow(
+                            leg_id="leg:secondary",
+                            leg_role="secondary_approach",
+                            alignment_ref="alignment:secondary",
+                            intersection_id="intersection:t-01",
+                            region_ref="region:secondary-intersection",
+                            approach_station_start=90.0,
+                            approach_station_end=110.0,
+                            grading_policy_ref="grading:intersection:t-01:default",
+                        ),
+                    ],
+                )
+            ],
+            control_area_rows=[
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:primary",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:primary",
+                    station_ranges=[(90.0, 110.0)],
+                    control_region_refs=["region:primary-intersection"],
+                    grading_policy_ref="grading:intersection:t-01:default",
+                ),
+                IntersectionControlArea(
+                    control_area_id="control-area:t-01:secondary",
+                    intersection_id="intersection:t-01",
+                    alignment_ref="alignment:secondary",
+                    station_ranges=[(90.0, 110.0)],
+                    control_region_refs=["region:secondary-intersection"],
+                    grading_policy_ref="grading:intersection:t-01:default",
+                ),
+            ],
+            grading_policy_rows=[
+                IntersectionGradingPolicyRow(
+                    "grading:intersection:t-01:default",
+                    "intersection:t-01",
+                    primary_alignment_ref="alignment:primary",
+                    secondary_alignment_refs=["alignment:secondary"],
+                )
+            ],
+        )
+        create_or_update_v1_intersection_model_object(doc, intersection_model=intersection_model)
+        applied_section_set = AppliedSectionSet(
+            schema_version=1,
+            project_id="project:test",
+            applied_section_set_id="sections:multi-alignment-intersection",
+            alignment_id="alignment:multiple",
+            station_rows=[
+                AppliedSectionStationRow("station:primary-100", 100.0, "section:primary-100"),
+                AppliedSectionStationRow("station:secondary-100", 100.0, "section:secondary-100"),
+            ],
+            sections=[
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:primary-100",
+                    alignment_id="alignment:primary",
+                    station=100.0,
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:primary",
+                    active_intersection_leg_id="leg:primary",
+                    active_intersection_leg_role="primary_through",
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                ),
+                AppliedSection(
+                    schema_version=1,
+                    project_id="project:test",
+                    applied_section_id="section:secondary-100",
+                    alignment_id="alignment:secondary",
+                    station=100.0,
+                    active_intersection_id="intersection:t-01",
+                    active_intersection_control_area_id="control-area:t-01:secondary",
+                    active_intersection_leg_id="leg:secondary",
+                    active_intersection_leg_role="secondary_approach",
+                    active_intersection_grading_policy_ref="grading:intersection:t-01:default",
+                ),
+            ],
+        )
+        create_or_update_v1_applied_section_set_object(
+            document=doc,
+            applied_section_set=applied_section_set,
+            label="Applied Sections Multi Alignment Intersection",
+        )
+
+        preview = show_v1_section_preview(
+            document=doc,
+            preferred_station=100.0,
+            preferred_applied_section_id="section:secondary-100",
+            app_module=None,
+            gui_module=None,
+        )
+
+        station_rows = list(preview.get("station_rows", []) or [])
+        assert len([row for row in station_rows if round(float(row.get("station", 0.0)), 3) == 100.0]) == 2
+        assert {row.get("alignment_id") for row in station_rows} == {"alignment:primary", "alignment:secondary"}
+        assert getattr(preview["applied_section"], "applied_section_id") == "section:secondary-100"
+        assert getattr(preview["applied_section"], "alignment_id") == "alignment:secondary"
+        context_rows = build_intersection_context_rows(preview)
+        assert context_rows
+        assert any(row[3] == "secondary_approach" for row in context_rows)
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_format_section_preview_includes_focus_subassembly_line() -> None:
     summary = format_section_preview(
         show_v1_section_preview(
             document=None,
             extra_context={
                 "viewer_context": {
-                    "focused_component": {
+                    "focused_subassembly": {
                         "key": "id:lane_left",
                         "id": "lane_left",
                         "label": "lane / left / typical [lane_left]",
@@ -865,7 +1266,18 @@ def test_format_section_preview_includes_focus_component_line() -> None:
         )
     )
 
-    assert "Focus Component: lane / left / typical [lane_left]" in summary
+    assert "Focus Subassembly: lane / left / typical [lane_left]" in summary
+
+
+def test_show_cross_section_viewer_dialog_retries_after_stale_panel(monkeypatch) -> None:
+    import freecad.Corridor_Road.v1.commands.cmd_view_sections as command_module
+
+    fake_gui = _FakeDialogGui()
+    monkeypatch.setattr(command_module, "CrossSectionViewerTaskPanel", lambda preview: object())
+
+    assert _show_cross_section_viewer_dialog(fake_gui, {"source": "test"}, app_module=None) is True
+    assert fake_gui.Control.show_count == 2
+    assert fake_gui.Control.close_count == 1
 
 
 def test_show_v1_section_preview_carries_result_state_reason() -> None:
@@ -1104,7 +1516,7 @@ def test_show_v1_section_preview_adds_section_cut_fill_area_quantities() -> None
     area_rows = [
         row
         for row in quantity_rows
-        if row.component_ref == "section_earthwork_area"
+        if row.subassembly_ref == "section_earthwork_area"
     ]
 
     assert preview["section_earthwork_area_result"].status == "ok"
@@ -1187,3 +1599,37 @@ def test_build_handoff_status_reports_missing_targets() -> None:
     assert "Source=v1_cross_section_viewer" in status["text"]
     assert "Missing=" in status["text"]
     assert status["style"] == "color: #b36b00;"
+
+
+def test_cross_section_handoff_tolerates_missing_focused_subassembly() -> None:
+    preview = show_v1_section_preview(
+        document=None,
+        extra_context={
+            "source": "v1_cross_section_viewer",
+            "viewer_context": {},
+        },
+        app_module=None,
+        gui_module=None,
+    )
+
+    rows = build_handoff_target_rows(preview)
+
+    assert rows
+    assert "Focus=" not in rows[0][3]
+
+
+def test_cross_section_review_tables_tolerate_empty_optional_rows() -> None:
+    preview = {
+        "corridor_review_rows": [None, {"result": "Design Surface", "status": "ready"}],
+        "intersection_context_rows": [None, {"family": "surface_zone", "status": "ready"}],
+    }
+
+    corridor_rows = build_corridor_result_review_table_rows(preview)
+    intersection_rows = build_intersection_context_rows(preview)
+    status = build_corridor_result_status(preview)
+
+    assert corridor_rows[0][0] == ""
+    assert corridor_rows[1][0] == "Design Surface"
+    assert intersection_rows[0][0] == ""
+    assert intersection_rows[1][0] == "surface_zone"
+    assert status["total_count"] == 2

@@ -122,7 +122,7 @@ Recommended columns:
 | Control ID | Stable row identity, displayed without prefix. |
 | STA | Station control location. |
 | Side | `left`, `right`, `both`, or `center`. |
-| Target | Target component group, such as lane, shoulder, or paved surface. |
+| Target | Target Subassembly group, such as lane, shoulder, or paved surface. |
 | Crossfall % | Desired crossfall value. |
 | Kind | `normal_crown`, `rotation_start`, `full_super`, `rotation_end`, or `reference_crossfall`. |
 | Notes | Optional explanation. |
@@ -244,17 +244,17 @@ Extend `AppliedSectionBuildRequest` and `AppliedSectionSetBuildRequest` with:
 
 - `superelevation_model: SuperelevationModel | None`
 
-### Component Resolution
+### Subassembly Resolution
 
 During Applied Section build:
 
 1. evaluate Superelevation at station
 2. resolve Assembly default slopes
-3. apply Superelevation to target components
-4. persist effective slopes in component rows
+3. apply Superelevation to target Subassemblies
+4. persist effective slopes in Applied Section crossfall fields and generated point rows
 5. preserve source provenance in parameters or dedicated fields
 
-First-slice target components:
+First-slice target Subassemblies:
 
 - `lane`
 - `shoulder`
@@ -285,8 +285,8 @@ Current implementation:
 
 - `AppliedSectionBuildRequest` and `AppliedSectionSetBuildRequest` accept `superelevation_model`.
 - `AppliedSectionService` evaluates Superelevation per station.
-- `lane` and `shoulder` template component slopes are replaced with effective crossfall values before point/component rows are generated.
-- original Assembly slope, effective source, transition ID, and crossfall percent are stored in component parameters.
+- `lane` and `shoulder` template Subassembly slopes are replaced with effective crossfall values before point/Subassembly rows are generated.
+- original Assembly slope, effective source, transition ID, and crossfall percent are stored in Subassembly parameters.
 - `AppliedSection` stores active Superelevation ID, left/right crossfall, active transition ID, and source rows.
 - `V1AppliedSectionSet` stores and restores Superelevation context so generated state survives panel reopen and downstream builds.
 
@@ -294,7 +294,7 @@ Current implementation:
 
 Build Parametric should not evaluate Superelevation directly.
 
-It should consume the already resolved Applied Section point rows and component rows.
+It should consume the already resolved Applied Section point rows and Subassembly rows.
 
 Expected effects:
 
@@ -378,7 +378,7 @@ Validation should report warnings for:
 | 1. Source object | Done | Add `V1SuperelevationSource` persistence, JSON round-trip, tree routing, and model conversion helpers. |
 | 2. Evaluation service | Done | Implement validation, station interpolation, sample rows, and diagnostics. |
 | 3. Task panel | Done | Add Superelevation command, toolbar icon, tables, Auto Calculate, Validate/Apply/Show actions. |
-| 4. Applied Sections integration | Done | Pass Superelevation model into build requests and resolve effective slopes into component/point rows. |
+| 4. Applied Sections integration | Done | Pass Superelevation model into build requests and resolve effective slopes into Subassembly/point rows. |
 | 5. Review integration | Done | Applied Sections review rows, Cross Section Viewer output trace fields, and 3D crossfall bar preview are in place. |
 | 6. Build Parametric verification | Done | Confirm Design Surface and output routing consume Superelevation-resolved Applied Sections without separate logic. |
 | 7. Tests | Done | Source object, service, UI helper, Applied Sections, review, and Build Parametric verification tests are in place. |

@@ -95,7 +95,7 @@ Column meaning:
 
 - `Enabled`: whether the row participates in `Build Enabled`
 - `Target`: target family such as `road_body_envelope`, `region_body`, `pavement_layer_body`
-- `Scope`: whole corridor, Region, station range, component, structure, drainage
+- `Scope`: whole corridor, Region, station range, Subassembly, structure, drainage
 - `Source`: source refs used to discover the target
 - `Status`: discovery readiness such as `available` or `blocked`
 - `Validation`: `not_validated`, `ok`, `blocked`, or `error`

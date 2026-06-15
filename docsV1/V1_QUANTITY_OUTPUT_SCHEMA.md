@@ -199,7 +199,7 @@ Quantity outputs must not rely on hidden unit conventions.
 - `unit`
 - optional `station_start`
 - optional `station_end`
-- optional `component_ref`
+- optional `subassembly_ref`
 - optional `region_ref`
 - optional `structure_ref`
 - optional `source_ref`
@@ -208,7 +208,7 @@ Quantity outputs must not rely on hidden unit conventions.
 ### 11.3 Recommended quantity kinds
 
 - `pavement_quantity`
-- `component_quantity`
+- `subassembly_quantity`
 - `surface_area_quantity`
 - `linear_quantity`
 - `structure_adjacent_quantity`
@@ -241,7 +241,7 @@ Fragment rows should preserve enough semantics for regrouping and drill-down rev
 - `corridor_total`
 - `station_range_total`
 - `region_total`
-- `component_total`
+- `subassembly_total`
 - `pavement_total`
 - `structure_note_total`
 
@@ -269,7 +269,7 @@ Aggregate rows should remain traceable back to explicit fragment references.
 
 ### 13.3 Recommended grouping kinds
 
-- `by_component`
+- `by_subassembly`
 - `by_region`
 - `by_station_range`
 - `by_structure_context`

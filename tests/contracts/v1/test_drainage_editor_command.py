@@ -322,7 +322,7 @@ def test_drainage_editor_panel_loads_starter_and_applies_model() -> None:
         assert obj.Name in {child.Name for child in tree[V1_TREE_DRAINAGE].Group}
         assert model.element_rows[0].policy_set_ref == "drainage-policy:lined-concrete"
         assert model.element_rows[0].side == "right"
-        assert model.element_rows[0].assembly_component_ref == "ditch:right"
+        assert model.element_rows[0].subassembly_ref == "ditch:right"
         assert model.element_rows[1].structure_ref == ""
         assert obj.ValidationStatus == "ok"
         assert model.flow_route_rows[0].from_element_ref == "drainage:side-ditch-right"
@@ -443,7 +443,7 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         structure_combo.setCurrentText("culvert-01")
 
         model = panel._model_from_tables()
-        assert model.element_rows[0].assembly_component_ref == ""
+        assert model.element_rows[0].subassembly_ref == ""
         assert model.element_rows[0].structure_ref == "structure:culvert-01"
 
         kind_combo.setCurrentText("ditch")
@@ -451,7 +451,7 @@ def test_drainage_editor_ditch_disables_structure_cell() -> None:
         structure_combo = panel._element_table.cellWidget(0, 7)
         assert bool(assembly_item.flags() & QtCore.Qt.ItemIsEnabled)
         assembly_item.setText("ditch:right")
-        assert panel._model_from_tables().element_rows[0].assembly_component_ref == "ditch:right"
+        assert panel._model_from_tables().element_rows[0].subassembly_ref == "ditch:right"
         assert not structure_combo.isEnabled()
         assert structure_combo.currentText() == ""
         assert panel._model_from_tables().element_rows[0].structure_ref == ""
@@ -701,7 +701,7 @@ def test_drainage_editor_panel_loads_existing_model() -> None:
                         drainage_element_id="drainage:side-ditch-left",
                         element_kind="ditch",
                         side="left",
-                        assembly_component_ref="ditch:left",
+                        subassembly_ref="ditch:left",
                         station_start=10.0,
                         station_end=80.0,
                     )
@@ -750,7 +750,7 @@ def test_drainage_editor_adds_side_specific_ditch_defaults() -> None:
         assert model.element_rows[0].drainage_element_id == "drainage:side-ditch-left"
         assert panel._element_table.item(0, 0).text() == "side-ditch-left"
         assert model.element_rows[0].side == "left"
-        assert model.element_rows[0].assembly_component_ref == "ditch:left"
+        assert model.element_rows[0].subassembly_ref == "ditch:left"
     finally:
         App.closeDocument(doc.Name)
 
@@ -768,7 +768,7 @@ def test_drainage_editor_loads_selected_preset_into_tables() -> None:
         assert panel._element_table.item(0, 0).text() == "side-ditch-left"
         assert panel._policy_table.item(0, 0).text() == "lined-concrete"
         assert [row.side for row in model.element_rows[:2]] == ["left", "right"]
-        assert [row.assembly_component_ref for row in model.element_rows[:2]] == ["ditch:left", "ditch:right"]
+        assert [row.subassembly_ref for row in model.element_rows[:2]] == ["ditch:left", "ditch:right"]
         assert [row.flow_route_id for row in model.flow_route_rows] == ["flow-route:flowId-01", "flow-route:flowId-02"]
         assert panel._policy_table.rowCount() == 1
         assert "Drainage preset loaded: Dual Side Ditches" in panel._status.toPlainText()

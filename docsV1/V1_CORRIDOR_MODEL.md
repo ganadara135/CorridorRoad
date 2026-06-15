@@ -80,7 +80,7 @@ This keeps the architecture aligned with the parametric 3D redesign.
 - `IntersectionModel`
 - `ProfileModel`
 - `SuperelevationModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 - `DrainageModel`
 - explicit override models
@@ -240,7 +240,7 @@ It also creates the initial corridor-derived `V1SurfaceModel` result with design
 
 If the `AppliedSectionSet` contains ditch surface point rows, it also creates a conditional drainage surface row and preview.
 
-When `AppliedSectionSet` contains persisted FG or subgrade point rows, the design and subgrade previews should use those rows as component-boundary-aware TIN input.
+When `AppliedSectionSet` contains persisted FG or subgrade point rows, the design and subgrade previews should use those rows as Subassembly-boundary-aware TIN input.
 
 If point rows are missing, the current implementation may fall back to the older left/right ribbon preview.
 
@@ -281,6 +281,8 @@ Build Corridor review UI should be organized into tabs for `Guided Review`, `Res
 
 `Guided Review` separates `Drainage Surface` from `Drainage Flow`.
 `Drainage Surface` reviews generated ditch/drainage surface handoff from Applied Section points.
+The Drainage tab shows a `Context` column so users can distinguish `Roadside Drainage` station-range checks from `Intersection Drainage` low-point coverage checks.
+Intersection Drainage does not create hydraulic design automatically; it reports whether the intersection patch low-point candidate has Drainage Element coverage.
 `Drainage Flow` reviews source-level Flow Route connections and linked Structure refs, and double-click focus should create a linear 3D highlight for the route station span without adding separate point or cross marker geometry.
 
 It does not generate final corridor solids.
@@ -405,16 +407,16 @@ This result family captures solid or layered geometry generated from corridor ev
 
 - pavement solids
 - corridor body solids
-- component-based solid groups
+- Subassembly-based solid groups
 - structure-adjacent corridor cutouts where supported
 
-Solid outputs should be reserved for physical or export-oriented component bodies such as:
+Solid outputs should be reserved for physical or export-oriented Subassembly or structure bodies such as:
 
 - pavement layers with material thickness
 - curbs, gutters, barriers, guardrails, medians, and retaining walls
 - bridge decks, girders, abutments, piers, and approach slabs
 - culvert barrels, headwalls, wing walls, pipes, inlets, and manholes
-- IFC or quantity bodies where closed volume and component identity matter
+- IFC or quantity bodies where closed volume and Subassembly identity matter
 
 ### 15.3 Rule
 
@@ -448,7 +450,7 @@ The practical v1 build order is:
 1. generate `AppliedSectionSet`
 2. create or update `CorridorModel`
 3. build corridor-derived surface results
-4. build solid/component outputs only where physical body identity is required
+4. build solid/Subassembly outputs only where physical body identity is required
 
 This keeps the first corridor result lightweight and reviewable while leaving detailed solids for pavement, structures, drainage assets, quantities, and exchange.
 
@@ -476,11 +478,11 @@ Current implementation status:
 - [x] start slope-face/daylight surfaces from the outermost built Assembly edge, including `ditch_surface` points, instead of only the FG/shoulder edge
 - [x] add Drainage diagnostic row marker focus in the 3D View
 - [x] organize Build Corridor review UI into task-focused tabs
-- [x] expose Applied Sections review summaries for component mix, ditch rows, slope-face policy, and diagnostics before `Build Corridor`
+- [x] expose Applied Sections review summaries for Subassembly mix, ditch rows, slope-face policy, and diagnostics before `Build Corridor`
 - [x] expose Applied Sections source summary and diagnostics directly in each `Build Corridor` review row
 - [x] Build Corridor review table can select/fit generated preview objects and now auto-focuses the ready Design Surface after Apply when available
 - [ ] generate actual corridor TIN geometry for those rows
-- [ ] generate physical solid/component bodies
+- [ ] generate physical solid/Subassembly bodies
 
 ## 17. Corridor and Quantity Relationship
 
@@ -489,7 +491,7 @@ Current implementation status:
 It should provide:
 
 - station-based quantity fragments
-- component identity continuity
+- Subassembly identity continuity
 - region-aware quantity grouping
 - traceable source mappings
 
@@ -623,7 +625,7 @@ Validation should check for:
 - non-monotonic section ordering
 - invalid drainage-context attachment
 - mismatched scenario references
-- lost component identity during build
+- lost Subassembly identity during build
 - invalid surface or solid handoff references
 
 Validation results should be recorded in `diagnostic_rows`.

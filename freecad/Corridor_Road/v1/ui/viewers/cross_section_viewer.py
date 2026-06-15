@@ -25,23 +25,62 @@ def _preview_station_label(preview: dict[str, object]) -> str:
     return f"STA {station_value:.3f}"
 
 
-def _preview_focused_component_label(preview: dict[str, object]) -> str:
-    """Return a compact focused-component label for one viewer payload."""
+def _preview_focused_subassembly_label(preview: dict[str, object]) -> str:
+    """Return a compact focused Subassembly label for one viewer payload."""
 
     viewer_context = dict(preview.get("viewer_context", {}) or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     explicit = str(focused.get("label", "") or "").strip()
     if explicit:
         return explicit
-    component_type = str(focused.get("type", "") or "").strip()
+    subassembly_type = str(focused.get("type", "") or "").strip()
     side = str(focused.get("side", "") or "").strip()
     scope = str(focused.get("scope", "") or "").strip()
     source = str(focused.get("source", "") or "").strip()
-    component_id = str(focused.get("id", "") or "").strip()
-    pieces = [value for value in (component_type, side, scope, source) if value and value != "-"]
-    if component_id and component_id != "-":
-        pieces.append(f"[{component_id}]")
+    subassembly_id = str(focused.get("id", "") or "").strip()
+    pieces = [value for value in (subassembly_type, side, scope, source) if value and value != "-"]
+    if subassembly_id and subassembly_id != "-":
+        pieces.append(f"[{subassembly_id}]")
     return " / ".join(pieces)
+
+
+def _viewer_context_focused_subassembly(viewer_context: dict[str, object]) -> dict[str, object]:
+    """Return the active focused Subassembly context."""
+
+    context = dict(viewer_context or {})
+    focused = dict(context.get("focused_subassembly", {}) or {})
+    if focused:
+        return focused
+    return {}
+
+
+def _section_output_subassembly_count(section_output) -> int:
+    """Count active Subassembly rows only."""
+
+    return len(list(getattr(section_output, "subassembly_rows", []) or []))
+
+
+def _section_output_subassembly_table_rows(section_output) -> list[list[str]]:
+    """Build Subassembly table rows."""
+
+    subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+    return [
+        [
+            str(getattr(row, "subassembly_id", "") or ""),
+            str(getattr(row, "kind", "") or ""),
+            str(getattr(row, "template_ref", "") or ""),
+            str(getattr(row, "region_ref", "") or ""),
+            str(getattr(row, "notes", "") or ""),
+        ]
+        for row in subassembly_rows
+    ]
+
+
+def _viewer_context_source_rows(viewer_context: dict[str, object]) -> list[dict[str, object]]:
+    """Return active Subassembly source rows."""
+
+    context = dict(viewer_context or {})
+    return list(context.get("subassembly_rows", []) or [])
 
 
 def _superelevation_summary_line(section_output) -> str:
@@ -61,13 +100,34 @@ def _superelevation_summary_line(section_output) -> str:
     return " | ".join(pieces)
 
 
+def _intersection_summary_line(section_output) -> str:
+    values = {
+        str(getattr(row, "kind", "") or ""): row
+        for row in list(getattr(section_output, "summary_rows", []) or [])
+    }
+    intersection_id = str(getattr(values.get("intersection_id"), "value", "") or "").strip()
+    if not intersection_id:
+        return ""
+    control_area = str(getattr(values.get("intersection_control_area"), "value", "") or "").strip()
+    leg = str(getattr(values.get("intersection_leg"), "value", "") or "").strip()
+    grading_policy = str(getattr(values.get("intersection_grading_policy"), "value", "") or "").strip()
+    pieces = [f"Intersection: {intersection_id}"]
+    if control_area:
+        pieces.append(f"Control Area {control_area}")
+    if leg:
+        pieces.append(f"Leg {leg}")
+    if grading_policy:
+        pieces.append(f"Grading Policy {grading_policy}")
+    return " | ".join(pieces)
+
+
 def build_handoff_target_rows(preview: dict[str, object]) -> list[list[str]]:
     """Build normalized editor-handoff rows for one section viewer payload."""
 
     source_objects = _preview_source_objects(preview)
     inspector = dict(preview.get("source_inspector", {}) or {})
     station_label = _preview_station_label(preview)
-    focused_label = _preview_focused_component_label(preview)
+    focused_label = _preview_focused_subassembly_label(preview)
     focused_suffix = f" | Focus={focused_label}" if focused_label else ""
 
     target_specs = [
@@ -111,6 +171,25 @@ def _preview_source_objects(preview: dict[str, object]) -> dict[str, object]:
     return dict(preview.get("source_objects", {}) or {})
 
 
+def _mapping_row(row: object) -> dict[str, object]:
+    """Return a mapping row while tolerating optional empty review rows."""
+
+    if isinstance(row, dict):
+        return dict(row)
+    if hasattr(row, "items"):
+        try:
+            return dict(row.items())
+        except Exception:
+            return {}
+    return {}
+
+
+def _mapping_rows(rows: object) -> list[dict[str, object]]:
+    """Return mapping rows from optional table payloads."""
+
+    return [_mapping_row(row) for row in list(rows or [])]
+
+
 def build_handoff_status(preview: dict[str, object]) -> dict[str, str]:
     """Build a compact handoff status summary for the section viewer."""
 
@@ -141,8 +220,7 @@ def build_corridor_result_review_table_rows(preview: dict[str, object]) -> list[
     """Build compact corridor-build result rows for section review."""
 
     rows = []
-    for row in list(preview.get("corridor_review_rows", []) or []):
-        item = dict(row or {})
+    for item in _mapping_rows(preview.get("corridor_review_rows", [])):
         rows.append(
             [
                 str(item.get("result", "") or ""),
@@ -160,7 +238,7 @@ def build_corridor_result_review_table_rows(preview: dict[str, object]) -> list[
 def build_corridor_result_status(preview: dict[str, object]) -> dict[str, object]:
     """Summarize whether corridor build outputs are available for section review."""
 
-    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    rows = _mapping_rows(preview.get("corridor_review_rows", []))
     if not rows:
         return {
             "state": "not_available",
@@ -192,7 +270,7 @@ def build_corridor_result_status(preview: dict[str, object]) -> dict[str, object
 def corridor_result_object_name_for_row(preview: dict[str, object], row_index: int) -> str:
     """Return the document object name behind one corridor-build result row."""
 
-    rows = [dict(row or {}) for row in list(preview.get("corridor_review_rows", []) or [])]
+    rows = _mapping_rows(preview.get("corridor_review_rows", []))
     if row_index < 0 or row_index >= len(rows):
         raise IndexError("Corridor result row index is out of range.")
     row = rows[int(row_index)]
@@ -516,14 +594,14 @@ def build_source_inspector_owner_rows(preview: dict[str, object]) -> list[list[s
 
 
 def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[str]]:
-    """Build detailed selected-component source inspector rows."""
+    """Build detailed selected Subassembly source inspector rows."""
 
     inspector = dict(preview.get("source_inspector", {}) or {})
     mapping = [
         ("Station", "station_label"),
-        ("Component Id", "component_id"),
-        ("Component Kind", "component_kind"),
-        ("Component Side", "component_side"),
+        ("Subassembly Id", "subassembly_id"),
+        ("Subassembly Kind", "subassembly_kind"),
+        ("Subassembly Side", "subassembly_side"),
         ("Owner Template Ref", "owner_template"),
         ("Owner Region Ref", "owner_region"),
         ("Owner Structure Ref", "owner_structure"),
@@ -536,17 +614,34 @@ def build_source_inspector_detail_rows(preview: dict[str, object]) -> list[list[
     ]
     rows = []
     for label, key in mapping:
-        value = str(inspector.get(key, "") or "").strip()
+        value = _inspector_value(inspector, key)
         if value:
             rows.append([label, value])
     unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
     if unresolved_fields:
         rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
-    for label, key in (("Component Count", "component_count"), ("Quantity Count", "quantity_count")):
-        value = inspector.get(key, None)
+    for label, key in (
+        ("Subassembly Count", "subassembly_count"),
+        ("Quantity Count", "quantity_count"),
+    ):
+        value = _inspector_value(inspector, key)
         if value not in (None, ""):
             rows.append([label, str(value)])
     return rows
+
+
+def _inspector_value(inspector: dict[str, object], key_or_keys) -> str:
+    keys = key_or_keys if isinstance(key_or_keys, (list, tuple)) else (key_or_keys,)
+    for key in keys:
+        key_text = str(key)
+        value = str(inspector.get(key_text, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _quantity_subassembly_ref(row) -> str:
+    return str(getattr(row, "subassembly_ref", "") or "").strip()
 
 
 def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: set[str]) -> list[list[str]]:
@@ -566,6 +661,7 @@ def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: 
     leg_id = str(getattr(section, "active_intersection_leg_id", "") or "").strip()
     leg_role = str(getattr(section, "active_intersection_leg_role", "") or "").strip()
     control_refs = list(getattr(section, "active_intersection_control_region_refs", []) or [])
+    grading_policy = str(getattr(section, "active_intersection_grading_policy_ref", "") or "").strip()
     if control_area and "intersection_control_area" not in seen_kinds:
         rows.append(["intersection_control_area", "Intersection Control Area", control_area, ""])
     if (leg_id or leg_role) and "intersection_leg" not in seen_kinds:
@@ -579,6 +675,10 @@ def _intersection_summary_fallback_rows(preview: dict[str, object], seen_kinds: 
                 "",
             ]
         )
+    if grading_policy and "intersection_grading_policy" not in seen_kinds:
+        rows.append(["intersection_grading_policy", "Intersection Grading Policy", grading_policy, ""])
+    if grading_policy and "intersection_grading_context" not in seen_kinds:
+        rows.append(["intersection_grading_context", "Intersection Grading Context", "active inside control area", grading_policy])
     return rows
 
 
@@ -625,6 +725,27 @@ def build_drainage_context_rows(preview: dict[str, object]) -> list[list[str]]:
     return [[ref, "-", flow_text, "station_context"] for ref in drainage_refs]
 
 
+def build_intersection_context_rows(preview: dict[str, object]) -> list[list[str]]:
+    """Build readable intersection contract rows for one selected section."""
+
+    rows = []
+    for item in _mapping_rows(preview.get("intersection_context_rows", [])):
+        source_refs = ", ".join(str(value) for value in list(item.get("source_refs", []) or []) if str(value or "").strip())
+        boundary_refs = ", ".join(str(value) for value in list(item.get("boundary_refs", []) or []) if str(value or "").strip())
+        rows.append(
+            [
+                str(item.get("family", "") or ""),
+                str(item.get("status", "") or ""),
+                str(item.get("row_id", "") or ""),
+                str(item.get("role", "") or ""),
+                source_refs or "-",
+                boundary_refs or "-",
+                str(item.get("notes", "") or ""),
+            ]
+        )
+    return rows
+
+
 def _source_owner_note(status: str, fallback: str) -> str:
     value = str(status or "").strip().lower()
     if value == "resolved":
@@ -648,7 +769,7 @@ def plan_cross_section_text_layout(
 
     placed: list[dict[str, object]] = []
     ordered = sorted(
-        [dict(row or {}) for row in list(candidates or [])],
+        _mapping_rows(candidates),
         key=lambda row: (float(row.get("priority", 0.0) or 0.0), float(row.get("x", 0.0) or 0.0)),
     )
     lane_offsets = _text_layout_lane_offsets(vertical_step=vertical_step, max_lanes=max_lanes)
@@ -990,10 +1111,10 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             text = str(getattr(row, "text", "") or "")
             value = str(getattr(row, "value", "") or "")
             role = str(getattr(row, "role", "") or "")
-            if role.startswith("component:"):
-                component_font = QtGui.QFont(font)
-                component_font.setPointSize(max(7, font.pointSize() - 1))
-                painter.setFont(component_font)
+            if role.startswith("subassembly:"):
+                subassembly_font = QtGui.QFont(font)
+                subassembly_font.setPointSize(max(7, font.pointSize() - 1))
+                painter.setFont(subassembly_font)
                 painter.setPen(QtGui.QPen(self._label_color(role)))
                 self._draw_rotated_text(
                     painter,
@@ -1079,7 +1200,7 @@ class _SectionGeometryPreviewWidget(QtWidgets.QWidget):
             unit = str(getattr(row, "unit", "") or "")
             label = str(getattr(row, "label", "") or "").strip()
             mid = self._scale_point(((start + end) * 0.5, baseline), plot, x_min, x_max, y_min, y_max)
-            if kind == "component_width":
+            if kind == "subassembly_width":
                 painter.setPen(QtGui.QPen(color))
                 section_y = self._section_elevation_at_offset((start + end) * 0.5)
                 section_point = self._scale_point(((start + end) * 0.5, section_y), plot, x_min, x_max, y_min, y_max)
@@ -1333,23 +1454,23 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
-        layout.addWidget(QtWidgets.QLabel("Components"))
-        self._component_table = self._table_widget(
+        layout.addWidget(QtWidgets.QLabel("Subassemblies"))
+        self._subassembly_table = self._table_widget(
             headers=["Id", "Kind", "Assembly Template", "Region", "Notes"],
-            rows=[
-                [
-                    str(getattr(row, "component_id", "") or ""),
-                    str(getattr(row, "kind", "") or ""),
-                    str(getattr(row, "template_ref", "") or ""),
-                    str(getattr(row, "region_ref", "") or ""),
-                    str(getattr(row, "notes", "") or ""),
-                ]
-                for row in list(getattr(self.preview.get("section_output"), "component_rows", []) or [])
-            ],
-            empty_text="No component rows.",
+            rows=_section_output_subassembly_table_rows(self.preview.get("section_output")),
+            empty_text="No Subassembly rows.",
         )
-        layout.addWidget(self._component_table)
-        self._select_focused_component_row(self._component_table)
+        layout.addWidget(self._subassembly_table)
+        self._select_focused_subassembly_row(self._subassembly_table)
+
+        layout.addWidget(QtWidgets.QLabel("Subassembly Results"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Family", "Code", "Subassembly", "Side", "Offset", "Refs"],
+                rows=self._subassembly_result_rows(),
+                empty_text="No Subassembly point/link/shape result rows.",
+            )
+        )
 
         layout.addWidget(QtWidgets.QLabel("Section Summary"))
         layout.addWidget(
@@ -1360,16 +1481,25 @@ class CrossSectionViewerTaskPanel:
             )
         )
 
+        layout.addWidget(QtWidgets.QLabel("Intersection Context"))
+        layout.addWidget(
+            self._table_widget(
+                headers=["Family", "Status", "ID", "Role", "Source Refs", "Boundary Refs", "Notes"],
+                rows=self._intersection_context_rows(),
+                empty_text="No active intersection context rows.",
+            )
+        )
+
         layout.addWidget(QtWidgets.QLabel("Quantities"))
         layout.addWidget(
             self._table_widget(
-                headers=["Kind", "Value", "Unit", "Component"],
+                headers=["Kind", "Value", "Unit", "Subassembly"],
                 rows=[
                     [
                         str(getattr(row, "quantity_kind", "") or ""),
                         str(getattr(row, "value", "") or ""),
                         str(getattr(row, "unit", "") or ""),
-                        str(getattr(row, "component_ref", "") or ""),
+                        _quantity_subassembly_ref(row),
                     ]
                     for row in list(getattr(self.preview.get("section_output"), "quantity_rows", []) or [])
                 ],
@@ -1450,7 +1580,7 @@ class CrossSectionViewerTaskPanel:
 
         button_row = QtWidgets.QHBoxLayout()
         for label, command_name in (
-            ("Open Assembly", "CorridorRoad_V1EditAssembly"),
+            ("Open Assembly", "CorridorRoad_V1EditAssemblySubassembly"),
             ("Open Regions", "CorridorRoad_V1EditRegions"),
             ("Open Structures", "CorridorRoad_V1EditStructures"),
             ("Open Drainage", "CorridorRoad_V1EditDrainage"),
@@ -1510,36 +1640,37 @@ class CrossSectionViewerTaskPanel:
             or "(unresolved)"
         )
 
-        return "\n".join(
-            [
-                f"Station: {station_value}",
-                f"Station Label: {station_label}",
-                f"Result State: {self._result_state_value()}",
-                f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
-                f"Assembly Template: {template_label}",
-                _superelevation_summary_line(section_output),
-                f"Stations: {len(self._navigation_station_rows())}",
-                f"Components: {len(list(getattr(section_output, 'component_rows', []) or []))}",
-                f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
-                f"Geometry Rows: {len(self._section_geometry_rows())}",
-                f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
-                f"Drawing Labels: {len(self._drawing_label_table_rows())}",
-                f"Drawing Dimensions: {len(self._drawing_dimension_table_rows())}",
-                f"Source Ownership: {self._source_inspector_status_value()}",
-                str(self._corridor_result_status().get("text", "")),
-                f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
-                f"Review Markers: {len(self._review_marker_rows())}",
-                f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
-                *self._viewer_context_summary_lines(),
-            ]
-        )
+        lines = [
+            f"Station: {station_value}",
+            f"Station Label: {station_label}",
+            f"Result State: {self._result_state_value()}",
+            f"Region: {getattr(applied_section, 'region_id', '') or '(none)'}",
+            f"Assembly Template: {template_label}",
+            _superelevation_summary_line(section_output),
+            _intersection_summary_line(section_output),
+            f"Stations: {len(self._navigation_station_rows())}",
+            f"Subassemblies: {_section_output_subassembly_count(section_output)}",
+            f"Quantities: {len(list(getattr(section_output, 'quantity_rows', []) or []))}",
+            f"Geometry Rows: {len(self._section_geometry_rows())}",
+            f"Drawing Geometry: {len(self._drawing_geometry_rows())}",
+            f"Drawing Labels: {len(self._drawing_label_table_rows())}",
+            f"Drawing Dimensions: {len(self._drawing_dimension_table_rows())}",
+            f"Source Ownership: {self._source_inspector_status_value()}",
+            str(self._corridor_result_status().get("text", "")),
+            f"Intersection Context Rows: {len(self._intersection_context_rows())}",
+            f"Earthwork Hints: {len(self._earthwork_hint_rows())}",
+            f"Review Markers: {len(self._review_marker_rows())}",
+            f"Handoff Ready: {self._handoff_ready_count()}/{len(self._handoff_target_rows())}",
+            *self._viewer_context_summary_lines(),
+        ]
+        return "\n".join(line for line in lines if str(line or "").strip())
 
     def _viewer_context_summary_lines(self) -> list[str]:
         viewer_context = dict(self.preview.get("viewer_context", {}) or {})
         lines = []
-        focused_label = self._focused_component_label()
+        focused_label = self._focused_subassembly_label()
         if focused_label:
-            lines.append(f"Focus Component: {focused_label}")
+            lines.append(f"Focus Subassembly: {focused_label}")
         if viewer_context.get("tag_summary"):
             lines.append(f"Station Tags: {viewer_context.get('tag_summary', '')}")
         if viewer_context.get("top_profile_edge_summary"):
@@ -1550,6 +1681,8 @@ class CrossSectionViewerTaskPanel:
             lines.append(f"Drainage Element: {viewer_context.get('active_drainage_ref', '')}")
         if viewer_context.get("drainage_summary"):
             lines.append(f"Drainage Summary: {viewer_context.get('drainage_summary', '')}")
+        if viewer_context.get("intersection_contract_summary"):
+            lines.append(f"Intersection Contracts: {viewer_context.get('intersection_contract_summary', '')}")
         diagnostics = list(viewer_context.get("diagnostic_tokens", []) or [])
         if diagnostics:
             lines.append(f"Diagnostics: {', '.join(str(token) for token in diagnostics)}")
@@ -1623,9 +1756,9 @@ class CrossSectionViewerTaskPanel:
             ("Structure Label", "structure_label"),
             ("Drainage Label", "drainage_label"),
             ("Intersection Label", "intersection_label"),
-            ("Component Id", "component_id"),
-            ("Component Kind", "component_kind"),
-            ("Component Side", "component_side"),
+            ("Subassembly Id", "subassembly_id"),
+            ("Subassembly Kind", "subassembly_kind"),
+            ("Subassembly Side", "subassembly_side"),
             ("Owner Assembly Template", "owner_template"),
             ("Owner Region", "owner_region"),
             ("Owner Structure", "owner_structure"),
@@ -1635,14 +1768,17 @@ class CrossSectionViewerTaskPanel:
         ]
         rows = []
         for label, key in mapping:
-            value = str(inspector.get(key, "") or "").strip()
+            value = _inspector_value(inspector, key)
             if value:
                 rows.append([label, value])
         unresolved_fields = list(inspector.get("unresolved_fields", []) or [])
         if unresolved_fields:
             rows.append(["Unresolved Fields", ", ".join(str(value) for value in unresolved_fields if str(value).strip())])
-        for label, key in (("Component Count", "component_count"), ("Quantity Count", "quantity_count")):
-            value = inspector.get(key, None)
+        for label, key in (
+            ("Subassembly Count", "subassembly_count"),
+            ("Quantity Count", "quantity_count"),
+        ):
+            value = _inspector_value(inspector, key)
             if value not in (None, ""):
                 rows.append([label, str(value)])
         return rows
@@ -1652,6 +1788,54 @@ class CrossSectionViewerTaskPanel:
 
     def _corridor_result_status(self) -> dict[str, object]:
         return build_corridor_result_status(self.preview)
+
+    def _intersection_context_rows(self) -> list[list[str]]:
+        return build_intersection_context_rows(self.preview)
+
+    def _subassembly_result_rows(self) -> list[list[str]]:
+        section_output = self.preview.get("section_output")
+        rows: list[list[str]] = []
+        for point in list(getattr(section_output, "subassembly_point_rows", []) or []):
+            rows.append(
+                [
+                    "point",
+                    str(getattr(point, "point_code", "") or ""),
+                    str(getattr(point, "subassembly_ref", "") or ""),
+                    str(getattr(point, "side", "") or ""),
+                    f"{float(getattr(point, 'lateral_offset', 0.0) or 0.0):.3f}",
+                    str(getattr(point, "point_id", "") or ""),
+                ]
+            )
+        for link in list(getattr(section_output, "subassembly_link_rows", []) or []):
+            rows.append(
+                [
+                    "link",
+                    str(getattr(link, "surface_role", "") or getattr(link, "link_code", "") or ""),
+                    str(getattr(link, "subassembly_ref", "") or ""),
+                    "",
+                    "",
+                    " -> ".join(
+                        value
+                        for value in (
+                            str(getattr(link, "start_point_ref", "") or ""),
+                            str(getattr(link, "end_point_ref", "") or ""),
+                        )
+                        if value
+                    ),
+                ]
+            )
+        for shape in list(getattr(section_output, "subassembly_shape_rows", []) or []):
+            rows.append(
+                [
+                    "shape",
+                    str(getattr(shape, "shape_code", "") or ""),
+                    str(getattr(shape, "subassembly_ref", "") or ""),
+                    "",
+                    "",
+                    str(getattr(shape, "shape_id", "") or ""),
+                ]
+            )
+        return rows
 
     def _connect_corridor_result_table(self, table) -> None:
         if not hasattr(table, "cellDoubleClicked"):
@@ -1677,7 +1861,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("terrain_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("terrain_rows", []))
         ]
 
     def _section_geometry_rows(self) -> list[object]:
@@ -1734,7 +1918,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("structure_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("structure_rows", []))
         ]
 
     def _diagnostic_review_rows(self) -> list[list[str]]:
@@ -1745,7 +1929,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("message", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("diagnostic_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("diagnostic_rows", []))
         ]
 
     def _earthwork_hint_rows(self) -> list[list[str]]:
@@ -1756,7 +1940,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("earthwork_hint_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("earthwork_hint_rows", []))
         ]
 
     def _review_marker_rows(self) -> list[list[str]]:
@@ -1767,7 +1951,7 @@ class CrossSectionViewerTaskPanel:
                 str(row.get("value", "") or ""),
                 str(row.get("notes", "") or ""),
             ]
-            for row in list(self.preview.get("review_marker_rows", []) or [])
+            for row in _mapping_rows(self.preview.get("review_marker_rows", []))
         ]
 
     def _viewer_context_rows(self, viewer_context: dict[str, object]) -> list[list[str]]:
@@ -1775,7 +1959,7 @@ class CrossSectionViewerTaskPanel:
         mapping = [
             ("Section Set", "section_set_label"),
             ("Station", "station_label"),
-            ("Focus Component", ""),
+            ("Focus Subassembly", ""),
             ("Station Tags", "tag_summary"),
             ("Earthwork Window", "earthwork_window_summary"),
             ("Earthwork Cut/Fill", "earthwork_cut_fill_summary"),
@@ -1784,10 +1968,11 @@ class CrossSectionViewerTaskPanel:
             ("Structure Summary", "structure_summary"),
             ("Drainage Summary", "drainage_summary"),
             ("Flow Route Summary", "flow_route_summary"),
+            ("Intersection Contracts", "intersection_contract_summary"),
         ]
         for label, key in mapping:
-            if label == "Focus Component":
-                value = self._focused_component_label()
+            if label == "Focus Subassembly":
+                value = self._focused_subassembly_label()
             else:
                 value = str(viewer_context.get(key, "") or "").strip()
             if value:
@@ -1824,7 +2009,7 @@ class CrossSectionViewerTaskPanel:
         return build_handoff_status(self.preview)
 
     def _navigation_station_rows(self) -> list[dict[str, object]]:
-        rows = [dict(row or {}) for row in list(self.preview.get("station_rows", []) or [])]
+        rows = _mapping_rows(self.preview.get("station_rows", []))
         if not rows:
             station_row = dict(self.preview.get("station_row", {}) or {})
             if station_row:
@@ -1909,6 +2094,7 @@ class CrossSectionViewerTaskPanel:
             "source": "v1_cross_section_navigation",
             "preferred_applied_section_set_name": applied_section_set_name,
             "preferred_station": station_value,
+            "preferred_applied_section_id": str(row.get("applied_section_id", "") or "").strip(),
             "station_row": dict(row),
             "viewer_context": dict(self.preview.get("viewer_context", {}) or {}),
         }
@@ -1920,38 +2106,40 @@ class CrossSectionViewerTaskPanel:
             pass
         Gui.runCommand("CorridorRoad_V1ViewSections", 0)
 
-    def _focused_component(self) -> dict[str, object]:
-        return dict(dict(self.preview.get("viewer_context", {}) or {}).get("focused_component", {}) or {})
+    def _focused_subassembly(self) -> dict[str, object]:
+        return _viewer_context_focused_subassembly(dict(self.preview.get("viewer_context", {}) or {}))
 
-    def _focused_component_label(self) -> str:
-        return _preview_focused_component_label(self.preview)
+    def _focused_subassembly_label(self) -> str:
+        return _preview_focused_subassembly_label(self.preview)
 
-    def _focused_component_id(self) -> str:
-        focused = self._focused_component()
+    def _focused_subassembly_id(self) -> str:
+        focused = self._focused_subassembly()
         return str(focused.get("id", "") or "").strip()
 
-    def _select_focused_component_row(self, table) -> None:
-        focused_id = self._focused_component_id()
+    def _select_focused_subassembly_row(self, table) -> None:
+        focused_id = self._focused_subassembly_id()
         if not focused_id or not hasattr(table, "rowCount"):
             return
         for row_index in range(int(table.rowCount())):
             item = table.item(row_index, 0)
             if item is None:
                 continue
-            if str(item.text() or "").strip() == focused_id:
+            item_text = str(item.text() or "").strip()
+            if item_text in {focused_id, f"compatibility:{focused_id}"}:
                 table.selectRow(row_index)
                 table.scrollToItem(item)
                 return
 
     def _select_focused_source_row(self, table) -> None:
-        focused = self._focused_component()
+        focused = self._focused_subassembly()
         focused_key = str(focused.get("key", "") or "").strip()
         focused_id = str(focused.get("id", "") or "").strip()
         focused_type = str(focused.get("type", "") or "").strip()
         focused_side = str(focused.get("side", "") or "").strip()
         if not (focused_key or focused_id or focused_type):
             return
-        source_rows = list(dict(self.preview.get("viewer_context", {}) or {}).get("component_rows", []) or [])
+        viewer_context = dict(self.preview.get("viewer_context", {}) or {})
+        source_rows = _viewer_context_source_rows(viewer_context)
         for row_index, row in enumerate(source_rows):
             row_key = str(row.get("key", "") or "").strip()
             row_id = str(row.get("id", "") or "").strip()
@@ -1970,7 +2158,7 @@ class CrossSectionViewerTaskPanel:
     def _open_v1_command(self, command_name: str) -> None:
         source_objects = _preview_source_objects(self.preview)
         objects_to_select = []
-        if command_name == "CorridorRoad_V1EditAssembly":
+        if command_name == "CorridorRoad_V1EditAssemblySubassembly":
             objects_to_select = [source_objects.get("assembly_model")]
         elif command_name == "CorridorRoad_V1EditRegions":
             objects_to_select = [source_objects.get("region_model")]

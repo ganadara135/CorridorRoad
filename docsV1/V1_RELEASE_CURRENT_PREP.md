@@ -1,28 +1,28 @@
 # Parametric Road Current Release Preparation
 
-Date: 2026-06-04
-Status: `1.0.4` release prepared
+Date: 2026-06-15
+Status: `1.0.5` release prepared
 Scope: post-`1.0.0` v1 updates
 
 ## Purpose
 
 This document tracks release cleanup for the current v1 work after the initial `1.0.0` release baseline.
 
-Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.4` release.
+Use it to keep documentation, release notes, tutorial links, forum messaging, and validation notes aligned after the `1.0.5` release.
 
 ## Release Status
 
-- Release version: `1.0.4`
-- Release date: `2026-06-04`
-- Tag: `v1.0.4`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
+- Release version: `1.0.5`
+- Release date: `2026-06-15`
+- Tag: `v1.0.5`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Forum thread: https://forum.freecad.org/viewtopic.php?t=103783
 
 Post-release tasks:
 
-- [x] `package.xml` version/date updated to `1.0.4` / `2026-06-04`.
-- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.4` release section.
+- [x] `package.xml` version/date updated to `1.0.5` / `2026-06-15`.
+- [x] `CHANGELOG.md` converted from `Unreleased` into the `1.0.5` release section.
 - [x] Git tag and GitHub Release published.
 - [x] Tutorial video link added to README, Addon overview, and Wiki draft pages.
 - [x] Forum announcement draft prepared in `docsV1/V1_1_0_1_FORUM_ANNOUNCEMENT.md`.
@@ -70,14 +70,14 @@ Keep these listed as future or incremental work:
 - [x] Wiki Troubleshooting updated for Drainage Flow Network, Structure preview, and Watertight Solids.
 - [x] Wiki Structures page updated for drainage-ready native Structure previews.
 - [x] Wiki Review page updated for 3D Centerline and Drainage Review.
-- [x] CHANGELOG `1.0.4` contains recent Intersections, multi-alignment 3D Centerline, Region Boundary, and Build Parametric notes.
-- [x] README and local Wiki drafts now point to the `1.0.4` release.
+- [x] CHANGELOG `1.0.5` contains recent Subassembly, Cross Section Viewer, Intersections, and Build Parametric notes.
+- [x] README and local Wiki drafts now point to the `1.0.5` release.
 
 ## Historical Document Notes
 
 The `1.0.0` release planning and validation records still mention Drainage as a placeholder or under-development stage because that was true for the `2026-05-02` release baseline.
 
-Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.4` changelog section.
+Do not rewrite those historical records as current behavior. Current user-facing behavior is tracked in this document, README, Wiki pages, and the `1.0.5` changelog section.
 
 ## Release Validation Checklist
 
@@ -103,18 +103,20 @@ Before tagging the next release:
 
 Suggested short release description:
 
-`Parametric Road 1.0.4 improves the source-driven v1 workflow with Intersections starter sources, automatic multi-alignment 3D Centerline generation, multi-alignment Region Boundary review, and safer Build Parametric surface handling for junction workflows. Advanced hydraulic analysis, automatic pipe sizing, dedicated Intersection Surface Patch generation, and complete exchange coverage remain future work.`
+`Parametric Road 1.0.5 advances the source-driven v1 workflow with the active Subassembly model, Applied Sections / Cross Section Viewer stability after the Component-to-Subassembly transition, and continued Intersections / Build Parametric review refinement. Advanced hydraulic analysis, automatic pipe sizing, dedicated Intersection Surface Patch generation, and complete exchange coverage remain future work.`
 
 Suggested highlights:
 
-- Intersections `Create Starter Sources` now creates editable source rows and generates a multi-alignment 3D Centerline preview.
+- Subassembly is now the active v1 cross-section building block in source, result, output, and viewer handoff paths.
+- Applied Sections and Cross Section Viewer paths were stabilized after the Component-to-Subassembly transition.
+- Intersections `Create Starter Sources` creates editable source rows and generates a multi-alignment 3D Centerline preview.
 - Shared 3D Centerline review and downstream coordinate ownership, with Smooth Curve / Polyline display options and multi-alignment preview support.
 - Superelevation is now a dedicated source stage before Applied Sections, with Auto Calculate and Applied Sections carrying the resolved crossfall into Build Parametric.
 - Region source simplification: Regions own station spans and Assembly; Structures and Drainage own their own Region/context refs.
 - Structures now support connection-ready native drainage objects and clearer 3D review geometry.
 - Drainage now has Elements, Policies, Flow Routes, Structure refs, and Flow Network preview.
 - Drainage now opens empty when no source object exists, so users intentionally add rows or load preset data.
-- Watertight Solids now discovers and builds road, component, drainage, and structure targets with package handoff.
+- Watertight Solids now discovers and builds road, Subassembly, drainage, and structure targets with package handoff.
 - Build Parametric and Watertight Solid outputs are easier to inspect from the FreeCAD tree.
 - Drainage Flow Network previews now follow shared 3D Centerline elevation context more reliably.
 - Applied Sections row review now shows the selected Assembly line without station marker clutter.
@@ -131,5 +133,5 @@ For future release work, do not tag the next release until:
 
 Current packaging state:
 
-- `package.xml` declares version `1.0.4` and date `2026-06-04`.
-- The intended release tag is `v1.0.4`.
+- `package.xml` declares version `1.0.5` and date `2026-06-15`.
+- The intended release tag is `v1.0.5`.

@@ -4,8 +4,8 @@ This folder contains the Parametric Road v1 redesign documents.
 
 Current public release:
 
-- `Parametric Road 1.0.4`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
+- `Parametric Road 1.0.5`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
 - Tutorial video: https://youtu.be/_xpqwnXPUU8
 - Release status and post-release tasks: [V1_RELEASE_CURRENT_PREP.md](./V1_RELEASE_CURRENT_PREP.md)
 
@@ -25,12 +25,17 @@ Baseline document:
 - [V1_RAMP_MODEL.md](./V1_RAMP_MODEL.md)
 - [V1_INTERSECTION_MODEL.md](./V1_INTERSECTION_MODEL.md)
 - [V1_INTERSECTION_IMPLEMENTATION_PLAN.md](./V1_INTERSECTION_IMPLEMENTATION_PLAN.md)
+- [V1_INTERSECTION_ENHANCEMENT_PLAN.md](./V1_INTERSECTION_ENHANCEMENT_PLAN.md)
+- [V1_INTERSECTION_REDESIGN_PLAN.md](./V1_INTERSECTION_REDESIGN_PLAN.md)
+- [V1_INTERSECTION_PRESET_DATA_PLAN.md](./V1_INTERSECTION_PRESET_DATA_PLAN.md)
+- [V1_INTERSECTION_MANUAL_QA.md](./V1_INTERSECTION_MANUAL_QA.md)
 - [V1_PROFILE_MODEL.md](./V1_PROFILE_MODEL.md)
 - [V1_SUPERELEVATION_MODEL.md](./V1_SUPERELEVATION_MODEL.md)
 - [V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md](./V1_SUPERELEVATION_IMPLEMENTATION_PLAN.md)
 - [V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md](./V1_SUPERELEVATION_AUTO_CALCULATION_PLAN.md)
 - [V1_SUPERELEVATION_MANUAL_QA.md](./V1_SUPERELEVATION_MANUAL_QA.md)
 - [V1_ASSEMBLY_MODEL.md](./V1_ASSEMBLY_MODEL.md)
+- [V1_SUBASSEMBLY_FULL_ADOPTION_PLAN.md](./V1_SUBASSEMBLY_FULL_ADOPTION_PLAN.md)
 - [V1_ASSEMBLY_SLOPE_BENCH_PLAN.md](./V1_ASSEMBLY_SLOPE_BENCH_PLAN.md)
 - [V1_REGION_MODEL.md](./V1_REGION_MODEL.md)
 - [V1_REGION_IMPLEMENTATION_PLAN.md](./V1_REGION_IMPLEMENTATION_PLAN.md)
@@ -128,7 +133,7 @@ Preferred review workflow:
 - for Profile CSV import checks, use `tests/samples/profile_v1_pvi_rolling.csv` or `tests/samples/profile_v1_pvi_mountain_valley_plain.csv`
 - before deeper Profile/Corridor consumers depend on terrain, add TIN editing through replayable edit operations rather than direct mesh mutation
 - model corridor ranges through `Region` as station spans with one base Assembly; Structure and Drainage source models should reference Region from their own panels instead of being authored in the Region table
-- use `Assembly` as the native v1 source editor for reusable section components; opening the panel should not generate corridor geometry until `Apply`
+- keep the existing `Assembly` editor available during the Subassembly cutover, and introduce `Assembly / Subassembly` as the new source editor for explicit Subassembly rows; opening either panel should not generate corridor geometry until `Apply`
 - order the source-authoring toolbar as `Assembly -> Regions -> Intersections -> Structures -> Drainage`, so Intersections can reference accepted Regions, Structures can reference intersection Regions, and Drainage can reference both Regions and Structure refs when needed
 - treat Drainage as an active v1 source stage with Elements, Policies, Flow Routes, Structure refs, Flow Network preview, and Drainage Review; reserve advanced hydraulic analysis and automatic pipe sizing for future work
 - use `Applied Sections` as the first v1 result builder after Assembly and Regions; it should create station-wise section results, not corridor solids
@@ -138,7 +143,7 @@ Preferred review workflow:
 - continue Structures enhancement as connection-ready source nodes with explicit Native/External geometry source modes, stable connection point mapping, invert context, validation, Drainage handoff, and Watertight Solid readiness as described in `V1_STRUCTURE_CONNECTION_NODE_PLAN.md`
 - use `Structure Output` under `Outputs & Exchange` to build structure solids, structure quantities, exchange packages, JSON export, and IFC handoff from accepted source/result contracts
 - check Structure Output export-readiness diagnostics before IFC export; errors block export, warnings remain visible in the persisted exchange package
-- treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical component bodies with thickness, material, volume, or export identity
+- treat corridor surfaces as the first build output for terrain-like results such as finished grade, subgrade, daylight, clipping, and comparison; reserve solids for physical Subassembly bodies with thickness, material, volume, or export identity
 - use the representation strategy table in `V1_MASTER_PLAN.md` when deciding whether a subsystem should be semantic-first, geometry-first, topology-first, or contract-first
 - generate watertight solids through a topology-first pipeline: closed semantic Applied Section profiles, deterministic edge networks, face adjacency, shell validation, then Part solid geometry
 - use the existing v0 viewers as secondary support paths during transition

@@ -41,7 +41,7 @@ This plan does not cover:
 
 Superelevation owns station-based effective Crossfall.
 
-Assembly owns default crossfall and section component geometry. Superelevation reads those defaults and overrides lane and shoulder crossfall by station when active.
+Assembly owns default crossfall and section Subassembly geometry. Superelevation reads those defaults and overrides lane and shoulder crossfall by station when active.
 
 The ownership rule is:
 
@@ -83,9 +83,9 @@ The auto calculator should read:
 | `ProfileModel` | Profile availability and grade context for diagnostics. |
 | `Centerline3DResult` | Station frame, tangent direction, elevation, and final sampled station context. |
 | `V1Stationing` | Candidate station list for sample review and QA. |
-| `AssemblyModel` | Default lane/shoulder crossfall and available target component sides. |
+| `AssemblySubassemblyModel` | Default lane/shoulder crossfall and available target Subassembly sides. |
 
-If no Assembly is available, the calculator may still generate Superelevation control rows, but it should warn that effective Crossfall cannot be verified against target components.
+If no Assembly is available, the calculator may still generate Superelevation control rows, but it should warn that effective Crossfall cannot be verified against target Subassemblies.
 
 ## Calculation Policy
 
@@ -152,7 +152,7 @@ Exact sign convention must match the current Applied Sections side convention:
 
 - left side uses positive lateral offset
 - right side uses negative lateral offset
-- effective slope is written into lane/shoulder component parameters before point rows are generated
+- effective slope is written into lane/shoulder Subassembly parameters before point rows are generated
 
 ### Transition Rows
 
@@ -286,7 +286,7 @@ The service should report:
 | `missing_alignment` | error | No Alignment source is available. |
 | `missing_centerline3d` | warning/error | 3D Centerline is unavailable for station frame review. |
 | `missing_profile` | warning | Profile context is unavailable. |
-| `missing_assembly` | warning | Default crossfall cannot be compared to Assembly target components. |
+| `missing_assembly` | warning | Default crossfall cannot be compared to Assembly target Subassemblies. |
 | `curve_radius_missing` | error | Curve cannot be calculated without radius. |
 | `curve_radius_below_minimum` | warning | Radius is below the selected design criteria. |
 | `transition_length_short` | warning | Curve does not have enough available length for the target transition policy. |
@@ -348,7 +348,7 @@ Add focused tests for:
 ## Non-goals
 
 - Superelevation does not edit Alignment geometry.
-- Superelevation does not replace Assembly component definitions.
+- Superelevation does not replace Assembly Subassembly definitions.
 - Superelevation does not directly build corridor surfaces.
 - Superelevation auto calculation does not silently overwrite accepted source state.
 

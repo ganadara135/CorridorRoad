@@ -158,7 +158,7 @@ def _drainage_element_rows(drainage_model: DrainageModel | None) -> list[Drainag
                         f"kind={str(getattr(row, 'element_kind', '') or '')}",
                         f"side={str(getattr(row, 'side', '') or '')}",
                         f"region_ref={str(getattr(row, 'region_ref', '') or '')}",
-                        f"assembly_component_ref={str(getattr(row, 'assembly_component_ref', '') or '')}",
+                        *_subassembly_note_fields(str(getattr(row, "subassembly_ref", "") or "")),
                         f"policy_set_ref={str(getattr(row, 'policy_set_ref', '') or '')}",
                     ] if value.split("=", 1)[-1]
                 ),
@@ -498,7 +498,7 @@ def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tupl
         if not points:
             continue
         refs = _unique_refs([str(getattr(point, "drainage_ref", "") or "") for point in points])
-        component_refs = _unique_refs([str(getattr(point, "component_ref", "") or "") for point in points])
+        subassembly_refs = _unique_refs([str(getattr(point, "subassembly_ref", "") or "") for point in points])
         sides = _unique_refs([str(getattr(point, "side", "") or "") for point in points])
         ditch_point_count += len(points)
         ditch_point_with_ref_count += sum(1 for point in points if str(getattr(point, "drainage_ref", "") or "").strip())
@@ -514,7 +514,7 @@ def _applied_section_rows(applied_section_set: AppliedSectionSet | None) -> tupl
                 notes=(
                     f"ditch_points={len(points)};"
                     f"drainage_refs={','.join(refs)};"
-                    f"component_refs={','.join(component_refs)};"
+                    f"subassembly_refs={','.join(subassembly_refs)};"
                     f"sides={','.join(sides)}"
                 ),
             )
@@ -573,7 +573,7 @@ def _flowline_continuity_rows(applied_section_set: AppliedSectionSet | None) -> 
                             f"z_end={z1:.3f}",
                             f"fall={fall:.3f}",
                             f"grade={grade:.6g}",
-                            f"component_ref={str(getattr(point0, 'component_ref', '') or getattr(point1, 'component_ref', '') or '')}",
+                            *_subassembly_note_fields(str(getattr(point0, "subassembly_ref", "") or getattr(point1, "subassembly_ref", "") or "")),
                             f"side={str(getattr(point0, 'side', '') or getattr(point1, 'side', '') or '')}",
                         ]
                     ),
@@ -594,12 +594,12 @@ def _flowline_candidate_point(point):
 
 def _flowline_group_key(point) -> str:
     drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
-    component_ref = str(getattr(point, "component_ref", "") or "").strip()
+    subassembly_ref = str(getattr(point, "subassembly_ref", "") or "").strip()
     side = str(getattr(point, "side", "") or "").strip()
     if drainage_ref:
         return drainage_ref
-    if component_ref:
-        return component_ref
+    if subassembly_ref:
+        return subassembly_ref
     if side:
         return f"side:{side}"
     return "unassigned-flowline"
@@ -610,6 +610,13 @@ def _point_lateral_offset(point) -> float:
         return float(getattr(point, "lateral_offset", 0.0) or 0.0)
     except Exception:
         return 0.0
+
+
+def _subassembly_note_fields(subassembly_ref: str) -> list[str]:
+    subassembly_ref = str(subassembly_ref or "").strip()
+    if subassembly_ref:
+        return [f"subassembly_ref={subassembly_ref}"]
+    return []
 
 
 def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageElementOutputRow], float, float]:
@@ -636,12 +643,14 @@ def _quantity_rows(quantity_model: QuantityModel | None) -> tuple[list[DrainageE
                 station_end=float(getattr(row, "station_end", 0.0) or 0.0),
                 label=quantity_kind,
                 source_ref=drainage_ref,
-                notes=(
-                    f"quantity_kind={quantity_kind};"
-                    f"value={value:.6g};"
-                    f"unit={str(getattr(row, 'unit', '') or '')};"
-                    f"component_ref={str(getattr(row, 'component_ref', '') or '')};"
-                    f"flow_route_ref={str(getattr(row, 'flow_route_ref', '') or '')}"
+                notes=";".join(
+                    value for value in [
+                        f"quantity_kind={quantity_kind}",
+                        f"value={value:.6g}",
+                        f"unit={str(getattr(row, 'unit', '') or '')}",
+                        *_subassembly_note_fields(str(getattr(row, "subassembly_ref", "") or "")),
+                        f"flow_route_ref={str(getattr(row, 'flow_route_ref', '') or '')}",
+                    ] if value.split("=", 1)[-1]
                 ),
             )
         )

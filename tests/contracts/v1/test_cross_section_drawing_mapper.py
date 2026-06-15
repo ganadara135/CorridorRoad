@@ -1,8 +1,8 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
+    AppliedSectionSubassemblyRow,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.services.mapping.cross_section_drawing_mapper import CrossSectionDrawingMapper
@@ -158,25 +158,25 @@ def test_cross_section_drawing_payload_uses_bench_point_rows_for_side_slope_geom
     assert ("Right daylight", "side_slope:daylight") in labels
 
 
-def test_cross_section_drawing_payload_synthesizes_v0_style_rows_from_components() -> None:
+def test_cross_section_drawing_payload_synthesizes_rows_from_subassemblies() -> None:
     section = AppliedSection(
         schema_version=1,
         project_id="project:cross-section-drawing",
-        applied_section_id="section:component-only",
+        applied_section_id="section:subassembly-only",
         corridor_id="corridor:main",
         alignment_id="alignment:main",
         station=20.0,
         frame=AppliedSectionFrame(station=20.0, x=20.0, y=0.0, z=12.0),
         subgrade_depth=0.30,
-        component_rows=[
-            AppliedSectionComponentRow("lane:left", "lane", side="left", width=3.5, slope=-0.02),
-            AppliedSectionComponentRow("lane:right", "lane", side="right", width=3.5, slope=-0.02),
-            AppliedSectionComponentRow("shoulder:left", "shoulder", side="left", width=1.8, slope=-0.04),
-            AppliedSectionComponentRow("shoulder:right", "shoulder", side="right", width=1.8, slope=-0.04),
-            AppliedSectionComponentRow("ditch:left", "ditch", side="left", width=1.8, slope=-0.12),
-            AppliedSectionComponentRow("ditch:right", "ditch", side="right", width=1.8, slope=-0.12),
-            AppliedSectionComponentRow("slope:left", "side_slope", side="left", width=6.0, slope=0.33),
-            AppliedSectionComponentRow("slope:right", "side_slope", side="right", width=6.0, slope=0.33),
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow("lane:left", "lane", side="left", width=3.5, slope=-0.02),
+            AppliedSectionSubassemblyRow("lane:right", "lane", side="right", width=3.5, slope=-0.02),
+            AppliedSectionSubassemblyRow("shoulder:left", "shoulder", side="left", width=1.8, slope=-0.04),
+            AppliedSectionSubassemblyRow("shoulder:right", "shoulder", side="right", width=1.8, slope=-0.04),
+            AppliedSectionSubassemblyRow("ditch:left", "ditch", side="left", width=1.8, slope=-0.12),
+            AppliedSectionSubassemblyRow("ditch:right", "ditch", side="right", width=1.8, slope=-0.12),
+            AppliedSectionSubassemblyRow("slope:left", "side_slope", side="left", width=6.0, slope=0.33),
+            AppliedSectionSubassemblyRow("slope:right", "side_slope", side="right", width=6.0, slope=0.33),
         ],
     )
 
@@ -193,7 +193,7 @@ def test_cross_section_drawing_payload_synthesizes_v0_style_rows_from_components
     assert any(row.text == "ditch L" and row.value == "1.800 m" for row in payload.label_rows)
     assert any(row.text == "daylight R" and row.value == "6.000 m" for row in payload.label_rows)
     assert any(row.kind == "overall_width" and abs(row.value - 26.2) < 1.0e-9 for row in payload.dimension_rows)
-    assert sum(1 for row in payload.dimension_rows if row.kind == "component_width") == 8
+    assert sum(1 for row in payload.dimension_rows if row.kind == "subassembly_width") == 8
 
 
 def test_cross_section_drawing_payload_returns_empty_state_without_sections() -> None:

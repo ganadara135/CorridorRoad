@@ -320,9 +320,18 @@ class V1Centerline3DTaskPanel:
 
     def _apply(self) -> None:
         self._result = build_document_centerline3d_result(self.document)
-        self._show()
+        if self._show():
+            _show_info(
+                self.form,
+                "3D Centerline",
+                (
+                    "3D Centerline has been generated.\n"
+                    f"Preview object: {str(getattr(self._preview_object, 'Name', '') or 'V1Centerline3DPreview')}\n"
+                    f"Points: {int(getattr(self._result, 'point_count', 0) or 0)}"
+                ),
+            )
 
-    def _show(self) -> None:
+    def _show(self) -> bool:
         try:
             self._preview_object = show_v1_centerline3d_preview_object(
                 self.document,
@@ -339,8 +348,10 @@ class V1Centerline3DTaskPanel:
                     f"display={_display_mode_label(getattr(self._preview_object, 'CenterlineDisplayMode', 'smooth_curve'))}."
                 )
             )
+            return True
         except Exception as exc:
             self._diagnostics.setPlainText(f"3D Centerline preview was not shown:\n{exc}")
+            return False
 
     def _hide(self) -> None:
         obj = self._preview_object or (self.document.getObject("V1Centerline3DPreview") if self.document is not None else None)
@@ -716,6 +727,15 @@ def _set_float(obj, name: str, value: float) -> None:
             pass
     try:
         setattr(obj, name, float(value or 0.0))
+    except Exception:
+        pass
+
+
+def _show_info(parent, title: str, message: str) -> None:
+    if QtWidgets is None:
+        return
+    try:
+        QtWidgets.QMessageBox.information(parent, title, message)
     except Exception:
         pass
 

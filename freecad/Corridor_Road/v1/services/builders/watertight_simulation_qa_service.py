@@ -22,6 +22,9 @@ class WatertightSimulationQaSolidInput:
     shape_valid: bool = False
     # FreeCAD BoundBox order: XMin, XMax, YMin, YMax, ZMin, ZMax.
     bound_box: tuple[float, float, float, float, float, float] | None = None
+    # Segment order: X1, Y1, X2, Y2. Used for first-slice contact edge diagnostics.
+    edge_xy_segments: list[tuple[float, float, float, float]] = field(default_factory=list)
+    subassembly_refs: list[str] = field(default_factory=list)
     structure_refs: list[str] = field(default_factory=list)
     flow_route_refs: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
@@ -67,7 +70,7 @@ class WatertightSimulationQaService:
                 bucket["total_volume"] = float(bucket["total_volume"]) + row_volume
 
         family_set = set(families)
-        road_ready = "road_body_envelope" in family_set or "region_body" in family_set
+        road_ready = "road_body_envelope" in family_set or "region_body" in family_set or "intersection_patch_body" in family_set
         drainage_ready = any(family in family_set for family in {"lined_ditch_body", "drainage_pipeline_body", "drainage_pipeline_network_body"})
         structure_ready = "structure_body" in family_set
         terrain_ready = bool(getattr(request, "terrain_ready", False))
@@ -114,7 +117,10 @@ class WatertightSimulationQaService:
             schema_version=1,
             project_id=str(getattr(request, "project_id", "") or "corridorroad-v1"),
             simulation_qa_output_id=str(getattr(request, "simulation_qa_output_id", "") or "simulation-qa:watertight-solids"),
-            source_refs=_unique_refs(getattr(request, "output_refs", []) or []),
+            source_refs=_simulation_source_refs(
+                getattr(request, "output_refs", []) or [],
+                inputs,
+            ),
             output_count=len(inputs),
             road_body_status="ready" if road_ready else "missing",
             terrain_status="ready" if terrain_ready else "missing",
@@ -159,6 +165,16 @@ def _diagnostics(*, missing_contexts: list[str], invalid_count: int, zero_volume
     return rows
 
 
+def _simulation_source_refs(output_refs: object, inputs: list[WatertightSimulationQaSolidInput]) -> list[str]:
+    refs: list[str] = [str(ref or "") for ref in list(output_refs or [])]
+    for row in list(inputs or []):
+        refs.extend(str(ref or "") for ref in list(getattr(row, "subassembly_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "structure_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "flow_route_refs", []) or []))
+        refs.extend(str(ref or "") for ref in list(getattr(row, "source_refs", []) or []))
+    return _unique_refs(refs)
+
+
 def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list[SimulationQaDiagnosticRow]:
     road_rows = [
         row for row in inputs
@@ -178,6 +194,61 @@ def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list
                         source_ref=str(getattr(row, "output_ref", "") or ""),
                     )
                 )
+        elif _has_family(row, {"intersection_patch_body"}):
+            nearest_gap = _nearest_xy_gap_to_road(row, road_rows)
+            nearest_edge_gap = _nearest_edge_xy_gap_to_road(row, road_rows)
+            trim_candidate_count = _nearby_edge_pair_count(row, road_rows, tolerance=0.05)
+            if not _touches_any_road(row, road_rows):
+                rows.append(
+                    _diagnostic(
+                        "error",
+                        "intersection_patch_disconnected_from_road_body",
+                        (
+                            f"Intersection patch solid {row.output_ref} does not overlap or touch any road body bounding box; "
+                            f"{_nearest_xy_gap_message(nearest_gap)}, {_nearest_edge_xy_gap_message(nearest_edge_gap)}."
+                        ),
+                        source_ref=str(getattr(row, "output_ref", "") or ""),
+                    )
+                )
+            elif nearest_edge_gap is not None and nearest_edge_gap > 0.05:
+                rows.append(
+                    _diagnostic(
+                        "warning",
+                        "intersection_patch_edge_pair_gap",
+                        (
+                            f"Intersection patch solid {row.output_ref} overlaps/touches a road body bounding box, "
+                            f"but the nearest patch/road edge pair has {_nearest_edge_xy_gap_message(nearest_edge_gap)}."
+                        ),
+                        source_ref=str(getattr(row, "output_ref", "") or ""),
+                    )
+                )
+            elif trim_candidate_count > 0:
+                rows.append(
+                    _diagnostic(
+                        "info",
+                        "intersection_patch_trim_candidate",
+                        (
+                            f"Intersection patch solid {row.output_ref} has candidate patch/road edge pair(s) for future clip/trim; "
+                            f"candidate_edge_pairs={trim_candidate_count}, {_nearest_edge_xy_gap_message(nearest_edge_gap)}, tolerance=0.050."
+                        ),
+                        source_ref=str(getattr(row, "output_ref", "") or ""),
+                    )
+                )
+            if not _intersection_patch_shares_road_region_context(row, road_rows):
+                patch_regions = _source_region_refs(getattr(row, "source_refs", []) or [])
+                road_regions = _road_region_refs(road_rows)
+                rows.append(
+                    _diagnostic(
+                        "error",
+                        "intersection_patch_region_context_mismatch",
+                        (
+                            f"Intersection patch solid {row.output_ref} does not share any control Region source ref with built road/region body outputs; "
+                            f"patch_regions={_ref_list_message(patch_regions)}, road_regions={_ref_list_message(road_regions)}, "
+                            f"{_nearest_xy_gap_message(nearest_gap)}, {_nearest_edge_xy_gap_message(nearest_edge_gap)}."
+                        ),
+                        source_ref=str(getattr(row, "output_ref", "") or ""),
+                    )
+                )
         elif _has_family(row, {"structure_body"}):
             if not _touches_any_road(row, road_rows):
                 rows.append(
@@ -194,7 +265,7 @@ def _contact_diagnostics(inputs: list[WatertightSimulationQaSolidInput]) -> list
 def _contact_check_applied(inputs: list[WatertightSimulationQaSolidInput]) -> bool:
     road_has_bbox = any(_has_family(row, {"road_body_envelope", "region_body"}) and getattr(row, "bound_box", None) is not None for row in inputs)
     subject_has_bbox = any(
-        _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body", "structure_body"})
+        _has_family(row, {"drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body", "intersection_patch_body", "structure_body"})
         and getattr(row, "bound_box", None) is not None
         for row in inputs
     )
@@ -209,14 +280,14 @@ def _terrain_domain_diagnostics(
         return []
     rows: list[SimulationQaDiagnosticRow] = []
     for row in inputs:
-        if not _has_family(row, {"road_body_envelope", "region_body", "drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body"}):
+        if not _has_family(row, {"road_body_envelope", "region_body", "intersection_patch_body", "drainage_pipeline_body", "drainage_pipeline_network_body", "lined_ditch_body"}):
             continue
         bbox = getattr(row, "bound_box", None)
         if bbox is None:
             continue
         if _bbox_xy_overlaps(bbox, terrain_bound_box, tolerance=0.05):
             continue
-        severity = "error" if _has_family(row, {"road_body_envelope", "region_body"}) else "warning"
+        severity = "error" if _has_family(row, {"road_body_envelope", "region_body", "intersection_patch_body"}) else "warning"
         rows.append(
             _diagnostic(
                 severity,
@@ -285,6 +356,107 @@ def _touches_any_road(row: WatertightSimulationQaSolidInput, road_rows: list[Wat
     return any(_bbox_overlaps(bbox, getattr(road_row, "bound_box", None), tolerance=0.05) for road_row in road_rows)
 
 
+def _nearest_xy_gap_to_road(
+    row: WatertightSimulationQaSolidInput,
+    road_rows: list[WatertightSimulationQaSolidInput],
+) -> float | None:
+    bbox = getattr(row, "bound_box", None)
+    if bbox is None:
+        return None
+    gaps = [
+        _bbox_xy_gap(bbox, getattr(road_row, "bound_box", None))
+        for road_row in road_rows
+        if getattr(road_row, "bound_box", None) is not None
+    ]
+    if not gaps:
+        return None
+    return min(gaps)
+
+
+def _nearest_edge_xy_gap_to_road(
+    row: WatertightSimulationQaSolidInput,
+    road_rows: list[WatertightSimulationQaSolidInput],
+) -> float | None:
+    patch_segments = _edge_xy_segments(row)
+    if not patch_segments:
+        return None
+    road_segments: list[tuple[float, float, float, float]] = []
+    for road_row in road_rows:
+        road_segments.extend(_edge_xy_segments(road_row))
+    if not road_segments:
+        return None
+    min_gap: float | None = None
+    for patch_segment in patch_segments:
+        for road_segment in road_segments:
+            gap = _segment_xy_distance(patch_segment, road_segment)
+            if min_gap is None or gap < min_gap:
+                min_gap = gap
+                if min_gap <= 0.0:
+                    return 0.0
+    return min_gap
+
+
+def _nearby_edge_pair_count(
+    row: WatertightSimulationQaSolidInput,
+    road_rows: list[WatertightSimulationQaSolidInput],
+    *,
+    tolerance: float,
+) -> int:
+    patch_segments = _edge_xy_segments(row)
+    if not patch_segments:
+        return 0
+    road_segments: list[tuple[float, float, float, float]] = []
+    for road_row in road_rows:
+        road_segments.extend(_edge_xy_segments(road_row))
+    if not road_segments:
+        return 0
+    tol = max(float(tolerance or 0.0), 0.0)
+    count = 0
+    for patch_segment in patch_segments:
+        for road_segment in road_segments:
+            if _segment_xy_distance(patch_segment, road_segment) <= tol:
+                count += 1
+    return count
+
+
+def _edge_xy_segments(row: WatertightSimulationQaSolidInput) -> list[tuple[float, float, float, float]]:
+    segments: list[tuple[float, float, float, float]] = []
+    for value in list(getattr(row, "edge_xy_segments", []) or []):
+        try:
+            x1, y1, x2, y2 = [float(part) for part in value]
+        except Exception:
+            continue
+        if (x1, y1) == (x2, y2):
+            continue
+        segments.append((x1, y1, x2, y2))
+    return segments
+
+
+def _intersection_patch_shares_road_region_context(
+    row: WatertightSimulationQaSolidInput,
+    road_rows: list[WatertightSimulationQaSolidInput],
+) -> bool:
+    patch_regions = _source_region_refs(getattr(row, "source_refs", []) or [])
+    road_regions = _road_region_refs(road_rows)
+    if not patch_regions or not road_regions:
+        return True
+    return bool(patch_regions & road_regions)
+
+
+def _road_region_refs(road_rows: list[WatertightSimulationQaSolidInput]) -> set[str]:
+    road_regions: set[str] = set()
+    for road in road_rows:
+        road_regions.update(_source_region_refs(getattr(road, "source_refs", []) or []))
+    return road_regions
+
+
+def _source_region_refs(values) -> set[str]:
+    return {
+        ref for ref in _input_ref_values(values)
+        if ref.startswith("region:")
+    }
+
+
 def _bbox_overlaps(
     left: tuple[float, float, float, float, float, float] | None,
     right: tuple[float, float, float, float, float, float] | None,
@@ -315,6 +487,103 @@ def _bbox_xy_overlaps(
     rx_min, rx_max, ry_min, ry_max, _rz_min, _rz_max = [float(value) for value in right]
     tol = max(float(tolerance or 0.0), 0.0)
     return lx_min <= rx_max + tol and lx_max + tol >= rx_min and ly_min <= ry_max + tol and ly_max + tol >= ry_min
+
+
+def _bbox_xy_gap(
+    left: tuple[float, float, float, float, float, float] | None,
+    right: tuple[float, float, float, float, float, float] | None,
+) -> float | None:
+    if left is None or right is None:
+        return None
+    lx_min, lx_max, ly_min, ly_max, _lz_min, _lz_max = [float(value) for value in left]
+    rx_min, rx_max, ry_min, ry_max, _rz_min, _rz_max = [float(value) for value in right]
+    dx = max(rx_min - lx_max, lx_min - rx_max, 0.0)
+    dy = max(ry_min - ly_max, ly_min - ry_max, 0.0)
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _nearest_xy_gap_message(gap: float | None) -> str:
+    if gap is None:
+        return "nearest_xy_gap=unknown"
+    return f"nearest_xy_gap={gap:.3f}"
+
+
+def _nearest_edge_xy_gap_message(gap: float | None) -> str:
+    if gap is None:
+        return "nearest_edge_xy_gap=unknown"
+    return f"nearest_edge_xy_gap={gap:.3f}"
+
+
+def _segment_xy_distance(
+    left: tuple[float, float, float, float],
+    right: tuple[float, float, float, float],
+) -> float:
+    ax, ay, bx, by = [float(value) for value in left]
+    cx, cy, dx, dy = [float(value) for value in right]
+    if _segments_xy_intersect((ax, ay), (bx, by), (cx, cy), (dx, dy)):
+        return 0.0
+    return min(
+        _point_to_segment_xy_distance((ax, ay), (cx, cy), (dx, dy)),
+        _point_to_segment_xy_distance((bx, by), (cx, cy), (dx, dy)),
+        _point_to_segment_xy_distance((cx, cy), (ax, ay), (bx, by)),
+        _point_to_segment_xy_distance((dx, dy), (ax, ay), (bx, by)),
+    )
+
+
+def _segments_xy_intersect(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+) -> bool:
+    def orient(p, q, r) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on_segment(p, q, r) -> bool:
+        return (
+            min(p[0], r[0]) - 1e-9 <= q[0] <= max(p[0], r[0]) + 1e-9
+            and min(p[1], r[1]) - 1e-9 <= q[1] <= max(p[1], r[1]) + 1e-9
+        )
+
+    o1 = orient(a, b, c)
+    o2 = orient(a, b, d)
+    o3 = orient(c, d, a)
+    o4 = orient(c, d, b)
+    if (o1 > 0.0) != (o2 > 0.0) and (o3 > 0.0) != (o4 > 0.0):
+        return True
+    if abs(o1) <= 1e-9 and on_segment(a, c, b):
+        return True
+    if abs(o2) <= 1e-9 and on_segment(a, d, b):
+        return True
+    if abs(o3) <= 1e-9 and on_segment(c, a, d):
+        return True
+    if abs(o4) <= 1e-9 and on_segment(c, b, d):
+        return True
+    return False
+
+
+def _point_to_segment_xy_distance(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    px, py = point
+    sx, sy = start
+    ex, ey = end
+    dx = ex - sx
+    dy = ey - sy
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 1e-12:
+        return ((px - sx) ** 2 + (py - sy) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - sx) * dx + (py - sy) * dy) / length_sq))
+    nx = sx + t * dx
+    ny = sy + t * dy
+    return ((px - nx) ** 2 + (py - ny) ** 2) ** 0.5
+
+
+def _ref_list_message(values: set[str]) -> str:
+    refs = sorted(str(value or "").strip() for value in values if str(value or "").strip())
+    return ",".join(refs) if refs else "-"
 
 
 def _diagnostic(severity: str, kind: str, message: str, *, source_ref: str = "") -> SimulationQaDiagnosticRow:

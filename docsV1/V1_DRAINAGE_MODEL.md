@@ -153,7 +153,7 @@ Each `DrainageElementRow` represents one drainage node.
 
 Elements answer "what drainage target exists here?".
 
-Assembly-generated drainage geometry is limited to ditch components in the current implementation. Other drainage needs such as culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references; they are not Assembly-generated ditch geometry.
+Assembly-generated drainage geometry is limited to ditch Subassemblies in the current implementation. Other drainage needs such as culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references; they are not Assembly-generated ditch geometry.
 
 ### 10.2 Recommended fields
 
@@ -318,13 +318,13 @@ Drainage constraints make grading and comparison rules explicit.
 
 - daylight edge treatment
 - ditch and gutter interpretation
-- drainage-sensitive component selection
+- drainage-sensitive Subassembly selection
 - low-point warnings attached to section review
 - output rows describing flow-route and discharge context
 
 It should not directly become the editable generated section geometry.
 
-Applied Section `ditch_surface` rows may carry `drainage_ref`, `component_ref`, and `side` as result context. Corridor surface generation consumes those source-tagged rows to create the separate drainage surface and carries the source ids into TIN provenance and diagnostics.
+Applied Section `ditch_surface` rows may carry `drainage_ref`, `subassembly_ref`, and `side` as result context. Corridor surface generation consumes those source-tagged rows to create the separate drainage surface and carries the source ids into TIN provenance and diagnostics.
 
 Drainage quantity generation uses the same source-tagged Applied Section rows. First-slice quantity outputs report `drainage_ditch_length` by `drainage_ref` and report `drainage_flowline_length` when paired flowline or invert point ids exist.
 
@@ -370,7 +370,7 @@ Recommended early diagnostics include:
 - drainage element overlapping incompatible policy rows
 - culvert reference with missing structure context
 - imported drainage reference with ambiguous ownership
-- ditch component shape parameters that cannot produce a reliable drainage surface
+- ditch Subassembly shape parameters that cannot produce a reliable drainage surface
 
 ## 19. Non-goals
 

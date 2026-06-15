@@ -9,7 +9,7 @@ from freecad.Corridor_Road.v1.models.source.profile_model import (
 )
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
     AppliedSectionQuantityFragment,
@@ -47,16 +47,16 @@ from freecad.Corridor_Road.v1.services.mapping import (
 )
 
 
-def test_section_output_mapper_maps_components_and_quantities() -> None:
+def test_section_output_mapper_maps_subassemblies_and_quantities() -> None:
     applied_section = AppliedSection(
         schema_version=1,
         project_id="proj-1",
         applied_section_id="sec-1",
         alignment_id="align-1",
         station=10.0,
-        component_rows=[
-            AppliedSectionComponentRow(
-                component_id="lane-1",
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow(
+                subassembly_id="lane-1",
                 kind="lane",
                 source_template_id="tmpl-1",
                 region_id="region-1",
@@ -68,7 +68,7 @@ def test_section_output_mapper_maps_components_and_quantities() -> None:
                 quantity_kind="pavement_quantity",
                 value=12.0,
                 unit="m2",
-                component_id="lane-1",
+                subassembly_id="lane-1",
             )
         ],
         point_rows=[
@@ -90,8 +90,8 @@ def test_section_output_mapper_maps_components_and_quantities() -> None:
     output = SectionOutputMapper().map_applied_section(applied_section)
 
     assert output.section_output_id == "sec-1"
-    assert output.component_rows[0].template_ref == "tmpl-1"
-    assert output.quantity_rows[0].component_ref == "lane-1"
+    assert output.subassembly_rows[0].template_ref == "tmpl-1"
+    assert output.quantity_rows[0].subassembly_ref == "lane-1"
     assert output.geometry_rows[0].kind == "design_section"
     assert output.geometry_rows[0].x_values == [-5.0, 5.0]
     assert output.geometry_rows[0].z_values == [10.0, 10.0]
@@ -110,9 +110,9 @@ def test_section_output_mapper_marks_bench_rows_as_side_slope_scope() -> None:
         alignment_id="align-1",
         assembly_id="assembly:bench-road",
         station=10.0,
-        component_rows=[
-            AppliedSectionComponentRow(
-                component_id="side-slope-right:bench:1",
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow(
+                subassembly_id="side-slope-right:bench:1",
                 kind="bench",
                 source_template_id="tmpl-1",
                 region_id="region-1",
@@ -120,8 +120,8 @@ def test_section_output_mapper_marks_bench_rows_as_side_slope_scope() -> None:
                 width=1.0,
                 slope=-0.02,
             ),
-            AppliedSectionComponentRow(
-                component_id="side-slope-right:daylight",
+            AppliedSectionSubassemblyRow(
+                subassembly_id="side-slope-right:daylight",
                 kind="daylight",
                 source_template_id="tmpl-1",
                 region_id="region-1",
@@ -137,9 +137,9 @@ def test_section_output_mapper_marks_bench_rows_as_side_slope_scope() -> None:
 
     output = SectionOutputMapper().map_applied_section(applied_section)
 
-    assert output.component_rows[0].notes == "scope=side_slope; side=right"
-    assert output.component_rows[0].assembly_ref == "assembly:bench-road"
-    assert output.component_rows[1].notes == "scope=side_slope; side=right"
+    assert output.subassembly_rows[0].notes == "scope=side_slope; side=right"
+    assert output.subassembly_rows[0].assembly_ref == "assembly:bench-road"
+    assert output.subassembly_rows[1].notes == "scope=side_slope; side=right"
     geometry_by_kind = {row.kind: row for row in output.geometry_rows}
     assert geometry_by_kind["bench_section"].style_role == "side_slope_bench"
     assert geometry_by_kind["bench_section"].x_values == [-8.0]
@@ -252,11 +252,11 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
         fragment_rows=[
             QuantityFragment(
                 fragment_id="frag-1",
-                quantity_kind="component_quantity",
+                quantity_kind="subassembly_quantity",
                 measurement_kind="area",
                 value=100.0,
                 unit="m2",
-                component_ref="lane-1",
+                subassembly_ref="lane-1",
                 assembly_ref="assembly:road",
                 structure_ref="structure:bridge-01",
                 drainage_ref="drainage:side-ditch-right",
@@ -266,7 +266,7 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
         aggregate_rows=[
             QuantityAggregate(
                 aggregate_id="agg-1",
-                aggregate_kind="component_total",
+                aggregate_kind="subassembly_total",
                 grouping_ref="grp-1",
                 value=100.0,
                 unit="m2",
@@ -278,7 +278,7 @@ def test_quantity_output_mapper_maps_fragments_and_aggregates() -> None:
     output = QuantityOutputMapper().map_quantity_model(quantity_model)
 
     assert output.quantity_output_id == "qty-1"
-    assert output.fragment_rows[0].component_ref == "lane-1"
+    assert output.fragment_rows[0].subassembly_ref == "lane-1"
     assert output.fragment_rows[0].assembly_ref == "assembly:road"
     assert output.fragment_rows[0].structure_ref == "structure:bridge-01"
     assert output.fragment_rows[0].drainage_ref == "drainage:side-ditch-right"
@@ -575,9 +575,9 @@ def test_exchange_output_mapper_packages_side_slope_bench_source_context() -> No
         assembly_id="assembly:bench-road",
         station=20.0,
         source_refs=["assembly:bench-road", "region:bench-01"],
-        component_rows=[
-            AppliedSectionComponentRow(
-                component_id="side-slope-right:bench:1",
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow(
+                subassembly_id="side-slope-right:bench:1",
                 kind="bench",
                 source_template_id="tmpl-side-slope-right",
                 region_id="region:bench-01",
@@ -599,7 +599,7 @@ def test_exchange_output_mapper_packages_side_slope_bench_source_context() -> No
                     measurement_kind="section_side_slope_breakline",
                     value=12.5,
                     unit="m",
-                    component_ref="side-slope-right:bench:1",
+                    subassembly_ref="side-slope-right:bench:1",
                     assembly_ref="assembly:bench-road",
                     region_ref="region:bench-01",
                 )
@@ -619,21 +619,21 @@ def test_exchange_output_mapper_packages_side_slope_bench_source_context() -> No
 
     context_rows = exchange_output.format_payload["source_context_rows"]
     context_by_kind = {row["context_kind"]: row for row in context_rows}
-    component_context = context_by_kind["section_side_slope_component"]
+    subassembly_context = context_by_kind["section_side_slope_subassembly"]
     quantity_context = context_by_kind["side_slope_quantity_fragment"]
 
     assert exchange_output.payload_metadata["source_context_count"] == 2
     assert exchange_output.payload_metadata["side_slope_source_context_count"] == 2
     assert exchange_output.payload_metadata["bench_source_context_count"] == 2
-    assert component_context["scope"] == "side_slope"
-    assert component_context["assembly_ref"] == "assembly:bench-road"
-    assert component_context["region_ref"] == "region:bench-01"
-    assert component_context["component_ref"] == "side-slope-right:bench:1"
-    assert component_context["template_ref"] == "tmpl-side-slope-right"
-    assert component_context["component_kind"] == "bench"
+    assert subassembly_context["scope"] == "side_slope"
+    assert subassembly_context["assembly_ref"] == "assembly:bench-road"
+    assert subassembly_context["region_ref"] == "region:bench-01"
+    assert subassembly_context["subassembly_ref"] == "side-slope-right:bench:1"
+    assert subassembly_context["template_ref"] == "tmpl-side-slope-right"
+    assert subassembly_context["subassembly_kind"] == "bench"
     assert quantity_context["scope"] == "side_slope"
     assert quantity_context["assembly_ref"] == "assembly:bench-road"
     assert quantity_context["region_ref"] == "region:bench-01"
-    assert quantity_context["component_ref"] == "side-slope-right:bench:1"
+    assert quantity_context["subassembly_ref"] == "side-slope-right:bench:1"
     assert quantity_context["quantity_kind"] == "bench_surface_length"
     assert quantity_context["measurement_kind"] == "section_side_slope_breakline"

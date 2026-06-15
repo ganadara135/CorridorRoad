@@ -73,6 +73,7 @@ def ensure_v1_watertight_solid_output_properties(obj) -> None:
     _add_property(obj, "App::PropertyIntegerList", "ProfileCounts", "Solid Rows", "profile counts")
     _add_property(obj, "App::PropertyStringList", "RegionRefs", "Solid Rows", "region refs")
     _add_property(obj, "App::PropertyStringList", "AssemblyRefs", "Solid Rows", "assembly refs")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyRefs", "Solid Rows", "subassembly refs")
     _add_property(obj, "App::PropertyStringList", "StructureRefs", "Solid Rows", "structure refs")
     _add_property(obj, "App::PropertyStringList", "DrainageRefs", "Solid Rows", "drainage refs")
     _add_property(obj, "App::PropertyStringList", "FlowRouteRefs", "Solid Rows", "flow route refs")
@@ -185,6 +186,7 @@ def update_v1_watertight_solid_output_object(
     obj.ProfileCounts = [int(row.profile_count) for row in rows]
     obj.RegionRefs = [str(row.region_ref) for row in rows]
     obj.AssemblyRefs = [str(row.assembly_ref) for row in rows]
+    obj.SubassemblyRefs = [str(getattr(row, "subassembly_ref", "") or "") for row in rows]
     obj.StructureRefs = [str(row.structure_ref) for row in rows]
     obj.DrainageRefs = [str(row.drainage_ref) for row in rows]
     obj.FlowRouteRefs = [str(getattr(row, "flow_route_ref", "") or "") for row in rows]
@@ -241,6 +243,7 @@ def to_watertight_solid_output(obj) -> WatertightSolidOutput | None:
             diagnostic_refs=_split_refs(_list_value(getattr(obj, "DiagnosticRefs", []), index, "")),
             region_ref=_list_value(getattr(obj, "RegionRefs", []), index, ""),
             assembly_ref=_list_value(getattr(obj, "AssemblyRefs", []), index, ""),
+            subassembly_ref=_list_value(getattr(obj, "SubassemblyRefs", []), index, ""),
             structure_ref=_list_value(getattr(obj, "StructureRefs", []), index, ""),
             drainage_ref=_list_value(getattr(obj, "DrainageRefs", []), index, ""),
             flow_route_ref=_list_value(getattr(obj, "FlowRouteRefs", []), index, ""),

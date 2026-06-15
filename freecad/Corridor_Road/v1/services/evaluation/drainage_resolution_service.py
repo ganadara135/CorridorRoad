@@ -107,6 +107,15 @@ class DrainageValidationService:
             element_kind = str(getattr(row, "element_kind", "") or "").strip()
             if not element_kind:
                 diagnostics.append(_diagnostic("warning", "missing_drainage_element_kind", source_ref, "Drainage element kind is not set."))
+            if _is_open_channel_element(row) and not _drainage_element_subassembly_ref(row):
+                diagnostics.append(
+                    _diagnostic(
+                        "warning",
+                        "missing_drainage_subassembly_ref",
+                        source_ref,
+                        "Open-channel Drainage elements should reference a Subassembly.",
+                    )
+                )
             side = str(getattr(row, "side", "") or "").strip().lower()
             if side and side not in {"left", "right", "both", "center"}:
                 diagnostics.append(
@@ -463,6 +472,15 @@ def _is_capture_only_flow_route(from_element, to_element) -> bool:
     if to_kind not in {"inlet", "inlet_reference", "catch_basin", "catch-basin"}:
         return False
     return True
+
+
+def _is_open_channel_element(row) -> bool:
+    kind = str(getattr(row, "element_kind", "") or "").strip().lower()
+    return kind in {"ditch", "gutter", "swale", "channel", "lined_ditch", "lined-ditch"}
+
+
+def _drainage_element_subassembly_ref(row) -> str:
+    return str(getattr(row, "subassembly_ref", "") or "").strip()
 
 
 def _element_route_station(element, *, direction: str) -> float:

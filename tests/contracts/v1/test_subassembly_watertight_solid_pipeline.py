@@ -1,8 +1,8 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
+    AppliedSectionSubassemblyRow,
 )
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet
 from freecad.Corridor_Road.v1.models.source.solid_target_model import SolidTargetRow
@@ -25,11 +25,11 @@ from freecad.Corridor_Road.v1.services.mapping.exchange_output_mapper import (
 from freecad.Corridor_Road.v1.services.mapping.watertight_solid_part_mapper import WatertightSolidPartMapper
 
 
-def _section(station: float, *, include_component: bool = True) -> AppliedSection:
-    components = []
-    if include_component:
-        components.append(
-            AppliedSectionComponentRow(
+def _section(station: float, *, include_subassembly: bool = True) -> AppliedSection:
+    subassemblies = []
+    if include_subassembly:
+        subassemblies.append(
+            AppliedSectionSubassemblyRow(
                 "pavement:base",
                 "pavement_layer",
                 side="center",
@@ -46,16 +46,16 @@ def _section(station: float, *, include_component: bool = True) -> AppliedSectio
         station=station,
         region_id="region:1",
         frame=AppliedSectionFrame(station=station, x=station, y=0.0, z=10.0),
-        component_rows=components,
+        subassembly_rows=subassemblies,
     )
 
 
-def test_pavement_layer_component_target_builds_independent_watertight_solid_output() -> None:
+def test_pavement_layer_subassembly_target_builds_independent_watertight_solid_output() -> None:
     target = SolidTargetRow(
         target_id="solid-target:pavement-layer:pavement-base",
         target_family="pavement_layer_body",
-        scope_kind="assembly_component",
-        component_ref="pavement:base",
+        scope_kind="assembly_subassembly",
+        subassembly_ref="pavement:base",
         material_ref="asphalt",
         station_start=0.0,
         station_end=100.0,
@@ -68,7 +68,7 @@ def test_pavement_layer_component_target_builds_independent_watertight_solid_out
         corridor_id="corridor:main",
         sections=[
             _section(0.0),
-            _section(50.0, include_component=False),
+            _section(50.0, include_subassembly=False),
             _section(100.0),
         ],
     )
@@ -92,23 +92,23 @@ def test_pavement_layer_component_target_builds_independent_watertight_solid_out
     )
 
     assert [row.station for row in profile_set.profile_rows] == [0.0, 100.0]
-    assert any(row.kind == "skipped_missing_component_profile" for row in profile_set.diagnostic_rows)
-    assert any(row.kind == "component_boundary_cap_profiles" for row in profile_set.diagnostic_rows)
+    assert any(row.kind == "skipped_missing_subassembly_profile" for row in profile_set.diagnostic_rows)
+    assert any(row.kind == "subassembly_boundary_cap_profiles" for row in profile_set.diagnostic_rows)
     assert edge_network.validation_status == "ok"
     assert part_result.validation_status == "ok"
     assert part_result.volume > 0.0
     assert output.solid_rows[0].target_family == "pavement_layer_body"
-    assert output.solid_rows[0].scope_kind == "assembly_component"
-    assert output.solid_rows[0].component_ref == "pavement:base"
+    assert output.solid_rows[0].scope_kind == "assembly_subassembly"
+    assert output.solid_rows[0].subassembly_ref == "pavement:base"
     assert output.solid_rows[0].material_ref == "asphalt"
 
 
-def test_pavement_layer_component_profile_uses_component_width_and_thickness() -> None:
+def test_pavement_layer_subassembly_profile_uses_subassembly_width_and_thickness() -> None:
     target = SolidTargetRow(
         target_id="solid-target:pavement-layer:pavement-base",
         target_family="pavement_layer_body",
-        scope_kind="assembly_component",
-        component_ref="pavement:base",
+        scope_kind="assembly_subassembly",
+        subassembly_ref="pavement:base",
         station_start=0.0,
         station_end=100.0,
     )
@@ -133,12 +133,12 @@ def test_pavement_layer_component_profile_uses_component_width_and_thickness() -
     assert elevations == [10.0, 10.0, 9.75, 9.75]
 
 
-def test_shoulder_component_profile_uses_side_specific_offsets() -> None:
+def test_shoulder_subassembly_profile_uses_side_specific_offsets() -> None:
     target = SolidTargetRow(
         target_id="solid-target:shoulder:shoulder-left",
         target_family="shoulder_body",
-        scope_kind="assembly_component",
-        component_ref="shoulder:left",
+        scope_kind="assembly_subassembly",
+        subassembly_ref="shoulder:left",
         station_start=0.0,
         station_end=100.0,
     )
@@ -155,8 +155,8 @@ def test_shoulder_component_profile_uses_side_specific_offsets() -> None:
                 station=0.0,
                 region_id="region:1",
                 frame=AppliedSectionFrame(station=0.0, x=0.0, y=0.0, z=10.0),
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "shoulder:left",
                         "shoulder",
                         side="left",
@@ -173,8 +173,8 @@ def test_shoulder_component_profile_uses_side_specific_offsets() -> None:
                 station=100.0,
                 region_id="region:1",
                 frame=AppliedSectionFrame(station=100.0, x=100.0, y=0.0, z=10.0),
-                component_rows=[
-                    AppliedSectionComponentRow(
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
                         "shoulder:left",
                         "shoulder",
                         side="left",
@@ -217,8 +217,8 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
                 AppliedSectionPoint("ditch:right-mid", station, -5.6, 9.7, "ditch_surface", -5.6),
                 AppliedSectionPoint("ditch:right-flow", station, -6.2, 9.8, "ditch_surface", -6.2),
             ],
-            component_rows=[
-                AppliedSectionComponentRow(
+            subassembly_rows=[
+                AppliedSectionSubassemblyRow(
                     "ditch:right",
                     "ditch",
                     side="right",
@@ -235,7 +235,7 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
         scope_kind="drainage",
         drainage_ref="lined_ditch:right",
         flow_route_ref="flow-route:right",
-        component_ref="ditch:right",
+        subassembly_ref="ditch:right",
         material_ref="concrete",
         station_start=0.0,
         station_end=100.0,
@@ -277,13 +277,13 @@ def test_lined_ditch_target_builds_independent_watertight_solid_output() -> None
     assert output.solid_rows[0].scope_kind == "drainage"
     assert output.solid_rows[0].drainage_ref == "lined_ditch:right"
     assert output.solid_rows[0].flow_route_ref == "flow-route:right"
-    assert output.solid_rows[0].component_ref == "ditch:right"
+    assert output.solid_rows[0].subassembly_ref == "ditch:right"
     assert output.solid_rows[0].material_ref == "concrete"
     provenance_rows = [row for row in output.solid_diagnostic_rows if row.kind == "lined_ditch_shape_provenance"]
     assert len(provenance_rows) == 1
     assert "drainage_ref=lined_ditch:right" in provenance_rows[0].notes
     assert "flow_route_ref=flow-route:right" in provenance_rows[0].notes
-    assert "component_ref=ditch:right" in provenance_rows[0].notes
+    assert "subassembly_ref=ditch:right" in provenance_rows[0].notes
     assert "side=right" in provenance_rows[0].notes
     assert "material=concrete" in provenance_rows[0].notes
     assert "lining_thickness=0.15" in provenance_rows[0].notes

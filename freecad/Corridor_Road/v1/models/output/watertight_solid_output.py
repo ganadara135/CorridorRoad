@@ -29,7 +29,7 @@ class WatertightSolidOutputRow:
     diagnostic_refs: list[str] = field(default_factory=list)
     region_ref: str = ""
     assembly_ref: str = ""
-    component_ref: str = ""
+    subassembly_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
     flow_route_ref: str = ""

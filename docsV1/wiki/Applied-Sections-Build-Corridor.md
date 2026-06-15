@@ -12,13 +12,19 @@ They resolve:
 - Profile elevation
 - matching 3D Centerline rows for the active Alignment, when available
 - active Region
-- Assembly components
+- Assembly Subassemblies
 - Superelevation effective lane/shoulder crossfall
 - Structure context
 - drainage/ditch point rows where available
 - terrain/daylight behavior
 
 Applied Sections are results. They are not the primary editing surface.
+
+Applied Section rows preserve Subassembly ownership when available.
+
+Generated point, link, shape, quantity, surface, watertight solid, exchange, and simulation package outputs should use `subassembly_ref` as the preferred traceability field.
+
+Active v1 result rows use Subassembly ownership as the user-facing source owner.
 
 The `Build Sections` action validates source handoff readiness and then builds result rows.
 

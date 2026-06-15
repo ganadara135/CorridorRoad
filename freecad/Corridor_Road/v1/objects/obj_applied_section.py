@@ -14,7 +14,15 @@ try:
 except Exception:  # pragma: no cover - Part is not available in plain Python.
     Part = None
 
-from ..models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
+from ..models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionFrame,
+    AppliedSectionPoint,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+    AppliedSectionSubassemblyRow,
+    AppliedSectionSubassemblyShape,
+)
 from ..models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 
 
@@ -105,9 +113,13 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "IntersectionLegIds", "Intersections", "active intersection leg ids")
     _add_property(obj, "App::PropertyStringList", "IntersectionLegRoles", "Intersections", "active intersection leg roles")
     _add_property(obj, "App::PropertyStringList", "IntersectionControlRegionRows", "Intersections", "active intersection control region refs by section")
+    _add_property(obj, "App::PropertyStringList", "IntersectionGradingPolicyRefs", "Intersections", "active intersection grading policy refs")
     _add_property(obj, "App::PropertyStringList", "IntersectionDiagnosticRows", "Intersections", "intersection context diagnostics by section")
     _add_property(obj, "App::PropertyStringList", "PointRows", "Surface", "applied section point rows")
-    _add_property(obj, "App::PropertyStringList", "ComponentRows", "Resolved Context", "applied section component rows")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyRows", "Resolved Context", "applied section subassembly rows")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyPointRows", "Resolved Context", "evaluated subassembly point rows")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyLinkRows", "Resolved Context", "evaluated subassembly link rows")
+    _add_property(obj, "App::PropertyStringList", "SubassemblyShapeRows", "Resolved Context", "evaluated subassembly shape rows")
     _add_property(obj, "App::PropertyStringList", "RegionIds", "Resolved Context", "resolved region ids")
     _add_property(obj, "App::PropertyStringList", "AssemblyIds", "Resolved Context", "resolved assembly ids")
     _add_property(obj, "App::PropertyStringList", "TemplateIds", "Resolved Context", "resolved template ids")
@@ -115,7 +127,7 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyStringList", "ActiveStructureRuleRows", "Resolved Context", "active structure interaction rule ids by section")
     _add_property(obj, "App::PropertyStringList", "ActiveStructureInfluenceZoneRows", "Resolved Context", "active structure influence zone ids by section")
     _add_property(obj, "App::PropertyStringList", "StructureDiagnosticRows", "Resolved Context", "structure context diagnostic rows")
-    _add_property(obj, "App::PropertyIntegerList", "ComponentCounts", "Resolved Context", "component counts")
+    _add_property(obj, "App::PropertyIntegerList", "SubassemblyCounts", "Resolved Context", "subassembly counts")
     _add_property(obj, "App::PropertyIntegerList", "DiagnosticCounts", "Diagnostics", "diagnostic counts")
     _add_property(obj, "App::PropertyStringList", "DiagnosticRows", "Diagnostics", "diagnostic summary rows")
     _add_property(obj, "App::PropertyStringList", "SourceRefs", "Source", "source refs")
@@ -230,9 +242,13 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.IntersectionLegIds = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_id", "") or "") for row in station_rows]
     obj.IntersectionLegRoles = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_leg_role", "") or "") for row in station_rows]
     obj.IntersectionControlRegionRows = _section_list_rows(station_rows, section_by_id, "active_intersection_control_region_refs")
+    obj.IntersectionGradingPolicyRefs = [str(getattr(section_by_id.get(str(row.applied_section_id)), "active_intersection_grading_policy_ref", "") or "") for row in station_rows]
     obj.IntersectionDiagnosticRows = _section_list_rows(station_rows, section_by_id, "intersection_diagnostic_rows")
     obj.PointRows = _point_rows(station_rows, section_by_id)
-    obj.ComponentRows = _component_rows(station_rows, section_by_id)
+    obj.SubassemblyRows = _subassembly_rows(station_rows, section_by_id)
+    obj.SubassemblyPointRows = _subassembly_point_rows(station_rows, section_by_id)
+    obj.SubassemblyLinkRows = _subassembly_link_rows(station_rows, section_by_id)
+    obj.SubassemblyShapeRows = _subassembly_shape_rows(station_rows, section_by_id)
     obj.RegionIds = [str(getattr(section_by_id.get(row.applied_section_id), "region_id", "") or "") for row in station_rows]
     obj.AssemblyIds = [str(getattr(section_by_id.get(row.applied_section_id), "assembly_id", "") or "") for row in station_rows]
     obj.TemplateIds = [str(getattr(section_by_id.get(row.applied_section_id), "template_id", "") or "") for row in station_rows]
@@ -240,7 +256,8 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.ActiveStructureRuleRows = _section_list_rows(station_rows, section_by_id, "active_structure_rule_ids")
     obj.ActiveStructureInfluenceZoneRows = _section_list_rows(station_rows, section_by_id, "active_structure_influence_zone_ids")
     obj.StructureDiagnosticRows = _section_list_rows(station_rows, section_by_id, "structure_diagnostic_rows")
-    obj.ComponentCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "component_rows", []) or [])) for row in station_rows]
+    _clear_existing_property(obj, "CompatibilityRowCounts")
+    obj.SubassemblyCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "subassembly_rows", []) or [])) for row in station_rows]
     obj.DiagnosticCounts = [len(list(getattr(section_by_id.get(row.applied_section_id), "diagnostic_rows", []) or [])) for row in station_rows]
     obj.DiagnosticRows = _diagnostic_rows(sections)
     obj.SourceRefs = [str(ref) for ref in list(getattr(applied_section_set, "source_refs", []) or []) if str(ref)]
@@ -428,9 +445,17 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
     superelevation_sources_by_section = _parse_section_list_rows(getattr(obj, "SuperelevationSourceRows", []) or [])
     intersection_control_regions_by_section = _parse_section_list_rows(getattr(obj, "IntersectionControlRegionRows", []) or [])
     intersection_diagnostics_by_section = _parse_section_list_rows(getattr(obj, "IntersectionDiagnosticRows", []) or [])
-    component_rows_by_section = _parse_component_rows(getattr(obj, "ComponentRows", []) or [])
+    subassembly_rows_by_section = _parse_subassembly_rows(getattr(obj, "SubassemblyRows", []) or [])
+    subassembly_point_rows_by_section = _parse_subassembly_point_rows(getattr(obj, "SubassemblyPointRows", []) or [])
+    subassembly_link_rows_by_section = _parse_subassembly_link_rows(getattr(obj, "SubassemblyLinkRows", []) or [])
+    subassembly_shape_rows_by_section = _parse_subassembly_shape_rows(getattr(obj, "SubassemblyShapeRows", []) or [])
     for index, station in enumerate(station_values):
         section_id = _list_value(section_ids, index, f"section:{index + 1}")
+        section_subassembly_rows = subassembly_rows_by_section.get(section_id) or _subassembly_placeholders(
+            _integer_value(getattr(obj, "SubassemblyCounts", []), index, 0),
+            _list_value(getattr(obj, "TemplateIds", []), index, ""),
+            _list_value(getattr(obj, "RegionIds", []), index, ""),
+        )
         station_rows.append(
             AppliedSectionStationRow(
                 station_row_id=_list_value(getattr(obj, "StationRowIds", []), index, f"station:{index + 1}"),
@@ -467,13 +492,12 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                 active_intersection_leg_id=_list_value(getattr(obj, "IntersectionLegIds", []), index, ""),
                 active_intersection_leg_role=_list_value(getattr(obj, "IntersectionLegRoles", []), index, ""),
                 active_intersection_control_region_refs=intersection_control_regions_by_section.get(section_id, []),
+                active_intersection_grading_policy_ref=_list_value(getattr(obj, "IntersectionGradingPolicyRefs", []), index, ""),
                 intersection_diagnostic_rows=intersection_diagnostics_by_section.get(section_id, []),
-                component_rows=component_rows_by_section.get(section_id)
-                or _component_placeholders(
-                    _integer_value(getattr(obj, "ComponentCounts", []), index, 0),
-                    _list_value(getattr(obj, "TemplateIds", []), index, ""),
-                    _list_value(getattr(obj, "RegionIds", []), index, ""),
-                ),
+                subassembly_rows=section_subassembly_rows,
+                subassembly_point_rows=subassembly_point_rows_by_section.get(section_id, []),
+                subassembly_link_rows=subassembly_link_rows_by_section.get(section_id, []),
+                subassembly_shape_rows=subassembly_shape_rows_by_section.get(section_id, []),
                 point_rows=point_rows_by_section.get(section_id, []),
                 active_structure_ids=active_structures_by_section.get(section_id, []),
                 active_structure_rule_ids=active_rules_by_section.get(section_id, []),
@@ -555,45 +579,128 @@ def _point_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[
                         f"{float(getattr(point, 'x', 0.0) or 0.0):.12g}",
                         f"{float(getattr(point, 'y', 0.0) or 0.0):.12g}",
                         f"{float(getattr(point, 'z', 0.0) or 0.0):.12g}",
-                        _escape_row_value(getattr(point, "component_ref", "")),
                         _escape_row_value(getattr(point, "side", "")),
                         _escape_row_value(getattr(point, "drainage_ref", "")),
+                        _escape_row_value(getattr(point, "subassembly_ref", "")),
                     ]
                 )
             )
     return output
 
 
-def _component_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+def _subassembly_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
     output: list[str] = []
     for station_row in list(station_rows or []):
         section_id = str(getattr(station_row, "applied_section_id", "") or "")
         section = section_by_id.get(section_id)
-        for component in list(getattr(section, "component_rows", []) or []):
+        for subassembly in list(getattr(section, "subassembly_rows", []) or []):
             output.append(
                 "|".join(
                     [
                         section_id,
-                        _escape_row_value(getattr(component, "component_id", "")),
-                        _escape_row_value(getattr(component, "kind", "")),
-                        _escape_row_value(getattr(component, "source_template_id", "")),
-                        _escape_row_value(getattr(component, "region_id", "")),
-                        _escape_row_value(getattr(component, "side", "")),
-                        f"{float(getattr(component, 'width', 0.0) or 0.0):.12g}",
-                        f"{float(getattr(component, 'slope', 0.0) or 0.0):.12g}",
-                        f"{float(getattr(component, 'thickness', 0.0) or 0.0):.12g}",
-                        _escape_row_value(getattr(component, "material", "")),
+                        _escape_row_value(getattr(subassembly, "subassembly_id", "")),
+                        _escape_row_value(getattr(subassembly, "kind", "")),
+                        _escape_row_value(getattr(subassembly, "source_template_id", "")),
+                        _escape_row_value(getattr(subassembly, "region_id", "")),
+                        _escape_row_value(getattr(subassembly, "side", "")),
+                        f"{float(getattr(subassembly, 'width', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(subassembly, 'slope', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(subassembly, 'thickness', 0.0) or 0.0):.12g}",
+                        _escape_row_value(getattr(subassembly, "material", "")),
                         ",".join(
                             _escape_row_value(value)
-                            for value in list(getattr(component, "structure_ids", []) or [])
+                            for value in list(getattr(subassembly, "structure_ids", []) or [])
                             if str(value or "")
                         ),
                         ",".join(
                             _escape_row_value(value)
-                            for value in list(getattr(component, "drainage_refs", []) or [])
+                            for value in list(getattr(subassembly, "drainage_refs", []) or [])
                             if str(value or "")
                         ),
-                        _escape_row_value(json.dumps(dict(getattr(component, "parameters", {}) or {}), sort_keys=True)),
+                        _escape_row_value(json.dumps(dict(getattr(subassembly, "parameters", {}) or {}), sort_keys=True)),
+                        ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "point_code_rules", ()) or ())),
+                        ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "link_code_rules", ()) or ())),
+                        ";".join(_escape_row_value(value) for value in tuple(getattr(subassembly, "shape_code_rules", ()) or ())),
+                        ",".join(
+                            _escape_row_value(value)
+                            for value in list(getattr(subassembly, "override_ids", []) or [])
+                            if str(value or "")
+                        ),
+                        ";".join(_escape_row_value(value) for value in list(getattr(subassembly, "diagnostics", []) or [])),
+                    ]
+                )
+            )
+    return output
+
+
+def _subassembly_point_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+    output: list[str] = []
+    for station_row in list(station_rows or []):
+        section_id = str(getattr(station_row, "applied_section_id", "") or "")
+        section = section_by_id.get(section_id)
+        for point in list(getattr(section, "subassembly_point_rows", []) or []):
+            output.append(
+                "|".join(
+                    [
+                        section_id,
+                        _escape_row_value(getattr(point, "point_id", "")),
+                        _escape_row_value(getattr(point, "subassembly_ref", "")),
+                        _escape_row_value(getattr(point, "point_code", "")),
+                        f"{float(getattr(point, 'lateral_offset', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'x', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'y', 0.0) or 0.0):.12g}",
+                        f"{float(getattr(point, 'z', 0.0) or 0.0):.12g}",
+                        _escape_row_value(getattr(point, "side", "")),
+                        _escape_row_value(getattr(point, "target_ref", "")),
+                        ";".join(_escape_row_value(value) for value in list(getattr(point, "diagnostics", []) or [])),
+                    ]
+                )
+            )
+    return output
+
+
+def _subassembly_link_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+    output: list[str] = []
+    for station_row in list(station_rows or []):
+        section_id = str(getattr(station_row, "applied_section_id", "") or "")
+        section = section_by_id.get(section_id)
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            output.append(
+                "|".join(
+                    [
+                        section_id,
+                        _escape_row_value(getattr(link, "link_id", "")),
+                        _escape_row_value(getattr(link, "subassembly_ref", "")),
+                        _escape_row_value(getattr(link, "start_point_ref", "")),
+                        _escape_row_value(getattr(link, "end_point_ref", "")),
+                        _escape_row_value(getattr(link, "link_code", "")),
+                        _escape_row_value(getattr(link, "surface_role", "")),
+                        _escape_row_value(getattr(link, "material", "")),
+                        ";".join(_escape_row_value(value) for value in list(getattr(link, "diagnostics", []) or [])),
+                    ]
+                )
+            )
+    return output
+
+
+def _subassembly_shape_rows(station_rows, section_by_id: dict[str, AppliedSection]) -> list[str]:
+    output: list[str] = []
+    for station_row in list(station_rows or []):
+        section_id = str(getattr(station_row, "applied_section_id", "") or "")
+        section = section_by_id.get(section_id)
+        for shape in list(getattr(section, "subassembly_shape_rows", []) or []):
+            output.append(
+                "|".join(
+                    [
+                        section_id,
+                        _escape_row_value(getattr(shape, "shape_id", "")),
+                        _escape_row_value(getattr(shape, "subassembly_ref", "")),
+                        ";".join(_escape_row_value(value) for value in list(getattr(shape, "point_refs", []) or [])),
+                        _escape_row_value(getattr(shape, "shape_code", "")),
+                        _escape_row_value(getattr(shape, "material", "")),
+                        f"{float(getattr(shape, 'thickness', 0.0) or 0.0):.12g}",
+                        _escape_row_value(getattr(shape, "solid_family", "")),
+                        ";".join(_escape_row_value(value) for value in list(getattr(shape, "diagnostics", []) or [])),
                     ]
                 )
             )
@@ -636,25 +743,34 @@ def _parse_point_rows(values) -> dict[str, list[AppliedSectionPoint]]:
         if not section_id:
             continue
         output.setdefault(section_id, []).append(
-            AppliedSectionPoint(
-                point_id=_unescape_row_value(parts[1]),
-                point_role=_unescape_row_value(parts[2]),
-                lateral_offset=_safe_float(parts[3]),
-                x=_safe_float(parts[4]),
-                y=_safe_float(parts[5]),
-                z=_safe_float(parts[6]),
-                component_ref=_unescape_row_value(parts[7]) if len(parts) > 7 else "",
-                side=_unescape_row_value(parts[8]) if len(parts) > 8 else "",
-                drainage_ref=_unescape_row_value(parts[9]) if len(parts) > 9 else "",
-            )
+            _applied_section_point_from_parts(parts)
         )
     for rows in output.values():
         rows.sort(key=lambda point: (str(getattr(point, "point_role", "") or ""), float(getattr(point, "lateral_offset", 0.0) or 0.0)))
     return output
 
 
-def _parse_component_rows(values) -> dict[str, list[AppliedSectionComponentRow]]:
-    output: dict[str, list[AppliedSectionComponentRow]] = {}
+def _applied_section_point_from_parts(parts: list[str]) -> AppliedSectionPoint:
+    """Parse current point rows."""
+
+    side_index = 7
+    drainage_index = 8
+    subassembly_index = 9
+    return AppliedSectionPoint(
+        point_id=_unescape_row_value(parts[1]),
+        point_role=_unescape_row_value(parts[2]),
+        lateral_offset=_safe_float(parts[3]),
+        x=_safe_float(parts[4]),
+        y=_safe_float(parts[5]),
+        z=_safe_float(parts[6]),
+        side=_unescape_row_value(parts[side_index]) if len(parts) > side_index else "",
+        drainage_ref=_unescape_row_value(parts[drainage_index]) if len(parts) > drainage_index else "",
+        subassembly_ref=_unescape_row_value(parts[subassembly_index]) if len(parts) > subassembly_index else "",
+    )
+
+
+def _parse_subassembly_rows(values) -> dict[str, list[AppliedSectionSubassemblyRow]]:
+    output: dict[str, list[AppliedSectionSubassemblyRow]] = {}
     for raw in list(values or []):
         parts = str(raw or "").split("|")
         if len(parts) < 10:
@@ -662,33 +778,36 @@ def _parse_component_rows(values) -> dict[str, list[AppliedSectionComponentRow]]
         section_id = _unescape_row_value(parts[0])
         if not section_id:
             continue
-        structure_ids = []
-        if len(parts) > 10:
-            structure_ids = [
-                _unescape_row_value(value)
-                for value in str(parts[10] or "").split(",")
-                if str(value or "")
-            ]
-        drainage_refs = []
-        parameter_index = 11
+        structure_ids = [
+            _unescape_row_value(value)
+            for value in str(parts[10] if len(parts) > 10 else "" or "").split(",")
+            if str(value or "")
+        ]
+        drainage_refs = [
+            _unescape_row_value(value)
+            for value in str(parts[11] if len(parts) > 11 else "" or "").split(",")
+            if str(value or "")
+        ]
         parameters = {}
         if len(parts) > 12:
-            drainage_refs = [
-                _unescape_row_value(value)
-                for value in str(parts[11] or "").split(",")
-                if str(value or "")
-            ]
-            parameter_index = 12
-        if len(parts) > parameter_index:
             try:
-                parsed = json.loads(_unescape_row_value(parts[parameter_index]))
+                parsed = json.loads(_unescape_row_value(parts[12]))
                 if isinstance(parsed, dict):
                     parameters = parsed
             except Exception:
                 parameters = {}
+        point_code_rules = _parse_semicolon_tuple(parts[13] if len(parts) > 13 else "")
+        link_code_rules = _parse_semicolon_tuple(parts[14] if len(parts) > 14 else "")
+        shape_code_rules = _parse_semicolon_tuple(parts[15] if len(parts) > 15 else "")
+        override_ids = [
+            _unescape_row_value(value)
+            for value in str(parts[16] if len(parts) > 16 else "" or "").split(",")
+            if str(value or "")
+        ]
+        diagnostics = list(_parse_semicolon_tuple(parts[17] if len(parts) > 17 else ""))
         output.setdefault(section_id, []).append(
-            AppliedSectionComponentRow(
-                component_id=_unescape_row_value(parts[1]),
+            AppliedSectionSubassemblyRow(
+                subassembly_id=_unescape_row_value(parts[1]),
                 kind=_unescape_row_value(parts[2]),
                 source_template_id=_unescape_row_value(parts[3]),
                 region_id=_unescape_row_value(parts[4]),
@@ -700,9 +819,94 @@ def _parse_component_rows(values) -> dict[str, list[AppliedSectionComponentRow]]
                 structure_ids=structure_ids,
                 drainage_refs=drainage_refs,
                 parameters=parameters,
+                point_code_rules=point_code_rules,
+                link_code_rules=link_code_rules,
+                shape_code_rules=shape_code_rules,
+                override_ids=override_ids,
+                diagnostics=diagnostics,
             )
         )
     return output
+
+
+def _parse_subassembly_point_rows(values) -> dict[str, list[AppliedSectionSubassemblyPoint]]:
+    output: dict[str, list[AppliedSectionSubassemblyPoint]] = {}
+    for raw in list(values or []):
+        parts = str(raw or "").split("|")
+        if len(parts) < 8:
+            continue
+        section_id = _unescape_row_value(parts[0])
+        if not section_id:
+            continue
+        output.setdefault(section_id, []).append(
+            AppliedSectionSubassemblyPoint(
+                point_id=_unescape_row_value(parts[1]),
+                subassembly_ref=_unescape_row_value(parts[2]),
+                point_code=_unescape_row_value(parts[3]),
+                lateral_offset=_safe_float(parts[4]),
+                x=_safe_float(parts[5]),
+                y=_safe_float(parts[6]),
+                z=_safe_float(parts[7]),
+                side=_unescape_row_value(parts[8]) if len(parts) > 8 else "",
+                target_ref=_unescape_row_value(parts[9]) if len(parts) > 9 else "",
+                diagnostics=list(_parse_semicolon_tuple(parts[10] if len(parts) > 10 else "")),
+            )
+        )
+    for rows in output.values():
+        rows.sort(key=lambda point: (str(getattr(point, "subassembly_ref", "") or ""), float(getattr(point, "lateral_offset", 0.0) or 0.0)))
+    return output
+
+
+def _parse_subassembly_link_rows(values) -> dict[str, list[AppliedSectionSubassemblyLink]]:
+    output: dict[str, list[AppliedSectionSubassemblyLink]] = {}
+    for raw in list(values or []):
+        parts = str(raw or "").split("|")
+        if len(parts) < 8:
+            continue
+        section_id = _unescape_row_value(parts[0])
+        if not section_id:
+            continue
+        output.setdefault(section_id, []).append(
+            AppliedSectionSubassemblyLink(
+                link_id=_unescape_row_value(parts[1]),
+                subassembly_ref=_unescape_row_value(parts[2]),
+                start_point_ref=_unescape_row_value(parts[3]),
+                end_point_ref=_unescape_row_value(parts[4]),
+                link_code=_unescape_row_value(parts[5]),
+                surface_role=_unescape_row_value(parts[6]),
+                material=_unescape_row_value(parts[7]),
+                diagnostics=list(_parse_semicolon_tuple(parts[8] if len(parts) > 8 else "")),
+            )
+        )
+    return output
+
+
+def _parse_subassembly_shape_rows(values) -> dict[str, list[AppliedSectionSubassemblyShape]]:
+    output: dict[str, list[AppliedSectionSubassemblyShape]] = {}
+    for raw in list(values or []):
+        parts = str(raw or "").split("|")
+        if len(parts) < 8:
+            continue
+        section_id = _unescape_row_value(parts[0])
+        if not section_id:
+            continue
+        output.setdefault(section_id, []).append(
+            AppliedSectionSubassemblyShape(
+                shape_id=_unescape_row_value(parts[1]),
+                subassembly_ref=_unescape_row_value(parts[2]),
+                point_refs=list(_parse_semicolon_tuple(parts[3])),
+                shape_code=_unescape_row_value(parts[4]),
+                material=_unescape_row_value(parts[5]),
+                thickness=_safe_float(parts[6]),
+                solid_family=_unescape_row_value(parts[7]),
+                diagnostics=list(_parse_semicolon_tuple(parts[8] if len(parts) > 8 else "")),
+            )
+        )
+    return output
+
+
+def _parse_semicolon_tuple(value: object) -> tuple[str, ...]:
+    return tuple(_unescape_row_value(part) for part in str(value or "").split(";") if str(part or ""))
 
 
 def _escape_row_value(value: object) -> str:
@@ -733,6 +937,15 @@ def _add_property(obj, property_type: str, name: str, group: str, doc: str = "")
         return
     try:
         obj.addProperty(property_type, name, group, doc)
+    except Exception:
+        pass
+
+
+def _clear_existing_property(obj, name: str) -> None:
+    if obj is None or not hasattr(obj, name):
+        return
+    try:
+        setattr(obj, name, [])
     except Exception:
         pass
 
@@ -775,13 +988,13 @@ def _integer_value(values, index: int, default: int = 0) -> int:
         return int(default)
 
 
-def _component_placeholders(count: int, template_id: str, region_id: str) -> list[AppliedSectionComponentRow]:
+def _subassembly_placeholders(count: int, template_id: str, region_id: str) -> list[AppliedSectionSubassemblyRow]:
     rows = []
     for index in range(max(int(count or 0), 0)):
         rows.append(
-            AppliedSectionComponentRow(
-                component_id=f"component:{index + 1}",
-                kind="component",
+            AppliedSectionSubassemblyRow(
+                subassembly_id=f"subassembly:{index + 1}",
+                kind="subassembly",
                 source_template_id=str(template_id or ""),
                 region_id=str(region_id or ""),
             )

@@ -61,13 +61,13 @@ Overrides exist for cases like:
 
 - one narrow station range with a local width change
 - one event-specific condition near a structure
-- one component parameter that must deviate from region policy
+- one Subassembly parameter that must deviate from region policy
 
 ## 5. Relationship to Templates and Regions
 
 The architectural distinction is:
 
-- `AssemblyModel` defines reusable section intent
+- `AssemblySubassemblyModel` defines reusable section intent
 - `RegionModel` defines structured policy over meaningful station ranges
 - `OverrideModel` defines narrow, explicit exceptions
 
@@ -97,7 +97,7 @@ Recommended early v1 support:
 - station range override
 - region-specific override
 - event-specific override
-- component-specific parameter override
+- Subassembly-specific parameter override
 
 Deferred or later refinements may include:
 
@@ -162,8 +162,8 @@ Each `OverrideRow` represents one explicit exception to otherwise resolved desig
 ### 10.3 Recommended override kinds
 
 - `parameter_override`
-- `component_enable`
-- `component_disable`
+- `subassembly_enable`
+- `subassembly_disable`
 - `target_swap`
 - `policy_override`
 - `station_event_override`
@@ -183,13 +183,13 @@ Override rows should preserve engineering meaning and should not store opaque ge
 - `target_id`
 - `target_kind`
 - `target_ref`
-- `component_ref`
+- `subassembly_ref`
 - `side`
 - `notes`
 
 ### 11.3 Recommended target kinds
 
-- `template_component`
+- `template_subassembly`
 - `region_policy`
 - `section_parameter`
 - `superelevation_parameter`
@@ -215,7 +215,7 @@ Overrides must not point to arbitrary scene geometry.
 - `station_end`
 - optional `region_ref`
 - optional `event_ref`
-- optional `component_side`
+- optional `subassembly_side`
 - `notes`
 
 ### 12.3 Recommended scope kinds
@@ -224,7 +224,7 @@ Overrides must not point to arbitrary scene geometry.
 - `station_range`
 - `region_bound_scope`
 - `event_scope`
-- `component_scope`
+- `subassembly_scope`
 
 ### 12.4 Rule
 
@@ -252,7 +252,7 @@ Constraint rows help keep overrides controlled.
 - `max_override_span`
 - `no_override_zone`
 - `approval_required`
-- `protected_component_rule`
+- `protected_subassembly_rule`
 
 ## 14. Precedence Model
 
@@ -277,7 +277,7 @@ This service resolves which overrides are active for a station or station range.
 
 - station to active overrides
 - station range to overlapping overrides
-- component-specific override lookup
+- Subassembly-specific override lookup
 - event-linked override lookup
 - override conflict detection
 
@@ -380,7 +380,7 @@ This is important for:
 
 ## 22. Relationship to Viewer
 
-The Viewer should be able to trace a changed component or value back to:
+The Viewer should be able to trace a changed Subassembly or value back to:
 
 - `override_id`
 - target row

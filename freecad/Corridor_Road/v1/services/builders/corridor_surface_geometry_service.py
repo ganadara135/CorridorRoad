@@ -27,6 +27,8 @@ class _SectionPointLite:
     z: float
     lateral_offset: float
     point_role: str = ""
+    compatibility_ref: str = ""
+    subassembly_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -588,7 +590,8 @@ def _build_surface_from_point_grid(
             TINQualityRow(f"{request.surface_id}:right_width_max", "right_width_max", max(right_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
-            TINQualityRow(f"{request.surface_id}:component_ref_count", "component_ref_count", len(source_summary["component_refs"]), "count"),
+            TINQualityRow(f"{request.surface_id}:subassembly_ref_count", "subassembly_ref_count", len(source_summary["subassembly_refs"]), "count"),
+            TINQualityRow(f"{request.surface_id}:compatibility_ref_count", "compatibility_ref_count", len(source_summary["compatibility_refs"]), "count"),
             TINQualityRow(f"{request.surface_id}:drainage_ref_count", "drainage_ref_count", len(source_summary["drainage_refs"]), "count"),
             TINQualityRow(
                 f"{request.surface_id}:drainage_source_missing_point_count",
@@ -680,7 +683,8 @@ def _build_drainage_surface_from_point_groups(request: CorridorDesignSurfaceGeom
             TINQualityRow(f"{request.surface_id}:right_offset_min", "right_offset_min", min(offset_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
-            TINQualityRow(f"{request.surface_id}:component_ref_count", "component_ref_count", len(source_summary["component_refs"]), "count"),
+            TINQualityRow(f"{request.surface_id}:subassembly_ref_count", "subassembly_ref_count", len(source_summary["subassembly_refs"]), "count"),
+            TINQualityRow(f"{request.surface_id}:compatibility_ref_count", "compatibility_ref_count", len(source_summary["compatibility_refs"]), "count"),
             TINQualityRow(f"{request.surface_id}:drainage_ref_count", "drainage_ref_count", len(source_summary["drainage_refs"]), "count"),
         ],
         provenance_rows=[
@@ -688,7 +692,8 @@ def _build_drainage_surface_from_point_groups(request: CorridorDesignSurfaceGeom
                 provenance_id=f"{request.surface_id}:provenance:applied-section-drainage-points",
                 source_kind="applied_section_drainage_points",
                 source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-                notes="Corridor drainage surface built from grouped ditch_surface point rows; separate ditch groups are not bridged.",
+                notes="Corridor drainage surface built from grouped ditch_surface point rows; separate ditch groups are not bridged. "
+                + _point_grid_provenance_notes("drainage_surface", source_summary),
             )
         ],
     )
@@ -703,8 +708,7 @@ def _drainage_point_group_grids(sections: list[object]) -> dict[str, list[list[o
         for section in section_rows:
             rows = [
                 point
-                for point in list(getattr(section, "point_rows", []) or [])
-                if str(getattr(point, "point_role", "") or "") == "ditch_surface"
+                for point in _section_points_for_surface_role(section, point_role="ditch_surface")
                 and _drainage_point_group_id(point) == group_id
             ]
             rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
@@ -730,9 +734,7 @@ def _drainage_point_group_ids(sections: list[object]) -> list[str]:
     ids: list[str] = []
     seen: set[str] = set()
     for section in list(sections or []):
-        for point in list(getattr(section, "point_rows", []) or []):
-            if str(getattr(point, "point_role", "") or "") != "ditch_surface":
-                continue
+        for point in _section_points_for_surface_role(section, point_role="ditch_surface"):
             group_id = _drainage_point_group_id(point)
             if group_id and group_id not in seen:
                 seen.add(group_id)
@@ -745,7 +747,8 @@ def _drainage_point_group_id(point) -> str:
     if side in {"left", "right"}:
         return f"drainage:{side}"
     for value in (
-        str(getattr(point, "component_ref", "") or ""),
+        str(getattr(point, "subassembly_ref", "") or ""),
+        _point_compatibility_ref(point),
         str(getattr(point, "drainage_ref", "") or ""),
         str(getattr(point, "point_id", "") or ""),
     ):
@@ -769,7 +772,8 @@ def _safe_tin_id(value: str) -> str:
 
 
 def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, object]:
-    component_refs: list[str] = []
+    compatibility_refs: list[str] = []
+    subassembly_refs: list[str] = []
     drainage_refs: list[str] = []
     sides: list[str] = []
     missing_drainage_ref_count = 0
@@ -777,11 +781,14 @@ def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, obje
     for points in list(point_grid or []):
         for point in list(points or []):
             role = str(getattr(point, "point_role", "") or "")
-            component_ref = str(getattr(point, "component_ref", "") or "").strip()
+            compatibility_ref = _point_compatibility_ref(point)
+            subassembly_ref = _point_subassembly_ref(point)
             drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
             side = str(getattr(point, "side", "") or "").strip()
-            if component_ref:
-                component_refs.append(component_ref)
+            if compatibility_ref:
+                compatibility_refs.append(compatibility_ref)
+            if subassembly_ref:
+                subassembly_refs.append(subassembly_ref)
             if drainage_ref:
                 drainage_refs.append(drainage_ref)
             if side:
@@ -791,7 +798,8 @@ def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, obje
                 if not drainage_ref:
                     missing_drainage_ref_count += 1
     return {
-        "component_refs": _unique_text_rows(component_refs),
+        "compatibility_refs": _unique_text_rows(compatibility_refs),
+        "subassembly_refs": _unique_text_rows(subassembly_refs),
         "drainage_refs": _unique_text_rows(drainage_refs),
         "sides": _unique_text_rows(sides),
         "drainage_source_missing_point_count": missing_drainage_ref_count,
@@ -802,13 +810,16 @@ def _point_grid_source_summary(point_grid: list[list[object]]) -> dict[str, obje
 def _point_grid_provenance_notes(surface_kind: str, source_summary: dict[str, object]) -> str:
     notes = f"Corridor {surface_kind} TIN built from evaluated AppliedSection point rows."
     drainage_refs = list(source_summary.get("drainage_refs", []) or [])
-    component_refs = list(source_summary.get("component_refs", []) or [])
+    compatibility_refs = list(source_summary.get("compatibility_refs", []) or [])
+    subassembly_refs = list(source_summary.get("subassembly_refs", []) or [])
     sides = list(source_summary.get("sides", []) or [])
     missing_count = int(source_summary.get("drainage_source_missing_point_count", 0) or 0)
     if drainage_refs:
         notes += f" drainage_refs={','.join(drainage_refs)}."
-    if component_refs:
-        notes += f" component_refs={','.join(component_refs)}."
+    if subassembly_refs:
+        notes += f" subassembly_refs={','.join(subassembly_refs)}."
+    if compatibility_refs:
+        notes += f" compatibility_refs={','.join(compatibility_refs)}."
     if sides:
         notes += f" sides={','.join(sides)}."
     if missing_count:
@@ -819,18 +830,94 @@ def _point_grid_provenance_notes(surface_kind: str, source_summary: dict[str, ob
 def _point_source_notes(point) -> str:
     rows = []
     role = str(getattr(point, "point_role", "") or "").strip()
-    component_ref = str(getattr(point, "component_ref", "") or "").strip()
+    compatibility_ref = _point_compatibility_ref(point)
+    subassembly_ref = _point_subassembly_ref(point)
     side = str(getattr(point, "side", "") or "").strip()
     drainage_ref = str(getattr(point, "drainage_ref", "") or "").strip()
     if role:
         rows.append(f"role={role}")
-    if component_ref:
-        rows.append(f"component_ref={component_ref}")
+    if subassembly_ref:
+        rows.append(f"subassembly_ref={subassembly_ref}")
+    if compatibility_ref:
+        rows.append(f"compatibility_ref={compatibility_ref}")
     if side:
         rows.append(f"side={side}")
     if drainage_ref:
         rows.append(f"drainage_ref={drainage_ref}")
     return ";".join(rows)
+
+
+def _side_slope_grid_source_summary(side_grids: dict[str, list[list[_SectionPointLite]]]) -> dict[str, object]:
+    compatibility_refs: list[str] = []
+    subassembly_refs: list[str] = []
+    roles: list[str] = []
+    for grid in list(side_grids.values()):
+        for row in list(grid or []):
+            for point in list(row or []):
+                compatibility_ref = _point_compatibility_ref(point)
+                subassembly_ref = _point_subassembly_ref(point)
+                role = str(getattr(point, "point_role", "") or "").strip()
+                if compatibility_ref:
+                    compatibility_refs.append(compatibility_ref)
+                if subassembly_ref:
+                    subassembly_refs.append(subassembly_ref)
+                if role:
+                    roles.append(role)
+    return {
+        "compatibility_refs": _unique_text_rows(compatibility_refs),
+        "subassembly_refs": _unique_text_rows(subassembly_refs),
+        "roles": _unique_text_rows(roles),
+    }
+
+
+def _side_slope_grid_provenance_notes(source_summary: dict[str, object]) -> str:
+    rows: list[str] = []
+    subassembly_refs = list(source_summary.get("subassembly_refs", []) or [])
+    compatibility_refs = list(source_summary.get("compatibility_refs", []) or [])
+    roles = list(source_summary.get("roles", []) or [])
+    if subassembly_refs:
+        rows.append(f"subassembly_refs={','.join(subassembly_refs)}.")
+    if roles:
+        rows.append(f"roles={','.join(roles)}.")
+    if compatibility_refs:
+        rows.append(f"compatibility_refs={','.join(compatibility_refs)}.")
+    return " ".join(rows)
+
+
+def _section_point_lite_notes(point: _SectionPointLite) -> str:
+    rows: list[str] = []
+    role = str(getattr(point, "point_role", "") or "").strip()
+    compatibility_ref = _point_compatibility_ref(point)
+    subassembly_ref = _point_subassembly_ref(point)
+    if role:
+        rows.append(f"role={role}")
+    if subassembly_ref:
+        rows.append(f"subassembly_ref={subassembly_ref}")
+    if compatibility_ref:
+        rows.append(f"compatibility_ref={compatibility_ref}")
+    return ";".join(rows)
+
+
+def _point_subassembly_ref(point) -> str:
+    return str(getattr(point, "subassembly_ref", "") or "").strip()
+
+
+def _point_compatibility_ref(point) -> str:
+    subassembly_ref = _point_subassembly_ref(point)
+    if subassembly_ref:
+        return ""
+    return str(getattr(point, "compatibility_ref", "") or "").strip()
+
+
+def _interpolated_subassembly_ref(first_point, second_point) -> str:
+    return _interpolated_point_context(first_point, second_point, "subassembly_ref")
+
+
+def _interpolated_compatibility_ref(first_point, second_point) -> str:
+    subassembly_ref = _interpolated_subassembly_ref(first_point, second_point)
+    if subassembly_ref:
+        return ""
+    return _interpolated_point_context(first_point, second_point, "compatibility_ref")
 
 
 def _surface_request_source_refs(
@@ -900,7 +987,7 @@ def _build_daylight_surface_from_side_slope_points(
                             y=float(point.y),
                             z=float(point.z),
                             source_point_ref=_span_source_point_ref(sections, section_index, row_index, len(mesh_rows), point),
-                            notes=str(getattr(point, "point_role", "") or ""),
+                            notes=_section_point_lite_notes(point),
                         )
                     )
             for row_index in range(len(mesh_rows) - 1):
@@ -926,6 +1013,7 @@ def _build_daylight_surface_from_side_slope_points(
                     )
     if not vertices or not triangles:
         return None
+    source_summary = _side_slope_grid_source_summary(side_grids)
     z_values = [vertex.z for vertex in vertices]
     offset_values = [
         abs(float(point.lateral_offset))
@@ -942,7 +1030,8 @@ def _build_daylight_surface_from_side_slope_points(
         source_refs=[
             str(getattr(request.corridor, "corridor_id", "") or ""),
             str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-        ],
+        ]
+        + source_summary["subassembly_refs"],
         vertex_rows=vertices,
         triangle_rows=triangles,
         boundary_refs=[f"{request.surface_id}:bench-daylight-boundary"],
@@ -952,6 +1041,7 @@ def _build_daylight_surface_from_side_slope_points(
             TINQualityRow(f"{request.surface_id}:side_slope_point_count", "side_slope_point_count", side_slope_point_count, "count"),
             TINQualityRow(f"{request.surface_id}:bench_breakline_count", "bench_breakline_count", bench_breakline_count, "count"),
             TINQualityRow(f"{request.surface_id}:daylight_marker_count", "daylight_marker_count", daylight_marker_count, "count"),
+            TINQualityRow(f"{request.surface_id}:subassembly_ref_count", "subassembly_ref_count", len(source_summary["subassembly_refs"]), "count"),
             TINQualityRow(f"{request.surface_id}:offset_abs_max", "offset_abs_max", max(offset_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_max", "z_max", max(z_values), "m"),
@@ -961,7 +1051,8 @@ def _build_daylight_surface_from_side_slope_points(
                 provenance_id=f"{request.surface_id}:provenance:applied-section-bench-points",
                 source_kind="applied_section_side_slope_points",
                 source_ref=str(getattr(request.applied_section_set, "applied_section_set_id", "") or ""),
-                notes="Corridor slope-face surface built from evaluated side_slope_surface, bench_surface, and daylight_marker breaklines.",
+                notes="Corridor slope-face surface built from evaluated side_slope_surface, bench_surface, and daylight_marker breaklines. "
+                + _side_slope_grid_provenance_notes(source_summary),
             )
         ],
     )
@@ -1068,6 +1159,8 @@ def _interpolate_side_slope_point_at_param(row: list[_SectionPointLite], param: 
         z=_lerp(start.z, end.z, ratio),
         lateral_offset=_lerp(start.lateral_offset, end.lateral_offset, ratio),
         point_role=role,
+        compatibility_ref=_interpolated_compatibility_ref(start, end),
+        subassembly_ref=_interpolated_subassembly_ref(start, end),
     )
 
 
@@ -1170,7 +1263,7 @@ def _side_slope_points_for_section(
             point_role="terminal_edge",
         )
     ]
-    for point in list(getattr(section, "point_rows", []) or []):
+    for point in _section_points_for_slope_face_role(section):
         role = str(getattr(point, "point_role", "") or "")
         if role not in {"side_slope_surface", "bench_surface", "daylight_marker"}:
             continue
@@ -1187,6 +1280,8 @@ def _side_slope_points_for_section(
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=offset,
                 point_role=role,
+                compatibility_ref=_point_compatibility_ref(point),
+                subassembly_ref=_point_subassembly_ref(point),
             )
         )
     rows.sort(key=lambda point: (float(point.lateral_offset) - edge_offset) * direction)
@@ -1462,6 +1557,8 @@ def _interpolate_between_side_slope_points(
         z=float(start.z) + (float(end.z) - float(start.z)) * t,
         lateral_offset=float(start.lateral_offset) + (float(end.lateral_offset) - float(start.lateral_offset)) * t,
         point_role=role,
+        compatibility_ref=_interpolated_compatibility_ref(start, end),
+        subassembly_ref=_interpolated_subassembly_ref(start, end),
     )
 
 
@@ -1473,6 +1570,8 @@ def _as_daylight_marker(point: _SectionPointLite) -> _SectionPointLite:
         z=point.z,
         lateral_offset=point.lateral_offset,
         point_role="daylight_marker",
+        compatibility_ref=_point_compatibility_ref(point),
+        subassembly_ref=_point_subassembly_ref(point),
     )
 
 
@@ -1505,6 +1604,8 @@ def _terrain_oriented_side_slope_point(
         z=oriented_z,
         lateral_offset=point.lateral_offset,
         point_role=point.point_role,
+        compatibility_ref=_point_compatibility_ref(point),
+        subassembly_ref=_point_subassembly_ref(point),
     )
 
 
@@ -1776,8 +1877,15 @@ def _interpolate_transition_applied_section(
         daylight_left_slope=float(getattr(section, "daylight_left_slope", 0.0) or 0.0),
         daylight_right_slope=float(getattr(section, "daylight_right_slope", 0.0) or 0.0),
         point_rows=point_rows,
-        component_rows=list(getattr(section, "component_rows", []) or []),
+        subassembly_rows=list(getattr(section, "subassembly_rows", []) or []),
         quantity_rows=[],
+        active_intersection_id=str(getattr(section, "active_intersection_id", "") or ""),
+        active_intersection_control_area_id=str(getattr(section, "active_intersection_control_area_id", "") or ""),
+        active_intersection_leg_id=str(getattr(section, "active_intersection_leg_id", "") or ""),
+        active_intersection_leg_role=str(getattr(section, "active_intersection_leg_role", "") or ""),
+        active_intersection_control_region_refs=list(getattr(section, "active_intersection_control_region_refs", []) or []),
+        active_intersection_grading_policy_ref=str(getattr(section, "active_intersection_grading_policy_ref", "") or ""),
+        intersection_diagnostic_rows=list(getattr(section, "intersection_diagnostic_rows", []) or []),
         active_structure_ids=list(getattr(section, "active_structure_ids", []) or []),
         active_structure_rule_ids=list(getattr(section, "active_structure_rule_ids", []) or []),
         active_structure_influence_zone_ids=list(getattr(section, "active_structure_influence_zone_ids", []) or []),
@@ -1954,7 +2062,7 @@ def _interpolate_applied_section(first, second, ratio: float, *, sequence_index:
         daylight_left_slope=_lerp(getattr(first, "daylight_left_slope", 0.0), getattr(second, "daylight_left_slope", 0.0), t),
         daylight_right_slope=_lerp(getattr(first, "daylight_right_slope", 0.0), getattr(second, "daylight_right_slope", 0.0), t),
         point_rows=_interpolate_applied_section_points(first, second, t),
-        component_rows=list(getattr(first, "component_rows", []) or []),
+        subassembly_rows=list(getattr(first, "subassembly_rows", []) or []),
         quantity_rows=[],
         active_structure_ids=list(getattr(first, "active_structure_ids", []) or []),
         active_structure_rule_ids=list(getattr(first, "active_structure_rule_ids", []) or []),
@@ -2007,7 +2115,7 @@ def _interpolate_applied_section_points(first, second, ratio: float) -> list[App
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=first_role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
-                component_ref=_interpolated_point_context(first_point, second_point, "component_ref"),
+                subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
             )
@@ -2041,7 +2149,7 @@ def _interpolate_matching_role_points(first, second, *, role: str, ratio: float)
                 z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
                 point_role=role,
                 lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
-                component_ref=_interpolated_point_context(first_point, second_point, "component_ref"),
+                subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
             )
@@ -2096,6 +2204,7 @@ def _interpolate_side_slope_applied_section_points(first, second, ratio: float) 
                     z=_lerp(first_point.z, second_point.z, t),
                     point_role=role,
                     lateral_offset=_lerp(first_point.lateral_offset, second_point.lateral_offset, t),
+                    subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 )
             )
     return output
@@ -2104,7 +2213,7 @@ def _interpolate_side_slope_applied_section_points(first, second, ratio: float) 
 def _side_slope_source_row_for_interpolation(section, *, side_label: str) -> list[_SectionPointLite]:
     rows: list[_SectionPointLite] = []
     side = str(side_label or "").strip().lower()
-    for point in list(getattr(section, "point_rows", []) or []):
+    for point in _section_points_for_slope_face_role(section):
         role = str(getattr(point, "point_role", "") or "")
         if role not in {"side_slope_surface", "bench_surface", "daylight_marker"}:
             continue
@@ -2122,6 +2231,8 @@ def _side_slope_source_row_for_interpolation(section, *, side_label: str) -> lis
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=offset,
                 point_role=role,
+                compatibility_ref=_point_compatibility_ref(point),
+                subassembly_ref=_point_subassembly_ref(point),
             )
         )
     if side == "left":
@@ -2313,11 +2424,7 @@ def _section_point_grid(sections: list[object], *, point_role: str) -> list[list
     grid: list[list[object]] = []
     reference_offsets: list[float] | None = None
     for section in list(sections or []):
-        rows = [
-            point
-            for point in list(getattr(section, "point_rows", []) or [])
-            if str(getattr(point, "point_role", "") or "") == point_role
-        ]
+        rows = _section_points_for_surface_role(section, point_role=point_role)
         rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
         if len(rows) < 2:
             return []
@@ -2328,6 +2435,122 @@ def _section_point_grid(sections: list[object], *, point_role: str) -> list[list
             return []
         grid.append(rows)
     return grid if len(grid) >= 2 else []
+
+
+def _section_points_for_surface_role(section, *, point_role: str) -> list[object]:
+    """Return point rows for a surface role, preferring Subassembly link ownership."""
+
+    role = str(point_role or "").strip()
+    if not role:
+        return []
+    surface_role = _surface_role_for_point_role(role)
+    if surface_role:
+        linked_subassembly_rows = _subassembly_points_for_surface_role(section, surface_role=surface_role)
+        linked_subassembly_rows = [
+            point
+            for point in linked_subassembly_rows
+            if str(getattr(point, "point_role", "") or "") == role
+        ]
+        if len(linked_subassembly_rows) >= 2:
+            return linked_subassembly_rows
+    legacy_rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") == role
+    ]
+    if not surface_role:
+        return legacy_rows
+    linked_point_ids = _subassembly_link_point_ids_for_surface_role(section, surface_role=surface_role)
+    if not linked_point_ids:
+        return legacy_rows
+    linked_rows = [
+        point
+        for point in legacy_rows
+        if str(getattr(point, "point_id", "") or "").strip() in linked_point_ids
+    ]
+    return linked_rows if len(linked_rows) >= 2 else legacy_rows
+
+
+def _section_points_for_slope_face_role(section) -> list[object]:
+    roles = {"side_slope_surface", "bench_surface", "daylight_marker"}
+    linked_subassembly_rows = _subassembly_points_for_surface_role(section, surface_role="slope_face_surface")
+    linked_subassembly_rows = [
+        point
+        for point in linked_subassembly_rows
+        if str(getattr(point, "point_role", "") or "") in roles
+    ]
+    if linked_subassembly_rows:
+        return linked_subassembly_rows
+    legacy_rows = [
+        point
+        for point in list(getattr(section, "point_rows", []) or [])
+        if str(getattr(point, "point_role", "") or "") in roles
+    ]
+    linked_point_ids = _subassembly_link_point_ids_for_surface_role(section, surface_role="slope_face_surface")
+    if not linked_point_ids:
+        return legacy_rows
+    linked_rows = [
+        point
+        for point in legacy_rows
+        if str(getattr(point, "point_id", "") or "").strip() in linked_point_ids
+    ]
+    return linked_rows if linked_rows else legacy_rows
+
+
+def _subassembly_points_for_surface_role(section, *, surface_role: str) -> list[_SectionPointLite]:
+    role = str(surface_role or "").strip()
+    if not role:
+        return []
+    linked_point_ids = _subassembly_link_point_ids_for_surface_role(section, surface_role=role)
+    if not linked_point_ids:
+        return []
+    rows: list[_SectionPointLite] = []
+    for point in list(getattr(section, "subassembly_point_rows", []) or []):
+        point_id = str(getattr(point, "point_id", "") or "").strip()
+        if point_id not in linked_point_ids:
+            continue
+        rows.append(
+            _SectionPointLite(
+                point_id=point_id,
+                x=float(getattr(point, "x", 0.0) or 0.0),
+                y=float(getattr(point, "y", 0.0) or 0.0),
+                z=float(getattr(point, "z", 0.0) or 0.0),
+                lateral_offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
+                point_role=str(getattr(point, "point_code", "") or ""),
+                compatibility_ref="",
+                subassembly_ref=_point_subassembly_ref(point),
+            )
+        )
+    rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
+    return rows
+
+
+def _subassembly_link_point_ids_for_surface_role(section, *, surface_role: str) -> set[str]:
+    role = str(surface_role or "").strip()
+    if not role:
+        return set()
+    point_ids: set[str] = set()
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        if str(getattr(link, "surface_role", "") or "").strip() != role:
+            continue
+        for attr in ("start_point_ref", "end_point_ref"):
+            point_id = str(getattr(link, attr, "") or "").strip()
+            if point_id:
+                point_ids.add(point_id)
+    return point_ids
+
+
+def _surface_role_for_point_role(point_role: str) -> str:
+    role = str(point_role or "").strip()
+    if role == "fg_surface":
+        return "design_surface"
+    if role == "subgrade_surface":
+        return "subgrade_surface"
+    if role == "ditch_surface":
+        return "drainage_surface"
+    if role in {"side_slope_surface", "bench_surface", "daylight_marker"}:
+        return "slope_face_surface"
+    return ""
 
 
 def _surface_width_rows(applied_section_set: AppliedSectionSet, *, fallback_half_width: float) -> list[tuple[float, float]]:

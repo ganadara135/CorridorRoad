@@ -16,6 +16,11 @@ SOLID_TARGET_FAMILIES = {
     "lined_ditch_body",
     "drainage_pipeline_body",
     "drainage_pipeline_network_body",
+    "intersection_patch_body",
+    "intersection_pavement_body",
+    "intersection_subgrade_body",
+    "intersection_slope_body",
+    "intersection_curb_return_body",
     "structure_body",
 }
 
@@ -23,9 +28,10 @@ SOLID_TARGET_SCOPE_KINDS = {
     "whole_corridor",
     "region",
     "station_range",
-    "assembly_component",
+    "assembly_subassembly",
     "structure",
     "drainage",
+    "intersection",
 }
 
 SOLID_TARGET_READINESS_STATUSES = {
@@ -58,7 +64,7 @@ class SolidTargetRow:
     station_end: float = 0.0
     region_ref: str = ""
     assembly_ref: str = ""
-    component_ref: str = ""
+    subassembly_ref: str = ""
     structure_ref: str = ""
     drainage_ref: str = ""
     flow_route_ref: str = ""

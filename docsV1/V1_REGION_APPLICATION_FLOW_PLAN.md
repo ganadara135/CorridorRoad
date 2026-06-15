@@ -19,13 +19,13 @@ Use this authoring order:
 2. `Structure`
 3. `Region`
 
-`AssemblyModel` and `StructureModel` are reusable source definitions.
+`AssemblySubassemblyModel` and `StructureModel` are reusable source definitions.
 
 `RegionModel` is the station-range application layer that decides where one Assembly and one optional Structure are active.
 
 ## 3. Ownership Boundary
 
-`AssemblyModel` owns reusable section composition.
+`AssemblySubassemblyModel` owns reusable section composition.
 
 `StructureModel` owns structure identity, placement, geometry intent, interaction policy, and exchange identity.
 
@@ -66,7 +66,7 @@ Regions need to answer station-specific questions:
 - Which source should win when Region rows overlap?
 - Which source relationships should `AppliedSectionService` and `Build Corridor` consume?
 
-Those questions cannot be answered cleanly until the reusable `AssemblyModel` and `StructureModel` sources already exist.
+Those questions cannot be answered cleanly until the reusable `AssemblySubassemblyModel` and `StructureModel` sources already exist.
 
 ## 6. Recommended User Flow
 
@@ -91,7 +91,7 @@ Use one of these approaches instead:
 
 - split the station range into multiple Region rows
 - use `RegionTransition` when the Assembly changes over a transition range
-- use `RegionPolicySet` or explicit override refs for narrow component exceptions
+- use `RegionPolicySet` or explicit override refs for narrow Subassembly exceptions
 
 This keeps Region resolution deterministic.
 
@@ -103,7 +103,7 @@ Use one of these approaches instead:
 
 - split the station range into multiple Region rows
 - create overlapping Region rows with different priorities when two structure effects must be reviewed separately
-- model minor non-structural effects through Assembly components, explicit refs, or policy context
+- model minor non-structural effects through Assembly Subassemblies, explicit refs, or policy context
 - keep the actual structure meaning in `StructureModel`
 
 If two major structures are active over the same station range, they should be represented by StructureModel rows that reference the owning Region.
@@ -231,7 +231,7 @@ Tasks:
 - [x] pass resolved Assembly ref into `AppliedSectionService`
 - [x] pass resolved Structure ref into `AppliedSectionService`
 - [x] filter structure interaction context by resolved Region `structure_ref`
-- [x] keep quantity fragments singular when component compatibility rows contain multiple structure ids
+- [x] keep quantity fragments singular when Subassembly compatibility rows contain multiple structure ids
 - [x] pass resolved Structure ref into structure output filtering
 - [x] show singular Assembly and Structure ownership in Cross Section Viewer source rows
 - [x] include singular Region source refs in review and exchange diagnostics where relevant
@@ -246,7 +246,7 @@ Acceptance criteria:
 
 ## 13. Non-goals
 
-This plan does not make Region own Assembly component geometry.
+This plan does not make Region own Assembly Subassembly geometry.
 
 This plan does not make Region own Structure geometry.
 

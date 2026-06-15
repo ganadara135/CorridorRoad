@@ -126,7 +126,7 @@ The viewer should provide:
 
 - station navigation
 - current-section display
-- component inspection
+- Subassembly inspection
 - ramp and junction context review
 - drainage interaction review
 - terrain interaction review
@@ -143,7 +143,7 @@ The viewer should consume a normalized section-view payload rather than ad-hoc o
 Minimum input families:
 
 - section geometry rows
-- semantic component rows
+- semantic Subassembly rows
 - dimension rows
 - summary rows
 - source ownership rows
@@ -190,8 +190,8 @@ The viewer should operate on stable station values and applied-section identitie
 
 Recommended selectable entities:
 
-- section component span
-- component edge or terminal behavior
+- section Subassembly span
+- Subassembly edge or terminal behavior
 - ramp or intersection event marker
 - terrain-intersection marker
 - drainage-interaction marker
@@ -215,8 +215,8 @@ Selection is not for:
 
 A selection should resolve to:
 
-- component identity
-- component kind
+- Subassembly identity
+- Subassembly kind
 - side
 - span or point reference
 - source owner
@@ -242,9 +242,9 @@ The inspector should explain:
 
 ### 10.2 Typical inspector fields
 
-- `ComponentId`
-- `ComponentKind`
-- `SectionTemplateId`
+- `SubassemblyId`
+- `SubassemblyKind`
+- `AssemblySubassemblyModelId`
 - `RegionId`
 - `OverrideId`
 - `RampId`
@@ -286,7 +286,7 @@ The viewer should support opening:
 The viewer should pass enough context to the target editor, such as:
 
 - station
-- selected component id
+- selected Subassembly id
 - region id
 - structure id
 - side
@@ -297,7 +297,7 @@ The viewer should pass enough context to the target editor, such as:
 After save and rebuild, the viewer should be able to return to:
 
 - the same station
-- the same selected component when still valid
+- the same selected Subassembly when still valid
 - the same zoom or review context where practical
 
 ### 11.5 Relationship to source editors during transition

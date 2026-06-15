@@ -108,7 +108,7 @@ def test_earthwork_analysis_service_builds_station_area_fragments() -> None:
     assert [row.value for row in result.area_fragment_rows] == [20.0, 40.0]
     assert [row.station_start for row in result.area_fragment_rows] == [0.0, 10.0]
     assert all(row.measurement_kind == "section_earthwork_area" for row in result.area_fragment_rows)
-    assert all(row.component_ref == "section_earthwork_area" for row in result.area_fragment_rows)
+    assert all(row.subassembly_ref == "section_earthwork_area" for row in result.area_fragment_rows)
     assert all(row.assembly_ref == "assembly-1" for row in result.area_fragment_rows)
     assert all(row.region_ref == "region-1" for row in result.area_fragment_rows)
 

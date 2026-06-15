@@ -268,12 +268,12 @@ Owns:
 - pavement layers
 - side-slope rules
 - ditch, gutter, swale, channel, berm, curb, sidewalk, median families
-- ramp and junction-related component families
+- ramp and junction-related Subassembly families
 
 Primary object families:
 
-- `AssemblyModel`
-- `SectionTemplate`
+- `AssemblySubassemblyModel`
+- `SubassemblySectionTemplate`
 - `SubassemblyCatalog`
 
 ### 5.9 Region Subsystem
@@ -453,7 +453,7 @@ The section system is central to v1.
 
 The architecture must support these distinctions:
 
-- `SectionTemplate` is authored intent
+- `SubassemblySectionTemplate` is authored intent
 - `AppliedSection` is evaluated station-specific reality
 - `AppliedSectionSet` is the ordered corridor-wide section result
 - `SectionView` is a derived review/output representation
@@ -611,7 +611,7 @@ It should consume:
 It should support:
 
 - station navigation
-- component inspection
+- Subassembly inspection
 - ramp and junction context review
 - drainage interaction review
 - source tracing
@@ -687,7 +687,7 @@ Recommended identity concepts:
 - `IntersectionId`
 - `ProfileId`
 - `TemplateId`
-- `ComponentId`
+- `SubassemblyId`
 - `RegionId`
 - `DrainageId`
 - `StructureId`

@@ -16,9 +16,9 @@ The final goal is to let users generate valid, reviewable watertight solids for 
 
 - the whole road body
 - a selected Region
-- a drainage component
+- a drainage Subassembly or Structure-backed drainage body
 - a structure such as a retaining wall or culvert
-- a specific Assembly component such as pavement, curb, gutter, barrier, shoulder, or lined ditch
+- a specific Assembly Subassembly such as pavement, curb, gutter, barrier, shoulder, or lined ditch
 
 ## 2. Core Rule
 
@@ -30,7 +30,7 @@ Design changes must return to the owning source models:
 
 - `AlignmentModel`
 - `ProfileModel`
-- `AssemblyModel`
+- `AssemblySubassemblyModel`
 - `RegionModel`
 - `DrainageModel`
 - `StructureModel`
@@ -170,7 +170,7 @@ Show a table of available solid target families:
 |---|---|---|---|
 | Whole Road Body | corridor | Applied Sections / Assembly | available or blocked |
 | Region Body | selected Region | Region / Applied Sections | available or blocked |
-| Pavement Layer | Assembly component | Assembly / Applied Sections | available or blocked |
+| Pavement Layer | Assembly Subassembly | Assembly / Applied Sections | available or blocked |
 | Drainage Body | lined ditch, channel, culvert | Drainage / Assembly / Structure | available or blocked |
 | Structure Body | wall, culvert, bridge deck | StructureModel | available or blocked |
 
@@ -181,7 +181,7 @@ Target scope controls should include:
 - whole corridor
 - selected Region
 - station range
-- Assembly component
+- Assembly Subassembly
 - Structure reference
 - Drainage reference
 
@@ -240,7 +240,7 @@ Rules:
 
 Purpose:
 
-- generate physical drainage component solids
+- generate physical drainage Subassembly or Structure-backed solids
 
 Valid first targets:
 
@@ -254,7 +254,7 @@ Rule:
 
 Open drainage grading surfaces are not solid targets.
 
-Only drainage components with thickness, material, volume, or asset identity should become watertight solids.
+Only drainage Subassemblies or Structures with thickness, material, volume, or asset identity should become watertight solids.
 
 ### 7.4 Structure Body
 
@@ -269,11 +269,11 @@ Rules:
 - corridor-following structures may be segmented by Applied Section frames
 - boolean union with road-body solids is deferred until independent solids are stable
 
-### 7.5 Assembly Component Body
+### 7.5 Assembly Subassembly Body
 
 Purpose:
 
-- generate component-level physical bodies from Assembly and Applied Section semantics
+- generate Subassembly-level physical bodies from Assembly and Applied Section semantics
 
 Valid first targets:
 
@@ -312,7 +312,7 @@ Recommended fields:
 - `station_start`
 - `station_end`
 - `assembly_ref`
-- `component_ref`
+- `subassembly_ref`
 - `structure_ref`
 - `drainage_ref`
 - `enabled`

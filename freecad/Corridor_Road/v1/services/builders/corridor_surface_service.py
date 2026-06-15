@@ -42,6 +42,8 @@ class CorridorSurfaceService:
         daylight_surface_id = f"{request.corridor.corridor_id}:daylight"
         drainage_surface_id = f"{request.corridor.corridor_id}:drainage"
         drainage_source_refs = _point_role_source_refs(request.applied_section_set, "ditch_surface")
+        drainage_source_refs.extend(_surface_role_source_refs(request.applied_section_set, "drainage_surface"))
+        subassembly_surface_refs = _surface_subassembly_refs(request.applied_section_set)
 
         surface_rows = [
             SurfaceRow(
@@ -65,7 +67,7 @@ class CorridorSurfaceService:
                 parent_surface_ref=design_surface_id,
             ),
         ]
-        if _has_point_role(request.applied_section_set, "ditch_surface"):
+        if _has_point_role(request.applied_section_set, "ditch_surface") or _has_surface_role(request.applied_section_set, "drainage_surface"):
             surface_rows.append(
                 SurfaceRow(
                     surface_id=drainage_surface_id,
@@ -84,25 +86,32 @@ class CorridorSurfaceService:
                 input_refs=[
                     request.corridor.corridor_id,
                     request.applied_section_set.applied_section_set_id,
-                ],
-                operation_summary="Built from applied section set skeleton.",
+                ]
+                + _surface_role_source_refs(request.applied_section_set, "design_surface"),
+                operation_summary="Built from applied section set skeleton with Subassembly design link provenance where available.",
             ),
             SurfaceBuildRelation(
                 build_relation_id=f"{request.surface_model_id}:subgrade-build",
                 surface_ref=subgrade_surface_id,
                 relation_kind="corridor_build",
-                input_refs=[design_surface_id],
-                operation_summary="Derived as child surface of design surface skeleton.",
+                input_refs=_unique_text_rows(
+                    [design_surface_id]
+                    + _surface_role_source_refs(request.applied_section_set, "subgrade_surface")
+                ),
+                operation_summary="Derived as child surface of design surface skeleton with Subassembly subgrade link provenance where available.",
             ),
             SurfaceBuildRelation(
                 build_relation_id=f"{request.surface_model_id}:daylight-build",
                 surface_ref=daylight_surface_id,
                 relation_kind="corridor_build",
-                input_refs=[design_surface_id],
-                operation_summary="Derived as child surface of design surface skeleton.",
+                input_refs=_unique_text_rows(
+                    [design_surface_id]
+                    + _surface_role_source_refs(request.applied_section_set, "slope_face_surface")
+                ),
+                operation_summary="Derived from side-slope/daylight rows with Subassembly slope_face_surface link provenance where available.",
             ),
         ]
-        if _has_point_role(request.applied_section_set, "ditch_surface"):
+        if _has_point_role(request.applied_section_set, "ditch_surface") or _has_surface_role(request.applied_section_set, "drainage_surface"):
             build_relation_rows.append(
                 SurfaceBuildRelation(
                     build_relation_id=f"{request.surface_model_id}:drainage-build",
@@ -115,7 +124,7 @@ class CorridorSurfaceService:
                         ]
                         + drainage_source_refs
                     ),
-                    operation_summary="Built as a separate drainage surface from source-tagged AppliedSection ditch_surface point rows.",
+                    operation_summary="Built as a separate drainage surface from source-tagged AppliedSection ditch_surface points and Subassembly drainage links.",
                 )
             )
         span_rows = _build_surface_span_rows(
@@ -127,7 +136,7 @@ class CorridorSurfaceService:
         source_refs = [
             request.corridor.corridor_id,
             request.applied_section_set.applied_section_set_id,
-        ] + list(getattr(request.applied_section_set, "source_refs", []) or []) + drainage_source_refs
+        ] + list(getattr(request.applied_section_set, "source_refs", []) or []) + drainage_source_refs + subassembly_surface_refs
         transition_model_id = str(getattr(request.surface_transition_model, "transition_model_id", "") or "")
         if transition_model_id:
             source_refs.append(transition_model_id)
@@ -154,6 +163,17 @@ def _has_point_role(applied_section_set: AppliedSectionSet, point_role: str) -> 
     return False
 
 
+def _has_surface_role(applied_section_set: AppliedSectionSet, surface_role: str) -> bool:
+    role = str(surface_role or "").strip()
+    if not role:
+        return False
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            if str(getattr(link, "surface_role", "") or "") == role:
+                return True
+    return False
+
+
 def _point_role_source_refs(applied_section_set: AppliedSectionSet, point_role: str) -> list[str]:
     output: list[str] = []
     for section in list(getattr(applied_section_set, "sections", []) or []):
@@ -161,6 +181,29 @@ def _point_role_source_refs(applied_section_set: AppliedSectionSet, point_role: 
             if str(getattr(point, "point_role", "") or "") != point_role:
                 continue
             output.append(str(getattr(point, "drainage_ref", "") or ""))
+    return _unique_text_rows(output)
+
+
+def _surface_role_source_refs(applied_section_set: AppliedSectionSet, surface_role: str) -> list[str]:
+    output: list[str] = []
+    role = str(surface_role or "").strip()
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            if str(getattr(link, "surface_role", "") or "") != role:
+                continue
+            output.append(str(getattr(link, "subassembly_ref", "") or ""))
+            output.append(str(getattr(link, "link_id", "") or ""))
+    return _unique_text_rows(output)
+
+
+def _surface_subassembly_refs(applied_section_set: AppliedSectionSet) -> list[str]:
+    output: list[str] = []
+    for section in list(getattr(applied_section_set, "sections", []) or []):
+        for link in list(getattr(section, "subassembly_link_rows", []) or []):
+            subassembly_ref = str(getattr(link, "subassembly_ref", "") or "").strip()
+            surface_role = str(getattr(link, "surface_role", "") or "").strip()
+            if subassembly_ref and surface_role:
+                output.append(subassembly_ref)
     return _unique_text_rows(output)
 
 
@@ -278,16 +321,25 @@ def _surface_span_diagnostic_refs(left, right) -> list[str]:
         diagnostics.append("structure_context_change")
     if _surface_point_role_counts(left) != _surface_point_role_counts(right):
         diagnostics.append("surface_point_role_mismatch")
+    if _surface_link_role_counts(left) != _surface_link_role_counts(right):
+        diagnostics.append("subassembly_surface_link_role_mismatch")
     return diagnostics
 
 
 def _surface_span_notes(left, right, *, diagnostics: list[str], transition: SurfaceTransitionRange | None = None) -> str:
     if not diagnostics:
+        link_counts = _surface_link_role_counts(left)
+        if link_counts:
+            return "same Region span; subassembly_link_roles=" + _format_role_counts(link_counts)
         return "same Region span."
     text = (
         f"{_section_region_id(left)} -> {_section_region_id(right)}; "
         f"diagnostics={', '.join(diagnostics)}"
     )
+    left_links = _surface_link_role_counts(left)
+    right_links = _surface_link_role_counts(right)
+    if left_links or right_links:
+        text += f"; subassembly_link_roles={_format_role_counts(left_links)}->{_format_role_counts(right_links)}"
     if transition is not None:
         text += f"; transition={getattr(transition, 'transition_id', '')}"
     return text
@@ -373,3 +425,19 @@ def _surface_point_role_counts(section) -> dict[str, int]:
         if role in counts:
             counts[role] += 1
     return {role: count for role, count in counts.items() if count}
+
+
+def _surface_link_role_counts(section) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for link in list(getattr(section, "subassembly_link_rows", []) or []):
+        role = str(getattr(link, "surface_role", "") or "").strip()
+        if not role:
+            continue
+        counts[role] = counts.get(role, 0) + 1
+    return counts
+
+
+def _format_role_counts(counts: dict[str, int]) -> str:
+    if not counts:
+        return "{}"
+    return ",".join(f"{key}:{counts[key]}" for key in sorted(counts))

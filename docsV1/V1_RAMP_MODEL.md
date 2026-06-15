@@ -274,7 +274,7 @@ Criteria rows should preserve engineering meaning rather than become unlabeled l
 - region switching
 - template changes
 - lane and shoulder composition
-- gore-area component logic
+- gore-area Subassembly logic
 - drainage edge treatment
 
 It should not directly mutate generated section geometry.

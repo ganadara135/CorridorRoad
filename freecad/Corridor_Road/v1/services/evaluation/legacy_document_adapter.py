@@ -8,7 +8,6 @@ from ...common.diagnostics import DiagnosticMessage
 from ...common.identity import new_entity_id
 from ...models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
     AppliedSectionQuantityFragment,
 )
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
@@ -54,15 +53,6 @@ def _row_get(row: dict[str, object], *keys: str, default=None):
         if normalized in lower_map:
             return lower_map[normalized]
     return default
-
-
-def _component_slope(row: dict[str, object], safe_float) -> float:
-    """Resolve legacy component slope as elevation change per metre."""
-
-    if _row_get(row, "Slope", "slope", default=None) is not None:
-        return safe_float(_row_get(row, "Slope", "slope", default=0.0), 0.0)
-    percent = safe_float(_row_get(row, "CrossSlopePct", "crossSlopePct", "cross_slope_pct", default=0.0), 0.0)
-    return -float(percent) / 100.0
 
 
 class LegacyDocumentAdapter:
@@ -296,7 +286,6 @@ class LegacyDocumentAdapter:
         if not station_values:
             station_values = [0.0]
 
-        component_rows = self._legacy_typical_component_rows(typical_section)
         pavement_rows = self._legacy_pavement_rows(typical_section)
 
         sections: list[AppliedSection] = []
@@ -306,31 +295,12 @@ class LegacyDocumentAdapter:
         for index, station in enumerate(station_values, start=1):
             applied_section_id = f"{corridor.corridor_id}:section:{index}"
             region_id = self._region_id_at_station(region_plan, station)
-            applied_components = [
-                AppliedSectionComponentRow(
-                    component_id=str(_row_get(row, "Id", "id", "component_id", default=f"component-{row_index}")),
-                    kind=str(_row_get(row, "Type", "type", "Kind", "kind", default="component")),
-                    source_template_id=template_id,
-                    region_id=region_id,
-                    side=str(_row_get(row, "Side", "side", default="center") or "center").strip().lower(),
-                    width=max(0.0, self._safe_float(_row_get(row, "Width", "width", default=0.0), 0.0)),
-                    slope=_component_slope(row, self._safe_float),
-                    thickness=max(
-                        0.0,
-                        self._safe_float(_row_get(row, "Thickness", "thickness", "Height", "height", default=0.0), 0.0),
-                    ),
-                    material=str(_row_get(row, "Material", "material", default="") or ""),
-                )
-                for row_index, row in enumerate(component_rows, start=1)
-                if bool(_row_get(row, "Enabled", "enabled", default=True))
-            ]
             quantity_rows = [
                 AppliedSectionQuantityFragment(
                     fragment_id=f"{applied_section_id}:pavement:{row_index}",
                     quantity_kind=f"pavement_{str(row.get('Type', 'layer'))}",
                     value=float(row.get("Thickness", 0.0) or 0.0),
                     unit="m",
-                    component_id=str(row.get("Id", "")),
                 )
                 for row_index, row in enumerate(pavement_rows, start=1)
                 if bool(row.get("Enabled", True))
@@ -348,7 +318,6 @@ class LegacyDocumentAdapter:
                     station=float(station),
                     template_id=template_id,
                     region_id=region_id,
-                    component_rows=applied_components,
                     quantity_rows=quantity_rows,
                     source_refs=list(corridor.source_refs),
                 )
@@ -803,16 +772,6 @@ class LegacyDocumentAdapter:
                 best_delta = delta
                 best_row = dict(row)
         return best_row
-
-    def _legacy_typical_component_rows(self, typical_section) -> list[dict[str, object]]:
-        """Read component rows from a legacy TypicalSectionTemplate."""
-
-        try:
-            from freecad.Corridor_Road.objects.obj_typical_section_template import component_rows
-
-            return [dict(row) for row in list(component_rows(typical_section) or [])]
-        except Exception:
-            return []
 
     def _legacy_pavement_rows(self, typical_section) -> list[dict[str, object]]:
         """Read pavement rows from a legacy TypicalSectionTemplate."""

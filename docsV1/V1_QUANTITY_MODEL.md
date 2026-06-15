@@ -29,7 +29,7 @@ This model covers:
 
 - quantity identity and grouping
 - station-based quantity fragments
-- component, pavement, region, and structure-related summaries
+- Subassembly, pavement, region, and structure-related summaries
 - quantity aggregation rules
 - diagnostics and traceability
 
@@ -83,7 +83,7 @@ It may also use:
 Recommended early v1 support:
 
 - pavement quantities
-- section-based component quantities
+- section-based Subassembly quantities
 - station-range quantity summaries
 - region-based quantity summaries
 - structure-related quantity notes
@@ -134,7 +134,7 @@ The quantity model should keep fragment and aggregate relationships explicit ins
 
 ### 9.1 Purpose
 
-Each `QuantityFragment` represents a small, traceable quantity contribution from a station, component, or surface-derived segment.
+Each `QuantityFragment` represents a small, traceable quantity contribution from a station, Subassembly, Structure, Drainage element, or surface-derived segment.
 
 ### 9.2 Recommended fields
 
@@ -146,7 +146,7 @@ Each `QuantityFragment` represents a small, traceable quantity contribution from
 - `station_start`
 - `station_end`
 - optional `applied_section_ref`
-- optional `component_ref`
+- optional `subassembly_ref`
 - optional `region_ref`
 - optional `structure_ref`
 - `source_ref`
@@ -155,7 +155,7 @@ Each `QuantityFragment` represents a small, traceable quantity contribution from
 ### 9.3 Recommended quantity kinds
 
 - `pavement_quantity`
-- `component_quantity`
+- `subassembly_quantity`
 - `surface_area_quantity`
 - `linear_quantity`
 - `structure_adjacent_quantity`
@@ -186,7 +186,7 @@ Fragments should preserve enough semantics to support later regrouping and repor
 - `project_total`
 - `station_range_total`
 - `region_total`
-- `component_total`
+- `subassembly_total`
 - `pavement_total`
 - `structure_note_total`
 
@@ -211,7 +211,7 @@ Aggregates should be derived from explicit fragment references rather than being
 
 ### 11.3 Recommended grouping kinds
 
-- `by_component`
+- `by_subassembly`
 - `by_region`
 - `by_station_range`
 - `by_structure_context`
@@ -230,7 +230,7 @@ Pavement quantities should derive from labeled section and corridor semantics, n
 ### 12.2 Typical quantity bases
 
 - lane width and thickness semantics
-- shoulder and auxiliary pavement components
+- shoulder and auxiliary pavement Subassemblies
 - pavement layer identity
 - station range and region context
 
@@ -238,7 +238,7 @@ Pavement quantities should derive from labeled section and corridor semantics, n
 
 Pavement quantity outputs should remain traceable to:
 
-- component identity
+- Subassembly identity
 - station range
 - source template or region context where relevant
 
@@ -270,7 +270,7 @@ Structure interaction may affect quantities through:
 
 - local replacement or omission
 - wall-adjacent treatments
-- structure-zone component changes
+- structure-zone Subassembly changes
 - structure-related notes and exceptions
 
 ### 13.3 Rule
@@ -339,7 +339,7 @@ Quantity and earthwork are related but not identical systems.
 
 The architectural distinction is:
 
-- `QuantityModel` handles measurable component and surface-related quantities
+- `QuantityModel` handles measurable Subassembly and surface-related quantities
 - `EarthworkBalanceModel` handles cut/fill, mass-haul, borrow, waste, and balance analysis
 
 They may share:
@@ -379,7 +379,7 @@ Review systems should inspect quantity provenance, not mutate quantity definitio
 
 Diagnostics should be produced when:
 
-- a fragment loses component identity
+- a fragment loses Subassembly identity
 - an aggregate references missing fragments
 - region grouping is inconsistent
 - structure-related quantity notes lose source references
@@ -454,7 +454,7 @@ The following should be avoided:
 In v1, `QuantityModel` is the derived analytical result model for:
 
 - station-based quantity fragments
-- component, pavement, region, and structure-related aggregates
+- Subassembly, pavement, region, and structure-related aggregates
 - grouping and comparison semantics
 - traceable quantity provenance
 

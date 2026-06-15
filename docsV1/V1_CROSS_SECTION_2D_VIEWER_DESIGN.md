@@ -33,7 +33,7 @@ Tables do not replace the drawing.
 The v1 viewer should preserve the successful v0 drawing-style experience:
 
 - section geometry is presented like a 2D engineering section drawing, not as a small chart
-- component labels and values are drawn on or near their owning section spans
+- Subassembly labels and values are drawn on or near their owning section spans
 - width, depth, and overall section dimensions are shown as dimension annotations
 - the lower dimension band remains part of the review contract
 - label/value rows should use drawing-rule placement to avoid clutter
@@ -62,7 +62,7 @@ The viewer should answer:
 Minimum inputs:
 
 - `SectionOutput.geometry_rows`
-- `SectionOutput.component_rows`
+- `SectionOutput.subassembly_rows`
 - `SectionOutput.quantity_rows`
 - baseline provenance metadata from `SectionOutput.coordinate_context`
 - focused station row
@@ -72,7 +72,7 @@ High-value inputs:
 
 - TIN sampled EG line
 - corridor build result rows
-- drainage/ditch component rows
+- drainage/ditch Subassembly rows
 - earthwork area rows
 - diagnostics rows
 
@@ -101,7 +101,7 @@ Station navigation bar:
 - supports auto-scale to visible section geometry
 - uses distinct styles for FG, EG, subgrade, ditch, drainage, and structure context
 - draws a centerline reference marker
-- draws component labels and values at component span midpoints when available
+- draws Subassembly labels and values at Subassembly span midpoints when available
 - draws dimension guides in a lower band
 - uses collision-aware placement for labels and dimension text
 - keeps labels readable in dark mode
@@ -135,12 +135,12 @@ The style should remain readable in dark mode.
 Drawing annotation requirements:
 
 - `lane`, `shoulder`, `ditch`, `slope`, `subgrade`, and drainage labels should be readable without opening tables
-- component value rows should appear near their component labels when there is enough room
+- Subassembly value rows should appear near their Subassembly labels when there is enough room
 - ditch annotations should include shape-specific dimensions when available, such as bottom width and depth
 - slope annotations should show side and slope meaning, not only generic linework
-- daylight markers should be visually distinct from ordinary component labels
+- daylight markers should be visually distinct from ordinary Subassembly labels
 - the overall section width dimension should be available in the lower band
-- component width dimensions should remain visible when `Show dimensions` is enabled
+- Subassembly width dimensions should remain visible when `Show dimensions` is enabled
 
 The first v1 implementation may start with FG, subgrade, ditch, and slope-face annotations from `AppliedSectionSet`.
 
@@ -204,10 +204,10 @@ The following v0 viewer behaviors should be treated as visual requirements for v
 - pan and zoom behavior
 - station selector and previous/next navigation
 - `Show dimensions`
-- component labels and values drawn in the section drawing
+- Subassembly labels and values drawn in the section drawing
 - lower-band dimension strategy
 - SVG/PNG export path after the payload stabilizes
-- focused component highlighting
+- focused Subassembly highlighting
 - daylight marker labeling
 - structure overlay capability as a later layer
 

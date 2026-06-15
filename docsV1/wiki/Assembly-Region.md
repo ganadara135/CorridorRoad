@@ -4,7 +4,7 @@ Assembly and Region define how reusable section intent is applied to station ran
 
 ## Assembly
 
-Assembly owns reusable section components.
+Assembly owns reusable section Subassemblies.
 
 Examples:
 
@@ -16,6 +16,10 @@ Examples:
 - pavement-related intent
 
 Assembly can define ditch shapes and side-slope bench behavior. These are source definitions, not generated corridor geometry.
+
+Use `Assembly / Subassembly` as the active v1 editor when creating new section intent.
+
+`Subassembly` is the user-facing term for reusable section parts. The old Assembly editor path is not part of the active v1 workflow.
 
 ## Region
 

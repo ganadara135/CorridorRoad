@@ -153,7 +153,7 @@ This is a hint, not a promise that every consumer can realize the exact same sca
 ### 10.3 Recommended label kinds
 
 - `station_label`
-- `component_label`
+- `subassembly_label`
 - `region_label`
 - `structure_label`
 - `grade_label`
@@ -176,7 +176,7 @@ This is a hint, not a promise that every consumer can realize the exact same sca
 
 ### 11.3 Recommended dimension kinds
 
-- `component_width`
+- `subassembly_width`
 - `overall_width`
 - `offset_dimension`
 - `structure_clearance`

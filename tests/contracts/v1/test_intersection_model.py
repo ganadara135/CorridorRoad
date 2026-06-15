@@ -1,6 +1,11 @@
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     INTERSECTION_KIND_PRESETS,
+    IntersectionArmPolicyRow,
     IntersectionControlArea,
+    IntersectionCurbReturnPolicyRow,
+    IntersectionDrainagePolicyRow,
+    IntersectionEdgePolicyRow,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -37,6 +42,12 @@ def test_intersection_row_preserves_alignment_refs_control_regions_and_legs() ->
     assert [leg.leg_role for leg in row.leg_rows] == ["primary_before", "primary_after", "side_approach"]
     assert row.leg_rows[0].alignment_ref == "alignment:main-road"
     assert row.leg_rows[-1].alignment_ref == "alignment:side-road-01"
+    assert row.leg_rows[0].arm_policy_ref == "arm-policy:intersection:t-01:leg-01"
+    assert row.leg_rows[0].edge_policy_refs == [
+        "edge-policy:intersection:t-01:leg-01:pavement",
+        "edge-policy:intersection:t-01:leg-01:daylight",
+    ]
+    assert "drainage-policy:intersection:t-01:default" in row.policy_refs
 
 
 def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
@@ -81,12 +92,69 @@ def test_intersection_model_round_trips_control_area_and_leg_context() -> None:
         intersection_model_id="intersection-model:main",
         intersection_rows=[row],
         control_area_rows=[control],
+        arm_policy_rows=[
+            IntersectionArmPolicyRow(
+                policy_id="policy:arm-primary",
+                intersection_id="intersection:x-01",
+                leg_ref="intersection:x-01:leg-primary",
+                arm_role="primary_before",
+                design_speed_kph=50.0,
+                lane_count=2,
+                lane_width=3.6,
+                shoulder_width=1.2,
+            )
+        ],
+        curb_return_policy_rows=[
+            IntersectionCurbReturnPolicyRow(
+                policy_id="policy:curb-return-basic",
+                intersection_id="intersection:x-01",
+                radius=12.0,
+                side="all",
+                approach_leg_refs=["intersection:x-01:leg-primary"],
+            )
+        ],
+        grading_policy_rows=[
+            IntersectionGradingPolicyRow(
+                policy_id="policy:intersection-grading-basic",
+                intersection_id="intersection:x-01",
+                mode="flatten_intersection",
+                target_crossfall_percent=0.0,
+                primary_alignment_ref="alignment:main",
+                secondary_alignment_refs=["alignment:cross"],
+            )
+        ],
+        edge_policy_rows=[
+            IntersectionEdgePolicyRow(
+                policy_id="policy:edge-primary-pavement",
+                intersection_id="intersection:x-01",
+                leg_ref="intersection:x-01:leg-primary",
+                edge_role="pavement_edge",
+                side="both",
+                offset_rule="lane_width_from_arm_policy",
+                elevation_rule="from_grading_policy",
+            )
+        ],
+        drainage_policy_rows=[
+            IntersectionDrainagePolicyRow(
+                policy_id="policy:intersection-drainage-basic",
+                intersection_id="intersection:x-01",
+                capture_mode="review_low_points",
+                low_point_tolerance=0.04,
+                gutter_edge_refs=["policy:edge-primary-pavement"],
+            )
+        ],
     )
 
     assert model.intersection_rows[0].intersection_kind == "cross_intersection"
     assert model.intersection_rows[0].secondary_station_refs["alignment:cross"] == 80.0
     assert model.intersection_rows[0].leg_rows[0].centerline3d_ref == "centerline3d:main"
     assert model.control_area_rows[0].control_region_refs == ["region:main-intersection"]
+    assert model.arm_policy_rows[0].lane_width == 3.6
+    assert model.curb_return_policy_rows[0].radius == 12.0
+    assert model.curb_return_policy_rows[0].approach_leg_refs == ["intersection:x-01:leg-primary"]
+    assert model.edge_policy_rows[0].elevation_rule == "from_grading_policy"
+    assert model.grading_policy_rows[0].mode == "flatten_intersection"
+    assert model.drainage_policy_rows[0].gutter_edge_refs == ["policy:edge-primary-pavement"]
 
 
 def test_intersection_kind_helper_rejects_unsupported_kind() -> None:

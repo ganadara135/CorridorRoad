@@ -63,7 +63,7 @@ But `SuperelevationModel` owns the station-based change behavior that modifies o
 
 The architectural rule is:
 
-- `AssemblyModel` defines intended default section composition
+- `AssemblySubassemblyModel` defines intended default section composition
 - `SuperelevationModel` defines station-aware crossfall transitions
 - `AppliedSection` resolves the actual effective slopes at a given station
 
@@ -179,7 +179,7 @@ Each control row represents a meaningful station-based crossfall control conditi
 - `control_index`
 - `station`
 - `side`
-- `target_component_scope`
+- `target_subassembly_scope`
 - `crossfall_value`
 - `crossfall_unit`
 - `kind`
@@ -206,13 +206,13 @@ Each control row represents a meaningful station-based crossfall control conditi
 
 ### 12.1 Purpose
 
-`LaneGroupRollRule` preserves which components rotate together and how their slope behavior should be interpreted.
+`LaneGroupRollRule` preserves which lane/shoulder Subassemblies rotate together and how their slope behavior should be interpreted.
 
 ### 12.2 Recommended fields
 
 - `lane_group_id`
 - `group_kind`
-- `component_refs`
+- `subassembly_refs`
 - `pivot_policy`
 - `rotation_policy`
 - `notes`
@@ -325,7 +325,7 @@ Section and corridor consumers should rely on shared superelevation evaluation r
 
 ### 18.1 Purpose
 
-This service resolves the final effective crossfall values that should be applied to section components.
+This service resolves the final effective crossfall values that should be applied to section Subassemblies.
 
 ### 18.2 Typical responsibilities
 
@@ -428,7 +428,7 @@ Outputs and viewer systems may consume derived superelevation effects through:
 
 But those consumers must not become the new superelevation source.
 
-The Viewer should be able to trace an effective slope or rotated component back to:
+The Viewer should be able to trace an effective slope or rotated Subassembly back to:
 
 - template default slope
 - superelevation control row

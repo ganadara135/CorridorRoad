@@ -98,7 +98,7 @@ Recommended top-level fields:
 - `coordinate_context`
 - `summary_rows`
 - `geometry_rows`
-- `component_rows`
+- `subassembly_rows`
 - `dimension_rows`
 - `terrain_rows`
 - `structure_rows`
@@ -167,7 +167,7 @@ The Cross Section Viewer should use this metadata to explain where the station f
 ### 8.2 Recommended geometry row kinds
 
 - `section_polyline`
-- `component_span_polyline`
+- `subassembly_span_polyline`
 - `terrain_intersection_polyline`
 - `structure_outline_polyline`
 - `guide_line`
@@ -187,18 +187,18 @@ The Cross Section Viewer should use this metadata to explain where the station f
 
 Geometry rows should carry enough structure for rendering but should not replace semantic rows.
 
-## 9. Component Rows
+## 9. Subassembly Rows
 
 ### 9.1 Purpose
 
-`component_rows` are the most important semantic rows for section review.
+`subassembly_rows` are the active semantic rows for section review.
 
 They identify what the user is actually looking at.
 
-### 9.2 Recommended component row fields
+### 9.2 Recommended Subassembly row fields
 
-- `component_id`
-- `component_kind`
+- `subassembly_id`
+- `subassembly_kind`
 - `template_id`
 - `assembly_ref`
 - `region_ref`
@@ -215,11 +215,11 @@ They identify what the user is actually looking at.
 
 Current implementation note:
 
-- `SectionComponentRow` preserves `assembly_ref` and `region_ref` so exchange packages and review surfaces can trace evaluated side-slope and bench rows back to the active source Assembly and Region.
+- `SectionSubassemblyRow` preserves `assembly_ref`, `region_ref`, and `subassembly_ref` so exchange packages, watertight solids, simulation packages, and review surfaces can trace evaluated rows back to the active source Assembly, Region, and Subassembly.
 
-### 9.3 Recommended component row semantics
+### 9.3 Recommended Subassembly row semantics
 
-Component rows should survive even when:
+Subassembly rows should survive even when:
 
 - labels are hidden
 - rendering style changes
@@ -227,7 +227,7 @@ Component rows should survive even when:
 
 ### 9.4 Supported kinds
 
-Initial component kinds should align with the section model, including:
+Initial Subassembly kinds should align with the section model, including:
 
 - `lane`
 - `shoulder`
@@ -259,11 +259,11 @@ Initial component kinds should align with the section model, including:
 - `display_label`
 - `priority`
 - `band_role`
-- `related_component_id`
+- `related_subassembly_id`
 
 ### 10.3 Recommended roles
 
-- `component_width`
+- `subassembly_width`
 - `overall_width`
 - `offset`
 - `structure_clearance`
@@ -334,7 +334,7 @@ This row family is required by the viewer model.
 - `ownership_id`
 - `target_kind`
 - `target_id`
-- `component_id`
+- `subassembly_id`
 - `template_id`
 - `region_id`
 - `override_id`
@@ -368,7 +368,7 @@ An ownership row should provide enough information for the viewer to identify th
 - `severity`
 - `kind`
 - `message`
-- `related_component_id`
+- `related_subassembly_id`
 - `related_region_id`
 - `related_structure_id`
 - `related_geometry_ref`
@@ -399,7 +399,7 @@ An ownership row should provide enough information for the viewer to identify th
 
 - `quantity_row_id`
 - `kind`
-- `component_id`
+- `subassembly_id`
 - `value`
 - `unit`
 - `notes`
@@ -410,7 +410,7 @@ An ownership row should provide enough information for the viewer to identify th
 - `pavement_thickness`
 - `cut_area`
 - `fill_area`
-- `component_area`
+- `subassembly_area`
 
 Current implementation note:
 
@@ -435,7 +435,7 @@ Current implementation note:
 - `label`
 - `message`
 - `priority`
-- `related_component_id`
+- `related_subassembly_id`
 
 ### 16.3 Recommended kinds
 
@@ -471,7 +471,15 @@ Current implementation note:
 - `frame_status`
 - `terrain_summary`
 - `structure_summary`
+- `subassembly_count`
+- `subassembly_point_count`
+- `subassembly_link_count`
+- `subassembly_shape_count`
 - `quantity_summary`
+
+Current implementation note:
+
+- `subassembly_count` is the user-facing count for road-section building units.
 
 ## 18. SectionSheetOutput Structure
 
@@ -518,7 +526,7 @@ Recommended values:
 Every section output should retain strong mapping back to:
 
 - `AppliedSection`
-- component semantics
+- Subassembly semantics
 - source ownership rows
 
 This is required for:
@@ -534,7 +542,7 @@ The Cross Section Viewer should be able to operate using, at minimum:
 
 - station metadata
 - geometry rows
-- component rows
+- Subassembly rows
 - ownership rows
 - diagnostic rows
 - dimension rows
@@ -548,7 +556,7 @@ Drawing-oriented exports should be able to operate using:
 
 - geometry rows
 - dimension rows
-- component rows
+- Subassembly rows
 - summary rows
 - layout hints
 
@@ -560,7 +568,7 @@ Earthwork and quantity consumers should be able to reuse:
 
 - quantity rows
 - terrain rows
-- component rows
+- Subassembly rows
 - station metadata
 
 This reduces duplication of section meaning across systems.
@@ -570,7 +578,7 @@ This reduces duplication of section meaning across systems.
 The output schema should be validated for:
 
 - missing required root metadata
-- duplicate component identities
+- duplicate Subassembly identities
 - broken geometry references
 - ownership rows that reference unknown targets
 - invalid unit metadata

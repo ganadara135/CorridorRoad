@@ -17,7 +17,7 @@ Sponsorship helps fund focused work on the v1 workflow, documentation, testing, 
 
 For commercial use, project-specific requirements, or custom workflow questions, please contact me.
 
-The current public release is Parametric Road `1.0.4`. This release improves the v1 intersection workflow with starter multi-alignment sources, automatic multi-alignment 3D Centerline generation, and Build Parametric Region review for primary-road and side-road Region rows. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
+The current public release is Parametric Road `1.0.5`. This release advances the v1 Subassembly workflow, stabilizes Applied Sections and Cross Section Viewer handoff after the Component-to-Subassembly transition, and continues Intersections / Build Parametric review refinement. v1 focuses on source-driven corridor modeling: design intent is stored in source models, evaluated results are generated from those sources, and review/output panels expose diagnostics without turning generated geometry into the editing source.
 
 This project is evolving toward fully watertight solid-based infrastructure geometry, enabling future CFD, FEM, and simulation-ready engineering workflows.
 The long-term goal is to generate topology-consistent parametric models suitable not only for design visualization, but also for computational analysis, digital twin pipelines, and advanced engineering simulation.
@@ -78,13 +78,13 @@ Important v1 references:
 
 ## Latest Release
 
-- Current release: `v1.0.4`
-- Release date: `2026-06-04`
-- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.4
+- Current release: `v1.0.5`
+- Release date: `2026-06-15`
+- GitHub Release: https://github.com/ganadara135/CorridorRoad/releases/tag/v1.0.5
 - Release notes: `CHANGELOG.md`
 - Release preparation notes: `docsV1/V1_RELEASE_CURRENT_PREP.md`
 
-`1.0.4` builds on the public naming transition from `Corridor Road` to `Parametric Road`. The internal Python package, FreeCAD Mod folder, command ids, and v1 source ids remain unchanged for compatibility.
+`1.0.5` keeps the public `Parametric Road` name while preserving the internal Python package, FreeCAD Mod folder, command ids, and v1 source ids for compatibility.
 
 ## Main Commands
 
@@ -136,7 +136,7 @@ Current toolbar order is organized around the v1 workflow:
 - Earthwork Viewer and v1-native earthwork report path
 - Outputs & Exchange entry point
 - AI Assist entry point
-- Watertight Solids final-stage panel for selected road, component, drainage, and structure solid targets
+- Watertight Solids final-stage panel for selected road, Subassembly, drainage, and structure solid targets
 
 ## In Progress
 

@@ -6,14 +6,14 @@ from freecad.Corridor_Road.objects.obj_project import (
     ensure_project_tree,
 )
 from freecad.Corridor_Road.v1.models.source.assembly_model import (
-    AssemblyModel,
-    SectionTemplate,
-    TemplateComponent,
+    AssemblySubassemblyModel,
+    SubassemblySectionTemplate,
+    TemplateSubassembly,
 )
-from freecad.Corridor_Road.v1.objects.obj_assembly import (
-    create_or_update_v1_assembly_model_object,
-    find_v1_assembly_model,
-    to_assembly_model,
+from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
+    create_or_update_v1_assembly_subassembly_model_object,
+    find_v1_assembly_subassembly_model,
+    to_assembly_subassembly_model,
 )
 
 
@@ -25,32 +25,32 @@ def _new_project_doc():
     return doc, project, tree
 
 
-def _sample_assembly_model() -> AssemblyModel:
-    return AssemblyModel(
+def _sample_assembly_model() -> AssemblySubassemblyModel:
+    return AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:basic-road",
         alignment_id="alignment:main",
         active_template_id="template:basic-road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:basic-road",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent(
-                        component_id="lane:left",
+                subassembly_rows=[
+                    TemplateSubassembly(
+                        subassembly_id="lane:left",
                         kind="lane",
-                        component_index=1,
+                        subassembly_index=1,
                         side="left",
                         width=3.5,
                         slope=-0.02,
                         thickness=0.25,
                         material="asphalt",
                     ),
-                    TemplateComponent(
-                        component_id="ditch:right",
+                    TemplateSubassembly(
+                        subassembly_id="ditch:right",
                         kind="ditch",
-                        component_index=2,
+                        subassembly_index=2,
                         side="right",
                         width=1.2,
                         slope=-0.03,
@@ -64,78 +64,78 @@ def _sample_assembly_model() -> AssemblyModel:
     )
 
 
-def test_create_or_update_v1_assembly_model_object_routes_to_assemblies_tree() -> None:
+def test_create_or_update_v1_assembly_subassembly_model_object_routes_to_assemblies_tree() -> None:
     doc, project, tree = _new_project_doc()
     try:
-        obj = create_or_update_v1_assembly_model_object(
+        obj = create_or_update_v1_assembly_subassembly_model_object(
             document=doc,
             project=project,
             assembly_model=_sample_assembly_model(),
         )
 
-        assert obj.V1ObjectType == "V1AssemblyModel"
-        assert obj.CRRecordKind == "v1_assembly_model"
+        assert obj.V1ObjectType == "V1AssemblySubassemblyModel"
+        assert obj.CRRecordKind == "v1_assembly_subassembly_model"
         assert obj.AssemblyId == "assembly:basic-road"
         assert obj.ActiveTemplateId == "template:basic-road"
         assert obj.TemplateCount == 1
-        assert obj.ComponentCount == 2
-        assert list(obj.ComponentKinds) == ["lane", "ditch"]
-        assert list(obj.ComponentEnabledValues) == [1, 0]
-        assert "shape=trapezoid" in list(obj.ComponentParameterRows)[1]
+        assert obj.SubassemblyCount == 2
+        assert list(obj.SubassemblyKinds) == ["lane", "ditch"]
+        assert list(obj.SubassemblyEnabledValues) == [1, 0]
+        assert "shape=trapezoid" in list(obj.SubassemblyParameterRows)[1]
         assert obj.Name in _group_names(tree[V1_TREE_ASSEMBLIES])
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_v1_assembly_model_object_roundtrips_to_source_model() -> None:
+def test_v1_assembly_subassembly_model_object_roundtrips_to_source_model() -> None:
     doc, project, _tree = _new_project_doc()
     try:
-        obj = create_or_update_v1_assembly_model_object(
+        obj = create_or_update_v1_assembly_subassembly_model_object(
             document=doc,
             project=project,
             assembly_model=_sample_assembly_model(),
         )
 
-        model = to_assembly_model(obj)
+        model = to_assembly_subassembly_model(obj)
 
         assert model is not None
         assert model.assembly_id == "assembly:basic-road"
         assert model.active_template_id == "template:basic-road"
-        assert model.template_rows[0].component_rows[0].side == "left"
-        assert model.template_rows[0].component_rows[0].width == 3.5
-        assert model.template_rows[0].component_rows[1].kind == "ditch"
-        assert model.template_rows[0].component_rows[1].enabled is False
-        assert model.template_rows[0].component_rows[1].target_ref == "drainage:side-ditch-right"
-        assert model.template_rows[0].component_rows[1].parameters["shape"] == "trapezoid"
-        assert model.template_rows[0].component_rows[1].parameters["bottom_width"] == "0.6"
+        assert model.template_rows[0].subassembly_rows[0].side == "left"
+        assert model.template_rows[0].subassembly_rows[0].width == 3.5
+        assert model.template_rows[0].subassembly_rows[1].kind == "ditch"
+        assert model.template_rows[0].subassembly_rows[1].enabled is False
+        assert model.template_rows[0].subassembly_rows[1].target_ref == "drainage:side-ditch-right"
+        assert model.template_rows[0].subassembly_rows[1].parameters["shape"] == "trapezoid"
+        assert model.template_rows[0].subassembly_rows[1].parameters["bottom_width"] == "0.6"
     finally:
         App.closeDocument(doc.Name)
 
 
-def test_create_or_update_v1_assembly_model_object_updates_existing_object() -> None:
+def test_create_or_update_v1_assembly_subassembly_model_object_updates_existing_object() -> None:
     doc, project, _tree = _new_project_doc()
     try:
-        first = create_or_update_v1_assembly_model_object(
+        first = create_or_update_v1_assembly_subassembly_model_object(
             document=doc,
             project=project,
             assembly_model=_sample_assembly_model(),
         )
-        updated_model = AssemblyModel(
+        updated_model = AssemblySubassemblyModel(
             schema_version=1,
             project_id="proj-1",
             assembly_id="assembly:bridge",
             active_template_id="template:bridge",
             template_rows=[
-                SectionTemplate(
+                SubassemblySectionTemplate(
                     template_id="template:bridge",
                     template_kind="bridge_deck",
-                    component_rows=[
-                        TemplateComponent("bridge_deck", "structure_interface", side="center", width=10.0)
+                    subassembly_rows=[
+                        TemplateSubassembly("bridge_deck", "structure_interface", side="center", width=10.0)
                     ],
                 )
             ],
         )
-        second = create_or_update_v1_assembly_model_object(
+        second = create_or_update_v1_assembly_subassembly_model_object(
             document=doc,
             project=project,
             assembly_model=updated_model,
@@ -143,8 +143,8 @@ def test_create_or_update_v1_assembly_model_object_updates_existing_object() -> 
 
         assert first.Name == second.Name
         assert second.AssemblyId == "assembly:bridge"
-        assert second.ComponentCount == 1
-        assert find_v1_assembly_model(doc) == second
+        assert second.SubassemblyCount == 1
+        assert find_v1_assembly_subassembly_model(doc) == second
     finally:
         App.closeDocument(doc.Name)
 

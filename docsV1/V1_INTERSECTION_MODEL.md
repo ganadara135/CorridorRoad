@@ -113,8 +113,17 @@ Recommended primary object families:
 - `IntersectionRow`
 - `IntersectionLegRow`
 - `IntersectionControlArea`
-- `TurnLanePolicySet`
+- `IntersectionArmPolicyRow`
+- `IntersectionCurbReturnPolicyRow`
+- `IntersectionEdgePolicyRow`
+- `IntersectionGradingPolicyRow`
+- `IntersectionDrainagePolicyRow`
 - `IntersectionEvaluationResult`
+- `IntersectionTopologyResult`
+- `IntersectionEdgeNetworkResult`
+- `IntersectionSurfaceZoneResult`
+- `IntersectionCorridorClipResult`
+- `IntersectionDrainageHintResult`
 
 ## 9. IntersectionModel Root
 
@@ -129,7 +138,12 @@ Recommended primary object families:
 - `project_id`
 - `label`
 - `intersection_rows`
-- `constraint_rows`
+- `control_area_rows`
+- `arm_policy_rows`
+- `curb_return_policy_rows`
+- `edge_policy_rows`
+- `grading_policy_rows`
+- `drainage_policy_rows`
 - `unit_context`
 - `source_refs`
 - `diagnostic_rows`
@@ -178,9 +192,13 @@ Each `IntersectionLegRow` preserves one participating corridor leg.
 - `leg_role`
 - `alignment_ref`
 - optional `profile_ref`
+- optional `centerline3d_ref`
 - optional `region_ref`
 - `approach_station_start`
 - `approach_station_end`
+- `arm_policy_ref`
+- `edge_policy_refs`
+- `grading_policy_ref`
 - `priority`
 - `notes`
 
@@ -239,7 +257,38 @@ Intersection behavior often depends on lane-role and edge-return policy.
 
 These policies should preserve engineering intent rather than collapse into display-only geometry.
 
-## 14. Grading and Drainage Context
+## 14. Edge-Network Source Policies
+
+### 14.1 IntersectionArmPolicyRow
+
+`IntersectionArmPolicyRow` defines one road arm's design intent before topology evaluation.
+
+It stores lane count, lane width, shoulder width, design speed, design vehicle reference, and optional turn-lane policy reference.
+
+This row does not create geometry directly. It gives the future edge-network evaluator stable arm-level rules.
+
+### 14.2 IntersectionEdgePolicyRow
+
+`IntersectionEdgePolicyRow` defines requested edge families such as:
+
+- `pavement_edge`
+- `lane_edge`
+- `shoulder_edge`
+- `curb_return_edge`
+- `gutter_edge`
+- `daylight_hinge`
+
+Each edge policy may reference one leg and specify side, offset rule, elevation rule, source policy reference, and status.
+
+These rows are the source contract for the future `Intersection Edge Network` result.
+
+### 14.3 IntersectionCurbReturnPolicyRow
+
+`IntersectionCurbReturnPolicyRow` defines curb-return radius, side, approach leg references, and boundary sampling controls.
+
+In the redesign path, curb-return arcs are not review decoration. They are edge-network boundaries used by pavement, slope face, drainage, and solid target generation.
+
+## 15. Grading and Drainage Context
 
 Intersection models should be able to reference:
 
@@ -251,7 +300,29 @@ Intersection models should be able to reference:
 
 Detailed hydraulic solving remains outside the initial v1 scope.
 
-## 15. Evaluation Responsibilities
+### 15.1 IntersectionGradingPolicyRow
+
+`IntersectionGradingPolicyRow` defines how vertical control behaves inside the control area.
+
+Supported early modes include:
+
+- `flatten_intersection`
+- `primary_controls`
+- `secondary_controls`
+- `blend_profiles`
+- `manual_edge_elevation`
+
+Superelevation may still control normal road sections, but this policy can override it inside the intersection control area.
+
+### 15.2 IntersectionDrainagePolicyRow
+
+`IntersectionDrainagePolicyRow` defines low-point review and drainage handoff intent.
+
+It can reference gutter or pavement edge policies and future drainage element references.
+
+The first goal is not hydraulic sizing. The first goal is a stable surface and low-point context for later drainage simulation.
+
+## 16. Evaluation Responsibilities
 
 `IntersectionModel` should support service inputs for:
 
@@ -261,7 +332,169 @@ Detailed hydraulic solving remains outside the initial v1 scope.
 - exposing drainage-sensitive warnings
 - driving review overlays for intersection influence zones
 
-## 16. Relationship to Outputs and Review
+### 16.1 IntersectionTopologyResult
+
+`IntersectionTopologyResult` is the first edge-network-first evaluation output.
+
+It is generated before edge, surface, or solid geometry.
+
+It contains:
+
+- participating alignment count
+- control Region count
+- leg span rows
+- control-area rows
+- policy refs
+- source refs
+- diagnostics
+
+Its purpose is to prove that junction source intent is complete enough before any mesh or surface work starts.
+
+If the topology result is not `ready`, later edge-network and surface-zone stages should not guess missing relationships.
+
+### 16.2 IntersectionEdgeNetworkResult
+
+`IntersectionEdgeNetworkResult` is the second edge-network-first evaluation output.
+
+It is generated after topology evaluation and before any surface-zone triangulation.
+
+It contains deterministic `IntersectionEdgeNetworkRow` records for:
+
+- leg pavement edges
+- leg daylight hinge edges
+- future lane, shoulder, and gutter edges
+- curb-return edges
+
+Each edge row carries source policy reference, leg reference, control-area reference, alignment reference, station span, edge role, side, and status.
+
+At this stage, edge rows may still have empty XYZ coordinates.
+
+That is intentional. Phase 4 records edge ownership and topology first; later phases assign exact horizontal and vertical geometry.
+
+### 16.3 Edge Network Preview
+
+The Intersections panel can create `Intersection Edge Network Preview` before Build Parametric surface generation.
+
+This preview is a review object, not an editable source.
+
+It shows:
+
+- leg edge rows from alignment station spans
+- daylight hinge edge rows with larger offsets
+- curb-return edge rows from curb-return policy
+- edge-network status and diagnostics on the object properties
+
+The preview helps confirm edge ownership before surface-zone generation starts.
+
+### 16.4 IntersectionSurfaceZoneResult
+
+`IntersectionSurfaceZoneResult` is the third edge-network-first evaluation output.
+
+It is generated after edge-network evaluation and before surface triangulation.
+
+It contains candidate `IntersectionSurfaceZoneRow` records for:
+
+- `central_junction`
+- `leg_pavement`
+- `curb_return`
+- `exterior_slope_face`
+
+Each zone row carries source edge references, leg references, control-area references, surface role, zone family, vertical policy reference, pending triangulation method, status, and diagnostics.
+
+Phase 7 adds explicit design-zone classification.
+
+Current design-zone roles are:
+
+- `central_pavement`
+- `main_pavement`
+- `side_pavement`
+- `curb_return_pavement`
+- `exterior_slope_face`
+
+The result also tracks separate counts for design zones, central pavement zones, main pavement zones, side pavement zones, curb-return zones, and slope-face zones.
+
+Curb-return zone rows should carry the participating leg refs, alignment refs, and control-area refs resolved from the pavement edge network.
+
+Phase 8 adds explicit Slope Face boundary ownership.
+
+Slope Face zone rows should carry:
+
+- `outer_edge_refs` from daylight hinge edges
+- `inner_edge_refs` from matching pavement edges
+- `tie_edge_refs` from curb-return edges that reference the same leg
+- `boundary_edge_refs` as the combined accepted edge boundary set
+
+A Slope Face zone should be `ready` only when it has the required daylight, pavement, and curb-return relationship.
+
+If that relationship is missing, the evaluator should produce diagnostics instead of guessing triangles.
+
+At this stage, zone rows do not contain triangles.
+
+That is intentional. Phase 6 through Phase 8 record zone ownership, design-zone responsibility, Slope Face boundary responsibility, and review diagnostics first; later phases assign exact zone boundaries and triangulate surfaces.
+
+### 16.5 IntersectionCorridorClipResult
+
+`IntersectionCorridorClipResult` is the ordinary-corridor clipping handoff generated before surface merge.
+
+It is generated from accepted topology control areas and, when available, surface-zone rows.
+
+It contains `IntersectionCorridorClipRow` records for:
+
+- ordinary design surface clipping
+- ordinary slope-face surface clipping
+
+Each clip row carries:
+
+- control-area ref
+- alignment ref
+- surface role
+- station ranges
+- influence ranges
+- control Region refs
+- protected intersection zone refs
+- clip boundary source
+- clip timing
+- clip method
+- status and diagnostics
+
+The core rule is that ordinary corridor surfaces must stop at the intersection control area before merge.
+
+If the control area lacks Region context, the evaluator reports a warning instead of silently clipping against an ambiguous target.
+
+### 16.6 IntersectionDrainageHintResult
+
+`IntersectionDrainageHintResult` is the drainage review handoff generated from accepted surface-zone responsibility.
+
+It is generated after `IntersectionSurfaceZoneResult` and before any Drainage Element, Structure, pipe, or mesh output is created.
+
+It contains `IntersectionDrainageHintRow` records for:
+
+- low-point candidates
+- inlet recommendations
+
+Each hint row carries:
+
+- hint id
+- intersection id
+- hint kind
+- source zone ref
+- zone role and surface role
+- recommended drainage element kind
+- drainage policy ref
+- related control-area refs
+- source and boundary edge refs
+- station ranges
+- status and diagnostics
+
+The core rule is that intersection drainage hints are review intent, not generated drainage geometry.
+
+Central pavement zones may produce low-point candidate rows.
+
+Curb-return pavement zones and exterior Slope Face zones may produce inlet recommendation rows.
+
+If the intersection lacks a drainage policy, the evaluator reports warnings and still exposes the affected candidate rows so the user can see what needs source intent.
+
+## 17. Relationship to Outputs and Review
 
 Intersection-aware outputs should be able to show:
 
@@ -273,7 +506,29 @@ Intersection-aware outputs should be able to show:
 
 Review surfaces must consume normalized output payloads rather than parse junction editor widgets directly.
 
-## 17. Exchange Expectations
+Build Parametric should expose intersection contract rows as a review surface:
+
+- topology rows confirm participating legs and control areas
+- edge-network rows confirm pavement, daylight, and curb-return edge ownership
+- surface-zone rows confirm central, leg, curb-return, and Slope Face zone responsibility
+- corridor-clip rows confirm where ordinary corridor surfaces must stop before intersection merge
+
+Double-click review behavior should focus accepted review objects. It should not create hidden geometry edits.
+
+Cross Section Viewer should expose the same contract language for the focused station.
+
+When an Applied Section carries active intersection context, the Viewer should show:
+
+- active leg and control-area rows
+- matching edge-network rows
+- matching surface-zone rows
+- matching ordinary corridor clipping rows
+- matching drainage hint rows
+- grading and drainage policy rows
+
+This is review context only. The Viewer does not own intersection source edits.
+
+## 18. Exchange Expectations
 
 Intersection-related exchange should support, where practical:
 
@@ -282,7 +537,7 @@ Intersection-related exchange should support, where practical:
 - degraded diagnostics when imported data lacks explicit junction semantics
 - export rows that preserve stable intersection identity and participating legs
 
-## 18. Diagnostics
+## 19. Diagnostics
 
 Recommended early diagnostics include:
 
@@ -292,8 +547,12 @@ Recommended early diagnostics include:
 - incompatible grading policy between participating legs
 - unresolved drainage outfall inside control area
 - imported junction geometry with ambiguous ownership
+- missing arm policy for a leg
+- unresolved edge policy reference
+- curb-return edge not connected to a pavement edge
+- slope face zone requested without a daylight hinge edge
 
-## 19. Non-goals
+## 20. Non-goals
 
 `IntersectionModel` should not become:
 
@@ -302,7 +561,7 @@ Recommended early diagnostics include:
 - a substitute for mainline alignment or profile models
 - an excuse to bypass region and section contracts
 
-## 20. Next Documents
+## 21. Next Documents
 
 This model should be followed by:
 

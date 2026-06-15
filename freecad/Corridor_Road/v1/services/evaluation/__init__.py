@@ -6,6 +6,7 @@ from .centerline3d_evaluation_service import Centerline3DEvaluationRequest, Cent
 from .centerline3d_frame_service import Centerline3DFrame, Centerline3DFrameService
 from .drainage_resolution_service import DrainageResolutionService, DrainageValidationService
 from .intersection_evaluation_service import IntersectionEvaluationService
+from ...models.result.intersection_grading_context import IntersectionGradingContextResult, IntersectionGradingContextRow
 from .intersection_alignment_detection_service import (
     AlignmentIntersectionDetectionResult,
     AlignmentIntersectionDetectionService,
@@ -51,6 +52,8 @@ __all__ = [
     "DrainageResolutionService",
     "DrainageValidationService",
     "IntersectionEvaluationService",
+    "IntersectionGradingContextResult",
+    "IntersectionGradingContextRow",
     "AlignmentIntersectionDetectionResult",
     "AlignmentIntersectionDetectionService",
     "LegacyDocumentAdapter",

@@ -234,7 +234,7 @@ def test_resolve_v1_target_container_routes_corridor_network_objects() -> None:
         cases = [
             ("RampModel", V1_TREE_RAMPS),
             ("IntersectionModel", V1_TREE_INTERSECTIONS),
-            ("V1AssemblyModel", V1_TREE_ASSEMBLIES),
+            ("V1AssemblySubassemblyModel", V1_TREE_ASSEMBLIES),
             ("AssemblyTemplate", V1_TREE_ASSEMBLIES),
             ("V1RegionModel", V1_TREE_REGIONS),
             ("RegionPlan", V1_TREE_REGIONS),
@@ -392,6 +392,39 @@ def test_resolve_v1_target_container_routes_build_parametric_output_record_kinds
 
         assert route_to_v1_tree(project, issue) == tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS]
         assert issue.Name in _group_names(tree[V1_TREE_BUILD_PARAMETRIC_OUTPUTS])
+    finally:
+        App.closeDocument(doc.Name)
+
+
+def test_route_to_v1_tree_places_intersection_source_family_under_intersections() -> None:
+    doc, project = _new_project_doc()
+    try:
+        tree = ensure_project_tree(project, include_references=False)
+
+        intersection = doc.addObject("App::FeaturePython", "IntersectionModelForTree")
+        intersection.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        intersection.CRRecordKind = "v1_intersection_model"
+
+        superelevation = doc.addObject("App::FeaturePython", "IntersectionPresetSuperelevationForTree")
+        superelevation.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        superelevation.addProperty("App::PropertyString", "SuperelevationId", "CorridorRoad", "")
+        superelevation.addProperty("App::PropertyString", "SuperelevationKind", "CorridorRoad", "")
+        superelevation.CRRecordKind = "v1_superelevation_source"
+        superelevation.SuperelevationId = "superelevation:intersection-preset-t-intersection"
+        superelevation.SuperelevationKind = "intersection_superelevation_handoff"
+
+        drainage = doc.addObject("App::FeaturePython", "IntersectionPresetDrainageForTree")
+        drainage.addProperty("App::PropertyString", "CRRecordKind", "CorridorRoad", "")
+        drainage.addProperty("App::PropertyString", "DrainageModelId", "CorridorRoad", "")
+        drainage.CRRecordKind = "v1_drainage_model"
+        drainage.DrainageModelId = "drainage:intersection-preset-t-intersection"
+
+        for obj in (intersection, superelevation, drainage):
+            folder = route_to_v1_tree(project, obj)
+            assert folder == tree[V1_TREE_INTERSECTIONS]
+            assert obj.Name in _group_names(tree[V1_TREE_INTERSECTIONS])
+
+        assert tree[V1_TREE_INTERSECTIONS].Label == "Intersections"
     finally:
         App.closeDocument(doc.Name)
 

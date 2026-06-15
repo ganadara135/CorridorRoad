@@ -1,6 +1,6 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
-    AppliedSectionComponentRow,
+    AppliedSectionSubassemblyRow,
     AppliedSectionFrame,
     AppliedSectionPoint,
     AppliedSectionQuantityFragment,
@@ -21,7 +21,7 @@ from freecad.Corridor_Road.v1.models.result.earthwork_balance_model import (
 )
 from freecad.Corridor_Road.v1.models.source import (
     AlignmentModel,
-    AssemblyModel,
+    AssemblySubassemblyModel,
     OverrideModel,
     ProfileModel,
     RegionModel,
@@ -30,8 +30,8 @@ from freecad.Corridor_Road.v1.models.source import (
 )
 from freecad.Corridor_Road.v1.models.source.alignment_model import AlignmentElement
 from freecad.Corridor_Road.v1.models.source.assembly_model import (
-    SectionTemplate,
-    TemplateComponent,
+    SubassemblySectionTemplate,
+    TemplateSubassembly,
 )
 from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint
 from freecad.Corridor_Road.v1.models.source.region_model import RegionRow
@@ -39,6 +39,7 @@ from freecad.Corridor_Road.v1.models.source.superelevation_model import Crossfal
 from freecad.Corridor_Road.v1.models.source.drainage_model import DrainageElementRow, DrainageFlowRoute, DrainageModel
 from freecad.Corridor_Road.v1.models.source.intersection_model import (
     IntersectionControlArea,
+    IntersectionGradingPolicyRow,
     IntersectionLegRow,
     IntersectionModel,
     IntersectionRow,
@@ -105,7 +106,7 @@ def _rounded_vertex_xyz_rows(vertices: list[TINVertex]) -> list[tuple[float, flo
     ]
 
 
-def test_applied_section_service_builds_component_rows_from_template() -> None:
+def test_applied_section_service_builds_subassembly_rows_from_template() -> None:
     alignment = AlignmentModel(
         schema_version=1,
         project_id="proj-1",
@@ -132,18 +133,18 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
             )
         ],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent(component_id="lane-1", kind="lane", side="right", width=3.5, thickness=0.25),
-                    TemplateComponent(component_id="shoulder-1", kind="shoulder", side="right", width=1.5, thickness=0.20),
-                    TemplateComponent(component_id="side-slope-1", kind="side_slope", side="right", width=4.0, slope=-0.5),
+                subassembly_rows=[
+                    TemplateSubassembly(subassembly_id="lane-1", kind="lane", side="right", width=3.5, thickness=0.25),
+                    TemplateSubassembly(subassembly_id="shoulder-1", kind="shoulder", side="right", width=1.5, thickness=0.20),
+                    TemplateSubassembly(subassembly_id="side-slope-1", kind="side_slope", side="right", width=4.0, slope=-0.5),
                 ],
             )
         ],
@@ -184,11 +185,11 @@ def test_applied_section_service_builds_component_rows_from_template() -> None:
     result = AppliedSectionService().build(request)
 
     assert result.template_id == "tmpl-1"
-    assert len(result.component_rows) == 3
-    assert result.component_rows[0].source_template_id == "tmpl-1"
-    assert result.component_rows[0].side == "right"
-    assert result.component_rows[0].width == 3.5
-    assert result.component_rows[0].thickness == 0.25
+    assert len(result.subassembly_rows) == 3
+    assert result.subassembly_rows[0].source_template_id == "tmpl-1"
+    assert result.subassembly_rows[0].side == "right"
+    assert result.subassembly_rows[0].width == 3.5
+    assert result.subassembly_rows[0].thickness == 0.25
     assert result.frame is not None
     assert result.surface_right_width == 5.0
     assert result.subgrade_depth == 0.25
@@ -213,14 +214,14 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
         alignment_id="align-1",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
-                component_rows=[TemplateComponent(component_id="lane-1", kind="lane", side="right", width=3.5)],
+                subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane", side="right", width=3.5)],
             )
         ],
     )
@@ -267,6 +268,14 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
                 alignment_ref="align-1",
                 station_ranges=[(40.0, 60.0)],
                 control_region_refs=["reg-1/region-intersection"],
+                grading_policy_ref="grading:intersection:t-01:default",
+            )
+        ],
+        grading_policy_rows=[
+            IntersectionGradingPolicyRow(
+                policy_id="grading:intersection:t-01:default",
+                intersection_id="intersection:t-01",
+                mode="flatten_intersection",
             )
         ],
     )
@@ -293,8 +302,10 @@ def test_applied_section_service_hands_off_active_intersection_context() -> None
     assert result.active_intersection_leg_id == "intersection:t-01:leg-01"
     assert result.active_intersection_leg_role == "primary_control"
     assert result.active_intersection_control_region_refs == ["reg-1/region-intersection"]
+    assert result.active_intersection_grading_policy_ref == "grading:intersection:t-01:default"
     assert summary["intersection_id"] == "intersection:t-01"
     assert "primary_control" in summary["intersection_leg"]
+    assert summary["intersection_grading_policy"] == "grading:intersection:t-01:default"
 
 
 def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -> None:
@@ -311,19 +322,19 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
         alignment_id="align-1",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
-                    TemplateComponent("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
-                    TemplateComponent("ditch-right", "ditch", side="right", width=1.0, slope=-0.02),
+                subassembly_rows=[
+                    TemplateSubassembly("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateSubassembly("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+                    TemplateSubassembly("ditch-right", "ditch", side="right", width=1.0, slope=-0.02),
                 ],
             )
         ],
@@ -363,7 +374,7 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
         )
     )
 
-    by_id = {row.component_id: row for row in result.component_rows}
+    by_id = {row.subassembly_id: row for row in result.subassembly_rows}
     fg_by_offset = {round(point.lateral_offset, 6): point for point in result.point_rows if point.point_role == "fg_surface"}
 
     assert result.active_superelevation_id == "superelevation:main"
@@ -380,7 +391,7 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
 
     output = SectionOutputMapper().map_applied_section(result)
     summary_by_kind = {row.kind: row for row in output.summary_rows}
-    lane_output = next(row for row in output.component_rows if row.component_id == "lane-right")
+    lane_output = next(row for row in output.subassembly_rows if row.subassembly_id == "lane-right")
     assert summary_by_kind["superelevation_id"].value == "superelevation:main"
     assert summary_by_kind["superelevation_right_crossfall"].value == 2.0
     assert "slope_source=superelevation" in lane_output.notes
@@ -408,16 +419,16 @@ def test_applied_section_service_uses_centerline3d_result_for_section_frame() ->
         alignment_id="align-1",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-2", 100.0, 20.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
                 template_kind="road",
-                component_rows=[
-                    TemplateComponent("lane:right", "lane", side="right", width=3.5, slope=-0.02),
+                subassembly_rows=[
+                    TemplateSubassembly("lane:right", "lane", side="right", width=3.5, slope=-0.02),
                 ],
             )
         ],
@@ -488,17 +499,17 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
         alignment_id="align-bench",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-bench",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-bench",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                    TemplateSubassembly(
                         "side-slope-right",
                         "side_slope",
                         side="right",
@@ -553,7 +564,7 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
     )
 
     assert result.daylight_right_width == 8.0
-    assert [row.kind for row in result.component_rows] == [
+    assert [row.kind for row in result.subassembly_rows] == [
         "lane",
         "side_slope",
         "side_slope",
@@ -561,7 +572,7 @@ def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
         "side_slope",
         "daylight",
     ]
-    assert [round(row.width, 2) for row in result.component_rows if row.component_id.startswith("side-slope-right:")] == [4.0, 1.0, 3.0, 0.0]
+    assert [round(row.width, 2) for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")] == [4.0, 1.0, 3.0, 0.0]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
     assert [point.point_role for point in bench_points] == [
         "side_slope_surface",
@@ -595,17 +606,17 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
         alignment_id="align-bench-terrain",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-bench-terrain",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-bench-terrain",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                    TemplateSubassembly(
                         "side-slope-right",
                         "side_slope",
                         side="right",
@@ -673,7 +684,7 @@ def test_applied_section_service_shortens_bench_rows_at_terrain_daylight() -> No
         )
     )
 
-    derived_rows = [row for row in result.component_rows if row.component_id.startswith("side-slope-right:")]
+    derived_rows = [row for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")]
     assert [row.kind for row in derived_rows] == ["side_slope", "bench", "daylight"]
     assert [round(row.width, 2) for row in derived_rows] == [4.0, 0.5, 0.0]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
@@ -705,17 +716,17 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
         alignment_id="align-bench-cut",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-bench-cut",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-bench-cut",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                    TemplateSubassembly(
                         "side-slope-right",
                         "side_slope",
                         side="right",
@@ -776,7 +787,7 @@ def test_applied_section_service_orients_bench_side_slope_up_for_cut_context() -
         )
     )
 
-    derived_rows = [row for row in result.component_rows if row.component_id.startswith("side-slope-right:")]
+    derived_rows = [row for row in result.subassembly_rows if row.subassembly_id.startswith("side-slope-right:")]
     bench_points = [point for point in result.point_rows if point.point_role in {"side_slope_surface", "bench_surface", "daylight_marker"}]
     assert [row.kind for row in derived_rows] == ["side_slope", "daylight"]
     assert round(derived_rows[0].width, 2) == 4.0
@@ -806,17 +817,17 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
         alignment_id="align-bench-max-daylight",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-bench-max-daylight",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-bench-max-daylight",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                    TemplateSubassembly(
                         "side-slope-right",
                         "side_slope",
                         side="right",
@@ -888,7 +899,7 @@ def test_applied_section_service_repeats_bench_profile_to_daylight_max_width_bef
     assert any(row.kind == "bench_daylight_shortened" for row in result.diagnostic_rows)
 
 
-def test_applied_section_service_builds_ditch_surface_points_from_ditch_components() -> None:
+def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassemblies() -> None:
     alignment = AlignmentModel(
         schema_version=1,
         project_id="proj-1",
@@ -909,19 +920,19 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
         alignment_id="align-ditch",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-ditch",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-ditch",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-left", "lane", side="left", width=3.5),
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                    TemplateComponent("ditch-left", "ditch", side="left", width=1.2, slope=-0.05),
-                    TemplateComponent("ditch-right", "ditch", side="right", width=1.0, slope=-0.04),
+                subassembly_rows=[
+                    TemplateSubassembly("lane-left", "lane", side="left", width=3.5),
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                    TemplateSubassembly("ditch-left", "ditch", side="left", width=1.2, slope=-0.05),
+                    TemplateSubassembly("ditch-right", "ditch", side="right", width=1.0, slope=-0.04),
                 ],
             )
         ],
@@ -988,11 +999,11 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_componen
     ditch_points = [point for point in result.point_rows if point.point_role == "ditch_surface"]
     assert [round(point.lateral_offset, 1) for point in ditch_points] == [-4.5, -3.5, 3.5, 4.7]
     assert min(point.z for point in ditch_points) < result.frame.z
-    assert {point.component_ref for point in ditch_points} == {"ditch-left", "ditch-right"}
+    assert {point.subassembly_ref for point in ditch_points} == {"ditch-left", "ditch-right"}
     assert {point.side for point in ditch_points} == {"left", "right"}
     assert {point.drainage_ref for point in ditch_points} == {"drainage:side-ditch-left", "drainage:side-ditch-right"}
-    ditch_components = [row for row in result.component_rows if row.kind == "ditch"]
-    assert [row.drainage_refs for row in ditch_components] == [["drainage:side-ditch-left"], ["drainage:side-ditch-right"]]
+    ditch_subassemblies = [row for row in result.subassembly_rows if row.kind == "ditch"]
+    assert [row.drainage_refs for row in ditch_subassemblies] == [["drainage:side-ditch-left"], ["drainage:side-ditch-right"]]
     assert "drainage:main" in result.source_refs
     assert "drainage:side-ditch-left" in result.source_refs
     assert "drainage:side-ditch-right" in result.source_refs
@@ -1019,21 +1030,21 @@ def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -
         alignment_id="align-bench-ditch",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-bench-ditch",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-bench-ditch",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-right", "lane", component_index=1, side="right", width=3.5),
-                    TemplateComponent("ditch-right", "ditch", component_index=2, side="right", width=1.0, slope=-0.04),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", subassembly_index=1, side="right", width=3.5),
+                    TemplateSubassembly("ditch-right", "ditch", subassembly_index=2, side="right", width=1.0, slope=-0.04),
+                    TemplateSubassembly(
                         "slope-right",
                         "side_slope",
-                        component_index=3,
+                        subassembly_index=3,
                         side="right",
                         width=4.0,
                         slope=-0.5,
@@ -1150,18 +1161,18 @@ def test_applied_section_service_builds_shape_aware_ditch_surface_points() -> No
         ),
     ]
     for shape_name, parameters, expected_offsets in cases:
-        assembly = AssemblyModel(
+        assembly = AssemblySubassemblyModel(
             schema_version=1,
             project_id="proj-1",
             assembly_id=f"asm-{shape_name}",
             template_rows=[
-                SectionTemplate(
+                SubassemblySectionTemplate(
                     template_id="tmpl-ditch-shapes",
                     template_kind="roadway",
-                    component_rows=[
-                        TemplateComponent("lane-left", "lane", side="left", width=3.5),
-                        TemplateComponent("lane-right", "lane", side="right", width=3.5),
-                        TemplateComponent(f"ditch-{shape_name}", "ditch", side="left", width=float(parameters.get("top_width", 1.2) or 1.2), parameters=parameters),
+                    subassembly_rows=[
+                        TemplateSubassembly("lane-left", "lane", side="left", width=3.5),
+                        TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
+                        TemplateSubassembly(f"ditch-{shape_name}", "ditch", side="left", width=float(parameters.get("top_width", 1.2) or 1.2), parameters=parameters),
                     ],
                 )
             ],
@@ -1207,24 +1218,24 @@ def test_applied_section_service_reports_invalid_ditch_shape_parameters() -> Non
         alignment_id="align-ditch-validation",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-ditch-validation",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-ditch-validation",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-left", "lane", side="left", width=3.5),
-                    TemplateComponent(
+                subassembly_rows=[
+                    TemplateSubassembly("lane-left", "lane", side="left", width=3.5),
+                    TemplateSubassembly(
                         "ditch-left",
                         "ditch",
                         side="left",
                         width=1.2,
                         parameters={"shape": "trapezoid", "bottom_width": 0.5},
                     ),
-                    TemplateComponent(
+                    TemplateSubassembly(
                         "ditch-right",
                         "ditch",
                         side="right",
@@ -1289,18 +1300,18 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
         alignment_id="align-assembly-ref",
         control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:basic-road",
         active_template_id="template:basic-road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:basic-road",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent(component_id="lane-1", kind="lane"),
-                    TemplateComponent(component_id="ditch-1", kind="ditch", enabled=False),
+                subassembly_rows=[
+                    TemplateSubassembly(subassembly_id="lane-1", kind="lane"),
+                    TemplateSubassembly(subassembly_id="ditch-1", kind="ditch", enabled=False),
                 ],
             )
         ],
@@ -1343,8 +1354,8 @@ def test_applied_section_service_uses_region_assembly_ref_active_template() -> N
     assert result.assembly_id == "assembly:basic-road"
     assert result.template_id == "template:basic-road"
     assert result.region_id == "region-assembly-ref"
-    assert [row.component_id for row in result.component_rows] == ["lane-1"]
-    assert result.component_rows[0].structure_ids == []
+    assert [row.subassembly_id for row in result.subassembly_rows] == ["lane-1"]
+    assert result.subassembly_rows[0].structure_ids == []
     assert result.diagnostic_rows == []
 
 
@@ -1364,16 +1375,16 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
         alignment_id="align-structure-context",
         control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:basic-road",
         active_template_id="template:basic-road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:basic-road",
                 template_kind="roadway",
-                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+                subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane")],
             )
         ],
     )
@@ -1436,7 +1447,7 @@ def test_applied_section_service_attaches_structure_context_rows() -> None:
     assert result.active_structure_rule_ids == ["rule:bridge-section"]
     assert result.active_structure_influence_zone_ids == ["zone:bridge-01"]
     assert result.structure_diagnostic_rows == []
-    assert result.component_rows[0].structure_ids == ["structure:bridge-01"]
+    assert result.subassembly_rows[0].structure_ids == ["structure:bridge-01"]
 
 
 def test_applied_section_service_filters_structure_context_by_region_structure_ref() -> None:
@@ -1465,16 +1476,16 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
             ProfileControlPoint("pvi-2", 100.0, 12.0),
         ],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:road",
         active_template_id="template:road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:road",
                 template_kind="roadway",
-                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+                subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane")],
             )
         ],
     )
@@ -1551,7 +1562,7 @@ def test_applied_section_service_filters_structure_context_by_region_structure_r
     assert result.active_structure_ids == ["structure:bridge-01"]
     assert result.active_structure_rule_ids == ["rule:bridge"]
     assert result.active_structure_influence_zone_ids == ["zone:bridge"]
-    assert result.component_rows[0].structure_ids == ["structure:bridge-01"]
+    assert result.subassembly_rows[0].structure_ids == ["structure:bridge-01"]
 
 
 def test_structure_solid_output_service_builds_source_traceable_rows() -> None:
@@ -1832,7 +1843,7 @@ def test_quantity_build_service_adds_structure_quantity_fragments() -> None:
     assert "structure-solids:main" in result.source_refs
 
 
-def test_quantity_build_service_uses_singular_component_structure_ref() -> None:
+def test_quantity_build_service_uses_singular_subassembly_structure_ref() -> None:
     corridor = CorridorModel(schema_version=1, project_id="proj-1", corridor_id="corridor:main")
     applied_section_set = AppliedSectionSet(
         schema_version=1,
@@ -1847,9 +1858,9 @@ def test_quantity_build_service_uses_singular_component_structure_ref() -> None:
                 applied_section_id="section:0",
                 station=0.0,
                 region_id="region:main",
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-1",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-1",
                         kind="lane",
                         structure_ids=["structure:bridge-01", "structure:wall-01"],
                     )
@@ -2014,16 +2025,16 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch() -> None
         alignment_id="align-assembly-mismatch",
         control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:basic-road",
         active_template_id="template:basic-road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:basic-road",
                 template_kind="roadway",
-                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+                subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane")],
             )
         ],
     )
@@ -2063,7 +2074,7 @@ def test_applied_section_service_warns_on_region_assembly_ref_mismatch() -> None
     )
 
     assert result.template_id == ""
-    assert result.component_rows == []
+    assert result.subassembly_rows == []
     assert [row.kind for row in result.diagnostic_rows] == ["assembly_ref_mismatch", "missing_template_ref"]
 
 
@@ -2088,16 +2099,16 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
         alignment_id="align-section-set",
         control_rows=[ProfileControlPoint("pvi-1", station=0.0, elevation=10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:basic-road",
         active_template_id="template:basic-road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:basic-road",
                 template_kind="roadway",
-                component_rows=[TemplateComponent(component_id="lane-1", kind="lane")],
+                subassembly_rows=[TemplateSubassembly(subassembly_id="lane-1", kind="lane")],
             )
         ],
     )
@@ -2139,7 +2150,7 @@ def test_applied_section_set_service_builds_station_ordered_sections() -> None:
     assert [row.station for row in result.station_rows] == [0.0, 20.0]
     assert [section.station for section in result.sections] == [0.0, 20.0]
     assert result.sections[0].template_id == "template:basic-road"
-    assert result.sections[0].component_rows[0].component_id == "lane-1"
+    assert result.sections[0].subassembly_rows[0].subassembly_id == "lane-1"
 
 
 def test_applied_section_set_service_selects_region_specific_assembly_model() -> None:
@@ -2168,29 +2179,29 @@ def test_applied_section_set_service_selects_region_specific_assembly_model() ->
             ProfileControlPoint("pvi-100", 100.0, 12.0),
         ],
     )
-    road = AssemblyModel(
+    road = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:road",
         active_template_id="template:road",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:road",
                 template_kind="roadway",
-                component_rows=[TemplateComponent("lane-road", "lane", side="right", width=3.5)],
+                subassembly_rows=[TemplateSubassembly("lane-road", "lane", side="right", width=3.5)],
             )
         ],
     )
-    bridge = AssemblyModel(
+    bridge = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="assembly:bridge",
         active_template_id="template:bridge",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="template:bridge",
                 template_kind="bridge_deck",
-                component_rows=[TemplateComponent("deck-interface", "structure_interface", side="center", width=10.0)],
+                subassembly_rows=[TemplateSubassembly("deck-interface", "structure_interface", side="center", width=10.0)],
             )
         ],
     )
@@ -2228,7 +2239,7 @@ def test_applied_section_set_service_selects_region_specific_assembly_model() ->
 
     assert [section.assembly_id for section in result.sections] == ["assembly:road", "assembly:bridge"]
     assert [section.template_id for section in result.sections] == ["template:road", "template:bridge"]
-    assert result.sections[1].component_rows[0].component_id == "deck-interface"
+    assert result.sections[1].subassembly_rows[0].subassembly_id == "deck-interface"
     assert "assembly:bridge" in result.source_refs
 
 
@@ -2269,11 +2280,11 @@ def test_applied_section_service_attaches_alignment_profile_frame() -> None:
             ),
         ],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
-        template_rows=[SectionTemplate(template_id="tmpl-1", template_kind="roadway")],
+        template_rows=[SubassemblySectionTemplate(template_id="tmpl-1", template_kind="roadway")],
     )
     region_model = RegionModel(
         schema_version=1,
@@ -3121,18 +3132,18 @@ def test_corridor_surface_geometry_service_uses_superelevation_resolved_section_
         alignment_id="align-1",
         control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
     )
-    assembly = AssemblyModel(
+    assembly = AssemblySubassemblyModel(
         schema_version=1,
         project_id="proj-1",
         assembly_id="asm-1",
         template_rows=[
-            SectionTemplate(
+            SubassemblySectionTemplate(
                 template_id="tmpl-1",
                 template_kind="roadway",
-                component_rows=[
-                    TemplateComponent("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
-                    TemplateComponent("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
-                    TemplateComponent("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
+                subassembly_rows=[
+                    TemplateSubassembly("lane-left", "lane", side="left", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateSubassembly("lane-right", "lane", side="right", width=3.5, slope=-0.02, thickness=0.25),
+                    TemplateSubassembly("shoulder-right", "shoulder", side="right", width=1.5, slope=-0.04, thickness=0.20),
                 ],
             )
         ],
@@ -3265,7 +3276,7 @@ def test_corridor_surface_geometry_service_builds_drainage_surface_from_ditch_po
     assert quality["drainage_ref_count"] == 2
     assert quality["drainage_source_missing_point_count"] == 0
     assert "drainage_refs=drainage:right,drainage:left" in result.provenance_rows[0].notes
-    assert any("component_ref=ditch:right" in vertex.notes and "drainage_ref=drainage:right" in vertex.notes for vertex in result.vertex_rows)
+    assert any("subassembly_ref=ditch:right" in vertex.notes and "drainage_ref=drainage:right" in vertex.notes for vertex in result.vertex_rows)
 
 
 def test_corridor_surface_geometry_service_preserves_drainage_source_tags_on_supplemental_samples() -> None:
@@ -4623,9 +4634,9 @@ def test_quantity_build_service_aggregates_section_quantity_fragments() -> None:
                 profile_id="prof-1",
                 station=0.0,
                 region_id="region-1",
-                component_rows=[
-                    AppliedSectionComponentRow(
-                        component_id="lane-1",
+                subassembly_rows=[
+                    AppliedSectionSubassemblyRow(
+                        subassembly_id="lane-1",
                         kind="lane",
                     )
                 ],
@@ -4635,7 +4646,7 @@ def test_quantity_build_service_aggregates_section_quantity_fragments() -> None:
                         quantity_kind="pavement_area",
                         value=25.0,
                         unit="m2",
-                        component_id="lane-1",
+                        subassembly_id="lane-1",
                     )
                 ],
             )
@@ -4806,7 +4817,7 @@ def test_quantity_build_service_reports_drainage_lengths_by_drainage_ref() -> No
     assert rows["drainage_ditch_length"].drainage_ref == "drainage:right"
     assert rows["drainage_ditch_length"].flow_route_ref == "flow-route:right"
     assert rows["drainage_flowline_length"].flow_route_ref == "flow-route:right"
-    assert rows["drainage_ditch_length"].component_ref == "ditch:right"
+    assert rows["drainage_ditch_length"].subassembly_ref == "ditch:right"
     assert "drainage:right" in result.source_refs
     assert not any(row.kind == "missing_drainage_quantity_source_ref" for row in result.diagnostic_rows)
 

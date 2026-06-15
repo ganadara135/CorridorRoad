@@ -113,7 +113,7 @@ Structures should support two broad families.
 | General corridor structure | bridge, retaining wall, barrier, custom object | May affect corridor context, quantities, and solids; not automatically a drainage node. |
 | Drainage-ready structure | inlet, outlet, headwall, culvert, manhole, junction box | Must expose connection points before Drainage pipeline output can be trusted. |
 
-Assembly remains limited to reusable road section components.
+Assembly remains limited to reusable road section Subassemblies.
 
 Drainage-related physical nodes belong in Structures, not Assembly.
 

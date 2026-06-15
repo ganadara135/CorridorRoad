@@ -20,10 +20,10 @@ It exists so U-shaped, L-shaped, trapezoidal, rectangular, and V-shaped ditch in
 
 This contract covers:
 
-- ditch shape parameters in `TemplateComponent.parameters`
+- ditch shape parameters in `TemplateSubassembly.parameters`
 - first-slice applied-section point roles
 - drainage surface generation
-- later solid/component-body handoff
+- later solid/Subassembly-body handoff
 - validation expectations
 
 This contract does not cover:
@@ -35,7 +35,7 @@ This contract does not cover:
 
 ## 3. Core Rule
 
-Ditch shape intent belongs in source components and drainage references.
+Ditch shape intent belongs in source Subassemblies and drainage references.
 
 Generated `ditch_surface`, mesh previews, and future ditch solids are derived outputs.
 
@@ -43,21 +43,21 @@ They must not become the durable editing source.
 
 ## 4. Source Ownership
 
-`TemplateComponent(kind="ditch")` owns the reusable section shape intent for a ditch-like component.
+`TemplateSubassembly(kind="ditch")` owns the reusable section shape intent for a ditch-like Subassembly.
 
 `DrainageModel` may own the broader drainage purpose, collection, discharge, and constraint intent.
 
-`AssemblyModel` ditch components define reusable ditch geometry. `DrainageElementRow.region_ref` decides where drainage behavior is active.
+`AssemblySubassemblyModel` ditch Subassemblies define reusable ditch geometry. `DrainageElementRow.region_ref` decides where drainage behavior is active.
 
 `AppliedSection` stores station-specific evaluated ditch points.
 
 `SurfaceModel` stores terrain-like drainage surface outputs derived from those points.
 
-Future solid/component-body outputs may represent lined or structural ditch bodies.
+Future solid/Subassembly-body outputs may represent lined or structural ditch bodies.
 
 ## 5. Recommended Shape Values
 
-Use `TemplateComponent.parameters["shape"]` to choose the ditch shape.
+Use `TemplateSubassembly.parameters["shape"]` to choose the ditch shape.
 
 Recommended values:
 
@@ -184,7 +184,7 @@ If `shape` is missing, it still emits the simple `width` and `slope` fallback st
 
 Use `drainage_surface` for terrain-like ditch grading, swales, and open channel earthwork surfaces.
 
-Use future solid/component-body outputs for:
+Use future solid/Subassembly-body outputs for:
 
 - precast U ditch
 - cast-in-place concrete channel
@@ -192,10 +192,10 @@ Use future solid/component-body outputs for:
 - lined rectangular channel
 - closed culvert or pipe bodies
 
-A single ditch source component may therefore produce both:
+A single ditch source Subassembly may therefore produce both:
 
 - `ditch_surface` points for grading review
-- future physical component bodies for material and quantity review
+- future physical Subassembly bodies for material and quantity review
 
 ## 10. Validation Rules
 
@@ -212,11 +212,11 @@ Validation should not silently convert a structural ditch into an earth grading 
 
 ## 11. Current Implementation Status
 
-- [x] `TemplateComponent(kind="ditch")` is supported as an Assembly component kind
-- [x] ditch components are excluded from FG width
+- [x] `TemplateSubassembly(kind="ditch")` is supported as an Assembly Subassembly kind
+- [x] ditch Subassemblies are excluded from FG width
 - [x] first-slice `ditch_surface` applied-section point rows are generated from `width` and `slope`
 - [x] `Build Corridor` can generate conditional `drainage_surface` previews from `ditch_surface` point rows
-- [x] parse shape-specific ditch parameters from `TemplateComponent.parameters`
+- [x] parse shape-specific ditch parameters from `TemplateSubassembly.parameters`
 - [x] generate shape-aware ditch point roles for trapezoid, U, L, rectangular, and V shapes
 - [x] preserve ditch shape parameters through the Assembly source object and a raw Assembly editor Parameters column
 - [x] add first-slice Assembly validation and Applied Section diagnostics for invalid or incomplete ditch shapes
@@ -225,8 +225,8 @@ Validation should not silently convert a structural ditch into an earth grading 
 - [x] show compact visual shape diagrams in the Assembly ditch helper
 - [x] add first-slice material policy hints and validation for lined or structural ditch materials
 - [x] use shape-aware ditch interpretation in the Assembly `Show` preview
-- [ ] add full material-specific quantity and component-body controls for ditch shape parameters
-- [ ] generate future solid/component bodies for structural ditch shapes
+- [ ] add full material-specific quantity and Subassembly-body controls for ditch shape parameters
+- [ ] generate future solid/Subassembly bodies for structural ditch shapes
 
 ## 12. Non-goals
 
@@ -240,7 +240,7 @@ This contract does not claim hydraulic adequacy from shape geometry alone.
 
 The next code slice should be accepted when:
 
-- a `ditch` component can declare `shape = trapezoid`, `u`, `l`, `rectangular`, or `v`
+- a `ditch` Subassembly can declare `shape = trapezoid`, `u`, `l`, `rectangular`, or `v`
 - shape-specific parameters produce deterministic `ditch_surface` points
 - invalid shape parameters produce diagnostics
 - existing simple width/slope ditch presets still work

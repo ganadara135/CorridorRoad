@@ -235,7 +235,7 @@ def _side_slope_quantity_source_tokens(rows: list[object]) -> list[str]:
         for label, value in (
             ("assembly", getattr(row, "assembly_ref", "")),
             ("region", getattr(row, "region_ref", "")),
-            ("component", getattr(row, "component_ref", "")),
+            ("subassembly", getattr(row, "subassembly_ref", "")),
         ):
             text = str(value or "").strip()
             if not text:

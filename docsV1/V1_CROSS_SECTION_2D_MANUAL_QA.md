@@ -18,7 +18,7 @@ The goal is not to prove that v1 reuses v0 data ownership.
 The goal is to confirm that v1 preserves the useful visual behavior:
 
 - large readable 2D section drawing
-- component labels near their owning spans
+- Subassembly labels near their owning spans
 - dimension annotations in the lower drawing band
 - dark-mode readable colors
 - source ownership and handoff context visible beside the drawing
@@ -78,7 +78,7 @@ Pass conditions:
 - `CL`, `FG`, `Subgrade`, ditch, and slope labels appear when their source rows exist.
 - Label values are near the relevant section span.
 - Overall width dimension appears in the lower dimension band.
-- Component width dimensions appear when generated.
+- Subassembly width dimensions appear when generated.
 - Labels and dimension text are shifted enough to reduce obvious overlap.
 - Text stays within the drawing frame in ordinary panel sizes.
 

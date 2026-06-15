@@ -63,6 +63,26 @@ def simulation_package_payload(simulation_package_obj, geometry_file_refs=None) 
             "built_output_count": int(getattr(simulation_package_obj, "DrainageBuiltOutputCount", 0) or 0),
             "network_fuse_status": str(getattr(simulation_package_obj, "DrainageNetworkFuseStatus", "") or "not_available"),
         },
+        "intersection_trim": {
+            "status": str(getattr(simulation_package_obj, "IntersectionTrimStatus", "") or "not_available"),
+            "result_ref": str(getattr(simulation_package_obj, "IntersectionTrimResultRef", "") or ""),
+            "boundary_pair_count": int(getattr(simulation_package_obj, "IntersectionTrimBoundaryPairCount", 0) or 0),
+            "ready_pair_count": int(getattr(simulation_package_obj, "IntersectionTrimReadyPairCount", 0) or 0),
+            "blocked_pair_count": int(getattr(simulation_package_obj, "IntersectionTrimBlockedPairCount", 0) or 0),
+            "fuse_candidate": {
+                "status": str(getattr(simulation_package_obj, "IntersectionTrimFuseStatus", "") or "not_available"),
+                "ref": str(getattr(simulation_package_obj, "IntersectionTrimFuseCandidateRef", "") or ""),
+                "source_count": int(getattr(simulation_package_obj, "IntersectionTrimFuseSourceCount", 0) or 0),
+                "face_count": int(getattr(simulation_package_obj, "IntersectionTrimFuseFaceCount", 0) or 0),
+                "open_edge_count": int(getattr(simulation_package_obj, "IntersectionTrimFuseOpenEdgeCount", 0) or 0),
+                "source_refs": list(getattr(simulation_package_obj, "IntersectionTrimFuseSourceRefs", []) or []),
+            },
+            "handoff_chain": {
+                "refs": list(getattr(simulation_package_obj, "IntersectionTrimHandoffChainRefs", []) or []),
+                "stage_statuses": list(getattr(simulation_package_obj, "IntersectionTrimHandoffStageStatuses", []) or []),
+            },
+            "pair_rows": _intersection_trim_pair_rows(simulation_package_obj),
+        },
         "output_count": int(getattr(simulation_package_obj, "OutputCount", 0) or 0),
         "total_volume": float(getattr(simulation_package_obj, "TotalVolume", 0.0) or 0.0),
         "target_families": list(getattr(simulation_package_obj, "TargetFamilies", []) or []),
@@ -205,6 +225,43 @@ def _exported_geometry_file_paths(export_path: Path, rows: list[dict[str, str]])
 
 def _split_refs(value: str) -> list[str]:
     return [part for part in str(value or "").split("|") if part]
+
+
+def _intersection_trim_pair_rows(simulation_package_obj) -> list[dict[str, object]]:
+    pair_ids = list(getattr(simulation_package_obj, "IntersectionTrimPairIds", []) or [])
+    count = max(
+        len(pair_ids),
+        len(list(getattr(simulation_package_obj, "IntersectionTrimPairStatuses", []) or [])),
+        len(list(getattr(simulation_package_obj, "IntersectionTrimPatchOutputRefs", []) or [])),
+        len(list(getattr(simulation_package_obj, "IntersectionTrimRoadOutputRefs", []) or [])),
+        len(list(getattr(simulation_package_obj, "IntersectionTrimDistancesXY", []) or [])),
+    )
+    rows: list[dict[str, object]] = []
+    for index in range(count):
+        rows.append(
+            {
+                "boundary_pair_id": _list_value(pair_ids, index, f"intersection-trim-boundary:{index + 1}"),
+                "status": _list_value(getattr(simulation_package_obj, "IntersectionTrimPairStatuses", []), index, ""),
+                "patch_output_ref": _list_value(getattr(simulation_package_obj, "IntersectionTrimPatchOutputRefs", []), index, ""),
+                "road_output_ref": _list_value(getattr(simulation_package_obj, "IntersectionTrimRoadOutputRefs", []), index, ""),
+                "distance_xy": _float_list_value(getattr(simulation_package_obj, "IntersectionTrimDistancesXY", []), index),
+                "patch_segment_xyz": _segment_list(_list_value(getattr(simulation_package_obj, "IntersectionTrimPatchSegmentsXYZ", []), index, "")),
+                "road_segment_xyz": _segment_list(_list_value(getattr(simulation_package_obj, "IntersectionTrimRoadSegmentsXYZ", []), index, "")),
+            }
+        )
+    return rows
+
+
+def _segment_list(value: object) -> list[float]:
+    output = []
+    for token in str(value or "").replace(",", "|").split("|"):
+        try:
+            output.append(float(token))
+        except Exception:
+            output.append(0.0)
+    while len(output) < 6:
+        output.append(0.0)
+    return output[:6]
 
 
 def _bound_box_list(value: str) -> list[float]:

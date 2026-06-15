@@ -67,10 +67,21 @@ Applied Sections, Build Parametric surfaces, Drainage Review rows, pipe previews
 | Tree exposure | Drainage preview/output objects are exposed in the FreeCAD tree so visibility and properties can be inspected. |
 | Flow Route focus | Flow Route rows can be selected/focused without editing generated pipe geometry. |
 | Build Parametric | Drainage surface consumes Applied Section `ditch_surface` rows with Drainage refs. |
-| Build Parametric review | Guided Review exposes `Drainage Surface` and `Drainage Flow` as separate rows. |
+| Build Parametric review | Guided Review exposes `Drainage Surface` and `Drainage Flow` as separate rows, and Drainage Diagnostics separates `Roadside Drainage` from `Intersection Drainage`. |
 | Quantity | First-slice ditch length and flowline length fragments preserve Drainage refs. |
 | Watertight Solids | Lined ditch, pipe segment, pipeline network, and Structure body targets can be discovered/built in first slice. |
 | Simulation package handoff | Watertight package output can preserve Drainage pipeline and Structure body provenance for later simulation QA. |
+
+### 3.1 Roadside Drainage vs Intersection Drainage
+
+Roadside Drainage follows linear Region station ranges.
+It reviews whether Applied Sections produced the expected ditch or gutter surface points for each station.
+
+Intersection Drainage follows intersection control Regions.
+It reviews the intersection surface patch low-point candidate and reports whether a Drainage Element covers that intersection or one of its control Regions.
+
+This is a review handoff, not automatic hydraulic design.
+If an intersection row is marked `missing`, add or assign an inlet/drainage element that references the intersection or the relevant control Region.
 
 ## 4. Active Source Contract
 
@@ -98,7 +109,7 @@ Active fields:
 - `side`
 - `alignment_ref`
 - `region_ref`
-- `assembly_component_ref`
+- `subassembly_ref`
 - `policy_set_ref`
 - `structure_ref`
 - `connection_point_ref`
@@ -106,7 +117,7 @@ Active fields:
 
 Current rule:
 
-- `ditch` rows may use Assembly component refs.
+- `ditch` rows may use Assembly Subassembly refs.
 - non-ditch rows may use Structure refs.
 - `connection_point_ref` is an internal/direct mapping option; normal routing should resolve Structure ports by Flow Route direction.
 - user-facing Drainage editing should not require users to manually pick `connection_point_ref` for normal inlet/culvert/outlet workflows.
@@ -152,7 +163,7 @@ Graph rule:
 Recommended user workflow:
 
 1. Build Project, TIN, Alignment, Stations, Profile, and 3D Centerline.
-2. Create Assembly ditch components when open drainage geometry is needed.
+2. Create Assembly ditch Subassemblies when open drainage geometry is needed.
 3. Create Regions.
 4. Create Structures and Structure connection points for inlets, culverts, headwalls, outlets, or external references.
 5. Open Drainage.
@@ -400,20 +411,20 @@ Acceptance:
 
 ### DR-S7. Applied Sections And Build Parametric
 
-Status: First slice complete, side/component mismatch diagnostics expanded
+Status: First slice complete, side/Subassembly mismatch diagnostics expanded
 
 Completed:
 
 - Applied Sections resolve Drainage Elements from `DrainageModel.region_ref`.
-- Ditch component result rows preserve matching Drainage refs by side.
-- `ditch_surface` points preserve Drainage, component, and side context.
+- Ditch Subassembly result rows preserve matching Drainage refs by side.
+- `ditch_surface` points preserve Drainage, Subassembly, and side context.
 - Build Parametric creates a separate Drainage Surface preview from Applied Section ditch rows.
 - Build Parametric Guided Review includes Drainage Surface and Drainage Flow.
 - Drainage Flow focus uses Flow Route and Structure connection context.
 - Build Parametric exposes generated Drainage preview objects in the tree instead of keeping them only as hidden helper geometry.
 - Build Parametric Drainage Review compares active Drainage ditch rows against generated `ditch_surface` sides.
 - Build Parametric Drainage Review reports missing source drainage refs on generated `ditch_surface` rows.
-- Build Parametric Drainage Review reports Assembly component mismatches when the expected Drainage `assembly_component_ref` is not present on generated ditch points.
+- Build Parametric Drainage Review reports Assembly Subassembly mismatches when the expected Drainage `subassembly_ref` is not present on generated ditch points.
 
 Next tasks:
 
@@ -425,7 +436,7 @@ Acceptance:
 - [x] Drainage surface follows source-tagged Applied Section ditch rows.
 - [x] Build Parametric does not infer Drainage ownership from preview mesh geometry.
 - [x] Drainage Flow focus distinguishes resolved pipe segments from fallback station-span focus.
-- [x] side/component mismatch diagnostics are available in Build Parametric Drainage Review rows.
+- [x] side/Subassembly mismatch diagnostics are available in Build Parametric Drainage Review rows.
 - [ ] Cross Section Viewer Drainage labels and explicit flowline/invert roles are complete.
 
 ### DR-S8. Quantities And Reports
@@ -516,7 +527,7 @@ Recommended next implementation order:
 
 1. DR-S4 validation upgrade for route-chain outlet reachability, multi-outlet ambiguity, and unresolved Structure ports.
 2. DR-S5 selected Flow Route endpoint summary showing From Structure/Port and To Structure/Port.
-3. DR-S7 side/component mismatch diagnostics in Applied Sections and Build Parametric.
+3. DR-S7 side/Subassembly mismatch diagnostics in Applied Sections and Build Parametric.
 4. DR-S6 3D issue markers for unresolved Structure ports, broken routes, and outlet-chain problems.
 5. DR-S8 report rows for pipe length, inlet count, culvert count, outlet count, and policy grouping.
 6. DR-S9 simulation-readiness summary in Watertight Solids and exported packages.
@@ -553,7 +564,7 @@ Minimum current QA:
 | Drainage Element and Flow Route concepts feel duplicated | Users may not know where to edit a pipe path. | Keep Elements as nodes and Flow Routes as edges; add selected-route summary. |
 | Ditch capture rows are mistaken for pipe rows | Users may expect ditch-to-inlet pipes in 3D. | Label capture-only rows clearly in validation and Review. |
 | Structure port resolution is hidden | Pipe preview may look wrong without obvious source reason. | Show From/To Structure port summary per route. |
-| Region / station mismatches remain subtle | Ditch geometry may not appear downstream. | Strengthen side/component and Region span diagnostics. |
+| Region / station mismatches remain subtle | Ditch geometry may not appear downstream. | Strengthen side/Subassembly and Region span diagnostics. |
 | Watertight Solid network fuse falls back silently | Simulation geometry may appear valid but remain a compound. | Surface fuse mode and readiness summary in panel and package QA. |
 | Hydraulic expectations grow too early | Scope creep can destabilize source contracts. | Keep hydraulic solver deferred and keep current work focused on traceable source/result/output contracts. |
 

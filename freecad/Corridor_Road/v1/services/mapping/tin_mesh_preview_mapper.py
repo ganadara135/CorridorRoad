@@ -50,6 +50,13 @@ TIN_MESH_PREVIEW_STYLES = {
         "transparency": 12,
         "line_width": 1.8,
     },
+    "intersection": {
+        "shape_color": (0.95, 0.78, 0.18),
+        "line_color": (0.95, 0.45, 0.02),
+        "point_color": (0.95, 0.45, 0.02),
+        "transparency": 18,
+        "line_width": 1.8,
+    },
 }
 
 

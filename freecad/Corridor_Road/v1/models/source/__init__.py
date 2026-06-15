@@ -1,12 +1,22 @@
 """Source-of-truth models for CorridorRoad v1."""
 
 from .alignment_model import AlignmentModel
-from .assembly_model import AssemblyModel, SectionTemplate, TemplateComponent
+from .assembly_model import (
+    AssemblySourceIdentity,
+    AssemblySubassemblyModel,
+    SubassemblySectionTemplate,
+    TemplateSubassembly,
+)
 from .drainage_model import DrainageModel
 from .intersection_model import (
     INTERSECTION_KIND_PRESETS,
+    IntersectionArmPolicyRow,
     IntersectionControlArea,
     IntersectionLegRow,
+    IntersectionDrainagePolicyRow,
+    IntersectionEdgePolicyRow,
+    IntersectionGradingPolicyRow,
+    IntersectionCurbReturnPolicyRow,
     IntersectionModel,
     IntersectionRow,
     intersection_kind_from_label,
@@ -36,14 +46,20 @@ from .tin_edit_model import TINEditOperation, TINEditSet
 
 __all__ = [
     "AlignmentModel",
-    "AssemblyModel",
-    "SectionTemplate",
-    "TemplateComponent",
+    "AssemblySourceIdentity",
+    "AssemblySubassemblyModel",
+    "SubassemblySectionTemplate",
+    "TemplateSubassembly",
     "DrainageModel",
     "IntersectionModel",
     "IntersectionRow",
     "IntersectionLegRow",
     "IntersectionControlArea",
+    "IntersectionArmPolicyRow",
+    "IntersectionCurbReturnPolicyRow",
+    "IntersectionEdgePolicyRow",
+    "IntersectionGradingPolicyRow",
+    "IntersectionDrainagePolicyRow",
     "INTERSECTION_KIND_PRESETS",
     "intersection_preset_labels",
     "intersection_kind_from_label",

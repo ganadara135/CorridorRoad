@@ -169,25 +169,25 @@ def _build_source_inspector(
     """Build a compact source-inspector payload for the v1 section viewer."""
 
     viewer_context = dict(viewer_context or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_id = str(focused.get("id", "") or "").strip()
     focused_kind = str(focused.get("type", "") or "").strip()
     focused_side = str(focused.get("side", "") or "").strip()
 
-    selected_component = None
-    for row in list(getattr(section_output, "component_rows", []) or []):
-        row_id = str(getattr(row, "component_id", "") or "").strip()
+    selected_subassembly = None
+    for row in list(getattr(section_output, "subassembly_rows", []) or []):
+        row_id = str(getattr(row, "subassembly_id", "") or "").strip()
         if focused_id and row_id == focused_id:
-            selected_component = row
+            selected_subassembly = row
             break
-    if selected_component is None:
-        component_rows = list(getattr(section_output, "component_rows", []) or [])
-        if component_rows:
-            selected_component = component_rows[0]
+    if selected_subassembly is None:
+        subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+        if subassembly_rows:
+            selected_subassembly = subassembly_rows[0]
 
-    component_id = focused_id or str(getattr(selected_component, "component_id", "") or "").strip()
-    component_kind = focused_kind or str(getattr(selected_component, "kind", "") or "").strip()
-    component_side = focused_side or str(focused.get("scope", "") or "").strip()
+    subassembly_id = focused_id or str(getattr(selected_subassembly, "subassembly_id", "") or "").strip()
+    subassembly_kind = focused_kind or str(getattr(selected_subassembly, "kind", "") or "").strip()
+    subassembly_side = focused_side or str(getattr(selected_subassembly, "side", "") or "").strip()
     applied_section_set_label = str(
         getattr(applied_section_set, "label", "")
         or getattr(applied_section_set, "applied_section_set_id", "")
@@ -203,9 +203,9 @@ def _build_source_inspector(
     owner_template = str(getattr(applied_section, "template_id", "") or "").strip()
     owner_region = str(getattr(applied_section, "region_id", "") or "").strip()
     if not owner_template:
-        owner_template = _first_component_ref(section_output, "template_ref")
+        owner_template = _first_subassembly_ref(section_output, "template_ref")
     if not owner_region:
-        owner_region = _first_component_ref(section_output, "region_ref")
+        owner_region = _first_subassembly_ref(section_output, "region_ref")
     template_object_label = str(getattr(assembly_model, "Label", "") or getattr(assembly_model, "Name", "") or "").strip()
     region_object_label = str(getattr(region_model, "Label", "") or getattr(region_model, "Name", "") or "").strip()
     structure_label = str(getattr(structure_model, "Label", "") or getattr(structure_model, "Name", "") or "").strip()
@@ -299,9 +299,9 @@ def _build_source_inspector(
         "intersection_control_area_ref": owner_intersection_control_area,
         "intersection_leg_ref": owner_intersection_leg,
         "intersection_leg_role": owner_intersection_leg_role,
-        "component_id": component_id,
-        "component_kind": component_kind,
-        "component_side": component_side,
+        "subassembly_id": subassembly_id,
+        "subassembly_kind": subassembly_kind,
+        "subassembly_side": subassembly_side,
         "owner_template": owner_template,
         "owner_region": owner_region,
         "owner_structure": owner_structure,
@@ -310,15 +310,348 @@ def _build_source_inspector(
         "owner_intersection": owner_intersection,
         "ownership_status": ownership_status,
         "unresolved_fields": list(unresolved_fields),
-        "component_count": int(len(list(getattr(section_output, "component_rows", []) or []))),
+        "subassembly_count": int(len(list(getattr(section_output, "subassembly_rows", []) or []))),
         "quantity_count": int(len(list(getattr(section_output, "quantity_rows", []) or []))),
     }
 
+def _build_intersection_context_rows(
+    document,
+    *,
+    intersection_model_obj=None,
+    applied_section=None,
+) -> list[dict[str, object]]:
+    """Build intersection contract rows for the focused cross-section station."""
 
-def _first_component_ref(section_output, attr_name: str) -> str:
-    """Return the first non-empty component source reference from section output."""
+    active_intersection = str(getattr(applied_section, "active_intersection_id", "") or "").strip()
+    if not active_intersection:
+        return []
 
-    for row in list(getattr(section_output, "component_rows", []) or []):
+    try:
+        from ..objects.obj_intersection import find_v1_intersection_model, to_intersection_model
+    except Exception:
+        find_v1_intersection_model = None
+        to_intersection_model = None
+    try:
+        from ..services.evaluation.intersection_evaluation_service import IntersectionEvaluationService
+    except Exception:
+        IntersectionEvaluationService = None
+
+    model_obj = intersection_model_obj
+    if model_obj is None and document is not None and find_v1_intersection_model is not None:
+        model_obj = find_v1_intersection_model(document)
+    if model_obj is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "missing",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection source model was not found.",
+            )
+        ]
+
+    model = to_intersection_model(model_obj) if to_intersection_model is not None else None
+    if model is None and hasattr(model_obj, "intersection_rows"):
+        model = model_obj
+    if model is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "error",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection source model could not be decoded.",
+            )
+        ]
+    if IntersectionEvaluationService is None:
+        return [
+            _intersection_context_row(
+                "source",
+                "error",
+                active_intersection,
+                "intersection_model",
+                notes="Intersection evaluation service is unavailable.",
+            )
+        ]
+
+    active_leg = str(getattr(applied_section, "active_intersection_leg_id", "") or "").strip()
+    active_leg_role = str(getattr(applied_section, "active_intersection_leg_role", "") or "").strip()
+    active_control_area = str(getattr(applied_section, "active_intersection_control_area_id", "") or "").strip()
+    active_alignment = str(getattr(applied_section, "alignment_id", "") or "").strip()
+    active_grading_policy = str(getattr(applied_section, "active_intersection_grading_policy_ref", "") or "").strip()
+
+    service = IntersectionEvaluationService()
+    topology = service.evaluate_topology(model)
+    edge_network = service.evaluate_edge_network(model, topology_result=topology)
+    surface_zones = service.evaluate_surface_zones(model, edge_network_result=edge_network)
+    corridor_clips = service.evaluate_corridor_clipping(
+        model,
+        topology_result=topology,
+        surface_zone_result=surface_zones,
+    )
+    drainage_hints = service.evaluate_drainage_hints(model, surface_zone_result=surface_zones)
+
+    rows: list[dict[str, object]] = [
+        _intersection_context_row(
+            "topology",
+            topology.status,
+            getattr(topology, "topology_result_id", "") or active_intersection,
+            "intersection",
+            source_refs=[active_intersection],
+            notes=(
+                f"legs={int(getattr(topology, 'leg_span_count', 0) or 0)}; "
+                f"control areas={int(getattr(topology, 'control_area_count', 0) or 0)}"
+            ),
+        )
+    ]
+
+    for leg_row in list(getattr(topology, "leg_span_rows", []) or []):
+        if active_leg and str(getattr(leg_row, "leg_ref", "") or "") != active_leg:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "topology",
+                getattr(leg_row, "status", "") or topology.status,
+                getattr(leg_row, "leg_span_id", "") or active_leg,
+                getattr(leg_row, "leg_role", "") or active_leg_role or "leg",
+                source_refs=[
+                    getattr(leg_row, "alignment_ref", ""),
+                    getattr(leg_row, "region_ref", ""),
+                    getattr(leg_row, "arm_policy_ref", ""),
+                    getattr(leg_row, "grading_policy_ref", ""),
+                ],
+                boundary_refs=[getattr(leg_row, "control_area_ref", "")],
+                notes=f"STA {float(getattr(leg_row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(leg_row, 'station_end', 0.0) or 0.0):.3f}",
+            )
+        )
+
+    for control_row in list(getattr(topology, "control_area_rows", []) or []):
+        if active_control_area and str(getattr(control_row, "control_area_id", "") or "") != active_control_area:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "control_area",
+                getattr(control_row, "status", "") or topology.status,
+                getattr(control_row, "control_area_id", "") or active_control_area,
+                "active_control_area",
+                source_refs=[
+                    getattr(control_row, "alignment_ref", ""),
+                    getattr(control_row, "curb_return_policy_ref", ""),
+                    getattr(control_row, "grading_policy_ref", ""),
+                    getattr(control_row, "drainage_policy_ref", ""),
+                ],
+                boundary_refs=list(getattr(control_row, "control_region_refs", []) or []),
+                notes=_station_range_note(getattr(control_row, "station_ranges", ()) or ()),
+            )
+        )
+
+    for edge_row in list(getattr(edge_network, "edge_rows", []) or []):
+        edge_leg = str(getattr(edge_row, "leg_ref", "") or "").strip()
+        edge_control = str(getattr(edge_row, "control_area_ref", "") or "").strip()
+        if active_leg and edge_leg and edge_leg != active_leg:
+            continue
+        if active_control_area and edge_control and edge_control != active_control_area:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "edge_network",
+                getattr(edge_row, "status", "") or edge_network.status,
+                getattr(edge_row, "edge_id", ""),
+                getattr(edge_row, "edge_role", "") or "edge",
+                source_refs=[
+                    getattr(edge_row, "source_policy_ref", ""),
+                    getattr(edge_row, "alignment_ref", ""),
+                    getattr(edge_row, "leg_ref", ""),
+                ],
+                boundary_refs=[edge_control],
+                notes=(
+                    f"family={getattr(edge_row, 'edge_family', '')}; side={getattr(edge_row, 'side', '')}; "
+                    f"STA {float(getattr(edge_row, 'station_start', 0.0) or 0.0):.3f}-{float(getattr(edge_row, 'station_end', 0.0) or 0.0):.3f}"
+                ),
+            )
+        )
+
+    for zone_row in list(getattr(surface_zones, "zone_rows", []) or []):
+        leg_refs = [str(value or "").strip() for value in list(getattr(zone_row, "leg_refs", ()) or ()) if str(value or "").strip()]
+        control_refs = [
+            str(value or "").strip()
+            for value in list(getattr(zone_row, "control_area_refs", ()) or ())
+            if str(value or "").strip()
+        ]
+        if active_leg and leg_refs and active_leg not in leg_refs:
+            continue
+        if active_control_area and control_refs and active_control_area not in control_refs:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "surface_zone",
+                getattr(zone_row, "status", "") or surface_zones.status,
+                getattr(zone_row, "zone_id", ""),
+                getattr(zone_row, "design_zone_role", "") or getattr(zone_row, "zone_role", "") or "zone",
+                source_refs=[
+                    getattr(zone_row, "vertical_policy_ref", ""),
+                    *list(getattr(zone_row, "source_edge_refs", ()) or ()),
+                ],
+                boundary_refs=list(getattr(zone_row, "boundary_edge_refs", ()) or ()),
+                notes=(
+                    f"surface={getattr(zone_row, 'surface_role', '')}; "
+                    f"triangulation={getattr(zone_row, 'triangulation_method', '')}"
+                ),
+            )
+        )
+
+    for clip_row in list(getattr(corridor_clips, "clip_rows", []) or []):
+        clip_control = str(getattr(clip_row, "control_area_ref", "") or "").strip()
+        clip_alignment = str(getattr(clip_row, "alignment_ref", "") or "").strip()
+        if active_control_area and clip_control and clip_control != active_control_area:
+            continue
+        if active_alignment and clip_alignment and clip_alignment != active_alignment:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "corridor_clip",
+                getattr(clip_row, "status", "") or corridor_clips.status,
+                getattr(clip_row, "clip_id", ""),
+                getattr(clip_row, "surface_role", "") or "clip",
+                source_refs=[clip_alignment, *list(getattr(clip_row, "control_region_refs", ()) or ())],
+                boundary_refs=list(getattr(clip_row, "protected_zone_refs", ()) or ()),
+                notes=(
+                    f"{getattr(clip_row, 'clip_timing', '')}; "
+                    f"{getattr(clip_row, 'clip_method', '')}"
+                ),
+            )
+        )
+
+    for hint_row in list(getattr(drainage_hints, "hint_rows", []) or []):
+        control_refs = [
+            str(value or "").strip()
+            for value in list(getattr(hint_row, "control_area_refs", ()) or ())
+            if str(value or "").strip()
+        ]
+        if active_control_area and control_refs and active_control_area not in control_refs:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "drainage_hint",
+                getattr(hint_row, "status", "") or drainage_hints.status,
+                getattr(hint_row, "hint_id", ""),
+                getattr(hint_row, "hint_kind", "") or "hint",
+                source_refs=[
+                    getattr(hint_row, "drainage_policy_ref", ""),
+                    *list(getattr(hint_row, "source_edge_refs", ()) or ()),
+                ],
+                boundary_refs=[
+                    getattr(hint_row, "zone_ref", ""),
+                    *control_refs,
+                ],
+                notes=(
+                    f"recommend={getattr(hint_row, 'recommended_element_kind', '')}; "
+                    f"zone={getattr(hint_row, 'zone_role', '')}; "
+                    f"{getattr(hint_row, 'notes', '')}"
+                ),
+            )
+        )
+
+    for policy in list(getattr(model, "grading_policy_rows", []) or []):
+        policy_id = str(getattr(policy, "policy_id", "") or "").strip()
+        if active_grading_policy and policy_id != active_grading_policy:
+            continue
+        if str(getattr(policy, "intersection_id", "") or "").strip() != active_intersection:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "grading",
+                getattr(policy, "status", "") or "active",
+                policy_id,
+                getattr(policy, "mode", "") or "grading_policy",
+                source_refs=[
+                    getattr(policy, "primary_alignment_ref", ""),
+                    *list(getattr(policy, "secondary_alignment_refs", []) or []),
+                ],
+                notes=f"target crossfall={float(getattr(policy, 'target_crossfall_percent', 0.0) or 0.0):.3f}%",
+            )
+        )
+
+    for policy in list(getattr(model, "drainage_policy_rows", []) or []):
+        if str(getattr(policy, "intersection_id", "") or "").strip() != active_intersection:
+            continue
+        rows.append(
+            _intersection_context_row(
+                "drainage",
+                getattr(policy, "status", "") or "active",
+                getattr(policy, "policy_id", "") or "",
+                getattr(policy, "capture_mode", "") or "drainage_policy",
+                source_refs=list(getattr(policy, "drainage_element_refs", []) or []),
+                boundary_refs=list(getattr(policy, "gutter_edge_refs", []) or []),
+                notes=f"inlet spacing={float(getattr(policy, 'inlet_spacing', 0.0) or 0.0):.3f}; low point tolerance={float(getattr(policy, 'low_point_tolerance', 0.0) or 0.0):.3f}",
+            )
+        )
+
+    return rows
+
+
+def _intersection_context_row(
+    family: str,
+    status: str,
+    row_id: str,
+    role: str,
+    *,
+    source_refs: list[str] | tuple[str, ...] | None = None,
+    boundary_refs: list[str] | tuple[str, ...] | None = None,
+    notes: str = "",
+) -> dict[str, object]:
+    return {
+        "family": str(family or "").strip(),
+        "status": _normalized_intersection_review_status(status),
+        "row_id": str(row_id or "").strip(),
+        "role": str(role or "").strip(),
+        "source_refs": [str(value).strip() for value in list(source_refs or []) if str(value or "").strip()],
+        "boundary_refs": [str(value).strip() for value in list(boundary_refs or []) if str(value or "").strip()],
+        "notes": str(notes or "").strip(),
+    }
+
+
+def _normalized_intersection_review_status(status: str) -> str:
+    value = str(status or "").strip().lower()
+    if value == "candidate":
+        return "ready"
+    if value == "warn":
+        return "warning"
+    return value or "unknown"
+
+
+def _station_range_note(ranges: tuple[tuple[float, float], ...] | list[tuple[float, float]]) -> str:
+    pieces = []
+    for start, end in list(ranges or []):
+        pieces.append(f"STA {float(start or 0.0):.3f}-{float(end or 0.0):.3f}")
+    return ", ".join(pieces)
+
+
+def _intersection_context_summary(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return ""
+    counts: dict[str, int] = {}
+    for row in rows:
+        family = str(row.get("family", "") or "unknown").strip()
+        counts[family] = counts.get(family, 0) + 1
+    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
+
+
+def _viewer_context_focused_subassembly(viewer_context: dict[str, object] | None) -> dict[str, object]:
+    """Return focused Subassembly context."""
+
+    context = dict(viewer_context or {})
+    focused = dict(context.get("focused_subassembly", {}) or {})
+    if focused:
+        return focused
+    return {}
+
+
+def _first_subassembly_ref(section_output, attr_name: str) -> str:
+    """Return the first non-empty Subassembly source ref."""
+
+    subassembly_rows = list(getattr(section_output, "subassembly_rows", []) or [])
+    for row in subassembly_rows:
         value = str(getattr(row, attr_name, "") or "").strip()
         if value:
             return value
@@ -332,8 +665,9 @@ def _applied_section_structure_ref(applied_section) -> str:
         text = str(value or "").strip()
         if text:
             return text
-    for component in list(getattr(applied_section, "component_rows", []) or []):
-        for value in list(getattr(component, "structure_ids", []) or []):
+    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "structure_ids", []) or []):
             text = str(value or "").strip()
             if text:
                 return text
@@ -347,8 +681,9 @@ def _applied_section_drainage_ref(applied_section) -> str:
         text = str(getattr(point, "drainage_ref", "") or "").strip()
         if text:
             return text
-    for component in list(getattr(applied_section, "component_rows", []) or []):
-        for value in list(getattr(component, "drainage_refs", []) or []):
+    subassembly_rows = list(getattr(applied_section, "subassembly_rows", []) or [])
+    for subassembly in subassembly_rows:
+        for value in list(getattr(subassembly, "drainage_refs", []) or []):
             text = str(value or "").strip()
             if text:
                 return text
@@ -365,21 +700,41 @@ def _source_owner_status(*, object_label: str, source_ref: str) -> str:
     return "unresolved"
 
 
+def _display_source_id(value: object, prefix: str = "") -> str:
+    """Return a compact source id for table labels without changing stored refs."""
+
+    text = str(value or "").strip()
+    prefix_text = str(prefix or "").strip()
+    if prefix_text and text.startswith(prefix_text):
+        return text[len(prefix_text) :]
+    return text
+
+
 def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[dict[str, object]]:
     """Build viewer station rows from a v1 AppliedSectionSet result contract."""
 
     rows = []
+    sections = {
+        str(getattr(section, "applied_section_id", "") or ""): section
+        for section in list(getattr(applied_section_set, "sections", []) or [])
+    }
     for index, row in enumerate(list(getattr(applied_section_set, "station_rows", []) or [])):
         try:
             station = float(getattr(row, "station", 0.0) or 0.0)
         except Exception:
             continue
+        section_id = str(getattr(row, "applied_section_id", "") or "")
+        section = sections.get(section_id)
+        alignment_id = str(getattr(section, "alignment_id", "") or getattr(applied_section_set, "alignment_id", "") or "").strip()
+        alignment_label = _display_source_id(alignment_id, "alignment:") if alignment_id else ""
+        label = f"{alignment_label} | STA {station:.3f}" if alignment_label else f"STA {station:.3f}"
         rows.append(
             {
                 "index": index,
                 "station": station,
-                "label": f"STA {station:.3f}",
-                "applied_section_id": str(getattr(row, "applied_section_id", "") or ""),
+                "label": label,
+                "applied_section_id": section_id,
+                "alignment_id": alignment_id,
                 "kind": str(getattr(row, "kind", "") or ""),
             }
         )
@@ -394,8 +749,13 @@ def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[d
             {
                 "index": index,
                 "station": station,
-                "label": f"STA {station:.3f}",
+                "label": (
+                    f"{_display_source_id(str(getattr(section, 'alignment_id', '') or ''), 'alignment:')} | STA {station:.3f}"
+                    if str(getattr(section, "alignment_id", "") or "").strip()
+                    else f"STA {station:.3f}"
+                ),
                 "applied_section_id": str(getattr(section, "applied_section_id", "") or ""),
+                "alignment_id": str(getattr(section, "alignment_id", "") or ""),
                 "kind": "applied_section",
             }
         )
@@ -405,7 +765,7 @@ def _viewer_station_rows_from_applied_section_set(applied_section_set) -> list[d
 def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> list[dict[str, object]]:
     """Merge station navigation rows without dropping v1 result stations."""
 
-    by_station: dict[float, dict[str, object]] = {}
+    by_key: dict[tuple[str, float], dict[str, object]] = {}
     for rows in row_groups:
         for row in list(rows or []):
             item = dict(row or {})
@@ -413,11 +773,23 @@ def _merge_viewer_station_rows(*row_groups: list[dict[str, object]] | None) -> l
                 station = round(float(item.get("station", 0.0) or 0.0), 6)
             except Exception:
                 continue
-            existing = by_station.get(station, {})
+            section_id = str(item.get("applied_section_id", "") or "").strip()
+            alignment_id = str(item.get("alignment_id", "") or "").strip()
+            base_key = (f"station:{station}", station)
+            key = (section_id or alignment_id or f"station:{station}", station)
+            if (section_id or alignment_id) and base_key in by_key:
+                key = base_key
+            existing = by_key.get(key, {})
             merged = dict(existing)
             merged.update({key: value for key, value in item.items() if value not in (None, "")})
-            by_station[station] = merged
-    merged_rows = [by_station[key] for key in sorted(by_station)]
+            by_key[key] = merged
+    merged_rows = [
+        by_key[key]
+        for key in sorted(
+            by_key,
+            key=lambda value: (value[1], str(by_key[value].get("alignment_id", "") or ""), str(value[0])),
+        )
+    ]
     for index, row in enumerate(merged_rows):
         row["index"] = index
         row["station"] = float(row.get("station", 0.0) or 0.0)
@@ -593,16 +965,23 @@ def _apply_section_earthwork_area(preview: dict[str, object]) -> None:
     existing_rows = [
         row
         for row in list(getattr(section_output, "quantity_rows", []) or [])
-        if not (
-            str(getattr(row, "quantity_kind", "") or "") in quantity_kinds
-            and str(getattr(row, "component_ref", "") or "") == "section_earthwork_area"
-        )
+        if not _is_section_earthwork_area_quantity(row, quantity_kinds)
     ]
     row_id_prefix = str(getattr(section_output, "section_output_id", "") or "section")
     section_output.quantity_rows = existing_rows + service.to_section_quantity_rows(
         result,
         row_id_prefix=row_id_prefix,
     )
+
+
+def _is_section_earthwork_area_quantity(row: object, quantity_kinds: set[str]) -> bool:
+    """Return true for section earthwork area rows from current outputs."""
+
+    if str(getattr(row, "quantity_kind", "") or "") not in quantity_kinds:
+        return False
+    if "section-earthwork-area" in str(getattr(row, "quantity_row_id", "") or ""):
+        return True
+    return False
 
 
 def _tin_section_geometry_rows(result) -> list[SectionGeometryRow]:
@@ -995,7 +1374,7 @@ def _build_review_marker_rows(
 
     viewer_context = dict(viewer_context or {})
     station_label = str((station_row or {}).get("label", "") or "").strip() or "Current station"
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_label = str(focused.get("label", "") or "").strip()
     notes = "Placeholder only; persistent bookmark storage is not implemented yet."
     if focused_label:
@@ -1010,7 +1389,7 @@ def _build_review_marker_rows(
         {
             "kind": "review_issue_placeholder",
             "label": "Issue Marker Slot",
-            "value": focused_label or "(no focused component)",
+            "value": focused_label or "(no focused Subassembly)",
             "notes": "Use this slot for future section review issue markers.",
         },
     ]
@@ -1066,6 +1445,7 @@ def build_document_section_preview(
     *,
     preferred_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
 ) -> dict[str, object] | None:
     """Build a v1 section viewer payload from a FreeCAD document when possible."""
 
@@ -1076,6 +1456,7 @@ def build_document_section_preview(
         project=project,
         preferred_applied_section_set=preferred_section_set,
         preferred_station=preferred_station,
+        preferred_applied_section_id=preferred_applied_section_id,
     )
 
 
@@ -1085,6 +1466,7 @@ def _build_v1_applied_section_set_preview(
     project=None,
     preferred_applied_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
 ) -> dict[str, object] | None:
     """Build a section viewer payload directly from a persisted v1 AppliedSectionSet."""
 
@@ -1093,9 +1475,9 @@ def _build_v1_applied_section_set_preview(
     except Exception:
         return None
     try:
-        from ..objects.obj_assembly import find_v1_assembly_model
+        from ..objects.obj_subassembly_assembly import find_v1_assembly_subassembly_model
     except Exception:
-        find_v1_assembly_model = None
+        find_v1_assembly_subassembly_model = None
     try:
         from ..objects.obj_region import find_v1_region_model
     except Exception:
@@ -1131,14 +1513,28 @@ def _build_v1_applied_section_set_preview(
     else:
         target_station = float(preferred_station)
 
-    applied_section = min(
-        sections,
-        key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station),
-    )
+    preferred_section_id = str(preferred_applied_section_id or "").strip()
+    applied_section = None
+    if preferred_section_id:
+        for section in sections:
+            if str(getattr(section, "applied_section_id", "") or "").strip() == preferred_section_id:
+                applied_section = section
+                break
+    if applied_section is None:
+        applied_section = min(
+            sections,
+            key=lambda row: abs(float(getattr(row, "station", 0.0) or 0.0) - target_station),
+        )
     target_station = float(getattr(applied_section, "station", target_station) or target_station)
-    station_payload = _nearest_station_payload(station_rows, target_station) or {
+    station_payload = _nearest_station_payload(
+        station_rows,
+        target_station,
+        applied_section_id=str(getattr(applied_section, "applied_section_id", "") or ""),
+    ) or {
         "station": target_station,
         "label": f"STA {target_station:.3f}",
+        "applied_section_id": str(getattr(applied_section, "applied_section_id", "") or ""),
+        "alignment_id": str(getattr(applied_section, "alignment_id", "") or ""),
     }
     section_output = SectionOutputMapper().map_applied_section(applied_section)
     drawing_payload = CrossSectionDrawingMapper().map_applied_section_set(
@@ -1146,7 +1542,11 @@ def _build_v1_applied_section_set_preview(
         station=target_station,
     )
 
-    assembly_model = find_v1_assembly_model(document) if find_v1_assembly_model is not None else None
+    assembly_model = (
+        find_v1_assembly_subassembly_model(document)
+        if find_v1_assembly_subassembly_model is not None
+        else None
+    )
     region_model = find_v1_region_model(document) if find_v1_region_model is not None else None
     structure_model = find_v1_structure_model(document) if find_v1_structure_model is not None else None
     drainage_model = find_v1_drainage_model(document) if find_v1_drainage_model is not None else None
@@ -1176,6 +1576,14 @@ def _build_v1_applied_section_set_preview(
         structure_model=structure_model,
         drainage_model=drainage_model,
     )
+    intersection_context_rows = _build_intersection_context_rows(
+        document,
+        intersection_model_obj=intersection_model,
+        applied_section=applied_section,
+    )
+    intersection_context_summary = _intersection_context_summary(intersection_context_rows)
+    if intersection_context_summary:
+        viewer_context["intersection_contract_summary"] = intersection_context_summary
     diagnostic_rows = _build_diagnostic_review_rows(
         section_output=section_output,
         viewer_context=viewer_context,
@@ -1226,6 +1634,7 @@ def _build_v1_applied_section_set_preview(
             region_model=region_model,
             structure_model=structure_model,
         ),
+        "intersection_context_rows": intersection_context_rows,
         "earthwork_hint_rows": earthwork_hint_rows,
         "review_marker_rows": review_marker_rows,
         "corridor_review_rows": _build_corridor_review_rows(document),
@@ -1234,11 +1643,22 @@ def _build_v1_applied_section_set_preview(
     }
 
 
-def _nearest_station_payload(rows: list[dict[str, object]], station: float) -> dict[str, object] | None:
+def _nearest_station_payload(
+    rows: list[dict[str, object]],
+    station: float,
+    *,
+    applied_section_id: str = "",
+) -> dict[str, object] | None:
     """Return the station navigation row nearest to a target station."""
 
     if not rows:
         return None
+    section_id = str(applied_section_id or "").strip()
+    if section_id:
+        for row in [dict(item or {}) for item in rows]:
+            if str(row.get("applied_section_id", "") or "").strip() == section_id:
+                row["is_current"] = True
+                return row
     best = min(
         [dict(row or {}) for row in rows],
         key=lambda row: abs(float(row.get("station", 0.0) or 0.0) - float(station)),
@@ -1370,7 +1790,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
     station_row = dict(preview.get("station_row", {}) or {})
     station_label = str(station_row.get("label", f"STA {section_output.station:.3f}") or f"STA {section_output.station:.3f}")
     viewer_context = dict(preview.get("viewer_context", {}) or {})
-    focused = dict(viewer_context.get("focused_component", {}) or {})
+    focused = _viewer_context_focused_subassembly(viewer_context)
     focused_label = str(focused.get("label", "") or "").strip()
     result_state = dict(preview.get("result_state", {}) or {})
     state_text = str(result_state.get("state", "unknown") or "unknown").strip()
@@ -1389,7 +1809,10 @@ def format_section_preview(preview: dict[str, object]) -> str:
         f"Result State: {state_text}",
         f"Station: {section_output.station}",
         f"Station Label: {station_label}",
-        f"Components: {len(section_output.component_rows)}",
+        f"Subassemblies: {len(list(getattr(section_output, 'subassembly_rows', []) or []))}",
+        f"Subassembly Points: {len(list(getattr(section_output, 'subassembly_point_rows', []) or []))}",
+        f"Subassembly Links: {len(list(getattr(section_output, 'subassembly_link_rows', []) or []))}",
+        f"Subassembly Shapes: {len(list(getattr(section_output, 'subassembly_shape_rows', []) or []))}",
         f"Quantities: {len(section_output.quantity_rows)}",
         f"Drawing Geometry: {len(list(getattr(drawing_payload, 'geometry_rows', []) or []))}",
         f"Drawing Labels: {len(list(getattr(drawing_payload, 'label_rows', []) or []))}",
@@ -1433,7 +1856,7 @@ def format_section_preview(preview: dict[str, object]) -> str:
     if corridor_text:
         lines.append(corridor_text)
     if focused_label:
-        lines.append(f"Focus Component: {focused_label}")
+        lines.append(f"Focus Subassembly: {focused_label}")
     return "\n".join(lines)
 
 
@@ -1465,6 +1888,7 @@ def _section_output_intersection_summary(section_output) -> str:
     control_area = str(getattr(rows.get("intersection_control_area"), "value", "") or "").strip()
     leg = str(getattr(rows.get("intersection_leg"), "value", "") or "").strip()
     control_regions = str(getattr(rows.get("intersection_control_regions"), "value", "") or "").strip()
+    grading_policy = str(getattr(rows.get("intersection_grading_policy"), "value", "") or "").strip()
     pieces = [f"Intersection: {intersection_id}"]
     if control_area:
         pieces.append(f"Control Area {control_area}")
@@ -1472,6 +1896,8 @@ def _section_output_intersection_summary(section_output) -> str:
         pieces.append(f"Leg {leg}")
     if control_regions:
         pieces.append(f"Regions {control_regions}")
+    if grading_policy:
+        pieces.append(f"Grading {grading_policy}")
     return " | ".join(pieces)
 
 
@@ -1480,6 +1906,7 @@ def show_v1_section_preview(
     document=None,
     preferred_section_set=None,
     preferred_station: float | None = None,
+    preferred_applied_section_id: str = "",
     extra_context: dict[str, object] | None = None,
     app_module=None,
     gui_module=None,
@@ -1501,6 +1928,7 @@ def show_v1_section_preview(
             active_document,
             preferred_section_set=preferred_section_set,
             preferred_station=preferred_station,
+            preferred_applied_section_id=preferred_applied_section_id,
         )
     if preview is None and active_document is not None:
         preview = _build_missing_v1_applied_section_set_preview(document_label=document_label)
@@ -1508,9 +1936,11 @@ def show_v1_section_preview(
         preview = build_demo_section_preview(document_label=document_label)
     explicit_review_marker_rows = None
     if extra_context:
-        preview.update(dict(extra_context))
-        explicit_review_marker_rows = dict(extra_context).get("review_marker_rows", None)
-        _retarget_preview_to_station(preview)
+        context = dict(extra_context)
+        preview.update(context)
+        explicit_review_marker_rows = context.get("review_marker_rows", None)
+        if "station_row" in context or context.get("preferred_applied_section_id"):
+            _retarget_preview_to_station(preview)
     viewer_context = dict(preview.get("viewer_context", {}) or {})
     active_structure_ref = _applied_section_structure_ref(preview.get("applied_section", None))
     if active_structure_ref and not str(viewer_context.get("active_structure_ref", "") or "").strip():
@@ -1532,6 +1962,17 @@ def show_v1_section_preview(
         structure_model=source_objects.get("structure_model"),
         drainage_model=source_objects.get("drainage_model"),
     )
+    if "intersection_context_rows" not in preview:
+        preview["intersection_context_rows"] = _build_intersection_context_rows(
+            active_document,
+            intersection_model_obj=source_objects.get("intersection_model"),
+            applied_section=preview.get("applied_section", None),
+        )
+    intersection_context_summary = _intersection_context_summary(
+        [dict(row or {}) for row in list(preview.get("intersection_context_rows", []) or [])]
+    )
+    if intersection_context_summary:
+        viewer_context["intersection_contract_summary"] = intersection_context_summary
     preview["viewer_context"] = viewer_context
     _apply_tin_section_geometry(preview)
     _apply_section_earthwork_area(preview)
@@ -1591,21 +2032,74 @@ def show_v1_section_preview(
         app.Console.PrintMessage(summary_text + "\n")
 
     if gui is not None and hasattr(gui, "Control"):  # pragma: no branch - GUI path only in FreeCAD.
-        try:
-            gui.Control.showDialog(CrossSectionViewerTaskPanel(preview))
-        except Exception:
+        if not _show_cross_section_viewer_dialog(gui, preview, app_module=app):
             try:  # pragma: no cover - GUI fallback not available in tests.
                 from PySide import QtGui
 
+                open_error = str(preview.get("_viewer_open_error", "") or "").strip()
+                fallback_text = (
+                    "Cross Section Viewer panel was not opened."
+                    + (f"\n\nError: {open_error}" if open_error else "")
+                    + "\n\nSummary:\n"
+                    + summary_text
+                )
                 QtGui.QMessageBox.information(
                     None,
                     "CorridorRoad v1 Cross Section Viewer",
-                    summary_text,
+                    fallback_text,
                 )
             except Exception:
                 pass
 
     return preview
+
+
+def _show_cross_section_viewer_dialog(gui, preview: dict[str, object], *, app_module=None) -> bool:
+    """Open the Cross Section Viewer task panel, retrying once after closing stale panels."""
+
+    try:
+        panel = CrossSectionViewerTaskPanel(preview)
+    except Exception as exc:
+        message = f"Cross Section Viewer panel could not be created: {exc}"
+        preview["_viewer_open_error"] = message
+        _print_viewer_error(app_module, message)
+        return False
+
+    try:
+        gui.Control.showDialog(panel)
+        return True
+    except Exception as first_exc:
+        message = f"Cross Section Viewer panel first open failed: {first_exc}"
+        preview["_viewer_open_error"] = message
+        _print_viewer_error(app_module, message)
+        try:
+            gui.Control.closeDialog()
+        except Exception:
+            pass
+        try:
+            gui.Control.showDialog(panel)
+            return True
+        except Exception as second_exc:
+            _print_viewer_error(app_module, f"Cross Section Viewer panel retry failed: {second_exc}")
+        try:
+            form = getattr(panel, "form", None)
+            if form is not None:
+                gui.Control.showDialog(form)
+                return True
+        except Exception as form_exc:
+            message = f"Cross Section Viewer panel was not opened after panel/form retry: {form_exc}"
+            preview["_viewer_open_error"] = message
+            _print_viewer_error(app_module, message)
+        return False
+
+
+def _print_viewer_error(app_module, message: str) -> None:
+    if app_module is None:
+        return
+    try:
+        app_module.Console.PrintError(str(message or "") + "\n")
+    except Exception:
+        pass
 
 
 def _retarget_preview_to_station(preview: dict[str, object]) -> None:
@@ -1616,6 +2110,17 @@ def _retarget_preview_to_station(preview: dict[str, object]) -> None:
     if not sections:
         return
     station_row = dict(preview.get("station_row", {}) or {})
+    target_section_id = str(station_row.get("applied_section_id", "") or "").strip()
+    if target_section_id:
+        for section in sections:
+            if str(getattr(section, "applied_section_id", "") or "").strip() == target_section_id:
+                preview["applied_section"] = section
+                preview["section_output"] = SectionOutputMapper().map_applied_section(section)
+                preview["drawing_payload"] = CrossSectionDrawingMapper().map_applied_section_set(
+                    section_set,
+                    station=float(getattr(section, "station", 0.0) or 0.0),
+                )
+                return
     try:
         target_station = float(station_row.get("station", getattr(preview.get("applied_section"), "station", 0.0)) or 0.0)
     except Exception:
@@ -1631,6 +2136,7 @@ def run_v1_section_view_command() -> dict[str, object]:
 
     preferred_section_set = None
     preferred_station = None
+    preferred_applied_section_id = ""
     extra_context = None
     ui_context = get_ui_context()
     clear_ui_context()
@@ -1652,6 +2158,7 @@ def run_v1_section_view_command() -> dict[str, object]:
                 preferred_station = float(ui_context.get("preferred_station"))
             except Exception:
                 preferred_station = None
+        preferred_applied_section_id = str(ui_context.get("preferred_applied_section_id", "") or "").strip()
         extra_context = {}
         for key in (
             "viewer_context",
@@ -1669,6 +2176,7 @@ def run_v1_section_view_command() -> dict[str, object]:
         document=getattr(App, "ActiveDocument", None) if App is not None else None,
         preferred_section_set=preferred_section_set,
         preferred_station=preferred_station,
+        preferred_applied_section_id=preferred_applied_section_id,
         extra_context=extra_context,
         app_module=App,
         gui_module=Gui,

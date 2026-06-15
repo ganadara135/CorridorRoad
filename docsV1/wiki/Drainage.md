@@ -22,9 +22,9 @@ Current drainage-related behavior appears through:
 - empty editor tables on first entry when no `V1DrainageModel` exists
 - Drainage editor Preset data for roadside ditch, dual side ditches, culvert crossing, and structure-backed flow source sets
 - `V1DrainageModel` document persistence
-- side, Region ref, and Assembly component ref persistence on drainage elements
-- Assembly ditch shapes
-- Applied Section `ditch_surface` rows with `component_ref`, `side`, and `drainage_ref`
+- side, Region ref, and Subassembly ref persistence on drainage elements
+- Subassembly ditch shapes
+- Applied Section `ditch_surface` rows with `subassembly_ref`, `side`, and `drainage_ref`
 - Drainage Review read-only tables for source assignment and Applied Section context
 - Build Corridor drainage diagnostics
 - drainage surface preview where ditch points exist
@@ -51,7 +51,7 @@ Drainage uses a graph-style source model:
 - Flow Routes are edges.
 - Outlet is represented by an `outfall_reference` Element. In the Flow Routes table, the `Outlet` cell is editable only when `To Element` is an outlet/outfall Element; intermediate route rows keep Outlet disabled and empty.
 
-Assembly-generated drainage geometry is currently limited to `ditch` components. Culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references, but they are connected through Flow Routes rather than generated as Assembly drainage components. In the Drainage Elements table, the `Assembly` cell is active only for `ditch` rows and is cleared for other element kinds.
+Assembly-generated drainage geometry is currently limited to `ditch` Subassemblies. Culverts, inlets, and outfalls remain valid Drainage elements or Structure-backed references, but they are connected through Flow Routes rather than generated as Assembly drainage Subassemblies. In the Drainage Elements table, the `Subassembly` cell is active only for `ditch` rows and is cleared for other element kinds.
 
 Example:
 
@@ -106,15 +106,15 @@ Element rows now include:
 - Region ref as a combo box populated from the active `V1RegionModel`
 - Side
 - Start STA and End STA
-- Assembly ref
+- Subassembly ref
 - Policy ref
-- Structure Ref, disabled for `ditch` rows because open ditches are generated from Assembly drainage geometry rather than Structure references
+- Structure Ref, disabled for `ditch` rows because open ditches are generated from Subassembly drainage geometry rather than Structure references
 
 The Elements table does not expose a separate `Connection Point` column. Pipe In / Pipe Out ownership belongs to Structures. Drainage Elements choose the related Structure, and Flow Routes determine whether that Structure is used as an outgoing or incoming endpoint. During review and network preview, the resolver chooses the appropriate Structure connection point by route direction.
 
-The `Add Left Ditch` and `Add Right Ditch` actions create first-slice ditch rows with matching side and default `ditch:left` or `ditch:right` Assembly component refs.
+The `Add Left Ditch` and `Add Right Ditch` actions create first-slice ditch rows with matching side and default `ditch:left` or `ditch:right` Subassembly refs.
 
-`Show Flow Network` applies the current Drainage table values, resolves Structure-backed Elements through direction-aware Structure ports, and creates a `V1DrainagePipelineNetworksPreview` object in the 3D View. It also creates linked per-segment `V1DrainagePipelineSegment_*` preview objects under the Drainage tree and linked `V1StructurePipeConnectionPoint_*` Pipe In / Pipe Out marker objects under the Structures tree. Drainage owns the pipe flow network; Structures own the connection points where pipes enter or leave a structure. Open ditch runs remain Assembly/Drainage surface geometry; pipe-like connections come from Structure connection points such as inlet Pipe Out, culvert Pipe In/Pipe Out, and outlet Pipe In. Ditch-to-inlet Flow Routes are intake/capture relationships unless a separate Structure-backed pipe element is added. If a connection point defines an invert elevation, 3D pipe previews display the circular pipe around the pipe axis by lifting the display center by the pipe radius; the stored source value remains the invert. If a connection point does not define an invert elevation, the preview uses the active 3D centerline/profile height instead of dropping the pipe to zero elevation.
+`Show Flow Network` applies the current Drainage table values, resolves Structure-backed Elements through direction-aware Structure ports, and creates a `V1DrainagePipelineNetworksPreview` object in the 3D View. It also creates linked per-segment `V1DrainagePipelineSegment_*` preview objects under the Drainage tree and linked `V1StructurePipeConnectionPoint_*` Pipe In / Pipe Out marker objects under the Structures tree. Drainage owns the pipe flow network; Structures own the connection points where pipes enter or leave a structure. Open ditch runs remain Subassembly/Drainage surface geometry; pipe-like connections come from Structure connection points such as inlet Pipe Out, culvert Pipe In/Pipe Out, and outlet Pipe In. Ditch-to-inlet Flow Routes are intake/capture relationships unless a separate Structure-backed pipe element is added. If a connection point defines an invert elevation, 3D pipe previews display the circular pipe around the pipe axis by lifting the display center by the pipe radius; the stored source value remains the invert. If a connection point does not define an invert elevation, the preview uses the active 3D centerline/profile height instead of dropping the pipe to zero elevation.
 
 Before drawing the pipe network, `Show Flow Network` also refreshes the current Structures preview from the active `V1StructureModel`. This keeps visible Structure bodies and Drainage pipes synchronized when a Structure row was edited after an earlier preview.
 
@@ -155,10 +155,10 @@ When a StructureModel is available, Drainage validation checks that a non-empty 
 
 Applied Sections should resolve Drainage context from `DrainageModel` Region assignments during section generation.
 
-For ditch components, generated result rows preserve:
+For ditch Subassemblies, generated result rows preserve:
 
-- component Drainage refs
-- ditch surface `component_ref`
+- Subassembly Drainage refs
+- ditch surface `subassembly_ref`
 - ditch surface side
 - ditch surface `drainage_ref`
 
@@ -175,7 +175,7 @@ It shows:
 - Applied Section ditch surface context
 - summary counts for elements, Region assignments, ditch surface points, and Drainage ref coverage
 
-The review does not read Region-owned Drainage refs. Corrections happen in Drainage, Region, Assembly, or Applied Sections depending on the source of the issue.
+The review does not read Region-owned Drainage refs. Corrections happen in Drainage, Region, Assembly / Subassembly, or Applied Sections depending on the source of the issue.
 
 When a QuantityModel is supplied to the review mapper, Drainage Review can also summarize drainage ditch length and flowline length by Drainage element id.
 
@@ -184,7 +184,7 @@ When a QuantityModel is supplied to the review mapper, Drainage Review can also 
 - hydraulic analysis
 - automatic pipe sizing
 - complete drainage report output
-- Assembly reference selectors
+- Subassembly reference selectors
 - multi-select Drainage assignment tools
 - explicit flowline/invert point roles and related review UI
 - Drainage Review issue markers and 3D focus actions

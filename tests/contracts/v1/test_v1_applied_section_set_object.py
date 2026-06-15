@@ -5,7 +5,7 @@ from freecad.Corridor_Road.objects.obj_project import (
     CorridorRoadProject,
     ensure_project_tree,
 )
-from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionComponentRow, AppliedSectionFrame, AppliedSectionPoint
+from freecad.Corridor_Road.v1.models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint, AppliedSectionSubassemblyRow
 from freecad.Corridor_Road.v1.models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from freecad.Corridor_Road.v1.objects.obj_applied_section import (
     build_v1_applied_section_set_review_shape,
@@ -63,7 +63,7 @@ def _sample_set() -> AppliedSectionSet:
                 ],
                 template_id="template:basic-road",
                 region_id="region:main",
-                component_rows=[AppliedSectionComponentRow("lane-1", "lane", drainage_refs=["drainage:side-ditch-right"])],
+                subassembly_rows=[AppliedSectionSubassemblyRow("lane-1", "lane", drainage_refs=["drainage:side-ditch-right"])],
                 active_structure_ids=["structure:bridge-01"],
                 active_structure_rule_ids=["rule:bridge-section"],
                 active_structure_influence_zone_ids=["zone:bridge-01"],
@@ -76,7 +76,7 @@ def _sample_set() -> AppliedSectionSet:
                         9.9,
                         "fg_surface",
                         -4.5,
-                        component_ref="lane-1",
+                        subassembly_ref="lane-1",
                         side="right",
                         drainage_ref="drainage:side-ditch-right",
                     ),
@@ -103,7 +103,7 @@ def _sample_set() -> AppliedSectionSet:
                 daylight_right_slope=-0.4,
                 template_id="template:basic-road",
                 region_id="region:main",
-                component_rows=[AppliedSectionComponentRow("lane-1", "lane")],
+                subassembly_rows=[AppliedSectionSubassemblyRow("lane-1", "lane")],
                 point_rows=[
                     AppliedSectionPoint("fg:right", 120.0, 196.0, 10.9, "fg_surface", -4.0),
                     AppliedSectionPoint("fg:center", 120.0, 200.0, 11.0, "fg_surface", 0.0),
@@ -145,7 +145,7 @@ def test_create_or_update_v1_applied_section_set_routes_to_tree() -> None:
             "section:1|left:control:normal|right:control:right-full|transition:transition:runoff",
         ]
         assert len(list(obj.PointRows)) == 6
-        assert len(list(obj.ComponentRows)) == 2
+        assert len(list(obj.SubassemblyRows)) == 2
         assert list(obj.RegionIds) == ["region:main", "region:main"]
         assert list(obj.AssemblyIds) == ["assembly:basic-road", "assembly:basic-road"]
         assert list(obj.ActiveStructureRows) == ["section:1|structure:bridge-01"]
@@ -194,9 +194,9 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
             "right:control:right-full",
             "transition:transition:runoff",
         ]
-        assert [section.component_rows[0].component_id for section in model.sections] == ["lane-1", "lane-1"]
-        assert [section.component_rows[0].kind for section in model.sections] == ["lane", "lane"]
-        assert model.sections[0].component_rows[0].drainage_refs == ["drainage:side-ditch-right"]
+        assert [section.subassembly_rows[0].subassembly_id for section in model.sections] == ["lane-1", "lane-1"]
+        assert [section.subassembly_rows[0].kind for section in model.sections] == ["lane", "lane"]
+        assert model.sections[0].subassembly_rows[0].drainage_refs == ["drainage:side-ditch-right"]
         assert [len(section.point_rows) for section in model.sections] == [3, 3]
         assert model.sections[0].active_structure_ids == ["structure:bridge-01"]
         assert model.sections[0].active_structure_rule_ids == ["rule:bridge-section"]
@@ -204,7 +204,7 @@ def test_v1_applied_section_set_object_roundtrips_summary_rows() -> None:
         assert model.sections[0].structure_diagnostic_rows == ["info|structure|section:1|Structure context active."]
         assert model.sections[0].point_rows[0].point_role == "fg_surface"
         assert model.sections[0].point_rows[0].lateral_offset == -4.5
-        assert model.sections[0].point_rows[0].component_ref == "lane-1"
+        assert model.sections[0].point_rows[0].subassembly_ref == "lane-1"
         assert model.sections[0].point_rows[0].side == "right"
         assert model.sections[0].point_rows[0].drainage_ref == "drainage:side-ditch-right"
         assert find_v1_applied_section_set(doc) == obj
