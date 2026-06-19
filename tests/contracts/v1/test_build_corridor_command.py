@@ -5717,13 +5717,14 @@ def test_apply_v1_corridor_model_prefers_shared_centerline3d_result_preview() ->
 
         centerline = doc.getObject("V1CorridorCenterline3DPreview")
         assert centerline is not None
-        assert centerline.PreviewSource == "centerline3d_result"
+        assert centerline.PreviewSource == "centerline3d_source_geometry"
         assert centerline.Centerline3DResultId == "centerline3d:main"
+        assert centerline.DisplayCurveKind == "source_geometry"
         assert int(centerline.PointCount) > 2
         rows = corridor_build_review_rows(doc)
         centerline_row = [row for row in rows if row["role"] == "centerline"][0]
         assert centerline_row["status"] == "ready"
-        assert "source=centerline3d_result" in centerline_row["notes"]
+        assert "source=centerline3d_source_geometry" in centerline_row["notes"]
     finally:
         App.closeDocument(doc.Name)
 
