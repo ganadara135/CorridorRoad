@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from typing import Callable
 
 from ...models.source.surface_transition_model import SurfaceTransitionModel, SurfaceTransitionRange
-from ...models.result.applied_section import AppliedSection, AppliedSectionFrame, AppliedSectionPoint
+from ...models.result.applied_section import (
+    AppliedSection,
+    AppliedSectionFrame,
+    AppliedSectionPoint,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
+    AppliedSectionSubassemblyShape,
+)
 from ...models.result.applied_section_set import AppliedSectionSet, AppliedSectionStationRow
 from ...models.result.corridor_model import CorridorModel
 from ...models.result.tin_surface import TINProvenanceRow, TINQualityRow, TINSurface, TINTriangle, TINVertex
@@ -17,6 +25,11 @@ SUPPLEMENTAL_SAMPLING_MAX_SPACING = 5.0
 SUPPLEMENTAL_DAYLIGHT_WIDTH_DELTA_THRESHOLD = 1.5
 SUPPLEMENTAL_SLOPE_DELTA_THRESHOLD = 0.05
 SUPPLEMENTAL_FRAME_Z_DELTA_THRESHOLD = 0.5
+SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG = 3.0
+SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD = 0.25
+SUPPLEMENTAL_FRAME_MAX_SAMPLES_PER_SPAN = 512
+
+SupplementalFrameResolver = Callable[[float, object, object, float], AppliedSectionFrame | None]
 
 
 @dataclass(frozen=True)
@@ -43,6 +56,9 @@ class CorridorDesignSurfaceGeometryRequest:
     existing_ground_surface: TINSurface | None = None
     supplemental_sampling_enabled: bool = False
     supplemental_sampling_max_spacing: float = SUPPLEMENTAL_SAMPLING_MAX_SPACING
+    supplemental_sampling_tangent_delta_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG
+    supplemental_sampling_chord_deviation: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD
+    supplemental_frame_resolver: SupplementalFrameResolver | None = None
     surface_transition_model: SurfaceTransitionModel | None = None
 
 
@@ -703,31 +719,103 @@ def _drainage_point_group_grids(sections: list[object]) -> dict[str, list[list[o
     grouped: dict[str, list[list[object]]] = {}
     section_rows = list(sections or [])
     for group_id in _drainage_point_group_ids(section_rows):
+        grids: list[list[list[object]]] = []
         grid: list[list[object]] = []
-        reference_offsets: list[float] | None = None
+        reference_count: int | None = None
         for section in section_rows:
             rows = [
                 point
                 for point in _section_points_for_surface_role(section, point_role="ditch_surface")
-                and _drainage_point_group_id(point) == group_id
+                if _drainage_point_group_id(point) == group_id
             ]
             rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
             if len(rows) < 2:
+                if len(grid) >= 2:
+                    grids.append(grid)
                 grid = []
-                break
-            offsets = [round(float(getattr(point, "lateral_offset", 0.0) or 0.0), 6) for point in rows]
-            if reference_offsets is None:
-                reference_offsets = offsets
-            elif offsets != reference_offsets:
-                grid = []
-                break
+                reference_count = None
+                continue
+            if reference_count is None:
+                reference_count = len(rows)
+            elif len(rows) != reference_count:
+                if len(rows) > reference_count:
+                    reference_count = len(rows)
+                    grid = [_resample_drainage_point_row(row, reference_count) for row in grid]
+                else:
+                    rows = _resample_drainage_point_row(rows, reference_count)
             grid.append(rows)
         if len(grid) >= 2:
-            grouped[group_id] = grid
+            grids.append(grid)
+        for index, rows in enumerate(grids, start=1):
+            key = group_id if len(grids) == 1 else f"{group_id}:segment:{index}"
+            grouped[key] = rows
     if grouped:
         return grouped
     fallback_grid = _section_point_grid(section_rows, point_role="ditch_surface")
     return {"drainage:all": fallback_grid} if fallback_grid else {}
+
+
+def _resample_drainage_point_row(rows: list[object], target_count: int) -> list[object]:
+    """Return a ditch/drainage section row with a stable point count for strip meshing."""
+
+    source = sorted(
+        list(rows or []),
+        key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0),
+    )
+    target = int(target_count or 0)
+    if target <= 0 or not source:
+        return []
+    if len(source) == target:
+        return source
+    if len(source) == 1:
+        return [source[0] for _index in range(target)]
+    start_offset = float(getattr(source[0], "lateral_offset", 0.0) or 0.0)
+    end_offset = float(getattr(source[-1], "lateral_offset", 0.0) or 0.0)
+    if target == 1 or abs(end_offset - start_offset) <= 1.0e-9:
+        return [source[0]]
+    output: list[object] = []
+    for index in range(target):
+        ratio = float(index) / float(max(target - 1, 1))
+        target_offset = start_offset + (end_offset - start_offset) * ratio
+        output.append(_interpolated_drainage_point(source, target_offset, index=index + 1))
+    return output
+
+
+def _interpolated_drainage_point(rows: list[object], target_offset: float, *, index: int) -> _SectionPointLite:
+    first = rows[0]
+    previous = first
+    for point in rows[1:]:
+        previous_offset = float(getattr(previous, "lateral_offset", 0.0) or 0.0)
+        point_offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        if target_offset <= point_offset or point is rows[-1]:
+            span = point_offset - previous_offset
+            ratio = 0.0 if abs(span) <= 1.0e-9 else (float(target_offset) - previous_offset) / span
+            ratio = max(0.0, min(1.0, ratio))
+            point_id = (
+                f"{str(getattr(previous, 'point_id', '') or 'ditch')}:"
+                f"drainage_interp:{index}"
+            )
+            return _SectionPointLite(
+                point_id=point_id,
+                x=_lerp(float(getattr(previous, "x", 0.0) or 0.0), float(getattr(point, "x", 0.0) or 0.0), ratio),
+                y=_lerp(float(getattr(previous, "y", 0.0) or 0.0), float(getattr(point, "y", 0.0) or 0.0), ratio),
+                z=_lerp(float(getattr(previous, "z", 0.0) or 0.0), float(getattr(point, "z", 0.0) or 0.0), ratio),
+                lateral_offset=float(target_offset),
+                point_role=str(getattr(previous, "point_role", "") or getattr(point, "point_role", "") or "ditch_surface"),
+                compatibility_ref=str(getattr(previous, "compatibility_ref", "") or getattr(point, "compatibility_ref", "") or ""),
+                subassembly_ref=str(getattr(previous, "subassembly_ref", "") or getattr(point, "subassembly_ref", "") or ""),
+            )
+        previous = point
+    return _SectionPointLite(
+        point_id=f"{str(getattr(rows[-1], 'point_id', '') or 'ditch')}:drainage_interp:{index}",
+        x=float(getattr(rows[-1], "x", 0.0) or 0.0),
+        y=float(getattr(rows[-1], "y", 0.0) or 0.0),
+        z=float(getattr(rows[-1], "z", 0.0) or 0.0),
+        lateral_offset=float(target_offset),
+        point_role=str(getattr(rows[-1], "point_role", "") or "ditch_surface"),
+        compatibility_ref=str(getattr(rows[-1], "compatibility_ref", "") or ""),
+        subassembly_ref=str(getattr(rows[-1], "subassembly_ref", "") or ""),
+    )
 
 
 def _drainage_point_group_ids(sections: list[object]) -> list[str]:
@@ -965,6 +1053,7 @@ def _build_daylight_surface_from_side_slope_points(
     bench_breakline_count = 0
     side_slope_point_count = 0
     daylight_marker_count = 0
+    linked_slope_face_point_count = 0
     for side_label, grid in side_grids.items():
         if len(grid) < 2:
             continue
@@ -974,6 +1063,7 @@ def _build_daylight_surface_from_side_slope_points(
                 bench_breakline_count += 1 if role == "bench_surface" else 0
                 side_slope_point_count += 1 if role == "side_slope_surface" else 0
                 daylight_marker_count += 1 if role == "daylight_marker" else 0
+                linked_slope_face_point_count += 1 if str(getattr(point, "subassembly_ref", "") or "").strip() else 0
         for section_index in range(len(grid) - 1):
             mesh_rows = list(_harmonized_side_slope_pair_rows(grid[section_index], grid[section_index + 1]))
             if len(mesh_rows[0]) < 2 or len(mesh_rows[1]) < 2:
@@ -1041,6 +1131,13 @@ def _build_daylight_surface_from_side_slope_points(
             TINQualityRow(f"{request.surface_id}:side_slope_point_count", "side_slope_point_count", side_slope_point_count, "count"),
             TINQualityRow(f"{request.surface_id}:bench_breakline_count", "bench_breakline_count", bench_breakline_count, "count"),
             TINQualityRow(f"{request.surface_id}:daylight_marker_count", "daylight_marker_count", daylight_marker_count, "count"),
+            TINQualityRow(
+                f"{request.surface_id}:linked_slope_face_point_count",
+                "linked_slope_face_point_count",
+                linked_slope_face_point_count,
+                "count",
+                notes="Evaluated Subassembly slope_face_surface link points consumed by Build Parametric.",
+            ),
             TINQualityRow(f"{request.surface_id}:subassembly_ref_count", "subassembly_ref_count", len(source_summary["subassembly_refs"]), "count"),
             TINQualityRow(f"{request.surface_id}:offset_abs_max", "offset_abs_max", max(offset_values), "m"),
             TINQualityRow(f"{request.surface_id}:z_min", "z_min", min(z_values), "m"),
@@ -1693,6 +1790,15 @@ def _section_rows_for_request(request: CorridorDesignSurfaceGeometryRequest, *, 
     return _supplemental_sampled_sections(
         sections,
         max_spacing=float(getattr(request, "supplemental_sampling_max_spacing", SUPPLEMENTAL_SAMPLING_MAX_SPACING) or SUPPLEMENTAL_SAMPLING_MAX_SPACING),
+        tangent_delta_threshold_deg=float(
+            getattr(request, "supplemental_sampling_tangent_delta_deg", SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG)
+            or SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG
+        ),
+        chord_deviation_threshold=float(
+            getattr(request, "supplemental_sampling_chord_deviation", SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD)
+            or SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD
+        ),
+        frame_resolver=getattr(request, "supplemental_frame_resolver", None),
     )
 
 
@@ -1981,6 +2087,9 @@ def _supplemental_sampled_sections(
     sections: list[object],
     *,
     max_spacing: float,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
 ) -> list[object]:
     if len(sections) < 2:
         return sections
@@ -1990,34 +2099,301 @@ def _supplemental_sampled_sections(
         first = sections[index]
         second = sections[index + 1]
         output.append(first)
-        if not _span_needs_supplemental_sampling(first, second, max_spacing=spacing):
-            continue
-        step_count = max(2, int(math.ceil(_section_station_delta(first, second) / spacing)))
-        for step in range(1, step_count):
-            ratio = float(step) / float(step_count)
-            output.append(_interpolate_applied_section(first, second, ratio, sequence_index=step))
+        ratios = _supplemental_sample_ratios(
+            first,
+            second,
+            max_spacing=spacing,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+            frame_resolver=frame_resolver,
+        )
+        for sequence_index, ratio in enumerate(ratios, start=1):
+            output.append(
+                _interpolate_applied_section(
+                    first,
+                    second,
+                    ratio,
+                    sequence_index=sequence_index,
+                    frame_resolver=frame_resolver,
+                )
+            )
     output.append(sections[-1])
     return output
 
 
-def _span_needs_supplemental_sampling(first, second, *, max_spacing: float) -> bool:
-    if _section_station_delta(first, second) > float(max_spacing) + 1.0e-6:
+def supplemental_sampling_summary(
+    sections: list[object],
+    *,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> dict[str, object]:
+    """Return output-only supplemental frame diagnostics for Guided Review."""
+
+    source_sections = list(sections or [])
+    sampled_sections = _supplemental_sampled_sections(
+        source_sections,
+        max_spacing=max_spacing,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+        frame_resolver=frame_resolver,
+    )
+    supplemental_sections = [
+        section
+        for section in sampled_sections
+        if "supplemental:" in str(getattr(section, "applied_section_id", "") or "")
+    ]
+    source_mode_counts: dict[str, int] = {}
+    fallback_count = 0
+    for section in supplemental_sections:
+        notes = str(getattr(getattr(section, "frame", None), "notes", "") or "")
+        source_mode = "centerline3d_result" if "source=centerline3d_result" in notes else "applied_section_frame"
+        source_mode_counts[source_mode] = source_mode_counts.get(source_mode, 0) + 1
+        if source_mode != "centerline3d_result":
+            fallback_count += 1
+    max_tangent_delta = 0.0
+    max_chord_deviation = 0.0
+    for index in range(len(sampled_sections) - 1):
+        first = sampled_sections[index]
+        second = sampled_sections[index + 1]
+        first_frame = getattr(first, "frame", None)
+        second_frame = getattr(second, "frame", None)
+        if first_frame is not None and second_frame is not None:
+            max_tangent_delta = max(
+                max_tangent_delta,
+                abs(
+                    _angle_delta_degrees(
+                        float(getattr(first_frame, "tangent_direction_deg", 0.0) or 0.0),
+                        float(getattr(second_frame, "tangent_direction_deg", 0.0) or 0.0),
+                    )
+                ),
+            )
+        max_chord_deviation = max(
+            max_chord_deviation,
+            _source_frame_chord_deviation(first, second, frame_resolver=frame_resolver),
+        )
+    return {
+        "enabled": True,
+        "max_spacing": max(float(max_spacing or 0.0), 0.1),
+        "tangent_delta_threshold_deg": max(float(tangent_delta_threshold_deg or 0.0), 0.01),
+        "chord_deviation_threshold": max(float(chord_deviation_threshold or 0.0), 0.001),
+        "source_station_count": len(source_sections),
+        "supplemental_frame_count": len(supplemental_sections),
+        "total_frame_count": len(sampled_sections),
+        "source_mode_counts": source_mode_counts,
+        "fallback_count": fallback_count,
+        "max_tangent_delta_deg": max_tangent_delta,
+        "max_chord_deviation": max_chord_deviation,
+        "density_limited": any(
+            len(
+                _supplemental_sample_ratios(
+                    first,
+                    second,
+                    max_spacing=max_spacing,
+                    tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+                    chord_deviation_threshold=chord_deviation_threshold,
+                    frame_resolver=frame_resolver,
+                )
+            )
+            >= SUPPLEMENTAL_FRAME_MAX_SAMPLES_PER_SPAN
+            for first, second in zip(source_sections, source_sections[1:])
+        ),
+    }
+
+
+def _supplemental_sample_ratios(
+    first,
+    second,
+    *,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> list[float]:
+    spacing = max(float(max_spacing or 0.0), 0.1)
+    ratios: set[float] = set()
+    if _span_exceeds_supplemental_curve_threshold(
+        first,
+        second,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+        frame_resolver=frame_resolver,
+    ):
+        span_length = abs(_section_station_delta(first, second))
+        if span_length > spacing + 1.0e-6:
+            sample_count = min(
+                max(0, int(math.ceil(span_length / spacing)) - 1),
+                SUPPLEMENTAL_FRAME_MAX_SAMPLES_PER_SPAN,
+            )
+            for index in range(1, sample_count + 1):
+                ratios.add(round(float(index) / float(sample_count + 1), 12))
+    stack: list[tuple[float, float]] = [(0.0, 1.0)]
+    guard = 0
+    while stack and guard < SUPPLEMENTAL_FRAME_MAX_SAMPLES_PER_SPAN:
+        guard += 1
+        start_ratio, end_ratio = stack.pop()
+        if not _span_interval_needs_supplemental_sampling(
+            first,
+            second,
+            start_ratio,
+            end_ratio,
+            max_spacing=spacing,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+            frame_resolver=frame_resolver,
+        ):
+            continue
+        mid_ratio = (float(start_ratio) + float(end_ratio)) * 0.5
+        if mid_ratio <= 1.0e-9 or mid_ratio >= 1.0 - 1.0e-9:
+            continue
+        key = round(mid_ratio, 12)
+        if key in ratios:
+            continue
+        ratios.add(key)
+        if len(ratios) >= SUPPLEMENTAL_FRAME_MAX_SAMPLES_PER_SPAN:
+            break
+        stack.append((mid_ratio, float(end_ratio)))
+        stack.append((float(start_ratio), mid_ratio))
+    return sorted(ratios)
+
+
+def _span_exceeds_supplemental_curve_threshold(
+    first,
+    second,
+    *,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> bool:
+    first_frame = _supplemental_frame_at_ratio(first, second, 0.0, frame_resolver=frame_resolver)
+    second_frame = _supplemental_frame_at_ratio(first, second, 1.0, frame_resolver=frame_resolver)
+    if first_frame is None or second_frame is None:
+        return False
+    tangent_delta = abs(
+        _angle_delta_degrees(
+            float(getattr(first_frame, "tangent_direction_deg", 0.0) or 0.0),
+            float(getattr(second_frame, "tangent_direction_deg", 0.0) or 0.0),
+        )
+    )
+    chord_deviation = _source_frame_interval_chord_deviation(
+        first,
+        second,
+        0.0,
+        1.0,
+        start_frame=first_frame,
+        end_frame=second_frame,
+        frame_resolver=frame_resolver,
+    )
+    return _supplemental_interval_exceeds_curve_threshold(
+        tangent_delta,
+        chord_deviation,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+    )
+
+
+def _span_interval_needs_supplemental_sampling(
+    first,
+    second,
+    start_ratio: float,
+    end_ratio: float,
+    *,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> bool:
+    start_ratio = min(max(float(start_ratio), 0.0), 1.0)
+    end_ratio = min(max(float(end_ratio), 0.0), 1.0)
+    if end_ratio - start_ratio <= 1.0e-9:
+        return False
+    first_station = _section_station(first)
+    second_station = _section_station(second)
+    start_station = _lerp(first_station, second_station, start_ratio)
+    end_station = _lerp(first_station, second_station, end_ratio)
+    start_frame = _supplemental_frame_at_ratio(first, second, start_ratio, frame_resolver=frame_resolver)
+    end_frame = _supplemental_frame_at_ratio(first, second, end_ratio, frame_resolver=frame_resolver)
+    if start_frame is None or end_frame is None:
+        return False
+    tangent_delta = abs(
+        _angle_delta_degrees(
+            float(getattr(start_frame, "tangent_direction_deg", 0.0) or 0.0),
+            float(getattr(end_frame, "tangent_direction_deg", 0.0) or 0.0),
+        )
+    )
+    chord_deviation = _source_frame_interval_chord_deviation(
+        first,
+        second,
+        start_ratio,
+        end_ratio,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        frame_resolver=frame_resolver,
+    )
+    if (
+        abs(end_station - start_station) > float(max_spacing) + 1.0e-6
+        and _supplemental_interval_exceeds_curve_threshold(
+            tangent_delta,
+            chord_deviation,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+        )
+    ):
         return True
-    if max(
-        abs(float(getattr(second, "daylight_left_width", 0.0) or 0.0) - float(getattr(first, "daylight_left_width", 0.0) or 0.0)),
-        abs(float(getattr(second, "daylight_right_width", 0.0) or 0.0) - float(getattr(first, "daylight_right_width", 0.0) or 0.0)),
-    ) > SUPPLEMENTAL_DAYLIGHT_WIDTH_DELTA_THRESHOLD:
+    if tangent_delta > max(float(tangent_delta_threshold_deg or 0.0), 0.01):
         return True
-    if max(
-        abs(float(getattr(second, "daylight_left_slope", 0.0) or 0.0) - float(getattr(first, "daylight_left_slope", 0.0) or 0.0)),
-        abs(float(getattr(second, "daylight_right_slope", 0.0) or 0.0) - float(getattr(first, "daylight_right_slope", 0.0) or 0.0)),
-    ) > SUPPLEMENTAL_SLOPE_DELTA_THRESHOLD:
-        return True
-    first_frame = getattr(first, "frame", None)
-    second_frame = getattr(second, "frame", None)
-    if abs(float(getattr(second_frame, "z", 0.0) or 0.0) - float(getattr(first_frame, "z", 0.0) or 0.0)) > SUPPLEMENTAL_FRAME_Z_DELTA_THRESHOLD:
+    if chord_deviation > max(float(chord_deviation_threshold or 0.0), 0.001):
         return True
     return False
+
+
+def _span_needs_supplemental_sampling(
+    first,
+    second,
+    *,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> bool:
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    tangent_delta = abs(
+        _angle_delta_degrees(
+            float(getattr(first_frame, "tangent_direction_deg", 0.0) or 0.0),
+            float(getattr(second_frame, "tangent_direction_deg", 0.0) or 0.0),
+        )
+    )
+    chord_deviation = _source_frame_chord_deviation(first, second, frame_resolver=frame_resolver)
+    if (
+        _section_station_delta(first, second) > float(max_spacing) + 1.0e-6
+        and _supplemental_interval_exceeds_curve_threshold(
+            tangent_delta,
+            chord_deviation,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+        )
+    ):
+        return True
+    if tangent_delta > max(float(tangent_delta_threshold_deg or 0.0), 0.01):
+        return True
+    if chord_deviation > max(float(chord_deviation_threshold or 0.0), 0.001):
+        return True
+    return False
+
+
+def _supplemental_interval_exceeds_curve_threshold(
+    tangent_delta: float,
+    chord_deviation: float,
+    *,
+    tangent_delta_threshold_deg: float = SUPPLEMENTAL_FRAME_TANGENT_DELTA_THRESHOLD_DEG,
+    chord_deviation_threshold: float = SUPPLEMENTAL_FRAME_CHORD_DEVIATION_THRESHOLD,
+) -> bool:
+    return (
+        abs(float(tangent_delta or 0.0)) > max(float(tangent_delta_threshold_deg or 0.0), 0.01)
+        or abs(float(chord_deviation or 0.0)) > max(float(chord_deviation_threshold or 0.0), 0.001)
+    )
 
 
 def _section_station_delta(first, second) -> float:
@@ -2035,13 +2411,95 @@ def _section_station(section) -> float:
             return 0.0
 
 
-def _interpolate_applied_section(first, second, ratio: float, *, sequence_index: int) -> AppliedSection:
+def _source_frame_chord_deviation(first, second, *, frame_resolver: SupplementalFrameResolver | None = None) -> float:
+    if frame_resolver is None:
+        return 0.0
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    if first_frame is None or second_frame is None:
+        return 0.0
+    station = _lerp(getattr(first_frame, "station", getattr(first, "station", 0.0)), getattr(second_frame, "station", getattr(second, "station", 0.0)), 0.5)
+    source_frame = _resolve_supplemental_frame(frame_resolver, station, first, second, 0.5)
+    if source_frame is None:
+        return 0.0
+    chord_x = _lerp(getattr(first_frame, "x", 0.0), getattr(second_frame, "x", 0.0), 0.5)
+    chord_y = _lerp(getattr(first_frame, "y", 0.0), getattr(second_frame, "y", 0.0), 0.5)
+    chord_z = _lerp(getattr(first_frame, "z", 0.0), getattr(second_frame, "z", 0.0), 0.5)
+    return math.sqrt(
+        (float(getattr(source_frame, "x", 0.0) or 0.0) - chord_x) ** 2
+        + (float(getattr(source_frame, "y", 0.0) or 0.0) - chord_y) ** 2
+        + (float(getattr(source_frame, "z", 0.0) or 0.0) - chord_z) ** 2
+    )
+
+
+def _source_frame_interval_chord_deviation(
+    first,
+    second,
+    start_ratio: float,
+    end_ratio: float,
+    *,
+    start_frame,
+    end_frame,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> float:
+    if frame_resolver is None:
+        return 0.0
+    mid_ratio = (float(start_ratio) + float(end_ratio)) * 0.5
+    mid_frame = _supplemental_frame_at_ratio(first, second, mid_ratio, frame_resolver=frame_resolver)
+    if mid_frame is None:
+        return 0.0
+    chord_x = _lerp(getattr(start_frame, "x", 0.0), getattr(end_frame, "x", 0.0), 0.5)
+    chord_y = _lerp(getattr(start_frame, "y", 0.0), getattr(end_frame, "y", 0.0), 0.5)
+    chord_z = _lerp(getattr(start_frame, "z", 0.0), getattr(end_frame, "z", 0.0), 0.5)
+    return math.sqrt(
+        (float(getattr(mid_frame, "x", 0.0) or 0.0) - chord_x) ** 2
+        + (float(getattr(mid_frame, "y", 0.0) or 0.0) - chord_y) ** 2
+        + (float(getattr(mid_frame, "z", 0.0) or 0.0) - chord_z) ** 2
+    )
+
+
+def _supplemental_frame_at_ratio(
+    first,
+    second,
+    ratio: float,
+    *,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> AppliedSectionFrame | None:
     t = min(max(float(ratio), 0.0), 1.0)
     first_frame = getattr(first, "frame", None)
     second_frame = getattr(second, "frame", None)
-    frame = _interpolate_applied_section_frame(first_frame, second_frame, t)
+    if first_frame is None or second_frame is None:
+        return None
+    station = _lerp(getattr(first_frame, "station", getattr(first, "station", 0.0)), getattr(second_frame, "station", getattr(second, "station", 0.0)), t)
+    resolved = _resolve_supplemental_frame(frame_resolver, station, first, second, t)
+    if resolved is not None:
+        return resolved
+    return _interpolate_applied_section_frame(first_frame, second_frame, t)
+
+
+def _interpolate_applied_section(
+    first,
+    second,
+    ratio: float,
+    *,
+    sequence_index: int,
+    frame_resolver: SupplementalFrameResolver | None = None,
+) -> AppliedSection:
+    t = min(max(float(ratio), 0.0), 1.0)
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    station = _lerp(getattr(first_frame, "station", getattr(first, "station", 0.0)), getattr(second_frame, "station", getattr(second, "station", 0.0)), t)
+    frame = _resolve_supplemental_frame(frame_resolver, station, first, second, t)
+    if frame is None:
+        frame = _interpolate_applied_section_frame(first_frame, second_frame, t)
     first_id = str(getattr(first, "applied_section_id", "") or "section")
     second_id = str(getattr(second, "applied_section_id", "") or "section")
+    subassembly_point_rows, subassembly_link_rows, subassembly_shape_rows = _interpolate_subassembly_result_rows(
+        first,
+        second,
+        t,
+        frame=frame,
+    )
     return AppliedSection(
         schema_version=int(getattr(first, "schema_version", getattr(second, "schema_version", 1)) or 1),
         project_id=str(getattr(first, "project_id", getattr(second, "project_id", "")) or ""),
@@ -2061,14 +2519,200 @@ def _interpolate_applied_section(first, second, ratio: float, *, sequence_index:
         daylight_right_width=_lerp(getattr(first, "daylight_right_width", 0.0), getattr(second, "daylight_right_width", 0.0), t),
         daylight_left_slope=_lerp(getattr(first, "daylight_left_slope", 0.0), getattr(second, "daylight_left_slope", 0.0), t),
         daylight_right_slope=_lerp(getattr(first, "daylight_right_slope", 0.0), getattr(second, "daylight_right_slope", 0.0), t),
-        point_rows=_interpolate_applied_section_points(first, second, t),
+        point_rows=_interpolate_applied_section_points(first, second, t, frame=frame),
         subassembly_rows=list(getattr(first, "subassembly_rows", []) or []),
+        subassembly_point_rows=subassembly_point_rows,
+        subassembly_link_rows=subassembly_link_rows,
+        subassembly_shape_rows=subassembly_shape_rows,
         quantity_rows=[],
         active_structure_ids=list(getattr(first, "active_structure_ids", []) or []),
         active_structure_rule_ids=list(getattr(first, "active_structure_rule_ids", []) or []),
         active_structure_influence_zone_ids=list(getattr(first, "active_structure_influence_zone_ids", []) or []),
         structure_diagnostic_rows=list(getattr(first, "structure_diagnostic_rows", []) or []),
     )
+
+
+def _interpolate_subassembly_result_rows(first, second, ratio: float, *, frame=None):
+    point_rows, point_ref_map = _interpolate_subassembly_point_rows(first, second, ratio, frame=frame)
+    if not point_rows:
+        return [], [], []
+    link_rows = _interpolate_subassembly_link_rows(first, second, ratio, point_ref_map=point_ref_map)
+    shape_rows = _interpolate_subassembly_shape_rows(first, second, ratio, point_ref_map=point_ref_map)
+    return point_rows, link_rows, shape_rows
+
+
+def _interpolate_subassembly_point_rows(first, second, ratio: float, *, frame=None) -> tuple[list[AppliedSectionSubassemblyPoint], dict[str, str]]:
+    first_points = sorted(
+        list(getattr(first, "subassembly_point_rows", []) or []),
+        key=_subassembly_point_interpolation_key,
+    )
+    second_points = sorted(
+        list(getattr(second, "subassembly_point_rows", []) or []),
+        key=_subassembly_point_interpolation_key,
+    )
+    if not first_points or len(first_points) != len(second_points):
+        return [], {}
+    t = min(max(float(ratio), 0.0), 1.0)
+    output: list[AppliedSectionSubassemblyPoint] = []
+    point_ref_map: dict[str, str] = {}
+    for index, first_point in enumerate(first_points):
+        second_point = second_points[index]
+        if _subassembly_point_interpolation_key(first_point)[:3] != _subassembly_point_interpolation_key(second_point)[:3]:
+            return [], {}
+        offset = _lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t)
+        z = _interpolated_point_z_from_frame(first, second, first_point, second_point, t, frame=frame)
+        x, y, z = _interpolated_point_xyz_from_frame(frame, offset=offset, z=z, first_point=first_point, second_point=second_point, ratio=t)
+        point_id = f"supplemental:subassembly:{index + 1}:{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}"
+        output.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=point_id,
+                subassembly_ref=str(getattr(first_point, "subassembly_ref", "") or getattr(second_point, "subassembly_ref", "") or ""),
+                point_code=str(getattr(first_point, "point_code", "") or getattr(second_point, "point_code", "") or ""),
+                x=x,
+                y=y,
+                z=z,
+                lateral_offset=offset,
+                side=_interpolated_point_context(first_point, second_point, "side"),
+                target_ref=_interpolated_point_context(first_point, second_point, "target_ref"),
+                diagnostics=list(getattr(first_point, "diagnostics", []) or []) + list(getattr(second_point, "diagnostics", []) or []),
+            )
+        )
+        for source_id in (
+            str(getattr(first_point, "point_id", "") or "").strip(),
+            str(getattr(second_point, "point_id", "") or "").strip(),
+        ):
+            if source_id:
+                point_ref_map[source_id] = point_id
+    return output, point_ref_map
+
+
+def _subassembly_point_interpolation_key(point) -> tuple[str, str, str, float, str]:
+    return (
+        str(getattr(point, "subassembly_ref", "") or "").strip(),
+        str(getattr(point, "point_code", "") or "").strip(),
+        str(getattr(point, "side", "") or "").strip(),
+        round(float(getattr(point, "lateral_offset", 0.0) or 0.0), 6),
+        str(getattr(point, "point_id", "") or "").strip(),
+    )
+
+
+def _interpolate_subassembly_link_rows(first, second, ratio: float, *, point_ref_map: dict[str, str]) -> list[AppliedSectionSubassemblyLink]:
+    first_links = sorted(list(getattr(first, "subassembly_link_rows", []) or []), key=_subassembly_link_interpolation_key)
+    second_links = sorted(list(getattr(second, "subassembly_link_rows", []) or []), key=_subassembly_link_interpolation_key)
+    if not first_links or len(first_links) != len(second_links):
+        return []
+    t = min(max(float(ratio), 0.0), 1.0)
+    output: list[AppliedSectionSubassemblyLink] = []
+    for index, first_link in enumerate(first_links):
+        second_link = second_links[index]
+        if _subassembly_link_interpolation_key(first_link)[:3] != _subassembly_link_interpolation_key(second_link)[:3]:
+            return []
+        start_ref = point_ref_map.get(str(getattr(first_link, "start_point_ref", "") or "").strip()) or point_ref_map.get(str(getattr(second_link, "start_point_ref", "") or "").strip())
+        end_ref = point_ref_map.get(str(getattr(first_link, "end_point_ref", "") or "").strip()) or point_ref_map.get(str(getattr(second_link, "end_point_ref", "") or "").strip())
+        if not start_ref or not end_ref:
+            continue
+        output.append(
+            AppliedSectionSubassemblyLink(
+                link_id=f"supplemental:subassembly-link:{index + 1}:{getattr(first_link, 'link_id', '')}->{getattr(second_link, 'link_id', '')}@{t:.6g}",
+                subassembly_ref=str(getattr(first_link, "subassembly_ref", "") or getattr(second_link, "subassembly_ref", "") or ""),
+                start_point_ref=start_ref,
+                end_point_ref=end_ref,
+                link_code=str(getattr(first_link, "link_code", "") or getattr(second_link, "link_code", "") or ""),
+                surface_role=str(getattr(first_link, "surface_role", "") or getattr(second_link, "surface_role", "") or ""),
+                material=str(getattr(first_link, "material", "") or getattr(second_link, "material", "") or ""),
+                diagnostics=list(getattr(first_link, "diagnostics", []) or []) + list(getattr(second_link, "diagnostics", []) or []),
+            )
+        )
+    return output
+
+
+def _subassembly_link_interpolation_key(link) -> tuple[str, str, str, str]:
+    return (
+        str(getattr(link, "subassembly_ref", "") or "").strip(),
+        str(getattr(link, "link_code", "") or "").strip(),
+        str(getattr(link, "surface_role", "") or "").strip(),
+        str(getattr(link, "link_id", "") or "").strip(),
+    )
+
+
+def _interpolate_subassembly_shape_rows(first, second, ratio: float, *, point_ref_map: dict[str, str]) -> list[AppliedSectionSubassemblyShape]:
+    first_shapes = sorted(list(getattr(first, "subassembly_shape_rows", []) or []), key=_subassembly_shape_interpolation_key)
+    second_shapes = sorted(list(getattr(second, "subassembly_shape_rows", []) or []), key=_subassembly_shape_interpolation_key)
+    if not first_shapes or len(first_shapes) != len(second_shapes):
+        return []
+    t = min(max(float(ratio), 0.0), 1.0)
+    output: list[AppliedSectionSubassemblyShape] = []
+    for index, first_shape in enumerate(first_shapes):
+        second_shape = second_shapes[index]
+        if _subassembly_shape_interpolation_key(first_shape)[:3] != _subassembly_shape_interpolation_key(second_shape)[:3]:
+            return []
+        point_refs: list[str] = []
+        for first_ref, second_ref in zip(list(getattr(first_shape, "point_refs", []) or []), list(getattr(second_shape, "point_refs", []) or [])):
+            mapped = point_ref_map.get(str(first_ref or "").strip()) or point_ref_map.get(str(second_ref or "").strip())
+            if mapped:
+                point_refs.append(mapped)
+        if not point_refs:
+            continue
+        output.append(
+            AppliedSectionSubassemblyShape(
+                shape_id=f"supplemental:subassembly-shape:{index + 1}:{getattr(first_shape, 'shape_id', '')}->{getattr(second_shape, 'shape_id', '')}@{t:.6g}",
+                subassembly_ref=str(getattr(first_shape, "subassembly_ref", "") or getattr(second_shape, "subassembly_ref", "") or ""),
+                point_refs=point_refs,
+                shape_code=str(getattr(first_shape, "shape_code", "") or getattr(second_shape, "shape_code", "") or ""),
+                material=str(getattr(first_shape, "material", "") or getattr(second_shape, "material", "") or ""),
+                thickness=_lerp(getattr(first_shape, "thickness", 0.0), getattr(second_shape, "thickness", 0.0), t),
+                solid_family=str(getattr(first_shape, "solid_family", "") or getattr(second_shape, "solid_family", "") or ""),
+                diagnostics=list(getattr(first_shape, "diagnostics", []) or []) + list(getattr(second_shape, "diagnostics", []) or []),
+            )
+        )
+    return output
+
+
+def _subassembly_shape_interpolation_key(shape) -> tuple[str, str, str, str]:
+    return (
+        str(getattr(shape, "subassembly_ref", "") or "").strip(),
+        str(getattr(shape, "shape_code", "") or "").strip(),
+        str(getattr(shape, "solid_family", "") or "").strip(),
+        str(getattr(shape, "shape_id", "") or "").strip(),
+    )
+
+
+def _resolve_supplemental_frame(
+    frame_resolver: SupplementalFrameResolver | None,
+    station: float,
+    first,
+    second,
+    ratio: float,
+) -> AppliedSectionFrame | None:
+    if frame_resolver is None:
+        return None
+    try:
+        frame = frame_resolver(float(station), first, second, float(ratio))
+    except Exception:
+        return None
+    if frame is None:
+        return None
+    notes = str(getattr(frame, "notes", "") or "").strip()
+    if "supplemental_sampling" not in notes:
+        notes = f"{notes};supplemental_sampling_source_resolved" if notes else "supplemental_sampling_source_resolved"
+    try:
+        return replace(frame, station=float(station), notes=notes)
+    except Exception:
+        return AppliedSectionFrame(
+            station=float(station),
+            x=float(getattr(frame, "x", 0.0) or 0.0),
+            y=float(getattr(frame, "y", 0.0) or 0.0),
+            z=float(getattr(frame, "z", 0.0) or 0.0),
+            tangent_direction_deg=float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0),
+            profile_grade=float(getattr(frame, "profile_grade", 0.0) or 0.0),
+            alignment_status=str(getattr(frame, "alignment_status", "") or ""),
+            profile_status=str(getattr(frame, "profile_status", "") or ""),
+            active_alignment_element_id=str(getattr(frame, "active_alignment_element_id", "") or ""),
+            active_profile_segment_start_id=str(getattr(frame, "active_profile_segment_start_id", "") or ""),
+            active_profile_segment_end_id=str(getattr(frame, "active_profile_segment_end_id", "") or ""),
+            active_vertical_curve_id=str(getattr(frame, "active_vertical_curve_id", "") or ""),
+            notes=notes,
+        )
 
 
 def _interpolate_applied_section_frame(first, second, ratio: float) -> AppliedSectionFrame:
@@ -2094,27 +2738,30 @@ def _interpolate_applied_section_frame(first, second, ratio: float) -> AppliedSe
     )
 
 
-def _interpolate_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+def _interpolate_applied_section_points(first, second, ratio: float, *, frame=None) -> list[AppliedSectionPoint]:
     first_points = list(getattr(first, "point_rows", []) or [])
     second_points = list(getattr(second, "point_rows", []) or [])
     t = min(max(float(ratio), 0.0), 1.0)
     if len(first_points) != len(second_points):
-        return _interpolate_stable_applied_section_points(first, second, t)
+        return _interpolate_stable_applied_section_points(first, second, t, frame=frame)
     output: list[AppliedSectionPoint] = []
     for index, first_point in enumerate(first_points):
         second_point = second_points[index]
         first_role = str(getattr(first_point, "point_role", "") or "")
         second_role = str(getattr(second_point, "point_role", "") or "")
         if first_role != second_role:
-            return _interpolate_stable_applied_section_points(first, second, t)
+            return _interpolate_stable_applied_section_points(first, second, t, frame=frame)
+        offset = _lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t)
+        z = _interpolated_point_z_from_frame(first, second, first_point, second_point, t, frame=frame)
+        x, y, z = _interpolated_point_xyz_from_frame(frame, offset=offset, z=z, first_point=first_point, second_point=second_point, ratio=t)
         output.append(
             AppliedSectionPoint(
                 point_id=f"{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}",
-                x=_lerp(getattr(first_point, "x", 0.0), getattr(second_point, "x", 0.0), t),
-                y=_lerp(getattr(first_point, "y", 0.0), getattr(second_point, "y", 0.0), t),
-                z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
+                x=x,
+                y=y,
+                z=z,
                 point_role=first_role,
-                lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+                lateral_offset=offset,
                 subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
@@ -2123,16 +2770,16 @@ def _interpolate_applied_section_points(first, second, ratio: float) -> list[App
     return output
 
 
-def _interpolate_stable_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+def _interpolate_stable_applied_section_points(first, second, ratio: float, *, frame=None) -> list[AppliedSectionPoint]:
     output: list[AppliedSectionPoint] = []
     t = min(max(float(ratio), 0.0), 1.0)
     for role in ("fg_surface", "subgrade_surface", "ditch_surface"):
-        output.extend(_interpolate_matching_role_points(first, second, role=role, ratio=t))
-    output.extend(_interpolate_side_slope_applied_section_points(first, second, t))
+        output.extend(_interpolate_matching_role_points(first, second, role=role, ratio=t, frame=frame))
+    output.extend(_interpolate_side_slope_applied_section_points(first, second, t, frame=frame))
     return output
 
 
-def _interpolate_matching_role_points(first, second, *, role: str, ratio: float) -> list[AppliedSectionPoint]:
+def _interpolate_matching_role_points(first, second, *, role: str, ratio: float, frame=None) -> list[AppliedSectionPoint]:
     first_rows = _role_points_for_interpolation(first, role=role)
     second_rows = _role_points_for_interpolation(second, role=role)
     if not first_rows or not second_rows or len(first_rows) != len(second_rows):
@@ -2141,14 +2788,17 @@ def _interpolate_matching_role_points(first, second, *, role: str, ratio: float)
     output: list[AppliedSectionPoint] = []
     for index, first_point in enumerate(first_rows):
         second_point = second_rows[index]
+        offset = _lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t)
+        z = _interpolated_point_z_from_frame(first, second, first_point, second_point, t, frame=frame)
+        x, y, z = _interpolated_point_xyz_from_frame(frame, offset=offset, z=z, first_point=first_point, second_point=second_point, ratio=t)
         output.append(
             AppliedSectionPoint(
                 point_id=f"supplemental:{role}:{index}:{getattr(first_point, 'point_id', '')}->{getattr(second_point, 'point_id', '')}@{t:.6g}",
-                x=_lerp(getattr(first_point, "x", 0.0), getattr(second_point, "x", 0.0), t),
-                y=_lerp(getattr(first_point, "y", 0.0), getattr(second_point, "y", 0.0), t),
-                z=_lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), t),
+                x=x,
+                y=y,
+                z=z,
                 point_role=role,
-                lateral_offset=_lerp(getattr(first_point, "lateral_offset", 0.0), getattr(second_point, "lateral_offset", 0.0), t),
+                lateral_offset=offset,
                 subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 side=_interpolated_point_context(first_point, second_point, "side"),
                 drainage_ref=_interpolated_point_context(first_point, second_point, "drainage_ref"),
@@ -2179,7 +2829,7 @@ def _role_points_for_interpolation(section, *, role: str) -> list[object]:
     return rows
 
 
-def _interpolate_side_slope_applied_section_points(first, second, ratio: float) -> list[AppliedSectionPoint]:
+def _interpolate_side_slope_applied_section_points(first, second, ratio: float, *, frame=None) -> list[AppliedSectionPoint]:
     output: list[AppliedSectionPoint] = []
     t = min(max(float(ratio), 0.0), 1.0)
     for side_label in ("left", "right"):
@@ -2196,14 +2846,17 @@ def _interpolate_side_slope_applied_section_points(first, second, ratio: float) 
             first_point = harmonized_first[index]
             second_point = harmonized_second[index]
             role = _interpolated_applied_side_slope_role(first_point, second_point)
+            offset = _lerp(first_point.lateral_offset, second_point.lateral_offset, t)
+            z = _interpolated_point_z_from_frame(first, second, first_point, second_point, t, frame=frame)
+            x, y, z = _interpolated_point_xyz_from_frame(frame, offset=offset, z=z, first_point=first_point, second_point=second_point, ratio=t)
             output.append(
                 AppliedSectionPoint(
                     point_id=f"supplemental:{side_label}:{index}:{first_point.point_id}->{second_point.point_id}@{t:.6g}",
-                    x=_lerp(first_point.x, second_point.x, t),
-                    y=_lerp(first_point.y, second_point.y, t),
-                    z=_lerp(first_point.z, second_point.z, t),
+                    x=x,
+                    y=y,
+                    z=z,
                     point_role=role,
-                    lateral_offset=_lerp(first_point.lateral_offset, second_point.lateral_offset, t),
+                    lateral_offset=offset,
                     subassembly_ref=_interpolated_subassembly_ref(first_point, second_point),
                 )
             )
@@ -2242,6 +2895,26 @@ def _side_slope_source_row_for_interpolation(section, *, side_label: str) -> lis
     return _unique_side_slope_points(rows)
 
 
+def _interpolated_point_z_from_frame(first, second, first_point, second_point, ratio: float, *, frame=None) -> float:
+    first_frame = getattr(first, "frame", None)
+    second_frame = getattr(second, "frame", None)
+    if frame is None or first_frame is None or second_frame is None:
+        return _lerp(getattr(first_point, "z", 0.0), getattr(second_point, "z", 0.0), ratio)
+    first_dz = float(getattr(first_point, "z", 0.0) or 0.0) - float(getattr(first_frame, "z", 0.0) or 0.0)
+    second_dz = float(getattr(second_point, "z", 0.0) or 0.0) - float(getattr(second_frame, "z", 0.0) or 0.0)
+    return float(getattr(frame, "z", 0.0) or 0.0) + _lerp(first_dz, second_dz, ratio)
+
+
+def _interpolated_point_xyz_from_frame(frame, *, offset: float, z: float, first_point, second_point, ratio: float) -> tuple[float, float, float]:
+    if frame is None:
+        return (
+            _lerp(getattr(first_point, "x", 0.0), getattr(second_point, "x", 0.0), ratio),
+            _lerp(getattr(first_point, "y", 0.0), getattr(second_point, "y", 0.0), ratio),
+            float(z),
+        )
+    return _xy_at_offset(frame, offset, z)
+
+
 def _interpolated_applied_side_slope_role(first: _SectionPointLite, second: _SectionPointLite) -> str:
     first_role = str(getattr(first, "point_role", "") or "")
     second_role = str(getattr(second, "point_role", "") or "")
@@ -2261,6 +2934,10 @@ def _lerp(first, second, ratio: float) -> float:
 def _interpolate_angle_degrees(first: float, second: float, ratio: float) -> float:
     delta = (float(second) - float(first) + 180.0) % 360.0 - 180.0
     return float(first) + delta * float(ratio)
+
+
+def _angle_delta_degrees(first: float, second: float) -> float:
+    return (float(second) - float(first) + 180.0) % 360.0 - 180.0
 
 
 def _section_rows(applied_section_set: AppliedSectionSet) -> list[object]:
@@ -2446,11 +3123,6 @@ def _section_points_for_surface_role(section, *, point_role: str) -> list[object
     surface_role = _surface_role_for_point_role(role)
     if surface_role:
         linked_subassembly_rows = _subassembly_points_for_surface_role(section, surface_role=surface_role)
-        linked_subassembly_rows = [
-            point
-            for point in linked_subassembly_rows
-            if str(getattr(point, "point_role", "") or "") == role
-        ]
         if len(linked_subassembly_rows) >= 2:
             return linked_subassembly_rows
     legacy_rows = [
@@ -2474,11 +3146,6 @@ def _section_points_for_surface_role(section, *, point_role: str) -> list[object
 def _section_points_for_slope_face_role(section) -> list[object]:
     roles = {"side_slope_surface", "bench_surface", "daylight_marker"}
     linked_subassembly_rows = _subassembly_points_for_surface_role(section, surface_role="slope_face_surface")
-    linked_subassembly_rows = [
-        point
-        for point in linked_subassembly_rows
-        if str(getattr(point, "point_role", "") or "") in roles
-    ]
     if linked_subassembly_rows:
         return linked_subassembly_rows
     legacy_rows = [
@@ -2516,13 +3183,26 @@ def _subassembly_points_for_surface_role(section, *, surface_role: str) -> list[
                 y=float(getattr(point, "y", 0.0) or 0.0),
                 z=float(getattr(point, "z", 0.0) or 0.0),
                 lateral_offset=float(getattr(point, "lateral_offset", 0.0) or 0.0),
-                point_role=str(getattr(point, "point_code", "") or ""),
+                point_role=_subassembly_surface_point_role(point, surface_role=role),
                 compatibility_ref="",
                 subassembly_ref=_point_subassembly_ref(point),
             )
         )
     rows.sort(key=lambda point: float(getattr(point, "lateral_offset", 0.0) or 0.0))
     return rows
+
+
+def _subassembly_surface_point_role(point, *, surface_role: str) -> str:
+    point_code = str(getattr(point, "point_code", "") or "").strip()
+    role = str(surface_role or "").strip()
+    if role != "slope_face_surface":
+        return point_code
+    code_text = point_code.lower()
+    if "bench" in code_text:
+        return "bench_surface"
+    if "daylight" in code_text:
+        return "daylight_marker"
+    return "side_slope_surface"
 
 
 def _subassembly_link_point_ids_for_surface_role(section, *, surface_role: str) -> set[str]:

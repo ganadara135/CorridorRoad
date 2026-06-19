@@ -38,6 +38,7 @@ def corridorroad_workflow_command_groups():
             "CorridorRoad_V1EditSuperelevation",
         ],
         "assembly_region": [
+            "CorridorRoad_V1SubAssemblyDesigner",
             "CorridorRoad_V1EditAssemblySubassembly",
             "CorridorRoad_V1EditRegions",
             "CorridorRoad_V1EditIntersections",
@@ -102,6 +103,7 @@ class CorridorRoadWorkbench(_WORKBENCH_BASE):
         import freecad.Corridor_Road.v1.commands.cmd_alignment_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_profile_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_generate_stations  # noqa: F401
+        import freecad.Corridor_Road.v1.commands.cmd_subassembly_designer  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_subassembly_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_structure_editor  # noqa: F401
         import freecad.Corridor_Road.v1.commands.cmd_intersection_editor  # noqa: F401

@@ -11,7 +11,7 @@ except Exception:  # pragma: no cover - FreeCAD is not available in test env.
     App = None
     Gui = None
 
-from freecad.Corridor_Road.qt_compat import QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from ...misc.resources import icon_path
 from ...objects.obj_project import (
@@ -31,7 +31,10 @@ from ..objects.obj_alignment import (
     ViewProviderV1Alignment,
     ensure_v1_alignment_properties,
     find_v1_alignment,
+    to_alignment_model,
 )
+from ..models.source.alignment_model import AlignmentElement, AlignmentModel
+from ..services.evaluation import AlignmentCurvePreviewRequest, AlignmentCurvePreviewService
 from .selection_context import selected_alignment_profile_target
 
 
@@ -201,6 +204,38 @@ def apply_alignment_element_rows(alignment, rows: list[dict[str, object]]) -> li
     except Exception:
         pass
     return normalized
+
+
+def alignment_model_from_editor_rows(
+    rows: list[dict[str, object]],
+    *,
+    alignment_id: str = "alignment:curve-preview",
+    label: str = "Alignment Curve Preview",
+) -> AlignmentModel:
+    """Build a transient AlignmentModel from compiled editor geometry rows."""
+
+    return AlignmentModel(
+        schema_version=1,
+        project_id="corridorroad-v1",
+        alignment_id=str(alignment_id or "alignment:curve-preview"),
+        label=str(label or "Alignment Curve Preview"),
+        alignment_kind="road_centerline",
+        source_refs=["alignment-editor-current-table"],
+        geometry_sequence=[
+            AlignmentElement(
+                element_id=str(row.get("element_id", "") or f"{alignment_id}:element:{index + 1}"),
+                kind=str(row.get("kind", "") or "tangent"),
+                station_start=float(row.get("station_start", 0.0) or 0.0),
+                station_end=float(row.get("station_end", 0.0) or 0.0),
+                length=float(row.get("length", 0.0) or 0.0),
+                geometry_payload={
+                    "x_values": _csv_float_row(row.get("x_values", "")),
+                    "y_values": _csv_float_row(row.get("y_values", "")),
+                },
+            )
+            for index, row in enumerate(list(rows or []))
+        ],
+    )
 
 
 def alignment_ip_rows(alignment) -> list[dict[str, float]]:
@@ -417,6 +452,206 @@ def create_blank_v1_alignment(*, document=None, project=None, label: str = "Main
     return obj
 
 
+class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
+    """Small read-only canvas for Alignment curve preview rows."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._result = None
+        self._zoom_factor = 1.0
+        self._zoom_changed_callback = None
+        self.setMinimumHeight(220)
+        self.setStyleSheet("background: #101826; border: 1px solid #40516a;")
+
+    def set_result(self, result) -> None:
+        self._result = result
+        self.update()
+
+    def zoom_in(self) -> None:
+        self._set_zoom(self._zoom_factor * 1.25)
+
+    def zoom_out(self) -> None:
+        self._set_zoom(self._zoom_factor / 1.25)
+
+    def reset_zoom(self) -> None:
+        self._set_zoom(1.0)
+
+    def zoom_percent(self) -> int:
+        return int(round(float(self._zoom_factor) * 100.0))
+
+    def set_zoom_changed_callback(self, callback) -> None:
+        self._zoom_changed_callback = callback
+
+    def _set_zoom(self, value: float) -> None:
+        self._zoom_factor = max(0.25, min(8.0, float(value or 1.0)))
+        self.update()
+        try:
+            if self._zoom_changed_callback is not None:
+                self._zoom_changed_callback()
+        except Exception:
+            pass
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt override
+        try:
+            if not (event.modifiers() & QtCore.Qt.ControlModifier):
+                return super().wheelEvent(event)
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            elif delta < 0:
+                self.zoom_out()
+            event.accept()
+        except Exception:
+            super().wheelEvent(event)
+
+    def paintEvent(self, event):  # noqa: N802 - Qt override
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.fillRect(self.rect(), QtGui.QColor("#101826"))
+            result = self._result
+            rows = list(getattr(result, "point_rows", []) or []) if result is not None else []
+            if not rows:
+                painter.setPen(QtGui.QColor("#9aa8bd"))
+                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No Alignment curve preview yet.")
+                return
+            xs = [float(row.x) for row in rows]
+            ys = [float(row.y) for row in rows]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            min_x, max_x, min_y, max_y = self._zoomed_bounds(min_x, max_x, min_y, max_y)
+            span_x = max(1.0, max_x - min_x)
+            span_y = max(1.0, max_y - min_y)
+            margin = 24.0
+            width = max(1.0, float(self.width()) - 2.0 * margin)
+            height = max(1.0, float(self.height()) - 2.0 * margin)
+            scale = min(width / span_x, height / span_y)
+
+            def to_point(x_value: float, y_value: float):
+                x = margin + (float(x_value) - min_x) * scale + 0.5 * (width - span_x * scale)
+                y = margin + (max_y - float(y_value)) * scale + 0.5 * (height - span_y * scale)
+                return QtCore.QPointF(x, y)
+
+            evaluated = sorted(
+                [row for row in rows if str(row.role) == "evaluated_path"],
+                key=lambda row: (str(row.element_ref), float(row.station)),
+            )
+            by_element: dict[str, list[object]] = {}
+            for row in evaluated:
+                by_element.setdefault(str(row.element_ref), []).append(row)
+            for element_rows in by_element.values():
+                if len(element_rows) < 2:
+                    continue
+                path = QtGui.QPainterPath(to_point(element_rows[0].x, element_rows[0].y))
+                for row in element_rows[1:]:
+                    path.lineTo(to_point(row.x, row.y))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#36d3ff"), 2.0))
+                painter.drawPath(path)
+
+            self._draw_arc_guides(painter, result, to_point)
+
+            painter.setPen(QtGui.QPen(QtGui.QColor("#f7a531"), 1.5))
+            painter.setBrush(QtGui.QColor("#f7a531"))
+            for row in rows:
+                if str(row.role) != "source_points":
+                    continue
+                point = to_point(row.x, row.y)
+                painter.drawEllipse(point, 3.5, 3.5)
+
+            annotations = list(getattr(result, "annotation_rows", []) or [])
+            for annotation in annotations:
+                kind = str(getattr(annotation, "kind", "") or "")
+                if kind not in {"PC", "PI", "PT", "Curve Center", "Radius", "Delta Angle", "Curve Direction"}:
+                    continue
+                point = to_point(float(annotation.x), float(annotation.y))
+                color = QtGui.QColor("#ffd23f") if kind in {"PC", "PI", "PT"} else QtGui.QColor("#f5f7fb")
+                painter.setPen(QtGui.QPen(color, 1.0))
+                painter.setBrush(color)
+                painter.drawEllipse(point, 3.0, 3.0)
+                label = str(getattr(annotation, "label", "") or kind)
+                value = str(getattr(annotation, "value", "") or "")
+                if value:
+                    label = f"{label} {value}"
+                painter.drawText(point + QtCore.QPointF(5.0, -5.0), label)
+
+            painter.setPen(QtGui.QColor("#8ca0bc"))
+            painter.drawText(10, self.height() - 10, "cyan=evaluated path, magenta=arc guide, orange=source points, yellow=PC/PI/PT")
+        finally:
+            painter.end()
+
+    def _zoomed_bounds(self, min_x: float, max_x: float, min_y: float, max_y: float) -> tuple[float, float, float, float]:
+        zoom = max(0.25, min(8.0, float(self._zoom_factor or 1.0)))
+        center_x = 0.5 * (float(min_x) + float(max_x))
+        center_y = 0.5 * (float(min_y) + float(max_y))
+        half_x = max(1.0e-9, 0.5 * (float(max_x) - float(min_x)) / zoom)
+        half_y = max(1.0e-9, 0.5 * (float(max_y) - float(min_y)) / zoom)
+        return center_x - half_x, center_x + half_x, center_y - half_y, center_y + half_y
+
+    def _draw_arc_guides(self, painter, result, to_point) -> None:
+        annotations = list(getattr(result, "annotation_rows", []) or [])
+        by_element: dict[str, dict[str, object]] = {}
+        for row in annotations:
+            element_ref = str(getattr(row, "element_ref", "") or "")
+            kind = str(getattr(row, "kind", "") or "")
+            if not element_ref or kind not in {"PC", "PT", "Curve Center", "Radius", "Curve Direction"}:
+                continue
+            by_element.setdefault(element_ref, {})[kind] = row
+
+        pen = QtGui.QPen(QtGui.QColor("#ff5fd2"))
+        pen.setWidthF(2.4)
+        try:
+            pen.setStyle(QtCore.Qt.DashLine)
+        except Exception:
+            pass
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        for values in by_element.values():
+            pc = values.get("PC")
+            pt = values.get("PT")
+            center = values.get("Curve Center")
+            if pc is None or pt is None or center is None:
+                continue
+            center_x = float(getattr(center, "x", 0.0) or 0.0)
+            center_y = float(getattr(center, "y", 0.0) or 0.0)
+            pc_x = float(getattr(pc, "x", 0.0) or 0.0)
+            pc_y = float(getattr(pc, "y", 0.0) or 0.0)
+            pt_x = float(getattr(pt, "x", 0.0) or 0.0)
+            pt_y = float(getattr(pt, "y", 0.0) or 0.0)
+            radius = _distance(center_x, center_y, pc_x, pc_y)
+            if radius <= 1.0e-9:
+                continue
+            direction_row = values.get("Curve Direction")
+            direction = str(getattr(direction_row, "value", "") or "").lower() if direction_row is not None else ""
+            angles = self._arc_angles(
+                math.atan2(pc_y - center_y, pc_x - center_x),
+                math.atan2(pt_y - center_y, pt_x - center_x),
+                direction,
+            )
+            if len(angles) < 2:
+                continue
+            path = QtGui.QPainterPath()
+            first_angle = angles[0]
+            path.moveTo(to_point(center_x + radius * math.cos(first_angle), center_y + radius * math.sin(first_angle)))
+            for angle in angles[1:]:
+                path.lineTo(to_point(center_x + radius * math.cos(angle), center_y + radius * math.sin(angle)))
+            painter.drawPath(path)
+
+    def _arc_angles(self, start: float, end: float, direction: str) -> list[float]:
+        ccw_delta = (float(end) - float(start)) % (2.0 * math.pi)
+        cw_delta = -((float(start) - float(end)) % (2.0 * math.pi))
+        if str(direction).lower() == "left":
+            delta = ccw_delta
+        elif str(direction).lower() == "right":
+            delta = cw_delta
+        else:
+            delta = ccw_delta if ccw_delta <= math.pi else -(2.0 * math.pi - ccw_delta)
+        if abs(delta) <= 1.0e-12:
+            return []
+        steps = max(8, min(72, int(math.ceil(abs(delta) / (math.pi / 32.0)))))
+        return [float(start) + delta * float(index) / float(steps) for index in range(steps + 1)]
+
+
 class V1AlignmentEditorTaskPanel:
     """v1 alignment editor with the v0 IP-based workflow as the primary UI."""
 
@@ -484,6 +719,7 @@ class V1AlignmentEditorTaskPanel:
         self._load_element_rows()
         self._load_criteria()
         self._refresh_report()
+        self._refresh_curve_preview()
         return widget
 
     def _build_pi_tab(self):
@@ -629,7 +865,68 @@ class V1AlignmentEditorTaskPanel:
         except Exception:
             pass
         layout.addWidget(self._element_table, 1)
+        layout.addWidget(self._build_curve_preview_group())
         return tab
+
+    def _build_curve_preview_group(self):
+        group = QtWidgets.QGroupBox("Curve Preview")
+        layout = QtWidgets.QVBoxLayout(group)
+        top_row = QtWidgets.QHBoxLayout()
+        refresh_button = QtWidgets.QPushButton("Refresh Curve Preview")
+        refresh_button.clicked.connect(self._refresh_curve_preview)
+        top_row.addWidget(refresh_button)
+        zoom_in_button = QtWidgets.QPushButton("Zoom In")
+        zoom_in_button.clicked.connect(self._zoom_curve_preview_in)
+        top_row.addWidget(zoom_in_button)
+        zoom_out_button = QtWidgets.QPushButton("Zoom Out")
+        zoom_out_button.clicked.connect(self._zoom_curve_preview_out)
+        top_row.addWidget(zoom_out_button)
+        zoom_reset_button = QtWidgets.QPushButton("Reset Zoom")
+        zoom_reset_button.clicked.connect(self._reset_curve_preview_zoom)
+        top_row.addWidget(zoom_reset_button)
+        self._curve_preview_zoom_label = QtWidgets.QLabel("100%")
+        self._curve_preview_zoom_label.setMinimumWidth(48)
+        self._curve_preview_zoom_label.setStyleSheet("color: #cbd7ea;")
+        top_row.addWidget(self._curve_preview_zoom_label)
+        legend = QtWidgets.QLabel("cyan=evaluated path, magenta=arc guide, orange=source points, yellow=PC/PI/PT")
+        legend.setStyleSheet("color: #cbd7ea;")
+        top_row.addWidget(legend, 1)
+        layout.addLayout(top_row)
+        self._curve_preview_widget = _AlignmentCurvePreviewWidget()
+        self._curve_preview_widget.set_zoom_changed_callback(self._update_curve_preview_zoom_label)
+        layout.addWidget(self._curve_preview_widget)
+        self._curve_preview_info = QtWidgets.QPlainTextEdit()
+        self._curve_preview_info.setReadOnly(True)
+        self._curve_preview_info.setMaximumHeight(96)
+        self._curve_preview_info.setStyleSheet(
+            "QPlainTextEdit { background: #1b2637; color: #dfe8ff; border: 1px solid #40516a; }"
+        )
+        layout.addWidget(self._curve_preview_info)
+        return group
+
+    def _zoom_curve_preview_in(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.zoom_in()
+        self._update_curve_preview_zoom_label()
+
+    def _zoom_curve_preview_out(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.zoom_out()
+        self._update_curve_preview_zoom_label()
+
+    def _reset_curve_preview_zoom(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.reset_zoom()
+        self._update_curve_preview_zoom_label()
+
+    def _update_curve_preview_zoom_label(self) -> None:
+        label = getattr(self, "_curve_preview_zoom_label", None)
+        widget = getattr(self, "_curve_preview_widget", None)
+        if label is not None and widget is not None:
+            label.setText(f"{widget.zoom_percent()}%")
 
     @staticmethod
     def _double_spin(minimum: float, maximum: float, value: float, decimals: int, suffix: str):
@@ -722,6 +1019,7 @@ class V1AlignmentEditorTaskPanel:
             y = 0.0
         self._append_ip_row({"x": x, "y": y, "radius": 0.0, "transition_length": 0.0})
         self._set_status("Added a new PI row. Apply when ready.", ok=True)
+        self._refresh_curve_preview()
 
     def _remove_ip_row(self) -> None:
         row_index = self._ip_table.currentRow()
@@ -730,6 +1028,7 @@ class V1AlignmentEditorTaskPanel:
         if row_index >= 0:
             self._ip_table.removeRow(row_index)
             self._set_status("Removed selected PI row. Apply when ready.", ok=True)
+            self._refresh_curve_preview()
 
     def _sort_ip_rows(self) -> None:
         try:
@@ -742,6 +1041,7 @@ class V1AlignmentEditorTaskPanel:
         for row in rows:
             self._append_ip_row(row)
         self._set_status("PI rows sorted by X/Y. Apply when ready.", ok=True)
+        self._refresh_curve_preview()
 
     def _load_selected_preset(self) -> None:
         preset = ALIGNMENT_PRESETS.get(str(self._preset_combo.currentText() or ""), {})
@@ -757,6 +1057,7 @@ class V1AlignmentEditorTaskPanel:
             f"Preset loaded ({placed.get('placement')}). {placed.get('note')} Apply to compile v1 alignment geometry.",
             ok=True,
         )
+        self._refresh_curve_preview()
 
     def _refresh_sketches(self) -> None:
         self._sketches = find_sketch_objects(self.document)
@@ -781,6 +1082,7 @@ class V1AlignmentEditorTaskPanel:
             rows = sketch_to_alignment_rows(sketch)
             self._set_ip_rows_data(rows)
             self._set_status(f"Loaded {len(rows)} PI row(s) from sketch. Apply when ready.", ok=True)
+            self._refresh_curve_preview()
         except Exception as exc:
             self._set_status(f"Sketch import failed: {exc}", ok=False)
 
@@ -825,6 +1127,7 @@ class V1AlignmentEditorTaskPanel:
                 f"Loaded {len(rows)} PI row(s) from CSV. {coord_policy.summary()}. Apply when ready.",
                 ok=True,
             )
+            self._refresh_curve_preview()
         except Exception as exc:
             self._set_status(f"CSV import failed: {exc}", ok=False)
 
@@ -997,6 +1300,7 @@ class V1AlignmentEditorTaskPanel:
                     pass
             self._load_element_rows()
             self._refresh_report()
+            self._refresh_curve_preview()
             self._refresh_design_standard_label()
             self._set_status(f"Applied {len(compiled)} compiled v1 geometry row(s).", ok=True)
             self._alignment_label.setText(self._alignment_summary_text())
@@ -1081,6 +1385,113 @@ class V1AlignmentEditorTaskPanel:
             for row in compiled_rows:
                 lines.append(_format_compiled_review_line(row))
         self._report.setPlainText("\n".join(lines))
+
+    def _refresh_curve_preview(self) -> None:
+        if not hasattr(self, "_curve_preview_widget"):
+            return
+        try:
+            alignment_model = self._alignment_model_for_curve_preview()
+            result = AlignmentCurvePreviewService().evaluate(
+                AlignmentCurvePreviewRequest(alignment=alignment_model, sample_interval=5.0)
+            )
+            self._curve_preview_widget.set_result(result)
+            self._set_curve_preview_info(result)
+        except Exception as exc:
+            self._curve_preview_widget.set_result(None)
+            self._curve_preview_info.setPlainText(f"Curve Preview unavailable: {exc}")
+
+    def _alignment_model_for_curve_preview(self) -> AlignmentModel:
+        try:
+            input_rows = self._ip_rows(allow_empty=True)
+            _normalized_ip_rows(input_rows)
+            compiled = _compile_ip_rows_to_element_rows(
+                self.alignment,
+                input_rows,
+                use_transition_curves=bool(self._use_transition_check.isChecked()),
+                spiral_segments=int(self._spiral_segments_spin.value()),
+            )
+            return alignment_model_from_editor_rows(compiled)
+        except Exception:
+            model = to_alignment_model(self.alignment)
+            if model is None:
+                raise
+            return model
+
+    def _set_curve_preview_info(self, result) -> None:
+        point_rows = list(getattr(result, "point_rows", []) or [])
+        annotation_rows = list(getattr(result, "annotation_rows", []) or [])
+        element_rows = list(getattr(result, "element_rows", []) or [])
+        diagnostic_rows = list(getattr(result, "diagnostic_rows", []) or [])
+        evaluated_count = len([row for row in point_rows if str(getattr(row, "role", "") or "") == "evaluated_path"])
+        source_count = len([row for row in point_rows if str(getattr(row, "role", "") or "") == "source_points"])
+        pc_pi_pt_count = len(
+            [
+                row
+                for row in annotation_rows
+                if str(getattr(row, "kind", "") or "") in {"PC", "PI", "PT"}
+            ]
+        )
+        lines = [
+            f"Status: {str(getattr(result, 'status', '') or 'empty')}",
+            f"Stations: {_format_float(getattr(result, 'station_start', 0.0))} -> {_format_float(getattr(result, 'station_end', 0.0))}",
+            f"Points: evaluated={evaluated_count}, source={source_count}, total={len(point_rows)}",
+            f"Elements: {len(element_rows)}",
+            f"PC/PI/PT labels: {pc_pi_pt_count}",
+        ]
+        curve_rows = [
+            row
+            for row in element_rows
+            if "curve" in str(getattr(row, "kind", "") or "").lower()
+        ]
+        if curve_rows:
+            lines.append("")
+            lines.append("Curve elements:")
+            for index, row in enumerate(curve_rows[:6], start=1):
+                radius = float(getattr(row, "radius", 0.0) or 0.0)
+                delta = float(getattr(row, "central_angle_deg", 0.0) or 0.0)
+                status = str(getattr(row, "status", "") or "ok")
+                direction = str(getattr(row, "curve_direction", "") or "-")
+                notes = str(getattr(row, "notes", "") or "")
+                quality = "resolved" if radius > 0.0 and delta > 0.0 else "needs source geometry"
+                lines.append(
+                    f"{index}. {str(getattr(row, 'element_id', '') or '')} | "
+                    f"{str(getattr(row, 'kind', '') or '')} | "
+                    f"STA {_format_float(getattr(row, 'station_start', 0.0))}-{_format_float(getattr(row, 'station_end', 0.0))} | "
+                    f"R={_format_float(radius)}m | Delta={_format_float(delta)}deg | Dir={direction} | {status}/{quality}"
+                )
+                if notes:
+                    lines.append(f"   {notes}")
+            if len(curve_rows) > 6:
+                lines.append(f"... plus {len(curve_rows) - 6} more curve element(s).")
+        else:
+            lines.append("")
+            lines.append("Curve elements: none. Preview is showing tangent geometry only.")
+
+        estimated = [
+            row
+            for row in diagnostic_rows
+            if str(getattr(row, "kind", "") or "") in {"alignment_curve_pc_pi_pt_estimated"}
+        ]
+        missing = [
+            row
+            for row in diagnostic_rows
+            if str(getattr(row, "severity", "") or "") in {"warning", "error"}
+            and str(getattr(row, "kind", "") or "") not in {"alignment_curve_pc_pi_pt_estimated"}
+        ]
+        if estimated:
+            lines.append("")
+            lines.append("Estimated labels:")
+            lines.extend(f"- {row.message}" for row in estimated[:4])
+        warnings = [
+            f"{row.severity}: {row.kind} - {row.message}"
+            for row in missing
+            if str(getattr(row, "severity", "") or "") in {"warning", "error"}
+        ]
+        if warnings:
+            lines.append("")
+            lines.append("Diagnostics:")
+            lines.extend(warnings[:6])
+        self._curve_preview_info.setPlainText("\n".join(lines))
 
     def _open_alignment_review(self) -> None:
         dialog = QtWidgets.QDialog(self.form)

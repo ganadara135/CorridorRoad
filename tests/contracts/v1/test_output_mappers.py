@@ -10,6 +10,8 @@ from freecad.Corridor_Road.v1.models.source.profile_model import (
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
     AppliedSectionSubassemblyRow,
+    AppliedSectionSubassemblyLink,
+    AppliedSectionSubassemblyPoint,
     AppliedSectionFrame,
     AppliedSectionPoint,
     AppliedSectionQuantityFragment,
@@ -144,6 +146,77 @@ def test_section_output_mapper_marks_bench_rows_as_side_slope_scope() -> None:
     assert geometry_by_kind["bench_section"].style_role == "side_slope_bench"
     assert geometry_by_kind["bench_section"].x_values == [-8.0]
     assert geometry_by_kind["daylight_marker"].style_role == "side_slope"
+
+
+def test_section_output_mapper_exposes_side_slope_bench_viewer_summary() -> None:
+    applied_section = AppliedSection(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_id="sec-side-slope-bench",
+        alignment_id="align-1",
+        assembly_id="assembly:bench-road",
+        station=20.0,
+        subassembly_rows=[
+            AppliedSectionSubassemblyRow(
+                subassembly_id="side-slope:right",
+                kind="side_slope",
+                source_template_id="template:bench-road",
+                definition_ref="subassembly-definition:side-slope-bench-daylight",
+                region_id="region-1",
+                side="right",
+                width=8.0,
+                slope=-0.5,
+                parameters={
+                    "side_slope_width": 8.0,
+                    "default_slope": -0.5,
+                    "bench_mode": "rows",
+                    "bench_rows": "3.0,1.5,-0.02,-0.50",
+                },
+            )
+        ],
+        subassembly_point_rows=[
+            AppliedSectionSubassemblyPoint(
+                point_id="side-slope:right:side_slope_surface:1",
+                subassembly_ref="side-slope:right",
+                point_code="side_slope_surface",
+                x=0.0,
+                y=-8.0,
+                z=10.0,
+                lateral_offset=-8.0,
+                side="right",
+            ),
+            AppliedSectionSubassemblyPoint(
+                point_id="side-slope:right:bench_surface:2",
+                subassembly_ref="side-slope:right",
+                point_code="bench_surface",
+                x=0.0,
+                y=-9.5,
+                z=9.97,
+                lateral_offset=-9.5,
+                side="right",
+            ),
+        ],
+        subassembly_link_rows=[
+            AppliedSectionSubassemblyLink(
+                link_id="side-slope:right:link:slope_face_surface:1",
+                subassembly_ref="side-slope:right",
+                start_point_ref="side-slope:right:side_slope_surface:1",
+                end_point_ref="side-slope:right:bench_surface:2",
+                link_code="slope_face_surface",
+                surface_role="slope_face_surface",
+            )
+        ],
+    )
+
+    output = SectionOutputMapper().map_applied_section(applied_section)
+
+    assert output.subassembly_rows[0].definition_ref == "subassembly-definition:side-slope-bench-daylight"
+    assert output.subassembly_rows[0].parameters["bench_mode"] == "rows"
+    summary_by_kind = {row.kind: row for row in output.summary_rows}
+    assert summary_by_kind["bench_point_count"].value == 1
+    assert summary_by_kind["bench_link_count"].value == 1
+    assert "right: width=8.000" in summary_by_kind["side_slope_effective_parameters"].value
+    assert "bench_rows=1" in summary_by_kind["side_slope_effective_parameters"].value
 
 
 def test_surface_output_mapper_maps_surface_rows() -> None:

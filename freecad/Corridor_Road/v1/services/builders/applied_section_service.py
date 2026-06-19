@@ -23,9 +23,10 @@ from ...models.source.assembly_model import (
     AssemblySourceIdentity,
     AssemblySubassemblyModel,
     SubassemblySectionTemplate,
-    normalize_bench_rows,
     subassembly_bench_validation_messages,
 )
+from ...models.source.subassembly_definition_model import SubassemblyDefinition, SubassemblyLibrary
+from ...models.source.subassembly_preset_model import SubassemblyPreset, SubassemblyPresetLibrary
 from ...models.source.drainage_model import DrainageModel
 from ...models.source.intersection_model import IntersectionModel
 from ...models.source.override_model import OverrideModel
@@ -60,6 +61,8 @@ from ...services.evaluation.superelevation_service import (
     SuperelevationService,
     SuperelevationStationResult,
 )
+from ...services.evaluation.subassembly_bench_row_parser import bench_rows_to_dicts, parse_bench_rows
+from ...services.evaluation.subassembly_expression_service import SubassemblyExpressionService
 from ...services.evaluation.station_context_resolver import StationContextResolver
 from ...services.evaluation.tin_sampling_service import TinSamplingService
 
@@ -79,6 +82,8 @@ class AppliedSectionBuildRequest:
     applied_section_id: str
     assembly_models: list[AssemblySourceIdentity] = field(default_factory=list)
     assembly_subassembly_models: list[AssemblySubassemblyModel] = field(default_factory=list)
+    subassembly_libraries: list[SubassemblyLibrary] = field(default_factory=list)
+    subassembly_preset_libraries: list[SubassemblyPresetLibrary] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
@@ -101,8 +106,16 @@ class AppliedSectionSetBuildRequest:
     stations: list[float]
     applied_section_set_id: str
     station_kinds: dict[float, str] = field(default_factory=dict)
+    supplemental_sections_enabled: bool = True
+    supplemental_sections_max_spacing: float = 5.0
+    supplemental_sections_tangent_delta_deg: float = 3.0
+    supplemental_sections_chord_deviation: float = 0.25
+    supplemental_sections_vertical_chord_deviation: float = 0.10
+    supplemental_sections_grade_delta: float = 0.01
     assembly_models: list[AssemblySourceIdentity] = field(default_factory=list)
     assembly_subassembly_models: list[AssemblySubassemblyModel] = field(default_factory=list)
+    subassembly_libraries: list[SubassemblyLibrary] = field(default_factory=list)
+    subassembly_preset_libraries: list[SubassemblyPresetLibrary] = field(default_factory=list)
     structure_model: StructureModel | None = None
     drainage_model: DrainageModel | None = None
     superelevation_model: SuperelevationModel | None = None
@@ -121,6 +134,18 @@ class _BenchEvaluation:
     segments: list[dict[str, object]]
     diagnostics: list[DiagnosticMessage] = field(default_factory=list)
 
+
+@dataclass(frozen=True)
+class _DefinitionSubassemblyEvaluation:
+    point_rows: list[AppliedSectionSubassemblyPoint] = field(default_factory=list)
+    link_rows: list[AppliedSectionSubassemblyLink] = field(default_factory=list)
+    shape_rows: list[AppliedSectionSubassemblyShape] = field(default_factory=list)
+    diagnostics: list[DiagnosticMessage] = field(default_factory=list)
+
+
+SUPPLEMENTAL_APPLIED_SECTION_MAX_SAMPLES_PER_SPAN = 512
+
+
 class AppliedSectionService:
     """Build minimal applied-section results from v1 source models."""
 
@@ -137,6 +162,7 @@ class AppliedSectionService:
         centerline_frame_service: Centerline3DFrameService | None = None,
         superelevation_service: SuperelevationService | None = None,
         intersection_service: IntersectionEvaluationService | None = None,
+        subassembly_expression_service: SubassemblyExpressionService | None = None,
     ) -> None:
         self.alignment_service = alignment_service or AlignmentEvaluationService()
         self.profile_service = profile_service or ProfileEvaluationService()
@@ -151,6 +177,7 @@ class AppliedSectionService:
         self.centerline_frame_service = centerline_frame_service or Centerline3DFrameService()
         self.superelevation_service = superelevation_service or SuperelevationService()
         self.intersection_service = intersection_service or IntersectionEvaluationService()
+        self.subassembly_expression_service = subassembly_expression_service or SubassemblyExpressionService()
 
     def build(self, request: AppliedSectionBuildRequest) -> AppliedSection:
         """Build a minimal applied section using source-layer references."""
@@ -190,8 +217,13 @@ class AppliedSectionService:
             template_ref=region_context.template_ref,
         )
         template = None
-        subassembly_model = self._resolve_subassembly_model(
+        subassembly_model_candidates = self._subassembly_model_candidates(
             request.assembly_subassembly_models,
+            request.assembly_models,
+            [request.assembly, assembly],
+        )
+        subassembly_model = self._resolve_subassembly_model(
+            subassembly_model_candidates,
             assembly_ref=region_context.assembly_ref or assembly.assembly_id,
         )
         subassembly_template_id = self._resolve_subassembly_template_id(
@@ -200,10 +232,11 @@ class AppliedSectionService:
             template_ref=region_context.template_ref or template_id,
         )
         subassembly_template = self._find_subassembly_template(subassembly_model, subassembly_template_id)
+        section_template_id = subassembly_template_id or template_id
         diagnostics = self._build_diagnostics(
             assembly,
             assembly_ref=region_context.assembly_ref,
-            template_id=template_id,
+            template_id=section_template_id,
             template=template,
             subassembly_template=subassembly_template,
         )
@@ -242,7 +275,11 @@ class AppliedSectionService:
             alignment_ref=request.alignment.alignment_id,
         )
         effective_template = template
-        effective_subassembly_template = _subassembly_template_with_superelevation(subassembly_template, superelevation_result)
+        effective_subassembly_template = _subassembly_template_with_definition_parameters(
+            _subassembly_template_with_superelevation(subassembly_template, superelevation_result),
+            request.subassembly_libraries,
+            subassembly_preset_libraries=request.subassembly_preset_libraries,
+        )
         diagnostics.extend(list(getattr(superelevation_result, "diagnostic_rows", []) or []))
         diagnostics.extend(_intersection_context_diagnostics(intersection_result))
         fg_points = _surface_section_offsets(
@@ -272,6 +309,8 @@ class AppliedSectionService:
             ),
             drainage_refs=active_drainage_refs,
             drainage_refs_by_side=active_drainage_refs_by_side,
+            subassembly_libraries=request.subassembly_libraries,
+            subassembly_preset_libraries=request.subassembly_preset_libraries,
         )
         point_rows = self._build_point_rows(
             effective_template,
@@ -303,6 +342,22 @@ class AppliedSectionService:
         )
         subassembly_link_rows = _subassembly_link_rows(subassembly_point_rows, subassembly_rows)
         subassembly_shape_rows = _subassembly_shape_rows(subassembly_point_rows, subassembly_rows)
+        definition_evaluation = _definition_subassembly_evaluation(
+            effective_subassembly_template,
+            subassembly_rows,
+            list(request.subassembly_libraries or []),
+            frame=frame,
+            expression_service=self.subassembly_expression_service,
+        )
+        diagnostics.extend(definition_evaluation.diagnostics)
+        subassembly_point_rows.extend(definition_evaluation.point_rows)
+        subassembly_link_rows.extend(definition_evaluation.link_rows)
+        subassembly_shape_rows.extend(definition_evaluation.shape_rows)
+        subassembly_rows = _subassembly_rows_with_preset_surface_role_diagnostics(
+            subassembly_rows,
+            subassembly_link_rows,
+            list(request.subassembly_preset_libraries or []),
+        )
 
         return AppliedSection(
             schema_version=1,
@@ -314,7 +369,7 @@ class AppliedSectionService:
             assembly_id=assembly.assembly_id,
             station=request.station,
             frame=frame,
-            template_id=template_id,
+            template_id=section_template_id,
             region_id=region_context.region_id,
             subassembly_rows=subassembly_rows,
             surface_left_width=left_width,
@@ -352,6 +407,10 @@ class AppliedSectionService:
                     request.profile.profile_id,
                     assembly.assembly_id,
                     str(getattr(subassembly_model, "assembly_id", "") or "") if subassembly_model is not None else "",
+                    *[
+                        str(getattr(library, "library_id", "") or "")
+                        for library in list(request.subassembly_libraries or [])
+                    ],
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
                     request.structure_model.structure_model_id
@@ -393,6 +452,28 @@ class AppliedSectionService:
                 if str(getattr(model, "assembly_id", "") or "").strip() == requested:
                     return model
         return fallback
+
+    @staticmethod
+    def _subassembly_model_candidates(*model_groups: object) -> list[AssemblySubassemblyModel]:
+        candidates: list[AssemblySubassemblyModel] = []
+        seen = set()
+        for group in model_groups:
+            if group is None:
+                continue
+            if isinstance(group, (list, tuple, set)):
+                values = list(group)
+            else:
+                values = [group]
+            for model in values:
+                if model is None or not hasattr(model, "template_rows"):
+                    continue
+                assembly_id = str(getattr(model, "assembly_id", "") or "").strip()
+                key = assembly_id or str(id(model))
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(model)
+        return candidates
 
     @staticmethod
     def _resolve_subassembly_model(
@@ -443,6 +524,7 @@ class AppliedSectionService:
         notes = "; ".join(
             text
             for text in [
+                "source=alignment_profile_fallback",
                 str(getattr(alignment_result, "notes", "") or "").strip(),
                 str(getattr(profile_result, "notes", "") or "").strip(),
                 *(list(getattr(centerline_frame, "diagnostic_rows", []) or []) if centerline_frame is not None else []),
@@ -509,10 +591,41 @@ class AppliedSectionService:
     ) -> SubassemblySectionTemplate | None:
         if assembly is None:
             return None
+        templates = list(getattr(assembly, "template_rows", []) or [])
+        requested = str(template_id or "").strip()
+        if requested:
+            for template in templates:
+                if str(getattr(template, "template_id", "") or "").strip() == requested:
+                    return template
+        active_template_id = str(getattr(assembly, "active_template_id", "") or "").strip()
+        if active_template_id:
+            for template in templates:
+                if str(getattr(template, "template_id", "") or "").strip() == active_template_id:
+                    return template
+        return templates[0] if templates else None
+
+    @staticmethod
+    def _has_subassembly_template_id(
+        assembly: AssemblySubassemblyModel | None,
+        template_id: str,
+    ) -> bool:
+        requested = str(template_id or "").strip()
+        if assembly is None or not requested:
+            return False
         for template in list(getattr(assembly, "template_rows", []) or []):
-            if str(getattr(template, "template_id", "") or "") == str(template_id or ""):
-                return template
-        return None
+            if str(getattr(template, "template_id", "") or "").strip() == requested:
+                return True
+        return False
+
+    @staticmethod
+    def _first_subassembly_template_id(assembly: AssemblySubassemblyModel | None) -> str:
+        if assembly is None:
+            return ""
+        for template in list(getattr(assembly, "template_rows", []) or []):
+            template_id = str(getattr(template, "template_id", "") or "").strip()
+            if template_id:
+                return template_id
+        return ""
 
     @staticmethod
     def _resolve_template_id(
@@ -541,14 +654,16 @@ class AppliedSectionService:
     ) -> str:
         if assembly is None:
             return ""
-        requested_assembly = str(assembly_ref or "").strip()
-        assembly_id = str(getattr(assembly, "assembly_id", "") or "").strip()
-        if requested_assembly and requested_assembly != assembly_id:
-            return ""
         requested_template = str(template_ref or "").strip()
-        if requested_template:
+        if AppliedSectionService._has_subassembly_template_id(assembly, requested_template):
             return requested_template
-        return str(getattr(assembly, "active_template_id", "") or "").strip()
+        active_template_id = str(getattr(assembly, "active_template_id", "") or "").strip()
+        if AppliedSectionService._has_subassembly_template_id(assembly, active_template_id):
+            return active_template_id
+        first_template_id = AppliedSectionService._first_subassembly_template_id(assembly)
+        if first_template_id:
+            return first_template_id
+        return requested_template
 
     @staticmethod
     def _build_diagnostics(
@@ -600,6 +715,8 @@ class AppliedSectionService:
         structure_ids: list[str],
         drainage_refs: list[str],
         drainage_refs_by_side: dict[str, list[str]] | None = None,
+        subassembly_libraries: list[SubassemblyLibrary] | None = None,
+        subassembly_preset_libraries: list[SubassemblyPresetLibrary] | None = None,
     ) -> list[AppliedSectionSubassemblyRow]:
         if template is None:
             return []
@@ -611,6 +728,11 @@ class AppliedSectionService:
                 AppliedSectionSubassemblyRow(
                     subassembly_id=str(getattr(subassembly, "subassembly_id", "") or ""),
                     kind=str(getattr(subassembly, "kind", "") or ""),
+                    definition_ref=str(getattr(subassembly, "definition_ref", "") or ""),
+                    preset_ref=str(getattr(subassembly, "preset_ref", "") or ""),
+                    preset_version=str(getattr(subassembly, "preset_version", "") or ""),
+                    preset_status=str(getattr(subassembly, "preset_status", "") or ""),
+                    source_instance_ref=str(getattr(subassembly, "source_instance_ref", "") or ""),
                     source_template_id=str(getattr(template, "template_id", "") or ""),
                     region_id=str(region_id or ""),
                     side=str(getattr(subassembly, "side", "") or "center"),
@@ -625,6 +747,10 @@ class AppliedSectionService:
                     point_code_rules=tuple(getattr(subassembly, "point_code_rules", ()) or ()),
                     link_code_rules=tuple(getattr(subassembly, "link_code_rules", ()) or ()),
                     shape_code_rules=tuple(getattr(subassembly, "shape_code_rules", ()) or ()),
+                    diagnostics=(
+                        _definition_ref_diagnostics(subassembly, subassembly_libraries)
+                        + _preset_ref_diagnostics(subassembly, subassembly_preset_libraries)
+                    ),
                 )
             )
         return rows
@@ -834,9 +960,21 @@ class AppliedSectionSetService:
     def build(self, request: AppliedSectionSetBuildRequest) -> AppliedSectionSet:
         """Build one applied section result per unique station."""
 
-        stations = _unique_stations(request.stations)
+        stations, station_kinds = _supplemental_applied_section_station_series(
+            request.stations,
+            request.station_kinds,
+            centerline3d_result=request.centerline3d_result,
+            enabled=bool(getattr(request, "supplemental_sections_enabled", True)),
+            max_spacing=float(getattr(request, "supplemental_sections_max_spacing", 5.0) or 5.0),
+            tangent_delta_threshold_deg=float(getattr(request, "supplemental_sections_tangent_delta_deg", 3.0) or 3.0),
+            chord_deviation_threshold=float(getattr(request, "supplemental_sections_chord_deviation", 0.25) or 0.25),
+            profile=request.profile,
+            vertical_chord_deviation_threshold=float(getattr(request, "supplemental_sections_vertical_chord_deviation", 0.10) or 0.10),
+            grade_delta_threshold=float(getattr(request, "supplemental_sections_grade_delta", 0.01) or 0.01),
+        )
         sections: list[AppliedSection] = []
         station_rows: list[AppliedSectionStationRow] = []
+        profile_service = ProfileEvaluationService()
         for index, station in enumerate(stations, start=1):
             section_id = f"{request.applied_section_set_id}:section:{index}"
             section = self.section_service.build(
@@ -848,6 +986,8 @@ class AppliedSectionSetService:
                     assembly=request.assembly,
                     assembly_models=list(request.assembly_models or []),
                     assembly_subassembly_models=list(request.assembly_subassembly_models or []),
+                    subassembly_libraries=list(request.subassembly_libraries or []),
+                    subassembly_preset_libraries=list(request.subassembly_preset_libraries or []),
                     region_model=request.region_model,
                     override_model=request.override_model,
                     station=station,
@@ -860,7 +1000,26 @@ class AppliedSectionSetService:
                     centerline3d_result=request.centerline3d_result,
                 )
             )
-            station_kind = _station_kind_for(request.station_kinds, station)
+            station_kind = _station_kind_for(station_kinds, station)
+            if "supplemental" in str(station_kind or "").lower():
+                section.diagnostic_rows.append(
+                    DiagnosticMessage(
+                        severity="info",
+                        kind=_supplemental_section_diagnostic_kind(station_kind),
+                        message=f"Result-only supplemental Applied Section generated from {station_kind}.",
+                    )
+                )
+                section.diagnostic_rows.extend(
+                    _supplemental_section_vertical_sampling_diagnostics(
+                        section,
+                        station_kind=station_kind,
+                        profile=request.profile,
+                        profile_service=profile_service,
+                        vertical_chord_deviation_threshold=float(
+                            getattr(request, "supplemental_sections_vertical_chord_deviation", 0.10) or 0.10
+                        ),
+                    )
+                )
             sections.append(section)
             station_rows.append(
                 AppliedSectionStationRow(
@@ -890,6 +1049,10 @@ class AppliedSectionSetService:
                     *[
                         str(getattr(assembly, "assembly_id", "") or "")
                         for assembly in list(request.assembly_subassembly_models or [])
+                    ],
+                    *[
+                        str(getattr(library, "library_id", "") or "")
+                        for library in list(request.subassembly_libraries or [])
                     ],
                     request.region_model.region_model_id,
                     request.override_model.override_model_id,
@@ -937,6 +1100,377 @@ def _station_kind_for(station_kinds: dict[float, str], station: float, *, tolera
     return "regular_sample"
 
 
+def _supplemental_applied_section_station_series(
+    stations: list[float],
+    station_kinds: dict[float, str] | None,
+    *,
+    centerline3d_result: Centerline3DResult | None,
+    enabled: bool,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+    profile: ProfileModel | None = None,
+    vertical_chord_deviation_threshold: float = 0.10,
+    grade_delta_threshold: float = 0.01,
+) -> tuple[list[float], dict[float, str]]:
+    base = _unique_stations(stations)
+    kinds = {float(station): _station_kind_for(station_kinds or {}, station) for station in base}
+    if not enabled or len(base) < 2 or centerline3d_result is None:
+        return base, kinds
+    frame_service = Centerline3DFrameService()
+    profile_service = ProfileEvaluationService()
+    output: list[float] = []
+    for index in range(len(base) - 1):
+        first = float(base[index])
+        second = float(base[index + 1])
+        output.append(first)
+        for ratio in _supplemental_applied_section_ratios(
+            first,
+            second,
+            centerline3d_result=centerline3d_result,
+            frame_service=frame_service,
+            max_spacing=max_spacing,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+            profile=profile,
+            profile_service=profile_service,
+            vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+            grade_delta_threshold=grade_delta_threshold,
+        ):
+            station = _lerp(first, second, ratio)
+            if _station_in_values(station, base) or _station_in_values(station, output):
+                continue
+            output.append(station)
+            kinds[float(station)] = _supplemental_applied_section_station_kind(
+                first,
+                second,
+                centerline3d_result=centerline3d_result,
+                frame_service=frame_service,
+                tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+                chord_deviation_threshold=chord_deviation_threshold,
+                profile=profile,
+                profile_service=profile_service,
+                vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+                grade_delta_threshold=grade_delta_threshold,
+            )
+    output.append(float(base[-1]))
+    return _unique_stations(output), kinds
+
+
+def _supplemental_applied_section_ratios(
+    first_station: float,
+    second_station: float,
+    *,
+    centerline3d_result: Centerline3DResult,
+    frame_service: Centerline3DFrameService,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+    profile: ProfileModel | None = None,
+    profile_service: ProfileEvaluationService | None = None,
+    vertical_chord_deviation_threshold: float = 0.10,
+    grade_delta_threshold: float = 0.01,
+) -> list[float]:
+    if abs(float(second_station) - float(first_station)) <= 1.0e-9:
+        return []
+    spacing = max(float(max_spacing or 0.0), 0.1)
+    ratios: set[float] = set()
+    if _supplemental_applied_section_interval_needs_sampling(
+        first_station,
+        second_station,
+        0.0,
+        1.0,
+        centerline3d_result=centerline3d_result,
+        frame_service=frame_service,
+        max_spacing=spacing,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+        profile=profile,
+        profile_service=profile_service,
+        vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+        grade_delta_threshold=grade_delta_threshold,
+    ):
+        span_length = abs(float(second_station) - float(first_station))
+        sample_count = min(
+            max(1, int(math.ceil(span_length / spacing)) - 1),
+            SUPPLEMENTAL_APPLIED_SECTION_MAX_SAMPLES_PER_SPAN,
+        )
+        for index in range(1, sample_count + 1):
+            ratios.add(round(float(index) / float(sample_count + 1), 12))
+    stack: list[tuple[float, float]] = [(0.0, 1.0)]
+    guard = 0
+    while stack and guard < SUPPLEMENTAL_APPLIED_SECTION_MAX_SAMPLES_PER_SPAN:
+        guard += 1
+        start_ratio, end_ratio = stack.pop()
+        if not _supplemental_applied_section_interval_needs_sampling(
+            first_station,
+            second_station,
+            start_ratio,
+            end_ratio,
+            centerline3d_result=centerline3d_result,
+            frame_service=frame_service,
+            max_spacing=spacing,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+            profile=profile,
+            profile_service=profile_service,
+            vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+            grade_delta_threshold=grade_delta_threshold,
+        ):
+            continue
+        mid_ratio = (float(start_ratio) + float(end_ratio)) * 0.5
+        if mid_ratio <= 1.0e-9 or mid_ratio >= 1.0 - 1.0e-9:
+            continue
+        key = round(mid_ratio, 12)
+        if key not in ratios:
+            ratios.add(key)
+        if len(ratios) >= SUPPLEMENTAL_APPLIED_SECTION_MAX_SAMPLES_PER_SPAN:
+            break
+        stack.append((mid_ratio, float(end_ratio)))
+        stack.append((float(start_ratio), mid_ratio))
+    return sorted(ratios)
+
+
+def _supplemental_applied_section_interval_needs_sampling(
+    first_station: float,
+    second_station: float,
+    start_ratio: float,
+    end_ratio: float,
+    *,
+    centerline3d_result: Centerline3DResult,
+    frame_service: Centerline3DFrameService,
+    max_spacing: float,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+    profile: ProfileModel | None = None,
+    profile_service: ProfileEvaluationService | None = None,
+    vertical_chord_deviation_threshold: float = 0.10,
+    grade_delta_threshold: float = 0.01,
+) -> bool:
+    start_station = _lerp(first_station, second_station, start_ratio)
+    end_station = _lerp(first_station, second_station, end_ratio)
+    if abs(float(end_station) - float(start_station)) <= 1.0e-9:
+        return False
+    if abs(float(end_station) - float(start_station)) <= max(float(max_spacing or 0.0), 0.1):
+        return _supplemental_applied_section_curve_exceeded(
+            start_station,
+            end_station,
+            centerline3d_result=centerline3d_result,
+            frame_service=frame_service,
+            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+            chord_deviation_threshold=chord_deviation_threshold,
+            profile=profile,
+            profile_service=profile_service,
+            vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+            grade_delta_threshold=grade_delta_threshold,
+        )
+    return _supplemental_applied_section_curve_exceeded(
+        start_station,
+        end_station,
+        centerline3d_result=centerline3d_result,
+        frame_service=frame_service,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+        profile=profile,
+        profile_service=profile_service,
+        vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+        grade_delta_threshold=grade_delta_threshold,
+    )
+
+
+def _supplemental_applied_section_curve_exceeded(
+    start_station: float,
+    end_station: float,
+    *,
+    centerline3d_result: Centerline3DResult,
+    frame_service: Centerline3DFrameService,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+    profile: ProfileModel | None = None,
+    profile_service: ProfileEvaluationService | None = None,
+    vertical_chord_deviation_threshold: float = 0.10,
+    grade_delta_threshold: float = 0.01,
+) -> bool:
+    if _supplemental_applied_section_horizontal_curve_exceeded(
+        start_station,
+        end_station,
+        centerline3d_result=centerline3d_result,
+        frame_service=frame_service,
+        tangent_delta_threshold_deg=tangent_delta_threshold_deg,
+        chord_deviation_threshold=chord_deviation_threshold,
+    ):
+        return True
+    return _supplemental_applied_section_vertical_curve_exceeded(
+        start_station,
+        end_station,
+        profile=profile,
+        profile_service=profile_service,
+        vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+        grade_delta_threshold=grade_delta_threshold,
+    )
+
+
+def _supplemental_applied_section_horizontal_curve_exceeded(
+    start_station: float,
+    end_station: float,
+    *,
+    centerline3d_result: Centerline3DResult,
+    frame_service: Centerline3DFrameService,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+) -> bool:
+    start_frame = frame_service.resolve_station(centerline3d_result, start_station)
+    end_frame = frame_service.resolve_station(centerline3d_result, end_station)
+    mid_station = (float(start_station) + float(end_station)) * 0.5
+    mid_frame = frame_service.resolve_station(centerline3d_result, mid_station)
+    if not _centerline_frame_is_usable(start_frame) or not _centerline_frame_is_usable(end_frame) or not _centerline_frame_is_usable(mid_frame):
+        return False
+    tangent_delta = abs(
+        _angle_delta_degrees(
+            float(getattr(start_frame, "tangent_direction_deg", 0.0) or 0.0),
+            float(getattr(end_frame, "tangent_direction_deg", 0.0) or 0.0),
+        )
+    )
+    chord_x = _lerp(float(getattr(start_frame, "x", 0.0) or 0.0), float(getattr(end_frame, "x", 0.0) or 0.0), 0.5)
+    chord_y = _lerp(float(getattr(start_frame, "y", 0.0) or 0.0), float(getattr(end_frame, "y", 0.0) or 0.0), 0.5)
+    chord_z = _lerp(float(getattr(start_frame, "z", 0.0) or 0.0), float(getattr(end_frame, "z", 0.0) or 0.0), 0.5)
+    chord_deviation = math.sqrt(
+        (float(getattr(mid_frame, "x", 0.0) or 0.0) - chord_x) ** 2
+        + (float(getattr(mid_frame, "y", 0.0) or 0.0) - chord_y) ** 2
+        + (float(getattr(mid_frame, "z", 0.0) or 0.0) - chord_z) ** 2
+    )
+    return (
+        tangent_delta > max(float(tangent_delta_threshold_deg or 0.0), 0.01)
+        or chord_deviation > max(float(chord_deviation_threshold or 0.0), 0.001)
+    )
+
+
+def _supplemental_applied_section_vertical_curve_exceeded(
+    start_station: float,
+    end_station: float,
+    *,
+    profile: ProfileModel | None,
+    profile_service: ProfileEvaluationService | None,
+    vertical_chord_deviation_threshold: float,
+    grade_delta_threshold: float,
+) -> bool:
+    if profile is None:
+        return False
+    service = profile_service or ProfileEvaluationService()
+    start = service.evaluate_station(profile, start_station)
+    end = service.evaluate_station(profile, end_station)
+    mid_station = (float(start_station) + float(end_station)) * 0.5
+    mid = service.evaluate_station(profile, mid_station)
+    if not _profile_result_is_usable(start) or not _profile_result_is_usable(end) or not _profile_result_is_usable(mid):
+        return False
+    chord_z = _lerp(float(getattr(start, "elevation", 0.0) or 0.0), float(getattr(end, "elevation", 0.0) or 0.0), 0.5)
+    vertical_deviation = abs(float(getattr(mid, "elevation", 0.0) or 0.0) - chord_z)
+    grade_delta = abs(float(getattr(end, "grade", 0.0) or 0.0) - float(getattr(start, "grade", 0.0) or 0.0))
+    return (
+        vertical_deviation > max(float(vertical_chord_deviation_threshold or 0.0), 0.001)
+        or grade_delta > max(float(grade_delta_threshold or 0.0), 0.0001)
+    )
+
+
+def _supplemental_applied_section_station_kind(
+    start_station: float,
+    end_station: float,
+    *,
+    centerline3d_result: Centerline3DResult,
+    frame_service: Centerline3DFrameService,
+    tangent_delta_threshold_deg: float,
+    chord_deviation_threshold: float,
+    profile: ProfileModel | None,
+    profile_service: ProfileEvaluationService,
+    vertical_chord_deviation_threshold: float,
+    grade_delta_threshold: float,
+) -> str:
+    if _supplemental_applied_section_vertical_curve_exceeded(
+        start_station,
+        end_station,
+        profile=profile,
+        profile_service=profile_service,
+        vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
+        grade_delta_threshold=grade_delta_threshold,
+    ):
+        return "vertical_curve_supplemental"
+    return "curve_supplemental"
+
+
+def _supplemental_section_diagnostic_kind(station_kind: str) -> str:
+    if str(station_kind or "") == "curve_supplemental":
+        return "supplemental_section_curve_trigger"
+    if str(station_kind or "") == "vertical_curve_supplemental":
+        return "supplemental_section_vertical_curve_trigger"
+    return "supplemental_section_trigger"
+
+
+def _supplemental_section_vertical_sampling_diagnostics(
+    section: AppliedSection,
+    *,
+    station_kind: str,
+    profile: ProfileModel | None,
+    profile_service: ProfileEvaluationService,
+    vertical_chord_deviation_threshold: float,
+) -> list[DiagnosticMessage]:
+    if str(station_kind or "") != "vertical_curve_supplemental" or profile is None:
+        return []
+    frame = getattr(section, "frame", None)
+    if frame is None:
+        return []
+    profile_result = profile_service.evaluate_station(profile, float(getattr(section, "station", 0.0) or 0.0))
+    if not _profile_result_is_usable(profile_result):
+        return []
+    profile_curve_id = str(getattr(profile_result, "active_vertical_curve_id", "") or "")
+    if not profile_curve_id:
+        return []
+    frame_curve_id = str(getattr(frame, "active_vertical_curve_id", "") or "")
+    elevation_delta = abs(float(getattr(frame, "z", 0.0) or 0.0) - float(getattr(profile_result, "elevation", 0.0) or 0.0))
+    threshold = max(float(vertical_chord_deviation_threshold or 0.0), 0.001)
+    if frame_curve_id == profile_curve_id and elevation_delta <= threshold:
+        return []
+    detail = f"profile_curve={profile_curve_id}"
+    if frame_curve_id:
+        detail += f", frame_curve={frame_curve_id}"
+    detail += f", elevation_delta={elevation_delta:.3f}m"
+    return [
+        DiagnosticMessage(
+            severity="warning",
+            kind="supplemental_section_vertical_curve_not_sampled",
+            message=(
+                "Vertical supplemental section was triggered by Profile curvature, but the Centerline3D frame may not "
+                f"represent that vertical curve closely enough ({detail}). Rebuild or inspect Centerline3DResult sampling."
+            ),
+        )
+    ]
+
+
+def _centerline_frame_is_usable(frame: Centerline3DFrame | None) -> bool:
+    return frame is not None and str(getattr(frame, "status", "") or "") in {"ok", "warning"}
+
+
+def _profile_result_is_usable(result) -> bool:
+    return result is not None and str(getattr(result, "status", "") or "") in {"ok", "warning"}
+
+
+def _station_in_values(station: float, stations: list[float], *, tolerance: float = 1.0e-6) -> bool:
+    for value in list(stations or []):
+        try:
+            if abs(float(value) - float(station)) <= tolerance:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _angle_delta_degrees(first: float, second: float) -> float:
+    return (float(second) - float(first) + 180.0) % 360.0 - 180.0
+
+
+def _lerp(start: float, end: float, ratio: float) -> float:
+    return float(start) + (float(end) - float(start)) * float(ratio)
+
+
 def _subassembly_template_with_superelevation(
     template: SubassemblySectionTemplate | None,
     superelevation_result: SuperelevationStationResult | None,
@@ -947,6 +1481,85 @@ def _subassembly_template_with_superelevation(
     for subassembly in list(getattr(template, "subassembly_rows", []) or []):
         rows.append(_subassembly_with_superelevation(subassembly, superelevation_result))
     return replace(template, subassembly_rows=rows)
+
+
+def _subassembly_template_with_definition_parameters(
+    template: SubassemblySectionTemplate | None,
+    subassembly_libraries: list[SubassemblyLibrary] | None,
+    *,
+    subassembly_preset_libraries: list[SubassemblyPresetLibrary] | None = None,
+) -> SubassemblySectionTemplate | None:
+    if template is None:
+        return template
+    rows = []
+    libraries = list(subassembly_libraries or [])
+    preset_libraries = list(subassembly_preset_libraries or [])
+    for subassembly in list(getattr(template, "subassembly_rows", []) or []):
+        rows.append(_subassembly_with_definition_parameters(subassembly, libraries, preset_libraries=preset_libraries))
+    return replace(template, subassembly_rows=rows)
+
+
+def _subassembly_with_definition_parameters(
+    subassembly,
+    subassembly_libraries: list[SubassemblyLibrary],
+    *,
+    preset_libraries: list[SubassemblyPresetLibrary] | None = None,
+):
+    definition_ref = str(getattr(subassembly, "definition_ref", "") or "").strip()
+    preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+    if not definition_ref and not preset_ref:
+        return subassembly
+    preset = _preset_by_ref(list(preset_libraries or []), preset_ref)
+    definition = _definition_by_ref(subassembly_libraries, definition_ref) if definition_ref else None
+    if definition is None and preset is None:
+        return subassembly
+    parameters = _preset_default_parameters(preset)
+    if definition is not None:
+        for key, value in _definition_default_parameters(definition).items():
+            parameters.setdefault(key, value)
+    parameters.update(dict(getattr(subassembly, "parameters", {}) or {}))
+    parameters.update(dict(getattr(subassembly, "parameter_overrides", {}) or {}))
+    return replace(
+        subassembly,
+        parameters=parameters,
+        width=_subassembly_numeric_parameter(parameters, ("width", "side_slope_width"), getattr(subassembly, "width", 0.0)),
+        slope=_subassembly_numeric_parameter(parameters, ("slope", "default_slope"), getattr(subassembly, "slope", 0.0)),
+        thickness=_subassembly_numeric_parameter(parameters, ("thickness",), getattr(subassembly, "thickness", 0.0)),
+    )
+
+
+def _preset_default_parameters(preset: SubassemblyPreset | None) -> dict[str, object]:
+    if preset is None:
+        return {}
+    return dict(getattr(preset, "parameter_defaults", {}) or {})
+
+
+def _definition_default_parameters(definition: SubassemblyDefinition) -> dict[str, object]:
+    output: dict[str, object] = {}
+    for row in list(getattr(definition, "parameter_rows", []) or []):
+        parameter_id = str(getattr(row, "parameter_id", "") or "").strip()
+        if not parameter_id:
+            continue
+        output[parameter_id] = getattr(row, "value", "")
+    return output
+
+
+def _definition_numeric_parameter(parameters: dict[str, object], key: str, fallback: object) -> float:
+    try:
+        return float(dict(parameters or {}).get(str(key), fallback))
+    except Exception:
+        try:
+            return float(fallback or 0.0)
+        except Exception:
+            return 0.0
+
+
+def _subassembly_numeric_parameter(parameters: dict[str, object], keys: tuple[str, ...], fallback: object) -> float:
+    values = dict(parameters or {})
+    for key in keys:
+        if str(key) in values:
+            return _definition_numeric_parameter(values, str(key), fallback)
+    return _definition_numeric_parameter(values, "", fallback)
 
 
 def _active_section_source_rows(
@@ -1013,6 +1626,347 @@ def _points_with_compatibility_subassembly_refs(
     return point_rows
 
 
+def _definition_subassembly_evaluation(
+    template: SubassemblySectionTemplate | None,
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+    subassembly_libraries: list[SubassemblyLibrary],
+    *,
+    frame: AppliedSectionFrame,
+    expression_service: SubassemblyExpressionService,
+) -> _DefinitionSubassemblyEvaluation:
+    if template is None or not subassembly_rows:
+        return _DefinitionSubassemblyEvaluation()
+    source_by_id = {
+        str(getattr(row, "subassembly_id", "") or "").strip(): row
+        for row in list(getattr(template, "subassembly_rows", []) or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    result_by_id = {
+        str(getattr(row, "subassembly_id", "") or "").strip(): row
+        for row in list(subassembly_rows or [])
+        if str(getattr(row, "subassembly_id", "") or "").strip()
+    }
+    points: list[AppliedSectionSubassemblyPoint] = []
+    links: list[AppliedSectionSubassemblyLink] = []
+    shapes: list[AppliedSectionSubassemblyShape] = []
+    diagnostics: list[DiagnosticMessage] = []
+    placement_by_side = {"left": (0.0, 0.0), "right": (0.0, 0.0)}
+    for subassembly_id, source_row in source_by_id.items():
+        result_row = result_by_id.get(subassembly_id)
+        if result_row is None:
+            continue
+        side = str(getattr(result_row, "side", "") or "center").strip().lower()
+        definition_ref = str(getattr(source_row, "definition_ref", "") or "").strip()
+        if not definition_ref:
+            if side in placement_by_side:
+                start_offset, start_z_delta = placement_by_side[side]
+                placement_by_side[side] = (
+                    start_offset + _source_row_placement_width(source_row),
+                    start_z_delta + _source_row_placement_z_delta(source_row),
+                )
+            continue
+        definition = _definition_by_ref(subassembly_libraries, definition_ref)
+        if definition is None:
+            diagnostics.append(
+                DiagnosticMessage(
+                    severity="error",
+                    kind="missing_subassembly_definition",
+                    message=f"Subassembly definition was not found: {definition_ref}.",
+                    notes=f"subassembly={subassembly_id}",
+                )
+            )
+            if side in placement_by_side:
+                start_offset, start_z_delta = placement_by_side[side]
+                placement_by_side[side] = (
+                    start_offset + _source_row_placement_width(source_row),
+                    start_z_delta + _source_row_placement_z_delta(source_row),
+                )
+            continue
+        overrides = dict(getattr(source_row, "parameter_overrides", {}) or {})
+        evaluation = expression_service.evaluate_definition(definition, parameter_overrides=overrides)
+        diagnostics.extend(list(getattr(evaluation, "diagnostic_rows", []) or []))
+        start_offset, start_z_delta = placement_by_side.get(side, (0.0, 0.0))
+        evaluated_points = _definition_point_rows(
+            subassembly_id,
+            result_row,
+            evaluation,
+            frame=frame,
+            start_offset=start_offset,
+            start_z_delta=start_z_delta,
+        )
+        points.extend(evaluated_points)
+        links.extend(_definition_link_rows(subassembly_id, definition, evaluated_points))
+        shapes.extend(_definition_shape_rows(subassembly_id, definition, evaluated_points, result_row))
+        if side in placement_by_side:
+            placement_by_side[side] = (
+                start_offset + _definition_placement_width(evaluation, source_row),
+                start_z_delta + _definition_local_end_z(evaluation),
+            )
+    return _DefinitionSubassemblyEvaluation(
+        point_rows=points,
+        link_rows=links,
+        shape_rows=shapes,
+        diagnostics=diagnostics,
+    )
+
+
+def _definition_point_rows(
+    subassembly_id: str,
+    result_row: AppliedSectionSubassemblyRow,
+    evaluation,
+    *,
+    frame: AppliedSectionFrame,
+    start_offset: float = 0.0,
+    start_z_delta: float = 0.0,
+) -> list[AppliedSectionSubassemblyPoint]:
+    angle_rad = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle_rad)
+    normal_y = math.cos(angle_rad)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    base_z = float(getattr(frame, "z", 0.0) or 0.0)
+    direction = _subassembly_side_direction(str(getattr(result_row, "side", "") or "center"))
+    side = str(getattr(result_row, "side", "") or "center")
+    output: list[AppliedSectionSubassemblyPoint] = []
+    for point in list(getattr(evaluation, "point_rows", []) or []):
+        local_offset = float(getattr(point, "x", 0.0) or 0.0)
+        offset = direction * (max(float(start_offset or 0.0), 0.0) + local_offset)
+        z = base_z + float(start_z_delta or 0.0) + float(getattr(point, "z", 0.0) or 0.0)
+        point_id = f"{subassembly_id}:definition:{getattr(point, 'point_id', '')}"
+        output.append(
+            AppliedSectionSubassemblyPoint(
+                point_id=point_id,
+                subassembly_ref=subassembly_id,
+                point_code=str(getattr(point, "code", "") or getattr(point, "role", "") or "definition_point"),
+                x=base_x + normal_x * offset,
+                y=base_y + normal_y * offset,
+                z=z,
+                lateral_offset=offset,
+                side=side,
+                diagnostics=[],
+            )
+        )
+    return output
+
+
+def _definition_local_width(evaluation) -> float:
+    offsets = [
+        max(float(getattr(point, "x", 0.0) or 0.0), 0.0)
+        for point in list(getattr(evaluation, "point_rows", []) or [])
+    ]
+    return max(offsets) if offsets else 0.0
+
+
+def _definition_placement_width(evaluation, source_row: object) -> float:
+    return max(_definition_local_width(evaluation), _source_row_placement_width(source_row))
+
+
+def _definition_local_end_z(evaluation) -> float:
+    points = list(getattr(evaluation, "point_rows", []) or [])
+    if not points:
+        return 0.0
+    max_offset = max(max(float(getattr(point, "x", 0.0) or 0.0), 0.0) for point in points)
+    candidates = [
+        float(getattr(point, "z", 0.0) or 0.0)
+        for point in points
+        if abs(max(float(getattr(point, "x", 0.0) or 0.0), 0.0) - max_offset) <= 1.0e-9
+    ]
+    if candidates:
+        return max(candidates)
+    return 0.0
+
+
+def _source_row_placement_width(source_row: object) -> float:
+    kind = str(getattr(source_row, "kind", "") or "").strip().lower()
+    if kind in {"lane", "shoulder", "median", "curb", "gutter", "sidewalk", "bike_lane", "green_strip", "ditch"}:
+        return max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
+    return 0.0
+
+
+def _source_row_placement_z_delta(source_row: object) -> float:
+    width = _source_row_placement_width(source_row)
+    if width <= 1.0e-9:
+        return 0.0
+    return width * float(getattr(source_row, "slope", 0.0) or 0.0)
+
+
+def _definition_link_rows(
+    subassembly_id: str,
+    definition: SubassemblyDefinition,
+    evaluated_points: list[AppliedSectionSubassemblyPoint],
+) -> list[AppliedSectionSubassemblyLink]:
+    point_by_local_id = _definition_point_by_local_id(subassembly_id, evaluated_points)
+    output: list[AppliedSectionSubassemblyLink] = []
+    for link in list(getattr(definition, "link_rows", []) or []):
+        start_ref = point_by_local_id.get(str(getattr(link, "start_point_ref", "") or "").strip(), "")
+        end_ref = point_by_local_id.get(str(getattr(link, "end_point_ref", "") or "").strip(), "")
+        diagnostics = []
+        if not start_ref or not end_ref:
+            diagnostics.append("definition_link_missing_point_ref")
+        output.append(
+            AppliedSectionSubassemblyLink(
+                link_id=f"{subassembly_id}:definition-link:{getattr(link, 'link_id', '')}",
+                subassembly_ref=subassembly_id,
+                start_point_ref=start_ref,
+                end_point_ref=end_ref,
+                link_code=str(getattr(link, "code", "") or getattr(link, "surface_role", "") or "definition_link"),
+                surface_role=_normalized_definition_surface_role(getattr(link, "surface_role", "")),
+                material=str(getattr(link, "material", "") or ""),
+                diagnostics=diagnostics,
+            )
+        )
+    return output
+
+
+def _definition_shape_rows(
+    subassembly_id: str,
+    definition: SubassemblyDefinition,
+    evaluated_points: list[AppliedSectionSubassemblyPoint],
+    result_row: AppliedSectionSubassemblyRow,
+) -> list[AppliedSectionSubassemblyShape]:
+    point_by_local_id = _definition_point_by_local_id(subassembly_id, evaluated_points)
+    output: list[AppliedSectionSubassemblyShape] = []
+    for shape in list(getattr(definition, "shape_rows", []) or []):
+        point_refs = [
+            point_by_local_id.get(str(ref or "").strip(), "")
+            for ref in list(getattr(shape, "point_refs", []) or [])
+            if str(ref or "").strip()
+        ]
+        diagnostics = []
+        if any(not ref for ref in point_refs):
+            diagnostics.append("definition_shape_missing_point_ref")
+        output.append(
+            AppliedSectionSubassemblyShape(
+                shape_id=f"{subassembly_id}:definition-shape:{getattr(shape, 'shape_id', '')}",
+                subassembly_ref=subassembly_id,
+                point_refs=[ref for ref in point_refs if ref],
+                shape_code=str(getattr(shape, "shape_code", "") or getattr(shape, "solid_role", "") or "definition_shape"),
+                material=str(getattr(shape, "material", "") or getattr(result_row, "material", "") or ""),
+                thickness=float(getattr(result_row, "thickness", 0.0) or 0.0),
+                solid_family=str(getattr(shape, "solid_role", "") or ""),
+                diagnostics=diagnostics,
+            )
+        )
+    return output
+
+
+def _normalized_definition_surface_role(surface_role: object) -> str:
+    """Normalize Designer link roles to the evaluated surface contract."""
+
+    role = str(surface_role or "").strip()
+    return {
+        "design": "design_surface",
+        "finished_grade": "design_surface",
+        "finished-grade": "design_surface",
+        "fg": "design_surface",
+        "subgrade": "subgrade_surface",
+        "slope_face": "slope_face_surface",
+        "daylight": "slope_face_surface",
+        "drainage": "drainage_surface",
+    }.get(role, role)
+
+
+def _definition_point_by_local_id(
+    subassembly_id: str,
+    evaluated_points: list[AppliedSectionSubassemblyPoint],
+) -> dict[str, str]:
+    prefix = f"{subassembly_id}:definition:"
+    output: dict[str, str] = {}
+    for point in list(evaluated_points or []):
+        point_id = str(getattr(point, "point_id", "") or "")
+        if point_id.startswith(prefix):
+            output[point_id[len(prefix):]] = point_id
+    return output
+
+
+def _subassembly_side_direction(side: str) -> float:
+    return -1.0 if str(side or "").strip().lower() == "right" else 1.0
+
+
+def _definition_by_ref(libraries: list[SubassemblyLibrary], definition_ref: str) -> SubassemblyDefinition | None:
+    ref = str(definition_ref or "").strip()
+    if not ref:
+        return None
+    for library in list(libraries or []):
+        definition = library.definition_by_id(ref)
+        if definition is not None:
+            return definition
+    return None
+
+
+def _preset_by_ref(libraries: list[SubassemblyPresetLibrary], preset_ref: str) -> SubassemblyPreset | None:
+    ref = str(preset_ref or "").strip()
+    if not ref:
+        return None
+    for library in list(libraries or []):
+        preset = library.subassembly_preset_by_id(ref)
+        if preset is not None:
+            return preset
+    return None
+
+
+def _definition_ref_diagnostics(subassembly, subassembly_libraries: list[SubassemblyLibrary] | None) -> list[str]:
+    definition_ref = str(getattr(subassembly, "definition_ref", "") or "").strip()
+    if not definition_ref:
+        return []
+    if _definition_by_ref(list(subassembly_libraries or []), definition_ref) is not None:
+        return []
+    return [f"missing_subassembly_definition:{definition_ref}"]
+
+
+def _preset_ref_diagnostics(subassembly, subassembly_preset_libraries: list[SubassemblyPresetLibrary] | None) -> list[str]:
+    preset_ref = str(getattr(subassembly, "preset_ref", "") or "").strip()
+    if not preset_ref:
+        return []
+    preset = _preset_by_ref(list(subassembly_preset_libraries or []), preset_ref)
+    if preset is None:
+        return [f"missing_subassembly_preset:{preset_ref}"]
+    row_version = str(getattr(subassembly, "preset_version", "") or "").strip()
+    preset_version = str(getattr(preset, "version", "") or "").strip()
+    if row_version and preset_version and row_version != preset_version:
+        return [f"outdated_subassembly_preset:{preset_ref}:row={row_version}:library={preset_version}"]
+    return []
+
+
+def _subassembly_rows_with_preset_surface_role_diagnostics(
+    subassembly_rows: list[AppliedSectionSubassemblyRow],
+    subassembly_link_rows: list[AppliedSectionSubassemblyLink],
+    preset_libraries: list[SubassemblyPresetLibrary],
+) -> list[AppliedSectionSubassemblyRow]:
+    if not subassembly_rows:
+        return []
+    roles_by_subassembly: dict[str, set[str]] = {}
+    for link in list(subassembly_link_rows or []):
+        subassembly_ref = str(getattr(link, "subassembly_ref", "") or "").strip()
+        surface_role = str(getattr(link, "surface_role", "") or "").strip()
+        if subassembly_ref and surface_role:
+            roles_by_subassembly.setdefault(subassembly_ref, set()).add(surface_role)
+    output: list[AppliedSectionSubassemblyRow] = []
+    for row in list(subassembly_rows or []):
+        preset_ref = str(getattr(row, "preset_ref", "") or "").strip()
+        preset = _preset_by_ref(preset_libraries, preset_ref)
+        if preset is None:
+            output.append(row)
+            continue
+        expected_roles = {
+            str(role or "").strip()
+            for role in dict(getattr(preset, "surface_roles", {}) or {}).values()
+            if str(role or "").strip()
+        }
+        if not expected_roles:
+            output.append(row)
+            continue
+        actual_roles = roles_by_subassembly.get(str(getattr(row, "subassembly_id", "") or "").strip(), set())
+        missing_roles = sorted(role for role in expected_roles if role not in actual_roles)
+        if not missing_roles:
+            output.append(row)
+            continue
+        diagnostics = list(getattr(row, "diagnostics", []) or [])
+        diagnostics.extend(f"missing_preset_surface_role:{preset_ref}:{role}" for role in missing_roles)
+        output.append(replace(row, diagnostics=diagnostics))
+    return output
+
+
 def _subassembly_point_rows(
     point_rows: list[AppliedSectionPoint],
     subassembly_rows: list[AppliedSectionSubassemblyRow],
@@ -1061,7 +2015,7 @@ def _surface_subassembly_point_rows(
     output: list[AppliedSectionSubassemblyPoint] = []
     left_offset = 0.0
     right_offset = 0.0
-    for row in sorted(list(subassembly_rows or []), key=lambda item: int(getattr(item, "parameters", {}).get("subassembly_index", 0) or 0)):
+    for row in list(subassembly_rows or []):
         kind = str(getattr(row, "kind", "") or "").strip().lower()
         if kind not in {"lane", "shoulder", "median", "curb", "gutter", "sidewalk", "bike_lane", "green_strip"}:
             continue
@@ -1229,6 +2183,18 @@ def _oriented_bench_subassembly_points(
         return []
     offset = float(edge_offset)
     z = float(edge_z)
+    output.append(
+        AppliedSectionSubassemblyPoint(
+            point_id=f"{subassembly_ref}:{side_label}:side_slope_surface:start",
+            subassembly_ref=subassembly_ref,
+            point_code="side_slope_surface",
+            x=base_x + normal_x * offset,
+            y=base_y + normal_y * offset,
+            z=z,
+            lateral_offset=offset,
+            side=side_label,
+        )
+    )
     for index, segment in enumerate(list(segments or []), start=1):
         width = max(float(segment.get("width", 0.0) or 0.0), 0.0)
         if width <= 1.0e-9:
@@ -1514,7 +2480,9 @@ def _bench_evaluations(
             continue
         if str(getattr(source_row, "kind", "") or "") != "side_slope":
             continue
-        base_segments = _bench_profile_segments(source_row)
+        if str(getattr(source_row, "definition_ref", "") or "").strip():
+            continue
+        base_segments, base_diagnostics = _bench_profile_segments_with_diagnostics(source_row)
         if not base_segments:
             continue
         side = str(getattr(source_row, "side", "") or "center")
@@ -1538,7 +2506,7 @@ def _bench_evaluations(
                     edge_z=edge_z,
                     direction=direction,
                     segments=segments,
-                    diagnostics=diagnostics,
+                    diagnostics=list(base_diagnostics) + list(diagnostics),
                 )
             )
     return output
@@ -1713,15 +2681,30 @@ def _oriented_bench_points(
 
 
 def _bench_profile_segments(row, *, total_width: float | None = None) -> list[dict[str, object]]:
+    segments, _diagnostics = _bench_profile_segments_with_diagnostics(row, total_width=total_width)
+    return segments
+
+
+def _bench_profile_segments_with_diagnostics(
+    row,
+    *,
+    total_width: float | None = None,
+) -> tuple[list[dict[str, object]], list[DiagnosticMessage]]:
     params = dict(getattr(row, "parameters", {}) or {})
-    rows = normalize_bench_rows(params.get("bench_rows", []))
-    if not rows:
-        return []
+    parse_result = parse_bench_rows(
+        params.get("bench_rows", []),
+        source_id=f"{_subassembly_id(row, fallback='side_slope')}:bench_rows",
+    )
     remaining = max(
         float(total_width if total_width is not None else getattr(row, "width", 0.0) or 0.0),
         0.0,
     )
     current_slope = float(getattr(row, "slope", 0.0) or 0.0)
+    rows = bench_rows_to_dicts(parse_result.rows)
+    if not rows:
+        if remaining <= 1.0e-9:
+            return [], list(parse_result.diagnostic_rows)
+        return [{"kind": "side_slope", "width": remaining, "slope": current_slope}], list(parse_result.diagnostic_rows)
     repeat = _truthy(params.get("repeat_first_bench_to_daylight"))
     source_rows = [rows[0]] if repeat else rows
     segments: list[dict[str, object]] = []
@@ -1759,7 +2742,7 @@ def _bench_profile_segments(row, *, total_width: float | None = None) -> list[di
             append_row(row)
     if remaining > 1.0e-9:
         segments.append({"kind": "side_slope", "width": remaining, "slope": current_slope})
-    return segments
+    return segments, list(parse_result.diagnostic_rows)
 
 
 def _clip_bench_segments_to_terrain(
@@ -2292,6 +3275,8 @@ def _surface_section_offsets(
     for source_row in sorted(rows, key=_section_source_sort_index):
         if str(getattr(source_row, "kind", "") or "") not in fg_kinds:
             continue
+        if str(getattr(source_row, "definition_ref", "") or "").strip():
+            continue
         width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
         if width <= 0.0:
             continue
@@ -2436,6 +3421,7 @@ def _ditch_source_rows(
             key=_section_source_sort_index,
         )
         if bool(getattr(source, "enabled", True)) and str(getattr(source, "kind", "") or "") == "ditch"
+        and not str(getattr(source, "definition_ref", "") or "").strip()
     ]
     if subassemblies:
         return [(source, str(getattr(source, "subassembly_id", "") or "")) for source in subassemblies]

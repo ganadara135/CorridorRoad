@@ -96,6 +96,7 @@ def ensure_v1_applied_section_set_properties(obj) -> None:
     _add_property(obj, "App::PropertyFloatList", "FrameProfileGrades", "Frames", "profile grades")
     _add_property(obj, "App::PropertyStringList", "FrameAlignmentStatuses", "Frames", "alignment statuses")
     _add_property(obj, "App::PropertyStringList", "FrameProfileStatuses", "Frames", "profile statuses")
+    _add_property(obj, "App::PropertyStringList", "FrameNotes", "Frames", "frame source and diagnostic notes")
     _add_property(obj, "App::PropertyFloatList", "SurfaceLeftWidths", "Surface", "left design surface widths")
     _add_property(obj, "App::PropertyFloatList", "SurfaceRightWidths", "Surface", "right design surface widths")
     _add_property(obj, "App::PropertyFloatList", "SubgradeDepths", "Surface", "subgrade depths")
@@ -225,6 +226,7 @@ def update_v1_applied_section_set_object(obj, applied_section_set: AppliedSectio
     obj.FrameProfileGrades = [float(getattr(frame, "profile_grade", 0.0) or 0.0) for frame in frames]
     obj.FrameAlignmentStatuses = [str(getattr(frame, "alignment_status", "") or "") for frame in frames]
     obj.FrameProfileStatuses = [str(getattr(frame, "profile_status", "") or "") for frame in frames]
+    obj.FrameNotes = [str(getattr(frame, "notes", "") or "") for frame in frames]
     obj.SurfaceLeftWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_left_width", 0.0) or 0.0) for row in station_rows]
     obj.SurfaceRightWidths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "surface_right_width", 0.0) or 0.0) for row in station_rows]
     obj.SubgradeDepths = [float(getattr(section_by_id.get(str(row.applied_section_id)), "subgrade_depth", 0.0) or 0.0) for row in station_rows]
@@ -512,6 +514,7 @@ def to_applied_section_set(obj) -> AppliedSectionSet | None:
                     profile_grade=_float_value(getattr(obj, "FrameProfileGrades", []), index, 0.0),
                     alignment_status=_list_value(getattr(obj, "FrameAlignmentStatuses", []), index, ""),
                     profile_status=_list_value(getattr(obj, "FrameProfileStatuses", []), index, ""),
+                    notes=_list_value(getattr(obj, "FrameNotes", []), index, ""),
                 ),
             )
         )
@@ -627,6 +630,11 @@ def _subassembly_rows(station_rows, section_by_id: dict[str, AppliedSection]) ->
                             if str(value or "")
                         ),
                         ";".join(_escape_row_value(value) for value in list(getattr(subassembly, "diagnostics", []) or [])),
+                        _escape_row_value(getattr(subassembly, "definition_ref", "")),
+                        _escape_row_value(getattr(subassembly, "preset_ref", "")),
+                        _escape_row_value(getattr(subassembly, "preset_version", "")),
+                        _escape_row_value(getattr(subassembly, "preset_status", "")),
+                        _escape_row_value(getattr(subassembly, "source_instance_ref", "")),
                     ]
                 )
             )
@@ -805,10 +813,20 @@ def _parse_subassembly_rows(values) -> dict[str, list[AppliedSectionSubassemblyR
             if str(value or "")
         ]
         diagnostics = list(_parse_semicolon_tuple(parts[17] if len(parts) > 17 else ""))
+        definition_ref = _unescape_row_value(parts[18]) if len(parts) > 18 else ""
+        preset_ref = _unescape_row_value(parts[19]) if len(parts) > 19 else ""
+        preset_version = _unescape_row_value(parts[20]) if len(parts) > 20 else ""
+        preset_status = _unescape_row_value(parts[21]) if len(parts) > 21 else ""
+        source_instance_ref = _unescape_row_value(parts[22]) if len(parts) > 22 else ""
         output.setdefault(section_id, []).append(
             AppliedSectionSubassemblyRow(
                 subassembly_id=_unescape_row_value(parts[1]),
                 kind=_unescape_row_value(parts[2]),
+                definition_ref=definition_ref,
+                preset_ref=preset_ref,
+                preset_version=preset_version,
+                preset_status=preset_status,
+                source_instance_ref=source_instance_ref,
                 source_template_id=_unescape_row_value(parts[3]),
                 region_id=_unescape_row_value(parts[4]),
                 side=_unescape_row_value(parts[5]),

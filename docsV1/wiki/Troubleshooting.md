@@ -87,6 +87,20 @@ Check:
 - Applied Sections exist before rebuilding Build Corridor
 - Build Corridor was run again after the transition update
 
+## Curved 3D Centerline Surface Looks Too Straight
+
+Check:
+
+- 3D Centerline was built and reviewed before Applied Sections
+- Applied Sections `Supplemental Sections` is enabled
+- Applied Sections summary shows supplemental sections greater than zero on curved spans
+- Build Corridor Guided Review row `2a. Supplemental Sections` reports consumed supplemental sections
+- if Build Corridor reports compatibility fallback, rebuild Applied Sections before trusting the surface
+
+Build Parametric no longer owns supplemental density.
+
+Change the density in Applied Sections, rebuild Applied Sections, then rebuild Build Corridor.
+
 ## Earthwork Has No Results
 
 Check:

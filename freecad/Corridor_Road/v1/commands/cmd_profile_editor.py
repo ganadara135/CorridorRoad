@@ -17,7 +17,7 @@ try:
 except Exception:  # pragma: no cover - Part is not available in plain Python.
     Part = None
 
-from freecad.Corridor_Road.qt_compat import QtCore, QtWidgets
+from freecad.Corridor_Road.qt_compat import QtCore, QtGui, QtWidgets
 
 from ...misc.resources import icon_path
 from ...objects.obj_project import (
@@ -37,7 +37,13 @@ from ..objects.obj_profile import (
 from ..objects.obj_stationing import find_v1_stationing, station_value_rows
 from ..models.source.profile_model import ProfileControlPoint, ProfileModel, VerticalCurveRow
 from ..models.result.tin_surface import TINSurface
-from ..services.evaluation import AlignmentEvaluationService, ProfileEvaluationService, ProfileTinSamplingService
+from ..services.evaluation import (
+    AlignmentEvaluationService,
+    ProfileCurvePreviewRequest,
+    ProfileCurvePreviewService,
+    ProfileEvaluationService,
+    ProfileTinSamplingService,
+)
 from ..ui.common import run_legacy_command
 from .selection_context import selected_alignment_profile_target
 
@@ -978,6 +984,264 @@ def _make_profile_table_compact(table, column_widths: list[int]) -> None:
         pass
 
 
+class _ProfileCurvePreviewWidget(QtWidgets.QWidget):
+    """Small read-only 2D profile curve preview canvas."""
+
+    def __init__(self):
+        super().__init__()
+        self._result = None
+        self._error = ""
+        self._zoom_factor = 1.0
+        self._zoom_changed_callback = None
+        try:
+            self.setMinimumHeight(170)
+            self.setMaximumHeight(230)
+            self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        except Exception:
+            pass
+
+    def set_result(self, result) -> None:
+        self._result = result
+        self._error = ""
+        self.update()
+
+    def set_error(self, message: str) -> None:
+        self._result = None
+        self._error = str(message or "")
+        self.update()
+
+    def zoom_in(self) -> None:
+        self._set_zoom(self._zoom_factor * 1.25)
+
+    def zoom_out(self) -> None:
+        self._set_zoom(self._zoom_factor / 1.25)
+
+    def reset_zoom(self) -> None:
+        self._set_zoom(1.0)
+
+    def zoom_percent(self) -> int:
+        return int(round(float(self._zoom_factor) * 100.0))
+
+    def set_zoom_changed_callback(self, callback) -> None:
+        self._zoom_changed_callback = callback
+
+    def _set_zoom(self, value: float) -> None:
+        self._zoom_factor = max(0.25, min(8.0, float(value or 1.0)))
+        self.update()
+        try:
+            if self._zoom_changed_callback is not None:
+                self._zoom_changed_callback()
+        except Exception:
+            pass
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt override name
+        try:
+            if not (event.modifiers() & QtCore.Qt.ControlModifier):
+                return super().wheelEvent(event)
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            elif delta < 0:
+                self.zoom_out()
+            event.accept()
+        except Exception:
+            super().wheelEvent(event)
+
+    def paintEvent(self, event):  # noqa: N802 - Qt override name
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
+            rect = self.rect()
+            painter.fillRect(rect, QtGui.QColor("#101821"))
+            plot = rect.adjusted(42, 18, -18, -34)
+            painter.fillRect(plot, QtGui.QColor("#0c1923"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#3f5264")))
+            painter.drawRect(plot)
+            if self._error:
+                painter.setPen(QtGui.QColor("#f0c36a"))
+                painter.drawText(plot.adjusted(10, 10, -10, -10), QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop | QtCore.Qt.TextWordWrap, self._error)
+                return
+            result = self._result
+            if result is None or not list(getattr(result, "point_rows", []) or []):
+                painter.setPen(QtGui.QColor("#cfd7e6"))
+                painter.drawText(plot, QtCore.Qt.AlignCenter, "Curve preview is not available.")
+                return
+            bounds = self._zoomed_bounds(self._bounds(result))
+            self._draw_grid(painter, plot, bounds)
+            self._draw_curve(painter, plot, bounds, result, "source_tangent", "#f08a30", 1.8)
+            self._draw_vertical_curve_guides(painter, plot, bounds, result)
+            self._draw_curve(painter, plot, bounds, result, "evaluated_curve", "#2de4ee", 2.6)
+            self._draw_annotations(painter, plot, bounds, result)
+        finally:
+            painter.end()
+
+    def _bounds(self, result) -> tuple[float, float, float, float]:
+        points = list(getattr(result, "point_rows", []) or [])
+        stations = [float(getattr(row, "station", 0.0) or 0.0) for row in points]
+        elevations = [float(getattr(row, "elevation", 0.0) or 0.0) for row in points]
+        for row in list(getattr(result, "annotation_rows", []) or []):
+            stations.append(float(getattr(row, "station", 0.0) or 0.0))
+            elevations.append(float(getattr(row, "elevation", 0.0) or 0.0))
+        station_min = min(stations)
+        station_max = max(stations)
+        elevation_min = min(elevations)
+        elevation_max = max(elevations)
+        station_pad = max(1.0, (station_max - station_min) * 0.04)
+        elevation_pad = max(1.0, (elevation_max - elevation_min) * 0.16)
+        return station_min - station_pad, station_max + station_pad, elevation_min - elevation_pad, elevation_max + elevation_pad
+
+    def _zoomed_bounds(self, bounds: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        station_min, station_max, elevation_min, elevation_max = bounds
+        zoom = max(0.25, min(8.0, float(self._zoom_factor or 1.0)))
+        station_center = 0.5 * (station_min + station_max)
+        elevation_center = 0.5 * (elevation_min + elevation_max)
+        station_half = max(1.0e-9, 0.5 * (station_max - station_min) / zoom)
+        elevation_half = max(1.0e-9, 0.5 * (elevation_max - elevation_min) / zoom)
+        return (
+            station_center - station_half,
+            station_center + station_half,
+            elevation_center - elevation_half,
+            elevation_center + elevation_half,
+        )
+
+    def _point(self, plot, bounds, station: float, elevation: float):
+        station_min, station_max, elevation_min, elevation_max = bounds
+        width = max(float(plot.width()), 1.0)
+        height = max(float(plot.height()), 1.0)
+        x = float(plot.left()) + ((float(station) - station_min) / max(station_max - station_min, 1.0e-9)) * width
+        y = float(plot.bottom()) - ((float(elevation) - elevation_min) / max(elevation_max - elevation_min, 1.0e-9)) * height
+        return QtCore.QPointF(x, y)
+
+    def _draw_grid(self, painter, plot, bounds) -> None:
+        station_min, station_max, elevation_min, elevation_max = bounds
+        painter.setPen(QtGui.QPen(QtGui.QColor("#263746")))
+        for index in range(1, 5):
+            x = plot.left() + plot.width() * index / 5.0
+            painter.drawLine(QtCore.QPointF(x, plot.top()), QtCore.QPointF(x, plot.bottom()))
+            y = plot.top() + plot.height() * index / 5.0
+            painter.drawLine(QtCore.QPointF(plot.left(), y), QtCore.QPointF(plot.right(), y))
+        painter.setPen(QtGui.QColor("#8fa8bb"))
+        painter.drawText(plot.left(), plot.bottom() + 18, f"STA {station_min:.1f}")
+        painter.drawText(plot.right() - 90, plot.bottom() + 18, f"STA {station_max:.1f}")
+        painter.drawText(4, plot.top() + 12, f"EL {elevation_max:.1f}")
+        painter.drawText(4, plot.bottom(), f"EL {elevation_min:.1f}")
+
+    def _draw_curve(self, painter, plot, bounds, result, role: str, color: str, width: float) -> None:
+        rows = [
+            row
+            for row in list(getattr(result, "point_rows", []) or [])
+            if str(getattr(row, "role", "") or "") == role
+        ]
+        rows.sort(key=lambda row: float(getattr(row, "station", 0.0) or 0.0))
+        if len(rows) < 2:
+            return
+        pen = QtGui.QPen(QtGui.QColor(color))
+        pen.setWidthF(width)
+        painter.setPen(pen)
+        previous = None
+        for row in rows:
+            point = self._point(plot, bounds, float(getattr(row, "station", 0.0) or 0.0), float(getattr(row, "elevation", 0.0) or 0.0))
+            if previous is not None:
+                painter.drawLine(previous, point)
+            previous = point
+
+    def _draw_annotations(self, painter, plot, bounds, result) -> None:
+        for row in list(getattr(result, "annotation_rows", []) or []):
+            kind = str(getattr(row, "kind", "") or "")
+            if kind not in {"BVC", "PVI", "EVC", "HP", "LP"}:
+                continue
+            point = self._point(plot, bounds, float(getattr(row, "station", 0.0) or 0.0), float(getattr(row, "elevation", 0.0) or 0.0))
+            color = QtGui.QColor("#f4d35e")
+            if kind == "PVI":
+                color = QtGui.QColor("#f5f7fa")
+            elif kind in {"HP", "LP"}:
+                color = QtGui.QColor("#76e28a")
+            painter.setPen(QtGui.QPen(QtGui.QColor("#101821")))
+            painter.setBrush(color)
+            painter.drawEllipse(point, 4.5, 4.5)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QColor("#e6edf7"))
+            value = str(getattr(row, "value", "") or "")
+            label = kind if not value else f"{kind} {value}"
+            painter.drawText(point + QtCore.QPointF(6.0, -6.0), label)
+
+    def _draw_vertical_curve_guides(self, painter, plot, bounds, result) -> None:
+        points = [
+            row
+            for row in list(getattr(result, "point_rows", []) or [])
+            if str(getattr(row, "role", "") or "") == "evaluated_curve"
+        ]
+        if len(points) < 2:
+            return
+        for curve in list(getattr(result, "curve_rows", []) or []):
+            curve_id = str(getattr(curve, "curve_id", "") or "")
+            station_start = float(getattr(curve, "station_start", 0.0) or 0.0)
+            station_end = float(getattr(curve, "station_end", station_start) or station_start)
+            if station_end < station_start:
+                station_start, station_end = station_end, station_start
+            curve_points = [
+                row
+                for row in points
+                if (
+                    str(getattr(row, "curve_ref", "") or "") == curve_id
+                    or station_start - 1.0e-9 <= float(getattr(row, "station", 0.0) or 0.0) <= station_end + 1.0e-9
+                )
+            ]
+            curve_points.sort(key=lambda row: float(getattr(row, "station", 0.0) or 0.0))
+            if len(curve_points) < 2:
+                continue
+            pen = QtGui.QPen(QtGui.QColor("#a76dff"))
+            pen.setWidthF(5.4)
+            try:
+                pen.setCapStyle(QtCore.Qt.RoundCap)
+                pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            except Exception:
+                pass
+            painter.setPen(pen)
+            path = QtGui.QPainterPath(
+                self._point(
+                    plot,
+                    bounds,
+                    float(getattr(curve_points[0], "station", 0.0) or 0.0),
+                    float(getattr(curve_points[0], "elevation", 0.0) or 0.0),
+                )
+            )
+            for row in curve_points[1:]:
+                path.lineTo(
+                    self._point(
+                        plot,
+                        bounds,
+                        float(getattr(row, "station", 0.0) or 0.0),
+                        float(getattr(row, "elevation", 0.0) or 0.0),
+                    )
+                )
+            painter.drawPath(path)
+
+            label_station = float(getattr(curve, "high_low_station", 0.0) or 0.0)
+            label_elevation = float(getattr(curve, "high_low_elevation", 0.0) or 0.0)
+            if label_station <= 0.0:
+                mid_row = curve_points[len(curve_points) // 2]
+                label_station = float(getattr(mid_row, "station", 0.0) or 0.0)
+                label_elevation = float(getattr(mid_row, "elevation", 0.0) or 0.0)
+            guide_label = self._vertical_curve_label(curve)
+            label_point = self._point(plot, bounds, label_station, label_elevation)
+            painter.setPen(QtGui.QColor("#f5f0ff"))
+            painter.drawText(label_point + QtCore.QPointF(8.0, 14.0), guide_label)
+
+    @staticmethod
+    def _vertical_curve_label(curve) -> str:
+        high_low = str(getattr(curve, "high_low_kind", "") or "").upper()
+        algebraic = float(getattr(curve, "algebraic_grade_difference", 0.0) or 0.0)
+        curve_kind = str(getattr(curve, "kind", "") or "parabolic_vertical_curve").lower()
+        base = "Parabola" if "parabolic" in curve_kind or "vertical_curve" in curve_kind else str(getattr(curve, "kind", "") or "Curve")
+        if high_low == "HP" or algebraic < 0.0:
+            return f"{base} Crest"
+        if high_low == "LP" or algebraic > 0.0:
+            return f"{base} Sag"
+        return base
+
+
 class V1ProfileEditorTaskPanel:
     """Tabbed editor for v1 profile source rows and references."""
 
@@ -988,6 +1252,7 @@ class V1ProfileEditorTaskPanel:
         self._needs_stationing_notice = False
         self._stationing_loaded_rows = 0
         self.form = self._build_ui()
+        self._refresh_curve_preview()
         if self._needs_stationing_notice:
             self._show_message(
                 "Profile",
@@ -1070,6 +1335,7 @@ class V1ProfileEditorTaskPanel:
         layout.addWidget(self._tabs, 1)
 
         self._refresh_reference_tabs()
+        layout.addWidget(self._build_curve_preview_group())
 
         button_grid = QtWidgets.QGridLayout()
         button_grid.setHorizontalSpacing(8)
@@ -1121,6 +1387,68 @@ class V1ProfileEditorTaskPanel:
         edit_row.addStretch(1)
         layout.addLayout(edit_row)
         return tab
+
+    def _build_curve_preview_group(self):
+        group = QtWidgets.QGroupBox("Curve Preview")
+        layout = QtWidgets.QVBoxLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        toolbar = QtWidgets.QHBoxLayout()
+        refresh_button = QtWidgets.QPushButton("Refresh Curve Preview")
+        refresh_button.clicked.connect(self._refresh_curve_preview)
+        toolbar.addWidget(refresh_button)
+        zoom_in_button = QtWidgets.QPushButton("Zoom In")
+        zoom_in_button.clicked.connect(self._zoom_curve_preview_in)
+        toolbar.addWidget(zoom_in_button)
+        zoom_out_button = QtWidgets.QPushButton("Zoom Out")
+        zoom_out_button.clicked.connect(self._zoom_curve_preview_out)
+        toolbar.addWidget(zoom_out_button)
+        zoom_reset_button = QtWidgets.QPushButton("Reset Zoom")
+        zoom_reset_button.clicked.connect(self._reset_curve_preview_zoom)
+        toolbar.addWidget(zoom_reset_button)
+        self._curve_preview_zoom_label = QtWidgets.QLabel("100%")
+        self._curve_preview_zoom_label.setMinimumWidth(48)
+        self._curve_preview_zoom_label.setStyleSheet("color: #dce8f7;")
+        toolbar.addWidget(self._curve_preview_zoom_label)
+        toolbar.addWidget(QtWidgets.QLabel("cyan=evaluated curve, purple=parabola guide, orange=source tangent, yellow=BVC/EVC, white=PVI, green=HP/LP"))
+        toolbar.addStretch(1)
+        layout.addLayout(toolbar)
+        self._curve_preview_widget = _ProfileCurvePreviewWidget()
+        self._curve_preview_widget.set_zoom_changed_callback(self._update_curve_preview_zoom_label)
+        layout.addWidget(self._curve_preview_widget)
+        self._curve_preview_info = QtWidgets.QPlainTextEdit()
+        self._curve_preview_info.setReadOnly(True)
+        self._curve_preview_info.setMaximumHeight(96)
+        self._curve_preview_info.setPlainText("Curve info will appear after preview refresh.")
+        self._curve_preview_info.setStyleSheet(
+            "QPlainTextEdit { color: #dce8f7; background: #162233; border: 1px solid #41546a; padding: 6px; }"
+        )
+        layout.addWidget(self._curve_preview_info)
+        return group
+
+    def _zoom_curve_preview_in(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.zoom_in()
+        self._update_curve_preview_zoom_label()
+
+    def _zoom_curve_preview_out(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.zoom_out()
+        self._update_curve_preview_zoom_label()
+
+    def _reset_curve_preview_zoom(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is not None:
+            widget.reset_zoom()
+        self._update_curve_preview_zoom_label()
+
+    def _update_curve_preview_zoom_label(self) -> None:
+        label = getattr(self, "_curve_preview_zoom_label", None)
+        widget = getattr(self, "_curve_preview_widget", None)
+        if label is not None and widget is not None:
+            label.setText(f"{widget.zoom_percent()}%")
 
     def _build_vertical_curves_tab(self):
         tab = QtWidgets.QWidget()
@@ -1521,6 +1849,7 @@ class V1ProfileEditorTaskPanel:
             station_rows = self._table_station_kind_rows()
             rows = profile_preset_rows_for_station_rows(str(name), station_rows)
             self._replace_table_rows(rows)
+            self._refresh_curve_preview()
             self._set_status(f"Loaded Profile preset data: {name} onto {len(rows)} current station row(s). Apply when ready.", ok=True)
             self._show_message(
                 "Profile",
@@ -1542,6 +1871,7 @@ class V1ProfileEditorTaskPanel:
         try:
             rows = import_profile_control_rows_from_csv(path)
             self._replace_table_rows(rows)
+            self._refresh_curve_preview()
             self._set_status(f"Imported {len(rows)} Profile row(s) from CSV. Apply when ready.", ok=True)
             self._show_message(
                 "Profile",
@@ -1572,6 +1902,7 @@ class V1ProfileEditorTaskPanel:
         try:
             rows = auto_interpolate_profile_elevation_rows(self._table_rows_with_optional_elevations())
             self._replace_table_rows(rows)
+            self._refresh_curve_preview()
             self._set_status(
                 f"Auto Interpolate Elevations filled {len(rows)} profile row(s). Apply when ready.",
                 ok=True,
@@ -1590,6 +1921,7 @@ class V1ProfileEditorTaskPanel:
             station = 0.0
             elevation = 0.0
         self._append_table_row({"station": station, "elevation": elevation, "kind": "pvi"})
+        self._refresh_curve_preview()
         self._set_status("Added a new PVI row. Apply when ready.", ok=True)
 
     def _delete_selected_rows(self) -> None:
@@ -1598,6 +1930,7 @@ class V1ProfileEditorTaskPanel:
             selected = [self._table.currentRow()]
         for row_index in selected:
             self._table.removeRow(row_index)
+        self._refresh_curve_preview()
         self._set_status(f"Deleted {len(selected)} row(s). Apply when ready.", ok=True)
 
     def _sort_table_rows(self) -> None:
@@ -1609,6 +1942,7 @@ class V1ProfileEditorTaskPanel:
         self._table.setRowCount(0)
         for row in rows:
             self._append_table_row(row)
+        self._refresh_curve_preview()
         self._set_status("Rows sorted by station. Apply when ready.", ok=True)
 
     def _add_curve_row(self) -> None:
@@ -1621,6 +1955,7 @@ class V1ProfileEditorTaskPanel:
                 "parameter": 0.0,
             }
         )
+        self._refresh_curve_preview()
         self._set_status("Added a blank vertical curve row. Enter Start/End/Length, then Apply.", ok=True)
 
     def _auto_curve_rows_from_pvi(self) -> None:
@@ -1637,6 +1972,7 @@ class V1ProfileEditorTaskPanel:
         self._curve_table.setRowCount(0)
         for row in curve_rows:
             self._append_vertical_curve_row(row)
+        self._refresh_curve_preview()
         self._set_status(f"Generated {len(curve_rows)} vertical curve row(s) from PVI rows. Apply when ready.", ok=True)
         self._show_message(
             "Profile",
@@ -1669,6 +2005,7 @@ class V1ProfileEditorTaskPanel:
             selected = [self._curve_table.currentRow()]
         for row_index in selected:
             self._curve_table.removeRow(row_index)
+        self._refresh_curve_preview()
         self._set_status(f"Deleted {len(selected)} vertical curve row(s). Apply when ready.", ok=True)
 
     def _sort_curve_rows(self) -> None:
@@ -1681,6 +2018,7 @@ class V1ProfileEditorTaskPanel:
         self._curve_table.setRowCount(0)
         for row in rows:
             self._append_vertical_curve_row(row)
+        self._refresh_curve_preview()
         self._set_status("Vertical curve rows sorted by start station. Apply when ready.", ok=True)
 
     def _apply(self, *, close_after: bool = False) -> bool:
@@ -1704,6 +2042,7 @@ class V1ProfileEditorTaskPanel:
             self._set_status(f"Applied {len(normalized)} PVI row(s) to V1Profile.", ok=True)
             self._profile_label.setText(self._profile_summary_text())
             self._refresh_reference_tabs()
+            self._refresh_curve_preview()
             self._show_apply_complete_message(len(normalized), len(normalized_curves))
             if close_after and Gui is not None:
                 Gui.Control.closeDialog()
@@ -1792,6 +2131,83 @@ class V1ProfileEditorTaskPanel:
         except Exception as exc:
             self._set_status(str(exc), ok=False)
             self._show_message("Profile", f"Profile preview was not shown.\n{exc}")
+
+    def _refresh_curve_preview(self) -> None:
+        widget = getattr(self, "_curve_preview_widget", None)
+        if widget is None:
+            return
+        try:
+            input_rows = self._table_rows(allow_empty=False)
+            curve_rows = self._curve_table_rows(allow_empty=True)
+            alignment = self.preferred_alignment or find_v1_alignment(self.document)
+            alignment_id = str(getattr(alignment, "AlignmentId", "") or "")
+            profile_model = profile_model_from_editor_rows(
+                input_rows,
+                curve_rows,
+                alignment_id=alignment_id,
+                profile_id=str(getattr(self.profile, "ProfileId", "") or "profile:curve-preview"),
+                label="Profile Curve Preview",
+            )
+            result = ProfileCurvePreviewService().evaluate(
+                ProfileCurvePreviewRequest(profile=profile_model, sample_interval=10.0)
+            )
+            widget.set_result(result)
+            self._set_curve_preview_info(result)
+        except Exception as exc:
+            widget.set_error(str(exc))
+            info = getattr(self, "_curve_preview_info", None)
+            if info is not None:
+                info.setPlainText(f"Curve preview unavailable:\n{exc}")
+
+    def _set_curve_preview_info(self, result) -> None:
+        info = getattr(self, "_curve_preview_info", None)
+        if info is None:
+            return
+        lines: list[str] = []
+        curve_rows = list(getattr(result, "curve_rows", []) or [])
+        if curve_rows:
+            curve = curve_rows[0]
+            lines.append(
+                "Curve: "
+                f"{str(getattr(curve, 'curve_id', '') or '-')}"
+                f" | {str(getattr(curve, 'kind', '') or '-')}"
+                f" | STA {float(getattr(curve, 'station_start', 0.0) or 0.0):.3f}"
+                f" - {float(getattr(curve, 'station_end', 0.0) or 0.0):.3f}"
+                f" | L={float(getattr(curve, 'length', 0.0) or 0.0):.3f}"
+            )
+            lines.append(
+                "BVC/PVI/EVC: "
+                f"BVC {float(getattr(curve, 'bvc_station', 0.0) or 0.0):.3f}/EL {float(getattr(curve, 'bvc_elevation', 0.0) or 0.0):.3f}, "
+                f"PVI {float(getattr(curve, 'pvi_station', 0.0) or 0.0):.3f}/EL {float(getattr(curve, 'pvi_elevation', 0.0) or 0.0):.3f}, "
+                f"EVC {float(getattr(curve, 'evc_station', 0.0) or 0.0):.3f}/EL {float(getattr(curve, 'evc_elevation', 0.0) or 0.0):.3f}"
+            )
+            lines.append(
+                "Grades: "
+                f"g1={float(getattr(curve, 'grade_in', 0.0) or 0.0):.6f}, "
+                f"g2={float(getattr(curve, 'grade_out', 0.0) or 0.0):.6f}, "
+                f"A={float(getattr(curve, 'algebraic_grade_difference', 0.0) or 0.0):.6f}, "
+                f"K={float(getattr(curve, 'k_value', 0.0) or 0.0):.3f}, "
+                f"max deviation={float(getattr(curve, 'max_chord_deviation', 0.0) or 0.0):.3f}"
+            )
+            high_low = str(getattr(curve, "high_low_kind", "") or "")
+            if high_low:
+                lines.append(
+                    f"{high_low}: STA {float(getattr(curve, 'high_low_station', 0.0) or 0.0):.3f}, "
+                    f"EL {float(getattr(curve, 'high_low_elevation', 0.0) or 0.0):.3f}"
+                )
+        else:
+            lines.append("Curve: no vertical curve rows. Preview shows source tangent/chord behavior.")
+        diagnostics = [
+            f"{str(getattr(row, 'severity', '') or '').upper()}: {str(getattr(row, 'kind', '') or '')} - {str(getattr(row, 'message', '') or '')}"
+            for row in list(getattr(result, "diagnostic_rows", []) or [])
+            if str(getattr(row, "severity", "") or "").lower() != "info"
+        ]
+        if diagnostics:
+            lines.append("Diagnostics:")
+            lines.extend(diagnostics[:4])
+        else:
+            lines.append("Diagnostics: no warnings.")
+        info.setPlainText("\n".join(lines))
 
     def _show_apply_complete_message(self, row_count: int, curve_count: int) -> None:
         try:

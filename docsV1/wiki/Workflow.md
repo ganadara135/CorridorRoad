@@ -9,6 +9,7 @@ Source:
 - Alignment
 - Profile
 - Superelevation
+- SubAssembly Designer
 - Assembly
 - Region
 - Structure
@@ -51,7 +52,7 @@ If a result looks wrong, correct the source model or policy that created it, the
 
 ## Primary Flow
 
-`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
+`TIN -> Alignment -> Stations -> Profile -> Review Plan/Profile -> 3D Centerline -> Superelevation -> SubAssembly Designer -> Assembly -> Regions -> Intersections -> Structures -> Drainage -> Applied Sections -> Build Corridor -> Review -> Outputs -> AI Assist -> Watertight Solids`
 
 Regions define station spans and the base Assembly. Intersections then group intersection Regions and participating Alignments into junction control areas. Structures and Drainage then choose their owning Region from their own source panels.
 
@@ -60,6 +61,10 @@ Regions define station spans and the base Assembly. Intersections then group int
 For Intersections, 3D Centerline can be multi-alignment. Starter Sources create the participating Alignment/Profile/Stationing/Region sources and then generate a multi-alignment 3D Centerline preview so the primary road and side road do not share one baseline.
 
 Superelevation is the station-based crossfall source after 3D Centerline. It does not replace Assembly; it overrides lane and shoulder crossfall during Applied Sections generation.
+
+SubAssembly Designer owns reusable cross-section definitions. Assembly places those definitions, sets side/order, and applies row-local parameter overrides. Applied Sections evaluate the placed definitions at stations.
+
+Build Parametric, Quantity, and Watertight Solids consume evaluated Subassembly point, link, and shape rows. They should not evaluate Designer expressions directly.
 
 Use this order when changing Superelevation:
 

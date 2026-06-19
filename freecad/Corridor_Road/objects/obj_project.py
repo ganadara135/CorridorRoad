@@ -1533,7 +1533,7 @@ def resolve_v1_target_container(prj, child):
     if record_kind == "v1_review_issue":
         issue_kind = str(getattr(child, "IssueKind", "") or "")
         name = _name(child)
-        if issue_kind in {"slope_face_tie_in", "surface_transition_span", "drainage_flow", "drainage_station"}:
+        if issue_kind in {"slope_face_tie_in", "surface_transition_span", "drainage_flow", "drainage_station", "subassembly_kind"}:
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
         if name.startswith(("ReviewIssueSlopeFace", "ReviewIssueDrainage")):
             return tree.get(V1_TREE_BUILD_PARAMETRIC_OUTPUTS, None)
@@ -1542,6 +1542,8 @@ def resolve_v1_target_container(prj, child):
     if record_kind == "v1_intersection_model":
         return tree.get(V1_TREE_INTERSECTIONS, None)
     if record_kind == "v1_assembly_subassembly_model":
+        return tree.get(V1_TREE_ASSEMBLIES, None)
+    if record_kind == "v1_subassembly_library":
         return tree.get(V1_TREE_ASSEMBLIES, None)
     if record_kind == "v1_assembly_show_preview":
         return tree.get(V1_TREE_ASSEMBLIES, None)

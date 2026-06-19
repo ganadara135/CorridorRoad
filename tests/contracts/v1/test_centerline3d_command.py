@@ -12,10 +12,13 @@ from freecad.Corridor_Road.v1.commands.cmd_centerline3d import (
     show_v1_centerline3d_station_markers,
 )
 from freecad.Corridor_Road.v1.models.result.centerline3d import Centerline3DPointRow, Centerline3DResult
+from freecad.Corridor_Road.v1.models.source import AlignmentModel, ProfileModel
+from freecad.Corridor_Road.v1.models.source.alignment_model import AlignmentElement
+from freecad.Corridor_Road.v1.models.source.profile_model import ProfileControlPoint, VerticalCurveRow
 from freecad.Corridor_Road.v1.objects.obj_alignment import create_sample_v1_alignment
 from freecad.Corridor_Road.v1.objects.obj_profile import create_sample_v1_profile
 from freecad.Corridor_Road.v1.objects.obj_stationing import create_v1_stationing
-from freecad.Corridor_Road.v1.services.evaluation import Centerline3DFrameService
+from freecad.Corridor_Road.v1.services.evaluation import Centerline3DEvaluationRequest, Centerline3DEvaluationService, Centerline3DFrameService
 
 
 def _new_project_doc():
@@ -130,12 +133,150 @@ def test_centerline3d_frame_service_resolves_station_offset() -> None:
 
     frame = Centerline3DFrameService().resolve_station_offset(result, 10.0, 5.0)
 
-    assert frame.status == "ok"
+    assert frame.status in {"ok", "warning"}
     assert frame.x == 10.0
     assert frame.y == 5.0
     assert frame.z == 11.0
     assert abs(frame.grade - 0.02) <= 1.0e-9
     assert frame.source_mode == "centerline3d_result"
+
+
+def test_centerline3d_result_expands_strong_vertical_curve_station_samples() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="project:test",
+        alignment_id="alignment:test",
+        geometry_sequence=[
+            AlignmentElement(
+                "alignment:test:tangent",
+                "tangent",
+                0.0,
+                100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="project:test",
+        profile_id="profile:test",
+        alignment_id="alignment:test",
+        control_rows=[
+            ProfileControlPoint("pvi:0", 0.0, 0.0),
+            ProfileControlPoint("pvi:50", 50.0, -20.0),
+            ProfileControlPoint("pvi:100", 100.0, 0.0),
+        ],
+        vertical_curve_rows=[
+            VerticalCurveRow("vertical-curve:sag", "parabolic_vertical_curve", 0.0, 100.0, curve_length=100.0),
+        ],
+    )
+
+    result = Centerline3DEvaluationService().evaluate(
+        Centerline3DEvaluationRequest(
+            alignment_model=alignment,
+            profile_model=profile,
+            station_values=(0.0, 100.0),
+            stationing_id="stationing:test",
+        )
+    )
+
+    assert result.status == "ready"
+    assert result.point_count > 2
+    assert any(abs(row.station - 50.0) <= 1.0e-9 for row in result.point_rows)
+    assert any("centerline3d_curve_station_expansion" in row for row in result.diagnostic_rows)
+
+
+def test_centerline3d_result_includes_vertical_curve_boundary_samples() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="project:test",
+        alignment_id="alignment:test",
+        geometry_sequence=[
+            AlignmentElement(
+                "alignment:test:tangent",
+                "tangent",
+                0.0,
+                180.0,
+                geometry_payload={"x_values": [0.0, 180.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="project:test",
+        profile_id="profile:test",
+        alignment_id="alignment:test",
+        control_rows=[
+            ProfileControlPoint("pvi:0", 0.0, 12.0),
+            ProfileControlPoint("pvi:90", 90.0, 15.0),
+            ProfileControlPoint("pvi:180", 180.0, 13.5),
+        ],
+        vertical_curve_rows=[
+            VerticalCurveRow("vertical-curve:1", "parabolic_vertical_curve", 75.0, 105.0, curve_length=30.0),
+        ],
+    )
+
+    result = Centerline3DEvaluationService().evaluate(
+        Centerline3DEvaluationRequest(
+            alignment_model=alignment,
+            profile_model=profile,
+            station_values=(0.0, 90.0, 180.0),
+            stationing_id="stationing:test",
+        )
+    )
+    stations = [round(float(row.station), 6) for row in result.point_rows]
+
+    assert result.status == "ready"
+    assert 75.0 in stations
+    assert 90.0 in stations
+    assert 105.0 in stations
+    assert result.point_count > 3
+
+
+def test_centerline3d_result_uses_profile_curve_when_pvi_is_not_exact_curve_midpoint() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="project:test",
+        alignment_id="alignment:test",
+        geometry_sequence=[
+            AlignmentElement(
+                "alignment:test:tangent",
+                "tangent",
+                0.0,
+                180.0,
+                geometry_payload={"x_values": [0.0, 180.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="project:test",
+        profile_id="profile:test",
+        alignment_id="alignment:test",
+        control_rows=[
+            ProfileControlPoint("pvi:0", 0.0, 12.0),
+            ProfileControlPoint("pvi:90", 90.0, 15.0, kind="pvi"),
+            ProfileControlPoint("pvi:180", 180.0, 13.5),
+        ],
+        vertical_curve_rows=[
+            VerticalCurveRow("vertical-curve:asymmetric", "parabolic_vertical_curve", 75.0, 110.0, curve_length=35.0),
+        ],
+    )
+
+    result = Centerline3DEvaluationService().evaluate(
+        Centerline3DEvaluationRequest(
+            alignment_model=alignment,
+            profile_model=profile,
+            station_values=(0.0, 90.0, 180.0),
+            stationing_id="stationing:test",
+        )
+    )
+    row_85 = min(result.point_rows, key=lambda row: abs(float(row.station) - 85.0))
+    linear_elevation = 12.0 + (15.0 - 12.0) * (85.0 / 90.0)
+
+    assert result.status == "ready"
+    assert abs(float(row_85.station) - 85.0) <= 1.0e-9
+    assert abs(float(row_85.z) - linear_elevation) > 0.01
 
 
 def test_centerline3d_panel_buttons_use_apply_before_close_without_refresh() -> None:

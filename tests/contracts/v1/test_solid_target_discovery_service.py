@@ -1,6 +1,8 @@
 from freecad.Corridor_Road.v1.models.result.applied_section import (
     AppliedSection,
+    AppliedSectionSubassemblyPoint,
     AppliedSectionSubassemblyRow,
+    AppliedSectionSubassemblyShape,
     AppliedSectionFrame,
     AppliedSectionPoint,
 )
@@ -348,6 +350,74 @@ def test_solid_target_discovery_creates_pavement_layer_subassembly_candidates() 
     assert target.station_start == 0.0
     assert target.station_end == 100.0
     assert target.readiness_status == "available"
+
+
+def test_solid_target_discovery_creates_designer_shape_solid_candidates() -> None:
+    def _section(section_id: str, station: float) -> AppliedSection:
+        return AppliedSection(
+            schema_version=1,
+            project_id="proj-1",
+            applied_section_id=section_id,
+            station=station,
+            frame=AppliedSectionFrame(station, station, 0.0, 10.0),
+            subassembly_point_rows=[
+                AppliedSectionSubassemblyPoint(f"{section_id}:p0", "lane:right", "top", station, 0.0, 10.0, lateral_offset=0.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p1", "lane:right", "top", station, -2.0, 10.0, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p2", "lane:right", "bottom", station, -2.0, 9.8, lateral_offset=-2.0),
+                AppliedSectionSubassemblyPoint(f"{section_id}:p3", "lane:right", "bottom", station, 0.0, 9.8, lateral_offset=0.0),
+            ],
+            subassembly_shape_rows=[
+                AppliedSectionSubassemblyShape(
+                    f"{section_id}:shape:lane",
+                    "lane:right",
+                    point_refs=[
+                        f"{section_id}:p0",
+                        f"{section_id}:p1",
+                        f"{section_id}:p2",
+                        f"{section_id}:p3",
+                    ],
+                    shape_code="pavement",
+                    material="asphalt",
+                    solid_family="pavement_layer",
+                )
+            ],
+        )
+
+    applied = AppliedSectionSet(
+        schema_version=1,
+        project_id="proj-1",
+        applied_section_set_id="applied:designer-shapes",
+        corridor_id="corridor:main",
+        station_rows=[
+            AppliedSectionStationRow("station:0", 0.0, "section:0"),
+            AppliedSectionStationRow("station:100", 100.0, "section:100"),
+        ],
+        sections=[
+            _section("section:0", 0.0),
+            _section("section:100", 100.0),
+        ],
+    )
+
+    model = SolidTargetDiscoveryService().discover(
+        SolidTargetDiscoveryRequest(
+            project_id="proj-1",
+            corridor_ref="corridor:main",
+            applied_section_set=applied,
+            corridor_model=_corridor_model(),
+        )
+    )
+
+    targets = {row.target_id: row for row in model.target_rows}
+    target = targets["solid-target:pavement-layer:lane-right"]
+    assert target.target_family == "pavement_layer_body"
+    assert target.scope_kind == "assembly_subassembly"
+    assert target.subassembly_ref == "lane:right"
+    assert target.material_ref == "asphalt"
+    assert target.station_start == 0.0
+    assert target.station_end == 100.0
+    assert target.readiness_status == "available"
+    assert "section:0:shape:lane" in target.source_refs
+    assert "shape_refs=section:0:shape:lane, section:100:shape:lane" in target.notes
 
 
 def test_solid_target_discovery_separates_subbase_and_shoulder_subassembly_bodies() -> None:

@@ -61,6 +61,16 @@ class Centerline3DFrameService:
         grade = _lerp(float(getattr(lower, "grade", 0.0) or 0.0), float(getattr(upper, "grade", 0.0) or 0.0), ratio)
         tangent = math.degrees(math.atan2(float(upper.y) - float(lower.y), float(upper.x) - float(lower.x)))
         diagnostics = []
+        span_abs = abs(float(upper.station) - float(lower.station))
+        if span_abs <= 5.0 + 1.0e-6:
+            diagnostics.append(
+                f"info|centerline3d_frame_source_evaluated|{active_station:.3f}|Frame resolved from dense Centerline3DResult segment."
+            )
+        else:
+            diagnostics.append(
+                f"warning|centerline3d_frame_sparse_chord_fallback|{active_station:.3f}|"
+                f"Frame used sparse point-row chord interpolation over {span_abs:.3f} station units."
+            )
         if active_station < float(rows[0].station) or active_station > float(rows[-1].station):
             diagnostics.append(
                 f"warning|station_outside_centerline3d_range|{active_station:.3f}|Station is outside Centerline3DResult range."
@@ -72,7 +82,7 @@ class Centerline3DFrameService:
             z=z,
             tangent_direction_deg=tangent,
             grade=grade,
-            status="ok" if not diagnostics else "warning",
+            status="warning" if any(str(row).startswith("warning|") for row in diagnostics) else "ok",
             diagnostic_rows=tuple(diagnostics),
         )
 

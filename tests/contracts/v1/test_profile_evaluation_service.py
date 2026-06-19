@@ -91,6 +91,31 @@ def test_profile_evaluation_parabolic_curve_matches_tangent_at_evc() -> None:
     assert abs(result.grade + 0.05) < 1e-9
 
 
+def test_profile_evaluation_uses_parabolic_curve_when_pvi_is_not_exact_curve_midpoint() -> None:
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="test-project",
+        profile_id="profile:asymmetric",
+        alignment_id="alignment:test",
+        control_rows=[
+            ProfileControlPoint("pvi-0", 0.0, 12.0),
+            ProfileControlPoint("pvi-90", 90.0, 15.0, kind="pvi"),
+            ProfileControlPoint("pvi-180", 180.0, 13.5),
+        ],
+        vertical_curve_rows=[
+            VerticalCurveRow("curve-asymmetric", "parabolic_vertical_curve", 75.0, 110.0, curve_length=35.0),
+        ],
+    )
+
+    result = ProfileEvaluationService().evaluate_station(profile, 85.0)
+    linear_elevation = 12.0 + (15.0 - 12.0) * (85.0 / 90.0)
+
+    assert result.status == "ok"
+    assert result.active_vertical_curve_id == "curve-asymmetric"
+    assert abs(result.elevation - linear_elevation) > 0.01
+    assert "parabolic" in result.notes
+
+
 def test_profile_evaluation_reports_out_of_range_station() -> None:
     result = ProfileEvaluationService().evaluate_station(_profile_model(), 120.0)
 

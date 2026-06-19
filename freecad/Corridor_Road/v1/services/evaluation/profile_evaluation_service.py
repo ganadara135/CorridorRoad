@@ -228,15 +228,24 @@ class ProfileEvaluationService:
         center_station = 0.5 * (float(station_start) + float(station_end))
         if len(ordered_controls) < 3:
             return None
+        candidate_indices = [
+            index
+            for index, control in enumerate(ordered_controls)
+            if 0 < index < len(ordered_controls) - 1
+            and float(station_start) - 1.0e-6 <= float(control.station) <= float(station_end) + 1.0e-6
+        ]
+        if not candidate_indices:
+            return None
+        pvi_indices = [
+            index
+            for index in candidate_indices
+            if "pvi" in str(getattr(ordered_controls[index], "kind", "") or "").lower()
+        ]
+        search_indices = pvi_indices or candidate_indices
         best_index = min(
-            range(len(ordered_controls)),
+            search_indices,
             key=lambda index: abs(float(ordered_controls[index].station) - center_station),
         )
-        tolerance = max(1e-6, abs(station_end - station_start) * 1e-6)
-        if abs(float(ordered_controls[best_index].station) - center_station) > tolerance:
-            return None
-        if best_index <= 0 or best_index >= len(ordered_controls) - 1:
-            return None
         return best_index
 
     @staticmethod
