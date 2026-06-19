@@ -101,6 +101,42 @@ Build Parametric no longer owns supplemental density.
 
 Change the density in Applied Sections, rebuild Applied Sections, then rebuild Build Corridor.
 
+At the current default density, supplemental Applied Sections target an approximate maximum spacing of about `45 m`.
+
+Recursive sampling should stop once an interval is already shorter than the requested maximum spacing.
+
+If supplemental sections look too dense, lower the Applied Sections density and rebuild Applied Sections before rebuilding Build Corridor.
+
+If the Build Parametric centerline differs from the 3D Centerline panel, inspect the generated object properties:
+
+- `PreviewSource`
+- `DisplayCurveKind`
+
+The preferred source is `centerline3d_source_geometry`.
+
+`centerline3d_result_fallback` means Build Parametric could not reuse Source Geometry and used a fallback preview path.
+
+When fallback appears, rebuild or inspect 3D Centerline, then rebuild Applied Sections and Build Corridor.
+
+## Applied Section Shape Does Not Match Assembly/Subassembly Preview
+
+Check:
+
+- the Assembly/Subassembly source was applied after editing
+- `Save Changes` was used after loading and editing an Assembly row in SubAssembly Designer
+- Applied Sections were rebuilt after the Assembly/Subassembly change
+- the selected Assembly row has the expected Subassembly Ref
+- percent slope parameters use the correct unit
+- ditch definitions have valid `top_width`, `bottom_width`, and `depth`
+
+The expected handoff is:
+
+- lane and shoulder finished-grade edges connect directly
+- ditch starts from the preceding finished-grade edge elevation
+- side-slope/daylight rows start after the placed ditch or shoulder row
+
+If the Section Preview is correct but Applied Sections are not, rebuild Applied Sections before investigating Build Corridor.
+
 ## Earthwork Has No Results
 
 Check:

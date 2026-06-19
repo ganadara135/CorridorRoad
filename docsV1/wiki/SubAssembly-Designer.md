@@ -40,6 +40,26 @@ If no Assembly row is available, `Save Changes` writes the SubAssembly library s
 
 Advanced template management is hidden by default. Use `Show Advanced Subassembly Template Library` only when editing, updating, duplicating, renaming, deleting, or detaching shared templates intentionally.
 
+## Assembly Row Editing UX
+
+The Assembly Row selector chooses which placed Assembly row is loaded into the Designer.
+
+`Refresh Rows`, `Load Row`, `Save Changes`, and `Save as Reusable Subassembly Template` are grouped together below the Assembly Row selector so the selector remains readable on narrow task panels.
+
+Use `Refresh Rows` after changing the Assembly/Subassembly source panel.
+
+Use `Load Row` to copy the selected Assembly row into the Designer edit tables.
+
+Use `Save Changes` to write the current Designer edits back to the selected Assembly row when an Assembly/Subassembly object exists.
+
+Use `Save as Reusable Subassembly Template` only when the current definition should become a reusable project template.
+
+In the Assembly/Subassembly panel, selected Subassembly detail changes only after an explicit table row click.
+
+Combo-box hover in table cells should not change the selected detail row.
+
+If hover changes the detail panel, treat it as a UI regression rather than accepted behavior.
+
 ## Template States
 
 SubAssembly Designer and Assembly share template state so users can see whether an Assembly row still follows its reusable source.
@@ -99,6 +119,26 @@ After changing a Reusable Subassembly Template or Assembly row override, rebuild
 3. Rebuild Applied Sections.
 4. Rebuild Build Corridor.
 5. Re-run downstream Quantity, Exchange, or Watertight Solid outputs if they depend on those sections.
+
+## Applied Section Handoff Expectations
+
+The section preview and Applied Sections should use the same placed Subassembly definitions and row-local overrides.
+
+Designer definition parameters are merged before Applied Sections evaluate point, link, and shape rows.
+
+Percent slope parameters in reusable definitions are normalized to engineering slope values during Applied Sections evaluation.
+
+A ditch definition with `top_width`, `bottom_width`, and `depth` can be evaluated as a trapezoid even when the legacy `shape` field is not present.
+
+Ditch geometry should start from the finished-grade edge elevation of the preceding lane or shoulder, not from the raw frame elevation.
+
+If the Section Preview and Applied Sections disagree at the shoulder-to-ditch connection, check:
+
+- the selected Assembly row was saved
+- the Assembly/Subassembly panel was applied
+- Applied Sections were rebuilt after the save
+- the ditch definition has valid width/depth parameters
+- slope parameter units are correct
 
 ## Manual QA Checklist
 

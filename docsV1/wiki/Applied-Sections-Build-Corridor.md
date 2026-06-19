@@ -33,6 +33,20 @@ Active v1 result rows use Subassembly ownership as the user-facing source owner.
 
 When an Assembly row references a Designer definition, Build Sections resolves the definition, applies row-local parameter overrides, evaluates point/link/shape rows, and stores the evaluated rows in the Applied Section result.
 
+Applied Sections use the placed Assembly/Subassembly rows as the section source.
+
+This means the evaluated Applied Section should match the Assembly/Subassembly Section Preview after the Assembly source has been applied.
+
+Designer definition parameters are merged with row-local overrides before evaluation.
+
+Percent slope parameters from reusable definitions are normalized before geometry is created.
+
+Trapezoid ditch definitions may be inferred from `top_width`, `bottom_width`, and `depth` when a legacy `shape` field is absent.
+
+Ditch points start from the finished-grade edge elevation of the preceding lane or shoulder.
+
+This keeps shoulder-to-ditch and lane-to-ditch connections aligned with the section preview instead of snapping the ditch back to the raw frame elevation.
+
 Designer surface role aliases are normalized during evaluation:
 
 - `design`, `finished_grade`, `fg` -> `design_surface`
@@ -152,6 +166,22 @@ Each marker shows the supplemental section frame location and tangent direction.
 
 Use the Guided Review Visibility checkbox to show or hide the marker object.
 
+The density control is an approximate spacing policy, not an unlimited subdivision request.
+
+The current default is intentionally less dense than early prototypes.
+
+At the default density, the approximate maximum spacing is about `45 m`.
+
+Recursive supplemental sampling stops once an interval is already shorter than the requested maximum spacing.
+
+This prevents straight or mildly curved spans from being overfilled with nearly duplicate sections.
+
+Increase density when a curve needs more local surface fidelity.
+
+Decrease density when the generated Applied Section set is too heavy or visually too dense.
+
+After changing density, rebuild Applied Sections first and then rebuild Build Corridor.
+
 If changing Applied Sections density does not change the generated corridor surface on a visibly curved 3D Centerline:
 
 1. Confirm `3D Centerline` has been built and reviewed.
@@ -160,6 +190,24 @@ If changing Applied Sections density does not change the generated corridor surf
 4. Rebuild Build Corridor.
 5. Check `2a. Supplemental Sections` for consumed supplemental sections.
 6. If compatibility fallback appears, rebuild Applied Sections again so Build Parametric does not need hidden frame fallback.
+
+## 3D Centerline Source Geometry Handoff
+
+3D Centerline is the preferred shared baseline for downstream station, tangent, and elevation context.
+
+Build Parametric should consume the same reviewed 3D Centerline result that the 3D Centerline panel displays.
+
+For the generated `Corridor 3D Centerline` preview object, the expected preferred source is:
+
+`PreviewSource = centerline3d_source_geometry`
+
+If source geometry cannot be built, Build Parametric may fall back to:
+
+`PreviewSource = centerline3d_result_fallback`
+
+Fallback is a diagnostic condition.
+
+When fallback appears, review the 3D Centerline panel source geometry settings and rebuild the 3D Centerline before rebuilding Applied Sections and Build Corridor.
 
 ## Region Boundaries
 
