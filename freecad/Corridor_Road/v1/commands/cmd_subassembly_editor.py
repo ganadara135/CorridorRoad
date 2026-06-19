@@ -443,8 +443,8 @@ class V1AssemblySubassemblyEditorTaskPanel:
             pass
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.cellPressed.connect(self._assembly_row_pressed)
+        self.table.cellClicked.connect(self._assembly_row_clicked)
         self.table.currentCellChanged.connect(self._assembly_current_cell_changed)
-        self.table.itemSelectionChanged.connect(self._refresh_selected_detail)
         for column in HIDDEN_SOURCE_COLUMNS:
             self.table.setColumnHidden(column, True)
         layout.addWidget(self.table, 1)
@@ -658,6 +658,12 @@ class V1AssemblySubassemblyEditorTaskPanel:
             self.table.setProperty("allowAssemblySelectionChange", True)
         except Exception:
             pass
+
+    def _assembly_row_clicked(self, row: int, _column: int) -> None:
+        if self._loading or row is None or row < 0:
+            return
+        self._lock_assembly_selection(int(row))
+        self._refresh_selected_detail()
 
     def _assembly_current_cell_changed(self, row: int, _column: int, _previous_row: int, _previous_column: int) -> None:
         if self._loading:

@@ -106,6 +106,27 @@ _DEFAULT_EF = {
     "AASHTO": {"e_pct": 6.0, "f_side": 0.14},
 }
 
+_VERTICAL_CURVE_K_TABLES = {
+    "KDS": {
+        40.0: {"crest": 7.0, "sag": 8.0},
+        50.0: {"crest": 12.0, "sag": 13.0},
+        60.0: {"crest": 18.0, "sag": 18.0},
+        70.0: {"crest": 28.0, "sag": 24.0},
+        80.0: {"crest": 44.0, "sag": 32.0},
+        90.0: {"crest": 60.0, "sag": 40.0},
+        100.0: {"crest": 84.0, "sag": 52.0},
+    },
+    "AASHTO": {
+        40.0: {"crest": 8.0, "sag": 9.0},
+        50.0: {"crest": 13.0, "sag": 14.0},
+        60.0: {"crest": 19.0, "sag": 19.0},
+        70.0: {"crest": 30.0, "sag": 25.0},
+        80.0: {"crest": 46.0, "sag": 34.0},
+        90.0: {"crest": 63.0, "sag": 42.0},
+        100.0: {"crest": 87.0, "sag": 55.0},
+    },
+}
+
 
 def criteria_defaults(standard: str, speed_kph: float, scale: float = 1.0):
     std = normalize_standard(standard)
@@ -131,3 +152,15 @@ def criteria_defaults(standard: str, speed_kph: float, scale: float = 1.0):
         "reverse_min_tangent": float(max(0.0, float(base.get("reverse_min_tangent_m", 0.0))) * sc),
         "reverse_min_transition": float(max(0.0, float(base.get("reverse_min_transition_m", 0.0))) * sc),
     }
+
+
+def vertical_curve_k_value(standard: str, speed_kph: float, curve_type: str) -> float:
+    """Return placeholder vertical-curve K value by standard, speed, and curve type."""
+
+    std = normalize_standard(standard)
+    table = _VERTICAL_CURVE_K_TABLES.get(std) or _VERTICAL_CURVE_K_TABLES[DEFAULT_STANDARD]
+    speeds = sorted(table)
+    speed = float(max(0.0, speed_kph))
+    nearest = min(speeds, key=lambda value: abs(float(value) - speed))
+    kind = "crest" if str(curve_type or "").strip().lower() == "crest" else "sag"
+    return float(table[nearest][kind])

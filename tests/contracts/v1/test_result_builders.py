@@ -34,6 +34,7 @@ from freecad.Corridor_Road.v1.models.source import (
     SubassemblyParameterRow,
     SubassemblyPointRow,
     SubassemblyShapeRow,
+    subassembly_definition_library_from_preset,
     SurfaceTransitionModel,
     SurfaceTransitionRange,
 )
@@ -304,6 +305,8 @@ def test_applied_section_service_evaluates_designer_subassembly_definitions() ->
     assert len(designer_points) == 2
     assert min(point.lateral_offset for point in designer_points) == -4.0
     assert max(point.z for point in designer_points) == 10.0
+    fg_offsets = {round(float(point.lateral_offset), 6) for point in result.point_rows if point.point_role == "fg_surface"}
+    assert -4.0 in fg_offsets
     assert designer_links[0].surface_role == "design_surface"
     assert designer_links[0].start_point_ref.endswith(":p0")
     assert designer_shapes[0].solid_family == "pavement_layer"
@@ -508,7 +511,7 @@ def test_applied_section_service_applies_superelevation_to_lane_and_shoulder() -
     assert "superelevation_transition=transition:runoff" in lane_output.notes
 
 
-def test_applied_section_service_uses_centerline3d_result_for_section_frame() -> None:
+def test_applied_section_service_falls_back_to_centerline3d_result_for_section_frame() -> None:
     alignment = AlignmentModel(
         schema_version=1,
         project_id="proj-1",
@@ -586,6 +589,88 @@ def test_applied_section_service_uses_centerline3d_result_for_section_frame() ->
     assert result.frame.profile_grade == 0.07500000000000001
     assert result.frame.tangent_direction_deg > 20.0
     assert "source=centerline3d_result" in result.frame.notes
+
+
+def test_applied_section_service_prefers_source_geometry_for_section_frame() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-1",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+                geometry_payload={"x_values": [0.0, 100.0], "y_values": [0.0, 0.0]},
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-1",
+        alignment_id="align-1",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0), ProfileControlPoint("pvi-2", 100.0, 20.0)],
+    )
+    assembly = AssemblySubassemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-1",
+        template_rows=[
+            SubassemblySectionTemplate(
+                template_id="tmpl-1",
+                template_kind="road",
+                subassembly_rows=[
+                    TemplateSubassembly("lane:right", "lane", side="right", width=3.5, slope=-0.02),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="regions-1",
+        region_rows=[
+            RegionRow("region-1", station_start=0.0, station_end=100.0, assembly_ref="asm-1", template_ref="tmpl-1"),
+        ],
+    )
+    centerline = Centerline3DResult(
+        project_id="proj-1",
+        centerline3d_result_id="centerline3d:test",
+        alignment_id="align-1",
+        profile_id="prof-1",
+        stationing_id="stationing:test",
+        status="ready",
+        point_rows=(
+            Centerline3DPointRow(0.0, 100.0, 10.0, 50.0, grade=0.05),
+            Centerline3DPointRow(20.0, 120.0, 20.0, 60.0, grade=0.10),
+        ),
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-1",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=OverrideModel(schema_version=1, project_id="proj-1", override_model_id="overrides-1"),
+            station=10.0,
+            applied_section_id="sec-1",
+            centerline3d_result=centerline,
+        )
+    )
+
+    assert result.frame is not None
+    assert result.frame.x == 10.0
+    assert result.frame.y == 0.0
+    assert result.frame.z == 11.0
+    assert result.frame.profile_grade == 0.1
+    assert result.frame.tangent_direction_deg == 0.0
+    assert "source=centerline3d_source_geometry" in result.frame.notes
+    assert "compatible_source=centerline3d_result" in result.frame.notes
 
 
 def test_applied_section_service_evaluates_side_slope_bench_rows() -> None:
@@ -1041,8 +1126,22 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
                 subassembly_rows=[
                     TemplateSubassembly("lane-left", "lane", side="left", width=3.5),
                     TemplateSubassembly("lane-right", "lane", side="right", width=3.5),
-                    TemplateSubassembly("ditch-left", "ditch", side="left", width=1.2, slope=-0.05),
-                    TemplateSubassembly("ditch-right", "ditch", side="right", width=1.0, slope=-0.04),
+                    TemplateSubassembly(
+                        "ditch-left",
+                        "ditch",
+                        definition_ref="subassembly-definition:ditch-basic-left",
+                        side="left",
+                        width=1.2,
+                        slope=-0.05,
+                    ),
+                    TemplateSubassembly(
+                        "ditch-right",
+                        "ditch",
+                        definition_ref="subassembly-definition:ditch-basic-right",
+                        side="right",
+                        width=1.0,
+                        slope=-0.04,
+                    ),
                 ],
             )
         ],
@@ -1117,6 +1216,185 @@ def test_applied_section_service_builds_ditch_surface_points_from_ditch_subassem
     assert "drainage:main" in result.source_refs
     assert "drainage:side-ditch-left" in result.source_refs
     assert "drainage:side-ditch-right" in result.source_refs
+
+
+def test_applied_section_service_starts_ditch_from_sloped_fg_edge() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-ditch-edge",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-ditch-edge",
+        alignment_id="align-ditch-edge",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblySubassemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-ditch-edge",
+        template_rows=[
+            SubassemblySectionTemplate(
+                template_id="tmpl-ditch-edge",
+                template_kind="roadway",
+                subassembly_rows=[
+                    TemplateSubassembly("lane-right", "lane", subassembly_index=1, side="right", width=3.5, slope=-0.02),
+                    TemplateSubassembly("ditch-right", "ditch", subassembly_index=2, side="right", width=1.0, slope=-0.04),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-ditch-edge",
+        alignment_id="align-ditch-edge",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-ditch-edge")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-ditch-edge",
+        alignment_id="align-ditch-edge",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-ditch-edge",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-ditch-edge",
+        )
+    )
+
+    fg_edge = next(point for point in result.point_rows if point.point_role == "fg_surface" and round(point.lateral_offset, 2) == -3.50)
+    ditch_inner = next(point for point in result.point_rows if point.point_role == "ditch_surface" and round(point.lateral_offset, 2) == -3.50)
+    ditch_outer = next(point for point in result.point_rows if point.point_role == "ditch_surface" and round(point.lateral_offset, 2) == -4.50)
+
+    assert round(fg_edge.z, 6) == round(ditch_inner.z, 6)
+    assert round(ditch_outer.z, 6) == round(ditch_inner.z - 0.04, 6)
+
+
+def test_applied_section_service_connects_definition_shoulder_to_ditch() -> None:
+    alignment = AlignmentModel(
+        schema_version=1,
+        project_id="proj-1",
+        alignment_id="align-shoulder-ditch",
+        geometry_sequence=[
+            AlignmentElement(
+                element_id="el-1",
+                kind="tangent",
+                station_start=0.0,
+                station_end=100.0,
+            )
+        ],
+    )
+    profile = ProfileModel(
+        schema_version=1,
+        project_id="proj-1",
+        profile_id="prof-shoulder-ditch",
+        alignment_id="align-shoulder-ditch",
+        control_rows=[ProfileControlPoint("pvi-1", 0.0, 10.0)],
+    )
+    assembly = AssemblySubassemblyModel(
+        schema_version=1,
+        project_id="proj-1",
+        assembly_id="asm-shoulder-ditch",
+        template_rows=[
+            SubassemblySectionTemplate(
+                template_id="tmpl-shoulder-ditch",
+                template_kind="roadway",
+                subassembly_rows=[
+                    TemplateSubassembly(
+                        "lane-right",
+                        "lane",
+                        subassembly_index=1,
+                        definition_ref="subassembly-definition:lane-basic",
+                        side="right",
+                    ),
+                    TemplateSubassembly(
+                        "shoulder-right",
+                        "shoulder",
+                        subassembly_index=2,
+                        definition_ref="subassembly-definition:shoulder-basic",
+                        side="right",
+                    ),
+                    TemplateSubassembly(
+                        "ditch-right",
+                        "ditch",
+                        subassembly_index=3,
+                        definition_ref="subassembly-definition:ditch-trapezoid",
+                        side="right",
+                    ),
+                ],
+            )
+        ],
+    )
+    region_model = RegionModel(
+        schema_version=1,
+        project_id="proj-1",
+        region_model_id="reg-shoulder-ditch",
+        alignment_id="align-shoulder-ditch",
+        region_rows=[RegionRow("region-1", 0.0, 100.0, template_ref="tmpl-shoulder-ditch")],
+    )
+    override_model = OverrideModel(
+        schema_version=1,
+        project_id="proj-1",
+        override_model_id="ovr-shoulder-ditch",
+        alignment_id="align-shoulder-ditch",
+    )
+
+    result = AppliedSectionService().build(
+        AppliedSectionBuildRequest(
+            project_id="proj-1",
+            corridor_id="cor-shoulder-ditch",
+            alignment=alignment,
+            profile=profile,
+            assembly=assembly,
+            region_model=region_model,
+            override_model=override_model,
+            station=10.0,
+            applied_section_id="sec-shoulder-ditch",
+            subassembly_libraries=[
+                subassembly_definition_library_from_preset("Starter Road Primitives", project_id="proj-1")
+            ],
+        )
+    )
+
+    shoulder_end = next(
+        point
+        for point in result.subassembly_point_rows
+        if point.subassembly_ref == "shoulder-right"
+        and point.point_code == "fg_surface"
+        and str(point.point_id).endswith(":end")
+    )
+    ditch_inner = min(
+        [
+            point
+            for point in result.point_rows
+            if point.point_role == "ditch_surface" and point.subassembly_ref == "ditch-right"
+        ],
+        key=lambda point: abs(float(point.lateral_offset) - float(shoulder_end.lateral_offset)),
+    )
+
+    assert round(result.surface_right_width, 6) == round(abs(shoulder_end.lateral_offset), 6)
+    assert round(ditch_inner.lateral_offset, 6) == round(shoulder_end.lateral_offset, 6)
+    assert round(ditch_inner.z, 6) == round(shoulder_end.z, 6)
 
 
 def test_applied_section_service_starts_benched_slope_after_ditch_outer_edge() -> None:

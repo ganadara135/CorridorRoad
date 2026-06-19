@@ -44,6 +44,7 @@ def _request(
     *,
     enabled: bool = True,
     profile: ProfileModel | None = None,
+    max_spacing: float = 25.0,
 ) -> AppliedSectionSetBuildRequest:
     alignment = AlignmentModel(
         schema_version=1,
@@ -114,13 +115,13 @@ def _request(
         applied_section_set_id="applied-sections:test",
         centerline3d_result=centerline3d_result,
         supplemental_sections_enabled=enabled,
-        supplemental_sections_max_spacing=25.0,
+        supplemental_sections_max_spacing=max_spacing,
         supplemental_sections_tangent_delta_deg=3.0,
         supplemental_sections_chord_deviation=0.25,
     )
 
 
-def test_applied_sections_create_curve_supplemental_sections_with_full_payload() -> None:
+def test_applied_sections_create_curve_supplemental_sections_with_centerline_result_fallback_payload() -> None:
     result = AppliedSectionSetService().build(_request(_curved_centerline_result()))
 
     kinds = [row.kind for row in result.station_rows]
@@ -147,6 +148,15 @@ def test_applied_sections_do_not_densify_straight_centerline_by_spacing_only() -
 
     assert [row.kind for row in result.station_rows] == ["regular_sample", "regular_sample"]
     assert len(result.sections) == 2
+
+
+def test_applied_sections_limit_curve_supplemental_density_to_spacing() -> None:
+    result = AppliedSectionSetService().build(_request(_curved_centerline_result(), max_spacing=25.0))
+
+    supplemental = [row for row in result.station_rows if row.kind == "curve_supplemental"]
+
+    assert len(supplemental) == 3
+    assert [round(row.station, 3) for row in result.station_rows] == [0.0, 25.0, 50.0, 75.0, 100.0]
 
 
 def test_applied_sections_supplemental_option_can_be_disabled() -> None:
@@ -189,7 +199,7 @@ def test_applied_sections_create_vertical_curve_supplemental_sections_on_straigh
     )
 
 
-def test_applied_section_origins_follow_expanded_3d_centerline_on_strong_vertical_curve() -> None:
+def test_applied_section_origins_follow_centerline_frame_on_strong_vertical_curve() -> None:
     alignment = AlignmentModel(
         schema_version=1,
         project_id="project:test",
@@ -239,9 +249,9 @@ def test_applied_section_origins_follow_expanded_3d_centerline_on_strong_vertica
 
 
 if __name__ == "__main__":
-    test_applied_sections_create_curve_supplemental_sections_with_full_payload()
+    test_applied_sections_create_curve_supplemental_sections_with_centerline_result_fallback_payload()
     test_applied_sections_do_not_densify_straight_centerline_by_spacing_only()
     test_applied_sections_supplemental_option_can_be_disabled()
     test_applied_sections_create_vertical_curve_supplemental_sections_on_straight_centerline()
-    test_applied_section_origins_follow_expanded_3d_centerline_on_strong_vertical_curve()
+    test_applied_section_origins_follow_centerline_frame_on_strong_vertical_curve()
     print("PASS: applied section supplemental sampling contract validation")

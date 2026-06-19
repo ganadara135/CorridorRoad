@@ -459,9 +459,21 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._result = None
         self._zoom_factor = 1.0
+        self._pan_x = 0.0
+        self._pan_y = 0.0
+        self._pan_last_pos = None
         self._zoom_changed_callback = None
-        self.setMinimumHeight(220)
+        self.setMinimumHeight(440)
+        try:
+            self.setMinimumWidth(0)
+            self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        except Exception:
+            pass
         self.setStyleSheet("background: #101826; border: 1px solid #40516a;")
+        try:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        except Exception:
+            pass
 
     def set_result(self, result) -> None:
         self._result = result
@@ -474,6 +486,9 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
         self._set_zoom(self._zoom_factor / 1.25)
 
     def reset_zoom(self) -> None:
+        self._pan_x = 0.0
+        self._pan_y = 0.0
+        self._pan_last_pos = None
         self._set_zoom(1.0)
 
     def zoom_percent(self) -> int:
@@ -493,8 +508,6 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
 
     def wheelEvent(self, event):  # noqa: N802 - Qt override
         try:
-            if not (event.modifiers() & QtCore.Qt.ControlModifier):
-                return super().wheelEvent(event)
             delta = event.angleDelta().y()
             if delta > 0:
                 self.zoom_in()
@@ -503,6 +516,45 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
             event.accept()
         except Exception:
             super().wheelEvent(event)
+
+    def mousePressEvent(self, event):  # noqa: N802 - Qt override
+        try:
+            if event.button() == QtCore.Qt.LeftButton:
+                self._pan_last_pos = event.pos()
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):  # noqa: N802 - Qt override
+        try:
+            if self._pan_last_pos is not None and event.buttons() & QtCore.Qt.LeftButton:
+                delta = event.pos() - self._pan_last_pos
+                self._pan_last_pos = event.pos()
+                span_x, span_y = self._current_zoomed_span()
+                width = max(1.0, float(self.width()) - 48.0)
+                height = max(1.0, float(self.height()) - 48.0)
+                self._pan_x -= float(delta.x()) / width * span_x
+                self._pan_y += float(delta.y()) / height * span_y
+                self.update()
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt override
+        try:
+            if event.button() == QtCore.Qt.LeftButton:
+                self._pan_last_pos = None
+                self.setCursor(QtCore.Qt.OpenHandCursor)
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):  # noqa: N802 - Qt override
         painter = QtGui.QPainter(self)
@@ -559,6 +611,7 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
                 painter.drawEllipse(point, 3.5, 3.5)
 
             annotations = list(getattr(result, "annotation_rows", []) or [])
+            label_rects: list[object] = []
             for annotation in annotations:
                 kind = str(getattr(annotation, "kind", "") or "")
                 if kind not in {"PC", "PI", "PT", "Curve Center", "Radius", "Delta Angle", "Curve Direction"}:
@@ -572,20 +625,30 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
                 value = str(getattr(annotation, "value", "") or "")
                 if value:
                     label = f"{label} {value}"
-                painter.drawText(point + QtCore.QPointF(5.0, -5.0), label)
+                self._draw_readable_label(painter, point, label, label_rects)
 
             painter.setPen(QtGui.QColor("#8ca0bc"))
-            painter.drawText(10, self.height() - 10, "cyan=evaluated path, magenta=arc guide, orange=source points, yellow=PC/PI/PT")
+            painter.drawText(10, self.height() - 10, "wheel=zoom, drag=pan, cyan=evaluated path, magenta=arc guide, orange=source points")
         finally:
             painter.end()
 
     def _zoomed_bounds(self, min_x: float, max_x: float, min_y: float, max_y: float) -> tuple[float, float, float, float]:
         zoom = max(0.25, min(8.0, float(self._zoom_factor or 1.0)))
-        center_x = 0.5 * (float(min_x) + float(max_x))
-        center_y = 0.5 * (float(min_y) + float(max_y))
+        center_x = 0.5 * (float(min_x) + float(max_x)) + float(self._pan_x)
+        center_y = 0.5 * (float(min_y) + float(max_y)) + float(self._pan_y)
         half_x = max(1.0e-9, 0.5 * (float(max_x) - float(min_x)) / zoom)
         half_y = max(1.0e-9, 0.5 * (float(max_y) - float(min_y)) / zoom)
         return center_x - half_x, center_x + half_x, center_y - half_y, center_y + half_y
+
+    def _current_zoomed_span(self) -> tuple[float, float]:
+        result = self._result
+        rows = list(getattr(result, "point_rows", []) or []) if result is not None else []
+        if not rows:
+            return 1.0, 1.0
+        xs = [float(row.x) for row in rows]
+        ys = [float(row.y) for row in rows]
+        zoom = max(0.25, min(8.0, float(self._zoom_factor or 1.0)))
+        return max(1.0, max(xs) - min(xs)) / zoom, max(1.0, max(ys) - min(ys)) / zoom
 
     def _draw_arc_guides(self, painter, result, to_point) -> None:
         annotations = list(getattr(result, "annotation_rows", []) or [])
@@ -650,6 +713,39 @@ class _AlignmentCurvePreviewWidget(QtWidgets.QWidget):
             return []
         steps = max(8, min(72, int(math.ceil(abs(delta) / (math.pi / 32.0)))))
         return [float(start) + delta * float(index) / float(steps) for index in range(steps + 1)]
+
+    def _draw_readable_label(self, painter, anchor, text: str, label_rects: list[object]) -> None:
+        font_metrics = painter.fontMetrics()
+        label = str(text or "")
+        offsets = [
+            QtCore.QPointF(7.0, -7.0),
+            QtCore.QPointF(7.0, 13.0),
+            QtCore.QPointF(-font_metrics.horizontalAdvance(label) - 7.0, -7.0),
+            QtCore.QPointF(-font_metrics.horizontalAdvance(label) - 7.0, 13.0),
+            QtCore.QPointF(7.0, 31.0),
+            QtCore.QPointF(-font_metrics.horizontalAdvance(label) - 7.0, 31.0),
+        ]
+        chosen_rect = None
+        chosen_point = None
+        for offset in offsets:
+            point = anchor + offset
+            rect = font_metrics.boundingRect(label).translated(int(point.x()), int(point.y()))
+            rect = rect.adjusted(-3, -2, 3, 2)
+            if not any(rect.intersects(existing) for existing in label_rects):
+                chosen_rect = rect
+                chosen_point = point
+                break
+        if chosen_rect is None:
+            extra_y = 18.0 * float(len(label_rects) % 6)
+            chosen_point = anchor + QtCore.QPointF(7.0, 49.0 + extra_y)
+            chosen_rect = font_metrics.boundingRect(label).translated(int(chosen_point.x()), int(chosen_point.y())).adjusted(-3, -2, 3, 2)
+        painter.setBrush(QtGui.QColor(16, 24, 38, 190))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRect(chosen_rect)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.setPen(QtGui.QColor("#e6edf7"))
+        painter.drawText(chosen_point, label)
+        label_rects.append(chosen_rect)
 
 
 class V1AlignmentEditorTaskPanel:
@@ -870,34 +966,56 @@ class V1AlignmentEditorTaskPanel:
 
     def _build_curve_preview_group(self):
         group = QtWidgets.QGroupBox("Curve Preview")
+        try:
+            group.setMinimumWidth(0)
+            group.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        except Exception:
+            pass
         layout = QtWidgets.QVBoxLayout(group)
         top_row = QtWidgets.QHBoxLayout()
-        refresh_button = QtWidgets.QPushButton("Refresh Curve Preview")
+        refresh_button = QtWidgets.QPushButton("Refresh")
+        refresh_button.setToolTip("Refresh Curve Preview")
         refresh_button.clicked.connect(self._refresh_curve_preview)
         top_row.addWidget(refresh_button)
-        zoom_in_button = QtWidgets.QPushButton("Zoom In")
+        zoom_in_button = QtWidgets.QPushButton("+")
+        zoom_in_button.setToolTip("Zoom In")
         zoom_in_button.clicked.connect(self._zoom_curve_preview_in)
         top_row.addWidget(zoom_in_button)
-        zoom_out_button = QtWidgets.QPushButton("Zoom Out")
+        zoom_out_button = QtWidgets.QPushButton("-")
+        zoom_out_button.setToolTip("Zoom Out")
         zoom_out_button.clicked.connect(self._zoom_curve_preview_out)
         top_row.addWidget(zoom_out_button)
-        zoom_reset_button = QtWidgets.QPushButton("Reset Zoom")
+        zoom_reset_button = QtWidgets.QPushButton("Reset")
+        zoom_reset_button.setToolTip("Reset Zoom and Pan")
         zoom_reset_button.clicked.connect(self._reset_curve_preview_zoom)
         top_row.addWidget(zoom_reset_button)
         self._curve_preview_zoom_label = QtWidgets.QLabel("100%")
         self._curve_preview_zoom_label.setMinimumWidth(48)
         self._curve_preview_zoom_label.setStyleSheet("color: #cbd7ea;")
         top_row.addWidget(self._curve_preview_zoom_label)
-        legend = QtWidgets.QLabel("cyan=evaluated path, magenta=arc guide, orange=source points, yellow=PC/PI/PT")
-        legend.setStyleSheet("color: #cbd7ea;")
-        top_row.addWidget(legend, 1)
+        top_row.addStretch(1)
         layout.addLayout(top_row)
+        legend = QtWidgets.QLabel("wheel=zoom, drag=pan | cyan=evaluated path | magenta=arc guide | orange=source points")
+        legend.setStyleSheet("color: #cbd7ea;")
+        legend.setWordWrap(True)
+        try:
+            legend.setMinimumWidth(0)
+            legend.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
+        except Exception:
+            pass
+        layout.addWidget(legend)
         self._curve_preview_widget = _AlignmentCurvePreviewWidget()
         self._curve_preview_widget.set_zoom_changed_callback(self._update_curve_preview_zoom_label)
         layout.addWidget(self._curve_preview_widget)
         self._curve_preview_info = QtWidgets.QPlainTextEdit()
         self._curve_preview_info.setReadOnly(True)
         self._curve_preview_info.setMaximumHeight(96)
+        try:
+            self._curve_preview_info.setMinimumWidth(0)
+            self._curve_preview_info.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
+            self._curve_preview_info.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed)
+        except Exception:
+            pass
         self._curve_preview_info.setStyleSheet(
             "QPlainTextEdit { background: #1b2637; color: #dfe8ff; border: 1px solid #40516a; }"
         )

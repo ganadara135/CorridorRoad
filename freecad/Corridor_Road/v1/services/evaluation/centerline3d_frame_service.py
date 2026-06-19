@@ -6,6 +6,11 @@ import math
 from dataclasses import dataclass, field
 
 from ...models.result.centerline3d import Centerline3DResult
+from .centerline3d_source_geometry_service import (
+    ARC_FIT_ABSOLUTE_TOLERANCE,
+    ARC_FIT_RELATIVE_TOLERANCE,
+    Centerline3DSourceGeometryService,
+)
 
 
 @dataclass(frozen=True)
@@ -26,12 +31,51 @@ class Centerline3DFrame:
 class Centerline3DFrameService:
     """Resolve station frames from a shared Centerline3DResult."""
 
-    def resolve_station(self, result: Centerline3DResult | None, station: float) -> Centerline3DFrame:
+    def __init__(self, source_geometry_service: Centerline3DSourceGeometryService | None = None) -> None:
+        self.source_geometry_service = source_geometry_service or Centerline3DSourceGeometryService()
+
+    def resolve_station(
+        self,
+        result: Centerline3DResult | None,
+        station: float,
+        *,
+        alignment=None,
+        profile=None,
+        arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
+        arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
+    ) -> Centerline3DFrame:
         """Return an interpolated station frame or a blocked diagnostic frame."""
 
         active_station = float(station)
+        source_diagnostics: list[str] = []
+        if alignment is not None and profile is not None:
+            source_frame = self.source_geometry_service.evaluate_station(
+                alignment,
+                profile,
+                active_station,
+                arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
+                arc_fit_relative_tolerance=arc_fit_relative_tolerance,
+            )
+            source_diagnostics.extend(list(getattr(source_frame, "diagnostic_rows", []) or []))
+            if str(getattr(source_frame, "status", "") or "") in {"ok", "warning"}:
+                return Centerline3DFrame(
+                    station=active_station,
+                    x=float(getattr(source_frame, "x", 0.0) or 0.0),
+                    y=float(getattr(source_frame, "y", 0.0) or 0.0),
+                    z=float(getattr(source_frame, "z", 0.0) or 0.0),
+                    tangent_direction_deg=float(getattr(source_frame, "tangent_direction_deg", 0.0) or 0.0),
+                    grade=float(getattr(source_frame, "grade", 0.0) or 0.0),
+                    status=str(getattr(source_frame, "status", "") or "ok"),
+                    source_mode=str(getattr(source_frame, "source_mode", "") or "centerline3d_source_geometry"),
+                    diagnostic_rows=tuple(source_diagnostics),
+                )
         if result is None:
-            return _blocked_frame(active_station, "missing_centerline3d_result", "Centerline3DResult is required.")
+            return _blocked_frame(
+                active_station,
+                "missing_centerline3d_result",
+                "Centerline3DResult is required.",
+                source_diagnostics=source_diagnostics,
+            )
         rows = sorted(
             [
                 row
@@ -41,7 +85,12 @@ class Centerline3DFrameService:
             key=lambda row: float(getattr(row, "station", 0.0) or 0.0),
         )
         if str(getattr(result, "status", "") or "") != "ready" or len(rows) < 2:
-            return _blocked_frame(active_station, "centerline3d_not_ready", "Centerline3DResult needs at least two ready point rows.")
+            return _blocked_frame(
+                active_station,
+                "centerline3d_not_ready",
+                "Centerline3DResult needs at least two ready point rows.",
+                source_diagnostics=source_diagnostics,
+            )
 
         lower = rows[0]
         upper = rows[-1]
@@ -75,6 +124,7 @@ class Centerline3DFrameService:
             diagnostics.append(
                 f"warning|station_outside_centerline3d_range|{active_station:.3f}|Station is outside Centerline3DResult range."
             )
+        diagnostics = [*source_diagnostics, *diagnostics]
         return Centerline3DFrame(
             station=active_station,
             x=x,
@@ -91,10 +141,22 @@ class Centerline3DFrameService:
         result: Centerline3DResult | None,
         station: float,
         offset: float = 0.0,
+        *,
+        alignment=None,
+        profile=None,
+        arc_fit_absolute_tolerance: float = ARC_FIT_ABSOLUTE_TOLERANCE,
+        arc_fit_relative_tolerance: float = ARC_FIT_RELATIVE_TOLERANCE,
     ) -> Centerline3DFrame:
         """Return a station frame shifted by lateral offset in the horizontal normal direction."""
 
-        frame = self.resolve_station(result, station)
+        frame = self.resolve_station(
+            result,
+            station,
+            alignment=alignment,
+            profile=profile,
+            arc_fit_absolute_tolerance=arc_fit_absolute_tolerance,
+            arc_fit_relative_tolerance=arc_fit_relative_tolerance,
+        )
         if str(getattr(frame, "status", "") or "") == "blocked":
             return frame
         heading = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
@@ -113,14 +175,14 @@ class Centerline3DFrameService:
         )
 
 
-def _blocked_frame(station: float, code: str, message: str) -> Centerline3DFrame:
+def _blocked_frame(station: float, code: str, message: str, *, source_diagnostics: list[str] | None = None) -> Centerline3DFrame:
     return Centerline3DFrame(
         station=float(station),
         x=0.0,
         y=0.0,
         z=0.0,
         status="blocked",
-        diagnostic_rows=(f"error|{code}|{float(station):.3f}|{message}",),
+        diagnostic_rows=tuple([*(source_diagnostics or []), f"error|{code}|{float(station):.3f}|{message}"]),
     )
 
 

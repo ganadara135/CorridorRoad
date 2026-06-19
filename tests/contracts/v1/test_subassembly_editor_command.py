@@ -1,8 +1,10 @@
 import FreeCAD as App
 
+from freecad.Corridor_Road.qt_compat import QtWidgets
 from freecad.Corridor_Road.objects.obj_project import CorridorRoadProject, ensure_project_tree
 from freecad.Corridor_Road.v1.commands.cmd_subassembly_editor import (
     CmdV1AssemblySubassemblyEditor,
+    V1AssemblySubassemblyEditorTaskPanel,
     _detail_parameter_rows,
     _merge_detail_parameters,
     _subassembly_preview_text,
@@ -20,6 +22,9 @@ from freecad.Corridor_Road.v1.objects.obj_subassembly_assembly import (
     find_v1_assembly_subassembly_model,
     to_assembly_subassembly_model,
 )
+
+
+_QAPP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
 def _new_project_doc():
@@ -157,6 +162,30 @@ def test_subassembly_preview_text_uses_subassembly_ownership() -> None:
     assert "surface_role=drainage_surface" in text
     assert "shape=trapezoid" in text
     assert "material=concrete" in text
+
+
+def test_subassembly_detail_changes_only_on_table_row_click() -> None:
+    doc, _project = _new_project_doc()
+    try:
+        panel = V1AssemblySubassemblyEditorTaskPanel(document=doc)
+        calls = []
+        original_refresh = panel._refresh_selected_detail
+
+        def tracked_refresh():
+            calls.append(panel._selected_row())
+            original_refresh()
+
+        panel._refresh_selected_detail = tracked_refresh
+        panel.table.selectRow(2)
+        panel.table.itemSelectionChanged.emit()
+
+        assert calls == []
+
+        panel.table.cellClicked.emit(2, 0)
+
+        assert calls == [2]
+    finally:
+        App.closeDocument(doc.Name)
 
 
 def test_subassembly_editor_command_resources() -> None:

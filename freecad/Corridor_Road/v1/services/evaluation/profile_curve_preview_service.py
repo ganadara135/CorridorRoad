@@ -145,12 +145,13 @@ class ProfileCurvePreviewService:
     ) -> tuple[ProfileCurvePreviewCurveRow, list[ProfileCurvePreviewAnnotationRow], list[DiagnosticMessage]]:
         curve_id = str(getattr(curve, "vertical_curve_id", "") or "vertical-curve")
         curve_start, curve_end = _curve_station_range(curve)
+        pvi = _pvi_control_for_curve(controls, curve_start, curve_end)
+        curve_start, curve_end = _effective_symmetric_curve_range(curve_start, curve_end, pvi)
         length = max(float(curve_end) - float(curve_start), 0.0)
         bvc = self.profile_service.evaluate_station(profile, curve_start)
         evc = self.profile_service.evaluate_station(profile, curve_end)
         mid_station = 0.5 * (curve_start + curve_end)
         mid = self.profile_service.evaluate_station(profile, mid_station)
-        pvi = _pvi_control_for_curve(controls, curve_start, curve_end)
         grade_in = float(getattr(bvc, "grade", 0.0) or 0.0)
         grade_out = float(getattr(evc, "grade", 0.0) or 0.0)
         algebraic = grade_out - grade_in
@@ -315,6 +316,19 @@ def _curve_station_range(curve: VerticalCurveRow) -> tuple[float, float]:
     start = float(getattr(curve, "station_start", 0.0) or 0.0)
     end = float(getattr(curve, "station_end", 0.0) or 0.0)
     return (start, end) if start <= end else (end, start)
+
+
+def _effective_symmetric_curve_range(
+    curve_start: float,
+    curve_end: float,
+    pvi: ProfileControlPoint | None,
+) -> tuple[float, float]:
+    if pvi is None:
+        return curve_start, curve_end
+    length = abs(float(curve_end) - float(curve_start))
+    center = float(getattr(pvi, "station", 0.0) or 0.0)
+    half = 0.5 * length
+    return center - half, center + half
 
 
 def _ordered_controls(profile: ProfileModel) -> list[ProfileControlPoint]:

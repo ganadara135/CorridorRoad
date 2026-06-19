@@ -2148,9 +2148,15 @@ def supplemental_sampling_summary(
     fallback_count = 0
     for section in supplemental_sections:
         notes = str(getattr(getattr(section, "frame", None), "notes", "") or "")
-        source_mode = "centerline3d_result" if "source=centerline3d_result" in notes else "applied_section_frame"
+        source_mode = (
+            "centerline3d_source_geometry"
+            if "source=centerline3d_source_geometry" in notes
+            else "centerline3d_result"
+            if "source=centerline3d_result" in notes
+            else "applied_section_frame"
+        )
         source_mode_counts[source_mode] = source_mode_counts.get(source_mode, 0) + 1
-        if source_mode != "centerline3d_result":
+        if source_mode == "applied_section_frame":
             fallback_count += 1
     max_tangent_delta = 0.0
     max_chord_deviation = 0.0

@@ -20,6 +20,9 @@ from freecad.Corridor_Road.v1.services.builders.corridor_surface_geometry_servic
     _supplemental_sampled_sections,
     supplemental_sampling_summary,
 )
+from freecad.Corridor_Road.v1.services.builders.applied_section_service import (
+    _clip_overlapping_applied_sections,
+)
 
 
 def _arc_frame(station, _first=None, _second=None, _ratio=0.0) -> AppliedSectionFrame:
@@ -34,6 +37,25 @@ def _arc_frame(station, _first=None, _second=None, _ratio=0.0) -> AppliedSection
         z=0.0,
         tangent_direction_deg=math.degrees(theta),
         notes="source=centerline3d_result",
+    )
+
+
+def _source_geometry_arc_frame(station, _first=None, _second=None, _ratio=0.0) -> AppliedSectionFrame:
+    frame = _arc_frame(station, _first, _second, _ratio)
+    return AppliedSectionFrame(
+        station=frame.station,
+        x=frame.x,
+        y=frame.y,
+        z=frame.z,
+        tangent_direction_deg=frame.tangent_direction_deg,
+        profile_grade=frame.profile_grade,
+        alignment_status=frame.alignment_status,
+        profile_status=frame.profile_status,
+        active_alignment_element_id=frame.active_alignment_element_id,
+        active_profile_segment_start_id=frame.active_profile_segment_start_id,
+        active_profile_segment_end_id=frame.active_profile_segment_end_id,
+        active_vertical_curve_id=frame.active_vertical_curve_id,
+        notes="source=centerline3d_source_geometry;compatible_source=centerline3d_result",
     )
 
 
@@ -155,6 +177,16 @@ def test_supplemental_sampling_summary_reports_source_and_density() -> None:
     assert dict(high["source_mode_counts"]).get("centerline3d_result", 0) > 0
 
 
+def test_supplemental_sampling_summary_treats_source_geometry_as_centerline_source() -> None:
+    sections = [_section("s0", 0.0), _section("s10", 10.0)]
+
+    summary = supplemental_sampling_summary(sections, max_spacing=1.0, frame_resolver=_source_geometry_arc_frame)
+
+    assert int(summary["supplemental_frame_count"]) > 0
+    assert int(summary["fallback_count"]) == 0
+    assert dict(summary["source_mode_counts"]).get("centerline3d_source_geometry", 0) > 0
+
+
 def test_supplemental_sections_preserve_subassembly_surface_ownership() -> None:
     sections = [_section("s0", 0.0), _section("s10", 10.0)]
 
@@ -165,6 +197,81 @@ def test_supplemental_sections_preserve_subassembly_surface_ownership() -> None:
     assert supplemental[0].subassembly_point_rows
     assert supplemental[0].subassembly_link_rows
     assert all("supplemental:subassembly:" in point.point_id for point in supplemental[0].subassembly_point_rows)
+
+
+def test_applied_section_overlap_guard_clips_overlapping_regular_and_supplemental_sections() -> None:
+    first = AppliedSection(
+        schema_version=1,
+        project_id="project:test",
+        applied_section_id="base:0",
+        corridor_id="corridor:test",
+        alignment_id="alignment:test",
+        profile_id="profile:test",
+        assembly_id="assembly:test",
+        station=0.0,
+        frame=AppliedSectionFrame(0.0, 0.0, 0.0, 0.0, tangent_direction_deg=0.0),
+        surface_left_width=2.0,
+        surface_right_width=2.0,
+        daylight_left_width=8.0,
+        daylight_right_width=8.0,
+    )
+    overlapping_supplemental = AppliedSection(
+        schema_version=1,
+        project_id="project:test",
+        applied_section_id="supplemental:1",
+        corridor_id="corridor:test",
+        alignment_id="alignment:test",
+        profile_id="profile:test",
+        assembly_id="assembly:test",
+        station=1.0,
+        frame=AppliedSectionFrame(1.0, 1.0, 0.0, 0.0, tangent_direction_deg=10.0),
+        surface_left_width=2.0,
+        surface_right_width=2.0,
+        daylight_left_width=8.0,
+        daylight_right_width=8.0,
+    )
+    overlapping_regular = AppliedSection(
+        schema_version=1,
+        project_id="project:test",
+        applied_section_id="regular:2",
+        corridor_id="corridor:test",
+        alignment_id="alignment:test",
+        profile_id="profile:test",
+        assembly_id="assembly:test",
+        station=2.0,
+        frame=AppliedSectionFrame(2.0, 1.0, 0.0, 0.0, tangent_direction_deg=10.0),
+        surface_left_width=2.0,
+        surface_right_width=2.0,
+        daylight_left_width=8.0,
+        daylight_right_width=8.0,
+    )
+    sections, rows = _clip_overlapping_applied_sections(
+        [first, overlapping_supplemental, overlapping_regular],
+        [
+            AppliedSectionStationRow("row:0", 0.0, "base:0", kind="regular_sample"),
+            AppliedSectionStationRow("row:1", 1.0, "supplemental:1", kind="supplemental_horizontal_curve"),
+            AppliedSectionStationRow("row:2", 2.0, "regular:2", kind="regular_sample"),
+        ],
+    )
+
+    assert [section.applied_section_id for section in sections] == ["base:0", "supplemental:1", "regular:2"]
+    assert [row.applied_section_id for row in rows] == ["base:0", "supplemental:1", "regular:2"]
+    assert sections[1].surface_left_width == 2.0
+    assert sections[1].surface_right_width == 2.0
+    assert sections[1].daylight_left_width < 8.0 or sections[1].daylight_right_width < 8.0
+    assert any(row.kind == "applied_section_overlap_clip" for row in sections[1].diagnostic_rows)
+    regular_sections, regular_rows = _clip_overlapping_applied_sections(
+        [first, overlapping_regular],
+        [
+            AppliedSectionStationRow("row:0", 0.0, "base:0", kind="regular_sample"),
+            AppliedSectionStationRow("row:2", 2.0, "regular:2", kind="regular_sample"),
+        ],
+    )
+    assert [row.applied_section_id for row in regular_rows] == ["base:0", "regular:2"]
+    assert regular_sections[1].surface_left_width == 2.0
+    assert regular_sections[1].surface_right_width == 2.0
+    assert regular_sections[1].daylight_left_width < 8.0 or regular_sections[1].daylight_right_width < 8.0
+    assert any(row.kind == "applied_section_overlap_clip" for row in regular_sections[1].diagnostic_rows)
 
 
 def test_design_surface_uses_supplemental_frame_series() -> None:
@@ -222,7 +329,9 @@ if __name__ == "__main__":
     test_supplemental_sampling_recursively_follows_centerline_frame()
     test_supplemental_sampling_does_not_densify_straight_centerline_by_spacing_only()
     test_supplemental_sampling_summary_reports_source_and_density()
+    test_supplemental_sampling_summary_treats_source_geometry_as_centerline_source()
     test_supplemental_sections_preserve_subassembly_surface_ownership()
+    test_applied_section_overlap_guard_clips_overlapping_regular_and_supplemental_sections()
     test_design_surface_uses_supplemental_frame_series()
     test_build_corridor_supplemental_frame_marker_preview()
     print("PASS: supplemental frame sampling contract validation")

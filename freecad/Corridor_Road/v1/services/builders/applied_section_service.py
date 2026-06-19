@@ -144,6 +144,7 @@ class _DefinitionSubassemblyEvaluation:
 
 
 SUPPLEMENTAL_APPLIED_SECTION_MAX_SAMPLES_PER_SPAN = 512
+SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE = 1.0e-7
 
 
 class AppliedSectionService:
@@ -241,7 +242,12 @@ class AppliedSectionService:
             subassembly_template=subassembly_template,
         )
 
-        centerline_frame = self.centerline_frame_service.resolve_station(request.centerline3d_result, request.station)
+        centerline_frame = self.centerline_frame_service.resolve_station(
+            request.centerline3d_result,
+            request.station,
+            alignment=request.alignment,
+            profile=request.profile,
+        )
         frame = self._build_frame(
             station=request.station,
             alignment_result=alignment_result,
@@ -256,12 +262,6 @@ class AppliedSectionService:
             active_structure_ids=active_structure_ids,
             active_rule_ids=active_rule_ids,
             active_influence_zone_ids=active_influence_zone_ids,
-        )
-        left_width, right_width = self._surface_widths(template, subassembly_template=subassembly_template)
-        subgrade_depth = self._subgrade_depth(template, subassembly_template=subassembly_template)
-        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(
-            template,
-            subassembly_template=subassembly_template,
         )
         superelevation_result = self._evaluate_superelevation(
             request.superelevation_model,
@@ -279,6 +279,12 @@ class AppliedSectionService:
             _subassembly_template_with_superelevation(subassembly_template, superelevation_result),
             request.subassembly_libraries,
             subassembly_preset_libraries=request.subassembly_preset_libraries,
+        )
+        left_width, right_width = self._surface_widths(template, subassembly_template=effective_subassembly_template)
+        subgrade_depth = self._subgrade_depth(template, subassembly_template=effective_subassembly_template)
+        daylight_left_width, daylight_right_width, daylight_left_slope, daylight_right_slope = self._daylight_policy(
+            template,
+            subassembly_template=effective_subassembly_template,
         )
         diagnostics.extend(list(getattr(superelevation_result, "diagnostic_rows", []) or []))
         diagnostics.extend(_intersection_context_diagnostics(intersection_result))
@@ -498,10 +504,12 @@ class AppliedSectionService:
         centerline_frame: Centerline3DFrame | None = None,
     ) -> AppliedSectionFrame:
         if centerline_frame is not None and str(getattr(centerline_frame, "status", "") or "") in {"ok", "warning"}:
+            source_mode = str(getattr(centerline_frame, "source_mode", "") or "centerline3d_result")
             centerline_notes = "; ".join(
                 text
                 for text in [
-                    "source=centerline3d_result",
+                    f"source={source_mode}",
+                    "compatible_source=centerline3d_result" if source_mode == "centerline3d_source_geometry" else "",
                     *list(getattr(centerline_frame, "diagnostic_rows", []) or []),
                 ]
                 if text
@@ -930,6 +938,7 @@ class AppliedSectionService:
             _ditch_section_points(
                 template,
                 frame=frame,
+                fg_points=fg_points,
                 surface_left_width=surface_left_width,
                 surface_right_width=surface_right_width,
                 drainage_refs=list(drainage_refs or []),
@@ -1029,6 +1038,7 @@ class AppliedSectionSetService:
                     kind=station_kind,
                 )
             )
+        sections, station_rows = _clip_overlapping_applied_sections(sections, station_rows)
         return AppliedSectionSet(
             schema_version=1,
             project_id=request.project_id,
@@ -1098,6 +1108,299 @@ def _station_kind_for(station_kinds: dict[float, str], station: float, *, tolera
         except Exception:
             continue
     return "regular_sample"
+
+
+def _clip_overlapping_applied_sections(
+    sections: list[AppliedSection],
+    station_rows: list[AppliedSectionStationRow],
+) -> tuple[list[AppliedSection], list[AppliedSectionStationRow]]:
+    """Clip section lines when adjacent Applied Sections overlap in plan view."""
+
+    if len(sections) < 2:
+        return sections, station_rows
+    clipped_sections: list[AppliedSection] = []
+    for section in list(sections or []):
+        clipped = section
+        if clipped_sections:
+            clipped = _clip_applied_section_against_previous(clipped_sections[-1], clipped)
+        clipped_sections.append(clipped)
+    return clipped_sections, station_rows
+
+
+def _applied_section_plan_lines_overlap(first: AppliedSection, second: AppliedSection) -> bool:
+    first_line = _applied_section_plan_line(first)
+    second_line = _applied_section_plan_line(second)
+    if first_line is None or second_line is None:
+        return False
+    return _plan_segments_intersect(first_line[0], first_line[1], second_line[0], second_line[1])
+
+
+def _clip_applied_section_against_previous(previous: AppliedSection, section: AppliedSection) -> AppliedSection:
+    previous_line = _applied_section_plan_line(previous)
+    current_line = _applied_section_plan_line(section)
+    if previous_line is None or current_line is None:
+        return section
+    intersection = _plan_segment_intersection_point(previous_line[0], previous_line[1], current_line[0], current_line[1])
+    if intersection is None:
+        return section
+    frame = getattr(section, "frame", None)
+    if frame is None:
+        return section
+    angle = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle)
+    normal_y = math.cos(angle)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    signed_offset = (float(intersection[0]) - base_x) * normal_x + (float(intersection[1]) - base_y) * normal_y
+    left_extent, right_extent = _applied_section_lateral_extents(section)
+    diagnostics = list(getattr(section, "diagnostic_rows", []) or [])
+    if signed_offset >= 0.0:
+        cap = max(min(float(signed_offset), left_extent), 0.0)
+        protected_left, protected_right = _applied_section_protected_lateral_extents(section)
+        cap = max(cap, protected_left)
+        if cap >= left_extent - SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE:
+            return section
+        surface_left, daylight_left = _clip_widths_to_extent(
+            float(getattr(section, "surface_left_width", 0.0) or 0.0),
+            float(getattr(section, "daylight_left_width", 0.0) or 0.0),
+            cap,
+        )
+        diagnostics.append(_section_overlap_clip_diagnostic(section, "left", left_extent, cap))
+        return replace(
+            section,
+            surface_left_width=surface_left,
+            daylight_left_width=daylight_left,
+            point_rows=_clip_section_points_to_lateral_extent(section.point_rows, frame=frame, left_cap=cap, right_cap=right_extent),
+            subassembly_point_rows=_clip_section_points_to_lateral_extent(
+                section.subassembly_point_rows,
+                frame=frame,
+                left_cap=cap,
+                right_cap=right_extent,
+            ),
+            diagnostic_rows=diagnostics,
+        )
+    cap = max(min(abs(float(signed_offset)), right_extent), 0.0)
+    protected_left, protected_right = _applied_section_protected_lateral_extents(section)
+    cap = max(cap, protected_right)
+    if cap >= right_extent - SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE:
+        return section
+    surface_right, daylight_right = _clip_widths_to_extent(
+        float(getattr(section, "surface_right_width", 0.0) or 0.0),
+        float(getattr(section, "daylight_right_width", 0.0) or 0.0),
+        cap,
+    )
+    diagnostics.append(_section_overlap_clip_diagnostic(section, "right", right_extent, cap))
+    return replace(
+        section,
+        surface_right_width=surface_right,
+        daylight_right_width=daylight_right,
+        point_rows=_clip_section_points_to_lateral_extent(section.point_rows, frame=frame, left_cap=left_extent, right_cap=cap),
+        subassembly_point_rows=_clip_section_points_to_lateral_extent(
+            section.subassembly_point_rows,
+            frame=frame,
+            left_cap=left_extent,
+            right_cap=cap,
+        ),
+        diagnostic_rows=diagnostics,
+    )
+
+
+def _clip_widths_to_extent(surface_width: float, daylight_width: float, cap: float) -> tuple[float, float]:
+    cap = max(float(cap or 0.0), 0.0)
+    surface = max(float(surface_width or 0.0), 0.0)
+    daylight = max(float(daylight_width or 0.0), 0.0)
+    if cap <= surface:
+        return cap, 0.0
+    return surface, min(daylight, max(cap - surface, 0.0))
+
+
+def _clip_section_points_to_lateral_extent(
+    points: list,
+    *,
+    frame: AppliedSectionFrame,
+    left_cap: float,
+    right_cap: float,
+) -> list:
+    if not points:
+        return []
+    angle = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle)
+    normal_y = math.cos(angle)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    left_limit = max(float(left_cap or 0.0), 0.0)
+    right_limit = -max(float(right_cap or 0.0), 0.0)
+    clipped = []
+    for point in list(points or []):
+        try:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        except Exception:
+            clipped.append(point)
+            continue
+        new_offset = min(max(offset, right_limit), left_limit)
+        if abs(new_offset - offset) <= SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE:
+            clipped.append(point)
+            continue
+        clipped.append(
+            replace(
+                point,
+                x=base_x + normal_x * new_offset,
+                y=base_y + normal_y * new_offset,
+                lateral_offset=new_offset,
+            )
+        )
+    return clipped
+
+
+def _section_overlap_clip_diagnostic(section: AppliedSection, side: str, original_extent: float, clipped_extent: float) -> DiagnosticMessage:
+    return DiagnosticMessage(
+        severity="info",
+        kind="applied_section_overlap_clip",
+        message=(
+            f"Applied Section {str(getattr(section, 'applied_section_id', '') or '')} {side} side was clipped "
+            f"from {float(original_extent):g} to {float(clipped_extent):g} because adjacent section lines overlapped."
+        ),
+    )
+
+
+def _applied_section_plan_line(section: AppliedSection) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    frame = getattr(section, "frame", None)
+    if frame is None:
+        return None
+    left_extent, right_extent = _applied_section_lateral_extents(section)
+    if left_extent <= 1.0e-9 and right_extent <= 1.0e-9:
+        return None
+    angle = math.radians(float(getattr(frame, "tangent_direction_deg", 0.0) or 0.0))
+    normal_x = -math.sin(angle)
+    normal_y = math.cos(angle)
+    base_x = float(getattr(frame, "x", 0.0) or 0.0)
+    base_y = float(getattr(frame, "y", 0.0) or 0.0)
+    left = (base_x + normal_x * left_extent, base_y + normal_y * left_extent)
+    right = (base_x - normal_x * right_extent, base_y - normal_y * right_extent)
+    return left, right
+
+
+def _applied_section_lateral_extents(section: AppliedSection) -> tuple[float, float]:
+    left_extent = max(
+        float(getattr(section, "surface_left_width", 0.0) or 0.0),
+        0.0,
+    ) + max(float(getattr(section, "daylight_left_width", 0.0) or 0.0), 0.0)
+    right_extent = max(
+        float(getattr(section, "surface_right_width", 0.0) or 0.0),
+        0.0,
+    ) + max(float(getattr(section, "daylight_right_width", 0.0) or 0.0), 0.0)
+    for point in list(getattr(section, "point_rows", []) or []) + list(getattr(section, "subassembly_point_rows", []) or []):
+        try:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        except Exception:
+            continue
+        if offset >= 0.0:
+            left_extent = max(left_extent, offset)
+        else:
+            right_extent = max(right_extent, abs(offset))
+    return left_extent, right_extent
+
+
+def _applied_section_protected_lateral_extents(section: AppliedSection) -> tuple[float, float]:
+    """Return the lane/shoulder/ditch envelope that overlap clipping must not cut into."""
+
+    left_extent = max(float(getattr(section, "surface_left_width", 0.0) or 0.0), 0.0)
+    right_extent = max(float(getattr(section, "surface_right_width", 0.0) or 0.0), 0.0)
+    protected_roles = {
+        "fg_surface",
+        "subgrade_surface",
+        "ditch_surface",
+        "ditch_flowline",
+        "drainage_surface",
+        "gutter_surface",
+        "swale_surface",
+        "channel_surface",
+    }
+    excluded_roles = {"side_slope_surface", "bench_surface", "daylight_marker", "daylight"}
+    for point in list(getattr(section, "point_rows", []) or []) + list(getattr(section, "subassembly_point_rows", []) or []):
+        role = str(getattr(point, "point_role", "") or getattr(point, "point_code", "") or "").strip()
+        if role in excluded_roles:
+            continue
+        if protected_roles and role and role not in protected_roles:
+            continue
+        try:
+            offset = float(getattr(point, "lateral_offset", 0.0) or 0.0)
+        except Exception:
+            continue
+        if offset >= 0.0:
+            left_extent = max(left_extent, offset)
+        else:
+            right_extent = max(right_extent, abs(offset))
+    return left_extent, right_extent
+
+
+def _plan_segments_intersect(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+) -> bool:
+    tol = SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE
+    if max(min(a[0], b[0]), min(c[0], d[0])) > min(max(a[0], b[0]), max(c[0], d[0])) + tol:
+        return False
+    if max(min(a[1], b[1]), min(c[1], d[1])) > min(max(a[1], b[1]), max(c[1], d[1])) + tol:
+        return False
+    o1 = _plan_orientation(a, b, c)
+    o2 = _plan_orientation(a, b, d)
+    o3 = _plan_orientation(c, d, a)
+    o4 = _plan_orientation(c, d, b)
+    if abs(o1) <= tol and _point_on_plan_segment(c, a, b):
+        return True
+    if abs(o2) <= tol and _point_on_plan_segment(d, a, b):
+        return True
+    if abs(o3) <= tol and _point_on_plan_segment(a, c, d):
+        return True
+    if abs(o4) <= tol and _point_on_plan_segment(b, c, d):
+        return True
+    return (o1 > tol and o2 < -tol or o1 < -tol and o2 > tol) and (o3 > tol and o4 < -tol or o3 < -tol and o4 > tol)
+
+
+def _plan_segment_intersection_point(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+) -> tuple[float, float] | None:
+    if not _plan_segments_intersect(a, b, c, d):
+        return None
+    denominator = (a[0] - b[0]) * (c[1] - d[1]) - (a[1] - b[1]) * (c[0] - d[0])
+    if abs(denominator) <= SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE:
+        for point in (c, d):
+            if _point_on_plan_segment(point, a, b):
+                return point
+        for point in (a, b):
+            if _point_on_plan_segment(point, c, d):
+                return point
+        return None
+    x_num = (a[0] * b[1] - a[1] * b[0]) * (c[0] - d[0]) - (a[0] - b[0]) * (c[0] * d[1] - c[1] * d[0])
+    y_num = (a[0] * b[1] - a[1] * b[0]) * (c[1] - d[1]) - (a[1] - b[1]) * (c[0] * d[1] - c[1] * d[0])
+    return x_num / denominator, y_num / denominator
+
+
+def _plan_orientation(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _point_on_plan_segment(
+    p: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> bool:
+    tol = SUPPLEMENTAL_APPLIED_SECTION_OVERLAP_TOLERANCE
+    return (
+        min(a[0], b[0]) - tol <= p[0] <= max(a[0], b[0]) + tol
+        and min(a[1], b[1]) - tol <= p[1] <= max(a[1], b[1]) + tol
+        and abs(_plan_orientation(a, b, p)) <= tol
+    )
 
 
 def _supplemental_applied_section_station_series(
@@ -1249,21 +1552,11 @@ def _supplemental_applied_section_interval_needs_sampling(
 ) -> bool:
     start_station = _lerp(first_station, second_station, start_ratio)
     end_station = _lerp(first_station, second_station, end_ratio)
-    if abs(float(end_station) - float(start_station)) <= 1.0e-9:
+    span_length = abs(float(end_station) - float(start_station))
+    if span_length <= 1.0e-9:
         return False
-    if abs(float(end_station) - float(start_station)) <= max(float(max_spacing or 0.0), 0.1):
-        return _supplemental_applied_section_curve_exceeded(
-            start_station,
-            end_station,
-            centerline3d_result=centerline3d_result,
-            frame_service=frame_service,
-            tangent_delta_threshold_deg=tangent_delta_threshold_deg,
-            chord_deviation_threshold=chord_deviation_threshold,
-            profile=profile,
-            profile_service=profile_service,
-            vertical_chord_deviation_threshold=vertical_chord_deviation_threshold,
-            grade_delta_threshold=grade_delta_threshold,
-        )
+    if span_length <= max(float(max_spacing or 0.0), 0.1) + 1.0e-6:
+        return False
     return _supplemental_applied_section_curve_exceeded(
         start_station,
         end_station,
@@ -1438,8 +1731,9 @@ def _supplemental_section_vertical_sampling_diagnostics(
             severity="warning",
             kind="supplemental_section_vertical_curve_not_sampled",
             message=(
-                "Vertical supplemental section was triggered by Profile curvature, but the Centerline3D frame may not "
-                f"represent that vertical curve closely enough ({detail}). Rebuild or inspect Centerline3DResult sampling."
+                "Vertical supplemental section was triggered by Profile curvature, but the centerline frame may not "
+                f"represent that vertical curve closely enough ({detail}). Inspect Source Geometry frame resolution "
+                "or Centerline3DResult fallback sampling."
             ),
         )
     ]
@@ -1522,8 +1816,8 @@ def _subassembly_with_definition_parameters(
     return replace(
         subassembly,
         parameters=parameters,
-        width=_subassembly_numeric_parameter(parameters, ("width", "side_slope_width"), getattr(subassembly, "width", 0.0)),
-        slope=_subassembly_numeric_parameter(parameters, ("slope", "default_slope"), getattr(subassembly, "slope", 0.0)),
+        width=_subassembly_numeric_parameter(parameters, ("width", "side_slope_width", "top_width"), getattr(subassembly, "width", 0.0)),
+        slope=_subassembly_slope_parameter(parameters, definition, getattr(subassembly, "slope", 0.0)),
         thickness=_subassembly_numeric_parameter(parameters, ("thickness",), getattr(subassembly, "thickness", 0.0)),
     )
 
@@ -1560,6 +1854,28 @@ def _subassembly_numeric_parameter(parameters: dict[str, object], keys: tuple[st
         if str(key) in values:
             return _definition_numeric_parameter(values, str(key), fallback)
     return _definition_numeric_parameter(values, "", fallback)
+
+
+def _subassembly_slope_parameter(parameters: dict[str, object], definition: SubassemblyDefinition | None, fallback: object) -> float:
+    values = dict(parameters or {})
+    if "slope" in values:
+        value = _definition_numeric_parameter(values, "slope", fallback)
+        if _definition_parameter_unit(definition, "slope") == "%":
+            return value / 100.0
+        return value
+    if "default_slope" in values:
+        return _definition_numeric_parameter(values, "default_slope", fallback)
+    return _definition_numeric_parameter(values, "", fallback)
+
+
+def _definition_parameter_unit(definition: SubassemblyDefinition | None, parameter_id: str) -> str:
+    if definition is None:
+        return ""
+    requested = str(parameter_id or "").strip()
+    for row in list(getattr(definition, "parameter_rows", []) or []):
+        if str(getattr(row, "parameter_id", "") or "").strip() == requested:
+            return str(getattr(row, "unit", "") or "").strip()
+    return ""
 
 
 def _active_section_source_rows(
@@ -2480,8 +2796,6 @@ def _bench_evaluations(
             continue
         if str(getattr(source_row, "kind", "") or "") != "side_slope":
             continue
-        if str(getattr(source_row, "definition_ref", "") or "").strip():
-            continue
         base_segments, base_diagnostics = _bench_profile_segments_with_diagnostics(source_row)
         if not base_segments:
             continue
@@ -2537,6 +2851,7 @@ def _bench_terminal_side_edges(
         for point in _ditch_section_points(
             template,
             frame=frame,
+            fg_points=fg_points,
             surface_left_width=surface_left_width,
             surface_right_width=surface_right_width,
             subassembly_template=subassembly_template,
@@ -3275,8 +3590,6 @@ def _surface_section_offsets(
     for source_row in sorted(rows, key=_section_source_sort_index):
         if str(getattr(source_row, "kind", "") or "") not in fg_kinds:
             continue
-        if str(getattr(source_row, "definition_ref", "") or "").strip():
-            continue
         width = max(float(getattr(source_row, "width", 0.0) or 0.0), 0.0)
         if width <= 0.0:
             continue
@@ -3330,6 +3643,7 @@ def _ditch_section_points(
     template: object | None,
     *,
     frame: AppliedSectionFrame,
+    fg_points: list[tuple[float, float, float, float]] | None = None,
     surface_left_width: float,
     surface_right_width: float,
     drainage_refs: list[str] | None = None,
@@ -3348,6 +3662,8 @@ def _ditch_section_points(
     base_z = float(getattr(frame, "z", 0.0) or 0.0)
     left_width = max(float(surface_left_width or 0.0), 0.0)
     right_width = max(float(surface_right_width or 0.0), 0.0)
+    left_edge_z = _edge_z_at_offset(list(fg_points or []), left_width, default_z=base_z)
+    right_edge_z = _edge_z_at_offset(list(fg_points or []), -right_width, default_z=base_z)
     rows: list[tuple[float, float, str, str, str, str]] = []
     for source, source_ref in _ditch_source_rows(template, subassembly_template=subassembly_template):
         side = str(getattr(source, "side", "") or "center")
@@ -3359,6 +3675,7 @@ def _ditch_section_points(
                 _oriented_ditch_rows(
                     local_profile,
                     edge_offset=left_width,
+                    edge_z=left_edge_z,
                     direction=1.0,
                     side_label="left",
                     subassembly_ref=source_ref,
@@ -3370,6 +3687,7 @@ def _ditch_section_points(
                 _oriented_ditch_rows(
                     local_profile,
                     edge_offset=-right_width,
+                    edge_z=right_edge_z,
                     direction=-1.0,
                     side_label="right",
                     subassembly_ref=source_ref,
@@ -3378,13 +3696,13 @@ def _ditch_section_points(
             )
     output: list[AppliedSectionPoint] = []
     sorted_rows = sorted(rows, key=lambda item: (item[0], item[2]))
-    for index, (offset, z_delta, role, subassembly_ref, side_label, drainage_ref) in enumerate(sorted_rows):
+    for index, (offset, z, role, subassembly_ref, side_label, drainage_ref) in enumerate(sorted_rows):
         output.append(
             AppliedSectionPoint(
                 point_id=f"ditch:{role}:{index + 1}",
                 x=base_x + normal_x * offset,
                 y=base_y + normal_y * offset,
-                z=base_z + z_delta,
+                z=z,
                 point_role="ditch_surface",
                 lateral_offset=offset,
                 subassembly_ref=subassembly_ref,
@@ -3421,7 +3739,6 @@ def _ditch_source_rows(
             key=_section_source_sort_index,
         )
         if bool(getattr(source, "enabled", True)) and str(getattr(source, "kind", "") or "") == "ditch"
-        and not str(getattr(source, "definition_ref", "") or "").strip()
     ]
     if subassemblies:
         return [(source, str(getattr(source, "subassembly_id", "") or "")) for source in subassemblies]
@@ -3454,6 +3771,8 @@ def _ditch_local_profile(subassembly) -> list[tuple[float, float, str]]:
     shape = str(params.get("shape", "") or "").strip().lower().replace("-", "_")
     width = max(_parameter_float(params, "top_width", _section_row_width(subassembly)), 0.0)
     if not shape:
+        if {"top_width", "bottom_width", "depth"}.issubset(set(params)):
+            return _trapezoid_ditch_profile(subassembly, params, width)
         fallback_width = _section_row_width(subassembly)
         if fallback_width <= 0.0:
             return []
@@ -3704,6 +4023,7 @@ def _oriented_ditch_rows(
     local_profile: list[tuple[float, float, str]],
     *,
     edge_offset: float,
+    edge_z: float,
     direction: float,
     side_label: str,
     subassembly_ref: str = "",
@@ -3714,7 +4034,7 @@ def _oriented_ditch_rows(
         rows.append(
             (
                 float(edge_offset) + float(direction) * float(local_offset),
-                float(z_delta),
+                float(edge_z) + float(z_delta),
                 f"{side_label}:{role}",
                 subassembly_ref,
                 str(side_label or ""),

@@ -62,7 +62,8 @@ APPLIED_SECTION_REVIEW_ROW_COLORS = {
     "missing": (255, 220, 220),
 }
 APPLIED_SECTION_REVIEW_TEXT_COLOR = (20, 20, 20)
-APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT = 21
+APPLIED_SECTION_SUPPLEMENTAL_DENSITY_DEFAULT = 11
+APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE = 3.0
 APPLIED_SECTION_SUPPLEMENTAL_VERTICAL_CHORD_DEVIATION_DEFAULT = 0.10
 APPLIED_SECTION_SUPPLEMENTAL_GRADE_DELTA_DEFAULT = 0.01
 
@@ -1031,7 +1032,7 @@ class V1AppliedSectionsTaskPanel:
             return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
         try:
             density = max(1, min(25, int(slider.value())))
-            return float(max(1, 26 - density))
+            return float(max(1.0, (26 - density) * APPLIED_SECTION_SUPPLEMENTAL_DENSITY_SPACING_SCALE))
         except Exception:
             return float(SUPPLEMENTAL_SAMPLING_MAX_SPACING)
 
@@ -1612,6 +1613,8 @@ def _frame_source_summary(frame) -> str:
     if frame is None:
         return "missing frame"
     notes = str(getattr(frame, "notes", "") or "").strip()
+    if "source=centerline3d_source_geometry" in notes:
+        return "Centerline3D Source Geometry"
     if "source=centerline3d_result" in notes:
         return "Centerline3D"
     if notes:

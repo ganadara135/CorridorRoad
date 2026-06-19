@@ -3568,13 +3568,13 @@ def create_corridor_centerline_3d_preview(
     except Exception:
         return None
 
-    points, stations, source_mode, centerline_result_id = _corridor_centerline_preview_points(
+    shape, curve_kind, points, stations, source_mode, centerline_result_id = _corridor_centerline_preview_shape(
         doc,
         AppModule,
+        Part,
     )
-    if len(points) < 2:
+    if shape is None or len(points) < 2:
         return None
-    shape, curve_kind = _make_centerline_shape(points, Part)
     obj = doc.getObject("V1CorridorCenterline3DPreview")
     if obj is None:
         obj = doc.addObject("Part::Feature", "V1CorridorCenterline3DPreview")
@@ -15194,6 +15194,21 @@ def _corridor_centerline_preview_points(document, app_module):
     if len(points) >= 2:
         return points, stations, "centerline3d_result", result_id
     return [], [], "", ""
+
+
+def _corridor_centerline_preview_shape(document, app_module, part_module):
+    centerline_result = _build_corridor_centerline3d_result(document)
+    points, stations, result_id = _centerline_points_from_centerline3d_result(centerline_result, app_module)
+    if len(points) < 2:
+        return None, "empty", points, stations, "", result_id
+    try:
+        from .cmd_centerline3d import _make_centerline3d_source_geometry_shape
+
+        shape, _source_summary = _make_centerline3d_source_geometry_shape(document, centerline_result)
+        return shape, "source_geometry", points, stations, "centerline3d_source_geometry", result_id
+    except Exception:
+        shape, curve_kind = _make_centerline_shape(points, part_module)
+        return shape, curve_kind, points, stations, "centerline3d_result_fallback", result_id
 
 
 def _build_corridor_centerline3d_result(document):

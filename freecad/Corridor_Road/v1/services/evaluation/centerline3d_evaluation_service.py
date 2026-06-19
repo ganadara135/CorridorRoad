@@ -27,8 +27,8 @@ class Centerline3DEvaluationRequest:
 class Centerline3DEvaluationService:
     """Evaluate Alignment XY and Profile Z over the accepted station grid."""
 
-    CURVE_SAMPLE_MAX_SPACING = 5.0
-    MAX_CURVE_SAMPLES_PER_SPAN = 64
+    CURVE_SAMPLE_MAX_SPACING = 1.0
+    MAX_CURVE_SAMPLES_PER_SPAN = 512
 
     def __init__(self) -> None:
         self._alignment_service = AlignmentEvaluationService()
